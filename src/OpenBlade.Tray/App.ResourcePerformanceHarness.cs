@@ -30,6 +30,7 @@ public partial class App
             int seconds = secondsText is null ? 2 : int.Parse(secondsText, System.Globalization.CultureInfo.InvariantCulture);
             string windowKind = Environment.GetEnvironmentVariable("OPENBLADE_RESOURCE_WINDOW_KIND") ?? "dashboard";
             bool observeRendering = Environment.GetEnvironmentVariable("OPENBLADE_RESOURCE_OBSERVE_RENDERING") == "1";
+            bool observeRetirement = Environment.GetEnvironmentVariable("OPENBLADE_RESOURCE_OBSERVE_RETIREMENT") == "1";
             bool offscreenWindows = Environment.GetEnvironmentVariable("OPENBLADE_RESOURCE_OFFSCREEN") == "1";
             bool requireInputDesktop = Environment.GetEnvironmentVariable("OPENBLADE_RESOURCE_INPUT_DESKTOP") == "1";
             if (requireInputDesktop && !offscreenWindows)
@@ -102,6 +103,8 @@ public partial class App
             ResourceGuiSnapshot? guiResourcesAfterWarmup = null;
             ResourceGuiSnapshot? guiResourcesAfterActivity = null;
             ResourceHandleTypeNames? nativeHandleTypeNames = null;
+            List<ResourceRetirementCheckpoint>? retirementCheckpoints = observeRetirement ? [] : null;
+            long retirementStarted = Stopwatch.GetTimestamp();
             using var process = Process.GetCurrentProcess();
             if (seconds != 0)
             {
@@ -128,6 +131,8 @@ public partial class App
                 nativeHandlesAfterWarmup = CaptureResourceHandleTypes();
                 guiResourcesAfterWarmup = CaptureResourceGuiCounts();
                 nativeHandleTypeNames = CaptureResourceHandleTypeNames();
+                retirementCheckpoints?.Add(CaptureResourceRetirementCheckpoint("after-warmup-collection", dashboardCycles, retirementStarted, process,
+                    nativeHandlesAfterWarmup, guiResourcesAfterWarmup));
 
                 File.WriteAllText(path + ".phase", "idle");
                 ResourceCheckpoint idleStart = CaptureResourceCheckpoint(process);
@@ -150,6 +155,7 @@ public partial class App
                     {
                         await CycleResourceDashboardAsync(window, dashboardReferences, windowKind, windowDwellMilliseconds, offscreenWindows, requireInputDesktop);
                         dashboardCycles++;
+                        retirementCheckpoints?.Add(CaptureResourceRetirementCheckpoint("after-window-close", dashboardCycles, retirementStarted, process));
                     }
                     await Task.Delay(250);
                 }
@@ -173,6 +179,13 @@ public partial class App
                 subscribersAfterActivity = window.SnapshotResourceSubscribers();
                 nativeHandlesAfterActivity = CaptureResourceHandleTypes();
                 guiResourcesAfterActivity = CaptureResourceGuiCounts();
+                if (retirementCheckpoints is not null)
+                {
+                    retirementCheckpoints.Add(CaptureResourceRetirementCheckpoint("after-activity-collection", dashboardCycles, retirementStarted, process,
+                        nativeHandlesAfterActivity, guiResourcesAfterActivity));
+                    File.WriteAllText(path + ".phase", "retirement");
+                    await ObserveResourceRetirementAsync(retirementCheckpoints, dashboardCycles, retirementStarted, process);
+                }
                 window.VerifyResourceIsolation(recorder);
                 if (offscreenWindows) { VerifyOffscreenResourceWindow(window, requireInputDesktop); }
             }
@@ -195,6 +208,11 @@ public partial class App
                 windowKind,
                 windowDwellMilliseconds,
                 observeRendering,
+                observeRetirement,
+                retirementCheckpoints,
+                retirementObservationNotes = observeRetirement
+                    ? "Per-window resource queries and report allocations are inside timed activity; compare matching observation modes. The growing checkpoint list stays rooted and contributes to managed retention. Samples are sequential, not atomic. LastGc fields describe the latest observed GC, whose index/generation/concurrency are recorded. Extra collections and acknowledged low-priority dispatcher turns occur after activity; they do not flush native composition or prove all deferred teardown has completed."
+                    : null,
                 offscreenWindows,
                 requireInputDesktop,
                 windowPresentation = offscreenWindows ? SnapshotResourceWindowPresentation() : null,

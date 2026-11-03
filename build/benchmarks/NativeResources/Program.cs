@@ -7,9 +7,9 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using OpenBlade.Testing;
 
-if (args.Length is < 2 or > 9)
+if (args.Length is < 2 or > 10)
 {
-    throw new ArgumentException("Usage: NativeResources <developer-harness-exe> <new-output-directory> [phase-seconds=300] [startup-runs=5] [window-kind=dashboard] [window-dwell-ms=0] [--observe-rendering] [--offscreen] [--input-desktop]. See README for diagnostic window kinds.");
+    throw new ArgumentException("Usage: NativeResources <developer-harness-exe> <new-output-directory> [phase-seconds=300] [startup-runs=5] [window-kind=dashboard] [window-dwell-ms=0] [--observe-rendering] [--offscreen] [--input-desktop] [--observe-retirement]. See README for diagnostic window kinds.");
 }
 string executable = Path.GetFullPath(args[0]);
 string output = Path.GetFullPath(args[1]);
@@ -19,11 +19,12 @@ string windowKind = args.Length >= 5 ? args[4] : "dashboard";
 int windowDwellMilliseconds = args.Length >= 6 ? int.Parse(args[5], CultureInfo.InvariantCulture) : 0;
 string[] switches = args.Skip(6).ToArray();
 if (switches.Distinct(StringComparer.Ordinal).Count() != switches.Length
-    || switches.Any(value => value is not ("--observe-rendering" or "--offscreen" or "--input-desktop")))
+    || switches.Any(value => value is not ("--observe-rendering" or "--offscreen" or "--input-desktop" or "--observe-retirement")))
 {
-    throw new ArgumentException("Optional switches must be unique: --observe-rendering, --offscreen, --input-desktop.");
+    throw new ArgumentException("Optional switches must be unique: --observe-rendering, --offscreen, --input-desktop, --observe-retirement.");
 }
 bool observeRendering = switches.Contains("--observe-rendering");
+bool observeRetirement = switches.Contains("--observe-retirement");
 bool offscreenWindows = switches.Contains("--offscreen");
 bool inputDesktop = switches.Contains("--input-desktop");
 if (inputDesktop && !offscreenWindows)
@@ -49,7 +50,7 @@ if (Directory.Exists(output) && Directory.EnumerateFileSystemEntries(output).Any
 }
 Directory.CreateDirectory(output);
 string assembly = Path.ChangeExtension(executable, ".dll");
-RequireDeveloperHarness(assembly, requireOffscreenSupport: offscreenWindows);
+RequireDeveloperHarness(assembly, requireOffscreenSupport: offscreenWindows, requireRetirementSupport: observeRetirement);
 string assemblyHash = Hash(assembly);
 Dictionary<string, string> binaryHashes = HashBinaries(Path.GetDirectoryName(executable)!);
 var runs = new List<NativeRun>();
@@ -80,6 +81,7 @@ var report = new
     windowKind,
     windowDwellMilliseconds,
     observeRendering,
+    observeRetirement,
     offscreenWindows,
     desktopMode = inputDesktop ? "input" : "private",
     runs,
@@ -129,6 +131,7 @@ async Task<NativeRun> RunOnDesktopAsync(WindowsVisualTestDesktop? desktop, strin
     startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_KIND"] = windowKind;
     startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_DWELL_MS"] = windowDwellMilliseconds.ToString(CultureInfo.InvariantCulture);
     startInfo.Environment["OPENBLADE_RESOURCE_OBSERVE_RENDERING"] = observeRendering ? "1" : "0";
+    startInfo.Environment["OPENBLADE_RESOURCE_OBSERVE_RETIREMENT"] = observeRetirement ? "1" : "0";
     startInfo.Environment["OPENBLADE_RESOURCE_OFFSCREEN"] = offscreenWindows ? "1" : "0";
     startInfo.Environment["OPENBLADE_RESOURCE_INPUT_DESKTOP"] = inputDesktop ? "1" : "0";
     if (desktop is not null)
@@ -203,6 +206,7 @@ async Task<NativeRun> RunOnDesktopAsync(WindowsVisualTestDesktop? desktop, strin
             || child.RootElement.GetProperty("processId").GetInt32() != processId
             || ReadOptionalFlag(child.RootElement, "offscreenWindows") != offscreenWindows
             || ReadOptionalFlag(child.RootElement, "requireInputDesktop") != inputDesktop
+            || ReadOptionalFlag(child.RootElement, "observeRetirement") != observeRetirement
             || offscreenWindows && desktop is not null
                 && child.RootElement.GetProperty("windowPresentation").GetProperty("desktop")
                     .GetProperty("currentThreadDesktop").GetString() != desktop.Name)
@@ -269,7 +273,7 @@ static string ReadPhase(string reportPath)
         using var stream = new FileStream(reportPath + ".phase", FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var reader = new StreamReader(stream);
         string phase = reader.ReadToEnd();
-        return phase is "warmup" or "idle" or "activity" or "dispose" ? phase : "startup-or-transition";
+        return phase is "warmup" or "idle" or "activity" or "retirement" or "dispose" ? phase : "startup-or-transition";
     }
     catch (IOException) { return "startup-or-transition"; }
 }
@@ -289,7 +293,7 @@ static Dictionary<string, string> HashBinaries(string directory) => Directory.En
     .Where(path => Path.GetExtension(path) is ".dll" or ".exe")
     .ToDictionary(path => Path.GetRelativePath(directory, path), Hash, StringComparer.Ordinal);
 
-static void RequireDeveloperHarness(string assemblyPath, bool requireOffscreenSupport)
+static void RequireDeveloperHarness(string assemblyPath, bool requireOffscreenSupport, bool requireRetirementSupport)
 {
     using FileStream stream = File.OpenRead(assemblyPath);
     using var pe = new PEReader(stream);
@@ -303,18 +307,20 @@ static void RequireDeveloperHarness(string assemblyPath, bool requireOffscreenSu
         }
         bool resourceProbe = false;
         bool offscreenProbe = false;
+        bool retirementProbe = false;
         foreach (MethodDefinitionHandle methodHandle in type.GetMethods())
         {
             string name = metadata.GetString(metadata.GetMethodDefinition(methodHandle).Name);
             resourceProbe |= name == "RunResourcePerformanceAuditAsync";
             offscreenProbe |= name == "ShowOffscreenResourceWindow";
+            retirementProbe |= name == "ObserveResourceRetirementAsync";
         }
-        if (resourceProbe && (!requireOffscreenSupport || offscreenProbe))
+        if (resourceProbe && (!requireOffscreenSupport || offscreenProbe) && (!requireRetirementSupport || retirementProbe))
         {
             return;
         }
     }
-    throw new InvalidDataException("Require an explicit developer-harness build with the requested resource/offscreen probe; nothing was launched.");
+    throw new InvalidDataException("Require an explicit developer-harness build with the requested resource/offscreen/retirement probe; nothing was launched.");
 }
 
 internal sealed record ExternalSample(double ElapsedSeconds, string Phase, double CpuMilliseconds,

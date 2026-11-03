@@ -185,6 +185,7 @@ public sealed class TrayXamlStartupSmokeTests
                 startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_KIND"] = "dashboard";
                 startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_DWELL_MS"] = "0";
                 startInfo.Environment["OPENBLADE_RESOURCE_OBSERVE_RENDERING"] = "0";
+                startInfo.Environment["OPENBLADE_RESOURCE_OBSERVE_RETIREMENT"] = offscreenResourceWindows ? "1" : "0";
                 startInfo.Environment["OPENBLADE_RESOURCE_OFFSCREEN"] = offscreenResourceWindows ? "1" : "0";
                 startInfo.Environment["OPENBLADE_RESOURCE_INPUT_DESKTOP"] = "0";
                 startInfo.Environment["OPENBLADE_RESOURCE_EXPECTED_DESKTOP"] = desktop.Name;
@@ -194,8 +195,9 @@ public sealed class TrayXamlStartupSmokeTests
             Assert.NotNull(process);
             // Reordering captures both section and nested-card states; its additional
             // frames need a bounded render budget under full-solution test load.
+            // Retirement observation adds twelve seconds plus collection work.
             TimeSpan processTimeout = argument is "--live-reorder-smoke" or "--resource-performance-audit"
-                ? TimeSpan.FromSeconds(60)
+                ? TimeSpan.FromSeconds(offscreenResourceWindows ? 75 : 60)
                 : isolatePreferences ? TimeSpan.FromSeconds(45) : TimeSpan.FromSeconds(30);
             using var timeout = new CancellationTokenSource(processTimeout);
             try
@@ -238,6 +240,7 @@ public sealed class TrayXamlStartupSmokeTests
                 Assert.True(root.GetProperty("disconnected").GetBoolean());
                 Assert.Equal(0, root.GetProperty("serviceCalls").GetInt32());
                 Assert.Equal(offscreenResourceWindows, root.GetProperty("offscreenWindows").GetBoolean());
+                Assert.Equal(offscreenResourceWindows, root.GetProperty("observeRetirement").GetBoolean());
                 Assert.False(root.GetProperty("requireInputDesktop").GetBoolean());
                 Assert.Equal(2, root.GetProperty("phases").GetArrayLength());
                 int operations = root.GetProperty("activityOperations").GetInt32();
@@ -257,6 +260,34 @@ public sealed class TrayXamlStartupSmokeTests
                 {
                     var presentation = root.GetProperty("windowPresentation");
                     int cycles = root.GetProperty("dashboardCycles").GetInt32();
+                    var checkpoints = root.GetProperty("retirementCheckpoints").EnumerateArray().ToArray();
+                    var expectedStages = new[] { "after-warmup-collection" }
+                        .Concat(Enumerable.Repeat("after-window-close", cycles - 4))
+                        .Concat(["after-activity-collection", "drain-1", "drain-2", "drain-3", "drain-4", "after-retirement-idle"]);
+                    Assert.Equal(expectedStages, checkpoints.Select(checkpoint => checkpoint.GetProperty("stage").GetString()));
+                    double previousElapsed = -1;
+                    for (int index = 0; index < checkpoints.Length; index++)
+                    {
+                        var checkpoint = checkpoints[index];
+                        Assert.Equal(Math.Min(4 + index, cycles), checkpoint.GetProperty("dashboardCycles").GetInt32());
+                        double elapsed = checkpoint.GetProperty("elapsedSeconds").GetDouble();
+                        Assert.True(elapsed >= previousElapsed);
+                        previousElapsed = elapsed;
+                        Assert.True(checkpoint.GetProperty("managedBytesEstimate").GetInt64() > 0);
+                        Assert.True(checkpoint.GetProperty("lastGcCommittedBytes").GetInt64() > 0);
+                        Assert.True(checkpoint.GetProperty("lastGcIndex").GetInt64() > 0);
+                        Assert.InRange(checkpoint.GetProperty("lastGcGeneration").GetInt32(), 0, GC.MaxGeneration);
+                        var handles = checkpoint.GetProperty("nativeHandles");
+                        if (handles.GetProperty("available").GetBoolean())
+                        {
+                            Assert.True(handles.GetProperty("handleCount").GetInt32() > 0);
+                        }
+                        else
+                        {
+                            Assert.Equal(System.Text.Json.JsonValueKind.Null, handles.GetProperty("handleCount").ValueKind);
+                            Assert.False(string.IsNullOrWhiteSpace(handles.GetProperty("unavailableReason").GetString()));
+                        }
+                    }
                     Assert.Equal(cycles + 2, presentation.GetProperty("showCount").GetInt32());
                     // Before/after show and after layout for every window, plus
                     // owner checks after each dashboard disposal and after activity.
@@ -264,6 +295,10 @@ public sealed class TrayXamlStartupSmokeTests
                     var desktopIdentity = presentation.GetProperty("desktop");
                     Assert.Equal(desktop.Name, desktopIdentity.GetProperty("currentThreadDesktop").GetString());
                     Assert.NotEqual(System.Text.Json.JsonValueKind.True, desktopIdentity.GetProperty("matchesInputDesktop").ValueKind);
+                }
+                else
+                {
+                    Assert.Equal(System.Text.Json.JsonValueKind.Null, root.GetProperty("retirementCheckpoints").ValueKind);
                 }
             }
         }

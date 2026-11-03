@@ -114,13 +114,32 @@ type and query kernel type metadata, never object names or other processes. The
 x64 internal Windows layouts have bounded buffers, counts and retries; unsupported
 layouts or query failures produce an explicit unavailable result. Their soft
 elapsed-time budget does not interrupt a native syscall; the parent process
-deadline remains the outer bound. Subscriber counts and native queries occur
+deadline remains the outer bound. Subscriber counts and default native queries occur
 outside timed phases. GDI and USER counts use current-process GUI-resource queries
 after warmup and after the activity collection, also outside timed phases. Query
 errors or unavailable counts remain explicit; they are not converted to zero.
 These native/GDI before readings occur before the idle phase, while each timed
 phase has its own later process-counter start. Do not subtract a native after-warmup
 count from an activity-start process count. A clock regression invalidates timestamp acceptance.
+
+Use `--observe-retirement` to record a separate series after warmup, after each
+activity window closes, and after activity collection. It then runs four GC /
+finalizer rounds with an acknowledged low-priority dispatcher callback after each,
+then ten seconds of idle before disposal. Each callback has a five-second timeout;
+this confirms a dispatcher turn, not a composition flush or completed native teardown.
+The extra collections stay outside the timed phases; per-window queries add
+instrumentation to activity. Compare runs with the same observation flag, not
+their timing or allocation metrics with the default workload. Startup-only children
+record an empty series. An older harness without this probe is rejected before launch.
+
+Each checkpoint keeps process private bytes, managed-byte estimates, last-GC heap /
+committed / fragmented bytes, native handle types and GUI counts separate. These
+are sequential observations, not an atomic sample or a calculation of native heap
+size. Last-GC index, generation and concurrency identify which collection the heap
+figures describe. Per-window snapshots do not force GC, so compare matching stages.
+The main window, fixture and bounded report series remain rooted throughout the
+retirement interval. The opt-in probe does not enumerate or close framework-owned
+islands, retain their wrappers, enable debugger hooks or publish raw handle values.
 
 The shared production `WindowTitleBarLifetime` cleanup applies only at permanent
 disposal of both XAML window roots. Short pinned-runtime evidence supports hiding
