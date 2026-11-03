@@ -100,6 +100,11 @@ public sealed class TrayXamlStartupSmokeTests
     public Task TelemetryNotificationsRenderOnceAndKeepNoSampleTimeProgression() =>
         RunTraySmokeAsync("--performance-audit", "OpenBlade-telemetry-performance");
 
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task ResourceWorkloadStaysDisconnectedAndRendersAcceptedSamples() =>
+        RunTraySmokeAsync("--resource-performance-audit", "OpenBlade-resource-performance", localizationLanguage: "en-US");
+
     private static async Task RunTraySmokeAsync(
         string argument,
         string reportPrefix,
@@ -167,12 +172,19 @@ public sealed class TrayXamlStartupSmokeTests
                 startInfo.Environment["OPENBLADE_LIVE_LOCALIZATION_SMOKE_PREFERENCE_PATH"] =
                     isolatedPreferencePath;
             }
+            if (argument == "--resource-performance-audit")
+            {
+                startInfo.Environment["OPENBLADE_RESOURCE_PHASE_SECONDS"] = "2";
+                startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_KIND"] = "dashboard";
+                startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_DWELL_MS"] = "0";
+                startInfo.Environment["OPENBLADE_RESOURCE_OBSERVE_RENDERING"] = "0";
+            }
 
             process = desktop.Start(startInfo);
             Assert.NotNull(process);
             // Reordering captures both section and nested-card states; its additional
             // frames need a bounded render budget under full-solution test load.
-            TimeSpan processTimeout = argument == "--live-reorder-smoke"
+            TimeSpan processTimeout = argument is "--live-reorder-smoke" or "--resource-performance-audit"
                 ? TimeSpan.FromSeconds(60)
                 : isolatePreferences ? TimeSpan.FromSeconds(45) : TimeSpan.FromSeconds(30);
             using var timeout = new CancellationTokenSource(processTimeout);
@@ -209,6 +221,26 @@ public sealed class TrayXamlStartupSmokeTests
                 Assert.True(new FileInfo(Path.ChangeExtension(reportPath, ".png")).Length > 0);
                 Assert.True(new FileInfo(Path.ChangeExtension(reportPath, ".gaps.png")).Length > 0);
             }
+            if (argument == "--resource-performance-audit")
+            {
+                using var report = System.Text.Json.JsonDocument.Parse(diagnostic);
+                var root = report.RootElement;
+                Assert.True(root.GetProperty("disconnected").GetBoolean());
+                Assert.Equal(0, root.GetProperty("serviceCalls").GetInt32());
+                Assert.Equal(2, root.GetProperty("phases").GetArrayLength());
+                int operations = root.GetProperty("activityOperations").GetInt32();
+                Assert.True(operations > 0);
+                Assert.Equal(operations, root.GetProperty("activitySampleChartRebuilds").GetInt32());
+                Assert.True(root.GetProperty("dashboardCycles").GetInt32() >= 5);
+                Assert.Equal(0, root.GetProperty("dashboardWrappersAliveAfterCollection").GetInt32());
+                Assert.Equal(0, root.GetProperty("dashboardContentsAliveAfterCollection").GetInt32());
+                Assert.Equal(0, root.GetProperty("dashboardNativeWindowsSurvivedClose").GetInt32());
+                Assert.Equal(0, root.GetProperty("dashboardRevealHosts").GetInt32());
+                Assert.False(root.GetProperty("retiredMainWindowAliveAfterCollection").GetBoolean());
+                Assert.False(root.GetProperty("retiredMainContentAliveAfterCollection").GetBoolean());
+                Assert.False(root.GetProperty("retiredMainNativeWindowSurvivedClose").GetBoolean());
+                Assert.True(root.GetProperty("bindingCleanupFailureChecksPassed").GetBoolean());
+            }
         }
         finally
         {
@@ -222,6 +254,13 @@ public sealed class TrayXamlStartupSmokeTests
                 process.Dispose();
             }
             File.Delete(reportPath);
+            if (argument == "--resource-performance-audit")
+            {
+                foreach (string suffix in new[] { ".ready", ".phase", ".preferences.json", ".retired.preferences.json", ".error.txt" })
+                {
+                    File.Delete(reportPath + suffix);
+                }
+            }
             if (argument == "--performance-audit")
             {
                 File.Delete(reportPath + ".error.txt");

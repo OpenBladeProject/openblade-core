@@ -468,11 +468,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     }
 #endif
 
-    internal static MainWindow CreateLocalizationSnapshot(IServiceClient? serviceClient = null) => new(
+    internal static MainWindow CreateLocalizationSnapshot(
+        IServiceClient? serviceClient = null,
+        UiPreferenceStore? preferenceStore = null) => new(
         WindowsProcessorEfficiencyPolicy.Discover(),
         new WindowsStartupRegistration(),
         showNotification: null,
         localizationSnapshotMode: true,
+        preferenceStore: preferenceStore,
         touchpadController: new SnapshotTouchpadController(),
         snapshotServiceClient: serviceClient);
 
@@ -745,6 +748,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             return;
         }
+
+        WindowXamlBindingLifetime.Release(this, Bindings, Bindings.StopTracking);
 
         gpuAppCleanupCoordinator.Cancel();
         CancelApplicationDiscovery();

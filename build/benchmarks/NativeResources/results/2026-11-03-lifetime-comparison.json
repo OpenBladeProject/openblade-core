@@ -1,0 +1,122 @@
+[
+  {
+    "Case": "lifetime-baseline",
+    "ReportSha256": "959E62A94E5234D5929D79B46E7414050B91A9BB2F15462DAA4F0D4A48BCE0A9",
+    "TrayAssemblySha256": "EA6DBD3F1E265CEA39636110CE54CEB7EA443261D2A5B60D0B7A976A712E4C17",
+    "DashboardCycles": 14,
+    "WindowsAlive": 14,
+    "ContentAlive": 14,
+    "NativeWindowsAlive": 0,
+    "RevealHosts": 0,
+    "Phases": [
+      {
+        "name": "disconnected-idle",
+        "elapsedSeconds": 30.0157492,
+        "cpuMilliseconds": 421.875,
+        "allocatedBytes": 408,
+        "gen0Collections": 0,
+        "gen1Collections": 0,
+        "gen2Collections": 0,
+        "startPrivateBytes": 210436096,
+        "endPrivateBytes": 204611584,
+        "startHandles": 1437,
+        "endHandles": 1431,
+        "operations": 0
+      },
+      {
+        "name": "paced-presentation-and-dashboard-lifetime",
+        "elapsedSeconds": 30.0672183,
+        "cpuMilliseconds": 8968.75,
+        "allocatedBytes": 134043504,
+        "gen0Collections": 23,
+        "gen1Collections": 15,
+        "gen2Collections": 10,
+        "startPrivateBytes": 204611584,
+        "endPrivateBytes": 249458688,
+        "startHandles": 1431,
+        "endHandles": 1849,
+        "operations": 101
+      }
+    ]
+  },
+  {
+    "Case": "lifetime-candidate",
+    "ReportSha256": "2AB13B6ADEDDD18134FAC003DF3D6735911F2AA6433AB36C9127377BCBD20CEF",
+    "TrayAssemblySha256": "DE4B60A31606CFA13228D702923DE4CFD283377F6DF0111D5999C2F3E1E5B5E3",
+    "DashboardCycles": 14,
+    "WindowsAlive": 0,
+    "ContentAlive": 0,
+    "NativeWindowsAlive": 0,
+    "RevealHosts": 0,
+    "Phases": [
+      {
+        "name": "disconnected-idle",
+        "elapsedSeconds": 30.0102843,
+        "cpuMilliseconds": 171.875,
+        "allocatedBytes": 8088,
+        "gen0Collections": 0,
+        "gen1Collections": 0,
+        "gen2Collections": 0,
+        "startPrivateBytes": 212840448,
+        "endPrivateBytes": 206024704,
+        "startHandles": 1380,
+        "endHandles": 1374,
+        "operations": 0
+      },
+      {
+        "name": "paced-presentation-and-dashboard-lifetime",
+        "elapsedSeconds": 30.0947331,
+        "cpuMilliseconds": 6343.75,
+        "allocatedBytes": 135657608,
+        "gen0Collections": 21,
+        "gen1Collections": 18,
+        "gen2Collections": 15,
+        "startPrivateBytes": 205979648,
+        "endPrivateBytes": 238440448,
+        "startHandles": 1374,
+        "endHandles": 1843,
+        "operations": 104
+      }
+    ]
+  },
+  {
+    "Case": "lifetime-baseline-repeat",
+    "ReportSha256": "D067C30CB1DA8DADDA2E791BAB2C9296176378298C26F71354185994DC620BCF",
+    "TrayAssemblySha256": "EA6DBD3F1E265CEA39636110CE54CEB7EA443261D2A5B60D0B7A976A712E4C17",
+    "DashboardCycles": 14,
+    "WindowsAlive": 14,
+    "ContentAlive": 14,
+    "NativeWindowsAlive": 0,
+    "RevealHosts": 0,
+    "Phases": [
+      {
+        "name": "disconnected-idle",
+        "elapsedSeconds": 30.0361245,
+        "cpuMilliseconds": 656.25,
+        "allocatedBytes": 408,
+        "gen0Collections": 2,
+        "gen1Collections": 2,
+        "gen2Collections": 0,
+        "startPrivateBytes": 213164032,
+        "endPrivateBytes": 208089088,
+        "startHandles": 1376,
+        "endHandles": 1373,
+        "operations": 0
+      },
+      {
+        "name": "paced-presentation-and-dashboard-lifetime",
+        "elapsedSeconds": 30.0309072,
+        "cpuMilliseconds": 6984.375,
+        "allocatedBytes": 138967832,
+        "gen0Collections": 27,
+        "gen1Collections": 25,
+        "gen2Collections": 15,
+        "startPrivateBytes": 208089088,
+        "endPrivateBytes": 251138048,
+        "startHandles": 1373,
+        "endHandles": 1858,
+        "operations": 105
+      }
+    ]
+  }
+]

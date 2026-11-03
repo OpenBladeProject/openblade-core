@@ -271,6 +271,9 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
 
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         Activated -= OnActivated;
+        // WinUI's generated Window x:Bind activation handler otherwise roots the
+        // closed window: https://github.com/microsoft/microsoft-ui-xaml/issues/9960.
+        WindowXamlBindingLifetime.Release(this, Bindings, Bindings.StopTracking);
         AppWindow.Closing -= OnClosing;
         foregroundTimer.Stop();
         foregroundTimer.Tick -= OnForegroundTimerTick;
