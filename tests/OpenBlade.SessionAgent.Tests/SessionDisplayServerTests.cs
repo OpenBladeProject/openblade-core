@@ -120,6 +120,73 @@ public sealed class SessionDisplayServerTests
     }
 
     [Fact]
+    public async Task DispatcherCancellationSettlesManualOperationBeforeExplicitReadRecovery()
+    {
+        var applier = new RecordingApplier();
+        var context = new DisplayPowerContextState();
+        DisplayAutomationRecoveryState? checkpoint = null;
+        await using var coordinator = new DisplayAutomationCoordinator(context, applier,
+            recordRecoveryState: state =>
+            {
+                checkpoint = state;
+                return true;
+            });
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                Display = new DisplayProfileSettings(null, true, null),
+            },
+        };
+        coordinator.Observe(new ServiceStatusSnapshot(
+            Revision: 1, DeviceVerified: true, WritesBlocked: false,
+            PotentialControllers: [], ControllerDetectionWarning: null,
+            ExternalChanges: [], Message: "test", Capabilities: null,
+            ConfirmedState: null, Profiles: profiles,
+            DesiredState: new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(profiles.PluggedIn.Performance,
+                    SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(profiles.PluggedIn.Fans,
+                    SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting,
+                    SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
+            ActivePowerSource: PowerSource.PluggedIn, LiveReadings: null,
+            PerformanceOverride: null, FanOverride: null, LightingOverride: null,
+            FullChargeOverride: false, Firmware: null, ServiceVersion: "test"));
+        var completions = new List<SessionDisplayOperationStatus>();
+        var dispatcher = new SessionDisplayRequestDispatcher(
+            applier, coordinator.BeginManualOperation,
+            (status, state) =>
+            {
+                completions.Add(status);
+                coordinator.CompleteManualOperation(status, state);
+            },
+            state => coordinator.ResumeAfterSuccessfulExplicitRead(state));
+        using var cancellation = new CancellationTokenSource();
+        applier.CancelHdr = cancellation;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => dispatcher.DispatchAsync(
+            new SetHdrRequest(SessionDisplayIpc.ProtocolVersion, Guid.NewGuid(),
+                PowerSource.PluggedIn, true), cancellation.Token));
+
+        Assert.Equal([SessionDisplayOperationStatus.Indeterminate], completions);
+        Assert.DoesNotContain("query", applier.Calls);
+        Assert.NotNull(checkpoint);
+        Assert.True(checkpoint.AutomaticWritesPaused);
+        Assert.True(checkpoint.UncertainHdr);
+        await dispatcher.DispatchAsync(
+            new QueryDisplayRequest(SessionDisplayIpc.ProtocolVersion, Guid.NewGuid()),
+            CancellationToken.None);
+        await coordinator.WhenIdleAsync();
+
+        Assert.NotNull(checkpoint);
+        Assert.False(checkpoint.AutomaticWritesPaused);
+        Assert.Equal(1, applier.TransitionCount);
+    }
+
+    [Fact]
     public async Task DispatcherBlocksMutationWhenManualCheckpointIsNotAcknowledged()
     {
         var applier = new RecordingApplier();
@@ -305,6 +372,8 @@ public sealed class SessionDisplayServerTests
         public List<string> Calls { get; } = [];
         public SessionDisplayOperationStatus Status { get; set; } =
             SessionDisplayOperationStatus.Succeeded;
+        public CancellationTokenSource? CancelHdr { get; set; }
+        public int TransitionCount { get; private set; }
 
         public Task<SessionDisplayExecutionResult> QueryAsync(CancellationToken cancellationToken = default)
         {
@@ -327,6 +396,11 @@ public sealed class SessionDisplayServerTests
             CancellationToken cancellationToken = default)
         {
             Calls.Add($"hdr:{expectedPowerSource}:{enabled}");
+            if (CancelHdr is { } cancellation)
+            {
+                cancellation.Cancel();
+                return Task.FromCanceled<SessionDisplayExecutionResult>(cancellationToken);
+            }
             return Result();
         }
 
@@ -361,7 +435,11 @@ public sealed class SessionDisplayServerTests
             PowerSource expectedPowerSource,
             long expectedGeneration,
             DisplayProfileSettings settings,
-            CancellationToken cancellationToken) => Result();
+            CancellationToken cancellationToken)
+        {
+            TransitionCount++;
+            return Result();
+        }
 
         private Task<SessionDisplayExecutionResult> Result() => Task.FromResult(
             new SessionDisplayExecutionResult(
