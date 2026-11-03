@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Keep display edits and refresh messages in order, use current brightness levels, and confirm display profiles only from supported brightness readback and matching HDR/color state. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+- Remove failed driver-download attempt files before installation begins, while retaining packages after any installation intent or uncertain result. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+- Keep driver installation recovery required for malformed journals or missing THX packages, preserve extraction files after uncertain termination, and distinguish timeouts from cancellation. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Keep settings tied to the correct Windows user when session activation is interrupted or requests overlap. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Preserve brightness-failure diagnostics and allow display automation to recover after a canceled manual change. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Retain keyboard-hook ownership when replacement cleanup fails and stop further replacements until cleanup is confirmed. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
@@ -22,6 +25,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Release the worker thread between GPU activity samples and cancel pending sample waits promptly. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Reduce service and battery IPC decoding overhead with shared streaming validation. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Reduce telemetry chart allocations and redraw each accepted live sample once, while keeping freshness labels and missing-sample time progression current. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 
