@@ -1,0 +1,1809 @@
+{
+  "schemaVersion": 1,
+  "evidenceDate": "2026-11-04",
+  "scope": "Disconnected private-desktop title-bar attribution and short baseline/candidate/baseline comparison; not final sustained or installed-product validation.",
+  "environment": {
+    "dotNetRuntime": "10.0.12",
+    "windowsAppSdkRuntime": "2.2.0",
+    "winUiPackage": "2.2.1",
+    "windowsBuild": 26300,
+    "architecture": "x64",
+    "configuration": "Release",
+    "dotNetSelfContained": false,
+    "windowsAppSdkSelfContained": true,
+    "deploymentConfigurationSource": "Pinned project/package configuration; these are independent deployment properties."
+  },
+  "counterSemantics": {
+    "phaseStart": "Whole-process handles/private bytes captured immediately before each timed phase.",
+    "nativeAndGuiBefore": "Captured after warmup/forced collection, before idle; not the activity-start process checkpoint.",
+    "nativeAndGuiAfter": "Captured after activity/forced collection outside timed phases.",
+    "guiFailures": "A null count or non-null error means unavailable; older absent GUI snapshots remain null.",
+    "nativeNames": "Each child resolves type indices using its own nativeHandleTypeNames.names; absent count in an available type snapshot is zero.",
+    "retention": "Retained managed totals include rooted fixtures/history and weak-reference/report tracking objects."
+  },
+  "limits": [
+    "All source reports are retained separately; sourceSummary is a sanitized directory basename, not an embedded machine path.",
+    "dashboard-reset is historical experimental data and is no longer an accepted workload kind.",
+    "Candidate tray assembly E038A2C0B76628736444778584BECDAA1C6C3092575D92ED20422C77C6E68DB0 predates subsequent pending-initialization/failure-path/early-hide/finally and native-before-close refinements.",
+    "These reports do not establish final full-test success, long-run stability, visible-window behavior or installed GPU residency/energy.",
+    "No product GC/COM forced release, installation or hardware action is established by these offline developer reports."
+  ],
+  "runs": [
+    {
+      "case": "attribution-20261103-dashboard-empty",
+      "sourceSummary": "openblade-native-attribution-20261103-dashboard-empty/summary.json",
+      "reportSha256": "6AE921CCA15B400567C4828AAC023E873D9ACD7F02727B15115097BF92CAA0B5",
+      "childReportSha256": "AE4187A2E81828338203D48D652D5814CD1E21155FACA8D533E26959A1579832",
+      "trayAssemblySha256": "0A6114D2EDA3B12BC6D432E552E0BE9910D8F4552CF44B5FF891D582F84837DD",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:15:26.9236322+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "dashboard-empty",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 30,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 15,
+      "activityWindowCycles": 11,
+      "activityOperations": 107,
+      "activitySampleChartRebuilds": 107,
+      "activityTotalChartRebuilds": 113,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 30.0184329,
+          "cpuMilliseconds": 437.5,
+          "allocatedBytes": 8088,
+          "operations": 0,
+          "start": {
+            "handles": 1370,
+            "privateBytes": 194375680
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1364,
+            "privateBytes": 190058496
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 30.0473797,
+          "cpuMilliseconds": 6640.625,
+          "allocatedBytes": 140044848,
+          "operations": 107,
+          "start": {
+            "handles": 1364,
+            "privateBytes": 190058496
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1796,
+            "privateBytes": 237441024
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1796,
+        "privateBytes": 236589056
+      },
+      "guiResourcesAfterWarmup": null,
+      "guiResourcesAfterActivityCollection": null,
+      "guiResourcesUnavailableReason": "Not instrumented in this historical build; no zero inferred.",
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1370,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 110
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 67
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 14
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 528
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1796,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 290
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 235
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 25
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 583
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4286328,
+        "afterActivity": 4440552,
+        "afterDispose": 4423168
+      }
+    },
+    {
+      "case": "presenter-20261103-empty",
+      "sourceSummary": "openblade-native-presenter-20261103-empty/summary.json",
+      "reportSha256": "EF48398B83BAED105AE2B15D71821788E63A558A2F40168AF6E21C3F249FDE81",
+      "childReportSha256": "258DD3638291A3680EEC779C73CC7BAF03BCE6D5717E7110226D4E6BFEBD10F9",
+      "trayAssemblySha256": "41788407BCFA8F8A62311C8EE269E42D047F126D991E40DAAB9B2E6234FE375C",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:18:49.8489383+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "empty",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 15,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 9,
+      "activityWindowCycles": 5,
+      "activityOperations": 45,
+      "activitySampleChartRebuilds": 45,
+      "activityTotalChartRebuilds": 47,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 15.0233778,
+          "cpuMilliseconds": 62.5,
+          "allocatedBytes": 408,
+          "operations": 0,
+          "start": {
+            "handles": 1366,
+            "privateBytes": 194551808
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1366,
+            "privateBytes": 193531904
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 15.1157788,
+          "cpuMilliseconds": 3500,
+          "allocatedBytes": 58414328,
+          "operations": 45,
+          "start": {
+            "handles": 1366,
+            "privateBytes": 193531904
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1393,
+            "privateBytes": 220336128
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1391,
+        "privateBytes": 217092096
+      },
+      "guiResourcesAfterWarmup": null,
+      "guiResourcesAfterActivityCollection": null,
+      "guiResourcesUnavailableReason": "Not instrumented in this historical build; no zero inferred.",
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1366,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 111
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 70
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 14
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 524
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1391,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 112
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 70
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 19
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 542
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4392616,
+        "afterActivity": 4206016,
+        "afterDispose": 4189512
+      }
+    },
+    {
+      "case": "presenter-20261103-empty-toolwindow",
+      "sourceSummary": "openblade-native-presenter-20261103-empty-toolwindow/summary.json",
+      "reportSha256": "D0A7E7BB2965B12D4B3B8C3CAB8020A0FEED902F42D37BA2DA7040E8F2AD8565",
+      "childReportSha256": "13544001B41CA77F6E0025E4E1C2C39092B24A3112BC9FBCDE298F4C7F064FAD",
+      "trayAssemblySha256": "41788407BCFA8F8A62311C8EE269E42D047F126D991E40DAAB9B2E6234FE375C",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:19:36.6640469+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "empty-toolwindow",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 15,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 9,
+      "activityWindowCycles": 5,
+      "activityOperations": 49,
+      "activitySampleChartRebuilds": 49,
+      "activityTotalChartRebuilds": 51,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 15.0212368,
+          "cpuMilliseconds": 437.5,
+          "allocatedBytes": 4056,
+          "operations": 0,
+          "start": {
+            "handles": 1397,
+            "privateBytes": 198025216
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1397,
+            "privateBytes": 196419584
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 15.0369286,
+          "cpuMilliseconds": 5109.375,
+          "allocatedBytes": 63709232,
+          "operations": 49,
+          "start": {
+            "handles": 1397,
+            "privateBytes": 196419584
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1574,
+            "privateBytes": 225853440
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1574,
+        "privateBytes": 225800192
+      },
+      "guiResourcesAfterWarmup": null,
+      "guiResourcesAfterActivityCollection": null,
+      "guiResourcesUnavailableReason": "Not instrumented in this historical build; no zero inferred.",
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1397,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 123
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 80
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 14
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 528
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1574,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 198
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 145
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 19
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 554
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4352760,
+        "afterActivity": 4623072,
+        "afterDispose": 4524520
+      }
+    },
+    {
+      "case": "presenter-20261103-empty-toolwindow-titlebar",
+      "sourceSummary": "openblade-native-presenter-20261103-empty-toolwindow-titlebar/summary.json",
+      "reportSha256": "AAEF3BFBADA35215E5375FC7415A8A39B91A1F425BF071F1016A60095F6F0CC3",
+      "childReportSha256": "67907FA8CE197976C7664F86E0AE88B9A046B1B3D01889DD890A2704DA81C3BB",
+      "trayAssemblySha256": "41788407BCFA8F8A62311C8EE269E42D047F126D991E40DAAB9B2E6234FE375C",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:20:13.9352049+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "empty-toolwindow-titlebar",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 15,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 10,
+      "activityWindowCycles": 6,
+      "activityOperations": 55,
+      "activitySampleChartRebuilds": 55,
+      "activityTotalChartRebuilds": 57,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 15.0170944,
+          "cpuMilliseconds": 281.25,
+          "allocatedBytes": 408,
+          "operations": 0,
+          "start": {
+            "handles": 1353,
+            "privateBytes": 195727360
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1344,
+            "privateBytes": 191787008
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 15.1104969,
+          "cpuMilliseconds": 2734.375,
+          "allocatedBytes": 69362368,
+          "operations": 55,
+          "start": {
+            "handles": 1344,
+            "privateBytes": 191787008
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1373,
+            "privateBytes": 214446080
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1373,
+        "privateBytes": 214310912
+      },
+      "guiResourcesAfterWarmup": null,
+      "guiResourcesAfterActivityCollection": null,
+      "guiResourcesUnavailableReason": "Not instrumented in this historical build; no zero inferred.",
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1353,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 100
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 59
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 18
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 527
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1373,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 101
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 59
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 20
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 544
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4410384,
+        "afterActivity": 4454328,
+        "afterDispose": 4437600
+      }
+    },
+    {
+      "case": "cleanup-20261103-empty-toolwindow",
+      "sourceSummary": "openblade-native-cleanup-20261103-empty-toolwindow/summary.json",
+      "reportSha256": "662C72279AD7B84BB6A931F3F1AD8D3BDC866DAE1B420249EF02D9C4029F8A03",
+      "childReportSha256": "43E4EAE3AF983A8CE27D174357FD4FB587B9110760F30DA58984E1FDD47B465C",
+      "trayAssemblySha256": "B558387928821916B36D923536293EC360A1F587AFEE3C417D46CE16FD0EE565",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:27:07.2788236+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "empty-toolwindow",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 10,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 8,
+      "activityWindowCycles": 4,
+      "activityOperations": 37,
+      "activitySampleChartRebuilds": 37,
+      "activityTotalChartRebuilds": 39,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 10.0163475,
+          "cpuMilliseconds": 15.625,
+          "allocatedBytes": 408,
+          "operations": 0,
+          "start": {
+            "handles": 1509,
+            "privateBytes": 194859008
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1509,
+            "privateBytes": 189743104
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 10.1968051,
+          "cpuMilliseconds": 1687.5,
+          "allocatedBytes": 47466880,
+          "operations": 37,
+          "start": {
+            "handles": 1509,
+            "privateBytes": 188870656
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1699,
+            "privateBytes": 235757568
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1699,
+        "privateBytes": 234999808
+      },
+      "guiResourcesAfterWarmup": {
+        "gdi": {
+          "count": 300,
+          "error": null
+        },
+        "user": {
+          "count": 74,
+          "error": null
+        }
+      },
+      "guiResourcesAfterActivityCollection": {
+        "gdi": {
+          "count": 424,
+          "error": null
+        },
+        "user": {
+          "count": 74,
+          "error": null
+        }
+      },
+      "guiResourcesUnavailableReason": null,
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1509,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 180
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 136
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 14
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 529
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1699,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 260
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 211
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 18
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 556
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4412232,
+        "afterActivity": 4415016,
+        "afterDispose": 4398624
+      }
+    },
+    {
+      "case": "cleanup-20261103-empty-toolwindow-restore",
+      "sourceSummary": "openblade-native-cleanup-20261103-empty-toolwindow-restore/summary.json",
+      "reportSha256": "216388917AC73C0200D9E72048B7AFF6459C0DDFC57ABB1EE756F0E3E0A54EA2",
+      "childReportSha256": "76D95B6686638EADB35D7B6BF402A53365D6A0DAC9E8594ECB7348C469316970",
+      "trayAssemblySha256": "B558387928821916B36D923536293EC360A1F587AFEE3C417D46CE16FD0EE565",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:27:39.8668798+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "empty-toolwindow-restore",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 10,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 8,
+      "activityWindowCycles": 4,
+      "activityOperations": 33,
+      "activitySampleChartRebuilds": 33,
+      "activityTotalChartRebuilds": 35,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 10.0431855,
+          "cpuMilliseconds": 328.125,
+          "allocatedBytes": 408,
+          "operations": 0,
+          "start": {
+            "handles": 1432,
+            "privateBytes": 193097728
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1432,
+            "privateBytes": 193118208
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 10.1075951,
+          "cpuMilliseconds": 3156.25,
+          "allocatedBytes": 43682912,
+          "operations": 33,
+          "start": {
+            "handles": 1432,
+            "privateBytes": 193118208
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1600,
+            "privateBytes": 227381248
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1598,
+        "privateBytes": 228524032
+      },
+      "guiResourcesAfterWarmup": {
+        "gdi": {
+          "count": 222,
+          "error": null
+        },
+        "user": {
+          "count": 74,
+          "error": null
+        }
+      },
+      "guiResourcesAfterActivityCollection": {
+        "gdi": {
+          "count": 324,
+          "error": null
+        },
+        "user": {
+          "count": 74,
+          "error": null
+        }
+      },
+      "guiResourcesUnavailableReason": null,
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1432,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 143
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 98
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 14
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 526
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1598,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 213
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 163
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 18
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 550
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4351416,
+        "afterActivity": 4205984,
+        "afterDispose": 4107384
+      }
+    },
+    {
+      "case": "cleanup-20261103-empty-toolwindow-reset",
+      "sourceSummary": "openblade-native-cleanup-20261103-empty-toolwindow-reset/summary.json",
+      "reportSha256": "D83784335F4FA4A785011053351FF8571B1DA1EBD33F61AE7D550509C06EE9B3",
+      "childReportSha256": "14014FEA8BBEF0A2848A56DCB6ECB9DFF897D7ACB37C8179ED81173AB6B3B136",
+      "trayAssemblySha256": "B558387928821916B36D923536293EC360A1F587AFEE3C417D46CE16FD0EE565",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:28:12.5568071+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "empty-toolwindow-reset",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 10,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 8,
+      "activityWindowCycles": 4,
+      "activityOperations": 34,
+      "activitySampleChartRebuilds": 34,
+      "activityTotalChartRebuilds": 36,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 10.0105014,
+          "cpuMilliseconds": 281.25,
+          "allocatedBytes": 544,
+          "operations": 0,
+          "start": {
+            "handles": 1322,
+            "privateBytes": 186650624
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1325,
+            "privateBytes": 181583872
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 10.1200389,
+          "cpuMilliseconds": 3109.375,
+          "allocatedBytes": 45041472,
+          "operations": 34,
+          "start": {
+            "handles": 1325,
+            "privateBytes": 181641216
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1358,
+            "privateBytes": 221372416
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1358,
+        "privateBytes": 221372416
+      },
+      "guiResourcesAfterWarmup": {
+        "gdi": {
+          "count": 160,
+          "error": null
+        },
+        "user": {
+          "count": 74,
+          "error": null
+        }
+      },
+      "guiResourcesAfterActivityCollection": {
+        "gdi": {
+          "count": 172,
+          "error": null
+        },
+        "user": {
+          "count": 75,
+          "error": null
+        }
+      },
+      "guiResourcesUnavailableReason": null,
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1322,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 95
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 46
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 14
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 517
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1358,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 103
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 48
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 18
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 536
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4121264,
+        "afterActivity": 4244752,
+        "afterDispose": 4146032
+      }
+    },
+    {
+      "case": "cleanup-20261103-dashboard-reset",
+      "sourceSummary": "openblade-native-cleanup-20261103-dashboard-reset/summary.json",
+      "reportSha256": "AB2CCE4982C21267288A659BA73258EAD0A11CF2A71613EC7A90C46BD66E9C36",
+      "childReportSha256": "FB16BAB62C7731306DB6332E40C123D6979BB91AC37F50832A7E503B4CEA8CF3",
+      "trayAssemblySha256": "B558387928821916B36D923536293EC360A1F587AFEE3C417D46CE16FD0EE565",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:28:44.2762303+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "dashboard-reset",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 10,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 8,
+      "activityWindowCycles": 4,
+      "activityOperations": 36,
+      "activitySampleChartRebuilds": 36,
+      "activityTotalChartRebuilds": 38,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 10.0208435,
+          "cpuMilliseconds": 546.875,
+          "allocatedBytes": 8088,
+          "operations": 0,
+          "start": {
+            "handles": 1325,
+            "privateBytes": 222683136
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1325,
+            "privateBytes": 223678464
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 10.1425775,
+          "cpuMilliseconds": 2703.125,
+          "allocatedBytes": 47158032,
+          "operations": 36,
+          "start": {
+            "handles": 1325,
+            "privateBytes": 223678464
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1358,
+            "privateBytes": 231243776
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1358,
+        "privateBytes": 231387136
+      },
+      "guiResourcesAfterWarmup": {
+        "gdi": {
+          "count": 154,
+          "error": null
+        },
+        "user": {
+          "count": 75,
+          "error": null
+        }
+      },
+      "guiResourcesAfterActivityCollection": {
+        "gdi": {
+          "count": 166,
+          "error": null
+        },
+        "user": {
+          "count": 75,
+          "error": null
+        }
+      },
+      "guiResourcesUnavailableReason": null,
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1325,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 93
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 42
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 14
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 524
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1358,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 101
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 44
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 18
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 543
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4285976,
+        "afterActivity": 4520744,
+        "afterDispose": 4422288
+      }
+    },
+    {
+      "case": "main-reset-20261103",
+      "sourceSummary": "openblade-native-main-reset-20261103/summary.json",
+      "reportSha256": "0543320F96323B351D19D7E351D4324893C06098E8526F13654A3D62DDA09C40",
+      "childReportSha256": "7965606817253E74F907C67D37D546ABD6C6CA06FF5EEE3926B6ED5727AC7465",
+      "trayAssemblySha256": "14D69937B26EE66B209901261E8572F04C12CE46DA678A43587160AD779C1A17",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:34:07.0050123+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "dashboard-reset",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 5,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 6,
+      "activityWindowCycles": 2,
+      "activityOperations": 18,
+      "activitySampleChartRebuilds": 18,
+      "activityTotalChartRebuilds": 18,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 5.0160424,
+          "cpuMilliseconds": 15.625,
+          "allocatedBytes": 408,
+          "operations": 0,
+          "start": {
+            "handles": 1295,
+            "privateBytes": 221589504
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1295,
+            "privateBytes": 221552640
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 5.0170964,
+          "cpuMilliseconds": 1109.375,
+          "allocatedBytes": 22254752,
+          "operations": 18,
+          "start": {
+            "handles": 1295,
+            "privateBytes": 221552640
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1308,
+            "privateBytes": 232026112
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1308,
+        "privateBytes": 232144896
+      },
+      "guiResourcesAfterWarmup": {
+        "gdi": {
+          "count": 133,
+          "error": null
+        },
+        "user": {
+          "count": 74,
+          "error": null
+        }
+      },
+      "guiResourcesAfterActivityCollection": {
+        "gdi": {
+          "count": 133,
+          "error": null
+        },
+        "user": {
+          "count": 74,
+          "error": null
+        }
+      },
+      "guiResourcesUnavailableReason": null,
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1295,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 82
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 27
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 14
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 523
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1308,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 82
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 27
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 16
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 534
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4396272,
+        "afterActivity": 4433544,
+        "afterDispose": 4417416
+      }
+    },
+    {
+      "case": "titlebar-20261103-baseline",
+      "sourceSummary": "openblade-native-titlebar-20261103-baseline/summary.json",
+      "reportSha256": "D931D3DD7602B0BFF7425B63D0FDAE56D3F8D14B047C23719C5F507A4DC0C64F",
+      "childReportSha256": "5B0D4365C3C1B7CEE2FADF5E2E23B66AEBF040F392F04A912D6E4D6004EB00D7",
+      "trayAssemblySha256": "B558387928821916B36D923536293EC360A1F587AFEE3C417D46CE16FD0EE565",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:43:45.1117826+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "dashboard",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 30,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 15,
+      "activityWindowCycles": 11,
+      "activityOperations": 101,
+      "activitySampleChartRebuilds": 101,
+      "activityTotalChartRebuilds": 107,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 30.0111297,
+          "cpuMilliseconds": 46.875,
+          "allocatedBytes": 2656,
+          "operations": 0,
+          "start": {
+            "handles": 1511,
+            "privateBytes": 228335616
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1509,
+            "privateBytes": 226050048
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 30.0987254,
+          "cpuMilliseconds": 6671.875,
+          "allocatedBytes": 132346096,
+          "operations": 101,
+          "start": {
+            "handles": 1509,
+            "privateBytes": 226050048
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1951,
+            "privateBytes": 244948992
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1946,
+        "privateBytes": 245145600
+      },
+      "guiResourcesAfterWarmup": {
+        "gdi": {
+          "count": 302,
+          "error": null
+        },
+        "user": {
+          "count": 74,
+          "error": null
+        }
+      },
+      "guiResourcesAfterActivityCollection": {
+        "gdi": {
+          "count": 583,
+          "error": null
+        },
+        "user": {
+          "count": 73,
+          "error": null
+        }
+      },
+      "guiResourcesUnavailableReason": null,
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1511,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 181
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 137
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 14
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 529
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1946,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 366
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 310
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 25
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 583
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4375792,
+        "afterActivity": 4172832,
+        "afterDispose": 4143320
+      }
+    },
+    {
+      "case": "titlebar-20261103-candidate",
+      "sourceSummary": "openblade-native-titlebar-20261103-candidate/summary.json",
+      "reportSha256": "8689ACDBA995A6C29CF48376A6BFD86033328BA5F99FEDFCE9FE13255431F47D",
+      "childReportSha256": "6DEF2787051B85F8262491FF17EBC84500F0E52BF6371A97A7C30C436E72EA9E",
+      "trayAssemblySha256": "E038A2C0B76628736444778584BECDAA1C6C3092575D92ED20422C77C6E68DB0",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:44:59.6868547+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "dashboard",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 30,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 14,
+      "activityWindowCycles": 10,
+      "activityOperations": 99,
+      "activitySampleChartRebuilds": 99,
+      "activityTotalChartRebuilds": 105,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 30.0350649,
+          "cpuMilliseconds": 437.5,
+          "allocatedBytes": 4744,
+          "operations": 0,
+          "start": {
+            "handles": 1270,
+            "privateBytes": 220061696
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1265,
+            "privateBytes": 214605824
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 30.1778561,
+          "cpuMilliseconds": 8906.25,
+          "allocatedBytes": 132897896,
+          "operations": 99,
+          "start": {
+            "handles": 1265,
+            "privateBytes": 214528000
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1310,
+            "privateBytes": 235106304
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1307,
+        "privateBytes": 232714240
+      },
+      "guiResourcesAfterWarmup": {
+        "gdi": {
+          "count": 109,
+          "error": null
+        },
+        "user": {
+          "count": 74,
+          "error": null
+        }
+      },
+      "guiResourcesAfterActivityCollection": {
+        "gdi": {
+          "count": 111,
+          "error": null
+        },
+        "user": {
+          "count": 73,
+          "error": null
+        }
+      },
+      "guiResourcesUnavailableReason": null,
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1272,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 68
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 22
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 14
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 519
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1307,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 69
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 20
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 24
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 547
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4140248,
+        "afterActivity": 4477128,
+        "afterDispose": 4378848
+      }
+    },
+    {
+      "case": "titlebar-20261103-baseline-repeat",
+      "sourceSummary": "openblade-native-titlebar-20261103-baseline-repeat/summary.json",
+      "reportSha256": "1B62FB75283B841B4FFF283A7B6300E8884E3219F0CBD882AA9A93F13E214FDC",
+      "childReportSha256": "6BC1BC06FD1163C054E88617ABB6C73A558D86B04144B055B2110912F6600647",
+      "trayAssemblySha256": "B558387928821916B36D923536293EC360A1F587AFEE3C417D46CE16FD0EE565",
+      "informationalVersion": "0.50.4+be98e70c",
+      "capturedAtUtc": "2026-11-03T23:46:10.2091389+08:00",
+      "framework": ".NET 10.0.12",
+      "os": "Microsoft Windows 10.0.26300",
+      "architecture": "X64",
+      "desktopMode": "private",
+      "offscreenWindows": true,
+      "requireInputDesktop": false,
+      "windowKind": "dashboard",
+      "windowDwellMilliseconds": 0,
+      "observeRendering": false,
+      "phaseBudgetSeconds": 30,
+      "startupRuns": 1,
+      "warmupOperations": 32,
+      "warmupWindowCycles": 4,
+      "totalWindowCyclesIncludingWarmup": 15,
+      "activityWindowCycles": 11,
+      "activityOperations": 105,
+      "activitySampleChartRebuilds": 105,
+      "activityTotalChartRebuilds": 111,
+      "boundedHistorySamples": 3600,
+      "serviceCalls": 0,
+      "phases": [
+        {
+          "name": "disconnected-idle",
+          "elapsedSeconds": 30.0225198,
+          "cpuMilliseconds": 31.25,
+          "allocatedBytes": 408,
+          "operations": 0,
+          "start": {
+            "handles": 1517,
+            "privateBytes": 228999168
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1509,
+            "privateBytes": 221507584
+          }
+        },
+        {
+          "name": "paced-presentation-and-dashboard-lifetime",
+          "elapsedSeconds": 30.2721677,
+          "cpuMilliseconds": 7171.875,
+          "allocatedBytes": 136754520,
+          "operations": 105,
+          "start": {
+            "handles": 1509,
+            "privateBytes": 222351360
+          },
+          "endBeforeForcedCollection": {
+            "handles": 1932,
+            "privateBytes": 242507776
+          }
+        }
+      ],
+      "afterActivityCollectionProcess": {
+        "handles": 1926,
+        "privateBytes": 242442240
+      },
+      "guiResourcesAfterWarmup": {
+        "gdi": {
+          "count": 308,
+          "error": null
+        },
+        "user": {
+          "count": 74,
+          "error": null
+        }
+      },
+      "guiResourcesAfterActivityCollection": {
+        "gdi": {
+          "count": 561,
+          "error": null
+        },
+        "user": {
+          "count": 73,
+          "error": null
+        }
+      },
+      "guiResourcesUnavailableReason": null,
+      "nativeHandlesAfterWarmup": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1517,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 183
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 138
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 14
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 532
+          }
+        }
+      },
+      "nativeHandlesAfterActivityCollection": {
+        "available": true,
+        "unavailableReason": null,
+        "typeMetadataAvailable": true,
+        "typeMetadataUnavailableReason": null,
+        "totalHandles": 1926,
+        "counts": {
+          "Section": {
+            "typeIndexFromThisChild": "49",
+            "count": 355
+          },
+          "DxgkCompositionObject": {
+            "typeIndexFromThisChild": "70",
+            "count": 299
+          },
+          "Composition": {
+            "typeIndexFromThisChild": "31",
+            "count": 25
+          },
+          "Event": {
+            "typeIndexFromThisChild": "21",
+            "count": 587
+          }
+        }
+      },
+      "managedLifetime": {
+        "dashboardWindowsAlive": 0,
+        "dashboardContentsAlive": 0,
+        "detachedDashboardContentsAlive": 0,
+        "retiredMainWindowAlive": false,
+        "retiredMainContentAlive": false
+      },
+      "nativeLifetime": {
+        "dashboardWindowsSurvivedClose": 0,
+        "retiredMainWindowSurvivedClose": false,
+        "dashboardRevealHosts": 0
+      },
+      "bindingCleanupFailureChecksPassed": true,
+      "retainedManagedBytes": {
+        "afterWarmup": 4377904,
+        "afterActivity": 4546896,
+        "afterDispose": 4394344
+      }
+    }
+  ]
+}

@@ -17,10 +17,31 @@ The default run takes roughly ten minutes: five fresh-process startup probes,
 then one process with warmup, five minutes idle, and five minutes paced activity.
 A preliminary `5 1` run checks the harness without establishing sustained stability.
 The evidence directory must be new or empty; reports are retained for inspection.
-Optional arguments after the startup count are `dashboard|empty` and a 0-1000 ms
-dwell after each window's loaded layout (defaults: `dashboard 0`). The empty-window
-control keeps presentation activity but replaces dashboard creation with a plain
-Window/Grid. These are diagnostic controls, not interchangeable workloads.
+Optional arguments after the startup count are a window kind and a 0-1000 ms
+dwell after each window's loaded layout (defaults: `dashboard 0`):
+
+| Kind | Window/presenter and permanent-close behavior |
+| --- | --- |
+| `dashboard` | Actual quick-controls window, including shared production lifetime cleanup |
+| `dashboard-empty` | Actual dashboard construction/presenter/subclass/timers, then replace its content with Grid; track the detached content too |
+| `empty` | Plain Window/Grid with the default presenter |
+| `empty-toolwindow` | Plain Window/Grid with the dashboard's tool-window presenter and hidden native title bar |
+| `empty-toolwindow-titlebar` | Same tool-window recipe, retaining the native title bar |
+| `empty-toolwindow-restore` | Hidden-title-bar tool window; Hide, restore `hasTitleBar: true`, then Close |
+| `empty-toolwindow-reset` | Hidden-title-bar tool window; Hide, `TitleBar.ResetToDefault()`, then Close |
+
+These are diagnostic controls, not interchangeable workloads. The plain tool-window
+controls intentionally express their presenter and cleanup calls literally, independent
+of the shared production helper. This preserves the mechanism comparison when production
+cleanup changes; it is not silent drift. Historical `dashboard-reset` reports are retained,
+but that experimental kind was removed after production adopted shared cleanup. Use
+`dashboard` to exercise the current production dashboard path.
+
+The pinned project uses Windows App SDK Runtime 2.2.0 and WinUI 2.2.1. Its
+`SelfContained=false` selects a shared .NET runtime; the independent
+`WindowsAppSDKSelfContained=true` carries the Windows App SDK runtime with the app.
+Do not describe this as a framework-dependent Windows App SDK measurement merely
+because the .NET deployment is framework-dependent.
 An optional final `--observe-rendering` subscribes to XAML rendering callbacks;
 that subscription can request continuous frames, so use it only as a separate
 diagnostic. Callback counts do not establish presentation to a physical display.
@@ -94,7 +115,24 @@ x64 internal Windows layouts have bounded buffers, counts and retries; unsupport
 layouts or query failures produce an explicit unavailable result. Their soft
 elapsed-time budget does not interrupt a native syscall; the parent process
 deadline remains the outer bound. Subscriber counts and native queries occur
-outside timed phases. A clock regression invalidates timestamp acceptance.
+outside timed phases. GDI and USER counts use current-process GUI-resource queries
+after warmup and after the activity collection, also outside timed phases. Query
+errors or unavailable counts remain explicit; they are not converted to zero.
+These native/GDI before readings occur before the idle phase, while each timed
+phase has its own later process-counter start. Do not subtract a native after-warmup
+count from an activity-start process count. A clock regression invalidates timestamp acceptance.
+
+The shared production `WindowTitleBarLifetime` cleanup applies only at permanent
+disposal of both XAML window roots. Short pinned-runtime evidence supports hiding
+before resetting native title-bar state; the custom MainWindow path additionally
+detaches its XAML title bar and disables extension. This is separate from ordinary
+hide/show. Native-before-close marker assertions have passed, and omitting dashboard
+cleanup makes both native regression cases fail. Failed-initialization coverage also
+reproduced the old skipped-cleanup path. A throwing cancellation callback additionally
+verifies that synchronous cleanup failures do not skip later teardown. All 2,650
+Tray tests and the final 600-second idle/activity workload passed those lifetime
+checks; [the results](RESULTS.md) retain the remaining native growth and validation
+limits. No product GC or forced COM release is involved.
 
 No fixed timing or memory-growth threshold is a CI gate. Validate bounded history,
 accepted samples, zero service calls, process identity and cleanup first. Compare

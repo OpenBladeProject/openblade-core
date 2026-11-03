@@ -1,4 +1,4 @@
-# Native resource validation, 2026-11-03
+# Native resource validation, 2026-11-03 to 2026-11-04
 
 Release, .NET 10.0.12, Windows build 26300, x64, en-US, 150% scale. The
 production starting revision was `295d7e6d`; the opt-in probes were added in the
@@ -58,7 +58,7 @@ The [candidate series](results/2026-11-03-candidate-series.csv) and
 This run predates later diagnostic/error-handling refinements; it is evidence for
 the shared lifetime fix, not a timing result for the final commit.
 
-## Remaining native-resource growth
+## Historical native-resource growth before title-bar attribution
 
 The same candidate activity still increased handles from 1,442 to 5,635 and
 private bytes from 209,924,096 to 372,449,280. After collection and a 250 ms
@@ -85,9 +85,10 @@ in one diagnostic), rather than accumulating. Current-process native type counts
 showed most growth in `Section` and `DxgkCompositionObject`, with a smaller `Event`
 increase. These names come from queried type metadata, not hard-coded index labels.
 The pinned WinUI package is 2.2.1 on Windows build 26300; these initial measurements
-ran on inactive private desktops. Attribution to application content, WinUI or
-composition remains unresolved. No forced native release, production
-delay or package upgrade was introduced on this evidence.
+ran on inactive private desktops. At this stage, attribution to application content,
+WinUI or composition was unresolved. The later title-bar controls below narrow that
+boundary. No forced native release, production delay or package upgrade was
+introduced on the initial evidence.
 
 ### Matched offscreen desktop controls
 
@@ -131,6 +132,192 @@ candidate DLL was restored and hash-verified. The
 [guard validation record](results/2026-11-03-offscreen-guard-validation.json)
 identifies these short checks separately from sustained measurements.
 
+### Title-bar mechanism controls and shared cleanup
+
+Further private-desktop, nonactivating offscreen controls reproduced the growth
+without the dashboard's visual tree. Replacing the actual dashboard content with
+Grid still grew handles from 1,364 at activity start to 1,796 after collection
+(15 total cycles, 30-second phases). Its detached content, replacement content and
+window wrappers were all reclaimed. Plain Window/Grid then isolated the presenter:
+
+| Plain-window control | Total cycles | Handles: activity start / after collection | Section: after warmup / after activity collection | DxgkCompositionObject: same checkpoints |
+| --- | ---: | ---: | ---: | ---: |
+| Default presenter | 9 | 1,366 / 1,391 | 111 / 112 | 70 / 70 |
+| Tool-window presenter, hidden native title bar | 9 | 1,397 / 1,574 | 123 / 198 | 80 / 145 |
+| Same tool-window presenter, native title bar retained | 10 | 1,344 / 1,373 | 100 / 101 | 59 / 59 |
+
+These were 15-second idle/activity phases, with four warmup windows included in
+each cycle total. Hiding the native title bar suffices to reproduce this resource
+signature in a plain window. It does not require `ExtendsContentIntoTitleBar`, a
+dashboard control, generated dashboard bindings or its timers/subclass. The
+actual dashboard uses `CreateForToolWindow()` and
+`SetBorderAndTitleBar(hasBorder: true, hasTitleBar: false)`; it does not enable
+title-bar extension.
+
+Ten-second cleanup controls then distinguished returning to visible-title-bar mode
+from resetting native state. Every row below has eight total cycles, including four
+warmups, and uses the same `B5583879...` assembly:
+
+| Control before permanent Close | GDI: after warmup / after activity collection | Handles: activity start / after collection | Section: after warmup / after activity collection | DxgkCompositionObject: same checkpoints |
+| --- | ---: | ---: | ---: | ---: |
+| Hidden title bar, ordinary Close | 300 / 424 | 1,509 / 1,699 | 180 / 260 | 136 / 211 |
+| Hide, restore `hasTitleBar: true`, Close | 222 / 324 | 1,432 / 1,598 | 143 / 213 | 98 / 163 |
+| Hide, `TitleBar.ResetToDefault()`, Close | 160 / 172 | 1,325 / 1,358 | 95 / 103 | 46 / 48 |
+| Historical actual-dashboard Hide + Reset control | 154 / 166 | 1,325 / 1,358 | 93 / 101 | 42 / 44 |
+
+Restoring `hasTitleBar: true` did not correct the growth. Hide + Reset sharply
+reduced the measured GDI/Section/Dxgk growth. The historical `dashboard-reset`
+mechanism control was subsequently removed after shared production cleanup was
+adopted; its data remains in the evidence record. The surviving plain-window
+controls deliberately keep literal cleanup sequences independent of the production
+helper so they continue to distinguish mechanisms.
+
+A separate five-second pilot exercised the actual MainWindow custom-title-bar
+cleanup in this order: Hide, `SetTitleBar(null)`, disable extension, Reset, then
+Close. It used six total dashboard cycles and 18 activity operations. GDI remained
+133 / 133, Section 82 / 82 and DxgkCompositionObject 27 / 27; process handles were
+1,295 at activity start and 1,308 after collection. The replaced MainWindow and
+its content were reclaimed, and its native window was destroyed. This is short
+private-desktop evidence for the pinned Runtime 2.2.0 / WinUI 2.2.1 path, not a
+general safety result for other runtime versions.
+
+The shared `WindowTitleBarLifetime` helper is now called by permanent disposal of
+both MainWindow and TrayDashboardWindow. It hides the native surface before reset;
+the custom MainWindow path also detaches its XAML title bar and disables extension.
+Ordinary hide/show remains a separate lifetime. The shared generated-binding
+cleanup remains necessary for managed reclamation. No production collection or
+forced COM release is added.
+
+A serial baseline/candidate/baseline comparison used 30-second idle and activity
+phases with the actual `dashboard` workload:
+
+| Run | Activity operations | Total cycles | GDI: after warmup / after activity collection | Handles: activity start / after collection | Section: after warmup / after activity collection | DxgkCompositionObject: same checkpoints |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Preserved baseline | 101 | 15 | 302 / 583 | 1,509 / 1,946 | 181 / 366 | 137 / 310 |
+| Shared-cleanup candidate | 99 | 14 | 109 / 111 | 1,265 / 1,307 | 68 / 69 | 22 / 20 |
+| Preserved baseline repeat | 105 | 15 | 308 / 561 | 1,509 / 1,926 | 183 / 355 | 138 / 299 |
+
+All three runs recorded zero service calls, zero surviving dashboard windows or
+content, destruction of the tracked native windows, and reclamation of the replaced
+main window/content. USER counts were 74 / 73 in each run, with no GUI-query errors.
+Cycle totals include four warmups. Operation counts and host load differ, so these
+figures establish the large resource-growth correction under this workload rather
+than an exact per-window allocation rate or CPU speedup.
+
+The [compact title-bar evidence](results/2026-11-04-titlebar-lifetime.json) retains
+all twelve source-summary hashes, child-report hashes, actual assembly hashes,
+mode/budgets, phase counters, query errors and lifetime checks. Kernel type indices
+are resolved through each child's own queried name map. GDI/USER and native-type
+before readings occur after warmup, before idle; activity-start process counters
+come later. They are distinct checkpoints and must not be combined into one delta.
+Absent historical GUI instrumentation is recorded as unavailable, not zero.
+
+The baseline DLL hash is `B558387928821916B36D923536293EC360A1F587AFEE3C417D46CE16FD0EE565`;
+the measured candidate is `E038A2C0B76628736444778584BECDAA1C6C3092575D92ED20422C77C6E68DB0`.
+That candidate predates subsequent pending-initialization failure handling,
+early-hide/finally refinements and native-before-close regression assertions.
+These reports do not claim final full-test success for those later changes;
+final sustained validation remains separate.
+
+Subsequent native regressions passed their positive before-close marker assertions.
+As a negative control, omitting the dashboard's `WindowTitleBarLifetime.Release`
+call made both native regression cases fail. The failed-initialization case also
+reproduced the old path that skipped cleanup. The marker records actual native
+title-bar state while the window is still valid, rather than inferring reset from
+managed reclamation or HWND destruction. Its checked-state flag is emitted only
+after the assertions succeed; a failed assertion produces no success report.
+
+The sixth review identified another concrete gap: synchronous `Dispose` or `Cancel`
+steps can throw and skip later teardown. A real throwing cancellation callback
+reproduced that failure. The guarded component cleanup now continues through that
+failure and failed initialization; all 2,650 Tray tests passed after the correction.
+The same run exposed a test that read power-source labels partway through a fake
+dispatcher turn. It now waits for complete application of a uniquely identified
+snapshot, preserving all outcome assertions. Final full-solution and sustained
+validation are recorded separately below.
+
+Early hide and the helper's pre-reset hide serve separate ordering guarantees:
+permanent disposal hides before awaiting pending initialization, while native reset
+also requires the surface hidden immediately before changing title-bar state.
+A failed Hide deliberately stops reset, retaining the prerequisite rather than
+attempting the later native mutations. These are guarded teardown semantics, not
+permission to continue native reset after an uncertain prerequisite.
+
+[Upstream issue #12210](https://github.com/microsoft/microsoft-ui-xaml/issues/12210)
+reports native title-bar composition/GDI retention after window destruction and
+supports investigating this boundary. It does not establish the exact retaining
+native owner in OpenBlade's pinned binaries. Its
+[newer Runtime 2.6.4/Rust report](https://github.com/microsoft/microsoft-ui-xaml/issues/12210#issuecomment-6590971810)
+also records a reset-related fail-fast with a XAML title bar. Renew the guarded
+native lifecycle validation on SDK/runtime upgrades; the pinned local result must
+not be generalized to that different version/binding.
+
+Smaller residual growth remains: the candidate's Composition count increased
+14 / 24 across ten activity-window cycles, while the earlier plain Window/Grid
+control increased 14 / 19 across five activity-window cycles. Both before snapshots
+were taken after warmup, so their intervals include idle as well as activity. These
+observations do not establish an application-specific owner for the remaining
+Composition growth. The candidate's process handles increased 1,265 / 1,307. The
+correction therefore does not prove flat total resource use or identify every
+remaining native owner.
+Microsoft documents [`Window.Close()`](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.window.close?view=windows-app-sdk-2.0)
+as destroying the window, and [XAML owns the lifetime of its framework-created visuals](https://learn.microsoft.com/en-us/windows/apps/develop/composition/visual-layer#working-with-winui-xaml).
+A bounded primary-source review found no additional supported app-owned cleanup
+operation for this ordinary Window path. Public WinUI [shutdown code](https://github.com/microsoft/microsoft-ui-xaml/blob/b1350c702ccef1c020cb19e6cace5ae25b20a895/dxaml/xcp/dxaml/lib/DesktopWindowImpl.cpp#L1702-L1746)
+releases its private XAML source and native window, but that source revision is
+not verified as the exact implementation in these pinned binaries. The residual
+owner and reclamation deadline remain unresolved; this does not justify closing
+XAML's internal composition objects from application code.
+Multi-hour stability, visible-window behavior and installed-product power/GPU
+residency remain unvalidated here. These binaries use a shared .NET runtime
+(`SelfContained=false`) and app-local Windows App SDK runtime
+(`WindowsAppSDKSelfContained=true`), which are independent deployment choices.
+
+## Final sustained candidate (2026-11-04)
+
+The final code revision `c7306e46995c44d4acbae5f3f159b9ce4c761f9b`, including
+callback-failure containment, ran for 600 seconds idle and 600 seconds of paced
+activity. The Release Tray assembly hash was
+`11688246328E6B2301287C06CC19C58254B0F822D7B66DAB9C36121428832378`.
+The private-desktop offscreen workload completed 2,068 accepted samples, each
+with exactly one sample-triggered chart rebuild, and 211 dashboard cycles:
+four warmups and 207 activity cycles. It recorded 213 nonactivating shows and
+851 presentation checks, with zero service calls. All tracked closed dashboard
+windows/content and the replaced MainWindow/content were reclaimed, every
+tracked native window was destroyed, and both cleanup-failure checks passed.
+
+| Resource | After warmup, before idle | After activity collection |
+| --- | ---: | ---: |
+| GDI | 139 | 139 |
+| USER | 73 | 73 |
+| Section | 85 | 86 |
+| DxgkCompositionObject | 30 | 30 |
+| Composition | 14 | 221 |
+| Event | 523 | 947 |
+
+All queries were available without errors. The dominant title-bar GDI and
+Section/Dxgk growth stayed suppressed over this longer run. The remaining
+Composition increase was 207 across 207 activity windows; Event increased 424.
+The short plain-Window control also showed Composition growth, so this does not
+identify an application-owned retaining object or prove a framework defect.
+
+Total process handles rose from 1,284 at activity start to 1,931 after collection.
+Private bytes rose from 212,668,416 to 316,424,192 at those checkpoints. Total
+resource use therefore did not flatten. The managed retained-byte checkpoint
+increased from 4,526,168 after warmup to 4,654,736 after activity; rooted history,
+fixtures and the growing weak-reference/report lists remain included. Closed
+window reclamation does not imply flat native memory.
+
+Disconnected idle used 359.375 ms CPU over 600.081 seconds, with handles falling
+from 1,300 to 1,284. This excludes the installed observation pipeline. The one
+startup upper bound was 1,507 ms to loaded layout; uncontrolled caches/load and
+one startup sample do not establish a startup improvement.
+
+The [sanitized sustained evidence](results/2026-11-04-titlebar-sustained.json)
+records the source/version binding, raw report hashes, per-child type-name map,
+phase counters, external sampling series, query errors and cleanup checks.
+The full-solution validation result is tracked in [PR #874](https://github.com/OpenBladeProject/openblade-core/pull/874).
+
 ## Interpretation
 
 Baseline launch-to-loaded-layout upper bounds ranged from 2.33 to 3.70 seconds
@@ -156,7 +343,7 @@ or private-memory threshold. Whole-Service/Session Agent consumption, installed
 GPU residency, energy, battery power and multi-hour behavior remain separate
 measurements; no installation, hardware mutation or live input hook was used.
 
-Four independent Claude Opus 5.5/high read-only reviews covered the findings,
+Six independent Claude Opus 5.5/high read-only reviews covered the findings,
 probes and shared fix. Confirmed findings led to shared teardown failure handling,
 phase-file sharing, exact per-sample rebuild accounting, destruction-event checks,
 bounded concurrent Git-output drains, and preservation of cleanup failures. Style-only
@@ -168,4 +355,17 @@ checks, bounded foreground-owner queries, exact desktop matching and stronger
 native regression assertions. Fresh presentation admission remains inside the
 activity workload, and an input-desktop switch intentionally invalidates the run.
 Separate Codex reviews checked the native diagnostic ABI, buffer bounds and the
-final guard changes. These reviews do not substitute for execution evidence.
+guard changes. The fifth and sixth reviews covered native title-bar lifetime and
+its regressions; their confirmed findings included early-hide ordering, cleanup
+after failed initialization and synchronous-failure containment. The sixth review
+completed successfully as a review run, with the containment changes and real
+callback-failure regression still in progress. This is not a claim that review
+found no issues or that all final checks passed.
+
+Other review claims were adjudicated against the actual contract and evidence:
+app-local pinned Runtime 2.2.0 prevents arbitrary installed Runtime 2.6.4 drift,
+while an intentional SDK/runtime upgrade requires renewed native validation;
+Hide failure deliberately stops reset; checked-state output follows successful
+assertions; and the omitted-cleanup negative control demonstrates that the native
+marker detects missing cleanup. These reviews do not substitute for execution
+evidence.
