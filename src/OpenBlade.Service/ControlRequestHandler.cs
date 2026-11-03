@@ -149,6 +149,13 @@ public sealed class ControlRequestHandler
             {
                 throw;
             }
+            catch (ConfigurationQuarantinedException exception)
+            {
+                DiagnosticTrace.TraceException(nameof(ControlRequestHandler), nameof(HandleCoreAsync), exception,
+                    "Active-user configuration transaction recovery is required.");
+                return Failure(request.RequestId,
+                    $"The active user's configuration requires recovery: {exception.Message}");
+            }
             catch (Exception exception) when (exception is
                 InvalidDataException or IOException or JsonException or UnauthorizedAccessException)
             {

@@ -144,6 +144,49 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         Assert.Equal(expected, runtime.PersistentOverrides);
     }
 
+    [Fact]
+    public async Task InitializeAsync_RecoveryRequiredRefusesBeforeRuntimeOrBackgroundWork()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "profiles.json");
+        string markerPath = Path.Combine(directory, "battery-configuration.commit.json");
+        var store = new BatteryConfigurationStore(
+            path, Path.Combine(directory, "battery-preferences.json"), markerPath);
+        await store.LoadAsync(CancellationToken.None);
+        string recoveryPath = markerPath + ".recovery-required";
+        await File.WriteAllTextAsync(recoveryPath, "unresolved machine transaction");
+        var prior = Directory.GetFiles(directory).ToDictionary(
+            file => file, File.ReadAllBytes, StringComparer.OrdinalIgnoreCase);
+        var runtime = new RecordingRuntime(path);
+        var logger = new RecordingLogger();
+        ServiceStartupCoordinator coordinator = CreateCoordinator(path, runtime, logger);
+        bool? initialized = null;
+        bool backgroundStarted = false;
+
+        await Worker.RunAfterSuccessfulStartupAsync(async token =>
+        {
+            initialized = await coordinator.InitializeAsync(token);
+            return initialized.Value;
+        }, _ =>
+        {
+            backgroundStarted = true;
+            return Task.CompletedTask;
+        }, CancellationToken.None);
+
+        Assert.False(initialized);
+        Assert.False(backgroundStarted);
+        Assert.Empty(runtime.Calls);
+        Assert.Null(runtime.Configuration);
+        Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Error
+            && entry.Exception is ConfigurationQuarantinedException
+            && entry.Exception.Message.Contains(recoveryPath, StringComparison.Ordinal));
+        Assert.Equal(prior.Keys.Order(), Directory.GetFiles(directory).Order());
+        foreach ((string file, byte[] contents) in prior)
+        {
+            Assert.Equal(contents, await File.ReadAllBytesAsync(file));
+        }
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))
