@@ -7,6 +7,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Save configured THX audio profiles correctly and avoid refreshing unrelated controls when audio settings have not changed. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+- Preserve the original configuration files for recovery when a save and its rollback both fail. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+- Follow the current default playback device in Audio Meter lighting, including switches where the previous device remains connected. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+- Stop firmware-validation writes after unconfirmed changes or restoration failures, and bound CPU probe callback buffering. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Preserve overlapping profile edits, refresh service state before later saves, and retain drafts when a save is rejected or its result is uncertain. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Reject malformed profile requests safely and preserve invalid saved configuration for recovery. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Keep display automation paused after a partially submitted change, retain the most recently activated app profile, and honor the latest telemetry replay selection. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
