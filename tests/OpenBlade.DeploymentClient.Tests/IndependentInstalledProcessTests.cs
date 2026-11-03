@@ -13,6 +13,27 @@ namespace OpenBlade.DeploymentClient.Tests;
 public sealed class IndependentInstalledProcessTests
 {
     [Fact]
+    public void PublishedFixtureTextIsReadableWhileRenameAccessRemainsOpen()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"OpenBlade.PublishedFixture.{Guid.NewGuid():N}.json");
+        const string expected = "{\"complete\":true}";
+        try
+        {
+            File.WriteAllText(path, expected);
+            // DeleteOnClose requests DELETE access, as does the atomic rename.
+            // Keep that handle alive to deterministically exercise the interval
+            // after the destination becomes visible and before rename returns.
+            using SafeFileHandle rename = File.OpenHandle(path, FileMode.Open, FileAccess.Read,
+                FileShare.Read | FileShare.Delete, FileOptions.DeleteOnClose);
+            Assert.Equal(expected, LaunchFixture.ReadPublishedText(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void LaunchFixtureAppHostUsesTheWindowsGuiSubsystem()
     {
         string executable = Path.ChangeExtension(typeof(LaunchFixture).Assembly.Location, ".exe");
@@ -433,7 +454,7 @@ public sealed class IndependentInstalledProcessTests
             }
 
             await WaitForFileAsync("parent.ready", Parent);
-            long parentHandle = long.Parse(File.ReadAllText(Path.Combine(Root, "parent.ready")), CultureInfo.InvariantCulture);
+            long parentHandle = long.Parse(LaunchFixture.ReadPublishedText(Path.Combine(Root, "parent.ready")), CultureInfo.InvariantCulture);
             Assert.True(LaunchFixture.IsSameRemoteObject(Parent.SafeHandle, parentHandle, ParentEvent.SafeWaitHandle));
             Assert.True(LaunchFixture.SetHandleInformation(CallerEvent.SafeWaitHandle, 1, 1));
             Coordinator = LaunchFixture.StartFixture(
@@ -448,7 +469,7 @@ public sealed class IndependentInstalledProcessTests
         internal async Task<LaunchReport> ReadReportAsync()
         {
             await WaitForFileAsync("report.json", Coordinator!);
-            return JsonSerializer.Deserialize<LaunchReport>(File.ReadAllText(Path.Combine(Root, "report.json")))!;
+            return JsonSerializer.Deserialize<LaunchReport>(LaunchFixture.ReadPublishedText(Path.Combine(Root, "report.json")))!;
         }
 
         private async Task WaitForFileAsync(string name, Process process)
@@ -479,7 +500,7 @@ public sealed class IndependentInstalledProcessTests
             {
                 string phasePath = Path.Combine(Root, "coordinator-phase.txt");
                 string phase = File.Exists(phasePath) && new FileInfo(phasePath).Length <= 1024
-                    ? File.ReadAllText(phasePath) : "missing or oversized";
+                    ? LaunchFixture.ReadPublishedText(phasePath) : "missing or oversized";
                 return $"Coordinator phase: {phase}; child.started: {File.Exists(Path.Combine(Root, "child.started"))}; "
                     + $"report.json: {File.Exists(Path.Combine(Root, "report.json"))}; "
                     + $"retained parent: {Describe(Parent)}; retained coordinator: {Describe(Coordinator)}. "
@@ -912,6 +933,15 @@ internal static class LaunchFixture
         string temporary = Path.Combine(root, name + ".tmp");
         File.WriteAllText(temporary, content);
         File.Move(temporary, Path.Combine(root, name));
+    }
+
+    internal static string ReadPublishedText(string path)
+    {
+        // The complete destination can be visible before File.Move releases
+        // its DELETE-access handle. Share that access, but deny content writes.
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 
     internal static SafeFileHandle CreateJob(bool killOnClose)
