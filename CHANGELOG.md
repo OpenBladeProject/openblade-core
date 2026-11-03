@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Keep settings tied to the correct Windows user when session activation is interrupted or requests overlap. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+- Preserve brightness-failure diagnostics and allow display automation to recover after a canceled manual change. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+- Retain keyboard-hook ownership when replacement cleanup fails and stop further replacements until cleanup is confirmed. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Save configured THX audio profiles correctly and avoid refreshing unrelated controls when audio settings have not changed. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Preserve the original configuration files for recovery when a save and its rollback both fail. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Follow the current default playback device in Audio Meter lighting, including switches where the previous device remains connected. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
@@ -19,6 +22,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Reduce service and battery IPC decoding overhead with shared streaming validation. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Reduce telemetry chart allocations and redraw each accepted live sample once, while keeping freshness labels and missing-sample time progression current. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 
 ## [0.50.3] - 2026-11-01
