@@ -437,11 +437,14 @@ internal sealed record ScopedIntentApplyExecution(
 
 internal interface IServiceUserAdmission
 {
-    IDisposable BeginUserAdmission(SecurityIdentifier userSid, Func<bool> stillControlsSession);
+    IDisposable BeginUserAdmission(ServiceClientContext client, Func<bool> stillControlsSession,
+        ServiceUserRequestOwner? requestOwner);
 
     bool TryReadCurrentUserStatus(SecurityIdentifier userSid, Func<bool> stillControlsSession,
         out ServiceStatusSnapshot? snapshot);
 }
+
+internal sealed record ServiceUserRequestOwner(ServiceClientContext Client, Func<bool> StillControlsSession);
 
 public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUserAdmission, IDisposable
 {
@@ -1086,20 +1089,45 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             cancellationToken).ConfigureAwait(false);
 
     IDisposable IServiceUserAdmission.BeginUserAdmission(
-        SecurityIdentifier userSid, Func<bool> stillControlsSession)
+        ServiceClientContext client, Func<bool> stillControlsSession, ServiceUserRequestOwner? requestOwner)
     {
         if (userConfigurationRepository is null)
         {
             return EmptyDisposable.Instance;
         }
-        if (Volatile.Read(ref pendingSessionAdmissions) == 0
+        // A second request from the same live Windows session is a waiter for
+        // the current finite operation, not a competing user admission. Keep
+        // all other pending leases and their advanced epochs unchanged.
+        if (requestOwner is not null
+            && requestOwner.Client.UserSid == client.UserSid
+            && requestOwner.Client.SessionId == client.SessionId
+            && requestOwner.Client.LogonKind == client.LogonKind
+            && RequestOwnerControlsSession(requestOwner)
+            && stillControlsSession())
+        {
+            return EmptyDisposable.Instance;
+        }
+        if (requestOwner is null
+            && Volatile.Read(ref pendingSessionAdmissions) == 0
             && !Volatile.Read(ref activeUserActivationIncomplete) && string.Equals(
-                Volatile.Read(ref activeUserSid), userSid.Value, StringComparison.OrdinalIgnoreCase)
+                Volatile.Read(ref activeUserSid), client.UserSid.Value, StringComparison.OrdinalIgnoreCase)
             || !stillControlsSession())
         {
             return EmptyDisposable.Instance;
         }
         return BeginSessionAdmission();
+    }
+
+    private static bool RequestOwnerControlsSession(ServiceUserRequestOwner owner)
+    {
+        try
+        {
+            return owner.StillControlsSession();
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     bool IServiceUserAdmission.TryReadCurrentUserStatus(
@@ -1222,7 +1250,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 {
                     suppressInitialUserProfileApplyAfterUnexpectedExit = false;
                 }
-                bool profileApplicationStopped = false;
                 // Old-context teardown can retire a renderer even when its
                 // caller is canceled before the new context is installed.
                 // Keep the prior SID/stores, but make that activation retryable.
@@ -1299,7 +1326,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 persistentOverrides = overrides;
                 lightingSuppressions.Clear();
                 lightingSuppressionWritePending = false;
-                if (!profileApplicationStopped && unexpectedExitRecoveryDeferredForUserConfiguration)
+                if (unexpectedExitRecoveryDeferredForUserConfiguration)
                 {
                     recoveryUserConfigurationLoaded = true;
                     pendingLightingRestore = context.Configuration.Preferences.LastKnownLighting;
@@ -1317,13 +1344,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 if (!suppressProfileApply
                     && powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
                 {
-                    ServiceTransitionApplicationOutcome application = await ApplyFullTransitionAsync(
+                    _ = await ApplyFullTransitionAsync(
                             powerSource,
                             cancellationToken,
                             preserveObservedExternalChanges: false,
                             stillControlsSession: stillControlsSession)
                         .ConfigureAwait(false);
-                    profileApplicationStopped = application.StopFurtherWrites;
                 }
 
                 if (!stillControlsSession())

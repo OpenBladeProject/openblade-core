@@ -7,6 +7,86 @@ namespace OpenBlade.Service.Tests;
 
 public sealed partial class ServiceControlRuntimeTests
 {
+    [Fact]
+    public async Task HandleAsync_SameUserQueuedStatusDoesNotInvalidateDeferredFanRecoveryActivation()
+    {
+        var repository = CreateManualCurveRecoveryRepository();
+        var userSid = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        var client = new ServiceClientContext(userSid, 4, false, ServiceClientLogonKind.Interactive);
+        ControlRequestHandler? handlerAtDelay = null;
+        Task<ServiceResponse>? queuedStatus = null;
+        TestContext context = await CreateDeferredRecoveryContextAsync(repository,
+            prepareFanRecovery: false,
+            transitionRetryDelay: (_, _) =>
+            {
+                queuedStatus = handlerAtDelay!.HandleAsync(
+                    new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), client, CancellationToken.None);
+                return Task.CompletedTask;
+            });
+        context.Device.FanTargetFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied, BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected safety-floor read failure during user activation."));
+        handlerAtDelay = new ControlRequestHandler(context.Runtime, new RecoveryArchiveProvider(),
+            NullServiceShutdownSignal.Instance, new HandoffSessionAuthority { SessionId = 4 });
+        int writesBeforeActivation = context.Device.FanSetCalls;
+
+        ServiceResponse activation = await handlerAtDelay.HandleAsync(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), client, CancellationToken.None);
+        ServiceResponse status = await Assert.IsAssignableFrom<Task<ServiceResponse>>(queuedStatus);
+
+        Assert.True(activation.Success);
+        Assert.True(status.Success);
+        Assert.Equal(writesBeforeActivation + 2, context.Device.FanSetCalls);
+        Assert.Equal(ExactFanControlOwnershipDisposition.OwnedExactIntent,
+            context.Runtime.FanControlOwnershipDisposition);
+    }
+
+    [Fact]
+    public async Task HandleAsync_SameUserQueuedStatusDoesNotInvalidateItsRunningActivation()
+    {
+        var repository = new UserConfigurationRepository(
+            Path.Combine(directory, "same-user-activation-request"), ProfileSetValidator.CreateUnverifiedSafeDefaults());
+        var firstSid = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        var secondSid = new SecurityIdentifier("S-1-5-21-1-2-3-1002");
+        UserConfigurationContext second = await repository.LoadAsync(secondSid, CancellationToken.None);
+        ProfileSet secondProfiles = second.Configuration.Profiles with
+        {
+            PluggedIn = second.Configuration.Profiles.PluggedIn with { Performance = PerformancePreset.Performance },
+        };
+        await second.Store.SaveProfilesAsync(secondProfiles, CancellationToken.None);
+        TestContext context = CreateWritableContext(userConfigurationRepository: repository,
+            transitionRetryDelay: static (_, _) => Task.CompletedTask);
+        context.Provider.Available = false;
+        await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
+        context.Provider.Available = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var authority = new HandoffSessionAuthority { SessionId = 5 };
+        var handler = new ControlRequestHandler(context.Runtime, new RecoveryArchiveProvider(),
+            NullServiceShutdownSignal.Instance, authority);
+        var client = new ServiceClientContext(secondSid, 5, false, ServiceClientLogonKind.Interactive);
+        Task<ServiceResponse>? queuedStatus = null;
+        context.Device.PerformanceFailures.Enqueue(new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied, BladeWriteFailurePhase.ThermalPreWriteRead,
+            "Injected pre-submission read failure during activation."));
+        context.Device.BeforeQueuedPerformanceFailure = () =>
+        {
+            context.Device.BeforeQueuedPerformanceFailure = null;
+            queuedStatus = handler.HandleAsync(
+                new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), client, CancellationToken.None);
+        };
+        int writesBeforeActivation = context.Device.PerformanceSetCalls;
+
+        ServiceResponse activation = await handler.HandleAsync(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), client, CancellationToken.None);
+        ServiceResponse status = await Assert.IsAssignableFrom<Task<ServiceResponse>>(queuedStatus);
+
+        Assert.True(activation.Success);
+        Assert.True(status.Success);
+        Assert.Equal(secondProfiles, status.Status?.Profiles);
+        Assert.Equal(writesBeforeActivation + 2, context.Device.PerformanceSetCalls);
+        Assert.Equal(PerformancePreset.Performance, context.Device.ConfirmedState.Performance);
+    }
+
     [Theory]
     [InlineData("LostSession", false)]
     [InlineData("LostSession", true)]
@@ -252,13 +332,15 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
-    [Fact]
-    public async Task HandleAsync_CanceledQueuedUserAbaInvalidatesTheActiveHyperBoostRetry()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HandleAsync_CanceledQueuedUserAbaInvalidatesTheActiveHyperBoostRetry(bool sameAccount)
     {
         var repository = new UserConfigurationRepository(
             Path.Combine(directory, "queued-user-hyperboost"), ProfileSetValidator.CreateUnverifiedSafeDefaults());
         var firstSid = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
-        var secondSid = new SecurityIdentifier("S-1-5-21-1-2-3-1002");
+        var secondSid = sameAccount ? firstSid : new SecurityIdentifier("S-1-5-21-1-2-3-1002");
         await repository.LoadAsync(firstSid, CancellationToken.None);
         await repository.LoadAsync(secondSid, CancellationToken.None);
         var authority = new HandoffSessionAuthority { SessionId = 4 };

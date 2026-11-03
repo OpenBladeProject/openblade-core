@@ -16,6 +16,7 @@ public sealed class ControlRequestHandler
     // lifetime; AvailableWaitHandle is never requested. Keep activation and
     // finite dispatch together so another client cannot replace their stores.
     private readonly SemaphoreSlim userRequestGate = new(1, 1);
+    private ServiceUserRequestOwner? userRequestOwner;
 
     internal ControlRequestHandler(
         IServiceControlRuntime runtime,
@@ -163,11 +164,15 @@ public sealed class ControlRequestHandler
             && request is not ShutdownOpenBladeRequest
             && client.IsInteractive
             && runtime is IServiceUserAdmission userAdmission
-                ? userAdmission.BeginUserAdmission(client.UserSid, stillControlsSession)
+                ? userAdmission.BeginUserAdmission(client, stillControlsSession, Volatile.Read(ref userRequestOwner))
                 : null;
         await userRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            Volatile.Write(ref userRequestOwner,
+                client.IsInteractive && request is not ShutdownOpenBladeRequest
+                    ? new ServiceUserRequestOwner(client, stillControlsSession)
+                    : null);
             // The prior request has finished. Activation below takes its own
             // admission before its first wait, so its writes do not see this
             // request's ingress lease as a competing pending user.
@@ -177,6 +182,7 @@ public sealed class ControlRequestHandler
         }
         finally
         {
+            Volatile.Write(ref userRequestOwner, null);
             userRequestGate.Release();
         }
     }
