@@ -318,6 +318,112 @@ records the source/version binding, raw report hashes, per-child type-name map,
 phase counters, external sampling series, query errors and cleanup checks.
 The full-solution validation result is tracked in [PR #874](https://github.com/OpenBladeProject/openblade-core/pull/874).
 
+## Residual native attribution and retirement (2026-11-04)
+
+Further disconnected probes over `53ce825487b6fedacd7cdc56f5868101b4455297`
+identify native creation paths for surviving handles. They do not locate the final
+retaining reference or provide a supported application cleanup operation. The
+[sanitized evidence](results/2026-11-04-native-retirement-attribution.json) binds
+each result to raw-report hashes, instrumented assembly hashes, temporary-source
+hashes, native module hashes and matching PDB identities. These are investigation
+builds over that source, not clean-head product benchmarks. Raw debugger logs,
+addresses and local paths remain outside the repository.
+
+A native breakpoint in the pinned app-local `dcompi.dll` observed a successful
+`DuplicateHandle` into `SystemVisualTarget`'s handle field. The same final handle
+was type Composition, with one OPEN and zero CLOSE records. Its creation stack ran
+through `CXamlIslandRoot::InitializeCommon`, `ContentIsland::RuntimeClassInitialize`
+and `LocalContentOutput::Initialize`. A separate trace matched two surviving Event
+handles: one created by `IslandInputSiteWinRT::RuntimeClassInitialize`, and one
+duplicated by `SystemVisualTarget::Partner::SetInputReadyEvent` through
+`ExternalTargetImpl<DesktopWindowTarget>::SetInputReadyEvent` during
+`LocalContentOutput::Connect`.
+
+Each Event match also had one OPEN and zero CLOSE records. The probe saved syscall
+output pointers at entry, read them on successful return, filtered both breakpoints
+to the UI thread and checked the complete entry/return pairing. This avoids using
+clobbered return registers or correlating a reused handle value. It does not prove
+the two Events belong to the same window or reference the same kernel Event.
+Earlier Event matches with CLOSE/reuse history were discarded. Both the self-query
+and CDB's handle tracing returned empty stacks; live native breakpoints supplied
+the stacks instead. The cause of the empty trace stacks remains unknown.
+
+Matched empty-window and dashboard controls then observed delayed retirement:
+30 seconds idle, 30 seconds activity, four extra GC/finalizer rounds with
+dispatcher pumping opportunities, and ten seconds idle. The historical `drain-N`
+stages used delays, without an acknowledged dispatcher callback or composition
+flush. Each created 11 activity windows, plus four warmups.
+All tracked closed windows/content and native HWNDs were gone.
+
+| Control / checkpoint | Composition | Event | Process handles | Private bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Pinned empty, after warmup | 14 | 517 | 1,283 | — |
+| Pinned empty, after activity collection | 25 | 549 | 1,327 | 221,061,120 |
+| Pinned empty, after extra drains and idle | 25 | 549 | 1,327 | 209,235,968 |
+| Pinned dashboard, after warmup | 14 | 519 | 1,305 | — |
+| Pinned dashboard, after activity collection | 25 | 552 | 1,351 | 234,332,160 |
+| Pinned dashboard, after extra drains and idle | 25 | 552 | 1,351 | 222,294,016 |
+
+Composition and Event counts stayed unchanged across all four historical rounds. Private
+commit fell, so the full private-byte increase cannot be attributed to retained
+native resources. Per-window observations are included in the evidence; those
+precede forced collection and are not interchangeable with post-collection counts.
+Read-only island enumeration found only the active main island after every child
+closure. Enumeration absence does not establish destruction of the closed native
+objects. The final reusable probe omits island enumeration entirely.
+
+An isolated build also tested [Windows App SDK 2.6.5](https://github.com/microsoft/WindowsAppSDK/releases/tag/v2.6.5),
+using the same temporary drain harness and empty-window workload. Both package
+pins were changed only in temporary central metadata and the output was staged
+separately. Its Composition count still rose 14 → 25 and stayed 25 across every
+drain and the final idle interval. Events rose 514 → 534, then fell to 532 during
+idle; private bytes fell from 213,712,896 to 201,224,192. The versions therefore
+differ in some observations, but 2.6.5 does not fix the reproduced Composition
+retention. Repository package pins remain Runtime 2.2.0 / WinUI 2.2.1.
+
+The retained `--observe-retirement` diagnostic records per-window counts and the
+bounded retirement interval, with separate managed-heap measurements. After review,
+each final probe round additionally awaits a low-priority dispatcher callback;
+this is not a native composition flush. Before the callback addition, a
+30-second empty-window control using the cleaned probe, with no island enumeration
+or debugger hooks, again increased Composition 14 → 25 across 11 activity windows
+and retained 25 through the extra drains and idle. Events fell 555 → 553 during
+the final idle; private bytes fell 222,023,680 → 202,330,112. All tracked closed
+windows/content and native HWNDs were gone, with zero service calls. The smoke
+tests also cover the observation sequence and the unchanged default mode.
+
+The final callback-enabled 30-second control completed 12 activity windows
+(16 including warmup), with zero service calls and no tracked closed windows,
+content or native HWNDs surviving. Composition rose 14 → 26 and remained 26
+after every acknowledged dispatcher turn and the final idle interval. Events
+stayed 557 throughout retirement; private bytes fell 222,633,984 → 212,148,224.
+This closes the delay-only probe's missing-dispatcher-acknowledgement gap without
+claiming a composition flush. The measurement preceded the commit of identical
+diagnostic code as `a6f0e54b`; the evidence retains its actual instrumented assembly
+hash and base revision rather than relabeling it as a clean-head run.
+
+The diagnostic is developer-only and changes no production lifetime behavior. Its observations are
+not proof of indefinite retention or full UI-thread shutdown behavior. No supported
+app-owned API has been established for closing WinUI's private visual target;
+closing borrowed islands, framework visuals, raw handles or the shared compositor
+would violate ownership. Residual native retention remains open. The evidence is
+ready for a framework investigation without claiming that an SDK update or more
+forced collection fixes it.
+
+Two further Claude Opus 5.5/high reviews covered this investigation: a bounded
+findings review and a frozen working-tree review with 21 read-only inspection
+calls. Confirmed findings led to acknowledged dispatcher callbacks, an explicit
+smoke-test time allowance, report-local instrumentation caveats, reused native/GUI
+snapshots and preservation of raw timestamp strings during export. The report now
+identifies the latest GC's index/generation/concurrency instead of implying that
+its heap data always describe a blocking full collection. Rooted report overhead,
+fixed retirement intervals and the fixture's four-window warmup are deliberate
+documented controls; they were retained. The review does not establish a safe
+production workaround or completion of the native ownership investigation.
+The final committed diagnostic code `a6f0e54b` rebuilt and passed all 2,650 Tray
+tests, with zero failures or skips, including both real native resource regressions.
+Formatting and the older-probe rejection check also passed.
+
 ## Interpretation
 
 Baseline launch-to-loaded-layout upper bounds ranged from 2.33 to 3.70 seconds

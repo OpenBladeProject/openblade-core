@@ -1,0 +1,5414 @@
+{
+  "schemaVersion": 1,
+  "baseSourceCommit": "53ce825487b6fedacd7cdc56f5868101b4455297",
+  "sourceScope": "Temporary developer-only instrumentation over this commit; no production lifetime changes. Not an exact clean-head benchmark. Matched drain controls use the same temporary harness source. The separately staged SDK trial changes central package metadata only outside the repository.",
+  "temporarySourceArtifacts": [
+    {
+      "file": "openblade-residual-drain-harness-20261104.cs",
+      "sha256": "BD17B4D609B4328F51311A29459B48907FAAEEA79AA8B75408D75CAFFB8EC3FB"
+    },
+    {
+      "file": "openblade-residual-debug-harness-20261104.cs",
+      "sha256": "9FA8330F128962226AB30715CF8A0DD7181D837FD7873C4E8D9063FFE20E11F1"
+    },
+    {
+      "file": "openblade-residual-debug-trace-20261104.cs",
+      "sha256": "56C784EF910124D4E34308886194AD27C8EF29DCB84CD6744697EE796E2AB2D5"
+    },
+    {
+      "file": "openblade-residual-debug-trace-final-20261104.cs",
+      "sha256": "3319CDFF9093061859E6A9C68F0D6BBA83A72AE596C31BEFC72A1B3AF6E17F60"
+    }
+  ],
+  "timestampSemantics": "Producer timestamps preserved verbatim, including offsets; no UTC relabeling or conversion inferred.",
+  "limitations": [
+    "Sequential instrumented observations, not atomic samples or normal product timing.",
+    "Per-window samples precede forced collection; compare matching stages.",
+    "Historical drain-n stages used four GC/finalizer rounds with dispatcher pumping opportunities and ten seconds idle, without an acknowledged low-priority callback or composition flush.",
+    "Private bytes are not native heap size.",
+    "A single enumerated active main island does not prove native destruction of closed islands.",
+    "Breakpoint attribution identifies creation paths, not the final retaining reference.",
+    "The two Event matches do not establish a shared window owner or kernel Event identity.",
+    "Self htrace and CDB htrace both recorded operations with zero stack addresses; the precise cause remains unknown.",
+    "Earlier Event matches with reused values were rejected. Only single-OPEN/no-CLOSE examples are reported.",
+    "Raw handle/object addresses, island identifiers, module paths, process identifiers and debugger logs remain local.",
+    "No production workaround or SDK upgrade was made; framework-owned objects are not application cleanup targets."
+  ],
+  "retirementControls": [
+    {
+      "label": "pinned-empty",
+      "packagePins": {
+        "runtime": "2.2.0",
+        "winUI": "2.2.1"
+      },
+      "rawArtifacts": [
+        {
+          "file": "sustained.json",
+          "sha256": "223DDB23F3C0B54C9BFC4FC90DFE48A95A76C4D0E6CE0CB0AA800DF032BB925F"
+        },
+        {
+          "file": "summary.json",
+          "sha256": "5E8BF11DE580BFBC8897BE1693A42E62512B18FBE79B339B6938360ABB5B0799"
+        }
+      ],
+      "trayAssemblySha256": "C335571E70B34A077A325E5DF3787FABD9CE911D8C823A9C2AA422AEEA781EEF",
+      "binaryHashes": {
+        "dcompi.dll": "1BAB52ACF1BBC45F1469AF675160DA8B2CE0BDCCDD4ADCE3CA3032E674AD6EE3",
+        "marshal.dll": "D00C3D3493B50688E2EF6CEE5F9F05699950B7258AC6496BF48959EB2E4C9717",
+        "Microsoft.UI.Input.dll": "7E24FB014303D387C140DE4FEDD4C65D079A2B0DD6DDDE01135972B887A8E403",
+        "OpenBlade.Tray.dll": "C335571E70B34A077A325E5DF3787FABD9CE911D8C823A9C2AA422AEEA781EEF"
+      },
+      "environment": {
+        "capturedAtUtc": "2026-11-03T18:48:26.9704363+00:00",
+        "runnerFramework": ".NET 10.0.12",
+        "os": "Microsoft Windows 10.0.26300",
+        "architecture": "X64",
+        "phaseSeconds": 30,
+        "startupRuns": 1,
+        "windowKind": "empty",
+        "windowDwellMilliseconds": 0,
+        "observeRendering": false,
+        "offscreenWindows": true,
+        "desktopMode": "private"
+      },
+      "child": {
+        "productVersion": "0.50.4+53ce8254",
+        "framework": ".NET 10.0.12",
+        "requireInputDesktop": false,
+        "disconnected": true,
+        "serviceCalls": 0,
+        "activityOperations": 107,
+        "activitySampleChartRebuilds": 107,
+        "dashboardCycles": 15,
+        "dashboardWrappersAliveAfterCollection": 0,
+        "dashboardContentsAliveAfterCollection": 0,
+        "dashboardNativeWindowsSurvivedClose": 0,
+        "retiredMainWindowAliveAfterCollection": false,
+        "retiredMainContentAliveAfterCollection": false,
+        "retiredMainNativeWindowSurvivedClose": false,
+        "nativeHandlesAfterWarmup": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T18:47:13.296098+00:00",
+          "elapsedMilliseconds": 5.0493,
+          "attempts": 1,
+          "handleCount": 1283,
+          "typeCounts": {
+            "3": 3,
+            "9": 42,
+            "12": 8,
+            "17": 1,
+            "21": 517,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 14,
+            "35": 4,
+            "40": 25,
+            "41": 82,
+            "42": 85,
+            "48": 28,
+            "49": 82,
+            "50": 51,
+            "56": 245,
+            "63": 16,
+            "70": 21
+          },
+          "unavailableReason": null
+        },
+        "nativeHandlesAfterActivity": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T18:48:14.2346352+00:00",
+          "elapsedMilliseconds": 0.2511,
+          "attempts": 1,
+          "handleCount": 1327,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 549,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 25,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 83,
+            "50": 51,
+            "56": 245,
+            "63": 18,
+            "70": 21
+          },
+          "unavailableReason": null
+        },
+        "guiResourcesAfterWarmup": {
+          "gdi": {
+            "count": 137,
+            "error": null
+          },
+          "user": {
+            "count": 74,
+            "error": null
+          }
+        },
+        "guiResourcesAfterActivity": {
+          "gdi": {
+            "count": 137,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        },
+        "nativeHandleTypeNames": {
+          "available": true,
+          "names": {
+            "2": "Type",
+            "3": "Directory",
+            "4": "SymbolicLink",
+            "5": "Token",
+            "6": "Session",
+            "7": "Job",
+            "8": "Process",
+            "9": "Thread",
+            "10": "Partition",
+            "11": "UserApcReserve",
+            "12": "IoCompletionReserve",
+            "13": "ActivityReference",
+            "14": "ProcessStateChange",
+            "15": "ThreadStateChange",
+            "16": "CpuPartition",
+            "17": "SchedulerSharedData",
+            "18": "PsSiloContextPaged",
+            "19": "PsSiloContextNonPaged",
+            "20": "DebugObject",
+            "21": "Event",
+            "22": "Mutant",
+            "23": "Callback",
+            "24": "Semaphore",
+            "25": "Timer",
+            "26": "IRTimer",
+            "27": "Profile",
+            "28": "KeyedEvent",
+            "29": "WindowStation",
+            "30": "Desktop",
+            "31": "Composition",
+            "32": "RawInputManager",
+            "33": "CoreMessaging",
+            "34": "ActivationObject",
+            "35": "TpWorkerFactory",
+            "36": "Adapter",
+            "37": "Controller",
+            "38": "Device",
+            "39": "Driver",
+            "40": "IoCompletion",
+            "41": "WaitCompletionPacket",
+            "42": "File",
+            "43": "IoRing",
+            "44": "TmTm",
+            "45": "TmTx",
+            "46": "TmRm",
+            "47": "TmEn",
+            "48": "ALPC Port",
+            "49": "Section",
+            "50": "Key",
+            "51": "RegistryTransaction",
+            "52": "DmaAdapter",
+            "53": "EnergyTracker",
+            "54": "PowerRequest",
+            "55": "WmiGuid",
+            "56": "EtwRegistration",
+            "57": "EtwSessionDemuxEntry",
+            "58": "EtwConsumer",
+            "59": "CoverageSampler",
+            "60": "PcwObject",
+            "61": "FilterConnectionPort",
+            "62": "FilterCommunicationPort",
+            "63": "DxgkSharedResource",
+            "64": "DxgkSharedKeyedMutexObject",
+            "65": "DxgkSharedSyncObject",
+            "66": "DxgkSharedSwapChainObject",
+            "67": "DxgkDisplayManagerObject",
+            "68": "DxgkSharedProtectedSessionObject",
+            "69": "DxgkSharedBundleObject",
+            "70": "DxgkCompositionObject",
+            "71": "DxgkDisplayMuxSwitch",
+            "72": "NdisCmState",
+            "73": "NdisThreadState",
+            "74": "VRegConfigurationContext"
+          },
+          "unavailableReason": null
+        },
+        "privateBytesAfterActivityCollection": 221061120,
+        "handlesAfterActivityCollection": 1327,
+        "retainedAfterWarmup": 4121848,
+        "retainedAfterActivity": 4409384
+      },
+      "perWindowAfterClose": [
+        {
+          "cycles": 5,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:47:43.4221453+00:00",
+            "elapsedMilliseconds": 0.5481,
+            "attempts": 1,
+            "handleCount": 1285,
+            "typeCounts": {
+              "3": 3,
+              "9": 42,
+              "12": 8,
+              "17": 1,
+              "21": 518,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 16,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 82,
+              "50": 51,
+              "56": 245,
+              "63": 16,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539371882433,
+            "cpu": "00:00:05.4843750",
+            "privateBytes": 186175488,
+            "handles": 1285,
+            "totalAllocatedBytes": 41810792,
+            "gen0": 10,
+            "gen1": 8,
+            "gen2": 8
+          }
+        },
+        {
+          "cycles": 6,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:47:46.0048523+00:00",
+            "elapsedMilliseconds": 0.6926,
+            "attempts": 1,
+            "handleCount": 1290,
+            "typeCounts": {
+              "3": 3,
+              "9": 42,
+              "12": 8,
+              "17": 1,
+              "21": 522,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 17,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 82,
+              "50": 51,
+              "56": 245,
+              "63": 16,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539397710935,
+            "cpu": "00:00:06.0937500",
+            "privateBytes": 215461888,
+            "handles": 1290,
+            "totalAllocatedBytes": 52725400,
+            "gen0": 11,
+            "gen1": 9,
+            "gen2": 9
+          }
+        },
+        {
+          "cycles": 7,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:47:48.814138+00:00",
+            "elapsedMilliseconds": 1.0845,
+            "attempts": 1,
+            "handleCount": 1297,
+            "typeCounts": {
+              "3": 3,
+              "9": 42,
+              "12": 8,
+              "17": 1,
+              "21": 527,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 18,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 82,
+              "50": 51,
+              "56": 246,
+              "63": 16,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539425807743,
+            "cpu": "00:00:06.7968750",
+            "privateBytes": 223068160,
+            "handles": 1298,
+            "totalAllocatedBytes": 65006640,
+            "gen0": 12,
+            "gen1": 10,
+            "gen2": 9
+          }
+        },
+        {
+          "cycles": 8,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:47:51.7114354+00:00",
+            "elapsedMilliseconds": 0.1923,
+            "attempts": 1,
+            "handleCount": 1310,
+            "typeCounts": {
+              "3": 3,
+              "9": 42,
+              "12": 8,
+              "17": 1,
+              "21": 537,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 19,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 83,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539454771754,
+            "cpu": "00:00:07.6093750",
+            "privateBytes": 221569024,
+            "handles": 1311,
+            "totalAllocatedBytes": 79572680,
+            "gen0": 14,
+            "gen1": 12,
+            "gen2": 10
+          }
+        },
+        {
+          "cycles": 9,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:47:54.548403+00:00",
+            "elapsedMilliseconds": 0.2019,
+            "attempts": 1,
+            "handleCount": 1310,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 538,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 20,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 82,
+              "50": 51,
+              "56": 245,
+              "63": 16,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539483141543,
+            "cpu": "00:00:08.1093750",
+            "privateBytes": 221798400,
+            "handles": 1310,
+            "totalAllocatedBytes": 91749592,
+            "gen0": 16,
+            "gen1": 14,
+            "gen2": 11
+          }
+        },
+        {
+          "cycles": 10,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:47:57.4057741+00:00",
+            "elapsedMilliseconds": 0.1801,
+            "attempts": 1,
+            "handleCount": 1316,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 540,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 21,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 83,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539511715014,
+            "cpu": "00:00:08.7187500",
+            "privateBytes": 221200384,
+            "handles": 1316,
+            "totalAllocatedBytes": 103910456,
+            "gen0": 20,
+            "gen1": 17,
+            "gen2": 13
+          }
+        },
+        {
+          "cycles": 11,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:48:00.2111442+00:00",
+            "elapsedMilliseconds": 0.2626,
+            "attempts": 1,
+            "handleCount": 1319,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 541,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 22,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 83,
+              "50": 51,
+              "56": 246,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539539769565,
+            "cpu": "00:00:09.2187500",
+            "privateBytes": 218185728,
+            "handles": 1320,
+            "totalAllocatedBytes": 116113320,
+            "gen0": 21,
+            "gen1": 18,
+            "gen2": 14
+          }
+        },
+        {
+          "cycles": 12,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:48:03.0388571+00:00",
+            "elapsedMilliseconds": 0.2068,
+            "attempts": 1,
+            "handleCount": 1322,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 544,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 23,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 83,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539568046133,
+            "cpu": "00:00:09.7812500",
+            "privateBytes": 222892032,
+            "handles": 1322,
+            "totalAllocatedBytes": 130680600,
+            "gen0": 23,
+            "gen1": 19,
+            "gen2": 15
+          }
+        },
+        {
+          "cycles": 13,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:48:05.8092337+00:00",
+            "elapsedMilliseconds": 7.1081,
+            "attempts": 1,
+            "handleCount": 1328,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 549,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 24,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 83,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539595818928,
+            "cpu": "00:00:10.2031250",
+            "privateBytes": 219828224,
+            "handles": 1327,
+            "totalAllocatedBytes": 142833296,
+            "gen0": 26,
+            "gen1": 21,
+            "gen2": 17
+          }
+        },
+        {
+          "cycles": 14,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:48:08.5202324+00:00",
+            "elapsedMilliseconds": 0.1749,
+            "attempts": 1,
+            "handleCount": 1326,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 549,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 83,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539622859543,
+            "cpu": "00:00:10.4843750",
+            "privateBytes": 223256576,
+            "handles": 1326,
+            "totalAllocatedBytes": 155035008,
+            "gen0": 28,
+            "gen1": 22,
+            "gen2": 18
+          }
+        },
+        {
+          "cycles": 15,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:48:11.2883467+00:00",
+            "elapsedMilliseconds": 0.1795,
+            "attempts": 1,
+            "handleCount": 1330,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 551,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 26,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 86,
+              "48": 25,
+              "49": 83,
+              "50": 52,
+              "56": 245,
+              "63": 16,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539650540739,
+            "cpu": "00:00:11.0156250",
+            "privateBytes": 223260672,
+            "handles": 1329,
+            "totalAllocatedBytes": 169617504,
+            "gen0": 31,
+            "gen1": 24,
+            "gen2": 20
+          }
+        }
+      ],
+      "retirementSnapshots": [
+        {
+          "stage": "original",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:48:14.2349218+00:00",
+            "elapsedMilliseconds": 0.2057,
+            "attempts": 1,
+            "handleCount": 1327,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 549,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 83,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539680006811,
+            "cpu": "00:00:11.3906250",
+            "privateBytes": 221061120,
+            "handles": 1327,
+            "totalAllocatedBytes": 178459352,
+            "gen0": 35,
+            "gen1": 27,
+            "gen2": 23
+          }
+        },
+        {
+          "stage": "drain-1",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:48:14.7744077+00:00",
+            "elapsedMilliseconds": 0.2057,
+            "attempts": 1,
+            "handleCount": 1327,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 549,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 83,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539685401623,
+            "cpu": "00:00:11.4218750",
+            "privateBytes": 217038848,
+            "handles": 1327,
+            "totalAllocatedBytes": 178474192,
+            "gen0": 37,
+            "gen1": 29,
+            "gen2": 25
+          }
+        },
+        {
+          "stage": "drain-2",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:48:15.333732+00:00",
+            "elapsedMilliseconds": 0.2097,
+            "attempts": 1,
+            "handleCount": 1327,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 549,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 83,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539690994903,
+            "cpu": "00:00:11.4531250",
+            "privateBytes": 213090304,
+            "handles": 1327,
+            "totalAllocatedBytes": 178488976,
+            "gen0": 39,
+            "gen1": 31,
+            "gen2": 27
+          }
+        },
+        {
+          "stage": "drain-3",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:48:15.8782829+00:00",
+            "elapsedMilliseconds": 0.5026,
+            "attempts": 1,
+            "handleCount": 1327,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 549,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 83,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539696443381,
+            "cpu": "00:00:11.4843750",
+            "privateBytes": 209154048,
+            "handles": 1327,
+            "totalAllocatedBytes": 178503760,
+            "gen0": 41,
+            "gen1": 33,
+            "gen2": 29
+          }
+        },
+        {
+          "stage": "drain-4",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:48:16.4241261+00:00",
+            "elapsedMilliseconds": 0.2614,
+            "attempts": 1,
+            "handleCount": 1327,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 549,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 83,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539701899364,
+            "cpu": "00:00:11.5156250",
+            "privateBytes": 209260544,
+            "handles": 1327,
+            "totalAllocatedBytes": 178518544,
+            "gen0": 43,
+            "gen1": 35,
+            "gen2": 31
+          }
+        },
+        {
+          "stage": "idle-ten-seconds",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:48:26.4380445+00:00",
+            "elapsedMilliseconds": 0.1581,
+            "attempts": 1,
+            "handleCount": 1327,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 549,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 83,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 21
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 539802037509,
+            "cpu": "00:00:11.5156250",
+            "privateBytes": 209235968,
+            "handles": 1327,
+            "totalAllocatedBytes": 178524920,
+            "gen0": 43,
+            "gen1": 35,
+            "gen2": 31
+          }
+        }
+      ],
+      "enumeratedIslandCounts": {
+        "warmup": 1,
+        "afterActivity": 1
+      }
+    },
+    {
+      "label": "pinned-dashboard",
+      "packagePins": {
+        "runtime": "2.2.0",
+        "winUI": "2.2.1"
+      },
+      "rawArtifacts": [
+        {
+          "file": "sustained.json",
+          "sha256": "B4ED85C0FFA0CB0AA9CCE421C6926ED47508835F13A146951C6675C7777FCBA1"
+        },
+        {
+          "file": "summary.json",
+          "sha256": "F465A69621B6A77EFA5C605C55FB949C7088DF481F1F0FBCB113016F672DA612"
+        }
+      ],
+      "trayAssemblySha256": "C335571E70B34A077A325E5DF3787FABD9CE911D8C823A9C2AA422AEEA781EEF",
+      "binaryHashes": {
+        "dcompi.dll": "1BAB52ACF1BBC45F1469AF675160DA8B2CE0BDCCDD4ADCE3CA3032E674AD6EE3",
+        "marshal.dll": "D00C3D3493B50688E2EF6CEE5F9F05699950B7258AC6496BF48959EB2E4C9717",
+        "Microsoft.UI.Input.dll": "7E24FB014303D387C140DE4FEDD4C65D079A2B0DD6DDDE01135972B887A8E403",
+        "OpenBlade.Tray.dll": "C335571E70B34A077A325E5DF3787FABD9CE911D8C823A9C2AA422AEEA781EEF"
+      },
+      "environment": {
+        "capturedAtUtc": "2026-11-03T18:50:22.9157174+00:00",
+        "runnerFramework": ".NET 10.0.12",
+        "os": "Microsoft Windows 10.0.26300",
+        "architecture": "X64",
+        "phaseSeconds": 30,
+        "startupRuns": 1,
+        "windowKind": "dashboard",
+        "windowDwellMilliseconds": 0,
+        "observeRendering": false,
+        "offscreenWindows": true,
+        "desktopMode": "private"
+      },
+      "child": {
+        "productVersion": "0.50.4+53ce8254",
+        "framework": ".NET 10.0.12",
+        "requireInputDesktop": false,
+        "disconnected": true,
+        "serviceCalls": 0,
+        "activityOperations": 108,
+        "activitySampleChartRebuilds": 108,
+        "dashboardCycles": 15,
+        "dashboardWrappersAliveAfterCollection": 0,
+        "dashboardContentsAliveAfterCollection": 0,
+        "dashboardNativeWindowsSurvivedClose": 0,
+        "retiredMainWindowAliveAfterCollection": false,
+        "retiredMainContentAliveAfterCollection": false,
+        "retiredMainNativeWindowSurvivedClose": false,
+        "nativeHandlesAfterWarmup": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T18:49:09.3207183+00:00",
+          "elapsedMilliseconds": 5.1787,
+          "attempts": 1,
+          "handleCount": 1305,
+          "typeCounts": {
+            "3": 3,
+            "9": 43,
+            "12": 8,
+            "17": 1,
+            "21": 519,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 14,
+            "35": 4,
+            "40": 25,
+            "41": 82,
+            "42": 85,
+            "48": 28,
+            "49": 89,
+            "50": 51,
+            "56": 244,
+            "63": 16,
+            "70": 34
+          },
+          "unavailableReason": null
+        },
+        "nativeHandlesAfterActivity": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T18:50:10.3800121+00:00",
+          "elapsedMilliseconds": 0.2345,
+          "attempts": 1,
+          "handleCount": 1351,
+          "typeCounts": {
+            "3": 3,
+            "9": 46,
+            "12": 8,
+            "17": 1,
+            "21": 552,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 25,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 90,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 34
+          },
+          "unavailableReason": null
+        },
+        "guiResourcesAfterWarmup": {
+          "gdi": {
+            "count": 147,
+            "error": null
+          },
+          "user": {
+            "count": 74,
+            "error": null
+          }
+        },
+        "guiResourcesAfterActivity": {
+          "gdi": {
+            "count": 147,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        },
+        "nativeHandleTypeNames": {
+          "available": true,
+          "names": {
+            "2": "Type",
+            "3": "Directory",
+            "4": "SymbolicLink",
+            "5": "Token",
+            "6": "Session",
+            "7": "Job",
+            "8": "Process",
+            "9": "Thread",
+            "10": "Partition",
+            "11": "UserApcReserve",
+            "12": "IoCompletionReserve",
+            "13": "ActivityReference",
+            "14": "ProcessStateChange",
+            "15": "ThreadStateChange",
+            "16": "CpuPartition",
+            "17": "SchedulerSharedData",
+            "18": "PsSiloContextPaged",
+            "19": "PsSiloContextNonPaged",
+            "20": "DebugObject",
+            "21": "Event",
+            "22": "Mutant",
+            "23": "Callback",
+            "24": "Semaphore",
+            "25": "Timer",
+            "26": "IRTimer",
+            "27": "Profile",
+            "28": "KeyedEvent",
+            "29": "WindowStation",
+            "30": "Desktop",
+            "31": "Composition",
+            "32": "RawInputManager",
+            "33": "CoreMessaging",
+            "34": "ActivationObject",
+            "35": "TpWorkerFactory",
+            "36": "Adapter",
+            "37": "Controller",
+            "38": "Device",
+            "39": "Driver",
+            "40": "IoCompletion",
+            "41": "WaitCompletionPacket",
+            "42": "File",
+            "43": "IoRing",
+            "44": "TmTm",
+            "45": "TmTx",
+            "46": "TmRm",
+            "47": "TmEn",
+            "48": "ALPC Port",
+            "49": "Section",
+            "50": "Key",
+            "51": "RegistryTransaction",
+            "52": "DmaAdapter",
+            "53": "EnergyTracker",
+            "54": "PowerRequest",
+            "55": "WmiGuid",
+            "56": "EtwRegistration",
+            "57": "EtwSessionDemuxEntry",
+            "58": "EtwConsumer",
+            "59": "CoverageSampler",
+            "60": "PcwObject",
+            "61": "FilterConnectionPort",
+            "62": "FilterCommunicationPort",
+            "63": "DxgkSharedResource",
+            "64": "DxgkSharedKeyedMutexObject",
+            "65": "DxgkSharedSyncObject",
+            "66": "DxgkSharedSwapChainObject",
+            "67": "DxgkDisplayManagerObject",
+            "68": "DxgkSharedProtectedSessionObject",
+            "69": "DxgkSharedBundleObject",
+            "70": "DxgkCompositionObject",
+            "71": "DxgkDisplayMuxSwitch",
+            "72": "NdisCmState",
+            "73": "NdisThreadState",
+            "74": "VRegConfigurationContext"
+          },
+          "unavailableReason": null
+        },
+        "privateBytesAfterActivityCollection": 234332160,
+        "handlesAfterActivityCollection": 1351,
+        "retainedAfterWarmup": 4545296,
+        "retainedAfterActivity": 4529560
+      },
+      "perWindowAfterClose": [
+        {
+          "cycles": 5,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:49:39.4864206+00:00",
+            "elapsedMilliseconds": 0.5197,
+            "attempts": 1,
+            "handleCount": 1312,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 519,
+              "22": 10,
+              "24": 25,
+              "25": 16,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 16,
+              "35": 4,
+              "40": 24,
+              "41": 85,
+              "42": 85,
+              "48": 27,
+              "49": 89,
+              "50": 51,
+              "56": 245,
+              "63": 16,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540532524973,
+            "cpu": "00:00:04.5781250",
+            "privateBytes": 217620480,
+            "handles": 1313,
+            "totalAllocatedBytes": 41860728,
+            "gen0": 9,
+            "gen1": 7,
+            "gen2": 7
+          }
+        },
+        {
+          "cycles": 6,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:49:41.9923883+00:00",
+            "elapsedMilliseconds": 0.5888,
+            "attempts": 1,
+            "handleCount": 1317,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 523,
+              "22": 10,
+              "24": 25,
+              "25": 16,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 17,
+              "35": 4,
+              "40": 24,
+              "41": 85,
+              "42": 85,
+              "48": 27,
+              "49": 89,
+              "50": 51,
+              "56": 244,
+              "63": 16,
+              "70": 35
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540557585243,
+            "cpu": "00:00:05.1875000",
+            "privateBytes": 229564416,
+            "handles": 1317,
+            "totalAllocatedBytes": 52934608,
+            "gen0": 10,
+            "gen1": 8,
+            "gen2": 8
+          }
+        },
+        {
+          "cycles": 7,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:49:44.8070422+00:00",
+            "elapsedMilliseconds": 0.1614,
+            "attempts": 1,
+            "handleCount": 1327,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 531,
+              "22": 10,
+              "24": 25,
+              "25": 16,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 18,
+              "35": 4,
+              "40": 24,
+              "41": 85,
+              "42": 85,
+              "48": 27,
+              "49": 89,
+              "50": 51,
+              "56": 244,
+              "63": 16,
+              "70": 35
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540585727511,
+            "cpu": "00:00:05.7187500",
+            "privateBytes": 226050048,
+            "handles": 1327,
+            "totalAllocatedBytes": 65230224,
+            "gen0": 13,
+            "gen1": 10,
+            "gen2": 10
+          }
+        },
+        {
+          "cycles": 8,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:49:47.6323021+00:00",
+            "elapsedMilliseconds": 0.5378,
+            "attempts": 1,
+            "handleCount": 1340,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 541,
+              "22": 10,
+              "24": 25,
+              "25": 16,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 19,
+              "35": 4,
+              "40": 24,
+              "41": 85,
+              "42": 85,
+              "48": 27,
+              "49": 90,
+              "50": 51,
+              "56": 244,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540613983885,
+            "cpu": "00:00:06.4062500",
+            "privateBytes": 234549248,
+            "handles": 1340,
+            "totalAllocatedBytes": 80017864,
+            "gen0": 16,
+            "gen1": 13,
+            "gen2": 11
+          }
+        },
+        {
+          "cycles": 9,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:49:50.4136404+00:00",
+            "elapsedMilliseconds": 0.163,
+            "attempts": 1,
+            "handleCount": 1337,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 539,
+              "22": 10,
+              "24": 25,
+              "25": 16,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 20,
+              "35": 4,
+              "40": 24,
+              "41": 85,
+              "42": 86,
+              "48": 27,
+              "49": 89,
+              "50": 51,
+              "56": 244,
+              "63": 16,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540641793512,
+            "cpu": "00:00:06.9218750",
+            "privateBytes": 236093440,
+            "handles": 1338,
+            "totalAllocatedBytes": 92299704,
+            "gen0": 17,
+            "gen1": 14,
+            "gen2": 12
+          }
+        },
+        {
+          "cycles": 10,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:49:53.219531+00:00",
+            "elapsedMilliseconds": 0.1601,
+            "attempts": 1,
+            "handleCount": 1343,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 541,
+              "22": 10,
+              "24": 25,
+              "25": 16,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 21,
+              "35": 4,
+              "40": 24,
+              "41": 85,
+              "42": 85,
+              "48": 27,
+              "49": 90,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540669852385,
+            "cpu": "00:00:07.4218750",
+            "privateBytes": 231456768,
+            "handles": 1344,
+            "totalAllocatedBytes": 104607152,
+            "gen0": 21,
+            "gen1": 17,
+            "gen2": 14
+          }
+        },
+        {
+          "cycles": 11,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:49:55.9959567+00:00",
+            "elapsedMilliseconds": 0.1745,
+            "attempts": 1,
+            "handleCount": 1346,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 544,
+              "22": 10,
+              "24": 25,
+              "25": 16,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 22,
+              "35": 4,
+              "40": 24,
+              "41": 85,
+              "42": 85,
+              "48": 27,
+              "49": 90,
+              "50": 51,
+              "56": 244,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540697616788,
+            "cpu": "00:00:07.7968750",
+            "privateBytes": 227422208,
+            "handles": 1346,
+            "totalAllocatedBytes": 116986736,
+            "gen0": 23,
+            "gen1": 18,
+            "gen2": 15
+          }
+        },
+        {
+          "cycles": 12,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:49:58.8299513+00:00",
+            "elapsedMilliseconds": 0.178,
+            "attempts": 1,
+            "handleCount": 1351,
+            "typeCounts": {
+              "3": 3,
+              "5": 1,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 546,
+              "22": 10,
+              "24": 25,
+              "25": 16,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 23,
+              "35": 4,
+              "40": 24,
+              "41": 85,
+              "42": 85,
+              "48": 27,
+              "49": 90,
+              "50": 51,
+              "56": 245,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540725956772,
+            "cpu": "00:00:08.3593750",
+            "privateBytes": 229003264,
+            "handles": 1351,
+            "totalAllocatedBytes": 131698944,
+            "gen0": 26,
+            "gen1": 20,
+            "gen2": 17
+          }
+        },
+        {
+          "cycles": 13,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:50:01.605786+00:00",
+            "elapsedMilliseconds": 8.0792,
+            "attempts": 1,
+            "handleCount": 1356,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 552,
+              "22": 10,
+              "24": 25,
+              "25": 16,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 24,
+              "35": 4,
+              "40": 24,
+              "41": 85,
+              "42": 85,
+              "48": 27,
+              "49": 90,
+              "50": 51,
+              "56": 244,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540753794155,
+            "cpu": "00:00:08.7500000",
+            "privateBytes": 229937152,
+            "handles": 1356,
+            "totalAllocatedBytes": 144069544,
+            "gen0": 27,
+            "gen1": 21,
+            "gen2": 18
+          }
+        },
+        {
+          "cycles": 14,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:50:04.4097515+00:00",
+            "elapsedMilliseconds": 0.1804,
+            "attempts": 1,
+            "handleCount": 1356,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 550,
+              "22": 10,
+              "24": 25,
+              "25": 16,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 85,
+              "42": 86,
+              "48": 27,
+              "49": 90,
+              "50": 51,
+              "56": 244,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540781754790,
+            "cpu": "00:00:09.2187500",
+            "privateBytes": 232947712,
+            "handles": 1356,
+            "totalAllocatedBytes": 156445856,
+            "gen0": 30,
+            "gen1": 24,
+            "gen2": 20
+          }
+        },
+        {
+          "cycles": 15,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:50:07.1857001+00:00",
+            "elapsedMilliseconds": 0.1729,
+            "attempts": 1,
+            "handleCount": 1357,
+            "typeCounts": {
+              "3": 3,
+              "9": 45,
+              "12": 8,
+              "17": 1,
+              "21": 555,
+              "22": 10,
+              "24": 25,
+              "25": 16,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 26,
+              "35": 4,
+              "40": 24,
+              "41": 85,
+              "42": 85,
+              "48": 25,
+              "49": 89,
+              "50": 51,
+              "56": 244,
+              "63": 16,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540809514206,
+            "cpu": "00:00:09.7656250",
+            "privateBytes": 234692608,
+            "handles": 1357,
+            "totalAllocatedBytes": 171187832,
+            "gen0": 32,
+            "gen1": 26,
+            "gen2": 21
+          }
+        }
+      ],
+      "retirementSnapshots": [
+        {
+          "stage": "original",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:50:10.3802791+00:00",
+            "elapsedMilliseconds": 0.1058,
+            "attempts": 1,
+            "handleCount": 1351,
+            "typeCounts": {
+              "3": 3,
+              "9": 46,
+              "12": 8,
+              "17": 1,
+              "21": 552,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 90,
+              "50": 51,
+              "56": 244,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540841459312,
+            "cpu": "00:00:10.1406250",
+            "privateBytes": 234332160,
+            "handles": 1351,
+            "totalAllocatedBytes": 181284856,
+            "gen0": 36,
+            "gen1": 29,
+            "gen2": 24
+          }
+        },
+        {
+          "stage": "drain-1",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:50:10.9339066+00:00",
+            "elapsedMilliseconds": 0.1908,
+            "attempts": 1,
+            "handleCount": 1351,
+            "typeCounts": {
+              "3": 3,
+              "9": 46,
+              "12": 8,
+              "17": 1,
+              "21": 552,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 90,
+              "50": 51,
+              "56": 244,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540846996458,
+            "cpu": "00:00:10.2187500",
+            "privateBytes": 230240256,
+            "handles": 1351,
+            "totalAllocatedBytes": 181299760,
+            "gen0": 38,
+            "gen1": 31,
+            "gen2": 26
+          }
+        },
+        {
+          "stage": "drain-2",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:50:11.4939559+00:00",
+            "elapsedMilliseconds": 0.2619,
+            "attempts": 1,
+            "handleCount": 1351,
+            "typeCounts": {
+              "3": 3,
+              "9": 46,
+              "12": 8,
+              "17": 1,
+              "21": 552,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 90,
+              "50": 51,
+              "56": 244,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540852597672,
+            "cpu": "00:00:10.2656250",
+            "privateBytes": 225271808,
+            "handles": 1351,
+            "totalAllocatedBytes": 181314608,
+            "gen0": 40,
+            "gen1": 33,
+            "gen2": 28
+          }
+        },
+        {
+          "stage": "drain-3",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:50:12.0404629+00:00",
+            "elapsedMilliseconds": 0.3423,
+            "attempts": 1,
+            "handleCount": 1351,
+            "typeCounts": {
+              "3": 3,
+              "9": 46,
+              "12": 8,
+              "17": 1,
+              "21": 552,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 90,
+              "50": 51,
+              "56": 244,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540858063559,
+            "cpu": "00:00:10.2968750",
+            "privateBytes": 221335552,
+            "handles": 1351,
+            "totalAllocatedBytes": 181329456,
+            "gen0": 42,
+            "gen1": 35,
+            "gen2": 30
+          }
+        },
+        {
+          "stage": "drain-4",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:50:12.5820047+00:00",
+            "elapsedMilliseconds": 0.1825,
+            "attempts": 1,
+            "handleCount": 1351,
+            "typeCounts": {
+              "3": 3,
+              "9": 46,
+              "12": 8,
+              "17": 1,
+              "21": 552,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 90,
+              "50": 51,
+              "56": 244,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540863477364,
+            "cpu": "00:00:10.3125000",
+            "privateBytes": 221442048,
+            "handles": 1351,
+            "totalAllocatedBytes": 181344304,
+            "gen0": 44,
+            "gen1": 37,
+            "gen2": 32
+          }
+        },
+        {
+          "stage": "idle-ten-seconds",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:50:22.5905014+00:00",
+            "elapsedMilliseconds": 0.178,
+            "attempts": 1,
+            "handleCount": 1351,
+            "typeCounts": {
+              "3": 3,
+              "9": 46,
+              "12": 8,
+              "17": 1,
+              "21": 552,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 24,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 90,
+              "50": 51,
+              "56": 244,
+              "63": 18,
+              "70": 34
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 540963562293,
+            "cpu": "00:00:10.3125000",
+            "privateBytes": 222294016,
+            "handles": 1351,
+            "totalAllocatedBytes": 181350744,
+            "gen0": 44,
+            "gen1": 37,
+            "gen2": 32
+          }
+        }
+      ],
+      "enumeratedIslandCounts": {
+        "warmup": 1,
+        "afterActivity": 1
+      }
+    },
+    {
+      "label": "sdk265-empty",
+      "packagePins": {
+        "runtime": "2.6.5",
+        "winUI": "2.6.5"
+      },
+      "rawArtifacts": [
+        {
+          "file": "sustained.json",
+          "sha256": "F3CA8F5FFA697C787B107E417652737EFF79F70614BB0E6DF10E384ACAFC5F50"
+        },
+        {
+          "file": "summary.json",
+          "sha256": "BA0F24A42ECE30FB360538D878A9AC1191ED040FAFFDC6DC132138D8F5C23510"
+        }
+      ],
+      "trayAssemblySha256": "689091A0A6883FB7BE7736429CFF4E599936E50F1DE50A8F5CC66840EFF352DB",
+      "binaryHashes": {
+        "dcompi.dll": "23A9BD72A41785D9B4D77ABCEC71D68FE7B0B352DD27924849057DB1A6CA0E80",
+        "marshal.dll": "BB8EDBD8ABEBDD1059B6D479EF9B89A6562941257D6AB2D04924AD9F9E3D82FF",
+        "Microsoft.UI.Input.dll": "DEBE53CD238E1204FB6ABFE08AD38C82B1286366AE2456164B6A802DB7F08E34",
+        "OpenBlade.Tray.dll": "689091A0A6883FB7BE7736429CFF4E599936E50F1DE50A8F5CC66840EFF352DB"
+      },
+      "environment": {
+        "capturedAtUtc": "2026-11-03T18:56:45.5067438+00:00",
+        "runnerFramework": ".NET 10.0.12",
+        "os": "Microsoft Windows 10.0.26300",
+        "architecture": "X64",
+        "phaseSeconds": 30,
+        "startupRuns": 1,
+        "windowKind": "empty",
+        "windowDwellMilliseconds": 0,
+        "observeRendering": false,
+        "offscreenWindows": true,
+        "desktopMode": "private"
+      },
+      "child": {
+        "productVersion": "0.50.4+53ce8254",
+        "framework": ".NET 10.0.12",
+        "requireInputDesktop": false,
+        "disconnected": true,
+        "serviceCalls": 0,
+        "activityOperations": 109,
+        "activitySampleChartRebuilds": 109,
+        "dashboardCycles": 15,
+        "dashboardWrappersAliveAfterCollection": 0,
+        "dashboardContentsAliveAfterCollection": 0,
+        "dashboardNativeWindowsSurvivedClose": 0,
+        "retiredMainWindowAliveAfterCollection": false,
+        "retiredMainContentAliveAfterCollection": false,
+        "retiredMainNativeWindowSurvivedClose": false,
+        "nativeHandlesAfterWarmup": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T18:55:31.7712505+00:00",
+          "elapsedMilliseconds": 3.9321,
+          "attempts": 1,
+          "handleCount": 1283,
+          "typeCounts": {
+            "3": 3,
+            "9": 42,
+            "12": 8,
+            "17": 1,
+            "21": 514,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 14,
+            "35": 4,
+            "40": 26,
+            "41": 82,
+            "42": 85,
+            "48": 28,
+            "49": 79,
+            "50": 51,
+            "56": 250,
+            "63": 18,
+            "70": 19
+          },
+          "unavailableReason": null
+        },
+        "nativeHandlesAfterActivity": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T18:56:32.8116424+00:00",
+          "elapsedMilliseconds": 0.1815,
+          "attempts": 1,
+          "handleCount": 1315,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 534,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 25,
+            "35": 4,
+            "40": 25,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 80,
+            "50": 51,
+            "56": 250,
+            "63": 20,
+            "70": 19
+          },
+          "unavailableReason": null
+        },
+        "guiResourcesAfterWarmup": {
+          "gdi": {
+            "count": 127,
+            "error": null
+          },
+          "user": {
+            "count": 75,
+            "error": null
+          }
+        },
+        "guiResourcesAfterActivity": {
+          "gdi": {
+            "count": 127,
+            "error": null
+          },
+          "user": {
+            "count": 74,
+            "error": null
+          }
+        },
+        "nativeHandleTypeNames": {
+          "available": true,
+          "names": {
+            "2": "Type",
+            "3": "Directory",
+            "4": "SymbolicLink",
+            "5": "Token",
+            "6": "Session",
+            "7": "Job",
+            "8": "Process",
+            "9": "Thread",
+            "10": "Partition",
+            "11": "UserApcReserve",
+            "12": "IoCompletionReserve",
+            "13": "ActivityReference",
+            "14": "ProcessStateChange",
+            "15": "ThreadStateChange",
+            "16": "CpuPartition",
+            "17": "SchedulerSharedData",
+            "18": "PsSiloContextPaged",
+            "19": "PsSiloContextNonPaged",
+            "20": "DebugObject",
+            "21": "Event",
+            "22": "Mutant",
+            "23": "Callback",
+            "24": "Semaphore",
+            "25": "Timer",
+            "26": "IRTimer",
+            "27": "Profile",
+            "28": "KeyedEvent",
+            "29": "WindowStation",
+            "30": "Desktop",
+            "31": "Composition",
+            "32": "RawInputManager",
+            "33": "CoreMessaging",
+            "34": "ActivationObject",
+            "35": "TpWorkerFactory",
+            "36": "Adapter",
+            "37": "Controller",
+            "38": "Device",
+            "39": "Driver",
+            "40": "IoCompletion",
+            "41": "WaitCompletionPacket",
+            "42": "File",
+            "43": "IoRing",
+            "44": "TmTm",
+            "45": "TmTx",
+            "46": "TmRm",
+            "47": "TmEn",
+            "48": "ALPC Port",
+            "49": "Section",
+            "50": "Key",
+            "51": "RegistryTransaction",
+            "52": "DmaAdapter",
+            "53": "EnergyTracker",
+            "54": "PowerRequest",
+            "55": "WmiGuid",
+            "56": "EtwRegistration",
+            "57": "EtwSessionDemuxEntry",
+            "58": "EtwConsumer",
+            "59": "CoverageSampler",
+            "60": "PcwObject",
+            "61": "FilterConnectionPort",
+            "62": "FilterCommunicationPort",
+            "63": "DxgkSharedResource",
+            "64": "DxgkSharedKeyedMutexObject",
+            "65": "DxgkSharedSyncObject",
+            "66": "DxgkSharedSwapChainObject",
+            "67": "DxgkDisplayManagerObject",
+            "68": "DxgkSharedProtectedSessionObject",
+            "69": "DxgkSharedBundleObject",
+            "70": "DxgkCompositionObject",
+            "71": "DxgkDisplayMuxSwitch",
+            "72": "NdisCmState",
+            "73": "NdisThreadState",
+            "74": "VRegConfigurationContext"
+          },
+          "unavailableReason": null
+        },
+        "privateBytesAfterActivityCollection": 213712896,
+        "handlesAfterActivityCollection": 1315,
+        "retainedAfterWarmup": 4120248,
+        "retainedAfterActivity": 4407632
+      },
+      "perWindowAfterClose": [
+        {
+          "cycles": 5,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:01.8601354+00:00",
+            "elapsedMilliseconds": 0.4334,
+            "attempts": 1,
+            "handleCount": 1283,
+            "typeCounts": {
+              "3": 3,
+              "9": 42,
+              "12": 8,
+              "17": 1,
+              "21": 512,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 16,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 79,
+              "50": 51,
+              "56": 251,
+              "63": 18,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544356261166,
+            "cpu": "00:00:08.0468750",
+            "privateBytes": 182071296,
+            "handles": 1284,
+            "totalAllocatedBytes": 41594328,
+            "gen0": 10,
+            "gen1": 8,
+            "gen2": 7
+          }
+        },
+        {
+          "cycles": 6,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:04.5697963+00:00",
+            "elapsedMilliseconds": 0.7024,
+            "attempts": 1,
+            "handleCount": 1287,
+            "typeCounts": {
+              "3": 3,
+              "9": 42,
+              "12": 8,
+              "17": 1,
+              "21": 516,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 17,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 79,
+              "50": 51,
+              "56": 250,
+              "63": 18,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544383360461,
+            "cpu": "00:00:08.6406250",
+            "privateBytes": 185741312,
+            "handles": 1286,
+            "totalAllocatedBytes": 52509360,
+            "gen0": 11,
+            "gen1": 9,
+            "gen2": 8
+          }
+        },
+        {
+          "cycles": 7,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:07.3010213+00:00",
+            "elapsedMilliseconds": 0.2029,
+            "attempts": 1,
+            "handleCount": 1293,
+            "typeCounts": {
+              "3": 3,
+              "9": 42,
+              "12": 8,
+              "17": 1,
+              "21": 521,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 18,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 79,
+              "50": 51,
+              "56": 250,
+              "63": 18,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544410667730,
+            "cpu": "00:00:09.0625000",
+            "privateBytes": 185327616,
+            "handles": 1292,
+            "totalAllocatedBytes": 64858880,
+            "gen0": 14,
+            "gen1": 12,
+            "gen2": 9
+          }
+        },
+        {
+          "cycles": 8,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:10.1113912+00:00",
+            "elapsedMilliseconds": 0.1857,
+            "attempts": 1,
+            "handleCount": 1307,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 533,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 19,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 79,
+              "50": 51,
+              "56": 250,
+              "63": 18,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544438771242,
+            "cpu": "00:00:09.5937500",
+            "privateBytes": 216809472,
+            "handles": 1307,
+            "totalAllocatedBytes": 79466600,
+            "gen0": 16,
+            "gen1": 14,
+            "gen2": 10
+          }
+        },
+        {
+          "cycles": 9,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:12.8777224+00:00",
+            "elapsedMilliseconds": 0.1764,
+            "attempts": 1,
+            "handleCount": 1304,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 529,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 20,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 79,
+              "50": 51,
+              "56": 250,
+              "63": 18,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544466434464,
+            "cpu": "00:00:10.0781250",
+            "privateBytes": 218648576,
+            "handles": 1304,
+            "totalAllocatedBytes": 91610536,
+            "gen0": 19,
+            "gen1": 16,
+            "gen2": 12
+          }
+        },
+        {
+          "cycles": 10,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:15.5973137+00:00",
+            "elapsedMilliseconds": 0.175,
+            "attempts": 1,
+            "handleCount": 1309,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 530,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 21,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 80,
+              "50": 51,
+              "56": 250,
+              "63": 20,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544493630360,
+            "cpu": "00:00:10.3437500",
+            "privateBytes": 214597632,
+            "handles": 1309,
+            "totalAllocatedBytes": 103833472,
+            "gen0": 21,
+            "gen1": 17,
+            "gen2": 13
+          }
+        },
+        {
+          "cycles": 11,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:18.3256771+00:00",
+            "elapsedMilliseconds": 0.1853,
+            "attempts": 1,
+            "handleCount": 1312,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 532,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 22,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 80,
+              "50": 51,
+              "56": 250,
+              "63": 20,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544520914100,
+            "cpu": "00:00:10.6875000",
+            "privateBytes": 213934080,
+            "handles": 1312,
+            "totalAllocatedBytes": 115952784,
+            "gen0": 22,
+            "gen1": 18,
+            "gen2": 14
+          }
+        },
+        {
+          "cycles": 12,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:21.095459+00:00",
+            "elapsedMilliseconds": 0.21,
+            "attempts": 1,
+            "handleCount": 1314,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 533,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 23,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 28,
+              "49": 80,
+              "50": 51,
+              "56": 250,
+              "63": 20,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544548612183,
+            "cpu": "00:00:11.1093750",
+            "privateBytes": 216383488,
+            "handles": 1314,
+            "totalAllocatedBytes": 130572912,
+            "gen0": 25,
+            "gen1": 20,
+            "gen2": 16
+          }
+        },
+        {
+          "cycles": 13,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:23.8056319+00:00",
+            "elapsedMilliseconds": 5.3916,
+            "attempts": 1,
+            "handleCount": 1315,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 536,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 24,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 80,
+              "50": 51,
+              "56": 250,
+              "63": 20,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544575765725,
+            "cpu": "00:00:11.4687500",
+            "privateBytes": 215695360,
+            "handles": 1315,
+            "totalAllocatedBytes": 142715776,
+            "gen0": 27,
+            "gen1": 21,
+            "gen2": 17
+          }
+        },
+        {
+          "cycles": 14,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:26.5484729+00:00",
+            "elapsedMilliseconds": 0.2325,
+            "attempts": 1,
+            "handleCount": 1317,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 536,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 80,
+              "50": 51,
+              "56": 250,
+              "63": 20,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544603142542,
+            "cpu": "00:00:11.8906250",
+            "privateBytes": 217395200,
+            "handles": 1317,
+            "totalAllocatedBytes": 154856136,
+            "gen0": 30,
+            "gen1": 23,
+            "gen2": 19
+          }
+        },
+        {
+          "cycles": 15,
+          "enumeratedIslandCount": 1,
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:29.2948736+00:00",
+            "elapsedMilliseconds": 0.2652,
+            "attempts": 1,
+            "handleCount": 1316,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 537,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 26,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 79,
+              "50": 51,
+              "56": 250,
+              "63": 18,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544630606862,
+            "cpu": "00:00:12.3437500",
+            "privateBytes": 216485888,
+            "handles": 1316,
+            "totalAllocatedBytes": 169475312,
+            "gen0": 32,
+            "gen1": 24,
+            "gen2": 20
+          }
+        }
+      ],
+      "retirementSnapshots": [
+        {
+          "stage": "original",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:32.8118714+00:00",
+            "elapsedMilliseconds": 0.0883,
+            "attempts": 1,
+            "handleCount": 1315,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 534,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 80,
+              "50": 51,
+              "56": 250,
+              "63": 20,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544665775063,
+            "cpu": "00:00:12.7031250",
+            "privateBytes": 213712896,
+            "handles": 1315,
+            "totalAllocatedBytes": 180764552,
+            "gen0": 36,
+            "gen1": 28,
+            "gen2": 24
+          }
+        },
+        {
+          "stage": "drain-1",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:33.3685239+00:00",
+            "elapsedMilliseconds": 0.3187,
+            "attempts": 1,
+            "handleCount": 1315,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 534,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 80,
+              "50": 51,
+              "56": 250,
+              "63": 20,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544671343905,
+            "cpu": "00:00:12.7656250",
+            "privateBytes": 209055744,
+            "handles": 1315,
+            "totalAllocatedBytes": 180779456,
+            "gen0": 38,
+            "gen1": 30,
+            "gen2": 26
+          }
+        },
+        {
+          "stage": "drain-2",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:33.931262+00:00",
+            "elapsedMilliseconds": 0.3254,
+            "attempts": 1,
+            "handleCount": 1315,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 534,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 80,
+              "50": 51,
+              "56": 250,
+              "63": 20,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544676971353,
+            "cpu": "00:00:12.8125000",
+            "privateBytes": 205135872,
+            "handles": 1315,
+            "totalAllocatedBytes": 180794304,
+            "gen0": 40,
+            "gen1": 32,
+            "gen2": 28
+          }
+        },
+        {
+          "stage": "drain-3",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:34.4970211+00:00",
+            "elapsedMilliseconds": 0.1888,
+            "attempts": 1,
+            "handleCount": 1315,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 534,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 80,
+              "50": 51,
+              "56": 250,
+              "63": 20,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544682627595,
+            "cpu": "00:00:12.8593750",
+            "privateBytes": 201195520,
+            "handles": 1315,
+            "totalAllocatedBytes": 180809152,
+            "gen0": 42,
+            "gen1": 34,
+            "gen2": 30
+          }
+        },
+        {
+          "stage": "drain-4",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:35.0466244+00:00",
+            "elapsedMilliseconds": 0.1793,
+            "attempts": 1,
+            "handleCount": 1315,
+            "typeCounts": {
+              "3": 3,
+              "9": 44,
+              "12": 8,
+              "17": 1,
+              "21": 534,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 80,
+              "50": 51,
+              "56": 250,
+              "63": 20,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544688123523,
+            "cpu": "00:00:12.9218750",
+            "privateBytes": 201302016,
+            "handles": 1315,
+            "totalAllocatedBytes": 180824000,
+            "gen0": 44,
+            "gen1": 36,
+            "gen2": 32
+          }
+        },
+        {
+          "stage": "idle-ten-seconds",
+          "handles": {
+            "available": true,
+            "capturedAtUtc": "2026-11-03T18:56:45.0557515+00:00",
+            "elapsedMilliseconds": 0.1636,
+            "attempts": 1,
+            "handleCount": 1312,
+            "typeCounts": {
+              "3": 3,
+              "9": 43,
+              "12": 8,
+              "17": 1,
+              "21": 532,
+              "22": 10,
+              "24": 25,
+              "25": 13,
+              "26": 8,
+              "29": 2,
+              "30": 1,
+              "31": 25,
+              "35": 4,
+              "40": 25,
+              "41": 82,
+              "42": 85,
+              "48": 25,
+              "49": 80,
+              "50": 51,
+              "56": 250,
+              "63": 20,
+              "70": 19
+            },
+            "unavailableReason": null
+          },
+          "checkpoint": {
+            "timestamp": 544788214640,
+            "cpu": "00:00:12.9375000",
+            "privateBytes": 201224192,
+            "handles": 1312,
+            "totalAllocatedBytes": 180830376,
+            "gen0": 44,
+            "gen1": 36,
+            "gen2": 32
+          }
+        }
+      ],
+      "enumeratedIslandCounts": {
+        "warmup": 1,
+        "afterActivity": 1
+      }
+    }
+  ],
+  "attribution": [
+    {
+      "label": "debug-owned-20261104",
+      "rawArtifacts": [
+        {
+          "file": "summary.json",
+          "sha256": "7B280333BE2917C91242E7A14DEB2C9C4FF1C190531780FD8BC984FE18C217E3"
+        },
+        {
+          "file": "sustained.json",
+          "sha256": "2ED5326859FD35F57DF686BFF3D1C73F0916B46C13B30F13F4944E1217ACB1E0"
+        },
+        {
+          "file": "sustained.json.handles.json",
+          "sha256": "CC615606FEC228F8DFBBB0D2311D45C71B1D2358C1152FE1375F35E1BCC84202"
+        },
+        {
+          "file": "openblade-residual-cdb-owned-20261104.log",
+          "sha256": "20302AD469DD1EF03E5EE772534C99FBD2BBE4304E9D2F5199300A8687821CB2"
+        }
+      ],
+      "trayAssemblySha256": "A27C917112E3278B81B4908A63877F9F86742D9B0271474FB739682568F23868",
+      "packagePins": {
+        "runtime": "2.2.0",
+        "winUI": "2.2.1"
+      },
+      "serviceCalls": 0,
+      "closedWindowWrappersAlive": 0,
+      "closedNativeWindowsAlive": 0,
+      "matches": [
+        {
+          "alias": "composition-target",
+          "finalType": "Composition",
+          "opens": 1,
+          "closes": 0,
+          "kernelTraceFramesAvailable": false,
+          "nativeBreakpointStackCallerToCallee": [
+            "Microsoft_UI_Xaml!CXamlIslandRoot::InitializeCommon",
+            "Microsoft_UI_Input!ContentIsland::RuntimeClassInitialize",
+            "Microsoft_UI_Input!LocalContentOutput::Initialize",
+            "dcompi!SystemVisualTarget::RuntimeClassInitialize",
+            "KERNELBASE!DuplicateHandle",
+            "ntdll!NtDuplicateObject"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "debug-event-20261104",
+      "rawArtifacts": [
+        {
+          "file": "summary.json",
+          "sha256": "8A8E0BF9B7E5BAA544CA3C2B91536C4CDFF4DAD2C02E75BAD4781AAE9AD92851"
+        },
+        {
+          "file": "sustained.json",
+          "sha256": "0D3A3E62AC810CB6013F9DF5BA64DEB2391C48786B293AA8D1AE9C6116160F4D"
+        },
+        {
+          "file": "sustained.json.handles.json",
+          "sha256": "72B1FA3C9ACF5A2CFB03E105F38D745D00DA9E082C18848D7A52A05625850771"
+        },
+        {
+          "file": "openblade-residual-cdb-event-20261104.log",
+          "sha256": "63AB10B30328328AB2082987ADD2D296ACA6E232F596BC9C0E577380CD998725"
+        }
+      ],
+      "trayAssemblySha256": "DBD7710242BFB885847D83174A1FAA6B9F94767D802C338F1CD62D78E5FC34B7",
+      "packagePins": {
+        "runtime": "2.2.0",
+        "winUI": "2.2.1"
+      },
+      "serviceCalls": 0,
+      "closedWindowWrappersAlive": 0,
+      "closedNativeWindowsAlive": 0,
+      "matches": [
+        {
+          "alias": "input-site-event",
+          "finalType": "Event",
+          "opens": 1,
+          "closes": 0,
+          "kernelTraceFramesAvailable": false,
+          "nativeBreakpointStackCallerToCallee": [
+            "Microsoft_UI_Xaml!CXamlIslandRoot::InitializeCommon",
+            "Microsoft_UI_Input!ContentIsland::RuntimeClassInitialize",
+            "Microsoft_UI_Input!IslandInputSiteWinRT::RuntimeClassInitialize",
+            "KERNELBASE!CreateEventExW",
+            "ntdll!NtCreateEvent"
+          ]
+        },
+        {
+          "alias": "input-ready-event-duplicate",
+          "finalType": "Event",
+          "opens": 1,
+          "closes": 0,
+          "kernelTraceFramesAvailable": false,
+          "nativeBreakpointStackCallerToCallee": [
+            "Microsoft_UI_Input!LocalContentOutput::Connect",
+            "dcompi!SystemVisualTarget::Partner::SetInputReadyEvent",
+            "dcompi!ExternalTargetImpl<DesktopWindowTarget>::SetInputReadyEvent",
+            "KERNELBASE!DuplicateHandle",
+            "ntdll!NtDuplicateObject"
+          ]
+        }
+      ]
+    }
+  ],
+  "pinnedModuleSymbolIdentities": [
+    {
+      "module": "dcompi.dll",
+      "fileVersion": "10.0.27200.1024",
+      "pdbGuid": "1D2CBCBB0F02D69AF6918085A83937DC",
+      "age": 1
+    },
+    {
+      "module": "Microsoft.UI.Input.dll",
+      "fileVersion": "10.0.27200.1024",
+      "pdbGuid": "A66C63FCF075AD56F5EFACF83EA39AB2",
+      "age": 1
+    },
+    {
+      "module": "Microsoft.UI.Xaml.dll",
+      "fileVersion": "3.2.2.0",
+      "pdbGuid": "8A067FD768013089CAE078F36EF09E21",
+      "age": 1
+    },
+    {
+      "module": "marshal.dll",
+      "fileVersion": "10.0.27200.1024",
+      "pdbGuid": "D3085C762478E045EBEEE81CDD686394",
+      "age": 1
+    }
+  ],
+  "correlationMethod": "Composition: read successful DuplicateHandle result from SystemVisualTarget this+0x150 at verified post-call instruction. Events: save syscall output pointers at entry and read on successful return, separate storage per call kind, UI-thread filter on both breakpoints, matched marker pairs with no intervening same-kind entry. Match final current-process handle type and require one OPEN and zero CLOSE records to exclude value reuse for each example.",
+  "retainedProbeControl": {
+    "sourceScope": "Cleaned working-tree probe over baseSourceCommit, before the acknowledged dispatcher-turn addition; no temporary debugger hooks or island enumeration. Not a committed-head benchmark.",
+    "rawArtifacts": [
+      {
+        "file": "summary.json",
+        "sha256": "5D700278848B9184D15052FA5D0FF5E9779E9FDB5C1052B1CE4F945434FD809D"
+      },
+      {
+        "file": "sustained.json",
+        "sha256": "A6978B23527AE122CA1052D748421768BE876777BC000D9B744C7BAD2BD73AF4"
+      }
+    ],
+    "trayAssemblySha256": "87F48CF8B619E13363B72A44731053773480D688C1227D519D3628495C57172A",
+    "phaseSeconds": 30,
+    "windowKind": "empty",
+    "offscreenWindows": true,
+    "observeRetirement": true,
+    "requireInputDesktop": false,
+    "dashboardCycles": 15,
+    "serviceCalls": 0,
+    "dashboardWrappersAliveAfterCollection": 0,
+    "dashboardContentsAliveAfterCollection": 0,
+    "dashboardNativeWindowsSurvivedClose": 0,
+    "nativeHandleTypeNames": {
+      "available": true,
+      "names": {
+        "2": "Type",
+        "3": "Directory",
+        "4": "SymbolicLink",
+        "5": "Token",
+        "6": "Session",
+        "7": "Job",
+        "8": "Process",
+        "9": "Thread",
+        "10": "Partition",
+        "11": "UserApcReserve",
+        "12": "IoCompletionReserve",
+        "13": "ActivityReference",
+        "14": "ProcessStateChange",
+        "15": "ThreadStateChange",
+        "16": "CpuPartition",
+        "17": "SchedulerSharedData",
+        "18": "PsSiloContextPaged",
+        "19": "PsSiloContextNonPaged",
+        "20": "DebugObject",
+        "21": "Event",
+        "22": "Mutant",
+        "23": "Callback",
+        "24": "Semaphore",
+        "25": "Timer",
+        "26": "IRTimer",
+        "27": "Profile",
+        "28": "KeyedEvent",
+        "29": "WindowStation",
+        "30": "Desktop",
+        "31": "Composition",
+        "32": "RawInputManager",
+        "33": "CoreMessaging",
+        "34": "ActivationObject",
+        "35": "TpWorkerFactory",
+        "36": "Adapter",
+        "37": "Controller",
+        "38": "Device",
+        "39": "Driver",
+        "40": "IoCompletion",
+        "41": "WaitCompletionPacket",
+        "42": "File",
+        "43": "IoRing",
+        "44": "TmTm",
+        "45": "TmTx",
+        "46": "TmRm",
+        "47": "TmEn",
+        "48": "ALPC Port",
+        "49": "Section",
+        "50": "Key",
+        "51": "RegistryTransaction",
+        "52": "DmaAdapter",
+        "53": "EnergyTracker",
+        "54": "PowerRequest",
+        "55": "WmiGuid",
+        "56": "EtwRegistration",
+        "57": "EtwSessionDemuxEntry",
+        "58": "EtwConsumer",
+        "59": "CoverageSampler",
+        "60": "PcwObject",
+        "61": "FilterConnectionPort",
+        "62": "FilterCommunicationPort",
+        "63": "DxgkSharedResource",
+        "64": "DxgkSharedKeyedMutexObject",
+        "65": "DxgkSharedSyncObject",
+        "66": "DxgkSharedSwapChainObject",
+        "67": "DxgkDisplayManagerObject",
+        "68": "DxgkSharedProtectedSessionObject",
+        "69": "DxgkSharedBundleObject",
+        "70": "DxgkCompositionObject",
+        "71": "DxgkDisplayMuxSwitch",
+        "72": "NdisCmState",
+        "73": "NdisThreadState",
+        "74": "VRegConfigurationContext"
+      },
+      "unavailableReason": null
+    },
+    "retirementCheckpoints": [
+      {
+        "stage": "after-warmup-collection",
+        "dashboardCycles": 4,
+        "elapsedSeconds": 3.2168096,
+        "processHandles": 1315,
+        "privateBytes": 195796992,
+        "managedBytesEstimate": 4445120,
+        "lastGcHeapBytes": 4797896,
+        "lastGcCommittedBytes": 18862080,
+        "lastGcFragmentedBytes": 402120,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:12:26.0692219+00:00",
+          "elapsedMilliseconds": 0.3822,
+          "attempts": 1,
+          "handleCount": 1315,
+          "typeCounts": {
+            "3": 3,
+            "9": 42,
+            "12": 8,
+            "17": 1,
+            "21": 524,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 14,
+            "35": 4,
+            "40": 25,
+            "41": 82,
+            "42": 85,
+            "48": 28,
+            "49": 101,
+            "50": 51,
+            "56": 244,
+            "63": 16,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 74,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 5,
+        "elapsedSeconds": 33.2959166,
+        "processHandles": 1316,
+        "privateBytes": 187359232,
+        "managedBytesEstimate": 4535496,
+        "lastGcHeapBytes": 4547872,
+        "lastGcCommittedBytes": 17809408,
+        "lastGcFragmentedBytes": 29232,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:12:56.1469966+00:00",
+          "elapsedMilliseconds": 0.5351,
+          "attempts": 1,
+          "handleCount": 1315,
+          "typeCounts": {
+            "3": 3,
+            "9": 42,
+            "12": 8,
+            "17": 1,
+            "21": 524,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 16,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 101,
+            "50": 51,
+            "56": 244,
+            "63": 16,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 6,
+        "elapsedSeconds": 35.9760598,
+        "processHandles": 1321,
+        "privateBytes": 223997952,
+        "managedBytesEstimate": 7658872,
+        "lastGcHeapBytes": 5148896,
+        "lastGcCommittedBytes": 18202624,
+        "lastGcFragmentedBytes": 78368,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:12:58.8372769+00:00",
+          "elapsedMilliseconds": 0.7435,
+          "attempts": 1,
+          "handleCount": 1321,
+          "typeCounts": {
+            "3": 3,
+            "9": 42,
+            "12": 8,
+            "17": 1,
+            "21": 528,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 17,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 101,
+            "50": 51,
+            "56": 245,
+            "63": 16,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 7,
+        "elapsedSeconds": 38.8812111,
+        "processHandles": 1328,
+        "privateBytes": 227885056,
+        "managedBytesEstimate": 11745128,
+        "lastGcHeapBytes": 6432168,
+        "lastGcCommittedBytes": 19456000,
+        "lastGcFragmentedBytes": 94496,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:01.7370182+00:00",
+          "elapsedMilliseconds": 0.1997,
+          "attempts": 1,
+          "handleCount": 1328,
+          "typeCounts": {
+            "3": 3,
+            "9": 42,
+            "12": 8,
+            "17": 1,
+            "21": 534,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 18,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 101,
+            "50": 51,
+            "56": 245,
+            "63": 16,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 8,
+        "elapsedSeconds": 41.771169,
+        "processHandles": 1342,
+        "privateBytes": 225865728,
+        "managedBytesEstimate": 6836416,
+        "lastGcHeapBytes": 7141048,
+        "lastGcCommittedBytes": 20697088,
+        "lastGcFragmentedBytes": 641712,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:04.625161+00:00",
+          "elapsedMilliseconds": 0.1908,
+          "attempts": 1,
+          "handleCount": 1342,
+          "typeCounts": {
+            "3": 3,
+            "9": 42,
+            "12": 8,
+            "17": 1,
+            "21": 546,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 19,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 102,
+            "50": 51,
+            "56": 244,
+            "63": 17,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 9,
+        "elapsedSeconds": 44.5751595,
+        "processHandles": 1340,
+        "privateBytes": 224571392,
+        "managedBytesEstimate": 7558320,
+        "lastGcHeapBytes": 4642192,
+        "lastGcCommittedBytes": 18522112,
+        "lastGcFragmentedBytes": 2784,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:07.4297679+00:00",
+          "elapsedMilliseconds": 0.2423,
+          "attempts": 1,
+          "handleCount": 1342,
+          "typeCounts": {
+            "3": 3,
+            "9": 43,
+            "12": 8,
+            "17": 1,
+            "21": 544,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 20,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 102,
+            "50": 51,
+            "56": 244,
+            "63": 16,
+            "70": 29
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 10,
+        "elapsedSeconds": 47.363676,
+        "processHandles": 1348,
+        "privateBytes": 217825280,
+        "managedBytesEstimate": 10820616,
+        "lastGcHeapBytes": 5094368,
+        "lastGcCommittedBytes": 18132992,
+        "lastGcFragmentedBytes": 102496,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:10.225901+00:00",
+          "elapsedMilliseconds": 0.1728,
+          "attempts": 1,
+          "handleCount": 1348,
+          "typeCounts": {
+            "3": 3,
+            "9": 43,
+            "12": 8,
+            "17": 1,
+            "21": 546,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 21,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 103,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 29
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 11,
+        "elapsedSeconds": 50.1756393,
+        "processHandles": 1351,
+        "privateBytes": 218169344,
+        "managedBytesEstimate": 5108064,
+        "lastGcHeapBytes": 4711296,
+        "lastGcCommittedBytes": 19447808,
+        "lastGcFragmentedBytes": 6448,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:13.0296551+00:00",
+          "elapsedMilliseconds": 0.1898,
+          "attempts": 1,
+          "handleCount": 1351,
+          "typeCounts": {
+            "3": 3,
+            "9": 43,
+            "12": 8,
+            "17": 1,
+            "21": 548,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 22,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 103,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 29
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 12,
+        "elapsedSeconds": 52.9953989,
+        "processHandles": 1353,
+        "privateBytes": 222752768,
+        "managedBytesEstimate": 11697888,
+        "lastGcHeapBytes": 5234944,
+        "lastGcCommittedBytes": 19099648,
+        "lastGcFragmentedBytes": 15984,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:15.8494208+00:00",
+          "elapsedMilliseconds": 8.1964,
+          "attempts": 1,
+          "handleCount": 1353,
+          "typeCounts": {
+            "3": 3,
+            "9": 43,
+            "12": 8,
+            "17": 1,
+            "21": 550,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 23,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 102,
+            "50": 51,
+            "56": 245,
+            "63": 18,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 13,
+        "elapsedSeconds": 55.7610334,
+        "processHandles": 1358,
+        "privateBytes": 223363072,
+        "managedBytesEstimate": 5757784,
+        "lastGcHeapBytes": 5443272,
+        "lastGcCommittedBytes": 19447808,
+        "lastGcFragmentedBytes": 104864,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:18.614576+00:00",
+          "elapsedMilliseconds": 0.1795,
+          "attempts": 1,
+          "handleCount": 1358,
+          "typeCounts": {
+            "3": 3,
+            "9": 43,
+            "12": 8,
+            "17": 1,
+            "21": 554,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 24,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 102,
+            "50": 51,
+            "56": 245,
+            "63": 18,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 14,
+        "elapsedSeconds": 58.5406034,
+        "processHandles": 1359,
+        "privateBytes": 223637504,
+        "managedBytesEstimate": 6263840,
+        "lastGcHeapBytes": 8584472,
+        "lastGcCommittedBytes": 19648512,
+        "lastGcFragmentedBytes": 3718144,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:21.3948854+00:00",
+          "elapsedMilliseconds": 0.2209,
+          "attempts": 1,
+          "handleCount": 1359,
+          "typeCounts": {
+            "3": 3,
+            "9": 43,
+            "12": 8,
+            "17": 1,
+            "21": 554,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 25,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 102,
+            "50": 51,
+            "56": 245,
+            "63": 18,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 15,
+        "elapsedSeconds": 61.3364991,
+        "processHandles": 1356,
+        "privateBytes": 222859264,
+        "managedBytesEstimate": 12465488,
+        "lastGcHeapBytes": 4776664,
+        "lastGcCommittedBytes": 18759680,
+        "lastGcFragmentedBytes": 2488,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:24.1904217+00:00",
+          "elapsedMilliseconds": 0.1854,
+          "attempts": 1,
+          "handleCount": 1356,
+          "typeCounts": {
+            "3": 3,
+            "9": 43,
+            "12": 8,
+            "17": 1,
+            "21": 556,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 26,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 101,
+            "50": 51,
+            "56": 244,
+            "63": 16,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-activity-collection",
+        "dashboardCycles": 15,
+        "elapsedSeconds": 64.1141018,
+        "processHandles": 1358,
+        "privateBytes": 222023680,
+        "managedBytesEstimate": 4663160,
+        "lastGcHeapBytes": 5141168,
+        "lastGcCommittedBytes": 17956864,
+        "lastGcFragmentedBytes": 519080,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:26.9682184+00:00",
+          "elapsedMilliseconds": 0.1552,
+          "attempts": 1,
+          "handleCount": 1358,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 555,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 25,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 102,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "drain-1",
+        "dashboardCycles": 15,
+        "elapsedSeconds": 64.6635474,
+        "processHandles": 1358,
+        "privateBytes": 218198016,
+        "managedBytesEstimate": 4487704,
+        "lastGcHeapBytes": 5179376,
+        "lastGcCommittedBytes": 14098432,
+        "lastGcFragmentedBytes": 716344,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:27.5160708+00:00",
+          "elapsedMilliseconds": 0.2623,
+          "attempts": 1,
+          "handleCount": 1358,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 555,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 25,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 102,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "drain-2",
+        "dashboardCycles": 15,
+        "elapsedSeconds": 65.2369066,
+        "processHandles": 1358,
+        "privateBytes": 214249472,
+        "managedBytesEstimate": 4493176,
+        "lastGcHeapBytes": 5196208,
+        "lastGcCommittedBytes": 10080256,
+        "lastGcFragmentedBytes": 731704,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:28.0917693+00:00",
+          "elapsedMilliseconds": 0.186,
+          "attempts": 1,
+          "handleCount": 1358,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 555,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 25,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 102,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "drain-3",
+        "dashboardCycles": 15,
+        "elapsedSeconds": 65.8127695,
+        "processHandles": 1358,
+        "privateBytes": 210313216,
+        "managedBytesEstimate": 4494648,
+        "lastGcHeapBytes": 5210584,
+        "lastGcCommittedBytes": 6107136,
+        "lastGcFragmentedBytes": 744608,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:28.6669874+00:00",
+          "elapsedMilliseconds": 0.2016,
+          "attempts": 1,
+          "handleCount": 1358,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 555,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 25,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 102,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "drain-4",
+        "dashboardCycles": 15,
+        "elapsedSeconds": 66.3705051,
+        "processHandles": 1358,
+        "privateBytes": 210419712,
+        "managedBytesEstimate": 4496120,
+        "lastGcHeapBytes": 5234344,
+        "lastGcCommittedBytes": 6176768,
+        "lastGcFragmentedBytes": 766896,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:29.2247493+00:00",
+          "elapsedMilliseconds": 0.1751,
+          "attempts": 1,
+          "handleCount": 1358,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 555,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 25,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 102,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-retirement-idle",
+        "dashboardCycles": 15,
+        "elapsedSeconds": 76.3906673,
+        "processHandles": 1355,
+        "privateBytes": 202330112,
+        "managedBytesEstimate": 4504344,
+        "lastGcHeapBytes": 5234344,
+        "lastGcCommittedBytes": 6176768,
+        "lastGcFragmentedBytes": 766896,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:13:39.2448264+00:00",
+          "elapsedMilliseconds": 0.1743,
+          "attempts": 1,
+          "handleCount": 1355,
+          "typeCounts": {
+            "3": 3,
+            "9": 43,
+            "12": 8,
+            "17": 1,
+            "21": 553,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 25,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 102,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 28
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 173,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      }
+    ]
+  },
+  "acknowledgedDispatcherControl": {
+    "sourceScope": "Final working-tree probe over baseSourceCommit, with an acknowledged low-priority dispatcher callback after each GC round. No composition flush or full shutdown is implied. Not a committed-head benchmark.",
+    "rawArtifacts": [
+      {
+        "file": "summary.json",
+        "sha256": "D0C0F037818692623CEFBB49F0F529250C8D64898B2C3C4E69C42F870A8BDEC7"
+      },
+      {
+        "file": "sustained.json",
+        "sha256": "276A3FD8D4606429DE97857296B8CBA13DC937711C99D0E5943DDFA156424CB2"
+      }
+    ],
+    "trayAssemblySha256": "E4F72061DE69C5734C2BF5FDF82C9435757954337C29D892811F61082B48ACE2",
+    "phaseSeconds": 30,
+    "windowKind": "empty",
+    "offscreenWindows": true,
+    "observeRetirement": true,
+    "requireInputDesktop": false,
+    "dashboardCycles": 16,
+    "serviceCalls": 0,
+    "dashboardWrappersAliveAfterCollection": 0,
+    "dashboardContentsAliveAfterCollection": 0,
+    "dashboardNativeWindowsSurvivedClose": 0,
+    "nativeHandleTypeNames": {
+      "available": true,
+      "names": {
+        "2": "Type",
+        "3": "Directory",
+        "4": "SymbolicLink",
+        "5": "Token",
+        "6": "Session",
+        "7": "Job",
+        "8": "Process",
+        "9": "Thread",
+        "10": "Partition",
+        "11": "UserApcReserve",
+        "12": "IoCompletionReserve",
+        "13": "ActivityReference",
+        "14": "ProcessStateChange",
+        "15": "ThreadStateChange",
+        "16": "CpuPartition",
+        "17": "SchedulerSharedData",
+        "18": "PsSiloContextPaged",
+        "19": "PsSiloContextNonPaged",
+        "20": "DebugObject",
+        "21": "Event",
+        "22": "Mutant",
+        "23": "Callback",
+        "24": "Semaphore",
+        "25": "Timer",
+        "26": "IRTimer",
+        "27": "Profile",
+        "28": "KeyedEvent",
+        "29": "WindowStation",
+        "30": "Desktop",
+        "31": "Composition",
+        "32": "RawInputManager",
+        "33": "CoreMessaging",
+        "34": "ActivationObject",
+        "35": "TpWorkerFactory",
+        "36": "Adapter",
+        "37": "Controller",
+        "38": "Device",
+        "39": "Driver",
+        "40": "IoCompletion",
+        "41": "WaitCompletionPacket",
+        "42": "File",
+        "43": "IoRing",
+        "44": "TmTm",
+        "45": "TmTx",
+        "46": "TmRm",
+        "47": "TmEn",
+        "48": "ALPC Port",
+        "49": "Section",
+        "50": "Key",
+        "51": "RegistryTransaction",
+        "52": "DmaAdapter",
+        "53": "EnergyTracker",
+        "54": "PowerRequest",
+        "55": "WmiGuid",
+        "56": "EtwRegistration",
+        "57": "EtwSessionDemuxEntry",
+        "58": "EtwConsumer",
+        "59": "CoverageSampler",
+        "60": "PcwObject",
+        "61": "FilterConnectionPort",
+        "62": "FilterCommunicationPort",
+        "63": "DxgkSharedResource",
+        "64": "DxgkSharedKeyedMutexObject",
+        "65": "DxgkSharedSyncObject",
+        "66": "DxgkSharedSwapChainObject",
+        "67": "DxgkDisplayManagerObject",
+        "68": "DxgkSharedProtectedSessionObject",
+        "69": "DxgkSharedBundleObject",
+        "70": "DxgkCompositionObject",
+        "71": "DxgkDisplayMuxSwitch",
+        "72": "NdisCmState",
+        "73": "NdisThreadState",
+        "74": "VRegConfigurationContext"
+      },
+      "unavailableReason": null
+    },
+    "retirementCheckpoints": [
+      {
+        "stage": "after-warmup-collection",
+        "dashboardCycles": 4,
+        "elapsedSeconds": 3.1343339,
+        "processHandles": 1334,
+        "privateBytes": 194211840,
+        "managedBytesEstimate": 4445136,
+        "lastGcHeapBytes": 4814720,
+        "lastGcCommittedBytes": 18919424,
+        "lastGcFragmentedBytes": 418928,
+        "lastGcIndex": 10,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:22:59.7910362+00:00",
+          "elapsedMilliseconds": 2.0236,
+          "attempts": 1,
+          "handleCount": 1334,
+          "typeCounts": {
+            "3": 3,
+            "9": 43,
+            "12": 8,
+            "17": 1,
+            "21": 524,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 14,
+            "35": 4,
+            "40": 25,
+            "41": 82,
+            "42": 85,
+            "48": 28,
+            "49": 112,
+            "50": 51,
+            "56": 244,
+            "63": 16,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 74,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 5,
+        "elapsedSeconds": 33.1921308,
+        "processHandles": 1340,
+        "privateBytes": 185733120,
+        "managedBytesEstimate": 5710752,
+        "lastGcHeapBytes": 4814720,
+        "lastGcCommittedBytes": 18919424,
+        "lastGcFragmentedBytes": 418928,
+        "lastGcIndex": 10,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:29.8592059+00:00",
+          "elapsedMilliseconds": 0.4455,
+          "attempts": 1,
+          "handleCount": 1340,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 527,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 16,
+            "35": 4,
+            "40": 25,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 112,
+            "50": 51,
+            "56": 245,
+            "63": 16,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 74,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 6,
+        "elapsedSeconds": 35.6941913,
+        "processHandles": 1345,
+        "privateBytes": 220815360,
+        "managedBytesEstimate": 8916312,
+        "lastGcHeapBytes": 5157832,
+        "lastGcCommittedBytes": 13877248,
+        "lastGcFragmentedBytes": 49416,
+        "lastGcIndex": 11,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:32.3614731+00:00",
+          "elapsedMilliseconds": 0.675,
+          "attempts": 1,
+          "handleCount": 1345,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 531,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 17,
+            "35": 4,
+            "40": 25,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 112,
+            "50": 51,
+            "56": 245,
+            "63": 16,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 74,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 7,
+        "elapsedSeconds": 38.3793043,
+        "processHandles": 1350,
+        "privateBytes": 225013760,
+        "managedBytesEstimate": 12000488,
+        "lastGcHeapBytes": 5397008,
+        "lastGcCommittedBytes": 18067456,
+        "lastGcFragmentedBytes": 30288,
+        "lastGcIndex": 12,
+        "lastGcGeneration": 1,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:35.0450277+00:00",
+          "elapsedMilliseconds": 0.2302,
+          "attempts": 1,
+          "handleCount": 1350,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 537,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 18,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 112,
+            "50": 51,
+            "56": 244,
+            "63": 16,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 8,
+        "elapsedSeconds": 41.1333447,
+        "processHandles": 1361,
+        "privateBytes": 225742848,
+        "managedBytesEstimate": 8650256,
+        "lastGcHeapBytes": 6305272,
+        "lastGcCommittedBytes": 18644992,
+        "lastGcFragmentedBytes": 1425752,
+        "lastGcIndex": 15,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:37.7989227+00:00",
+          "elapsedMilliseconds": 0.2585,
+          "attempts": 1,
+          "handleCount": 1361,
+          "typeCounts": {
+            "3": 3,
+            "9": 43,
+            "12": 8,
+            "17": 1,
+            "21": 546,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 19,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 113,
+            "50": 51,
+            "56": 244,
+            "63": 17,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 9,
+        "elapsedSeconds": 43.8645913,
+        "processHandles": 1360,
+        "privateBytes": 226664448,
+        "managedBytesEstimate": 11255184,
+        "lastGcHeapBytes": 5983152,
+        "lastGcCommittedBytes": 18612224,
+        "lastGcFragmentedBytes": 1283360,
+        "lastGcIndex": 17,
+        "lastGcGeneration": 0,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:40.5303109+00:00",
+          "elapsedMilliseconds": 0.2406,
+          "attempts": 1,
+          "handleCount": 1360,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 545,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 20,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 112,
+            "50": 51,
+            "56": 244,
+            "63": 16,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 10,
+        "elapsedSeconds": 46.5928935,
+        "processHandles": 1367,
+        "privateBytes": 220123136,
+        "managedBytesEstimate": 6948464,
+        "lastGcHeapBytes": 5421568,
+        "lastGcCommittedBytes": 18477056,
+        "lastGcFragmentedBytes": 149728,
+        "lastGcIndex": 20,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:43.2612137+00:00",
+          "elapsedMilliseconds": 0.178,
+          "attempts": 1,
+          "handleCount": 1367,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 546,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 21,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 114,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 36
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 11,
+        "elapsedSeconds": 49.3119891,
+        "processHandles": 1369,
+        "privateBytes": 221364224,
+        "managedBytesEstimate": 6711888,
+        "lastGcHeapBytes": 9362616,
+        "lastGcCommittedBytes": 19599360,
+        "lastGcFragmentedBytes": 4516776,
+        "lastGcIndex": 22,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": true,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:45.9789763+00:00",
+          "elapsedMilliseconds": 0.1689,
+          "attempts": 1,
+          "handleCount": 1369,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 549,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 22,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 113,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 12,
+        "elapsedSeconds": 52.0593017,
+        "processHandles": 1373,
+        "privateBytes": 220921856,
+        "managedBytesEstimate": 5811400,
+        "lastGcHeapBytes": 13459048,
+        "lastGcCommittedBytes": 17809408,
+        "lastGcFragmentedBytes": 7708208,
+        "lastGcIndex": 25,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": true,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:48.7273805+00:00",
+          "elapsedMilliseconds": 0.1648,
+          "attempts": 1,
+          "handleCount": 1373,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 550,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 23,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 114,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 36
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 13,
+        "elapsedSeconds": 54.764747,
+        "processHandles": 1377,
+        "privateBytes": 221171712,
+        "managedBytesEstimate": 9067352,
+        "lastGcHeapBytes": 5152648,
+        "lastGcCommittedBytes": 17928192,
+        "lastGcFragmentedBytes": 14320,
+        "lastGcIndex": 27,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:51.4332111+00:00",
+          "elapsedMilliseconds": 7.7141,
+          "attempts": 1,
+          "handleCount": 1377,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 555,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 24,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 113,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 14,
+        "elapsedSeconds": 57.4852557,
+        "processHandles": 1375,
+        "privateBytes": 223031296,
+        "managedBytesEstimate": 11211216,
+        "lastGcHeapBytes": 4991400,
+        "lastGcCommittedBytes": 19779584,
+        "lastGcFragmentedBytes": 2000,
+        "lastGcIndex": 29,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:54.1518217+00:00",
+          "elapsedMilliseconds": 0.2564,
+          "attempts": 1,
+          "handleCount": 1375,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 554,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 25,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 27,
+            "49": 112,
+            "50": 51,
+            "56": 245,
+            "63": 16,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 15,
+        "elapsedSeconds": 60.2368295,
+        "processHandles": 1376,
+        "privateBytes": 226783232,
+        "managedBytesEstimate": 8965960,
+        "lastGcHeapBytes": 5182520,
+        "lastGcCommittedBytes": 19312640,
+        "lastGcFragmentedBytes": 16344,
+        "lastGcIndex": 32,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:56.9047297+00:00",
+          "elapsedMilliseconds": 0.2475,
+          "attempts": 1,
+          "handleCount": 1376,
+          "typeCounts": {
+            "3": 3,
+            "9": 44,
+            "12": 8,
+            "17": 1,
+            "21": 556,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 26,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 112,
+            "50": 51,
+            "56": 245,
+            "63": 16,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-window-close",
+        "dashboardCycles": 16,
+        "elapsedSeconds": 62.9251227,
+        "processHandles": 1386,
+        "privateBytes": 225480704,
+        "managedBytesEstimate": 11867152,
+        "lastGcHeapBytes": 5419856,
+        "lastGcCommittedBytes": 19779584,
+        "lastGcFragmentedBytes": 145920,
+        "lastGcIndex": 34,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:23:59.5912727+00:00",
+          "elapsedMilliseconds": 0.2939,
+          "attempts": 1,
+          "handleCount": 1386,
+          "typeCounts": {
+            "3": 3,
+            "9": 45,
+            "12": 8,
+            "17": 1,
+            "21": 562,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 27,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 113,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-activity-collection",
+        "dashboardCycles": 16,
+        "elapsedSeconds": 63.9913849,
+        "processHandles": 1380,
+        "privateBytes": 222633984,
+        "managedBytesEstimate": 4541232,
+        "lastGcHeapBytes": 5129208,
+        "lastGcCommittedBytes": 16900096,
+        "lastGcFragmentedBytes": 629048,
+        "lastGcIndex": 36,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:24:00.6528673+00:00",
+          "elapsedMilliseconds": 0.1865,
+          "attempts": 1,
+          "handleCount": 1380,
+          "typeCounts": {
+            "3": 3,
+            "9": 45,
+            "12": 8,
+            "17": 1,
+            "21": 557,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 26,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 113,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "drain-1",
+        "dashboardCycles": 16,
+        "elapsedSeconds": 64.5606238,
+        "processHandles": 1380,
+        "privateBytes": 218529792,
+        "managedBytesEstimate": 4446192,
+        "lastGcHeapBytes": 5166072,
+        "lastGcCommittedBytes": 12840960,
+        "lastGcFragmentedBytes": 744552,
+        "lastGcIndex": 38,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:24:01.2268955+00:00",
+          "elapsedMilliseconds": 0.2569,
+          "attempts": 1,
+          "handleCount": 1380,
+          "typeCounts": {
+            "3": 3,
+            "9": 45,
+            "12": 8,
+            "17": 1,
+            "21": 557,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 26,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 113,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "drain-2",
+        "dashboardCycles": 16,
+        "elapsedSeconds": 65.1062657,
+        "processHandles": 1380,
+        "privateBytes": 214609920,
+        "managedBytesEstimate": 4451720,
+        "lastGcHeapBytes": 5190840,
+        "lastGcCommittedBytes": 8822784,
+        "lastGcFragmentedBytes": 767768,
+        "lastGcIndex": 40,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:24:01.7750931+00:00",
+          "elapsedMilliseconds": 0.1965,
+          "attempts": 1,
+          "handleCount": 1380,
+          "typeCounts": {
+            "3": 3,
+            "9": 45,
+            "12": 8,
+            "17": 1,
+            "21": 557,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 26,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 113,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "drain-3",
+        "dashboardCycles": 16,
+        "elapsedSeconds": 65.6685198,
+        "processHandles": 1380,
+        "privateBytes": 212062208,
+        "managedBytesEstimate": 4453208,
+        "lastGcHeapBytes": 5198920,
+        "lastGcCommittedBytes": 6242304,
+        "lastGcFragmentedBytes": 774360,
+        "lastGcIndex": 42,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:24:02.3343216+00:00",
+          "elapsedMilliseconds": 0.263,
+          "attempts": 1,
+          "handleCount": 1380,
+          "typeCounts": {
+            "3": 3,
+            "9": 45,
+            "12": 8,
+            "17": 1,
+            "21": 557,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 26,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 113,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "drain-4",
+        "dashboardCycles": 16,
+        "elapsedSeconds": 66.2346986,
+        "processHandles": 1380,
+        "privateBytes": 212168704,
+        "managedBytesEstimate": 4454824,
+        "lastGcHeapBytes": 5223760,
+        "lastGcCommittedBytes": 6311936,
+        "lastGcFragmentedBytes": 797584,
+        "lastGcIndex": 44,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:24:02.9028181+00:00",
+          "elapsedMilliseconds": 0.1911,
+          "attempts": 1,
+          "handleCount": 1380,
+          "typeCounts": {
+            "3": 3,
+            "9": 45,
+            "12": 8,
+            "17": 1,
+            "21": 557,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 26,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 113,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      },
+      {
+        "stage": "after-retirement-idle",
+        "dashboardCycles": 16,
+        "elapsedSeconds": 76.2419956,
+        "processHandles": 1380,
+        "privateBytes": 212148224,
+        "managedBytesEstimate": 4463048,
+        "lastGcHeapBytes": 5223760,
+        "lastGcCommittedBytes": 6311936,
+        "lastGcFragmentedBytes": 797584,
+        "lastGcIndex": 44,
+        "lastGcGeneration": 2,
+        "lastGcConcurrent": false,
+        "nativeHandles": {
+          "available": true,
+          "capturedAtUtc": "2026-11-03T19:24:12.9103379+00:00",
+          "elapsedMilliseconds": 0.166,
+          "attempts": 1,
+          "handleCount": 1380,
+          "typeCounts": {
+            "3": 3,
+            "9": 45,
+            "12": 8,
+            "17": 1,
+            "21": 557,
+            "22": 10,
+            "24": 25,
+            "25": 13,
+            "26": 8,
+            "29": 2,
+            "30": 1,
+            "31": 26,
+            "35": 4,
+            "40": 24,
+            "41": 82,
+            "42": 85,
+            "48": 25,
+            "49": 113,
+            "50": 51,
+            "56": 244,
+            "63": 18,
+            "70": 35
+          },
+          "unavailableReason": null
+        },
+        "guiResources": {
+          "gdi": {
+            "count": 195,
+            "error": null
+          },
+          "user": {
+            "count": 73,
+            "error": null
+          }
+        }
+      }
+    ]
+  }
+}
