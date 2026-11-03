@@ -7,9 +7,9 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using OpenBlade.Testing;
 
-if (args.Length is < 2 or > 7)
+if (args.Length is < 2 or > 9)
 {
-    throw new ArgumentException("Usage: NativeResources <developer-harness-exe> <new-output-directory> [phase-seconds=300] [startup-runs=5] [window-kind=dashboard|empty] [window-dwell-ms=0] [--observe-rendering]");
+    throw new ArgumentException("Usage: NativeResources <developer-harness-exe> <new-output-directory> [phase-seconds=300] [startup-runs=5] [window-kind=dashboard|empty] [window-dwell-ms=0] [--observe-rendering] [--offscreen] [--input-desktop]");
 }
 string executable = Path.GetFullPath(args[0]);
 string output = Path.GetFullPath(args[1]);
@@ -17,10 +17,18 @@ int phaseSeconds = args.Length >= 3 ? int.Parse(args[2], CultureInfo.InvariantCu
 int startupRuns = args.Length >= 4 ? int.Parse(args[3], CultureInfo.InvariantCulture) : 5;
 string windowKind = args.Length >= 5 ? args[4] : "dashboard";
 int windowDwellMilliseconds = args.Length >= 6 ? int.Parse(args[5], CultureInfo.InvariantCulture) : 0;
-bool observeRendering = args.Length == 7;
-if (observeRendering && args[6] != "--observe-rendering")
+string[] switches = args.Skip(6).ToArray();
+if (switches.Distinct(StringComparer.Ordinal).Count() != switches.Length
+    || switches.Any(value => value is not ("--observe-rendering" or "--offscreen" or "--input-desktop")))
 {
-    throw new ArgumentException("The final optional argument must be --observe-rendering.");
+    throw new ArgumentException("Optional switches must be unique: --observe-rendering, --offscreen, --input-desktop.");
+}
+bool observeRendering = switches.Contains("--observe-rendering");
+bool offscreenWindows = switches.Contains("--offscreen");
+bool inputDesktop = switches.Contains("--input-desktop");
+if (inputDesktop && !offscreenWindows)
+{
+    throw new ArgumentException("Input-desktop validation requires --offscreen; the activating presentation path is never admitted there.");
 }
 if (windowDwellMilliseconds is < 0 or > 1000)
 {
@@ -40,7 +48,7 @@ if (Directory.Exists(output) && Directory.EnumerateFileSystemEntries(output).Any
 }
 Directory.CreateDirectory(output);
 string assembly = Path.ChangeExtension(executable, ".dll");
-RequireDeveloperHarness(assembly);
+RequireDeveloperHarness(assembly, requireOffscreenSupport: offscreenWindows);
 string assemblyHash = Hash(assembly);
 Dictionary<string, string> binaryHashes = HashBinaries(Path.GetDirectoryName(executable)!);
 var runs = new List<NativeRun>();
@@ -71,8 +79,10 @@ var report = new
     windowKind,
     windowDwellMilliseconds,
     observeRendering,
+    offscreenWindows,
+    desktopMode = inputDesktop ? "input" : "private",
     runs,
-    notes = "Fresh processes on private desktops with warm/uncontrolled OS caches, fixed en-US language and per-run preferences. Launch-to-loaded-layout is a parent-observed upper bound with 25ms polling, not first paint or installed-app startup. Process identity comes from the owned process handle, never a name search. External samples include task delays and instrumentation but no forced child GC during phases. CPU percentages are one-logical-core equivalents (CPU seconds / wall seconds * 100), not normalized to machine cores. No battery, energy, real service/driver latency or hardware behavior is measured.",
+    notes = "Fresh processes with explicit desktop/presentation mode, warm/uncontrolled OS caches, fixed en-US language and per-run preferences. Compare matched offscreen modes when isolating desktop identity. Launch-to-loaded-layout is a parent-observed upper bound with 25ms polling, not first paint or installed-app startup. Process identity comes from the owned process handle, never a name search. External samples include task delays and instrumentation but no forced child GC during phases. CPU percentages are one-logical-core equivalents (CPU seconds / wall seconds * 100), not normalized to machine cores. No battery, energy, real service/driver latency or hardware behavior is measured.",
 };
 string json = JsonSerializer.Serialize(report, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
 await File.WriteAllTextAsync(Path.Combine(output, "summary.json"), json);
@@ -80,7 +90,7 @@ Console.WriteLine(json);
 
 async Task<NativeRun> RunAsync(string scenario, int seconds)
 {
-    var desktop = new WindowsVisualTestDesktop();
+    WindowsVisualTestDesktop? desktop = inputDesktop ? null : new WindowsVisualTestDesktop();
     Exception? primaryFailure = null;
     try
     {
@@ -93,7 +103,7 @@ async Task<NativeRun> RunAsync(string scenario, int seconds)
     }
     finally
     {
-        try { desktop.Dispose(); }
+        try { desktop?.Dispose(); }
         catch (Exception cleanupFailure) when (primaryFailure is not null)
         {
             throw new AggregateException($"Native scenario '{scenario}' failed and desktop cleanup also failed.", primaryFailure, cleanupFailure);
@@ -101,7 +111,7 @@ async Task<NativeRun> RunAsync(string scenario, int seconds)
     }
 }
 
-async Task<NativeRun> RunOnDesktopAsync(WindowsVisualTestDesktop desktop, string scenario, int seconds)
+async Task<NativeRun> RunOnDesktopAsync(WindowsVisualTestDesktop? desktop, string scenario, int seconds)
 {
     string reportPath = Path.Combine(output, scenario + ".json");
     var startInfo = new ProcessStartInfo(executable, $"--resource-performance-audit \"{reportPath}\"")
@@ -118,6 +128,12 @@ async Task<NativeRun> RunOnDesktopAsync(WindowsVisualTestDesktop desktop, string
     startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_KIND"] = windowKind;
     startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_DWELL_MS"] = windowDwellMilliseconds.ToString(CultureInfo.InvariantCulture);
     startInfo.Environment["OPENBLADE_RESOURCE_OBSERVE_RENDERING"] = observeRendering ? "1" : "0";
+    startInfo.Environment["OPENBLADE_RESOURCE_OFFSCREEN"] = offscreenWindows ? "1" : "0";
+    startInfo.Environment["OPENBLADE_RESOURCE_INPUT_DESKTOP"] = inputDesktop ? "1" : "0";
+    if (desktop is not null)
+    {
+        startInfo.Environment["OPENBLADE_RESOURCE_EXPECTED_DESKTOP"] = desktop.Name;
+    }
     startInfo.Environment["OPENBLADE_LOCALIZATION_LANGUAGE"] = "en-US";
     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(seconds * 2 + 120));
     Task? exit = null;
@@ -127,7 +143,9 @@ async Task<NativeRun> RunOnDesktopAsync(WindowsVisualTestDesktop desktop, string
     long previousSample = 0;
     Exception? primaryFailure = null;
     long started = Stopwatch.GetTimestamp();
-    using Process process = desktop.Start(startInfo);
+    using Process process = desktop is null
+        ? Process.Start(startInfo) ?? throw new InvalidOperationException("The disconnected resource child did not start.")
+        : desktop.Start(startInfo);
     try
     {
         int processId = process.Id;
@@ -181,7 +199,12 @@ async Task<NativeRun> RunOnDesktopAsync(WindowsVisualTestDesktop desktop, string
         using JsonDocument child = JsonDocument.Parse(await File.ReadAllTextAsync(reportPath));
         if (!child.RootElement.GetProperty("disconnected").GetBoolean()
             || child.RootElement.GetProperty("serviceCalls").GetInt32() != 0
-            || child.RootElement.GetProperty("processId").GetInt32() != processId)
+            || child.RootElement.GetProperty("processId").GetInt32() != processId
+            || ReadOptionalFlag(child.RootElement, "offscreenWindows") != offscreenWindows
+            || ReadOptionalFlag(child.RootElement, "requireInputDesktop") != inputDesktop
+            || offscreenWindows && desktop is not null
+                && child.RootElement.GetProperty("windowPresentation").GetProperty("desktop")
+                    .GetProperty("currentThreadDesktop").GetString() != desktop.Name)
         {
             throw new InvalidDataException("Child identity or disconnected admission did not match.");
         }
@@ -250,6 +273,11 @@ static string ReadPhase(string reportPath)
     catch (IOException) { return "startup-or-transition"; }
 }
 
+// Earlier default-mode probes predate these optional controls. Missing flags
+// mean false; explicit offscreen launches still require matching metadata first.
+static bool ReadOptionalFlag(JsonElement report, string name) =>
+    report.TryGetProperty(name, out JsonElement value) && value.GetBoolean();
+
 static string Hash(string path)
 {
     using FileStream stream = File.OpenRead(path);
@@ -260,7 +288,7 @@ static Dictionary<string, string> HashBinaries(string directory) => Directory.En
     .Where(path => Path.GetExtension(path) is ".dll" or ".exe")
     .ToDictionary(path => Path.GetRelativePath(directory, path), Hash, StringComparer.Ordinal);
 
-static void RequireDeveloperHarness(string assemblyPath)
+static void RequireDeveloperHarness(string assemblyPath, bool requireOffscreenSupport)
 {
     using FileStream stream = File.OpenRead(assemblyPath);
     using var pe = new PEReader(stream);
@@ -272,15 +300,20 @@ static void RequireDeveloperHarness(string assemblyPath)
         {
             continue;
         }
+        bool resourceProbe = false;
+        bool offscreenProbe = false;
         foreach (MethodDefinitionHandle methodHandle in type.GetMethods())
         {
-            if (metadata.GetString(metadata.GetMethodDefinition(methodHandle).Name) == "RunResourcePerformanceAuditAsync")
-            {
-                return;
-            }
+            string name = metadata.GetString(metadata.GetMethodDefinition(methodHandle).Name);
+            resourceProbe |= name == "RunResourcePerformanceAuditAsync";
+            offscreenProbe |= name == "ShowOffscreenResourceWindow";
+        }
+        if (resourceProbe && (!requireOffscreenSupport || offscreenProbe))
+        {
+            return;
         }
     }
-    throw new InvalidDataException("Require an explicit developer-harness build. The supplied assembly has no resource probe; nothing was launched.");
+    throw new InvalidDataException("Require an explicit developer-harness build with the requested resource/offscreen probe; nothing was launched.");
 }
 
 internal sealed record ExternalSample(double ElapsedSeconds, string Phase, double CpuMilliseconds,

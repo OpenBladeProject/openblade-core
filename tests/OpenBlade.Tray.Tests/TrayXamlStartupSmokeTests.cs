@@ -105,13 +105,20 @@ public sealed class TrayXamlStartupSmokeTests
     public Task ResourceWorkloadStaysDisconnectedAndRendersAcceptedSamples() =>
         RunTraySmokeAsync("--resource-performance-audit", "OpenBlade-resource-performance", localizationLanguage: "en-US");
 
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task OffscreenResourceWorkloadStaysNonactivatingAndReclaimsWindows() =>
+        RunTraySmokeAsync("--resource-performance-audit", "OpenBlade-offscreen-resource-performance",
+            localizationLanguage: "en-US", offscreenResourceWindows: true);
+
     private static async Task RunTraySmokeAsync(
         string argument,
         string reportPrefix,
         bool pseudoLocalized = false,
         string? localizationLanguage = null,
         bool isolatePreferences = false,
-        bool seedExistingPreferences = false)
+        bool seedExistingPreferences = false,
+        bool offscreenResourceWindows = false)
     {
         string executable = GetTrayExecutablePath(pseudoLocalized);
         Assert.True(File.Exists(executable), $"Tray executable not found: {executable}");
@@ -178,6 +185,9 @@ public sealed class TrayXamlStartupSmokeTests
                 startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_KIND"] = "dashboard";
                 startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_DWELL_MS"] = "0";
                 startInfo.Environment["OPENBLADE_RESOURCE_OBSERVE_RENDERING"] = "0";
+                startInfo.Environment["OPENBLADE_RESOURCE_OFFSCREEN"] = offscreenResourceWindows ? "1" : "0";
+                startInfo.Environment["OPENBLADE_RESOURCE_INPUT_DESKTOP"] = "0";
+                startInfo.Environment["OPENBLADE_RESOURCE_EXPECTED_DESKTOP"] = desktop.Name;
             }
 
             process = desktop.Start(startInfo);
@@ -227,6 +237,8 @@ public sealed class TrayXamlStartupSmokeTests
                 var root = report.RootElement;
                 Assert.True(root.GetProperty("disconnected").GetBoolean());
                 Assert.Equal(0, root.GetProperty("serviceCalls").GetInt32());
+                Assert.Equal(offscreenResourceWindows, root.GetProperty("offscreenWindows").GetBoolean());
+                Assert.False(root.GetProperty("requireInputDesktop").GetBoolean());
                 Assert.Equal(2, root.GetProperty("phases").GetArrayLength());
                 int operations = root.GetProperty("activityOperations").GetInt32();
                 Assert.True(operations > 0);
@@ -240,6 +252,18 @@ public sealed class TrayXamlStartupSmokeTests
                 Assert.False(root.GetProperty("retiredMainContentAliveAfterCollection").GetBoolean());
                 Assert.False(root.GetProperty("retiredMainNativeWindowSurvivedClose").GetBoolean());
                 Assert.True(root.GetProperty("bindingCleanupFailureChecksPassed").GetBoolean());
+                if (offscreenResourceWindows)
+                {
+                    var presentation = root.GetProperty("windowPresentation");
+                    int cycles = root.GetProperty("dashboardCycles").GetInt32();
+                    Assert.Equal(cycles + 2, presentation.GetProperty("showCount").GetInt32());
+                    // Before/after show and after layout for every window, plus
+                    // owner checks after each dashboard disposal and after activity.
+                    Assert.True(presentation.GetProperty("verificationCount").GetInt32() >= 3 * (cycles + 2) + cycles + 1);
+                    var desktopIdentity = presentation.GetProperty("desktop");
+                    Assert.Equal(desktop.Name, desktopIdentity.GetProperty("currentThreadDesktop").GetString());
+                    Assert.NotEqual(System.Text.Json.JsonValueKind.True, desktopIdentity.GetProperty("matchesInputDesktop").ValueKind);
+                }
             }
         }
         finally

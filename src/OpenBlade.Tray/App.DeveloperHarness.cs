@@ -1083,6 +1083,18 @@ public partial class App
 
     private static void ShowNoninteractiveSnapshotWindow(Window window)
     {
+        PrepareNoninteractiveSnapshotWindow(window);
+        // Legacy private-desktop snapshots initialize x:Bind through activation.
+        // Offscreen resource probes initialize bindings without activating.
+        window.Activate();
+        if (WindowsPopupPositioner.GetForegroundWindowHandle() == WindowNative.GetWindowHandle(window))
+        {
+            throw new InvalidOperationException("A snapshot window unexpectedly took foreground.");
+        }
+    }
+
+    private static void PrepareNoninteractiveSnapshotWindow(Window window)
+    {
         ((UIElement)window.Content).IsHitTestVisible = false;
 #if OPENBLADE_DEVELOPER_HARNESS
         // Private test desktops have no Explorer shell; WinUI returns E_NOTIMPL
@@ -1093,13 +1105,6 @@ public partial class App
             window.AppWindow.IsShownInSwitchers = false;
         }
         LocalizationSnapshotWindowInput.Apply(WindowNative.GetWindowHandle(window));
-        // WinUI requires Activate to initialize x:Bind and templates. The native
-        // no-activate style is already installed, so this does not take foreground.
-        window.Activate();
-        if (WindowsPopupPositioner.GetForegroundWindowHandle() == WindowNative.GetWindowHandle(window))
-        {
-            throw new InvalidOperationException("A snapshot window unexpectedly took foreground.");
-        }
     }
 
     private static async Task WaitForSnapshotLayoutAsync()

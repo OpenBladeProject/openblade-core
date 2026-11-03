@@ -84,10 +84,52 @@ Shared view-model native subscriber counts decreased after collection (32 to 26
 in one diagnostic), rather than accumulating. Current-process native type counts
 showed most growth in `Section` and `DxgkCompositionObject`, with a smaller `Event`
 increase. These names come from queried type metadata, not hard-coded index labels.
-The pinned WinUI package is 2.2.1 on Windows build 26300; the resource measurements
-run on inactive private desktops. Attribution to application content, WinUI or
-desktop composition remains unresolved. No forced native release, production
+The pinned WinUI package is 2.2.1 on Windows build 26300; these initial measurements
+ran on inactive private desktops. Attribution to application content, WinUI or
+composition remains unresolved. No forced native release, production
 delay or package upgrade was introduced on this evidence.
+
+### Matched offscreen desktop controls
+
+A subsequent diagnostic uses explicit generated-binding initialization and
+`AppWindow.Show(false)`, with every window positioned wholly outside the virtual
+screen before showing. Native input guards, fresh desktop identity checks and
+process-wide foreground rejection remain active. The private pilot passed before
+the input-desktop pilot; the runner also rejected an older resource harness lacking
+this mode before launch. Private mode requires the shared launcher's isolated
+desktop name; input mode must freshly match the current input desktop and has no
+fallback. No installed service, input hook or hardware mutation was involved.
+
+Two serial runs used the same hashed binaries and offscreen presentation, each
+with 30-second idle and activity phases:
+
+| Desktop | Sample operations | Dashboard cycles | Handles at activity start / after collection | Private bytes at activity start / after collection |
+| --- | ---: | ---: | ---: | ---: |
+| Private | 103 | 15 | 1,508 / 1,972 | 215,392,256 / 241,848,320 |
+| Current input | 93 | 14 | 1,312 / 1,637 | 211,853,312 / 236,744,704 |
+
+Cycle totals include four warmup dashboards. Both runs reclaimed every tracked
+dashboard window/content and the retired main window, with zero service calls.
+The [matched comparison](results/2026-11-03-offscreen-desktop-comparison.json)
+records identity, verification counts, phase metrics and binary/report hashes.
+The differing operation counts and uncontrolled host load do not support comparing
+growth rates. Growth on the input desktop establishes that private-desktop
+execution is not required for this offscreen workload. It does not establish
+visible-window behavior or distinguish application/native WinUI lifetime from
+occlusion/composition resource retention. These probes were working-tree additions
+on `7b375a6d`; actual DLL hashes identify the measured code.
+Later review tightened thread-local activation checks, exact launcher desktop
+matching, failure preservation and default-mode compatibility with older probes.
+The recorded comparison predates those diagnostic refinements. Timed offscreen
+activity includes presentation checks; it is not comparable with legacy snapshot
+CPU/allocation measurements.
+Post-review five-second pilots passed on both desktops: six dashboard cycles,
+eight shows, 31 presentation verifications, zero service calls and no surviving
+tracked windows or content. The runner also completed startup/activity with the
+preserved older default-mode probe whose reports omit the new mode flags; the
+candidate DLL was restored and hash-verified. The
+[guard validation record](results/2026-11-03-offscreen-guard-validation.json)
+identifies these short checks separately from sustained measurements.
 
 ## Interpretation
 
@@ -114,10 +156,16 @@ or private-memory threshold. Whole-Service/Session Agent consumption, installed
 GPU residency, energy, battery power and multi-hour behavior remain separate
 measurements; no installation, hardware mutation or live input hook was used.
 
-Two independent Claude Opus 5.5/high read-only reviews covered the findings,
+Four independent Claude Opus 5.5/high read-only reviews covered the findings,
 probes and shared fix. Confirmed findings led to shared teardown failure handling,
 phase-file sharing, exact per-sample rebuild accounting, destruction-event checks,
 bounded concurrent Git-output drains, and preservation of cleanup failures. Style-only
 duplication requests were rejected; hidden-page stress and clock assumptions are
-documented limits. A separate Codex review checked the native diagnostic ABI and
-buffer bounds. Neither review substitutes for the recorded execution evidence.
+documented limits. The third review covered atomically published test-report
+sharing; the fourth covered the offscreen controls. Its confirmed findings led to
+older-probe compatibility, shared input preparation, thread-local activation
+checks, bounded foreground-owner queries, exact desktop matching and stronger
+native regression assertions. Fresh presentation admission remains inside the
+activity workload, and an input-desktop switch intentionally invalidates the run.
+Separate Codex reviews checked the native diagnostic ABI, buffer bounds and the
+final guard changes. These reviews do not substitute for execution evidence.

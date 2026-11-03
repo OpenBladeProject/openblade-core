@@ -1,7 +1,7 @@
 # Disconnected native resource validation
 
 This opt-in harness measures real WinUI windows with isolated preferences and a
-service client that rejects all calls before IPC. It runs on a private desktop,
+service client that rejects all calls before IPC. By default it runs on a private desktop,
 using the same owned-process launcher as the native tests. It does not install
 OpenBlade, open the product's pipes, observe input, or change hardware settings.
 
@@ -24,6 +24,32 @@ Window/Grid. These are diagnostic controls, not interchangeable workloads.
 An optional final `--observe-rendering` subscribes to XAML rendering callbacks;
 that subscription can request continuous frames, so use it only as a separate
 diagnostic. Callback counts do not establish presentation to a physical display.
+
+For a matched desktop comparison, add `--offscreen` to both runs and
+`--input-desktop` to the second run. The latter requires `--offscreen`; it never
+falls back to the activating snapshot path. Before any show, the dedicated path
+initializes generated bindings, applies native input guards, positions the entire
+window outside the complete virtual screen, and uses `AppWindow.Show(false)`.
+It checks geometry, thread-local activation and foreground ownership before/after show, after loaded layout
+and after dashboard disposal. Input-desktop mode must freshly verify that the UI
+thread belongs to the current input desktop; private mode requires the launcher's
+exact owned desktop name. Query unavailability rejects input-desktop mode. Keep
+the input desktop unlocked throughout that run; locking or switching to a secure
+desktop invalidates the comparison and stops it. Private tests
+can record unavailable input-desktop metadata without leaving their private desktop.
+The runner rejects older harness binaries missing this offscreen helper before
+launch. Both modes keep the rejecting client and per-run preferences.
+
+```powershell
+# Same executable, dimensions, fixture, dwell and phase budgets; run serially.
+dotnet run --project build/benchmarks/NativeResources/NativeResources.csproj -c Release --no-build -- "<harness exe>" "<new private directory>" 30 1 dashboard 0 --offscreen
+dotnet run --project build/benchmarks/NativeResources/NativeResources.csproj -c Release --no-build -- "<same harness exe>" "<new input directory>" 30 1 dashboard 0 --offscreen --input-desktop
+```
+
+This comparison isolates desktop mode under the same offscreen workload. Neither
+run establishes visible-window presentation, normal installed operation or energy.
+Timed activity includes the fresh desktop, geometry and activation checks. Compare
+matched offscreen modes; their instrumentation differs from legacy snapshot mode.
 Before launch, the runner inspects the companion assembly metadata without loading
 it and rejects ordinary product builds lacking the developer probe. It clears
 inherited OpenBlade environment overrides, sets the phase budget and language,
@@ -33,9 +59,10 @@ the run. Do not rebuild the candidate during measurement.
 Startup is launch to **loaded layout**, observed by the parent with a monotonic
 clock and 25 ms polling. It is an upper bound, not first paint. If the child exits
 between polls, the exit-time upper bound is marked `readinessObservedAfterExit`.
-The child also
-records synchronous constructor time/UI-thread allocation separately. Fresh
-processes use warm or uncontrolled OS caches; this is not a cold-disk startup test.
+The child also records synchronous constructor time/UI-thread allocation separately.
+The child's loaded-layout timestamp precedes the final presentation check; the
+parent's readiness upper bound includes that check.
+Fresh processes use warm or uncontrolled OS caches; this is not a cold-disk startup test.
 Snapshot mode disables normal observation and changes transitions/backgrounds,
 so it is not installed-app startup or idle performance.
 

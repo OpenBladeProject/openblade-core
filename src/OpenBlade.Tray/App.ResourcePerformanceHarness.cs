@@ -30,6 +30,12 @@ public partial class App
             int seconds = secondsText is null ? 2 : int.Parse(secondsText, System.Globalization.CultureInfo.InvariantCulture);
             string windowKind = Environment.GetEnvironmentVariable("OPENBLADE_RESOURCE_WINDOW_KIND") ?? "dashboard";
             bool observeRendering = Environment.GetEnvironmentVariable("OPENBLADE_RESOURCE_OBSERVE_RENDERING") == "1";
+            bool offscreenWindows = Environment.GetEnvironmentVariable("OPENBLADE_RESOURCE_OFFSCREEN") == "1";
+            bool requireInputDesktop = Environment.GetEnvironmentVariable("OPENBLADE_RESOURCE_INPUT_DESKTOP") == "1";
+            if (requireInputDesktop && !offscreenWindows)
+            {
+                throw new InvalidOperationException("Input-desktop validation requires offscreen nonactivating presentation.");
+            }
             int windowDwellMilliseconds = int.Parse(Environment.GetEnvironmentVariable("OPENBLADE_RESOURCE_WINDOW_DWELL_MS") ?? "0",
                 System.Globalization.CultureInfo.InvariantCulture);
             if (windowDwellMilliseconds is < 0 or > 1000)
@@ -55,9 +61,11 @@ public partial class App
             ApplyGpuStartupStatus(window.ViewModel, CreateGpuStartupStatus(delayedRanges: false));
             window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 820));
             FrameworkElement root = (FrameworkElement)window.Content;
-            ShowNoninteractiveSnapshotWindow(window);
+            if (offscreenWindows) { ShowOffscreenResourceWindow(window, requireInputDesktop); }
+            else { ShowNoninteractiveSnapshotWindow(window); }
             await WaitForResourceLayoutAsync(root);
             double constructionToLoadedLayoutMilliseconds = Stopwatch.GetElapsedTime(constructorStart).TotalMilliseconds;
+            if (offscreenWindows) { VerifyOffscreenResourceWindow(window, requireInputDesktop); }
             double? rasterizationScale = root.XamlRoot?.RasterizationScale;
             window.VerifyResourceIsolation(recorder);
             // The parent observes this marker using its own monotonic launch
@@ -95,7 +103,7 @@ public partial class App
             if (seconds != 0)
             {
                 File.WriteAllText(path + ".phase", "warmup");
-                retiredMainWindow = await ExerciseResourceMainWindowLifetimeAsync(path + ".retired.preferences.json");
+                retiredMainWindow = await ExerciseResourceMainWindowLifetimeAsync(path + ".retired.preferences.json", offscreenWindows, requireInputDesktop);
                 await window.PreparePerformanceTelemetryAsync();
                 using MainWindow.ResourceSampleFixture fixture = window.CreateResourceSampleFixture();
                 for (int index = 0; index < 32; index++)
@@ -106,7 +114,7 @@ public partial class App
                 }
                 for (int index = 0; index < 4; index++)
                 {
-                    await CycleResourceDashboardAsync(window, dashboardReferences, windowKind, windowDwellMilliseconds);
+                    await CycleResourceDashboardAsync(window, dashboardReferences, windowKind, windowDwellMilliseconds, offscreenWindows, requireInputDesktop);
                     dashboardCycles++;
                 }
                 window.SelectLocalizationSnapshotPage("home");
@@ -135,7 +143,7 @@ public partial class App
                     activityOperations++;
                     if (activityOperations == 1 || activityOperations % 10 == 0)
                     {
-                        await CycleResourceDashboardAsync(window, dashboardReferences, windowKind, windowDwellMilliseconds);
+                        await CycleResourceDashboardAsync(window, dashboardReferences, windowKind, windowDwellMilliseconds, offscreenWindows, requireInputDesktop);
                         dashboardCycles++;
                     }
                     await Task.Delay(250);
@@ -160,6 +168,7 @@ public partial class App
                 subscribersAfterActivity = window.SnapshotResourceSubscribers();
                 nativeHandlesAfterActivity = CaptureResourceHandleTypes();
                 window.VerifyResourceIsolation(recorder);
+                if (offscreenWindows) { VerifyOffscreenResourceWindow(window, requireInputDesktop); }
             }
             File.WriteAllText(path + ".phase", "dispose");
             await window.DisposeAsync();
@@ -180,6 +189,9 @@ public partial class App
                 windowKind,
                 windowDwellMilliseconds,
                 observeRendering,
+                offscreenWindows,
+                requireInputDesktop,
+                windowPresentation = offscreenWindows ? SnapshotResourceWindowPresentation() : null,
                 constructionMilliseconds,
                 constructionAllocatedBytes,
                 constructionToLoadedLayoutMilliseconds,
@@ -289,7 +301,8 @@ public partial class App
         }
     }
 
-    private static async Task CycleResourceDashboardAsync(MainWindow window, List<ResourceDashboardReference> references, string windowKind, int dwellMilliseconds)
+    private static async Task CycleResourceDashboardAsync(MainWindow window, List<ResourceDashboardReference> references, string windowKind, int dwellMilliseconds,
+        bool offscreenWindows, bool requireInputDesktop)
     {
         Window dashboard = windowKind == "empty"
             ? new Window { Content = new Microsoft.UI.Xaml.Controls.Grid() }
@@ -300,6 +313,7 @@ public partial class App
         void OnDestroying(Microsoft.UI.Windowing.AppWindow sender, object args) => destroyed = true;
         nativeWindow.Destroying += OnDestroying;
         ResourceDashboardReference? reference = null;
+        List<Exception>? failures = null;
         try
         {
             if (dashboard is TrayDashboardWindow quickControls)
@@ -307,11 +321,17 @@ public partial class App
                 quickControls.ApplyPreferences(TrayDashboardPreferenceDefaults.Preference);
             }
             dashboard.AppWindow.Resize(new Windows.Graphics.SizeInt32(430, 760));
-            ShowNoninteractiveSnapshotWindow(dashboard);
+            if (offscreenWindows) { ShowOffscreenResourceWindow(dashboard, requireInputDesktop); }
+            else { ShowNoninteractiveSnapshotWindow(dashboard); }
             await WaitForResourceLayoutAsync((FrameworkElement)dashboard.Content);
+            if (offscreenWindows) { VerifyOffscreenResourceWindow(dashboard, requireInputDesktop); }
             if (dwellMilliseconds != 0) { await Task.Delay(dwellMilliseconds); }
             reference = new ResourceDashboardReference(new WeakReference(dashboard), new WeakReference(dashboard.Content));
             references.Add(reference);
+        }
+        catch (Exception exception)
+        {
+            (failures ??= []).Add(exception);
         }
         finally
         {
@@ -320,15 +340,28 @@ public partial class App
                 if (dashboard is TrayDashboardWindow quickControls) { quickControls.Dispose(); }
                 else { dashboard.Close(); }
             }
-            finally
+            catch (Exception exception)
             {
-                nativeWindow.Destroying -= OnDestroying;
-                if (reference is not null) { reference.NativeWindowDestroyed = destroyed; }
+                (failures ??= []).Add(exception);
             }
+            try { nativeWindow.Destroying -= OnDestroying; }
+            catch (Exception exception) { (failures ??= []).Add(exception); }
+            if (reference is not null) { reference.NativeWindowDestroyed = destroyed; }
+            try { if (offscreenWindows) { VerifyOffscreenResourceWindow(window, requireInputDesktop); } }
+            catch (Exception exception) { (failures ??= []).Add(exception); }
+        }
+        if (failures is { Count: 1 })
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        }
+        if (failures is not null)
+        {
+            throw new AggregateException("Dashboard resource validation and cleanup failed.", failures);
         }
     }
 
-    private static async Task<ResourceDashboardReference> ExerciseResourceMainWindowLifetimeAsync(string preferencePath)
+    private static async Task<ResourceDashboardReference> ExerciseResourceMainWindowLifetimeAsync(string preferencePath,
+        bool offscreenWindows, bool requireInputDesktop)
     {
         IServiceClient client = DispatchProxy.Create<IServiceClient, GpuStartupServiceClientProxy>();
         MainWindow retired = MainWindow.CreateLocalizationSnapshot(client, new UiPreferenceStore(preferencePath));
@@ -340,8 +373,10 @@ public partial class App
         try
         {
             retired.AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 820));
-            ShowNoninteractiveSnapshotWindow(retired);
+            if (offscreenWindows) { ShowOffscreenResourceWindow(retired, requireInputDesktop); }
+            else { ShowNoninteractiveSnapshotWindow(retired); }
             await WaitForResourceLayoutAsync((FrameworkElement)retired.Content);
+            if (offscreenWindows) { VerifyOffscreenResourceWindow(retired, requireInputDesktop); }
             retired.VerifyResourceIsolation((GpuStartupServiceClientProxy)client);
             VerifyResourceBindingCleanupFailures(retired);
             reference = new ResourceDashboardReference(new WeakReference(retired), new WeakReference(retired.Content));

@@ -1,0 +1,77 @@
+{
+  "Scope": "Post-review execution checks; short pilots do not establish sustained performance. Developer binaries built from working tree on 7b375a6d.",
+  "OffscreenChecks": [
+    {
+      "DesktopMode": "private",
+      "RawReportSha256": "9826D528714DB11B5979767C802A6E5A9976236826D384BD5226F9049700DE06",
+      "AssemblySha256": "9FBE130DC60A50122B2BF0FCDC257185D98A6143716E439F571AA09D1EBE08B7",
+      "PhaseSeconds": 5,
+      "ServiceCalls": 0,
+      "DashboardCycles": 6,
+      "DashboardWrappersAliveAfterCollection": 0,
+      "DashboardContentsAliveAfterCollection": 0,
+      "DashboardNativeWindowsSurvivedClose": 0,
+      "RetiredMainWindowAliveAfterCollection": false,
+      "RetiredMainContentAliveAfterCollection": false,
+      "WindowPresentation": {
+        "showCount": 8,
+        "verificationCount": 31,
+        "desktop": {
+          "threadId": 26944,
+          "currentThreadDesktop": "OpenBlade-visual-9409a747bdfa4f5b8144c3a72131e0b0",
+          "inputDesktop": "Default",
+          "inputDesktopReadable": true,
+          "inputDesktopOpenError": null,
+          "matchesInputDesktop": false
+        },
+        "lastWindowRectangle": {
+          "left": 2688,
+          "top": 1728,
+          "right": 3888,
+          "bottom": 2628
+        },
+        "presentation": "offscreen AppWindow.Show(false); explicit x:Bind initialization; no activation"
+      }
+    },
+    {
+      "DesktopMode": "input",
+      "RawReportSha256": "506805C5EB4E32A826CF340CEEB5756969A01B46CAFB786ED4EE9C7B5EEAC077",
+      "AssemblySha256": "9FBE130DC60A50122B2BF0FCDC257185D98A6143716E439F571AA09D1EBE08B7",
+      "PhaseSeconds": 5,
+      "ServiceCalls": 0,
+      "DashboardCycles": 6,
+      "DashboardWrappersAliveAfterCollection": 0,
+      "DashboardContentsAliveAfterCollection": 0,
+      "DashboardNativeWindowsSurvivedClose": 0,
+      "RetiredMainWindowAliveAfterCollection": false,
+      "RetiredMainContentAliveAfterCollection": false,
+      "WindowPresentation": {
+        "showCount": 8,
+        "verificationCount": 31,
+        "desktop": {
+          "threadId": 6296,
+          "currentThreadDesktop": "Default",
+          "inputDesktop": "Default",
+          "inputDesktopReadable": true,
+          "inputDesktopOpenError": null,
+          "matchesInputDesktop": true
+        },
+        "lastWindowRectangle": {
+          "left": 2688,
+          "top": 1728,
+          "right": 3888,
+          "bottom": 2628
+        },
+        "presentation": "offscreen AppWindow.Show(false); explicit x:Bind initialization; no activation"
+      }
+    }
+  ],
+  "OlderDefaultProbe": {
+    "RawReportSha256": "87DC3DD62D74B9A0486C3DF7BF956B77E175AAEF87CF9872C868BA218DB6E9EF",
+    "AssemblySha256": "EA6DBD3F1E265CEA39636110CE54CEB7EA443261D2A5B60D0B7A976A712E4C17",
+    "Runs": 2,
+    "ServiceCalls": 0,
+    "ReportHasNewModeFlags": false,
+    "CandidateRestoredSha256": "9FBE130DC60A50122B2BF0FCDC257185D98A6143716E439F571AA09D1EBE08B7"
+  }
+}
