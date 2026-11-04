@@ -5,6 +5,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Remove failed driver-download attempt files before installation begins, while retaining packages after any installation intent or uncertain result. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
+- Keep driver installation recovery required for malformed journals or missing THX packages, preserve extraction files after uncertain termination, and distinguish timeouts from cancellation. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
+
 ## [0.50.3] - 2026-11-01
 
 ### Added
