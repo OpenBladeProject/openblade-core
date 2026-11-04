@@ -56,16 +56,16 @@ function Assert-LowFanOnlyPerformanceOverrideMissing($Status, $Baseline) {
     # Only the observed Value/Source change is admitted; custom/GPU and all other desired fields must stay identical.
     $sourceName = [string]$Status.ActivePowerSource
     if ($sourceName -notin 'PluggedIn', 'Battery', 'UsbC') { throw 'The active power source is unknown.' }
-    $profile = $Status.Profiles.$sourceName
+    $powerProfile = $Status.Profiles.$sourceName
     $application = $null
     if ($null -ne $Status.ActiveApplicationProfileId) {
-        $matches = @($Status.Profiles.ApplicationProfiles | Where-Object {
+        $matchingApplications = @($Status.Profiles.ApplicationProfiles | Where-Object {
             $_.Enabled -eq $true -and $_.Id -eq $Status.ActiveApplicationProfileId
         })
-        if ($matches.Count -ne 1) { throw 'The active application profile is ambiguous.' }
-        $application = $matches[0].Overrides.ForPowerSource($Status.ActivePowerSource)
+        if ($matchingApplications.Count -ne 1) { throw 'The active application profile is ambiguous.' }
+        $application = $matchingApplications[0].Overrides.ForPowerSource($Status.ActivePowerSource)
     }
-    $performance = if ($null -ne $application.Performance) { $application.Performance } else { $profile.Performance }
+    $performance = if ($null -ne $application.Performance) { $application.Performance } else { $powerProfile.Performance }
     $source = if ($null -ne $application.Performance -or $null -ne $application.CustomPerformance -or
         $null -ne $application.GpuClockTuning) { 'ApplicationProfile' } else { 'PowerProfile' }
     if ($Status.DesiredState.Performance.Value -ne $performance -or

@@ -157,6 +157,10 @@
       "patterns": ["build/BuildIdentity.ps1"]
     },
     {
+      "test": "tests/Build.Tests/LowFanValidationInstalledState.Tests.ps1",
+      "patterns": ["build/LowFanValidationInstalledState.ps1", "build/Invoke-BatterySaverLowFanValidation.ps1", "build/Invoke-SilentLowFanValidation.ps1", "src/OpenBlade.Contracts/Overrides.cs", "src/OpenBlade.Contracts/ServiceMessages.cs", "src/OpenBlade.Contracts/Profiles.cs", "src/OpenBlade.Contracts/DeviceState.cs", "src/OpenBlade.Service/ServiceControlRuntime.cs", "src/OpenBlade.Tray.Core/ServiceClient.cs"]
+    },
+    {
       "test": "tests/Build.Tests/PadlessHyperBoostLifecycleValidationBuild.Tests.ps1",
       "patterns": ["build/Build-PadlessHyperBoostLifecycleValidation.ps1", "src/OpenBlade.Service/OpenBlade.Service.csproj", "src/OpenBlade.Service/PadlessHyperBoostLifecycleValidationBuild.cs", "src/OpenBlade.Protocol/HyperBoostWithoutCoolingPadEvidence.cs", "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json"]
     },

@@ -341,6 +341,20 @@ if ($contractDifference.Count -ne 0) {
     throw "Every build-contract suite must have an explicit input rule: $($contractDifference -join ', ')"
 }
 
+foreach ($lowFanInput in @(
+        'build/LowFanValidationInstalledState.ps1',
+        'build/Invoke-BatterySaverLowFanValidation.ps1',
+        'build/Invoke-SilentLowFanValidation.ps1',
+        'tests/Build.Tests/LowFanValidationInstalledState.Tests.ps1',
+        'src/OpenBlade.Contracts/Overrides.cs',
+        'src/OpenBlade.Service/ServiceControlRuntime.cs',
+        'src/OpenBlade.Tray.Core/ServiceClient.cs')) {
+    $lowFan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($lowFanInput)
+    Assert-Contains $lowFan.ContractTests `
+        'tests/Build.Tests/LowFanValidationInstalledState.Tests.ps1' `
+        'Low-fan workflow and installed-state contracts must run their restoration safety checks.'
+}
+
 foreach ($legacyThxInput in @(
         'build/Export-LegacyThxBindingEvidence.ps1',
         'tests/Build.Tests/LegacyThxBindingEvidence.Tests.ps1',
