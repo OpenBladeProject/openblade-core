@@ -19,6 +19,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Release worker threads between GPU activity samples and cancel pending sample waits promptly. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
 - Reduce service and battery IPC decoding overhead with shared streaming validation. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+
 ## [0.50.3] - 2026-11-01
 
 ### Added
