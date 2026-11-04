@@ -1212,7 +1212,7 @@ public partial class App
         if (!mainWindow.HasLocalizedCheckNowButton(expectedContent, expectedAccessibleName))
         {
             throw new InvalidOperationException(
-                "Compiled x:Uid resources did not apply the resolved visible and accessibility text. "
+                "Compiled XAML resources did not apply the resolved visible and accessibility text. "
                     + $"Expected content='{expectedContent}', accessible='{expectedAccessibleName}'. "
                     + "The named Settings-page button retained a different value.");
         }

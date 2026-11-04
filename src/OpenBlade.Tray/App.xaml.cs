@@ -59,6 +59,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         string[] commandLineArguments = Environment.GetCommandLineArgs();
         base.OnLaunched(args);
+        Microsoft.UI.Xaml.Resources.CustomXamlResourceLoader.Current = new LocalizedXamlResourceLoader();
         if (TryRunDeveloperHarness(commandLineArguments))
         {
             return;

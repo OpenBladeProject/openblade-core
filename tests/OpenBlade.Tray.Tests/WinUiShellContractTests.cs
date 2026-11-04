@@ -8,7 +8,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void WindowsBatteryReportLivesOutsideCollectionControlsAndKeepsDetailsOptional()
     {
-        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement report = NamedElement(document, "Expander", "BatteryHistorySection");
         XElement telemetry = NamedElement(document, "ScrollViewer", "TelemetryPage");
         XElement controls = NamedElement(document, "StackPanel", "TelemetryContent");
@@ -60,8 +60,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void TelemetrySourceHeaderUsesContextualStateAndLocalizedIconCommands()
     {
-        XDocument document = XDocument.Parse(
-            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement header = NamedElement(
             document,
             "ContextualToolbar",
@@ -93,7 +92,7 @@ public sealed class WinUiShellContractTests
             Assert.Equal("Button", button.Name.LocalName);
             Assert.Equal("{StaticResource AppToolbarButtonStyle}", Attribute(button, "Style"));
             Assert.Null(Attribute(button, "ContentTemplate"));
-            Assert.Null(Attribute(button, "Uid"));
+            Assert.Null(CanonicalLocalizedXaml.Identity(button));
             Assert.Single(button.Descendants(), element => element.Name.LocalName is "SymbolIcon" or "FontIcon");
             XElement label = Assert.Single(button.Descendants(), element =>
                 element.Name.LocalName == "TextBlock");
@@ -137,7 +136,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void SnapTapPopupExplainsLaptopDriverAndKeepsCompatibilityOutOfTheRow()
     {
-        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement button = NamedElement(document, "Button", "SnapTapInfoButton");
         Assert.Equal("About SnapTap", Attribute(button, "AutomationProperties.Name"));
         Assert.Equal("About SnapTap", Attribute(button, "ToolTipService.ToolTip"));
@@ -146,7 +145,7 @@ public sealed class WinUiShellContractTests
         {
             Assert.Equal(Attribute(reference, property), Attribute(button, property));
         }
-        XElement description = document.Descendants().Single(element => Attribute(element, "Uid") == "SnapTap_Description");
+        XElement description = document.Descendants().Single(element => CanonicalLocalizedXaml.Identity(element) == "SnapTap_Description");
         Assert.Equal("When A and D overlap, the last pressed key wins.", Attribute(description, "Text"));
         XElement[] details = button.Descendants().Where(element => element.Name.LocalName == "TextBlock").ToArray();
         Assert.Contains(details, element => Attribute(element, "Text") == "Razer driver handles the built-in keyboard. Windows hook applies to all keyboards.");
@@ -156,8 +155,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void SnapTapRemainsAvailableWithoutShortcutHardwareAndAnnouncesRuntimeState()
     {
-        XDocument document = XDocument.Parse(
-            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement card = NamedElement(document, "Border", "SnapTapCard");
         XElement keyboardSection = NamedElement(document, "StackPanel", "KeyboardSection");
         XElement keyboardHeader = NamedElement(document, "TextBlock", "KeyboardHeader");
@@ -166,7 +164,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains(card.Ancestors(), element => element == keyboardSection);
         Assert.DoesNotContain(card.Ancestors(), element =>
             Attribute(element, "Name") == "ShortcutKeysSection");
-        Assert.Equal("SnapTap_KeyboardHeader", Attribute(keyboardHeader, "Uid"));
+        Assert.Equal("SnapTap_KeyboardHeader", CanonicalLocalizedXaml.Identity(keyboardHeader));
         Assert.Null(Attribute(keyboardHeader, "Visibility"));
         Assert.Equal("{StaticResource SettingsGroupStyle}", Attribute(card, "Style"));
         Assert.Equal("{StaticResource SettingsLastExpanderRowStyle}", Attribute(row, "Style"));
@@ -243,7 +241,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void IndependentKeyboardBackendSelectorsUseSharedPresentationAndExplicitDriverSetup()
     {
-        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         foreach (string prefix in new[] { "SnapTap", "FunctionRow" })
         {
             XElement row = NamedElement(document, "Border", prefix + "BackendRow");
@@ -263,7 +261,7 @@ public sealed class WinUiShellContractTests
             Assert.Contains(header.Descendants(), element => Attribute(element, "Name") ==
                 (prefix == "SnapTap" ? "SnapTapToggle" : "FunctionKeyPrimarySelector"));
             XElement subtitle = Assert.Single(row.Descendants(), element =>
-                Attribute(element, "Uid") == "KeyboardBackend_" + prefix + "Description");
+                CanonicalLocalizedXaml.Identity(element) == "KeyboardBackend_" + prefix + "Description");
             Assert.Equal("{StaticResource SecondaryTextStyle}", Attribute(subtitle, "Style"));
             Assert.Equal("Wrap", Attribute(subtitle, "TextWrapping"));
             Assert.False(string.IsNullOrWhiteSpace(Attribute(subtitle, "Text")));
@@ -292,7 +290,7 @@ public sealed class WinUiShellContractTests
         XElement functionParent = NamedElement(document, "Border", "FunctionKeyBehaviorRow");
         Assert.Contains(functionRow.Ancestors(), element => element == functionParent);
         XElement functionTitle = functionParent.Descendants().Single(element =>
-            Attribute(element, "Uid") == "MainWindow_TextBlockFunctionKeyBehavior");
+            CanonicalLocalizedXaml.Identity(element) == "MainWindow_TextBlockFunctionKeyBehavior");
         Assert.Equal("Wrap", Attribute(functionTitle, "TextWrapping"));
         Assert.Equal("{x:Bind SupportsFunctionKeyPrimary, Mode=OneWay}", Attribute(functionParent, "Visibility"));
         Assert.Equal("OnFunctionRowBackendLoaded", Attribute(functionRow, "Loaded"));
@@ -308,7 +306,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void MissingOrUnavailableSnapTapDriverKeepsSetupDiscoverableAndRetryable()
     {
-        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement link = NamedElement(document, "HyperlinkButton", "SnapTapDriverLink");
         Assert.Equal("Setup guide", Attribute(link, "ToolTipService.ToolTip"));
         Assert.Equal("32", Attribute(link, "Width"));
@@ -448,11 +446,10 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void ThxEnhancementSlidersUseSharedInlineCardStyle()
     {
-        XDocument document = XDocument.Parse(
-            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         foreach (string uid in new[] { "MainWindow_ThxAudioNormalizationLevel", "MainWindow_ThxAudioVoiceClarityLevel" })
         {
-            XElement slider = UidElement(document, "Slider", uid);
+            XElement slider = LocalizedElement(document, "Slider", uid);
             Assert.Equal("{StaticResource InlineCardSliderStyle}", Attribute(slider, "Style"));
         }
     }
@@ -460,9 +457,8 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void ExperimentalSupportIsAutomaticAndPausedWritesExposeOneExplicitResumeAction()
     {
-        XDocument document = XDocument.Parse(
-            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
-        XElement resume = UidElement(
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement resume = LocalizedElement(
             document,
             "Button",
             "MainWindow_ResumeExperimentalWritesButton");
@@ -481,12 +477,12 @@ public sealed class WinUiShellContractTests
                     == "{x:Bind ViewModel.IsResumeExperimentalWritesOperationInProgress, Mode=OneWay}");
         Assert.DoesNotContain(
             document.Descendants(),
-            element => Attribute(element, "Uid") is
+            element => CanonicalLocalizedXaml.Identity(element) is
                 "MainWindow_ExperimentalControlsToggle"
                 or "MainWindow_ExperimentalControlsTitle"
                 or "MainWindow_ExperimentalControlsDescription");
 
-        XElement labFeatures = UidElement(
+        XElement labFeatures = LocalizedElement(
             document,
             "TextBlock",
             "MainWindow_TextBlockLabFeatures");
@@ -521,8 +517,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void FanTemperatureToggleKeepsProgrammaticSynchronizationOutOfCommitPath()
     {
-        XDocument document = XDocument.Parse(
-            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement toggle = Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == "ToggleSwitch"
             && Attribute(element, "Toggled") == "OnManualFanCurveSettingChanged");
@@ -538,8 +533,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void FirmwareVersionsSectionHidesWhenEveryFirmwareRowIsHidden()
     {
-        XDocument document = XDocument.Parse(
-            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement versionsSection = NamedElement(
             document,
             "Border",
@@ -559,8 +553,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void LocalizedPageHeadersKeepProfileActionsResponsiveAndOrdered()
     {
-        XDocument document = XDocument.Parse(
-            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         foreach ((string headerName, string actionName, string customizeUid, string visibilityBinding) in new[]
         {
             (
@@ -587,7 +580,7 @@ public sealed class WinUiShellContractTests
         {
             XElement header = NamedElement(document, "ResponsivePageHeader", headerName);
             XElement profileActions = NamedElement(document, "StackPanel", actionName);
-            XElement customizeButton = UidElement(document, "Button", customizeUid);
+            XElement customizeButton = LocalizedElement(document, "Button", customizeUid);
 
             Assert.Same(header, profileActions.Parent);
             Assert.Equal("1", Attribute(profileActions, "Grid.Column"));
@@ -661,7 +654,7 @@ public sealed class WinUiShellContractTests
             document,
             "ResponsivePageHeader",
             "ProfilesPageHeader");
-        XElement profilesTitle = UidElement(
+        XElement profilesTitle = LocalizedElement(
             document,
             "TextBlock",
             "MainWindow_TextBlockProfiles2");
@@ -686,7 +679,7 @@ public sealed class WinUiShellContractTests
             .Where(element => element.Name.LocalName == "Button")
             .ToArray();
         Assert.Equal(2, profileFileActions.Length);
-        Assert.Equal("MainWindow_ButtonImportProfiles", Attribute(profileFileActions[0], "Uid"));
+        Assert.Equal("MainWindow_ButtonImportProfiles", CanonicalLocalizedXaml.Identity(profileFileActions[0]));
         Assert.Equal("Import profiles", Attribute(profileFileActions[0], "Content"));
         Assert.Equal("OnImportProfiles", Attribute(profileFileActions[0], "Click"));
         Assert.Equal(
@@ -695,7 +688,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal(
             "Import profiles from JSON",
             Attribute(profileFileActions[0], "AutomationProperties.Name"));
-        Assert.Equal("MainWindow_ButtonExportProfiles", Attribute(profileFileActions[1], "Uid"));
+        Assert.Equal("MainWindow_ButtonExportProfiles", CanonicalLocalizedXaml.Identity(profileFileActions[1]));
         Assert.Equal("Export profiles", Attribute(profileFileActions[1], "Content"));
         Assert.Equal("OnExportProfiles", Attribute(profileFileActions[1], "Click"));
         Assert.Equal(
@@ -708,8 +701,8 @@ public sealed class WinUiShellContractTests
             "{StaticResource PageHeaderSecondaryButtonStyle}",
             Attribute(button, "Style")));
 
-        XElement aboutCustomize = UidElement(document, "Button", "MainWindow_ButtonCustomize7");
-        XElement aboutNotes = UidElement(document, "Button", "MainWindow_ButtonWhatsNew");
+        XElement aboutCustomize = LocalizedElement(document, "Button", "MainWindow_ButtonCustomize7");
+        XElement aboutNotes = LocalizedElement(document, "Button", "MainWindow_ButtonWhatsNew");
         XElement aboutActions = Assert.IsType<XElement>(aboutCustomize.Parent);
         Assert.Equal("ContentWrapPanel", aboutActions.Name.LocalName);
         Assert.Same(aboutActions, aboutNotes.Parent);
@@ -719,7 +712,7 @@ public sealed class WinUiShellContractTests
         Assert.Same(aboutHeader, aboutActions.Parent);
         Assert.Equal(
             "Context",
-            Attribute(UidElement(document, "TextBlock", "MainWindow_TextBlockAbout"), "ContextualToolbar.Role"));
+            Attribute(LocalizedElement(document, "TextBlock", "MainWindow_TextBlockAbout"), "ContextualToolbar.Role"));
         Assert.Equal([aboutNotes, aboutCustomize], aboutActions.Elements().ToArray());
         Assert.Equal(
             "{StaticResource PageHeaderSecondaryButtonStyle}",
@@ -729,7 +722,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void DashboardCustomPerformanceRowsUseNeutralSubcardBackgrounds()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string powerModeCard = SliceMethod(
             xaml,
             "<DataTemplate x:Key=\"DashboardPowerModeCardTemplate\"",
@@ -751,15 +744,12 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void HyperBoostUnavailableWarningIsAdjacentToBothPerformanceSelectors()
     {
-        string mainXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string mainXaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string powerModeCard = SliceMethod(
             mainXaml,
             "<DataTemplate x:Key=\"DashboardPowerModeCardTemplate\"",
             "<DataTemplate x:Key=\"DashboardFansCardTemplate\"");
-        string dashboardXaml = ReadRepositoryFile(
-            "src",
-            "OpenBlade.Tray",
-            "TrayDashboardWindow.xaml");
+        string dashboardXaml = CanonicalLocalizedXaml.Read("TrayDashboardWindow.xaml");
         string dashboardWindow = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
@@ -789,7 +779,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void DashboardGpuTuningDescriptionUsesDefinedSharedStyle()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string gpuTuningCard = SliceMethod(
             xaml,
             "Text=\"GPU tuning\"",
@@ -805,7 +795,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void PowerModeCardOffersConfirmedGpuAppCleanup()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string codeBehind = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
@@ -939,10 +929,10 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void DisplayColorProfilePickerLocalizesItsNoSelectionPlaceholder()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         Assert.Contains(
-            "x:Uid=\"MainWindow_DisplayColorProfilePickerText\"",
-            xaml,
+            "{CustomResource MainWindow_DisplayColorProfilePickerText.PlaceholderText}",
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"),
             StringComparison.Ordinal);
         Assert.Contains(
             "PlaceholderText=\"No profile selected\"",
@@ -1050,7 +1040,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void ProfilesPageIsReadOnlyAndSubsystemPagesOwnProfileActions()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string profilesPage = SliceMethod(
             xaml,
             "<ScrollViewer x:Name=\"ProfilesPage\"",
@@ -1187,7 +1177,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void LogoAndFirmwareOnlyLaptopActionsUseTruthfulSettingsPatterns()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
 
         Assert.Contains("Text=\"Laptop logo\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Laptop behavior\"", xaml, StringComparison.Ordinal);
@@ -1312,8 +1302,8 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void AboutPageOwnsSupportAndUsesBorderlessIconActions()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
-        XDocument document = XDocument.Parse(xaml);
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
 
@@ -1353,7 +1343,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void TestedPlatformWarningUsesDashboardPillAndAboutDetails()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
         Assert.Contains("x:Name=\"TestedPlatformWarningBadge\"", xaml, StringComparison.Ordinal);
@@ -1424,7 +1414,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void LightingPageOffersCapabilityGatedPresetImportWithConfirmation()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
@@ -1480,12 +1470,12 @@ public sealed class WinUiShellContractTests
             keyboardSection,
             StringComparison.Ordinal);
         Assert.Contains(
-            "x:Uid=\"MainWindow_TextBlockSixtyHzLighting\"",
-            keyboardSection,
+            "{CustomResource MainWindow_TextBlockSixtyHzLighting.Text}",
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"),
             StringComparison.Ordinal);
         Assert.Contains(
-            "x:Uid=\"MainWindow_LightingRefreshRateToggleText\"",
-            keyboardSection,
+            "{CustomResource MainWindow_LightingRefreshRateToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}",
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"),
             StringComparison.Ordinal);
         Assert.Contains(
             "Toggled=\"OnLightingRefreshRateToggled\"",
@@ -1517,7 +1507,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void LightingAutoAppliesWithDebounceAndHasNoSeparateApplyAction()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
         Assert.DoesNotContain("Apply lighting", xaml, StringComparison.OrdinalIgnoreCase);
@@ -1605,15 +1595,15 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void WindowsLightingOwnershipUsesCompactSettingsRow()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
-        XDocument document = XDocument.Parse(xaml);
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement toggle = NamedElement(document, "ToggleSwitch", "WindowsDynamicLightingToggle");
         XElement keyboardSection = NamedElement(document, "StackPanel", "LightingKeyboardSection");
         XElement row = toggle.Ancestors().First(element =>
             element.Name.LocalName == "Border"
             && Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}");
         Assert.Contains(keyboardSection, row.Ancestors());
-        XElement heading = UidElement(document, "TextBlock", "MainWindow_TextBlockKeyboard2");
+        XElement heading = LocalizedElement(document, "TextBlock", "MainWindow_TextBlockKeyboard2");
         Assert.Contains(keyboardSection, heading.Ancestors());
         Assert.Equal("True", Attribute(heading, "CardReorder.IsHeader"));
         Assert.DoesNotContain(toggle.Ancestors(), ancestor =>
@@ -1661,7 +1651,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void SettingsExposeReorderableTelemetryAndTroubleshootingServiceControl()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
@@ -1722,7 +1712,7 @@ public sealed class WinUiShellContractTests
             "SelectedItem=\"{x:Bind UpdateViewModel.SelectedChannelOption, Mode=TwoWay}\"",
             xaml,
             StringComparison.Ordinal);
-        XElement settingsHeader = NamedElement(XDocument.Parse(xaml), "Grid", "SettingsPageHeader");
+        XElement settingsHeader = NamedElement(CanonicalLocalizedXaml.Load("MainWindow.xaml"), "Grid", "SettingsPageHeader");
         Assert.Equal("0,0,0,20", settingsHeader.Attribute("Margin")?.Value);
         Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}\"",
@@ -1764,7 +1754,7 @@ public sealed class WinUiShellContractTests
     public void DashboardCustomizerUsesTheSameNativeListViewReorderingAsTaskbarHover()
     {
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
 
         Assert.Contains("new ObservableCollection<DashboardCardOption>()", window, StringComparison.Ordinal);
         Assert.Contains("CreateCustomizationDialog(", window, StringComparison.Ordinal);
@@ -1831,9 +1821,9 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void CanonicalLaptopCardsStartInTheirFinalHostBeforeLoaded()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
-        XDocument document = XDocument.Parse(xaml);
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement laptopHost = NamedElement(document, "StackPanel", "LaptopCardsHost");
         string[] cardNames = ["PowerModeCard", "FansCard", "BatteryCard"];
         Assert.Equal(cardNames, laptopHost.Elements().Take(cardNames.Length)
@@ -1859,7 +1849,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void EveryReusableDashboardCardBindsDirectlyToItsViewModel()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         string[] mainViewModelTemplates =
         [
@@ -1902,7 +1892,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Content = content", factory, StringComparison.Ordinal);
         Assert.DoesNotContain("Content = this", factory, StringComparison.Ordinal);
 
-        XDocument document = XDocument.Parse(xaml);
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         foreach (string cardName in new[]
         {
             "PowerModeCard",
@@ -2003,7 +1993,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void DashboardTelemetryUsesResponsiveSingleRowWithoutClipping()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string heroReadings = SliceMethod(
             xaml,
             "<Border x:Name=\"HeroReadings\"",
@@ -2029,7 +2019,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void DashboardTelemetryPreferencesUseAConstrainedFullWidthRow()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
 
         Assert.Contains("Grid.Row=\"1\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Grid.ColumnSpan=\"2\"", xaml, StringComparison.Ordinal);
@@ -2039,7 +2029,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void ProfileComparisonIncludesCurrentLightingAndPowerPolicySettings()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
 
         Assert.Contains("Laptop lid logo", xaml, StringComparison.Ordinal);
         Assert.Contains("PluggedInProfilePresentation.LightingDisplayOff", xaml, StringComparison.Ordinal);
@@ -2051,7 +2041,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void DashboardStatusPillsShareOneNeutralContainerStyle()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
 
         Assert.Equal(3, CountOccurrences(
             xaml,
@@ -2090,7 +2080,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void ExternalChangeFlyoutOffersTheScopedManualRecoveryAction()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
@@ -2148,7 +2138,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void AttentionFlyoutIsDismissedWhenAttentionClears()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
@@ -2185,7 +2175,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void ActiveProfileAndNestedControlStylesHaveSingleSemanticRoles()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
 
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillStyle}\""));
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
@@ -2207,10 +2197,10 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void DisplayBrightnessUsesSharedRowPresentationAndBoundedAccessibleEditor()
     {
-        XDocument document = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-        XElement title = document.Descendants().Single(element => (string?)element.Attribute(x + "Uid") == "MainWindow_DisplayBrightnessTitle");
-        XElement reference = document.Descendants().Single(element => (string?)element.Attribute(x + "Uid") == "MainWindow_TextBlockCPU");
+        XElement title = document.Descendants().Single(element => CanonicalLocalizedXaml.Identity(element) == "MainWindow_DisplayBrightnessTitle");
+        XElement reference = document.Descendants().Single(element => CanonicalLocalizedXaml.Identity(element) == "MainWindow_TextBlockCPU");
         XElement row = title.Ancestors().First(element => element.Name.LocalName == "Border");
         XElement referenceRow = reference.Ancestors().First(element => element.Name.LocalName == "Border");
         Assert.Equal(reference.Attribute("Style")?.Value, title.Attribute("Style")?.Value);
@@ -2242,7 +2232,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal("OnDisplayBrightnessSliderUnloaded", editor.Attribute("Unloaded")?.Value);
         Assert.Equal("{x:Bind HasBrightnessReading, Mode=OneWay}", editor.Parent?.Attribute("Visibility")?.Value);
         XElement unavailable = row.Descendants().Single(element =>
-            (string?)element.Attribute(x + "Uid") == "MainWindow_DisplayBrightnessUnavailableText");
+            CanonicalLocalizedXaml.Identity(element) == "MainWindow_DisplayBrightnessUnavailableText");
         Assert.Equal("{x:Bind IsBrightnessUnavailable, Mode=OneWay}", unavailable.Attribute("Visibility")?.Value);
         Assert.DoesNotContain(row.Descendants(), element => element.Name.LocalName == "NumberBox");
         Assert.Contains(editor.Attributes(), attribute => attribute.Name.LocalName == "AutomationProperties.Name" && !string.IsNullOrWhiteSpace(attribute.Value));
@@ -2542,7 +2532,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void NotificationSettingsKeepDurableFailureStatusIndependentFromToasts()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
         Assert.Contains("Notification preferences", xaml, StringComparison.Ordinal);
@@ -2744,7 +2734,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ThemeSelectionPolicy.Resolve", themeManager, StringComparison.Ordinal);
         Assert.Contains("root.RequestedTheme", themeManager, StringComparison.Ordinal);
 
-        string windowXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string windowXaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         Assert.Contains(
             "Background=\"Transparent\"",
             windowXaml,
@@ -2833,7 +2823,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void PersonalizationSupportsAnimatedDashboardNavigationOrderAndAccentColor()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         string accentManager = ReadRepositoryFile(
             "src",
@@ -2852,7 +2842,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("OnCustomizeNavigation", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Title = \"Customize navigation\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"TaskbarHoverLabelExpander\"", xaml, StringComparison.Ordinal);
-        XDocument document = XDocument.Parse(xaml);
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         foreach (string name in new[] { "NavigationMenuExpander", "TaskbarHoverLabelExpander" })
         {
             Assert.Equal("False", (string?)NamedElement(document, "Expander", name).Attribute("IsExpanded"));
@@ -2882,7 +2872,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void RuntimeThemeSynchronizesMicaBackdropWithRootActualTheme()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
         Assert.DoesNotContain("<Window.SystemBackdrop>", xaml, StringComparison.Ordinal);
@@ -2943,11 +2933,11 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void WindowExtendsMicaThroughNativeCaptionArea()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         Assert.Contains("x:Name=\"AppTitleBar\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Grid.Row=\"0\"", xaml, StringComparison.Ordinal);
-        Assert.Equal("UserControl", XDocument.Parse(xaml).Root!.Name.LocalName);
+        Assert.Equal("UserControl", CanonicalLocalizedXaml.Load("MainWindow.xaml").Root!.Name.LocalName);
         Assert.Contains("HostWindow.Title = \"OpenBlade\"", window, StringComparison.Ordinal);
         Assert.Contains("Background=\"Transparent\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"MainNavigation\"", xaml, StringComparison.Ordinal);
@@ -3553,7 +3543,7 @@ public sealed class WinUiShellContractTests
     public void LocalizedViewsOwnContentWhileNativeShellsSurviveRetirement(string name)
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", name + ".xaml.cs");
-        XDocument xaml = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", name + ".xaml"));
+        XDocument xaml = CanonicalLocalizedXaml.Load(name + ".xaml");
         Assert.Equal("UserControl", xaml.Root!.Name.LocalName);
         Assert.Contains("Microsoft.UI.Xaml.Controls.UserControl", source, StringComparison.Ordinal);
         Assert.Contains("HostWindow = hostWindow ?? new Window()", source, StringComparison.Ordinal);
@@ -3751,7 +3741,7 @@ public sealed class WinUiShellContractTests
         int watch = source.IndexOf("await ViewModel.StartAsync()", StringComparison.Ordinal);
         Assert.True(load >= 0 && load < apply && apply < subscribe && subscribe < watch);
 
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         Assert.Contains("Text=\"Lab features\"", xaml, StringComparison.Ordinal);
         Assert.Contains(
             "Text=\"Turn on experimental features.\"",
@@ -3785,12 +3775,12 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "x:Uid=\"MainWindow_TextBlockSixtyHzKeyboardLighting\"",
-            xaml,
+            "{CustomResource MainWindow_TextBlockSixtyHzKeyboardLighting.Text}",
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"),
             StringComparison.Ordinal);
         Assert.Contains(
-            "x:Uid=\"MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly\"",
-            xaml,
+            "{CustomResource MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text}",
+            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"),
             StringComparison.Ordinal);
         Assert.Contains(
             "Text=\"Lab features may change or be removed.\"",
@@ -3919,7 +3909,7 @@ public sealed class WinUiShellContractTests
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         string trayHost = ReadRepositoryFile(
             "src", "OpenBlade.Tray", "WinFormsTrayIconHost.cs");
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
 
         Assert.Contains("new VisibleObservationLoop(ObserveVisibleSurfacesAsync", window, StringComparison.Ordinal);
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync", window, StringComparison.Ordinal);
@@ -4084,12 +4074,12 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void DischargeNotificationRowUsesSharedSingleLineSettingsPresentation()
     {
-        XDocument xaml = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"));
+        XDocument xaml = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
         XElement label = Assert.Single(xaml.Descendants(), element =>
-            (string?)element.Attribute(x + "Uid") == "MainWindow_TextBlockExternalPowerDischarge");
+            CanonicalLocalizedXaml.Identity(element) == "MainWindow_TextBlockExternalPowerDischarge");
         XElement reference = Assert.Single(xaml.Descendants(), element =>
-            (string?)element.Attribute(x + "Uid") == "MainWindow_TextBlockGPUCoreClockOffset");
+            CanonicalLocalizedXaml.Identity(element) == "MainWindow_TextBlockGPUCoreClockOffset");
         XElement row = label.Ancestors().First(element => element.Name.LocalName == "Border");
         XElement referenceRow = reference.Ancestors().First(element => element.Name.LocalName == "Border");
         Assert.Equal("{StaticResource SettingsNeutralSubcardStyle}", (string?)row.Attribute("Style"));
@@ -4316,7 +4306,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void LaptopPageHostsPersistentSpecialKeyBindings()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         string bindingViewModel = ReadRepositoryFile(
             "src",
@@ -4474,8 +4464,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void TrayDashboardShowsOperationFailuresAcrossDashboardAndDetailPages()
     {
-        XDocument document = XDocument.Parse(
-            ReadRepositoryFile("src", "OpenBlade.Tray", "TrayDashboardWindow.xaml"));
+        XDocument document = CanonicalLocalizedXaml.Load("TrayDashboardWindow.xaml");
         XElement operationError = NamedElement(
             document,
             "InfoBar",
@@ -4494,7 +4483,7 @@ public sealed class WinUiShellContractTests
             Attribute(operationError, "Message"));
         Assert.Equal(
             "TrayDashboardWindow_OperationErrorInfoBarText",
-            Attribute(operationError, "Uid"));
+            CanonicalLocalizedXaml.Identity(operationError));
         Assert.Equal("1", Attribute(
             NamedElement(document, "Grid", "DashboardPage"),
             "Grid.Row"));
@@ -4507,7 +4496,7 @@ public sealed class WinUiShellContractTests
     public void TrayDashboardEditorWiringKeepsPreferencePersistenceAndObservationInTheWindow()
     {
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         Assert.Contains("trayDashboardEditor.EditAccepted += OnTrayDashboardEditorEditAccepted;",
             window, StringComparison.Ordinal);
         Assert.Contains("trayDashboardEditor.EditAccepted -= OnTrayDashboardEditorEditAccepted;",
@@ -4564,15 +4553,12 @@ public sealed class WinUiShellContractTests
             "src",
             "OpenBlade.Tray",
             "WinFormsTrayIconHost.cs");
-        string mainXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string mainXaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string mainWindow = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
             "MainWindow.xaml.cs");
-        string dashboardXaml = ReadRepositoryFile(
-            "src",
-            "OpenBlade.Tray",
-            "TrayDashboardWindow.xaml");
+        string dashboardXaml = CanonicalLocalizedXaml.Read("TrayDashboardWindow.xaml");
         string dashboardWindow = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
@@ -5326,7 +5312,7 @@ public sealed class WinUiShellContractTests
     [Fact]
     public void ThermalPolicyDisclosureIsAccessibleExplicitAndForcesVisibleLaunch()
     {
-        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = ReadRepositoryFile(
             "src",
             "OpenBlade.Tray",
@@ -5402,12 +5388,12 @@ public sealed class WinUiShellContractTests
             element.Name.LocalName == elementName
             && Attribute(element, "Name") == name);
 
-    private static XElement UidElement(
+    private static XElement LocalizedElement(
         XDocument document,
         string elementName,
         string uid) => Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == elementName
-            && Attribute(element, "Uid") == uid);
+            && CanonicalLocalizedXaml.Identity(element) == uid);
 
     private static XElement KeyedElement(
         XDocument document,
