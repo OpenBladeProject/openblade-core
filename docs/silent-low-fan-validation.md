@@ -37,8 +37,8 @@ both restorable stored targets and actual fan speeds. It enters Silent/manual,
 independently confirms that mode before writing targets, then establishes both
 fans physically spinning at the 2,000 RPM target. Changing only the targets to
 1,500 RPM tests spin-down. Three consecutive zero readings on both fans are
-required. The 2,000 RPM preparation isolates the experiment's physical effect;
-it is not a production prerequisite.
+required. The 2,000 RPM preparation establishes a spinning starting state; it
+does not by itself isolate causation and is not a production prerequisite.
 
 After a clear first round trip, `validate-silent-lowest-spinning` can descend
 through 1,900, 1,800, 1,700, 1,600 and 1,500 RPM. Each target must be independently
@@ -131,5 +131,47 @@ The pinned sources contain no separately established
 fan-off selector. They also call an overclock-mode API separately, whose complete
 implementation/readback is absent from these pins; combining another thermal
 profile with a presumed Silent CPU mode would be an unsupported inference.
-Consequently, Silent fan stop is not enabled by these results. The separately
-proven Battery Saver feature retains its existing admission.
+Consequently, Silent fan stop is not enabled by these results. Battery Saver's
+earlier stop observation also lacks a sustained 2,000 RPM control and a reversal;
+its causal effect remains uncertain. Production fan-stop admission is withheld
+for both modes. See the [Battery Saver reassessment](battery-saver-low-fan-validation.md#withheld-production-capability).
+
+## Online source review, 2026-11-05
+
+The reviewed online sources do not establish a forced fan-off operation for
+RZ09-0581 / `1532:02E0`. This is a bounded source finding, not proof that an
+undocumented operation cannot exist. Source was inspected as text; no third-party
+utility, firmware updater or additional hardware test was run.
+
+- Razer's [Product 736 Synapse guide, page 18](https://dl.razerzone.com/master-guides/RazerSynapse4/Blade16-00000736-en.pdf)
+  documents Automatic, Fixed RPM and Manual fan curve, with no separate fan-off
+  setting. Its [exact-model firmware list](https://mysupport.razer.com/app/answers/detail/a_id/20854)
+  lists EC 1.04; the [EC release note](https://mysupport.razer.com/app/answers/detail/a_id/20850/kw/set%20up)
+  describes improved fan control without promising fan stop. The saved local
+  baseline already reports EC 1.04, so this is not an untried update remedy.
+- [CPUnity R-Helper at `3b5a0dc`](https://github.com/CPUnity/CPUnity-R-Helper/blob/3b5a0dce6a67eefcf15dee8afa5ec9a5773ddc74/README.md#L128-L132)
+  advertises 500–3,200 RPM and Off for the **external cooling pad**. Its
+  [laptop control](https://github.com/CPUnity/CPUnity-R-Helper/blob/3b5a0dce6a67eefcf15dee8afa5ec9a5773ddc74/src/ui/fan.rs#L3-L7)
+  has a 2,000 RPM manual minimum; its model definitions do not establish 02E0.
+- [razer-control-revived at `f600bc8`](https://github.com/encomjp/razer-control-revived/blob/f600bc86997392de27e04edefe53bf5c844bc3e2/razer_control_gui/src/daemon/device.rs#L1005-L1018)
+  maps requested zero to firmware Automatic, without sending a literal zero
+  target. Its tested newer-model thermal implementation is for 02C6, not 02E0.
+- [razerblade-cli at `7a89806`](https://github.com/TimandXiyu/razerblade-cli/blob/7a8980671cfce1abe7f37405071509c04385fc04/razerctld.c#L221-L228)
+  likewise maps a curve's zero point to Automatic. It was tested on 02B7. Its
+  active profile-byte `1` requirement matches the exact-model vendor encoding
+  and the already performed OpenBlade trials; it supplies no new command lead.
+- [sqmagellan/razer-ctl at `158ba28`](https://github.com/sqmagellan/razer-ctl/blob/158ba283f4c7d2a5367b3b6cac95c0deaaee9642/librazer/src/descriptor.rs#L29-L47)
+  records an independent older-model result on RZ09-0483 / 029F, BIOS 2.05:
+  manual targets from 1,800 through literal zero remained at 2,000 RPM during
+  40-second holds. That project's [02E0 entry](https://github.com/sqmagellan/razer-ctl/blob/158ba283f4c7d2a5367b3b6cac95c0deaaee9642/librazer/src/descriptor.rs#L228-L298)
+  is explicitly an unmeasured generic fallback, so neither result grants this
+  model a capability.
+- The [original rnd-ash implementation at `016b3fe`](https://github.com/rnd-ash/razer-laptop-control/blob/016b3fe512bbfc47f38e5672533adb6df07839fc/driver/README.md#L55-L73)
+  also uses zero to select Automatic. Its old-model fan-control implementation
+  supplies no distinct forced-off or hardware-curve command.
+
+The concrete supported route to idle silence remains firmware Automatic, which
+already stopped this laptop's fans in the recorded Silent idle baseline. It
+cannot guarantee fan stop on demand. A manual zero setpoint, a UI label of zero,
+and measured zero rotation must remain separate claims. None of this research
+widens production admission or authorizes another experiment.

@@ -54,15 +54,14 @@ was subsequently exercised on RZ09-0581 in the bounded
 [low-target round trips](battery-saver-low-fan-validation.md); that result does
 not establish another model's physical behavior or Battery Balanced operation.
 
-RZ09-0581 additionally offers a separate **Stop fans** switch while on battery
-in Battery Saver. It uses the independently confirmed 1,500 RPM target from
-that experiment, without changing ordinary fixed-target ranges. The service
-requires fresh CPU temperature at or below 55°C and confirmed inactive GPU
-activity; unsafe or unavailable readings suspend fan stop and hand owned manual
-cooling back to firmware Automatic. Turning the switch off restores the current
-resolved normal fan intent. Other exact models retain their existing controls:
-matching command geometry does not establish that their firmware stops at this
-target. Silent mode is outside this feature's scope.
+The developer Battery Saver trial retained a requested 1,500 RPM target and
+later measured zero RPM, but its short 2,000 RPM preparation had no held control
+or reversal. That association does not establish a causal or reliable fan-stop
+command. A literal-zero target was not tested in Battery Saver. Production
+fan-stop admission is withheld on RZ09-0581 and all other models; the retained
+prototype preference is dormant and its switch is hidden. Ordinary fixed-target
+ranges and direct manual transitions remain unchanged. See the
+[corrected evidence assessment](battery-saver-low-fan-validation.md#withheld-production-capability).
 
 Smart curves are external-power-only. The vendor policy stores and reads smart
 curve state under `performance.plugged` and starts its temperature monitor only

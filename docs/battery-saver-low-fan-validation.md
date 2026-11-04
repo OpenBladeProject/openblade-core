@@ -1,4 +1,4 @@
-# Battery Saver 1,500 RPM validation
+# Battery Saver low-target observations
 
 The initial developer-only experiment checks whether the exact RZ09-0581
 accepts and physically reaches a fixed 1,500 RPM target in Battery Saver. A
@@ -6,6 +6,13 @@ separately authorized follow-up checks whether reducing a confirmed spinning
 2,000 RPM target to 1,500 RPM stops the fans. Ordinary fixed-target controls
 continue to admit 2,000–5,400 RPM. Results apply to the device, firmware, power source and
 command sequence exercised.
+
+**Production admission is withheld.** The fans stopped after a requested
+1,500 RPM target in one trial, but that sequence did not distinguish a target
+effect from autonomous firmware cooling policy. A measured 0 RPM result is not
+a literal-zero request: no literal `00` target was tested in Battery Saver.
+The prototype has never been installed, and the production factory keeps
+`SupportsBatterySaverFanStop` false.
 
 ## Source and operation
 
@@ -26,8 +33,9 @@ The target register is distinct from the measured-RPM query.
 | Restore Battery Saver Automatic | `0D/02` | Exact saved paired mode payloads |
 
 The setter's byte encoding establishes how to submit this experiment, rather
-than proof that firmware accepts a target below the advertised range. Zero-RPM
-target semantics remain unreviewed.
+than proof that firmware accepts or physically follows a target below the
+advertised range. Literal-zero firmware behavior in Battery Saver remains
+unknown; that command was not tested.
 
 ## Execution
 
@@ -128,22 +136,32 @@ retains every preparation and candidate sample and all ten acknowledged writes.
 | Preparation target | Both independently read back 2,000 RPM |
 | Confirmed spinning baseline | Three consecutive pairs: 1,800/1,800, 1,800/1,900 and 1,900/1,900 RPM |
 | Reduced target | Both independently read back 1,500 RPM, with Battery Saver / Manual retained |
-| Physical response | Both fans reached zero about 10.8 seconds after the second 1,500 RPM acknowledgement, followed by three consecutive 0/0 readings |
+| Physical response | Both fans reached zero 10.755 seconds after the second 1,500 RPM acknowledgement, followed by three consecutive 0/0 readings |
 | Restoration | Both original 3,800 RPM targets and exact Battery Saver / Automatic paired state independently confirmed |
 | Installed state | Original profiles and overrides, user-process presence and protected executable hashes verified after restoration |
 
-This establishes observed spin-down from running fans after the target-only
-change to 1,500 RPM in the sampled cool Battery Saver conditions. Steady
-1,500 RPM rotation, persistent fan-off under load, restart behavior, Silent
-mode and other models were not validated. Normal control ranges remain
-unchanged. The updated probe passes 2,717 Protocol and 505 Capture tests,
-including 59 focused runner cases, and independent safety review.
+The fans were rotating before the target change and stopped afterward. This is
+an observed association, not evidence that the 1,500 RPM request caused the stop
+or will do so reliably. The 2,000 RPM preparation was observed for only about
+5.4 seconds after its second acknowledgement. There was no held 2,000 RPM
+control interval and no return to 2,000 RPM after the zero readings; restoration
+instead returned directly to the original targets and Automatic mode. Autonomous
+firmware policy remains an alternative explanation.
+
+The recorded `spunDown: true` describes the observed tachometer sequence. It does
+not establish causal control, a physical minimum, steady 1,500 RPM rotation,
+persistent fan-off under load, restart behavior or another model's behavior.
+The original capture and its historical interpretation remain immutable; this
+section corrects the inference drawn from them. Normal control ranges remain
+unchanged. The updated probe passed 2,717 Protocol and 505 Capture tests,
+including 59 focused runner cases, and independent safety review; those checks
+did not establish hardware causation.
 
 ## Lowest nonzero target: 100 RPM
 
 The target field uses 100 RPM units. A literal 1 RPM value cannot be represented;
-wire value `01` requests 100 RPM. Zero's firmware semantics remain unknown and
-zero was not tested.
+wire value `01` requests 100 RPM. Literal-zero Battery Saver firmware semantics
+remain unknown, and a literal-zero target was not tested.
 
 The separately authorized `validate-battery-saver-spin-down-100` trial first
 confirmed both fans spinning at the 2,000 RPM target. Both 100 RPM setters
@@ -167,42 +185,51 @@ command was replayed. The original failed trial remains recorded as failed;
 the successful explicit recovery is a separate result.
 
 The [sanitized 100 RPM and recovery record](evidence/battery-saver-100-rz09-0581-2026-11-04.json)
-retains both outcomes. The verified 1,500 RPM path remains the basis for the
-Battery Saver fan-stop feature.
+retains both outcomes. Neither the 100 RPM trial nor the earlier 1,500 RPM
+sequence establishes a production fan-stop capability.
 
-## Battery Saver switch
+## Withheld production capability
 
-The product adds a default-off **Stop fans** switch in the Fans card for exact
-RZ09-0581 (`1532:02E0`). Its separate battery-profile preference preserves the
-normal fan mode, fixed speed and curve, including current overrides. It applies
-only on battery in Battery Saver. Turning it off or leaving that scope restores
-the current resolved normal fan intent.
+The source retains a default-off Battery Saver fan-stop prototype and its saved
+preference, IPC and schema fields. Production admission is explicitly false,
+independently of ordinary direct manual fan transitions. The Fans card therefore
+does not expose the switch, and the service does not admit enabling it on an
+installed device. Existing saved intent remains intact and dormant. Ordinary
+fan modes, fixed-target ranges and direct manual transitions are unchanged.
 
-The service directly selects Battery Saver manual fans when needed and writes
-the established 1,500 RPM target; the experiment's 2,000 RPM preparation is not
-a product prerequisite. Paired mode and both stored targets must independently
-confirm the request. Actual RPM remains a separate measurement: confirming the
-target does not guarantee that firmware will hold the fans stopped.
+The prototype's software tests and disconnected renders establish software
+behavior only. No build enabling this prototype was installed during the
+experiments. Its service integration, causal fan-stop effect and sleep/resume
+behavior remain unvalidated. A stored 1,500 RPM readback and measured zero RPM
+must not be presented as proof of a reliable stop command. Silent-mode evidence
+is documented separately in [Silent low-fan observations](silent-low-fan-validation.md).
 
-Admission requires CPU temperature at or below 55°C, confirmed inactive GPU
-activity and fresh sensor evidence. Unsafe or unavailable readings release
-OpenBlade-owned fan stop to firmware Automatic and suspend the request for that
-Battery Saver activation. The preference stays on; turning it off and on can
-retry after conditions permit it. Native submissions retain fresh exact-device,
-controller, physical-power and scope checks. Ambiguity pauses further writes.
-Low-power and shutdown cleanup release only service-owned fan control and do
-not change saved intent.
+## Proposed controlled follow-up — not authorized or executed
 
-After a service restart, a matching observed target does not establish ownership.
-A new successful, independently confirmed fan-stop write can establish it while
-conditions permit. If the observed stop target is unowned and conditions prevent
-that write, control is paused: turn the switch off to restore normal cooling.
-The service does not silently adopt or automatically overwrite unowned state.
+A bounded A/B/A sequence could distinguish a target effect from the existing
+firmware policy without introducing another command or a baseline-mode reset:
 
-The new switch has software and disconnected-render validation. Its installed
-service integration and sleep/resume behavior have not been physically tested.
-The user-authorized hardware trials above exercised the developer tool, and the
-original installed state was restored. Contracts/IPC changed, so deployment
-requires a coordinated full install rather than a tray-only replacement.
-Other models and Silent mode remain outside this feature's admission; shared
-fan-command encoding alone does not justify a lower physical limit.
+1. Capture the exact Automatic baseline, original stored targets and tachometer
+   readings. Admit the exact device, battery source, controller absence,
+   ownership, local session and fresh safe thermal readings before each write.
+2. Select the reviewed Battery Saver/manual mode and confirm it independently.
+   Request 2,000 RPM, verify both stored targets, then hold that target for at
+   least 30 seconds while recording actual RPM. This is an experimental control,
+   not a firmware prerequisite. If the fans stop during this interval, the
+   current conditions do not establish a useful running control; skip the lower
+   target and restore the saved baseline after fresh admission.
+3. If the control remains spinning, change only the targets to 1,500 RPM and
+   record paired mode, stored targets and actual RPM over a matching interval.
+4. On an unambiguous safe outcome, return only the targets to 2,000 RPM, confirm
+   their readback and observe whether both fans resume and remain spinning over
+   the same interval. Then restore the exact saved targets and Automatic state,
+   independently verifying restoration.
+
+A stop confined to the lower-target interval followed by rotation at the
+restored 2,000 RPM target would strengthen the causal inference under those
+conditions. A missing reversal or a stop during the held control would leave it
+unresolved. Either result would retain the actual samples and their timestamps;
+it would not establish a global minimum or reliability under other conditions.
+Ambiguous submission/readback stops all writes, including restoration, without
+retry or fallback. This design grants no new hardware authorization and has not
+been implemented as an executable probe.
