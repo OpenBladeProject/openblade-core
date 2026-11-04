@@ -5,6 +5,20 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve invalid configuration and the original files when a save and its rollback both fail. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Keep settings tied to the correct Windows user across interrupted activation and overlapping requests. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Report incomplete profile application accurately and retain uncertain laptop-control writes across restarts without replaying them automatically. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Keep lighting recovery admission consistent across supported backends. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Retain keyboard-hook ownership when replacement cleanup fails and stop replacements until cleanup is confirmed. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Follow playback-device changes in Audio Meter lighting and preserve configured THX profile values through saving and loading. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Preserve display-automation pauses after partially submitted changes and retain the latest activated app profile. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+
+### Changed
+
+- Release worker threads between GPU activity samples and cancel pending sample waits promptly. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Reduce service and battery IPC decoding overhead with shared streaming validation. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
 ## [0.50.3] - 2026-11-01
 
 ### Added
