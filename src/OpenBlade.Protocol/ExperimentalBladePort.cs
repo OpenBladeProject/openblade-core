@@ -17,7 +17,7 @@ internal sealed partial class ExperimentalBladePort(
     TimeProvider? lightingTimeProvider = null,
     ExperimentalStartupAnimationState? sharedStartupAnimationState = null,
     ExperimentalTemporaryFullChargeState? sharedTemporaryFullChargeState = null)
-    : IProductionBatteryPort, IProductionLightingPort
+    : IProductionBatteryPort, IProductionLightingPort, ILightingRecoveryWriteAdmission
 {
     private readonly SemaphoreSlim operationGate = sharedOperationGate ?? new(1, 1);
     private readonly AdapterPowerCommandClient adapterPowerCommands = new(session, TimeSpan.FromSeconds(3));
@@ -113,6 +113,10 @@ internal sealed partial class ExperimentalBladePort(
                 false, ConfirmedValue: confirmed, FailureCategory: failure);
         }
     }
+
+    private readonly LightingRecoveryWriteGate recoveryWriteGate = new();
+
+    public void SetRecoveryWriteAdmission(Func<bool> admission) => recoveryWriteGate.Set(admission);
 
     private Func<bool>? additionalWriteAdmission;
 
@@ -454,6 +458,7 @@ internal sealed partial class ExperimentalBladePort(
 
     private void RequireWriteAdmission(bool thermal = false, FanMode? fanMode = null)
     {
+        recoveryWriteGate.ThrowIfBlocked();
         if (!policy.WritesAllowed)
         {
             policy.Record("WriteAdmission", "Guard", "Blocked", failure: "RecoveryRequired");
@@ -562,6 +567,7 @@ internal sealed partial class ExperimentalBladePort(
         policy.Record(operation, "Failure", submitted ? "Indeterminate" : "NotApplied", submitted,
             failure: exception.GetType().Name);
         return new(submitted ? WriteSubmissionState.Indeterminate : WriteSubmissionState.KnownNotApplied,
+            LightingRecoveryWriteGate.IsRejection(exception) ? BladeWriteFailurePhase.ControlRecoveryAdmission : BladeWriteFailurePhase.Unspecified,
             exception.Message, exception);
     }
 
@@ -639,6 +645,12 @@ internal sealed partial class ExperimentalBladePort(
                     arguments,
                     admittedFanSource) : null,
         };
+        LightingRecoveryWriteGate.SubmissionGuard? recoveryGuard = write
+            ? recoveryWriteGate.CreateSubmissionGuard(command.SubmissionAllowed) : null;
+        if (recoveryGuard is not null)
+        {
+            command = command with { SubmissionAllowed = recoveryGuard.Allow };
+        }
         HidSessionResult<ReadOnlyMemory<byte>> result;
         try
         {
@@ -651,6 +663,7 @@ internal sealed partial class ExperimentalBladePort(
             throw new BladeWriteException(WriteSubmissionState.Indeterminate,
                 "Experimental write failed after submission became possible.", exception);
         }
+        recoveryGuard?.ThrowIfRefused(result.Diagnostic);
         if (result.Failure is not null)
         {
             bool possiblySubmitted = write && result.Diagnostic?.Phase != HidSessionFailurePhase.Guard

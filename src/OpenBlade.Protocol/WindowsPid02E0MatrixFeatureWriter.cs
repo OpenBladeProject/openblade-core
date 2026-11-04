@@ -320,7 +320,8 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         var item = new WorkItem(
             buffer,
             cancellationToken,
-            timingSink is null ? 0 : timeProvider.GetTimestamp());
+            timingSink is null ? 0 : timeProvider.GetTimestamp(),
+            report.SubmissionAllowed);
         lock (sync)
         {
             if (state != RazerCommandSessionDisposition.Healthy)
@@ -550,6 +551,17 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         long guardStartedTimestamp,
         long guardCompletedTimestamp)
     {
+        try
+        {
+            if (item.SubmissionAllowed?.Invoke() == false)
+            {
+                return DiagnosticFailure(HidSessionFailureKind.ConflictBlocked, HidSessionFailurePhase.Guard);
+            }
+        }
+        catch
+        {
+            return DiagnosticFailure(HidSessionFailureKind.ConflictDetectionFailed, HidSessionFailurePhase.Guard);
+        }
         HidFeatureIoResult result;
         try
         {
@@ -726,12 +738,16 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
         internal WorkItem(
             byte[] buffer,
             CancellationToken cancellationToken,
-            long enqueuedTimestamp)
+            long enqueuedTimestamp,
+            Func<bool>? submissionAllowed)
         {
             Buffer = buffer;
             CancellationToken = cancellationToken;
             EnqueuedTimestamp = enqueuedTimestamp;
+            SubmissionAllowed = submissionAllowed;
         }
+
+        internal Func<bool>? SubmissionAllowed { get; }
 
         internal byte[] Buffer { get; }
 
