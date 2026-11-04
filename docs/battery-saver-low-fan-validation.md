@@ -1,9 +1,11 @@
 # Battery Saver 1,500 RPM validation
 
-This developer-only experiment checks whether the exact RZ09-0581 accepts and
-physically reaches a fixed 1,500 RPM target in Battery Saver. The installed app
-continues to admit 2,000–5,400 RPM. A successful experiment would apply only to
-the device, firmware, power source and command sequence exercised.
+The initial developer-only experiment checks whether the exact RZ09-0581
+accepts and physically reaches a fixed 1,500 RPM target in Battery Saver. A
+separately authorized follow-up checks whether reducing a confirmed spinning
+2,000 RPM target to 1,500 RPM stops the fans. The installed app continues to
+admit 2,000–5,400 RPM. Results apply to the device, firmware, power source and
+command sequence exercised.
 
 ## Source and operation
 
@@ -32,7 +34,7 @@ target semantics remain unreviewed.
 Run only with explicit authorization for the out-of-range 1,500 RPM experiment.
 The baseline must independently confirm Battery Saver / Automatic on battery,
 and both stored targets must be restorable within the existing 2,000–5,400 RPM
-contract. The named operation exposes no target-value parameter.
+contract. Each named operation exposes no target-value parameter.
 
 `build/Invoke-BatterySaverLowFanValidation.ps1` saves installed state and hashes,
 uses an elevated child for the sole-owner handoff, and invokes the built Capture
@@ -62,7 +64,7 @@ Ambiguous submission or readback stops further writes, including restoration.
 The handoff leaves installed owners stopped when restoration is unresolved.
 No alternate sequence or uncertain write is replayed.
 
-## Results and model scope
+## Initial experiment: automatic baseline
 
 Software validation: 2,691 Protocol tests and 505 Capture tests pass, including
 33 focused runner tests. An independent source safety review passed.
@@ -97,3 +99,42 @@ Silent mode were not exercised.
 Fixed-target limits differ between models and presets; matching command
 geometry alone does not establish a lower physical fan limit. Normal controls
 retain their existing ranges on this laptop and every other model.
+
+## Follow-up: spinning 2,000 RPM target to 1,500 RPM
+
+The initial zero-RPM baseline left spin-down causation unresolved. A separately
+authorized follow-up therefore establishes both fans spinning before reducing
+the target. This is an experiment starting condition, rather than a firmware
+prerequisite for direct low-target entry.
+
+The named `validate-battery-saver-spin-down-1500` command enters Battery Saver
+manual fans, sends 2,000 RPM to both channels and independently confirms the
+mode and stored targets. It requires three consecutive measured pairs with
+both fans in the 1,800–2,200 RPM tolerance. A known preparation failure skips
+1,500 RPM and restores the saved state after fresh admission; ambiguity stops
+further writes. With preparation confirmed, it changes
+only the two targets to 1,500 RPM, then requires three consecutive measured
+pairs of exactly zero to report spin-down. The same submission admission,
+durable journal, ambiguity stop and exact restoration rules apply. The owner
+handoff wrapper selects this command with `-ConfirmSpinningAt2000`.
+
+The follow-up completed on the same RZ09-0581, BIOS 4.01, on battery in Battery
+Saver. The Windows CPU temperature reading remained 45°C during candidate
+admission. The [sanitized follow-up result](evidence/battery-saver-2000-to-1500-rz09-0581-2026-11-04.json)
+retains every preparation and candidate sample and all ten acknowledged writes.
+
+| Observation | Result |
+| --- | --- |
+| Preparation target | Both independently read back 2,000 RPM |
+| Confirmed spinning baseline | Three consecutive pairs: 1,800/1,800, 1,800/1,900 and 1,900/1,900 RPM |
+| Reduced target | Both independently read back 1,500 RPM, with Battery Saver / Manual retained |
+| Physical response | Both fans reached zero about 10.8 seconds after the second 1,500 RPM acknowledgement, followed by three consecutive 0/0 readings |
+| Restoration | Both original 3,800 RPM targets and exact Battery Saver / Automatic paired state independently confirmed |
+| Installed state | Original profiles and overrides, user-process presence and protected executable hashes verified after restoration |
+
+This establishes observed spin-down from running fans after the target-only
+change to 1,500 RPM in the sampled cool Battery Saver conditions. Steady
+1,500 RPM rotation, persistent fan-off under load, restart behavior, Silent
+mode and other models were not validated. Normal control ranges remain
+unchanged. The updated probe passes 2,717 Protocol and 505 Capture tests,
+including 59 focused runner cases, and independent safety review.
