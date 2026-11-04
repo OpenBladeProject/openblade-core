@@ -133,6 +133,10 @@ This test confirms direct entry and exit; generic manual readback does not
 establish that the Performance preset remains effective while manual fans are
 active. See the [recorded physical result](direct-fan-transition-validation.md).
 
+The separately authorized [Battery Saver 1,500 RPM experiment](battery-saver-low-fan-validation.md)
+uses a named developer-only probe with independent stored-target and actual-RPM
+readback. Its recorded result preserves the installed fan ranges.
+
 ### Other direct-transition checks
 
 The same stopped-service ownership rules apply to these named developer checks:
