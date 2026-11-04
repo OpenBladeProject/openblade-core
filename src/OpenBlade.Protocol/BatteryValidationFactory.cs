@@ -1061,6 +1061,36 @@ public static class BatteryValidationFactory
     }
 
 
+    internal static BatterySaverLowFanValidationRunner CreateWindowsBatterySaverLowFanValidation(
+        Func<bool, CancellationToken, Task<string?>> admission,
+        Action<LowFanValidationProgress> journal,
+        Func<bool, bool> submissionAllowed)
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var processes = new RunningProcessSource();
+        var services = new WindowsServiceSource();
+        var guard = new DirectFanValidationAccessGuard(
+            new WindowsHardwareAccessGuard(processes, services), processes, services);
+        var identity = new WindowsHostIdentitySource(
+            registry, new RuntimeWindowsPlatformEvidenceSource(registry));
+        var opener = new WindowsRazerHidSessionOpener(
+            identity, guard, native, ControllerExclusivityPolicy.Strict);
+        var actors = new ValidationActorFactory(opener, new OverlappedFeatureOperation(native),
+            guard, TimeProvider.System, DefaultExchangeTimeout, ControllerExclusivityPolicy.Strict,
+            BatteryFeatureReportSettleDelay);
+        DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
+            ProductionFixtureSource.Read()
+                ?? throw new UnvalidatedCommandException("The admitted thermal fixture is unavailable."),
+            TrustedFixtureHashRegistry.Production);
+        return new BatterySaverLowFanValidationRunner(actors, catalog,
+            async (restoring, token) => !guard.Check().Safe
+                ? "ControllerOrValidationOwnerUnavailable"
+                : await admission(restoring, token).ConfigureAwait(false),
+            journal, TimeProvider.System, DefaultExchangeTimeout, DefaultCleanupDrainTimeout,
+            submissionAllowed: restoring => guard.Check().Safe && submissionAllowed(restoring));
+    }
+
     internal static DirectThermalTransitionValidationRunner CreateWindowsDirectThermalTransitionValidation()
     {
         var (actors, safety, native) = CreateDirectTransitionActors();

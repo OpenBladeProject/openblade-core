@@ -1666,6 +1666,11 @@ if (args.Length > 0 && args[0].Equals(
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length > 0 && args[0] == BatterySaverLowFanValidationCommand.Name)
+{
+    return await BatterySaverLowFanValidationCommand.RunWindowsAsync(args[1..], Console.Out);
+}
+
 if (args.Length > 0 && args[0] is "validate-direct-thermal-transition" or "validate-direct-battery-off" or "query-direct-thermal-state")
 {
     var registry = new WindowsRegistryValueSource();
