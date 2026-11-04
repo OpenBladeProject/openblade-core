@@ -1666,9 +1666,11 @@ if (args.Length > 0 && args[0].Equals(
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
-if (args.Length > 0 && args[0] == BatterySaverLowFanValidationCommand.Name)
+if (args.Length > 0 && args[0] is BatterySaverLowFanValidationCommand.Name
+    or BatterySaverLowFanValidationCommand.SpinDownName)
 {
-    return await BatterySaverLowFanValidationCommand.RunWindowsAsync(args[1..], Console.Out);
+    return await BatterySaverLowFanValidationCommand.RunWindowsAsync(args[1..], Console.Out,
+        confirmSpinningAt2000: args[0] == BatterySaverLowFanValidationCommand.SpinDownName);
 }
 
 if (args.Length > 0 && args[0] is "validate-direct-thermal-transition" or "validate-direct-battery-off" or "query-direct-thermal-state")

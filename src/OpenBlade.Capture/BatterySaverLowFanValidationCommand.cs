@@ -8,10 +8,11 @@ using OpenBlade.Service;
 
 namespace OpenBlade.Capture;
 
-// One explicitly authorized experiment, not a production range override or raw command tool.
+// Explicitly authorized named experiments; no production range override or raw command tool.
 internal static class BatterySaverLowFanValidationCommand
 {
     internal const string Name = "validate-battery-saver-1500";
+    internal const string SpinDownName = "validate-battery-saver-spin-down-1500";
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -36,7 +37,8 @@ internal static class BatterySaverLowFanValidationCommand
     }
 
     internal static async Task<int> RunWindowsAsync(
-        IReadOnlyList<string> arguments, TextWriter output)
+        IReadOnlyList<string> arguments, TextWriter output,
+        bool confirmSpinningAt2000 = false)
     {
         var registry = new WindowsRegistryValueSource();
         var identity = new WindowsHostIdentitySource(
@@ -50,7 +52,8 @@ internal static class BatterySaverLowFanValidationCommand
 
         if (!TryParseArguments(arguments, bios, out string? journalPath))
         {
-            await output.WriteLineAsync($"Usage: OpenBlade.Capture {Name} --confirm-target "
+            string name = confirmSpinningAt2000 ? SpinDownName : Name;
+            await output.WriteLineAsync($"Usage: OpenBlade.Capture {name} --confirm-target "
                 + $"RZ09-0581:1532:02E0:{bios} --journal <absolute-new-jsonl-path>");
             return 1;
         }
@@ -141,13 +144,18 @@ internal static class BatterySaverLowFanValidationCommand
 
         Append(new
         {
-            schemaVersion = 1,
+            schemaVersion = confirmSpinningAt2000 ? 2 : 1,
             phase = "experiment",
             model = "RZ09-0581",
             vendorId = "1532",
             productId = "02E0",
             biosVersion = bios,
             requestedRpm = 1500,
+            preparationRpm = confirmSpinningAt2000 ? 2000 : (int?)null,
+            preparationMinimumMeasuredRpm = confirmSpinningAt2000 ? 1800 : (int?)null,
+            preparationMaximumMeasuredRpm = confirmSpinningAt2000 ? 2200 : (int?)null,
+            preparationRequiredConsecutiveSamples = confirmSpinningAt2000 ? 3 : (int?)null,
+            scenario = confirmSpinningAt2000 ? "2000-to-1500-spin-down" : "automaticTo1500",
             performance = "BatterySaver",
             productionAdmitted = false,
             sourceBaseSha256 = "BC7DC47E18261AB38393589D336C11F321CC431D700ED32147997144F64628CA",
@@ -155,7 +163,7 @@ internal static class BatterySaverLowFanValidationCommand
         });
         BatterySaverLowFanValidationRunner runner = BatteryValidationFactory
             .CreateWindowsBatterySaverLowFanValidation(
-                AdmitAsync, progress => Append(progress), SubmissionAllowed);
+                AdmitAsync, progress => Append(progress), SubmissionAllowed, confirmSpinningAt2000);
         BatterySaverLowFanValidationResult result = await runner.RunAsync(cancellation.Token)
             .ConfigureAwait(false);
         Append(new { phase = "completed", result });

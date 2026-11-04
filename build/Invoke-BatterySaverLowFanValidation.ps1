@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory)][string]$CapturePath,
     [Parameter(Mandatory)][string]$RecordDirectory,
+    [switch]$ConfirmSpinningAt2000,
     [switch]$Elevated
 )
 
@@ -13,6 +14,7 @@ $childReport = Join-Path $recordRoot 'owner-handoff.json'
 $outputPath = Join-Path $recordRoot 'capture-result.json'
 $journalPath = Join-Path $recordRoot 'hardware-journal.jsonl'
 $manifestPath = Join-Path $recordRoot 'probe-hashes.json'
+$probeCommand = if ($ConfirmSpinningAt2000) { 'validate-battery-saver-spin-down-1500' } else { 'validate-battery-saver-1500' }
 
 function Write-Report($Report) {
     [IO.File]::WriteAllText($childReport, ($Report | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
@@ -68,7 +70,7 @@ if ($Elevated) {
         }
         $report.CaptureStarted = $true
         Write-Report $report
-        & $captureFile validate-battery-saver-1500 --confirm-target RZ09-0581:1532:02E0:4.01 --journal $journalPath > $outputPath
+        & $captureFile $probeCommand --confirm-target RZ09-0581:1532:02E0:4.01 --journal $journalPath > $outputPath
         $report.CaptureExitCode = $LASTEXITCODE
         $result = Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json
         $report.Restored = $result.Restored -eq $true
@@ -162,6 +164,7 @@ $baselineIntent = Get-Intent $baseline
 $shellPath = Join-Path $PSHOME 'pwsh.exe'
 $childArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $PSCommandPath + '"'),
     '-CapturePath', ('"' + $captureFile + '"'), '-RecordDirectory', ('"' + $recordRoot + '"'), '-Elevated')
+if ($ConfirmSpinningAt2000) { $childArguments += '-ConfirmSpinningAt2000' }
 $child = Start-Process -FilePath $shellPath -ArgumentList $childArguments -Verb RunAs -WindowStyle Hidden -PassThru
 $child.WaitForExit()
 if (-not (Test-Path -LiteralPath $childReport)) { throw 'The elevated handoff did not produce a report; do not relaunch owners.' }
