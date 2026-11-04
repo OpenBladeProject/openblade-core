@@ -1666,6 +1666,11 @@ if (args.Length > 0 && args[0].Equals(
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length > 0 && args[0] is SilentLowFanValidationCommand.StopName or SilentLowFanValidationCommand.LowestName)
+{
+    return await SilentLowFanValidationCommand.RunWindowsAsync(args[1..], Console.Out,
+        args[0] == SilentLowFanValidationCommand.StopName ? SilentLowFanScenario.FanStop1500 : SilentLowFanScenario.LowestSpinning);
+}
 if (args.Length > 0 && args[0] is BatterySaverLowFanValidationCommand.Name
     or BatterySaverLowFanValidationCommand.SpinDownName
     or BatterySaverLowFanValidationCommand.LowestNonzeroName

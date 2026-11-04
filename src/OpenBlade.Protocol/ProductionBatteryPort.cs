@@ -2484,6 +2484,9 @@ internal sealed class ProductionBatteryPort :
             ThermalModeState.SilentAutomatic => new(
                 PerformancePreset.Silent,
                 FanMode.Automatic),
+            ThermalModeState.SilentManual => new(
+                PerformancePreset.Silent,
+                FanMode.Maximum),
             ThermalModeState.PerformanceAutomatic => new(
                 PerformancePreset.Performance,
                 FanMode.Automatic),
