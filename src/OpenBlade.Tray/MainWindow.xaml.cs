@@ -94,7 +94,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
     private bool chargeLimitPointerInteraction;
     private bool? dashboardIsStacked;
     private bool? profilesUseCompactLayout;
-    private bool enforcingMinimumWindowSize;
     private bool windowVisible;
     private bool trayDashboardVisible;
     private int trayDashboardLiveReadingSensors =
@@ -374,7 +373,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         HostWindow.ExtendsContentIntoTitleBar = true;
         HostWindow.SetTitleBar(AppTitleBar);
         ContentHost.AttachBackdrop(HostWindow, Root);
-        AppWindow.Changed += OnAppWindowChanged;
+        ContentHost.ConfigureSizeConstraints(HostWindow, AppWindow, MinimumWidthDip, MinimumHeightDip);
         AppWindow.Closing += OnClosing;
         ApplyCaptionTheme();
     }
@@ -390,7 +389,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         }
         hostAttached = false;
         DisposeComponentSafely("window closing handler", () => AppWindow.Closing -= OnClosing);
-        DisposeComponentSafely("window changed handler", () => AppWindow.Changed -= OnAppWindowChanged);
         DisposeComponentSafely("Mica theme source detachment", () => ContentHost.DetachBackdrop(Root));
         DisposeComponentSafely("content detachment", () =>
         {
@@ -865,6 +863,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         {
             if (ownsHost && ReferenceEquals(ContentHost.ActiveView, this))
             {
+                DisposeComponentSafely("window size constraints", ContentHost.DisposeSizeConstraints);
                 DisposeComponentSafely("Mica backdrop", ContentHost.DisposeBackdrop);
                 WindowTitleBarLifetime.Release(HostWindow, usesXamlTitleBar: true);
                 DetachFromHost();
@@ -928,7 +927,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         Root.ActualThemeChanged -= OnRootActualThemeChanged;
         Root.Loaded -= OnRootLoaded;
         Root.SizeChanged -= OnRootSizeChanged;
-        AppWindow.Changed -= OnAppWindowChanged;
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
         DisposeComponentSafely("charge-limit commits", chargeLimitCommits.Dispose);
@@ -1733,48 +1731,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             args.Cancel = true;
             StartHiddenObservation();
             AppWindow.Hide();
-        }
-    }
-
-    private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
-    {
-        if (!args.DidSizeChange || enforcingMinimumWindowSize)
-        {
-            return;
-        }
-
-        try
-        {
-            nint hwnd = WindowNative.GetWindowHandle(HostWindow);
-            uint nativeDpi = GetDpiForWindow(hwnd);
-            if (nativeDpi == 0)
-            {
-                return;
-            }
-
-            SizeInt32 size = sender.Size;
-            DisplayArea displayArea = DisplayArea.GetFromWindowId(
-                sender.Id,
-                DisplayAreaFallback.Primary);
-            RectInt32 workArea = displayArea.WorkArea;
-            PixelRect constrained = WindowPlacementPolicy.EnforceMinimumSize(
-                new PixelRect(0, 0, size.Width, size.Height),
-                MinimumWidthDip,
-                MinimumHeightDip,
-                checked((int)nativeDpi),
-                workArea.Width,
-                workArea.Height);
-            if (constrained.Width == size.Width && constrained.Height == size.Height)
-            {
-                return;
-            }
-
-            enforcingMinimumWindowSize = true;
-            sender.Resize(new SizeInt32(constrained.Width, constrained.Height));
-        }
-        finally
-        {
-            enforcingMinimumWindowSize = false;
         }
     }
 

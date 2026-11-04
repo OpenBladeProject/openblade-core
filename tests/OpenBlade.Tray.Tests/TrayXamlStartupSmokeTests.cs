@@ -117,6 +117,11 @@ public sealed class TrayXamlStartupSmokeTests
         RunTraySmokeAsync("--resource-performance-audit", "OpenBlade-resource-localization",
             localizationLanguage: "en-US", offscreenResourceWindows: true, resourceWindowKind: "localized-content");
 
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task NativeWindowLimitsPreserveSizingAndReleaseTheirShellCallback() =>
+        RunTraySmokeAsync("--window-size-smoke", "OpenBlade-window-size");
+
     private static async Task RunTraySmokeAsync(
         string argument,
         string reportPrefix,
@@ -186,7 +191,7 @@ public sealed class TrayXamlStartupSmokeTests
                 startInfo.Environment["OPENBLADE_LIVE_LOCALIZATION_SMOKE_PREFERENCE_PATH"] =
                     isolatedPreferencePath;
             }
-            if (argument == "--resource-performance-audit")
+            if (argument is "--resource-performance-audit" or "--window-size-smoke")
             {
                 startInfo.Environment["OPENBLADE_RESOURCE_PHASE_SECONDS"] = "2";
                 startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_KIND"] = resourceWindowKind;

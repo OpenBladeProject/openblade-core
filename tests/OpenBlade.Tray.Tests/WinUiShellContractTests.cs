@@ -3610,11 +3610,7 @@ public sealed class WinUiShellContractTests
         string detach = SliceMethod(source, "internal void DetachFromHost()", "public MainViewModel ViewModel");
         Assert.Contains("AppWindow.Closing += OnClosing", attach, StringComparison.Ordinal);
         Assert.Contains("AppWindow.Closing -= OnClosing", detach, StringComparison.Ordinal);
-        if (name == "MainWindow")
-        {
-            Assert.Contains("AppWindow.Changed += OnAppWindowChanged", attach, StringComparison.Ordinal);
-            Assert.Contains("AppWindow.Changed -= OnAppWindowChanged", detach, StringComparison.Ordinal);
-        }
+        Assert.DoesNotContain("AppWindow.Changed +=", source, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -8,6 +8,7 @@ namespace OpenBlade.Tray;
 internal sealed class WindowContentHost : Grid
 {
     private MicaBackdropHost? backdrop;
+    private WindowsWindowSizeConstraints? sizeConstraints;
 
     internal FrameworkElement? ActiveView => Children.Count switch
     {
@@ -68,6 +69,17 @@ internal sealed class WindowContentHost : Grid
 
     internal void DetachBackdrop(FrameworkElement themeSource) =>
         backdrop?.DetachThemeSource(themeSource);
+
+    internal void ConfigureSizeConstraints(Window window, Microsoft.UI.Windowing.AppWindow appWindow,
+        double minimumWidthDip, double minimumHeightDip) =>
+        sizeConstraints ??= new WindowsWindowSizeConstraints(window, appWindow, minimumWidthDip, minimumHeightDip);
+
+    internal void DisposeSizeConstraints()
+    {
+        WindowsWindowSizeConstraints? previous = sizeConstraints;
+        sizeConstraints = null;
+        previous?.Dispose();
+    }
 
     internal void DisposeBackdrop()
     {
