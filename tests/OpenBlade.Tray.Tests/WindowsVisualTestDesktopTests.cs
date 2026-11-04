@@ -67,6 +67,24 @@ public sealed class WindowsVisualTestDesktopTests
     }
 
     [Fact]
+    public void StartRejectsArgumentListBeforeLaunching()
+    {
+        using var desktop = new WindowsVisualTestDesktop();
+        var startInfo = new ProcessStartInfo(Path.Combine(
+            Path.GetTempPath(),
+            $"OpenBlade-missing-renderer-{Guid.NewGuid():N}.exe"))
+        {
+            UseShellExecute = false,
+        };
+        startInfo.ArgumentList.Add("--resource-performance-audit");
+        Assert.False(File.Exists(startInfo.FileName));
+
+        ArgumentException error = Assert.Throws<ArgumentException>(() => desktop.Start(startInfo));
+
+        Assert.Equal("startInfo", error.ParamName);
+    }
+
+    [Fact]
     public void FailedLaunchDoesNotPreventAReplacementLaunchOnTheSameDesktop()
     {
         string directory = CreateTemporaryDirectory();

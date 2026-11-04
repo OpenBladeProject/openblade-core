@@ -32,7 +32,7 @@ internal static class LocalizedResources
             string localized = overrideContext is { } context
                 ? ResourceMap.TryGetValue(ToResourceMapPath(key), context)?.ValueAsString
                     ?? string.Empty
-                : Loader.GetString(key);
+                : Loader.GetString(ToResourceMapPath(key));
             return string.IsNullOrWhiteSpace(localized) ? englishFallback : localized;
         }
         catch

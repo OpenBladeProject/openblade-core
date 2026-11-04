@@ -18,37 +18,39 @@ public sealed partial class MainViewModel
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (!CanSaveThxAudioProfile || ActivePowerSource != expectedSource)
+        using var persistenceCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, lifetime.Token);
+        cancellationToken = persistenceCancellation.Token;
+        if (!await BeginProfilePersistenceAsync(cancellationToken))
         {
             return false;
         }
-
-        PowerProfile updated = GetProfile(expectedSource) with { ThxAudio = settings };
-        ProfileSet candidate = expectedSource switch
+        try
         {
-            PowerSource.PluggedIn => Profiles with { PluggedIn = updated },
-            PowerSource.Battery => Profiles with { Battery = updated },
-            PowerSource.UsbC => Profiles with { UsbC = updated },
-            _ => throw new ArgumentOutOfRangeException(nameof(expectedSource)),
-        };
-        if (!TryGetSupportedProfileDraft(candidate, out ProfileSet validated))
-        {
-            return false;
-        }
-        bool accepted = false;
-        await RunOperationAsync(
-            token => serviceClient.UpdateProfilesAsync(validated, token), cancellationToken,
-            result =>
+            if (!CanSaveThxAudioProfile || ActivePowerSource != expectedSource)
             {
-                if (result.Status is ControlOperationStatus.Stored or ControlOperationStatus.Applied)
-                {
-                    // Audio saves replace only this profile's audio settings.
-                    // Other unsaved editors retain their owners. A blocked save
-                    // must not replace the last confirmed local profile.
-                    Profiles = validated;
-                    accepted = true;
-                }
-            });
-        return accepted;
+                return false;
+            }
+
+            PowerProfile updated = GetProfile(expectedSource) with { ThxAudio = settings };
+            ProfileSet candidate = expectedSource switch
+            {
+                PowerSource.PluggedIn => Profiles with { PluggedIn = updated },
+                PowerSource.Battery => Profiles with { Battery = updated },
+                PowerSource.UsbC => Profiles with { UsbC = updated },
+                _ => throw new ArgumentOutOfRangeException(nameof(expectedSource)),
+            };
+            if (!TryGetSupportedProfileDraft(candidate, out ProfileSet validated))
+            {
+                return false;
+            }
+            // Other unsaved editors retain their owners; only confirmed persistence
+            // replaces the saved profile document.
+            return await PersistProfileSetAsync(validated, cancellationToken);
+        }
+        finally
+        {
+            profilePersistenceGate.Release();
+        }
     }
 }

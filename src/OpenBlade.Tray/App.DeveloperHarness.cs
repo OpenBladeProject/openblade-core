@@ -106,6 +106,32 @@ public partial class App
     /// </summary>
     private bool TryRunDeveloperHarness(string[] commandLineArguments)
     {
+        if (commandLineArguments is [_, "--window-close-smoke", string closeReportPath])
+        {
+            _ = RunWindowCloseSmokeAsync(closeReportPath);
+            return true;
+        }
+        if (commandLineArguments is [_, "--window-size-smoke", string sizeReportPath])
+        {
+            _ = RunWindowSizeSmokeAsync(sizeReportPath);
+            return true;
+        }
+        if (commandLineArguments is [_, "--resource-performance-audit", string resourceReportPath])
+        {
+            _ = RunResourcePerformanceAuditAsync(resourceReportPath);
+            return true;
+        }
+        if (commandLineArguments is [_, "--gpu-startup-smoke", string gpuStartupReportPath])
+        {
+            _ = RunGpuStartupSmokeAsync(gpuStartupReportPath);
+            return true;
+        }
+        if (commandLineArguments is [_, "--performance-audit", string performanceReportPath])
+        {
+            _ = RunPerformanceAuditAsync(performanceReportPath);
+            return true;
+        }
+
         bool pseudoLocalizationRequested = string.Equals(
             Environment.GetEnvironmentVariable("OPENBLADE_PSEUDO_LOCALIZATION"),
             "1",
@@ -269,7 +295,7 @@ public partial class App
         File.WriteAllText(smokeReportPath, "construct dashboard window");
         var smokeDashboardWindow = new TrayDashboardWindow(
             smokeMainWindow.ViewModel,
-            WindowNative.GetWindowHandle(smokeMainWindow),
+                WindowNative.GetWindowHandle(smokeMainWindow.HostWindow),
             _ => { });
         File.WriteAllText(smokeReportPath, "apply all-visible preferences");
         TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
@@ -995,7 +1021,7 @@ public partial class App
             {
                 snapshotDashboardWindow = new TrayDashboardWindow(
                     snapshotMainWindow.ViewModel,
-                    WindowNative.GetWindowHandle(snapshotMainWindow),
+                    WindowNative.GetWindowHandle(snapshotMainWindow.HostWindow),
                     _ => { });
                 TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
                 snapshotDashboardWindow.ApplyPreferences(defaults with
@@ -1065,7 +1091,28 @@ public partial class App
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern nint GetShellWindow();
 
+    private static void ShowNoninteractiveSnapshotWindow(MainWindow window) =>
+        ShowNoninteractiveSnapshotWindow(window.HostWindow);
+
+    private static void ShowNoninteractiveSnapshotWindow(TrayDashboardWindow window) =>
+        ShowNoninteractiveSnapshotWindow(window.HostWindow);
+
     private static void ShowNoninteractiveSnapshotWindow(Window window)
+    {
+        PrepareNoninteractiveSnapshotWindow(window);
+        // Legacy private-desktop snapshots initialize x:Bind through activation.
+        // Offscreen resource probes initialize bindings without activating.
+        window.Activate();
+        if (WindowsPopupPositioner.GetForegroundWindowHandle() == WindowNative.GetWindowHandle(window))
+        {
+            throw new InvalidOperationException("A snapshot window unexpectedly took foreground.");
+        }
+    }
+
+    private static void PrepareNoninteractiveSnapshotWindow(MainWindow window) =>
+        PrepareNoninteractiveSnapshotWindow(window.HostWindow);
+
+    private static void PrepareNoninteractiveSnapshotWindow(Window window)
     {
         ((UIElement)window.Content).IsHitTestVisible = false;
 #if OPENBLADE_DEVELOPER_HARNESS
@@ -1077,13 +1124,6 @@ public partial class App
             window.AppWindow.IsShownInSwitchers = false;
         }
         LocalizationSnapshotWindowInput.Apply(WindowNative.GetWindowHandle(window));
-        // WinUI requires Activate to initialize x:Bind and templates. The native
-        // no-activate style is already installed, so this does not take foreground.
-        window.Activate();
-        if (WindowsPopupPositioner.GetForegroundWindowHandle() == WindowNative.GetWindowHandle(window))
-        {
-            throw new InvalidOperationException("A snapshot window unexpectedly took foreground.");
-        }
     }
 
     private static async Task WaitForSnapshotLayoutAsync()
@@ -1172,14 +1212,14 @@ public partial class App
         if (!mainWindow.HasLocalizedCheckNowButton(expectedContent, expectedAccessibleName))
         {
             throw new InvalidOperationException(
-                "Compiled x:Uid resources did not apply the resolved visible and accessibility text. "
+                "Compiled XAML resources did not apply the resolved visible and accessibility text. "
                     + $"Expected content='{expectedContent}', accessible='{expectedAccessibleName}'. "
                     + "The named Settings-page button retained a different value.");
         }
     }
 
     private static async Task SaveFlyoutSnapshotAsync(
-        Window window,
+        MainWindow window,
         Microsoft.UI.Xaml.Controls.Flyout flyout,
         string path)
     {
@@ -1991,7 +2031,7 @@ public partial class App
 
         var popup = new TrayDashboardWindow(
             window.ViewModel,
-            WindowNative.GetWindowHandle(window),
+            WindowNative.GetWindowHandle(window.HostWindow),
             _ => { });
         double scale = root.XamlRoot?.RasterizationScale ?? 1;
         popup.AppWindow.Resize(new Windows.Graphics.SizeInt32(

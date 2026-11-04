@@ -168,7 +168,8 @@ public sealed class WhatsNewReleaseTests : IDisposable
     [Fact]
     public void BundledChangelog_ContainsReadableReleaseNotes()
     {
-        WhatsNewRelease release = WhatsNewRelease.Load("9999.0.0");
+        WhatsNewRelease release = WhatsNewRelease.Load(
+            OpenBlade.Contracts.OpenBladeProductVersion.Read(typeof(WhatsNewRelease).Assembly));
 
         Assert.NotEmpty(release.Sections);
         Assert.All(release.Sections, section =>

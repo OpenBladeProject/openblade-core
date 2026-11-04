@@ -44,25 +44,31 @@ public sealed partial class MainWindow
 
     private void RefreshTelemetryPresentation(DateTimeOffset? rangeEndOverride = null)
     {
+        if (!CanRefreshTelemetryPresentation())
+        {
+            return;
+        }
+        RefreshTelemetryCommandPresentation();
+        RefreshTelemetryChartPresentation(rangeEndOverride);
+        RefreshTelemetrySourcePresentation();
+        telemetryPresentationDirty = false;
+    }
+
+    private bool CanRefreshTelemetryPresentation()
+    {
         if (!localizationSnapshotMode
             && (!windowVisible || TelemetryPage.Visibility != Visibility.Visible))
         {
             telemetryPresentationDirty = true;
-            return;
+            return false;
         }
+        return true;
+    }
 
-        bool enabled = ViewModel.TelemetryEnabled;
-        telemetryToggleSynchronizing = true;
-        try { TelemetryEnabledToggle.IsOn = enabled; }
-        finally { telemetryToggleSynchronizing = false; }
-        TelemetryContent.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
-        TelemetryDisabledText.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
-        TelemetryErrorText.Text = telemetryActionError ?? ViewModel.TelemetryErrorMessage;
-        TelemetryErrorText.Visibility = string.IsNullOrWhiteSpace(TelemetryErrorText.Text)
-            ? Visibility.Collapsed : Visibility.Visible;
-        if (!enabled)
+    private void RefreshTelemetryChartPresentation(DateTimeOffset? rangeEndOverride = null)
+    {
+        if (!CanRefreshTelemetryPresentation() || !ViewModel.TelemetryEnabled)
         {
-            telemetryPresentationDirty = false;
             return;
         }
 
@@ -78,6 +84,16 @@ public sealed partial class MainWindow
         TelemetryHistorySnapshot snapshot = ViewModel.GetTelemetrySnapshot(rangeEndUtc: end);
         DateTimeOffset? sourceStart = replay ? metadata?.StartedAtUtc : snapshot.RangeStartUtc;
         TelemetryPlot.Update(snapshot, sourceStart ?? end, end, ViewModel.DisplayedTelemetrySourceSessionId);
+    }
+
+    private void RefreshTelemetrySourcePresentation()
+    {
+        if (!CanRefreshTelemetryPresentation() || !ViewModel.TelemetryEnabled)
+        {
+            return;
+        }
+        bool replay = ViewModel.DisplayedTelemetrySource == TelemetrySource.LocalCsvReplay;
+        TelemetrySessionMetadata? metadata = ViewModel.DisplayedTelemetrySessionMetadata;
         TelemetrySourceText.Text = replay
             ? LocalizedResources.Format(
                 "TelemetryUI_ReplaySource",
@@ -89,6 +105,29 @@ public sealed partial class MainWindow
                 TelemetryFreshness.Stale => LocalizedResources.Get("TelemetryUI_Stale", "Stale"),
                 _ => LocalizedResources.Get("TelemetryUI_WaitingForReadings", "Waiting for readings"),
             });
+    }
+
+    private void RefreshTelemetryCommandPresentation()
+    {
+        if (!CanRefreshTelemetryPresentation())
+        {
+            return;
+        }
+        bool enabled = ViewModel.TelemetryEnabled;
+        telemetryToggleSynchronizing = true;
+        try { TelemetryEnabledToggle.IsOn = enabled; }
+        finally { telemetryToggleSynchronizing = false; }
+        TelemetryContent.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        TelemetryDisabledText.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
+        TelemetryErrorText.Text = telemetryActionError ?? ViewModel.TelemetryErrorMessage;
+        TelemetryErrorText.Visibility = string.IsNullOrWhiteSpace(TelemetryErrorText.Text)
+            ? Visibility.Collapsed : Visibility.Visible;
+        if (!enabled)
+        {
+            return;
+        }
+
+        bool replay = ViewModel.DisplayedTelemetrySource == TelemetrySource.LocalCsvReplay;
         bool recording = ViewModel.IsTelemetryRecording;
         SetTelemetryCommandPresentation(
             TelemetryRecordButton,
@@ -131,7 +170,27 @@ public sealed partial class MainWindow
         TelemetryRecordingText.Visibility = recording
             ? Visibility.Visible
             : Visibility.Collapsed;
-        telemetryPresentationDirty = false;
+    }
+
+    private void CompleteTelemetryObservationPresentation(
+        TelemetrySample? sampleBeforeObservation,
+        TelemetrySessionDocument? replayBeforeObservation)
+    {
+        if (Volatile.Read(ref disposed) != 0
+            || !ViewModel.TelemetryEnabled || !ViewModel.IsTelemetryPresentationActive)
+        {
+            return;
+        }
+        // History notifications render accepted samples. A failed/no-sample
+        // observation still advances the live time axis, but a newer sample or
+        // a replay selected before this dispatcher callback owns its own render.
+        if (replayBeforeObservation is null
+            && ViewModel.TelemetryReplaySession is null
+            && ReferenceEquals(sampleBeforeObservation, ViewModel.LatestTelemetrySample))
+        {
+            ViewModel.RefreshTelemetryFreshness();
+            RefreshTelemetryChartPresentation();
+        }
     }
 
     private static void SetTelemetryCommandPresentation(
@@ -169,7 +228,6 @@ public sealed partial class MainWindow
             {
                 await ViewModel.StartTelemetryRecordingAsync(result.Path, CancellationToken.None);
                 UpdateActiveObservationLoop();
-                RefreshTelemetryPresentation();
             }
         }, nameof(OnStartTelemetryRecording));
 
@@ -178,7 +236,6 @@ public sealed partial class MainWindow
         {
             _ = await ViewModel.StopTelemetryRecordingAsync(CancellationToken.None);
             UpdateActiveObservationLoop();
-            RefreshTelemetryPresentation();
         }, nameof(OnStopTelemetryRecording));
 
     private async void OnOpenTelemetryReplay(object sender, RoutedEventArgs args) =>
@@ -192,14 +249,12 @@ public sealed partial class MainWindow
             if (await picker.PickSingleFileAsync() is { } result)
             {
                 await ViewModel.OpenTelemetryReplayAsync(result.Path, CancellationToken.None);
-                RefreshTelemetryPresentation();
             }
         }, nameof(OnOpenTelemetryReplay));
 
     private void OnCloseTelemetryReplay(object sender, RoutedEventArgs args)
     {
         ViewModel.CloseTelemetryReplay();
-        RefreshTelemetryPresentation();
     }
 
     private async Task RunTelemetryActionAsync(Func<Task> action, string label)
@@ -227,7 +282,7 @@ public sealed partial class MainWindow
         {
             if (Volatile.Read(ref disposed) == 0)
             {
-                RefreshTelemetryPresentation();
+                RefreshTelemetryCommandPresentation();
             }
         }
     }

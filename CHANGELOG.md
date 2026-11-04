@@ -7,6 +7,16 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Reduce memory growth when changing app language by sharing localized resource lookups across the main window and quick controls. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Avoid native event-argument memory growth when closing main and quick-controls windows to the tray. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Preserve window size limits while reducing memory growth during language changes. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Reuse native windows, backdrops and icons when changing language, and release retired views and their event subscriptions. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Release generated XAML bindings and native title-bar resources when closing main and quick-controls windows, and complete cleanup after failed window initialization. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Keep display edits and refresh messages in order and use current brightness levels. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Preserve brightness-failure diagnostics and allow display automation to recover after a canceled manual change. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Avoid refreshing unrelated controls when THX audio settings have not changed. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Preserve overlapping profile edits, refresh service state before later saves, and retain drafts when a save is rejected or its result is uncertain. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Honor the latest telemetry replay selection and keep intermittent readings visible without drawing chart lines across missing readings. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Remove failed driver-download attempt files before installation begins, while retaining packages after any installation intent or uncertain result. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
 - Keep driver installation recovery required for malformed journals or missing THX packages, preserve extraction files after uncertain termination, and distinguish timeouts from cancellation. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
 - Preserve invalid configuration and the original files when a save and its rollback both fail. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
@@ -20,6 +30,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Reduce telemetry chart allocations and redraw each accepted live sample once, while keeping freshness labels and missing-sample time progression current. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Release worker threads between GPU activity samples and cancel pending sample waits promptly. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
 - Reduce service and battery IPC decoding overhead with shared streaming validation. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
 

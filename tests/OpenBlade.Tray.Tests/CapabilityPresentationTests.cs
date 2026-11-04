@@ -31,7 +31,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_HyperBoostUsesCapabilityGatedLaptopPerformanceChoice()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement selector = NamedElement(
             document,
             "ResponsiveChoiceSelector",
@@ -93,7 +93,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_FirmwareAssistantIsReadOnlyAndModelScoped()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement card = NamedElement(document, "Border", "OfficialFirmwareUpdatesCard");
         string presentation = card.ToString();
 
@@ -154,7 +154,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_FirmwareAssistantUsesResponsiveSettingsGroupLayout()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement card = NamedElement(document, "Border", "OfficialFirmwareUpdatesCard");
         Assert.Equal("{StaticResource SettingsGroupStyle}", Attribute(card, "Style"));
         Assert.Null(Attribute(card, "Padding"));
@@ -259,7 +259,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_PresentsVbiosOnlyInTheFirmwareSection()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         (string RowName, string PropertyName)[] rows =
         [
             ("DeviceInformationBiosFirmwareRow", "ShowsBiosInDeviceInformation"),
@@ -294,7 +294,7 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "VBIOS");
         Assert.Contains(vbiosLabel, versionsSection.Descendants());
-        Assert.Equal("MainWindow_TextBlockVBIOS", Attribute(vbiosLabel, "Uid"));
+        Assert.Equal("MainWindow_TextBlockVBIOS", CanonicalLocalizedXaml.Identity(vbiosLabel));
         Assert.Equal("4", Attribute(vbiosLabel, "Grid.Row"));
         XElement vbiosValues = Assert.Single(versionsSection.Descendants(), element =>
             element.Name.LocalName == "Grid"
@@ -313,7 +313,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_SettingsRowsConfigureTheSharedPointerOverHighlight()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement style = Assert.Single(document.Descendants(), element =>
             Attribute(element, "Key") == "SettingsRowStyle");
         Assert.Equal("Border", Attribute(style, "TargetType"));
@@ -358,7 +358,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_SettingsExpanderHeadersUseTheSharedHoverHighlight()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement style = Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == "Style"
             && Attribute(element, "Key") == "SettingsExpanderHeaderStyle");
@@ -407,7 +407,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_ThxUsesRecoveryOnlyReadAndSharedStatusAndSettingCells()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement status = NamedElement(document, "Grid", "ThxAudioStatusArea");
         XElement measure = Assert.Single(status.Elements(), element =>
             element.Name.LocalName == "TextBlock" && Attribute(element, "Opacity") == "0");
@@ -418,7 +418,7 @@ public sealed class CapabilityPresentationTests
         Assert.Single(status.Elements(), element => element.Name.LocalName == "ProgressBar");
         Assert.DoesNotContain(status.Descendants(), element => element.Name.LocalName == "RowDefinition");
         XElement read = Assert.Single(document.Descendants(), element =>
-            Attribute(element, "Uid") == "MainWindow_ThxAudioReadSettings");
+            CanonicalLocalizedXaml.Identity(element) == "MainWindow_ThxAudioReadSettings");
         Assert.Equal("{x:Bind ThxViewModel.IsReadSettingsVisible, Mode=OneWay}", Attribute(read, "Visibility"));
         XElement downloadPanel = NamedElement(document, "StackPanel", "ThxAudioComponentDownload");
         Assert.Equal("{x:Bind ThxViewModel.IsComponentDownloadVisible, Mode=OneWay}", Attribute(downloadPanel, "Visibility"));
@@ -477,7 +477,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_ShowsUnsavedNavigationBadgesAndStretchesFanCurveSliders()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         string[] expectedBadgeBindings =
         [
             "{x:Bind ViewModel.HasDashboardProfileDraft, Mode=OneWay}",
@@ -523,7 +523,7 @@ public sealed class CapabilityPresentationTests
     public void MainWindow_AnimatesConditionalDashboardSubcardsAndExportsJsonProfiles()
     {
         string xaml = ReadMainWindowXaml();
-        XDocument document = XDocument.Parse(xaml);
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement[] animated = document.Descendants()
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
@@ -605,7 +605,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_SharedSettingsRowsKeepTheirPresentationDefaults()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         var rowStyles = new HashSet<string>(StringComparer.Ordinal)
         {
             "SettingsRowStyle", "SettingsLastRowStyle",
@@ -657,7 +657,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_DashboardRowsCompactOnlySingleLineContent()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         string[] sharedStyleKeys =
         [
             "SettingsRowStyle",
@@ -722,7 +722,7 @@ public sealed class CapabilityPresentationTests
             XElement title = content.Descendants().First(element =>
                 element.Name.LocalName == "TextBlock"
                 && Attribute(element, "Style") == "{StaticResource CardTitleStyle}");
-            if (Attribute(title, "Uid") == "MainWindow_TextBlockLaptopPerformance")
+            if (CanonicalLocalizedXaml.Identity(title) == "MainWindow_TextBlockLaptopPerformance")
             {
                 Assert.NotNull(title.Parent);
                 Assert.Equal(
@@ -759,7 +759,7 @@ public sealed class CapabilityPresentationTests
                 .Attribute("Text")?.Value));
 
         XElement gamingScope = Assert.Single(document.Descendants(), element =>
-            Attribute(element, "Uid") == "MainWindow_GamingModeKeyBlockingScope");
+            CanonicalLocalizedXaml.Identity(element) == "MainWindow_GamingModeKeyBlockingScope");
         Assert.Equal("{StaticResource SecondaryTextStyle}", Attribute(gamingScope, "Style"));
         Assert.Equal("Wrap", Attribute(gamingScope, "TextWrapping"));
         XElement gamingRow = gamingScope.Ancestors().First(element =>
@@ -768,7 +768,7 @@ public sealed class CapabilityPresentationTests
         Assert.Null(Attribute(gamingRow, "Padding"));
         Assert.Null(Attribute(gamingRow, "Height"));
         XElement gamingTitle = gamingRow.Descendants().First(element =>
-            Attribute(element, "Uid") == "MainWindow_TextBlockGamingMode");
+            CanonicalLocalizedXaml.Identity(element) == "MainWindow_TextBlockGamingMode");
         Assert.Null(Attribute(gamingTitle, "SizeChanged"));
 
         XElement[] animatedCompactRows = compactRows
@@ -814,7 +814,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_FoldsGpuOffsetsUnderANeutralTuningRow()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement toggle = NamedElement(document, "ToggleSwitch", "GpuClockTuningToggle");
         XElement toggleRow = toggle.Ancestors()
             .First(element => element.Name.LocalName == "Border");
@@ -868,7 +868,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_FanEditorSubcardsUseHoverFreeBackground()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         string[] visibilityBindings =
         [
             "{Binding IsFixedFanSpeedVisible}",
@@ -915,7 +915,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_DashboardSliderCardsKeepValuesInline()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement sliderStyle = Assert.Single(document.Descendants(), element =>
             Attribute(element, "Key") == "InlineCardSliderStyle");
         Assert.Equal(
@@ -954,7 +954,7 @@ public sealed class CapabilityPresentationTests
     public void MainWindow_UsesDashboardNavigationAndImmediateControls()
     {
         string xaml = ReadMainWindowXaml();
-        XDocument document = XDocument.Parse(xaml);
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
 
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "NavigationViewItem"
@@ -1170,7 +1170,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void EveryOptionPicker_HasAStableSelectionAnchor()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement[] optionPickers = document.Descendants()
             .Where(element =>
                 element.Name.LocalName == "ComboBox"
@@ -1188,7 +1188,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void ResponsiveChoiceSelector_DeclaresNativeWideAndCompactPresentations()
     {
-        XDocument mainWindow = XDocument.Parse(ReadMainWindowXaml());
+        XDocument mainWindow = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XDocument selectorDocument = XDocument.Parse(
             ReadTraySource("ResponsiveChoiceSelector.xaml"));
         string selectorSource = ReadTraySource("ResponsiveChoiceSelector.xaml.cs");
@@ -1352,7 +1352,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_ExtendsResponsiveChoicesToRemainingSmallOptionPickers()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         string[] expected =
         [
             "Custom CPU level",
@@ -1401,7 +1401,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_UsesAutoHidingScrollViewersWithEdgeAlignedPadding()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
 
         foreach (string pageName in new[]
                  {
@@ -1435,7 +1435,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_DisplayPageUsesSettingsRowsAndGatesAvailableControls()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement display = NamedElement(document, "ScrollViewer", "DisplayPage");
         XElement displayTemplate = NamedTemplate(document, "DashboardDisplayCardTemplate");
 
@@ -1495,7 +1495,7 @@ public sealed class CapabilityPresentationTests
     public void MainWindow_UsesSettingsRowsDurationOptionsAndFlyoutDetails()
     {
         string xaml = ReadMainWindowXaml();
-        XDocument document = XDocument.Parse(xaml);
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement settings = NamedElement(document, "ScrollViewer", "SettingsPage");
         XElement about = NamedElement(document, "ScrollViewer", "AboutPage");
 
@@ -1907,7 +1907,7 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "Text") == "For gamers. By the community.");
         Assert.Equal(
             "MainWindow_TextBlockForGamersByTheCommunity",
-            Attribute(communityTagline, "Uid"));
+            CanonicalLocalizedXaml.Identity(communityTagline));
         Assert.Equal(
             "{StaticResource SecondaryTextStyle}",
             Attribute(communityTagline, "Style"));
@@ -2041,7 +2041,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_ThxAudioOwnsDedicatedModelGatedPageAndNavigationLogo()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement navigation = NamedElement(document, "NavigationViewItem", "ThxAudioNavigationItem");
         XElement audio = NamedElement(document, "ScrollViewer", "ThxAudioPage");
         XElement laptop = NamedElement(document, "ScrollViewer", "LaptopPage");
@@ -2053,9 +2053,9 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(section, laptop.Descendants());
         Assert.Single(navigation.Descendants(), element => element.Name.LocalName == "PathIcon");
         Assert.Contains(audio.Descendants(), element =>
-            Attribute(element, "Uid") == "MainWindow_ThxAudioSpatial");
+            CanonicalLocalizedXaml.Identity(element) == "MainWindow_ThxAudioSpatial");
         Assert.Contains(audio.Descendants(), element =>
-            Attribute(element, "Uid") == "MainWindow_ThxAudioEqualizer");
+            CanonicalLocalizedXaml.Identity(element) == "MainWindow_ThxAudioEqualizer");
 
         string window = ReadTraySource("MainWindow.xaml.cs");
         Assert.Contains(
@@ -2099,7 +2099,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_LaptopPageOwnsFirmwareWideLaptopBehavior()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement navigation = NamedElement(
             document,
             "NavigationViewItem",
@@ -2141,7 +2141,7 @@ public sealed class CapabilityPresentationTests
     public void Dashboard_HeroReadingsAreAFullWidthConfigurableFooter()
     {
         string xaml = ReadMainWindowXaml();
-        XDocument document = XDocument.Parse(xaml);
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement readings = NamedElement(document, "Border", "HeroReadings");
         XElement hero = NamedElement(document, "Grid", "HeroLayout");
 
@@ -2222,7 +2222,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void TroubleshootingExpander_LocallyRemovesHeaderLayers()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement troubleshooting = Assert.Single(
             document.Descendants(),
             element => element.Name.LocalName == "Expander"
@@ -2255,7 +2255,7 @@ public sealed class CapabilityPresentationTests
     public void MainWindow_UsesResponsiveProfileNamesAndNativeTypography()
     {
         string xaml = ReadMainWindowXaml();
-        XDocument document = XDocument.Parse(xaml);
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
 
         XElement comparisonProfiles = NamedElement(document, "StackPanel", "ProfilesComparisonLayout");
         XElement compactProfiles = NamedElement(document, "StackPanel", "ProfilesCompactLayout");
@@ -3327,7 +3327,7 @@ public sealed class CapabilityPresentationTests
     public void MainWindow_LightingPageIsAlwaysVisibleAndDisablesItsControlsAsOneGroup()
     {
         string xaml = ReadMainWindowXaml();
-        XDocument document = XDocument.Parse(xaml);
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement navigation = NamedElement(
             document,
             "NavigationViewItem",
@@ -3390,7 +3390,7 @@ public sealed class CapabilityPresentationTests
             || Attribute(ancestor, "Visibility") == "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}");
         XElement keyboardHeading = keyboardSection.Descendants().Single(element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Uid") == "MainWindow_TextBlockKeyboard2");
+            && CanonicalLocalizedXaml.Identity(element) == "MainWindow_TextBlockKeyboard2");
         Assert.Equal("True", Attribute(keyboardHeading, "CardReorder.IsHeader"));
         Assert.DoesNotContain(keyboardHeading.Ancestors(), ancestor =>
             Attribute(ancestor, "Visibility") == "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}");
@@ -3467,7 +3467,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindow_SpecialKeyBindingsRequireExplicitWritableCapability()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement section = NamedElement(document, "StackPanel", "ShortcutKeysSection");
         XElement itemTemplate = section.Descendants().Single(element =>
             element.Name.LocalName == "DataTemplate"
@@ -3490,7 +3490,7 @@ public sealed class CapabilityPresentationTests
     [Fact]
     public void MainWindowTouchpadUsesConfirmedStateAndSharedSettingsPresentation()
     {
-        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement row = NamedElement(document, "Border", "TouchpadRow");
         Assert.Equal("{StaticResource SettingsRowStyle}", Attribute(row, "Style"));
         XElement grid = Assert.Single(row.Elements());
@@ -3505,7 +3505,7 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "TextWrapping") == "Wrap");
     }
 
-    private static string ReadMainWindowXaml() => ReadTraySource("MainWindow.xaml");
+    private static string ReadMainWindowXaml() => CanonicalLocalizedXaml.Read("MainWindow.xaml");
 
     private static string? Attribute(XElement element, string localName) =>
         element.Attributes()

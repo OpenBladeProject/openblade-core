@@ -14,14 +14,33 @@ public sealed partial class MainViewModelTests
     private static readonly DateTimeOffset NotificationTestTime =
         new(2026, 9, 3, 12, 0, 0, TimeSpan.Zero);
 
-    [Fact]
-    public async Task ObservationCyclesAgainstUnchangedSnapshot_RaiseNoRedundantNotifications()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ObservationCyclesAgainstUnchangedSnapshot_RaiseNoRedundantNotifications(bool withAudioProfile)
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
         var time = new MutableTimeProvider(NotificationTestTime);
         await using var viewModel = new MainViewModel(client, dispatcher, time);
         ServiceStatusSnapshot status = CreateLiveStatus();
+        if (withAudioProfile)
+        {
+            status = status with
+            {
+                Profiles = status.Profiles with
+                {
+                    PluggedIn = status.Profiles.PluggedIn with
+                    {
+                        ThxAudio = AudioSettings() with
+                        {
+                            ApplicationRoutingEnabled = true,
+                            ApplicationRules = [new("game.exe", ThxApplicationAudioOutput.Immersive)],
+                        },
+                    },
+                },
+            };
+        }
         ServiceStatusSnapshot initial = await RoundTripStatusAsync(status);
         Assert.NotSame(
             status.Capabilities!.ChargeLimits,

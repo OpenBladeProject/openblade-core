@@ -40,7 +40,7 @@ public sealed class WhatsNewShellContractTests
     {
         string xaml = Read("MainWindow.xaml");
         Assert.Contains("Click=\"OnShowWhatsNew\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Uid=\"MainWindow_ButtonWhatsNew\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("{CustomResource MainWindow_ButtonWhatsNew.Content}", xaml, StringComparison.Ordinal);
         string harness = Read("App.DeveloperHarness.cs");
         Assert.Contains("\"whats-new\" => \"about\"", harness, StringComparison.Ordinal);
         Assert.Contains("snapshotMainWindow.CreateWhatsNewDialog()", harness, StringComparison.Ordinal);

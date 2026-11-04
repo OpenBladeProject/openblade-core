@@ -69,10 +69,258 @@ public sealed class TelemetryHistoryTests
             .Series.Single(value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
 
         Assert.Equal(10, cpu.Points.Count);
+        Assert.Equal(new[] { 0, 4, 9, 13, 15, 22, 26, 30, 35, 39 }.Select(second => Start.AddSeconds(second)),
+            cpu.Points.Select(point => point.TimestampUtc));
         Assert.Contains(cpu.Points, point => point.Value is null);
         Assert.Equal(35, cpu.Statistics.Count);
         Assert.Equal(40, cpu.Statistics.Minimum);
         Assert.Equal(79, cpu.Statistics.Maximum);
+    }
+
+    [Theory]
+    [InlineData(1_000_000)]
+    [InlineData(-1_000_000)]
+    public void Snapshot_AccumulatesLargeSignedReadingsWithoutOverflow(int reading)
+    {
+        const int count = 3_000;
+        var history = new TelemetryHistory(count);
+        for (int index = 0; index < count; index++)
+        {
+            history.AddSample(Sample(index, battery: reading, cpu: null));
+        }
+
+        TelemetryHistorySnapshot snapshot = history.Snapshot(maximumChartPoints: 2);
+        TelemetryMetricStatistics battery = snapshot.Series.Single(
+            value => value.Metric == TelemetryMetric.BatteryPowerFlowMilliwatts).Statistics;
+        TelemetryMetricStatistics cpu = snapshot.Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius).Statistics;
+
+        Assert.Equal(count, battery.Count);
+        Assert.Equal(0, battery.MissingCount);
+        Assert.Equal(reading, battery.Minimum);
+        Assert.Equal(reading, battery.Maximum);
+        Assert.Equal(reading, battery.Average);
+        Assert.Equal(0, cpu.Count);
+        Assert.Equal(count, cpu.MissingCount);
+        Assert.Null(cpu.Minimum);
+        Assert.Null(cpu.Maximum);
+        Assert.Null(cpu.Average);
+    }
+
+    [Fact]
+    public void Downsampling_TooManyGapsRetainsRealReadingsSeparatedByActualGaps()
+    {
+        var history = new TelemetryHistory();
+        for (int index = 0; index < 20; index++)
+        {
+            history.AddSample(Sample(index, cpu: index % 2 == 0 ? 50 : null));
+        }
+
+        TelemetrySeriesSnapshot cpu = history.Snapshot(maximumChartPoints: 5)
+            .Series.Single(value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
+
+        Assert.Equal(new[] { 0, 1, 10, 11, 18 }.Select(second => Start.AddSeconds(second)),
+            cpu.Points.Select(point => point.TimestampUtc));
+        Assert.Equal(new double?[] { 50, null, 50, null, 50 }, cpu.Points.Select(point => point.Value));
+        Assert.Equal(10, cpu.Statistics.Count);
+        Assert.Equal(10, cpu.Statistics.MissingCount);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    public void Downsampling_AlternatingMissingReadingsStaysVisibleWithoutJoiningGaps(int budget)
+    {
+        var history = new TelemetryHistory();
+        for (int index = 0; index < 64; index++)
+        {
+            history.AddSample(Sample(index, cpu: index % 2 == 0 ? null : 50));
+        }
+        TelemetryHistorySnapshot snapshot = history.Snapshot(maximumChartPoints: budget);
+        TelemetrySeriesSnapshot cpu = snapshot.Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
+
+        Assert.InRange(cpu.Points.Count, 1, budget);
+        Assert.Contains(cpu.Points, point => point.Value == 50);
+        Assert.Equal(Start.AddSeconds(1), cpu.Points.First(point => point.Value is not null).TimestampUtc);
+        if (budget >= 3)
+        {
+            Assert.Equal(Start.AddSeconds(63), cpu.Points.Last(point => point.Value is not null).TimestampUtc);
+        }
+        AssertNoInventedContinuity(cpu, snapshot.RawSamples);
+        Assert.Equal(cpu.Points, history.Snapshot(maximumChartPoints: budget).Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius).Points);
+        Assert.Equal(32, cpu.Statistics.Count);
+        Assert.Equal(32, cpu.Statistics.MissingCount);
+        Assert.Equal(50, cpu.Statistics.Average);
+    }
+
+    [Fact]
+    public void Downsampling_GapsExactlyFillBudgetStillShowsTheValidEndpoints()
+    {
+        var history = new TelemetryHistory();
+        for (int index = 0; index < 5; index++)
+        {
+            history.AddSample(Sample(index, cpu: index % 2 == 0 ? null : 50 + index));
+        }
+        TelemetrySeriesSnapshot cpu = history.Snapshot(maximumChartPoints: 3).Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
+
+        Assert.Equal(new[] { 1, 2, 3 }.Select(second => Start.AddSeconds(second)),
+            cpu.Points.Select(point => point.TimestampUtc));
+        Assert.Equal(new double?[] { 51, null, 53 }, cpu.Points.Select(point => point.Value));
+    }
+
+    [Theory]
+    [InlineData(299)]
+    [InlineData(300)]
+    [InlineData(301)]
+    [InlineData(597)]
+    public void Downsampling_NearGapBudgetRetainsRepresentativeReadings(int gaps)
+    {
+        const int budget = 600;
+        var history = new TelemetryHistory();
+        // A valid start/end and enough real samples to always require downsampling.
+        for (int index = 0; index < 1400; index++)
+        {
+            history.AddSample(Sample(index, cpu: index % 2 == 1 && index < gaps * 2 ? null : 50));
+        }
+        TelemetryHistorySnapshot snapshot = history.Snapshot(maximumChartPoints: budget);
+        TelemetrySeriesSnapshot cpu = snapshot.Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
+        Assert.InRange(cpu.Points.Count, 1, budget);
+        Assert.True(cpu.Points.Count(point => point.Value is not null) >= budget / 2);
+        Assert.Equal(Start, cpu.Points.First(point => point.Value is not null).TimestampUtc);
+        Assert.Equal(Start.AddSeconds(1399), cpu.Points.Last(point => point.Value is not null).TimestampUtc);
+        AssertNoInventedContinuity(cpu, snapshot.RawSamples);
+        Assert.Equal(1400 - gaps, cpu.Statistics.Count);
+        Assert.Equal(gaps, cpu.Statistics.MissingCount);
+        Assert.Equal(50, cpu.Statistics.Average);
+        Assert.Equal(cpu.Points, history.Snapshot(maximumChartPoints: budget).Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius).Points);
+    }
+
+    [Fact]
+    public void Downsampling_TwoPointBudgetKeepsBothEndpointsOfOneContinuousRun()
+    {
+        var history = new TelemetryHistory();
+        for (int index = 0; index < 5; index++)
+        {
+            history.AddSample(Sample(index, cpu: index is 0 or 4 ? null : 50 + index));
+        }
+        TelemetryHistorySnapshot snapshot = history.Snapshot(maximumChartPoints: 2);
+        TelemetrySeriesSnapshot cpu = snapshot.Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
+
+        Assert.Equal(new[] { 1, 3 }.Select(second => Start.AddSeconds(second)),
+            cpu.Points.Select(point => point.TimestampUtc));
+        Assert.Equal(new double?[] { 51, 53 }, cpu.Points.Select(point => point.Value));
+        AssertNoInventedContinuity(cpu, snapshot.RawSamples);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public void Downsampling_ValidRunsRemainSeparatedAcrossDiscardedMissingReadings(int budget)
+    {
+        var history = new TelemetryHistory();
+        for (int index = 0; index < 100; index++)
+        {
+            history.AddSample(Sample(index, cpu: index % 50 < 25 ? 50 : null));
+        }
+        TelemetryHistorySnapshot snapshot = history.Snapshot(maximumChartPoints: budget);
+        TelemetrySeriesSnapshot cpu = snapshot.Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
+
+        Assert.InRange(cpu.Points.Count, 1, budget);
+        Assert.Contains(cpu.Points, point => point.Value is not null);
+        AssertNoInventedContinuity(cpu, snapshot.RawSamples);
+        Assert.Equal(50, cpu.Statistics.Count);
+        Assert.Equal(50, cpu.Statistics.MissingCount);
+    }
+
+    [Fact]
+    public void Downsampling_AllMissingReadingsStayMissing()
+    {
+        var history = new TelemetryHistory();
+        for (int index = 0; index < 20; index++)
+        {
+            history.AddSample(Sample(index, cpu: null));
+        }
+        TelemetrySeriesSnapshot cpu = history.Snapshot(maximumChartPoints: 2).Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
+
+        Assert.InRange(cpu.Points.Count, 1, 2);
+        Assert.All(cpu.Points, point => Assert.Null(point.Value));
+        Assert.Equal(0, cpu.Statistics.Count);
+        Assert.Equal(20, cpu.Statistics.MissingCount);
+        Assert.Null(cpu.Statistics.Average);
+    }
+
+    [Fact]
+    public void Downsampling_TooManyStoppedObservationGapsRetainsReadingsWithoutBridgingTime()
+    {
+        var history = new TelemetryHistory();
+        for (int index = 0; index < 15; index++)
+        {
+            history.AddSample(Sample(index * 10, cpu: 50));
+        }
+        TelemetrySeriesSnapshot cpu = history.Snapshot(
+            maximumChartPoints: 5,
+            expectedSampleInterval: TimeSpan.FromSeconds(1)).Series.Single(
+                value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
+
+        Assert.Equal(new[] { 0, 1, 70, 71, 140 }.Select(second => Start.AddSeconds(second)),
+            cpu.Points.Select(point => point.TimestampUtc));
+        Assert.Equal(new double?[] { 50, null, 50, null, 50 }, cpu.Points.Select(point => point.Value));
+        Assert.Equal(15, cpu.Statistics.Count);
+        Assert.Equal(0, cpu.Statistics.MissingCount);
+    }
+
+    private static void AssertNoInventedContinuity(
+        TelemetrySeriesSnapshot series,
+        IReadOnlyList<TelemetrySample> samples)
+    {
+        for (int index = 1; index < series.Points.Count; index++)
+        {
+            TelemetryChartPoint previous = series.Points[index - 1];
+            TelemetryChartPoint current = series.Points[index];
+            Assert.True(previous.TimestampUtc < current.TimestampUtc);
+            if (previous.Value is not null && current.Value is not null)
+            {
+                Assert.All(samples.Where(sample => sample.TimestampUtc >= previous.TimestampUtc
+                    && sample.TimestampUtc <= current.TimestampUtc),
+                    sample => Assert.NotNull(sample.Value(series.Metric)));
+            }
+        }
+    }
+
+    [Fact]
+    public void Snapshot_ReturnedPointsRemainOwnedAfterLaterProjections()
+    {
+        var history = new TelemetryHistory(capacity: 20);
+        for (int index = 0; index < 20; index++)
+        {
+            history.AddSample(Sample(index, cpu: index is >= 5 and <= 14 ? null : 50));
+        }
+        TelemetryHistorySnapshot first = history.Snapshot(maximumChartPoints: 4);
+        TelemetryChartPoint[][] original = first.Series.Select(series => series.Points.ToArray()).ToArray();
+
+        for (int index = 20; index < 40; index++)
+        {
+            history.AddSample(Sample(index, battery: -index, cpu: 80));
+        }
+        _ = history.Snapshot(maximumChartPoints: 3);
+
+        for (int index = 0; index < first.Series.Count; index++)
+        {
+            Assert.Equal(original[index], first.Series[index].Points);
+        }
     }
 
     [Fact]

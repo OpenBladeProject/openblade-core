@@ -97,6 +97,16 @@ internal sealed class WindowsTrayBrightnessOsdHost : IDisposable
         presenter = null;
     }
 
+    internal void ResetLocalizedPresenter()
+    {
+        // Keep the HWND subscription. Only the lazily created OSD caches text
+        // from the previous language, so rebuild it on the next notification.
+        IDisplayBrightnessOsdPresenter? previous = presenter;
+        presenter = null;
+        try { previous?.Dispose(); }
+        catch (Exception exception) { errorHandler?.Invoke(exception); }
+    }
+
     private nint ProcessMessage(uint message, nuint windowParameter)
     {
         if (message != brightnessChangedMessage || windowParameter > 100)

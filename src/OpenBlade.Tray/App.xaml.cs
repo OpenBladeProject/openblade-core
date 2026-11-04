@@ -59,6 +59,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         string[] commandLineArguments = Environment.GetCommandLineArgs();
         base.OnLaunched(args);
+        Microsoft.UI.Xaml.Resources.CustomXamlResourceLoader.Current = new LocalizedXamlResourceLoader();
         if (TryRunDeveloperHarness(commandLineArguments))
         {
             return;
@@ -311,7 +312,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         UiLanguagePreference? initialLanguageOverride = null,
         UiPreferenceStore? preferenceStore = null,
         UpdateCheckInterval? initialUpdateCheckConsentOverride = null,
-        bool suppressWhatsNew = false)
+        bool suppressWhatsNew = false,
+        Window? hostWindow = null)
     {
         return new MainWindow(
             processorPolicy,
@@ -320,7 +322,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             initialLanguageOverride: initialLanguageOverride,
             preferenceStore: preferenceStore,
             initialUpdateCheckConsentOverride: initialUpdateCheckConsentOverride,
-            suppressWhatsNew: suppressWhatsNew);
+            suppressWhatsNew: suppressWhatsNew,
+            hostWindow: hostWindow);
     }
 
     private void AttachWindowSurfaces(
@@ -342,11 +345,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             dashboard = new TrayDashboardWindow(
                 window.ViewModel,
-                WindowNative.GetWindowHandle(window),
+                WindowNative.GetWindowHandle(window.HostWindow),
                 visible => window.SetTrayDashboardVisible(visible));
             dashboard.ApplyPreferences(window.TrayDashboardPreference);
             brightnessHost = WindowsTrayBrightnessOsdHost.CreateBestEffort(
-                window,
+                window.HostWindow,
                 eventEndpoint,
                 exception => DiagnosticTrace.TraceException(
                     "OpenBlade.Tray.BrightnessOsdHost",
@@ -354,9 +357,9 @@ public partial class App : Microsoft.UI.Xaml.Application
                     exception));
             notificationHost =
                 WindowsTrayPerformanceNotificationHost.CreateBestEffort(
-                    window,
+                    window.HostWindow,
                     eventEndpoint,
-                    signal => Enqueue(() => ShowPerformanceNotification(signal)),
+                    OnPerformanceNotificationSignal,
                     exception => DiagnosticTrace.TraceException(
                         "OpenBlade.Tray.PerformanceNotificationHost",
                         "Observe",
@@ -392,6 +395,27 @@ public partial class App : Microsoft.UI.Xaml.Application
         windowInitializationTask = initializationTask;
     }
 
+    private WindowSurfaceSet CreateLocalizedWindowSurfaces(MainWindow window, Window? dashboardHostWindow)
+    {
+        var dashboard = new TrayDashboardWindow(window.ViewModel,
+            WindowNative.GetWindowHandle(window.HostWindow),
+            visible => window.SetTrayDashboardVisible(visible), dashboardHostWindow);
+        try
+        {
+            dashboard.ApplyPreferences(window.TrayDashboardPreference);
+            // These subscriptions belong to the unchanged main HWND. A second
+            // registration for it is rejected; candidates borrow the existing
+            // hosts and must not dispose them on rollback or view retirement.
+            return new WindowSurfaceSet(dashboard, brightnessOsdHost, performanceNotificationHost,
+                OwnsShellHosts: false);
+        }
+        catch
+        {
+            DisposeSurfaceSafely("replacement dashboard content", dashboard);
+            throw;
+        }
+    }
+
     private void DetachWindowEvents(MainWindow window)
     {
         window.LanguagePreferenceChanged -= OnLanguagePreferenceChanged;
@@ -412,7 +436,10 @@ public partial class App : Microsoft.UI.Xaml.Application
     private async Task RefreshLanguageAsync(
         UiLanguagePreference preference,
         Func<MainWindow, ITrayIconHost>? replacementTrayIconFactory = null,
-        LiveLocalizationSmokeContext? liveLocalizationSmokeContext = null)
+        LiveLocalizationSmokeContext? liveLocalizationSmokeContext = null,
+        Func<Window, MainWindow>? replacementWindowFactory = null,
+        Func<MainWindow, Window?, WindowSurfaceSet>? replacementSurfaceFactory = null,
+        Func<MainWindow, Task>? replacementInitializationFactory = null)
     {
         MainWindow? previousWindow = mainWindow;
         IStartupRegistration? registration = startupRegistration;
@@ -424,12 +451,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         bool wasVisible = previousWindow.IsWindowVisible;
-        PointInt32 position = previousWindow.AppWindow.Position;
-        SizeInt32 size = previousWindow.AppWindow.Size;
-        bool wasMaximized = previousWindow.AppWindow.Presenter is OverlappedPresenter
-        {
-            State: OverlappedPresenterState.Maximized,
-        };
+        TrayDashboardWindow? previousDashboard = trayDashboardWindow;
+        TrayDashboardWindow.PresentationState? dashboardPresentation = previousDashboard?.CapturePresentation();
         string previousLanguageOverride = ApplicationLanguages.PrimaryLanguageOverride;
         CultureInfo previousUiCulture = CultureInfo.CurrentUICulture;
         string previousTrayLanguage = TrayLocalization.CurrentLanguageName;
@@ -455,37 +478,26 @@ public partial class App : Microsoft.UI.Xaml.Application
             liveLocalizationSmokeContext?.Report(
                 $"create {preference} replacement window");
 
-            replacement = CreateMainWindow(
+            replacement = replacementWindowFactory?.Invoke(previousWindow.HostWindow) ?? CreateMainWindow(
                 registration,
                 preference,
                 liveLocalizationSmokeContext?.PreferenceStore,
                 liveLocalizationSmokeContext is null
                     ? null
                     : UpdateCheckInterval.ManualOnly,
-                suppressWhatsNew: liveLocalizationSmokeContext is not null);
-            Task replacementInitialization = replacement.InitializeAsync();
+                suppressWhatsNew: liveLocalizationSmokeContext is not null,
+                hostWindow: previousWindow.HostWindow);
+            Task replacementInitialization = replacementInitializationFactory?.Invoke(replacement)
+                ?? replacement.InitializeAsync();
             liveLocalizationSmokeContext?.Report(
                 $"initialize {preference} replacement window");
             await replacementInitialization;
             liveLocalizationSmokeContext?.Report(
                 $"create {preference} replacement surfaces");
-            replacementSurfaces = CreateWindowSurfaces(replacement, eventEndpoint);
+            replacementSurfaces = replacementSurfaceFactory?.Invoke(replacement, previousDashboard?.HostWindow)
+                ?? CreateLocalizedWindowSurfaces(replacement, previousDashboard?.HostWindow);
             replacementTrayIcon = replacementTrayIconFactory?.Invoke(replacement)
                 ?? CreateTrayIconHost(replacement);
-
-            if (wasMaximized
-                && replacement.AppWindow.Presenter is OverlappedPresenter presenter)
-            {
-                presenter.Maximize();
-            }
-            else
-            {
-                replacement.AppWindow.MoveAndResize(new RectInt32(
-                    position.X,
-                    position.Y,
-                    size.Width,
-                    size.Height));
-            }
 
             if (exitLifecycle?.ExitRequested == true)
             {
@@ -494,8 +506,19 @@ public partial class App : Microsoft.UI.Xaml.Application
                 liveLocalizationSmokeContext?.Report(
                     $"dispose replacement {preference} window during exit");
                 await DisposeWindowSafelyAsync(replacement);
-                await CloseWindowSafelyAsync(replacement);
                 return;
+            }
+
+            // Both candidates are initialized before either native shell is
+            // touched. Preserve the old views until the pair has attached so
+            // any attachment failure can restore them on the same HWNDs.
+            previousDashboard?.DetachFromHost();
+            previousWindow.DetachFromHost();
+            replacement.AttachToHost();
+            replacementSurfaces.Dashboard?.AttachToHost();
+            if (dashboardPresentation is { } presentation)
+            {
+                replacementSurfaces.Dashboard?.RestorePresentation(presentation);
             }
 
             if (wasVisible)
@@ -511,7 +534,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             WindowSurfaceSet previousSurfaces = new(
                 trayDashboardWindow,
                 brightnessOsdHost,
-                performanceNotificationHost);
+                performanceNotificationHost,
+                OwnsShellHosts: false);
             DetachWindowEvents(previousWindow);
             AttachWindowSurfaces(
                 replacement,
@@ -528,16 +552,14 @@ public partial class App : Microsoft.UI.Xaml.Application
             liveLocalizationSmokeContext?.Report(
                 $"dispose previous window before committing {preference}");
             await DisposeWindowSafelyAsync(previousWindow);
+            brightnessOsdHost?.ResetLocalizedPresenter();
             liveLocalizationSmokeContext?.Report(
-                $"close previous window before completing {preference}");
-            if (!await CloseWindowSafelyAsync(previousWindow))
-            {
-                throw new InvalidOperationException(
-                    $"The previous window did not close while applying {preference}.");
-            }
-            liveLocalizationSmokeContext?.Report(
-                $"previous window closed for {preference}");
+                $"previous localized content retired for {preference}; native shells retained");
 
+            if (exitLifecycle?.ExitRequested == true)
+            {
+                return;
+            }
             if (wasVisible)
             {
                 replacement.ShowLanguageSettings();
@@ -565,19 +587,37 @@ public partial class App : Microsoft.UI.Xaml.Application
                 return;
             }
             DisposeSurfaceSafely("replacement tray icon", replacementTrayIcon);
+            replacementSurfaces?.Dashboard?.DetachFromHost();
+            replacement?.DetachFromHost();
             replacementSurfaces?.Dispose();
             if (replacement is not null)
             {
                 liveLocalizationSmokeContext?.Report(
                     $"dispose failed {preference} replacement window");
                 await DisposeWindowSafelyAsync(replacement);
-                await CloseWindowSafelyAsync(replacement);
             }
             ApplicationLanguages.PrimaryLanguageOverride = previousLanguageOverride;
             CultureInfo.CurrentUICulture = previousUiCulture;
             LocalizedResources.SetLanguageOverride(previousUiCulture.Name);
             TrayLocalization.SetLanguageOverride(previousTrayLanguage);
-            previousWindow.ShowAndActivate();
+            if (exitLifecycle?.ExitRequested == true)
+            {
+                return;
+            }
+            previousWindow.AttachToHost();
+            previousDashboard?.AttachToHost();
+            if (dashboardPresentation is { } presentation)
+            {
+                previousDashboard?.RestorePresentation(presentation);
+            }
+            if (wasVisible)
+            {
+                previousWindow.ShowAndActivate();
+            }
+            else
+            {
+                previousWindow.StartHiddenObservation();
+            }
         }
         finally
         {
@@ -629,12 +669,16 @@ public partial class App : Microsoft.UI.Xaml.Application
     private sealed record WindowSurfaceSet(
         TrayDashboardWindow? Dashboard,
         WindowsTrayBrightnessOsdHost? BrightnessHost,
-        WindowsTrayPerformanceNotificationHost? NotificationHost) : IDisposable
+        WindowsTrayPerformanceNotificationHost? NotificationHost,
+        bool OwnsShellHosts = true) : IDisposable
     {
         public void Dispose()
         {
-            DisposeSurfaceSafely("performance notification host", NotificationHost);
-            DisposeSurfaceSafely("brightness OSD host", BrightnessHost);
+            if (OwnsShellHosts)
+            {
+                DisposeSurfaceSafely("performance notification host", NotificationHost);
+                DisposeSurfaceSafely("brightness OSD host", BrightnessHost);
+            }
             DisposeSurfaceSafely("dashboard window", Dashboard);
         }
     }
@@ -716,6 +760,11 @@ public partial class App : Microsoft.UI.Xaml.Application
                 exception);
         }
     }
+
+    // The shell-lived native callback must target App directly. A lambda in
+    // CreateWindowSurfaces shares the dashboard closure that captures its view.
+    private void OnPerformanceNotificationSignal(PerformanceShortcutNotificationSignal signal) =>
+        Enqueue(() => ShowPerformanceNotification(signal));
 
     private void ShowPerformanceNotification(
         PerformanceShortcutNotificationSignal signal)
@@ -1097,7 +1146,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (window?.IsWindowVisible == true)
         {
             return TaskDialog.ShowDialog(
-                WindowNative.GetWindowHandle(window),
+                WindowNative.GetWindowHandle(window.HostWindow),
                 page,
                 TaskDialogStartupLocation.CenterOwner);
         }

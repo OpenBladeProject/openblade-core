@@ -51,6 +51,11 @@
     <PRIResource Remove="Strings\qps-ploc\Resources.resw" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Strings\en-US\Resources.resw"
+                      LogicalName="OpenBlade.Tray.LocalizationFallbacks.resw"
+                      WithCulture="false" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
     <ProjectReference Include="..\OpenBlade.Display\OpenBlade.Display.csproj" />
     <ProjectReference Include="..\OpenBlade.Platform\OpenBlade.Platform.csproj" />

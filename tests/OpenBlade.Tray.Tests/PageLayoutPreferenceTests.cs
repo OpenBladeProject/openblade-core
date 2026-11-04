@@ -194,8 +194,7 @@ public sealed class PageLayoutPreferenceTests
     public void EveryNonDashboardPageExposesSharedCustomizationContract()
     {
         string repositoryRoot = FindRepositoryRoot();
-        string xaml = File.ReadAllText(
-            Path.Combine(repositoryRoot, "src", "OpenBlade.Tray", "MainWindow.xaml"));
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         string window = File.ReadAllText(
             Path.Combine(repositoryRoot, "src", "OpenBlade.Tray", "MainWindow.xaml.cs"));
 

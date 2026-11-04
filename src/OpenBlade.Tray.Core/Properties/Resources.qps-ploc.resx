@@ -1792,4 +1792,10 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Plugged in, battery discharging" xml:space="preserve">
     <value>[!! Plúggéd ín, báttérý díschárgíng ~~~~~~~~~~ !!]</value>
   </data>
+  <data name="The imported profiles include settings that are unavailable on this laptop." xml:space="preserve">
+    <value>[!! Thé ímpórtéd prófílés ínclúdé séttíngs thát áré únáváíláblé ón thís láptóp. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
+    <value>[!! Thé pówér sóúrcé chángéd. Révíéw thé cúrrént prófílé ánd trý ágáín. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

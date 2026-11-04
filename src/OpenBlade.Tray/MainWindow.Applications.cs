@@ -106,7 +106,7 @@ public sealed partial class MainWindow
                 {
                     return;
                 }
-                _ = await ViewModel.SaveApplicationProfileAsync(profile with { Enabled = enabled.IsOn },
+                _ = await ViewModel.SetApplicationProfileEnabledAsync(profile.Id, enabled.IsOn,
                     featureLifetime.Token);
                 RefreshApplicationProfiles();
             }, nameof(RefreshApplicationProfiles));

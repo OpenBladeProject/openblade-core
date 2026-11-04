@@ -1702,4 +1702,10 @@ Details: {1}</value>
   <data name="Plugged in, battery discharging" xml:space="preserve">
     <value>Plugged in, battery discharging</value>
   </data>
+  <data name="The imported profiles include settings that are unavailable on this laptop." xml:space="preserve">
+    <value>The imported profiles include settings that are unavailable on this laptop.</value>
+  </data>
+  <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
+    <value>The power source changed. Review the current profile and try again.</value>
+  </data>
 </root>
