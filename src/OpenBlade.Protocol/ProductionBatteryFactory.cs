@@ -450,8 +450,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 : null;
         IReadOnlySet<AdapterPowerState> admittedAdapterPowerStates =
             GetRz090581AdmittedAdapterPowerStates(exactIdentity);
-        bool supportsDirectManualFanTransitions =
-            GetRz090581SupportsDirectManualFanTransitions(
+        (bool supportsDirectManualFanTransitions, bool supportsBatterySaverFanStop) =
+            GetRz090581FanCapabilityAdmission(
                 exactIdentity,
                 catalog,
                 directManualFanTransitionEvidenceAdmitted);
@@ -484,9 +484,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             allowPadlessHyperBoostLifecycleValidation:
                 allowPadlessHyperBoostLifecycleValidation,
             supportsDirectManualFanTransitions: supportsDirectManualFanTransitions,
-            // Exact Product736 class-1 targets and the reviewed 1500 RPM experiment.
-            // This does not widen the ordinary fixed-speed range or any other model.
-            supportsBatterySaverFanStop: supportsDirectManualFanTransitions,
+            supportsBatterySaverFanStop: supportsBatterySaverFanStop,
             // Ordinary controls remain advisory. Stopping cooling requires a fresh
             // competing-controller and exact-host check at each native submission.
             stopHardwareAdmission: () => hardwareAccessGuard.Check().Safe
@@ -494,6 +492,20 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             thxAudioCapabilities: thxAudioCapabilities,
             laptopControlRecoveryIdentity: $"{TargetBladeDevice.Model}|{TargetBladeDevice.VendorId:X4}:{TargetBladeDevice.ProductId:X4}");
     }
+
+    internal static (bool DirectManualTransitions, bool BatterySaverFanStop)
+        GetRz090581FanCapabilityAdmission(
+            HostIdentityReadResult exactIdentity,
+            DeviceCommandCatalog catalog,
+            bool trustedExactFixture) =>
+        (
+            GetRz090581SupportsDirectManualFanTransitions(exactIdentity, catalog, trustedExactFixture),
+            // Fans stopped after the developer 1500 RPM request, but the brief
+            // 2000 RPM preparation had no held control or reversal. This does not
+            // establish causal or reliable fan stop. Keep that separate capability
+            // unadmitted without changing ordinary manual controls or saved intent.
+            false
+        );
 
     internal static bool GetRz090581SupportsDirectManualFanTransitions(
         HostIdentityReadResult exactIdentity,
