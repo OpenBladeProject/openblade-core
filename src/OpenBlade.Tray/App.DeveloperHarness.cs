@@ -106,6 +106,11 @@ public partial class App
     /// </summary>
     private bool TryRunDeveloperHarness(string[] commandLineArguments)
     {
+        if (commandLineArguments is [_, "--window-close-smoke", string closeReportPath])
+        {
+            _ = RunWindowCloseSmokeAsync(closeReportPath);
+            return true;
+        }
         if (commandLineArguments is [_, "--window-size-smoke", string sizeReportPath])
         {
             _ = RunWindowSizeSmokeAsync(sizeReportPath);

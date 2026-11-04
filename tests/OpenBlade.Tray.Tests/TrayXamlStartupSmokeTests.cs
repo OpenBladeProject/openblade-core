@@ -122,6 +122,11 @@ public sealed class TrayXamlStartupSmokeTests
     public Task NativeWindowLimitsPreserveSizingAndReleaseTheirShellCallback() =>
         RunTraySmokeAsync("--window-size-smoke", "OpenBlade-window-size");
 
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task NativeCloseHandlingPreservesHideAndTerminalCleanup() =>
+        RunTraySmokeAsync("--window-close-smoke", "OpenBlade-window-close");
+
     private static async Task RunTraySmokeAsync(
         string argument,
         string reportPrefix,
@@ -191,7 +196,7 @@ public sealed class TrayXamlStartupSmokeTests
                 startInfo.Environment["OPENBLADE_LIVE_LOCALIZATION_SMOKE_PREFERENCE_PATH"] =
                     isolatedPreferencePath;
             }
-            if (argument is "--resource-performance-audit" or "--window-size-smoke")
+            if (argument is "--resource-performance-audit" or "--window-size-smoke" or "--window-close-smoke")
             {
                 startInfo.Environment["OPENBLADE_RESOURCE_PHASE_SECONDS"] = "2";
                 startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_KIND"] = resourceWindowKind;

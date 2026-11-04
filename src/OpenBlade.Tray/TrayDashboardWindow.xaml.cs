@@ -80,6 +80,7 @@ public sealed partial class TrayDashboardWindow : Microsoft.UI.Xaml.Controls.Use
     private Thread? revealFrameClockThread;
     private bool revealSubclassAttached;
     private int disposed;
+    private WindowsWindowCloseHandler? closeHandler;
     private bool hostAttached;
     private bool ownsHost;
     private bool hostConfigured;
@@ -91,8 +92,7 @@ public sealed partial class TrayDashboardWindow : Microsoft.UI.Xaml.Controls.Use
         Window? hostWindow = null)
     {
         HostWindow = hostWindow ?? new Window();
-        // Unsubscribe through the same projection that registered native events,
-        // rather than reacquiring a projection with a different event-state table.
+        // Keep one projection for all operations on this native shell.
         AppWindow = HostWindow.AppWindow;
         ContentHost = WindowContentHost.GetOrCreate(HostWindow);
         hostConfigured = hostWindow is not null;
@@ -168,7 +168,7 @@ public sealed partial class TrayDashboardWindow : Microsoft.UI.Xaml.Controls.Use
         HostWindow.Title = Title;
         TryAttachRevealSubclass();
         HostWindow.Activated += OnActivated;
-        AppWindow.Closing += OnClosing;
+        closeHandler = new WindowsWindowCloseHandler(HostWindow, TryHideOnClose);
         if (hostConfigured)
         {
             return;
@@ -211,7 +211,7 @@ public sealed partial class TrayDashboardWindow : Microsoft.UI.Xaml.Controls.Use
         }
         hostAttached = false;
         DetachSafely("activation handler", () => HostWindow.Activated -= OnActivated);
-        DetachSafely("closing handler", () => AppWindow.Closing -= OnClosing);
+        DetachSafely("closing handler", DetachCloseHandler);
         DetachSafely("foreground timer", foregroundTimer.Stop);
         DetachSafely("cancel reveal", CancelRevealAnimation);
         DetachSafely("hide surface", HideSurface);
@@ -1233,13 +1233,21 @@ public sealed partial class TrayDashboardWindow : Microsoft.UI.Xaml.Controls.Use
         visibilityChanged(isVisible);
     }
 
-    private void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
+    private void DetachCloseHandler()
+    {
+        WindowsWindowCloseHandler? previous = closeHandler;
+        closeHandler = null;
+        previous?.Dispose();
+    }
+
+    private bool TryHideOnClose()
     {
         if (Volatile.Read(ref disposed) == 0)
         {
-            args.Cancel = true;
             Hide();
+            return true;
         }
+        return false;
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)

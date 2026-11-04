@@ -1,0 +1,183 @@
+{
+ "schemaVersion": 1,
+ "evidenceDate": "2026-11-04",
+ "status": "Baseline attribution control only; no production closing fix is measured.",
+ "sourceManifest": {
+  "baseCommit": "951e497946ac5d8258a7436f68fa9d6142a2998a",
+  "cleanCommitMeasurement": false,
+  "buildState": "Temporary developer-harness entry point, corrected bare-window probe and default-process heap census over this base. The shared launcher/test guard was also pending; no clean-head benchmark claim.",
+  "sourceArtifacts": [
+   ["App.DeveloperHarness.cs", 154572, "07EDCDB091DE86718B321B878650A73E1DB2BB0FD94CFBCF8CF7B90C68D1606C"],
+   ["App.DeveloperHarness.instrumented.cs", 154811, "C4A61382223084328B671EE17380BB072FACE5CAE8400BAE5028207E96782F4A"],
+   ["App.TemporaryClosingCensus.corrected.cs", 4794, "E8E567C85F62CFBAA3B740D55CD01B2B30ADEBCDE3553F91D286FA8EBB5B00BA"],
+   ["App.TemporaryNativeHeapWalk.cs", 7055, "B05C8B479168C12A4E65AB01C15693BD157C8B9ED269FCED1720B8232274A567"],
+   ["openblade-closing-native-corrected-controller-20261104.ps1", 2779, "259A5FD8D91CD9E40A864A0729925F1772E7597A673727D041687C503D4BA05A"]
+  ],
+  "sourceRoles": ["App.DeveloperHarness.cs is the clean base backup, verified with CRLF normalized.", "App.DeveloperHarness.instrumented.cs adds the exact temporary-closing-census entry point.", "App.TemporaryClosingCensus.corrected.cs is the measured corrected probe; the earlier uncorrected source is excluded.", "App.TemporaryNativeHeapWalk.cs is the census helper. The corrected controller launches fresh children through Arguments and validates exit/report/census completion."],
+  "temporarySourceRestored": true,
+  "excludedAttempt": "The earlier closing run used unsupported ArgumentList, launched without the intended diagnostic arguments and produced no control reports. It is excluded; no observations from that run are allocation evidence."
+ },
+ "binaryHashes": {
+  "OpenBlade.Tray.exe": "DADDD0613AAC116432CE3EBB2F9E8772209CB7BA4ED7E9B8AC7CC8240E51A6C2",
+  "Microsoft.UI.Windowing.dll": "DE777FC7F88256DC3158138B5E267A151FDA461A2EF71B24320CCAC7CC5A3B75",
+  "WinRT.Runtime.dll": "BCF3A14E8712A90837FC5C0D8C8A24696AF2BD7F74E9767597EC81EDEDFB23DB",
+  "OpenBlade.Tray.dll": "DC77B414672A5763D9F40D0548D9177A8786F8ECDD8F42973BE67275EE93FF0F"
+ },
+ "experiment": {
+  "processes": "One fresh process/private desktop per mode, hide then close; identical pinned app/SDK binaries.",
+  "surface": "One bare Window containing a Grid, shown offscreen without activation; one cached AppWindow with Closing subscribed.",
+  "warmup": "Both modes perform three canceled closes and three direct hides before collection; both record exactly three callbacks.",
+  "closeMode": "Each of 200 cycles sends WM_CLOSE. The Closing handler increments its counter, sets Cancel=true and hides the AppWindow.",
+  "hideMode": "Each of 200 cycles calls AppWindow.Hide directly with the same Closing subscription still installed.",
+  "postcondition": "After every cycle, dispatcher draining verifies the window is hidden and its original HWND is still valid and unchanged.",
+  "retirement": "Before each census: dispatcher drain, forced full GC, finalizer wait, another forced full GC, then dispatcher drain. Final idle additionally waits three seconds.",
+  "censusBoundary": "All censuses precede unsubscription and final window destruction. The final close after unsubscription is outside the measurements.",
+  "hardwareAndService": "Disconnected developer-only bare-window probe; no service client or hardware operation is created by its body."
+ },
+ "reports": {
+  "close": {
+   "mode": "close",
+   "cycles": 200,
+   "callbacks": 203,
+   "sameNativeShell": true,
+   "disconnected": true,
+   "privateDesktop": true,
+   "productVersion": "0.50.4.0"
+  },
+  "hide": {
+   "mode": "hide",
+   "cycles": 200,
+   "callbacks": 3,
+   "sameNativeShell": true,
+   "disconnected": true,
+   "privateDesktop": true,
+   "productVersion": "0.50.4.0"
+  }
+ },
+ "nativeTypes": {
+  "module": "Microsoft.UI.Windowing.dll",
+  "columnOrder": ["0x57088", "0x58C90", "0x58CD8"],
+  "symbols": ["Api::IAppWindowClosingEventArgs::ExportAdapter$", "Windowing::ClosingArgs::ComExportAdapterContainer$", "Windowing::ClosingArgs"],
+  "bytesPerAllocation": [24, 56, 48],
+  "symbolResolution": {
+   "method": "Read-only offline CDB exact-symbol lookup in an earlier saved idle dump using cached matching PDB symbols; no live process attached.",
+   "pdbGuid": "6D576CD0-F2FE-D3C3-A420-975AE3EF677F",
+   "pdbAge": 1,
+   "imageSizeBytes": 544768,
+   "lookupCommands": ["ln Microsoft_UI_Windowing+0x57088", "ln Microsoft_UI_Windowing+0x58c90", "ln Microsoft_UI_Windowing+0x58cd8"],
+   "symbolArtifacts": [
+    ["Microsoft.UI.Windowing.pdb", 2174976, "DF614DFE0B9F552EBE37B5E1F15CF5C0815086CAF86247D3304D7D1A4025AD8E"],
+    ["idle.dmp", 980604411, "2891B1191C87954BE4284273C1DBDAC031D920A483280A75B83C6374B32491C0"]
+   ],
+   "limit": "The earlier dump is used only for type resolution, not for either control count. Its matching module/PDB identity and unchanged Windowing hash bind these RVAs."
+  }
+ },
+ "checkpointColumns": ["stage", "cyclesAfterWarmup", "countsByRva", "payloadBytesByRva"],
+ "checkpoints": {
+  "close": [
+   [
+    "warmup",
+    0,
+    [3, 3, 3],
+    [72, 168, 144]
+   ],
+   [
+    "batch-50",
+    50,
+    [53, 53, 53],
+    [1272, 2968, 2544]
+   ],
+   [
+    "batch-100",
+    100,
+    [103, 103, 103],
+    [2472, 5768, 4944]
+   ],
+   [
+    "batch-200",
+    200,
+    [203, 203, 203],
+    [4872, 11368, 9744]
+   ],
+   [
+    "idle",
+    200,
+    [203, 203, 203],
+    [4872, 11368, 9744]
+   ]
+  ],
+  "hide": [
+   [
+    "warmup",
+    0,
+    [3, 3, 3],
+    [72, 168, 144]
+   ],
+   [
+    "batch-50",
+    50,
+    [3, 3, 3],
+    [72, 168, 144]
+   ],
+   [
+    "batch-100",
+    100,
+    [3, 3, 3],
+    [72, 168, 144]
+   ],
+   [
+    "batch-200",
+    200,
+    [3, 3, 3],
+    [72, 168, 144]
+   ],
+   [
+    "idle",
+    200,
+    [3, 3, 3],
+    [72, 168, 144]
+   ]
+  ]
+ },
+ "censusValidation": {
+  "walkCount": 10,
+  "allCompleted": true,
+  "allEndError": 259,
+  "allUnlocked": 1,
+  "anyHeaderTableOverflow": false,
+  "windowingModuleCoveredInEveryWalk": true,
+  "scope": "Locked default-process HeapWalk; allocated-block first words grouped by module-relative address."
+ },
+ "result": {
+  "closeCountGrowthPerTypePerCycle": 1,
+  "hideCountGrowthPerTypePerCycle": 0,
+  "closePayloadGrowthBytesPerCycle": 128,
+  "hidePayloadGrowthBytesPerCycle": 0,
+  "closeTotalPayloadGrowthBytes": 25600,
+  "interpretation": "Each canceled-close callback is associated with one additional retained ClosingArgs/adapter group across the measured checkpoints. Direct hiding stays flat after the same warmup. Counts remain unchanged over the final three-second idle/collection interval."
+ },
+ "limits": ["Only 200 cycles and the stated retirement interval were measured; not an indefinite-retention proof.", "The native Window and Closing subscription remain live during all censuses; cleanup after unsubscribe, true destruction or process exit is unmeasured.", "The count slope identifies native types, not their final retaining reference or a direct allocation/release stack.", "Payload totals exclude allocator overhead. Default-heap counts do not cover every heap, mapping, private byte or handle; those process-wide trends were not recorded by this probe.", "No production fix, full-solution validation, installed-product behavior or Claude review is established by this artifact."],
+ "rawArtifactColumns": ["basename", "bytes", "sha256"],
+ "rawArtifacts": {
+  "shared": [
+   ["binary-hashes.json", 384, "FC9BC80B41434D41AD89CD85E03886D777B6EA6B411075FE81ECACF5444417A8"]
+  ],
+  "close": [
+   ["close.json", 175, "7097875E664040EAFD49E7CC0AB49B01005ADECADF42E0259141100BFF895FD9"],
+   ["close.json.warmup.heap.json", 56993, "9525171B4D2EA3C484F05C0FFB74855629A512FF78BB982C349AFD2E4F7190E3"],
+   ["close.json.batch-50.heap.json", 56439, "E6C468DBBE51973ABC281F1B46275778658D2319167908A7F7E8806B2258669D"],
+   ["close.json.batch-100.heap.json", 56443, "DB841C0E76B0212108B40ADB04ED59BF8B95B103FE2257EF80BFC190291233AC"],
+   ["close.json.batch-200.heap.json", 56444, "67B58AB7518B39C8A537662A795F9A4E5B33530FB174ACA72B19E5E1B13A65B7"],
+   ["close.json.idle.heap.json", 56440, "ACFF72C18E5BF6AD6E784A2B2AC6C6948A0B9A46E70E78E3DD72E647D7B9CC60"]
+  ],
+  "hide": [
+   ["hide.json", 172, "56EA7219CA151D61D7AB564ACAA4FC9055D8966878936317F7A419D445E991A1"],
+   ["hide.json.warmup.heap.json", 57117, "209503BB76AE1C331BF797D09602E7E206F907949B1F9FF439DCEF9BED5FC476"],
+   ["hide.json.batch-50.heap.json", 56556, "F2A63DE995D5D71162A8707FEC1103FC6B88EA955A69A281267B460AC6BADD79"],
+   ["hide.json.batch-100.heap.json", 56557, "F3CE88B3758F424DE51D019680A1DEDF9A41BC78667D9C53DCD300FF88D4A721"],
+   ["hide.json.batch-200.heap.json", 56557, "8B858D4DCAE70388F66BEEB41F4DF64F7651E215A64765868EF06340BADCF2AF"],
+   ["hide.json.idle.heap.json", 56553, "04470B65452DE872BEAEE651ABF33E0981E9042369B22B158AFC3D480CDB537A"]
+  ]
+ },
+ "privacy": "Only basenames, module RVAs, counts and hashes are exported. Raw addresses, handles, PIDs, private paths and user data remain outside the repository."
+}

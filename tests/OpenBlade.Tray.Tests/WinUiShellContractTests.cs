@@ -3595,7 +3595,7 @@ public sealed class WinUiShellContractTests
     [Theory]
     [InlineData("MainWindow")]
     [InlineData("TrayDashboardWindow")]
-    public void NativeEventSubscriptionsRetainTheirOriginalAppWindowProjection(string name)
+    public void NativeShellProjectionAndCloseHandlerFollowAttachedContent(string name)
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", name + ".xaml.cs");
         int createHost = source.IndexOf("HostWindow = hostWindow ?? new Window()", StringComparison.Ordinal);
@@ -3608,9 +3608,41 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("HostWindow.AppWindow.", source, StringComparison.Ordinal);
         string attach = SliceMethod(source, "internal void AttachToHost()", "internal void DetachFromHost()");
         string detach = SliceMethod(source, "internal void DetachFromHost()", "public MainViewModel ViewModel");
-        Assert.Contains("AppWindow.Closing += OnClosing", attach, StringComparison.Ordinal);
-        Assert.Contains("AppWindow.Closing -= OnClosing", detach, StringComparison.Ordinal);
+        Assert.Contains("closeHandler = new WindowsWindowCloseHandler(HostWindow, TryHideOnClose)", attach, StringComparison.Ordinal);
+        Assert.Contains("DetachCloseHandler", detach, StringComparison.Ordinal);
+        string release = SliceMethod(source, "private void DetachCloseHandler()", "private bool TryHideOnClose()");
+        Assert.Contains("WindowsWindowCloseHandler? previous = closeHandler", release, StringComparison.Ordinal);
+        Assert.True(release.IndexOf("closeHandler = null", StringComparison.Ordinal)
+            < release.IndexOf("previous?.Dispose()", StringComparison.Ordinal));
+        Assert.DoesNotContain("AppWindow.Closing", source, StringComparison.Ordinal);
         Assert.DoesNotContain("AppWindow.Changed +=", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NativeClosePoliciesPreserveHideActionsAndAllowTerminalClose()
+    {
+        string main = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string policy = SliceMethod(main, "private bool TryHideOnClose()", "private async void OnStartAtSignInToggled");
+        Assert.Contains("app.ExitRequested", policy, StringComparison.Ordinal);
+        Assert.Contains("WindowLifecyclePolicy.Decide(exitRequested) == WindowCloseDecision.Hide", policy, StringComparison.Ordinal);
+        int endEdit = policy.IndexOf("EndTrayDashboardCustomization(showSettingsOverview: true)", StringComparison.Ordinal);
+        int observe = policy.IndexOf("StartHiddenObservation()", StringComparison.Ordinal);
+        int hide = policy.IndexOf("AppWindow.Hide()", StringComparison.Ordinal);
+        int consumed = policy.IndexOf("return true", StringComparison.Ordinal);
+        Assert.True(endEdit >= 0 && observe > endEdit && hide > observe && consumed > hide);
+        Assert.Contains("return false", policy, StringComparison.Ordinal);
+        string disposal = SliceMethod(main, "private async ValueTask DisposeOwnedResourcesAsync()", "private static void DisposeComponentSafely");
+        Assert.Contains("DetachCloseHandler", disposal, StringComparison.Ordinal);
+
+        string dashboard = ReadRepositoryFile("src", "OpenBlade.Tray", "TrayDashboardWindow.xaml.cs");
+        string dashboardPolicy = SliceMethod(dashboard, "private bool TryHideOnClose()", "private void OnViewModelPropertyChanged");
+        Assert.Contains("Volatile.Read(ref disposed) == 0", dashboardPolicy, StringComparison.Ordinal);
+        Assert.Contains("Hide();", dashboardPolicy, StringComparison.Ordinal);
+        Assert.True(dashboardPolicy.IndexOf("return true", StringComparison.Ordinal)
+            > dashboardPolicy.IndexOf("Hide();", StringComparison.Ordinal));
+        Assert.Contains("return false", dashboardPolicy, StringComparison.Ordinal);
+        string dashboardDisposal = SliceMethod(dashboard, "private void DisposeOwnedResources()", "private void TrySetEditOwner");
+        Assert.Contains("DetachFromHost();", dashboardDisposal, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -3970,7 +4002,7 @@ public sealed class WinUiShellContractTests
         int show = window.IndexOf("AppWindow.Show(true)", showMethod, StringComparison.Ordinal);
         Assert.True(showMethod >= 0 && start > showMethod && show > start);
 
-        int closing = window.IndexOf("private void OnClosing", StringComparison.Ordinal);
+        int closing = window.IndexOf("private bool TryHideOnClose", StringComparison.Ordinal);
         int stop = window.IndexOf("StartHiddenObservation()", closing, StringComparison.Ordinal);
         int hide = window.IndexOf("AppWindow.Hide()", closing, StringComparison.Ordinal);
         Assert.True(closing >= 0 && stop > closing && hide > stop);
@@ -4818,7 +4850,7 @@ public sealed class WinUiShellContractTests
             moveFocus,
             StringComparison.Ordinal);
         int onClosing = dashboardWindow.IndexOf(
-            "private void OnClosing(",
+            "private bool TryHideOnClose(",
             foregroundTimerTick,
             StringComparison.Ordinal);
         Assert.Contains(

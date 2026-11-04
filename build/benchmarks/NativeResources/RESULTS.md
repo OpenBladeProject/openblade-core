@@ -619,3 +619,45 @@ skips. The separate Release Tray suite passed all 2,660 tests, including direct
 Win32 resizing. Fresh English and pseudo-localized Main-window renders were
 inspected. Independent Codex review found no remaining actionable issue in this
 fix; the requested Claude review remains incomplete because of its weekly quota.
+
+## Close-to-hide event retention (2026-11-04)
+
+A separate [matched close/hide control](results/2026-11-04-window-closing-subscription-control.json)
+found retention in `AppWindow.Closing`. Both fresh processes used one bare window,
+the same event subscription and three canceled closes during warmup. After 200
+additional close requests, three native ClosingArgs/adapter groups each grew
+from 3 to 203 and remained after collection and idle. Direct hiding left all
+three counts at 3. Matching cached PDB symbols identify the types; their combined
+payload is 128 bytes per canceled close, excluding allocator overhead.
+
+Main and Dashboard now share a native `WM_CLOSE` interceptor, preserving their
+existing hide policies before WinUI creates these arguments. Each attached view
+owns its callback; detach and native destruction release it. Normal terminal
+closes still reach Windows, and callback failures remain inside the native
+boundary. The [fix census](results/2026-11-04-window-closing-native-fix.json) used
+this production helper for the same 200-cycle workload: all three groups stayed
+absent at warmup, 50, 100 and 200 cycles, and idle. All five heap walks completed,
+unlocked and included Windowing coverage without hash-table overflow.
+
+The first attempted baseline controller supplied `ArgumentList` to a custom
+launcher that only forwarded `Arguments`. It produced no diagnostic reports and
+is excluded. The launcher now rejects nonempty `ArgumentList` before creating a
+process, using reflection to retain Windows PowerShell/.NET Framework support.
+Its five focused tests and Windows PowerShell compilation passed. A private
+desktop does not isolate named-event IPC from an installed instance.
+
+The new native smoke verifies repeated and system close commands, duplicate
+registration, handler replacement, callback failure, allowed close and explicit
+terminal `Window.Close`. The focused localization-retirement test also passed
+with the integrated Main/Dashboard handlers. Temporary instrumentation is
+excluded from delivered sources. These results address the measured ClosingArgs
+groups; the separate MRM ownership leak and Intel-linked allocation investigation
+remain unresolved. The requested Claude review remains incomplete after the
+weekly quota failure; independent Codex review and runtime checks are reported
+separately.
+
+After removing temporary instrumentation, the full solution build passed with
+zero warnings or errors and all 11,381 tests across 17 projects passed, with no
+failures or skips. The clean Release developer harness was rebuilt and checked
+for absence of the temporary census markers. Independent Codex review found no
+actionable issue in the integrated close-handler change.

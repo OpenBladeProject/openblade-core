@@ -1,0 +1,143 @@
+{
+ "schemaVersion": 1,
+ "evidenceDate": "2026-11-04",
+ "status": "The shared production close handler suppresses the measured retained native ClosingArgs family; other native growth remains unresolved.",
+ "sourceManifest": {
+  "baseCommit": "951e497946ac5d8258a7436f68fa9d6142a2998a",
+  "cleanCommitMeasurement": false,
+  "productionChange": "MainWindow and TrayDashboardWindow replace AppWindow.Closing subscriptions with an active-view-owned WindowsWindowCloseHandler. It consumes WM_CLOSE when the view hides, forwards permitted closes, and releases its native subclass/delegate on detach or WM_NCDESTROY.",
+  "measuredScope": "The census uses the actual production WindowsWindowCloseHandler on a bare Window/Grid with a hide callback. It does not instantiate the full MainWindow/Dashboard views; their integration is separately source-reviewed and tested.",
+  "temporaryChanges": "An instrumented developer-harness route starts the temporary close probe and default-process heap census. The heap helper is byte-identical to the baseline helper.",
+  "restoration": "Temporary probe/helper files were removed and the clean developer harness restored. Production helper/MainWindow/Dashboard and clean harness/smoke source were verified byte-identical to the archived measured candidate.",
+  "sourceArtifacts": {
+   "production": [
+    ["WindowsWindowCloseHandler.cs", 4436, "7E350052053634296456B4BFDBE8F29B8C88819177209DFECA5F2F2AD0221940"],
+    ["MainWindow.xaml.cs", 234394, "DBCD590A4C33C559D161FA454D5EDE94E9477821B251862A93F52590755B8DC5"],
+    ["TrayDashboardWindow.xaml.cs", 61816, "BDC59D09B4C168C57B5D160BAE1BF6233990882104AA69493CA40EB9306BCCE0"]
+   ],
+   "cleanDeveloperHarness": [
+    ["App.DeveloperHarness.cs", 154770, "E1EFA9A68483302D3D7F2CDABD701FCE05088C0BBCA4D5B1400892B49A50D15D"],
+    ["App.WindowCloseSmoke.cs", 6587, "CDD5150E85D10852CD771ED2526807DCE37F9652C83A8D809B731D8CCFB80743"]
+   ],
+   "temporaryInstrumentation": [
+    ["App.DeveloperHarness.instrumented.cs", 155009, "0A4C53D3F9DE88A5600862E39E4598B20291959CBE0C0F60C460B241980A2AF1"],
+    ["App.TemporaryClosingCensus.cs", 4771, "B28EFCDCCC9523A89B1CB689264E8B0609305CA041C6864C66990AA424DF3C41"],
+    ["App.TemporaryNativeHeapWalk.cs", 7055, "B05C8B479168C12A4E65AB01C15693BD157C8B9ED269FCED1720B8232274A567"]
+   ],
+   "controller": [
+    ["openblade-window-close-native-fix-controller-20261104.ps1", 2771, "14A8B6C052BFA3889301FC9566833E9E83812B9E97EEB089501696BC542F5BA3"]
+   ]
+  }
+ },
+ "binaryHashes": {
+  "OpenBlade.Tray.exe": "DADDD0613AAC116432CE3EBB2F9E8772209CB7BA4ED7E9B8AC7CC8240E51A6C2",
+  "OpenBlade.Tray.dll": "328F587C0EC02387E546056DD11D715F219D82F039172F9CC8C1F3EAE278A73B",
+  "WinRT.Runtime.dll": "BCF3A14E8712A90837FC5C0D8C8A24696AF2BD7F74E9767597EC81EDEDFB23DB",
+  "Microsoft.UI.Windowing.dll": "DE777FC7F88256DC3158138B5E267A151FDA461A2EF71B24320CCAC7CC5A3B75"
+ },
+ "baselineEvidence": ["2026-11-04-window-closing-subscription-control.json", 9292, "AFDCFBC4F9861CFD1642A59A7A9990C953CC09800FDB8EAAE4FEC49C415DD38F"],
+ "windowingAndWinRtHashesMatchBaseline": true,
+ "report": {
+  "mode": "close",
+  "cycles": 200,
+  "callbacks": 203,
+  "sameNativeShell": true,
+  "disconnected": true,
+  "privateDesktop": true,
+  "productVersion": "0.50.4.0"
+ },
+ "protocol": {
+  "desktop": "One fresh process on a private desktop; offscreen without activation and disconnected from the service.",
+  "warmup": "Three close cycles plus three direct-hide cycles; three production-handler callbacks before the warmup census.",
+  "activity": "200 WM_CLOSE cycles. The production helper invokes the hide callback, which hides the AppWindow and returns true. Exactly203 callbacks including warmup are required.",
+  "shellChecks": "After each cycle, dispatcher draining verifies hidden state, unchanged original HWND and a valid native window.",
+  "retirement": "Before each census: dispatcher drain, forced full GC, finalizer wait, another forced full GC, then dispatcher drain. Final idle also waits three seconds.",
+  "censusBoundary": "All snapshots precede closeHandler.Dispose and final window destruction, matching the baseline live-shell measurement boundary."
+ },
+ "nativeTypes": {
+  "module": "Microsoft.UI.Windowing.dll",
+  "columnOrder": ["0x57088", "0x58C90", "0x58CD8"],
+  "symbols": ["Api::IAppWindowClosingEventArgs::ExportAdapter$", "Windowing::ClosingArgs::ComExportAdapterContainer$", "Windowing::ClosingArgs"],
+  "bytesPerAllocation": [24, 56, 48],
+  "symbolProvenance": "Exact cached-symbol/PDB resolution is preserved in the baseline artifact; the measured Windowing hash is unchanged."
+ },
+ "checkpointColumns": ["stage", "cyclesAfterWarmup", "baselineCountsByRva", "fixCountsByRva", "baselinePayloadBytesByRva", "fixPayloadBytesByRva"],
+ "checkpoints": [
+  [
+   "warmup",
+   0,
+   [3, 3, 3],
+   [0, 0, 0],
+   [72, 168, 144],
+   [0, 0, 0]
+  ],
+  [
+   "batch-50",
+   50,
+   [53, 53, 53],
+   [0, 0, 0],
+   [1272, 2968, 2544],
+   [0, 0, 0]
+  ],
+  [
+   "batch-100",
+   100,
+   [103, 103, 103],
+   [0, 0, 0],
+   [2472, 5768, 4944],
+   [0, 0, 0]
+  ],
+  [
+   "batch-200",
+   200,
+   [203, 203, 203],
+   [0, 0, 0],
+   [4872, 11368, 9744],
+   [0, 0, 0]
+  ],
+  [
+   "idle",
+   200,
+   [203, 203, 203],
+   [0, 0, 0],
+   [4872, 11368, 9744],
+   [0, 0, 0]
+  ]
+ ],
+ "censusValidation": {
+  "walkCount": 5,
+  "allCompleted": true,
+  "allEndError": 259,
+  "allUnlocked": 1,
+  "anyHeaderTableOverflow": false,
+  "windowingCoveredInEveryWalk": true,
+  "otherWindowingHeadersPresentInEveryWalk": true,
+  "scope": "Locked default-process HeapWalk; allocated-block first words grouped by module-relative address."
+ },
+ "result": {
+  "baselinePayloadGrowthBytesPerClose": 128,
+  "fixPayloadGrowthBytesPerClose": 0,
+  "baselinePayloadGrowthAcross200Cycles": 25600,
+  "fixPayloadGrowthAcross200Cycles": 0,
+  "baselineCountPerTypeAtIdle": 203,
+  "fixCountPerTypeAtIdle": 0,
+  "interpretation": "The same hide behavior executes through the production helper without the baseline ClosingArgs/adapter retention. Zero is the observed count of matching busy-block headers; it does not prove no transient event arguments are ever allocated."
+ },
+ "limits": ["Targeted200-cycle native census only; no indefinite-retention or whole-process memory/handle bound.", "Counts are measured before handler disposal and true window destruction. Terminal cleanup is covered by separate smoke tests, not these five snapshots.", "The native framework cleanup implementation is unchanged; this avoids the measured event-argument path.", "The separate MRM resource-map retention and Intel graphics-runtime allocation findings remain unresolved and are not exercised or fixed by this bare-window control.", "This artifact does not claim full-solution completion, installed-product behavior or a completed Claude review."],
+ "review": {
+  "reviewer": "Independent Codex source review",
+  "result": "No actionable production finding in the archived helper/MainWindow/Dashboard/smoke integration.",
+  "scope": "UI-thread attachment, callback lifetime/reentry, duplicate owner rejection, detach/destruction cleanup, hide failures, permitted/explicit close, retired-view roots and localization rollback. This is distinct from Claude review and execution validation."
+ },
+ "fingerprintColumns": ["basename", "bytes", "sha256"],
+ "rawArtifacts": [
+  ["binary-hashes.json", 384, "3D3BB42708368BE328B902C6E1772F4A73F9A64D52654A623E1488DD695DE184"],
+  ["close.json", 175, "7097875E664040EAFD49E7CC0AB49B01005ADECADF42E0259141100BFF895FD9"],
+  ["close.json.warmup.heap.json", 55781, "753E5BA3C2D90DB5FF75A4AAB07BECE4124C157B69ED013610DBD3CCCD80252F"],
+  ["close.json.batch-50.heap.json", 55220, "01084FFDD7E75A3C7DDBE62BE7A1D3C6DE8591E21A90ABD8B523F4F5E67F5139"],
+  ["close.json.batch-100.heap.json", 55221, "9DAA2F5611FD94B9E1035CD368FCB4D22EDD5C371D479FD4D59439060FE7BDF9"],
+  ["close.json.batch-200.heap.json", 55221, "53F7E8817219FA9F7AEB5968939EE28F7D841BBE4C4181E7A9BFA5B70A1CE99E"],
+  ["close.json.idle.heap.json", 55217, "20063FAFA336738AAB61BFE322637E8BD3C63F3EBA35E9C60D8087404AB9E3CC"]
+ ],
+ "privacy": "Raw addresses, handles, process IDs, private paths and user data remain local; only basenames, module RVAs, counts and hashes are exported."
+}

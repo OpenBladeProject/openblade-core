@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Avoid native event-argument memory growth when closing main and quick-controls windows to the tray. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Preserve window size limits while reducing memory growth during language changes. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Reuse native windows, backdrops and icons when changing language, and release retired views and their event subscriptions. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Release generated XAML bindings and native title-bar resources when closing main and quick-controls windows, and complete cleanup after failed window initialization. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))

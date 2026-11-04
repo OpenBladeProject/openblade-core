@@ -102,6 +102,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
     private int openDisplayPickerCount;
     private int updateCheckingStarted;
     private int disposed;
+    private WindowsWindowCloseHandler? closeHandler;
     private ContentDialog? dashboardCustomizerDialog;
     private Action? dashboardCustomizerRefresh;
     private Action? dashboardCustomizerApply;
@@ -149,8 +150,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             throw new ArgumentException("A snapshot service client requires disconnected snapshot mode.", nameof(snapshotServiceClient));
         }
         HostWindow = hostWindow ?? new Window();
-        // Keep the projection that owns our WinRT event registrations alive;
-        // reacquiring it can make -= consult a different event-state table.
+        // Keep one projection for all operations on this native shell.
         AppWindow = HostWindow.AppWindow;
         ContentHost = WindowContentHost.GetOrCreate(HostWindow);
         initialPlacementAttempted = hostWindow is not null;
@@ -374,7 +374,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         HostWindow.SetTitleBar(AppTitleBar);
         ContentHost.AttachBackdrop(HostWindow, Root);
         ContentHost.ConfigureSizeConstraints(HostWindow, AppWindow, MinimumWidthDip, MinimumHeightDip);
-        AppWindow.Closing += OnClosing;
+        closeHandler = new WindowsWindowCloseHandler(HostWindow, TryHideOnClose);
         ApplyCaptionTheme();
     }
 
@@ -388,7 +388,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             return;
         }
         hostAttached = false;
-        DisposeComponentSafely("window closing handler", () => AppWindow.Closing -= OnClosing);
+        DisposeComponentSafely("window closing handler", DetachCloseHandler);
         DisposeComponentSafely("Mica theme source detachment", () => ContentHost.DetachBackdrop(Root));
         DisposeComponentSafely("content detachment", () =>
         {
@@ -923,7 +923,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         }
         DisplayViewModel.UserSettingsChanged -= OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested -= OnSavedDisplayProfileRestoreRequested;
-        AppWindow.Closing -= OnClosing;
+        DisposeComponentSafely("window closing handler", DetachCloseHandler);
         Root.ActualThemeChanged -= OnRootActualThemeChanged;
         Root.Loaded -= OnRootLoaded;
         Root.SizeChanged -= OnRootSizeChanged;
@@ -1722,16 +1722,24 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         }
     }
 
-    private void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
+    private void DetachCloseHandler()
+    {
+        WindowsWindowCloseHandler? previous = closeHandler;
+        closeHandler = null;
+        previous?.Dispose();
+    }
+
+    private bool TryHideOnClose()
     {
         bool exitRequested = Microsoft.UI.Xaml.Application.Current is App app && app.ExitRequested;
         if (WindowLifecyclePolicy.Decide(exitRequested) == WindowCloseDecision.Hide)
         {
             EndTrayDashboardCustomization(showSettingsOverview: true);
-            args.Cancel = true;
             StartHiddenObservation();
             AppWindow.Hide();
+            return true;
         }
+        return false;
     }
 
     private async void OnStartAtSignInToggled(object sender, RoutedEventArgs args) =>
