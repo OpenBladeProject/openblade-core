@@ -86,6 +86,242 @@ public sealed class ServiceAudioMeterLightingLoopTests
             nativeApi.Released);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DefaultOutputChange_RebindsEvenWhenPreviousMeterRemainsReadable(bool uniform)
+    {
+        var native = new SwitchingAudioMeterNativeApi();
+        var changes = new DefaultOutputChanges();
+        using var sampler = new WindowsAudioMeterLightingSampler(native, changes.Subscribe);
+        AssertPeak(0);
+
+        native.DefaultEndpoint = 1;
+        changes.Publish();
+
+        AssertPeak(1);
+        AssertPeak(1);
+        Assert.Equal(2, native.EndpointReads);
+        Assert.Equal([native.Endpoints[0].Meter, native.Endpoints[0].Device], native.Released);
+
+        void AssertPeak(float expected)
+        {
+            if (uniform)
+            {
+                Assert.Equal(WindowsAudioMeterLightingSampler.RenderUniformFrame(expected, 1),
+                    sampler.CaptureUniform(1));
+            }
+            else
+            {
+                Assert.Equal(CountLitColumns(WindowsAudioMeterLightingSampler.RenderFrame(expected, 1)),
+                    CountLitColumns(sampler.Capture(1)));
+            }
+        }
+    }
+
+    [Fact]
+    public void DefaultOutputChanges_CoalesceWithoutEnumeratingOnEveryFrame()
+    {
+        var native = new SwitchingAudioMeterNativeApi();
+        var changes = new DefaultOutputChanges();
+        var sampler = new WindowsAudioMeterLightingSampler(native, changes.Subscribe);
+        _ = sampler.CaptureUniform(1);
+        Assert.Equal(1, native.EndpointReads); // Subscribe publishes its initial notification.
+
+        native.DefaultEndpoint = 1;
+        changes.Publish();
+        changes.Publish();
+        changes.Publish();
+        _ = sampler.CaptureUniform(1);
+        _ = sampler.Capture(1);
+        Assert.Equal(2, native.EndpointReads);
+
+        sampler.Dispose();
+        sampler.Dispose();
+        changes.Publish();
+        Assert.Equal(1, changes.DisposeCount);
+        Assert.Equal([native.Endpoints[0].Meter, native.Endpoints[0].Device,
+            native.Endpoints[1].Meter, native.Endpoints[1].Device, native.Enumerator], native.Released);
+        Assert.Throws<ObjectDisposedException>(() => sampler.CaptureUniform(1));
+    }
+
+    [Fact]
+    public void DefaultOutputChange_DuringBindingRebindsOnNextCaptureWithoutFailureBackoff()
+    {
+        var native = new SwitchingAudioMeterNativeApi();
+        var changes = new DefaultOutputChanges();
+        using var sampler = new WindowsAudioMeterLightingSampler(native, changes.Subscribe);
+        native.DefaultEndpoint = 1;
+        changes.Publish();
+        native.ValidatingMeter = () =>
+        {
+            native.ValidatingMeter = null;
+            native.DefaultEndpoint = 2;
+            changes.Publish();
+        };
+
+        Assert.Equal(WindowsAudioMeterLightingSampler.RenderUniformFrame(1, 1), sampler.CaptureUniform(1));
+        Assert.Equal(WindowsAudioMeterLightingSampler.RenderUniformFrame(0.5f, 1), sampler.CaptureUniform(1));
+        Assert.Equal([native.Endpoints[1].Meter, native.Endpoints[2].Meter], native.MetersRead);
+        Assert.Equal(3, native.EndpointReads);
+        Assert.Equal([native.Endpoints[0].Meter, native.Endpoints[0].Device,
+            native.Endpoints[1].Meter, native.Endpoints[1].Device], native.Released);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DefaultOutputChange_DuringSamplingRebindsOnNextCaptureWithoutFailureBackoff(bool uniform)
+    {
+        var native = new SwitchingAudioMeterNativeApi();
+        var changes = new DefaultOutputChanges();
+        using var sampler = new WindowsAudioMeterLightingSampler(native, changes.Subscribe);
+        native.ReadingMeter = () =>
+        {
+            native.ReadingMeter = null;
+            native.DefaultEndpoint = 1;
+            changes.Publish();
+        };
+
+        if (uniform)
+        {
+            Assert.Equal(WindowsAudioMeterLightingSampler.RenderUniformFrame(0, 1), sampler.CaptureUniform(1));
+            Assert.Equal(WindowsAudioMeterLightingSampler.RenderUniformFrame(1, 1), sampler.CaptureUniform(1));
+        }
+        else
+        {
+            Assert.Equal(0, CountLitColumns(sampler.Capture(1)));
+            Assert.Equal(AmbientLightingFrame.Columns, CountLitColumns(sampler.Capture(1)));
+        }
+        Assert.Equal(2, native.EndpointReads);
+        Assert.Equal([native.Endpoints[0].Meter, native.Endpoints[1].Meter], native.MetersRead);
+        Assert.Equal([native.Endpoints[0].Meter, native.Endpoints[0].Device], native.Released);
+        Assert.Equal(0, changes.DisposeCount);
+    }
+
+    [Fact]
+    public void UnrelatedEndpointEventBurstDoesNotInvalidateOrDisposeTheAudioSampler()
+    {
+        var native = new SwitchingAudioMeterNativeApi();
+        var changes = new DefaultOutputChanges();
+        WindowsThxActiveOutput.Notification? notification = null;
+        using var sampler = new WindowsAudioMeterLightingSampler(native, callback =>
+        {
+            notification = new(callback, defaultMultimediaOnly: true);
+            return changes.Subscribe(callback);
+        });
+        native.ReadingMeter = () =>
+        {
+            for (int index = 0; index < 100; index++)
+            {
+                _ = notification!.OnDeviceAdded("capture");
+                _ = notification.OnDeviceRemoved("unrelated-render");
+                _ = notification.OnDeviceStateChanged("capture", 1);
+                _ = notification.OnPropertyValueChanged("unrelated-render", default);
+                _ = notification.OnDefaultDeviceChanged(CoreAudioDataFlow.Capture, CoreAudioRole.Multimedia, "capture");
+                _ = notification.OnDefaultDeviceChanged(CoreAudioDataFlow.Render, CoreAudioRole.Console, "console");
+            }
+        };
+
+        _ = sampler.CaptureUniform(1);
+        _ = sampler.Capture(1);
+
+        Assert.Equal(1, native.EndpointReads);
+        Assert.Empty(native.Released);
+        Assert.Equal(0, changes.DisposeCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InvalidColorBoostIsRejectedBeforeNativeSampling(bool uniform)
+    {
+        var native = new SwitchingAudioMeterNativeApi();
+        using var sampler = new WindowsAudioMeterLightingSampler(native);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+        {
+            if (uniform) { _ = sampler.CaptureUniform(1.1); }
+            else { _ = sampler.Capture(1.1); }
+        });
+
+        Assert.Empty(native.MetersRead);
+    }
+
+    [Fact]
+    public void DefaultOutputChange_FailedBindingReleasesPartialResourcesAndCanRetry()
+    {
+        var native = new SwitchingAudioMeterNativeApi();
+        var changes = new DefaultOutputChanges();
+        using var sampler = new WindowsAudioMeterLightingSampler(native, changes.Subscribe);
+        native.DefaultEndpoint = 1;
+        changes.Publish();
+        native.ActivationFailure = new InvalidOperationException("Endpoint activation failed.");
+
+        Assert.Throws<InvalidOperationException>(() => sampler.CaptureUniform(1));
+        Assert.Empty(native.MetersRead);
+        Assert.Equal([native.Endpoints[1].Device], native.Released);
+
+        native.ActivationFailure = null;
+        Assert.Equal(WindowsAudioMeterLightingSampler.RenderUniformFrame(1, 1), sampler.CaptureUniform(1));
+        Assert.Equal(3, native.EndpointReads);
+    }
+
+    [Fact]
+    public void InitialBindingFailureUnsubscribesAndReleasesNativeResources()
+    {
+        var native = new SwitchingAudioMeterNativeApi
+        {
+            ActivationFailure = new InvalidOperationException("Endpoint activation failed."),
+        };
+        var changes = new DefaultOutputChanges();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            new WindowsAudioMeterLightingSampler(native, changes.Subscribe));
+
+        Assert.Equal(1, changes.DisposeCount);
+        Assert.Equal([native.Endpoints[0].Device, native.Enumerator], native.Released);
+    }
+
+    [Fact]
+    public async Task SamplerDisposalWaitsForInProgressCaptureBeforeReleasingNativeResources()
+    {
+        var native = new SwitchingAudioMeterNativeApi();
+        var changes = new DefaultOutputChanges();
+        var sampler = new WindowsAudioMeterLightingSampler(native, changes.Subscribe);
+        var reading = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        native.ReadingMeter = () =>
+        {
+            reading.TrySetResult();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(5)));
+            Assert.Empty(native.Released);
+        };
+        Task capture = Task.Run(() => sampler.CaptureUniform(1));
+        Task? disposal = null;
+        try
+        {
+            await reading.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            disposal = Task.Run(() =>
+            {
+                disposing.TrySetResult();
+                sampler.Dispose();
+            });
+            await disposing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(disposal.IsCompleted);
+        }
+        finally
+        {
+            release.Set();
+            await capture.WaitAsync(TimeSpan.FromSeconds(5));
+            if (disposal is not null) { await disposal.WaitAsync(TimeSpan.FromSeconds(5)); }
+            sampler.Dispose();
+        }
+        Assert.Equal(1, changes.DisposeCount);
+        Assert.Equal([native.Endpoints[0].Meter, native.Endpoints[0].Device, native.Enumerator], native.Released);
+    }
+
     [Fact]
     public void RenderFrame_MapsPeakAcrossColumnsAndPreservesHoles()
     {
@@ -617,6 +853,73 @@ public sealed class ServiceAudioMeterLightingLoopTests
                 ? next()
                 : throw new InvalidOperationException("No sampler was configured.");
         }
+    }
+
+    private sealed class DefaultOutputChanges
+    {
+        private Action? changed;
+        internal int DisposeCount { get; private set; }
+
+        internal IDisposable Subscribe(Action callback)
+        {
+            changed = callback;
+            callback();
+            return new Subscription(this);
+        }
+
+        internal void Publish() => changed?.Invoke();
+
+        private sealed class Subscription(DefaultOutputChanges owner) : IDisposable
+        {
+            public void Dispose()
+            {
+                owner.DisposeCount++;
+                owner.changed = null;
+            }
+        }
+    }
+
+    private sealed class SwitchingAudioMeterNativeApi : IAudioMeterNativeApi
+    {
+        internal sealed record Endpoint(object Device, object Meter, float Peak);
+        internal object Enumerator { get; } = new();
+        internal Endpoint[] Endpoints { get; } =
+            [new(new(), new(), 0), new(new(), new(), 1), new(new(), new(), 0.5f)];
+        internal int DefaultEndpoint { get; set; }
+        internal int EndpointReads { get; private set; }
+        internal List<object> Released { get; } = [];
+        internal List<object> MetersRead { get; } = [];
+        internal Exception? ActivationFailure { get; set; }
+        internal Action? ValidatingMeter { get; set; }
+        internal Action? ReadingMeter { get; set; }
+
+        public object CreateEnumerator() => Enumerator;
+
+        public object GetDefaultAudioEndpoint(object enumeratorObject)
+        {
+            Assert.Same(Enumerator, enumeratorObject);
+            EndpointReads++;
+            return Endpoints[DefaultEndpoint].Device;
+        }
+
+        public object ActivateMeter(object deviceObject) => ActivationFailure is null
+            ? Endpoints.Single(endpoint => ReferenceEquals(endpoint.Device, deviceObject)).Meter
+            : throw ActivationFailure;
+
+        public void ValidateMeter(object meterObject)
+        {
+            Assert.Contains(Endpoints, endpoint => ReferenceEquals(endpoint.Meter, meterObject));
+            ValidatingMeter?.Invoke();
+        }
+
+        public float GetPeakValue(object meterObject)
+        {
+            ReadingMeter?.Invoke();
+            MetersRead.Add(meterObject);
+            return Endpoints.Single(endpoint => ReferenceEquals(endpoint.Meter, meterObject)).Peak;
+        }
+
+        public void Release(object value) => Released.Add(value);
     }
 
     private sealed class FakeAudioMeterNativeApi : IAudioMeterNativeApi

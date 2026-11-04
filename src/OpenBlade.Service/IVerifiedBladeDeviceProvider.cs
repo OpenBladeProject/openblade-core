@@ -19,6 +19,10 @@ public interface IVerifiedBladeDeviceProvider
 
     void SetAllowUntestedFirmware(bool enabled);
 
+    void SetRecoveryWriteAdmission(Func<bool> admission)
+    {
+    }
+
     bool IsExperimentalWritesPaused => false;
 
     DeviceCapabilities? ExperimentalCapabilities => null;
@@ -38,6 +42,10 @@ public interface IVerifiedBladeDeviceProvider
     }
 
     bool TryGetVerifiedDevice(out IBladeDevice device);
+
+    // Recovery binding only. Every read/write still requires fresh backend admission.
+    // This identifies an exact model/HID contract, not a unique physical unit.
+    string? LaptopControlRecoveryIdentity => null;
 
     DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics() =>
         DiagnosticDeviceVerification.NotObserved;

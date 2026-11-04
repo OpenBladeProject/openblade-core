@@ -67,9 +67,11 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         bool allowPadlessHyperBoostLifecycleValidation = false,
         PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced,
         bool supportsDirectManualFanTransitions = false,
-        ThxAudioCapabilities? thxAudioCapabilities = null)
+        ThxAudioCapabilities? thxAudioCapabilities = null,
+        string? laptopControlRecoveryIdentity = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        LaptopControlRecoveryIdentity = laptopControlRecoveryIdentity;
         this.hyperBoostCatalog = hyperBoostCatalog ?? DeviceCommandCatalog.Empty;
         this.readEvidence = readEvidence ?? throw new ArgumentNullException(nameof(readEvidence));
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
@@ -181,6 +183,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     }
 
     public DeviceCapabilities Capabilities { get; }
+
+    internal string? LaptopControlRecoveryIdentity { get; }
 
     private static void ValidateHyperBoostBaseModes(
         DeviceFeatureAccess? overallAccess,
@@ -471,7 +475,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             allowPadlessHyperBoostLifecycleValidation:
                 allowPadlessHyperBoostLifecycleValidation,
             supportsDirectManualFanTransitions: supportsDirectManualFanTransitions,
-            thxAudioCapabilities: thxAudioCapabilities);
+            thxAudioCapabilities: thxAudioCapabilities,
+            laptopControlRecoveryIdentity: $"{TargetBladeDevice.Model}|{TargetBladeDevice.VendorId:X4}:{TargetBladeDevice.ProductId:X4}");
     }
 
     internal static bool GetRz090581SupportsDirectManualFanTransitions(
