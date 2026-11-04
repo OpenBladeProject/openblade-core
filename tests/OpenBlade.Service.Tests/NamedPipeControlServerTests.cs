@@ -723,6 +723,9 @@ public sealed class NamedPipeControlServerTests
                 NullServiceShutdownSignal.Instance,
                 new MutableSessionAuthority(3)),
             hub);
+        // Admission timing excludes serialization of the test fixture.
+        byte[] request = await EncodeAsync(
+            new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()));
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
         (Stream serverConnection, Stream client) =
             await CreateDuplexPairAsync(timeout.Token);
@@ -733,10 +736,7 @@ public sealed class NamedPipeControlServerTests
                 serverConnection,
                 clientContext,
                 timeout.Token);
-            await IpcMessageCodec.WriteRequestAsync(
-                client,
-                new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
-                timeout.Token);
+            await client.WriteAsync(request, timeout.Token);
 
             ServiceResponse response = Assert.IsType<ServiceResponse>(
                 await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
