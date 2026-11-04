@@ -15,6 +15,7 @@ $childReport = Join-Path $recordRoot 'owner-handoff.json'
 $outputPath = Join-Path $recordRoot 'capture-result.json'
 $journalPath = Join-Path $recordRoot 'hardware-journal.jsonl'
 $manifestPath = Join-Path $recordRoot 'probe-hashes.json'
+$installedStateHelper = Join-Path $PSScriptRoot 'LowFanValidationInstalledState.ps1'
 $probeCommand = if ($LowestNonzeroTarget) { 'validate-battery-saver-spin-down-100' }
     elseif ($ConfirmSpinningAt2000) { 'validate-battery-saver-spin-down-1500' }
     else { 'validate-battery-saver-1500' }
@@ -24,7 +25,7 @@ function Write-Report($Report) {
 }
 
 if ($Elevated) {
-    $report = [ordered]@{ CaptureStarted = $false; SafeToResume = $false; Restored = $false; Error = $null }
+    $report = [ordered]@{ CaptureStarted = $false; SafeToResume = $false; Restored = $false; IndeterminatePartialWrite = $null; Error = $null }
     $originalServiceProcess = $null
     try {
         $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
@@ -34,6 +35,11 @@ if ($Elevated) {
             }
         }
         if ($captureFile -ne $manifest[0].Path) { throw 'The probe manifest does not identify this executable.' }
+        foreach ($workflowPath in @($PSCommandPath, $installedStateHelper)) {
+            if (@($manifest | Where-Object Path -EQ $workflowPath).Count -ne 1) {
+                throw 'The reviewed probe manifest must include this wrapper and its shared installed-state helper.'
+            }
+        }
         $service = Get-Service -Name OpenBlade
         if ($service.Status -ne 'Running') { throw 'The installed service is no longer running.' }
         $installedService = Get-CimInstance Win32_Service -Filter "Name='OpenBlade'"
@@ -77,7 +83,8 @@ if ($Elevated) {
         $report.CaptureExitCode = $LASTEXITCODE
         $result = Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json
         $report.Restored = $result.Restored -eq $true
-        $report.SafeToResume = ($result.Restored -eq $true -or $result.WritesAttempted -eq 0) -and $result.ManualRecoveryRequired -eq $false
+        $report.IndeterminatePartialWrite = $result.IndeterminatePartialWrite
+        $report.SafeToResume = ($result.Restored -eq $true -or $result.WritesAttempted -eq 0) -and $result.ManualRecoveryRequired -eq $false -and $result.IndeterminatePartialWrite -eq $false
         if (-not $report.SafeToResume) {
             throw 'Restoration is not confirmed. Leave all OpenBlade owners stopped; reconcile read-only.'
         }
@@ -112,6 +119,8 @@ if ($Elevated) {
     exit 0
 }
 
+. $installedStateHelper
+
 $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw 'Start the validation from a normal-integrity shell so the installed user processes can be relaunched normally.'
@@ -122,6 +131,7 @@ New-Item -ItemType Directory -Path $recordRoot | Out-Null
 $protectedBefore = @('OpenBlade.Service.exe', 'OpenBlade.SessionAgent.exe') | ForEach-Object {
     Get-FileHash -LiteralPath (Join-Path $installDirectory $_) -Algorithm SHA256
 }
+Write-LowFanDurableRecord (Join-Path $recordRoot 'installed-hashes-before.json') @($protectedBefore | Select-Object Path, Hash)
 $originalUserOwners = @{}
 foreach ($name in @('OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
     $owners = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
@@ -130,7 +140,7 @@ foreach ($name in @('OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
     }
     $originalUserOwners[$name] = $owners.Count -eq 1
 }
-$probeFiles = @($captureFile) + @(Get-ChildItem -LiteralPath (Split-Path -Parent $captureFile) -File |
+$probeFiles = @($captureFile, $PSCommandPath, $installedStateHelper) + @(Get-ChildItem -LiteralPath (Split-Path -Parent $captureFile) -File |
     Where-Object { $_.Extension -in '.dll', '.json' } | Sort-Object Name | Select-Object -ExpandProperty FullName)
 @($probeFiles | ForEach-Object { Get-FileHash -LiteralPath $_ -Algorithm SHA256 | Select-Object Path, Hash }) |
     ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifestPath -Encoding utf8
@@ -150,17 +160,7 @@ if (-not $baseline.DeviceVerified -or $baseline.WritesBlocked -or $baseline.Cont
     $baseline.ConfirmedState.HyperBoostActive -ne $false) {
     throw 'The confirmed installed baseline must be Battery Saver / Automatic on battery with active write admission.'
 }
-function Get-Intent($Status) {
-    [ordered]@{
-        Profiles = $Status.Profiles
-        DesiredState = $Status.DesiredState
-        PerformanceOverride = $Status.PerformanceOverride
-        FanOverride = $Status.FanOverride
-        FanControlOverride = $Status.FanControlOverride
-        ActiveApplicationProfileId = $Status.ActiveApplicationProfileId
-    } | ConvertTo-Json -Depth 25 -Compress
-}
-$baselineIntent = Get-Intent $baseline
+$baselineIntent = Get-LowFanIntent $baseline
 [IO.File]::WriteAllText((Join-Path $recordRoot 'installed-baseline.json'),
     [Text.Json.JsonSerializer]::Serialize($baseline, $baseline.GetType(), [Text.Json.JsonSerializerOptions]::new()),
     [Text.UTF8Encoding]::new($false))
@@ -173,12 +173,15 @@ $child = Start-Process -FilePath $shellPath -ArgumentList $childArguments -Verb 
 $child.WaitForExit()
 if (-not (Test-Path -LiteralPath $childReport)) { throw 'The elevated handoff did not produce a report; do not relaunch owners.' }
 $handoff = Get-Content -LiteralPath $childReport -Raw | ConvertFrom-Json
-if ($handoff.SafeToResume -ne $true) { throw "OpenBlade remains stopped: $($handoff.Error)" }
+$protectedAfter = @($protectedBefore | ForEach-Object { Get-FileHash -LiteralPath $_.Path -Algorithm SHA256 })
+Write-LowFanDurableRecord (Join-Path $recordRoot 'installed-hashes-after.json') @($protectedAfter | Select-Object Path, Hash)
 foreach ($entry in $protectedBefore) {
-    if ((Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash -ne $entry.Hash) {
+    $observed = @($protectedAfter | Where-Object Path -EQ $entry.Path)
+    if ($observed.Count -ne 1 -or $observed[0].Hash -ne $entry.Hash) {
         throw 'A protected installed executable changed during validation.'
     }
 }
+if ($handoff.SafeToResume -ne $true) { throw "OpenBlade remains stopped: $($handoff.Error)" }
 foreach ($name in @('OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
     if ($originalUserOwners[$name] -and @(Get-Process -Name $name -ErrorAction SilentlyContinue).Count -eq 0) {
         Start-Process -FilePath (Join-Path $installDirectory "$name.exe") -WorkingDirectory $installDirectory -WindowStyle Hidden
@@ -188,7 +191,7 @@ $client = [OpenBlade.Tray.ServiceClient]::new()
 $timeout = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(20))
 try {
     # Service and Session Agent startup may publish an unconfirmed first snapshot.
-    # Reconcile read-only; no setting is replayed to repair a presentation delay.
+    # Poll read-only first. The helper separately admits only an exact missing temporary override after confirmed probe restoration.
     for ($attempt = 0; $attempt -lt 5; $attempt++) {
         try {
             $after = $client.GetStatusAsync($timeout.Token).GetAwaiter().GetResult()
@@ -201,15 +204,17 @@ try {
         if ($null -ne $after.ConfirmedState -and
             $after.ConfirmedState.Performance.ToString() -eq 'BatterySaver' -and
             $after.ConfirmedState.Fans.ToString() -eq 'Automatic' -and
-            (Get-Intent $after) -eq $baselineIntent) { break }
+            (Get-LowFanIntent $after) -eq $baselineIntent) { break }
         if ($attempt -lt 4) { Start-Sleep -Seconds 1 }
     }
+    $after = Restore-LowFanInstalledState -Client $client -Baseline $baseline -Handoff $handoff `
+        -RecordDirectory $recordRoot -Sensors ([OpenBlade.Contracts.LiveReadingSensors]::All) -CancellationToken $timeout.Token
 }
 finally { $client.DisposeAsync().GetAwaiter().GetResult(); $timeout.Dispose() }
 [IO.File]::WriteAllText((Join-Path $recordRoot 'installed-restoration.json'),
     [Text.Json.JsonSerializer]::Serialize($after, $after.GetType(), [Text.Json.JsonSerializerOptions]::new()),
     [Text.UTF8Encoding]::new($false))
-if ((Get-Intent $after) -ne $baselineIntent -or
+if ((Get-LowFanIntent $after) -ne $baselineIntent -or
     $after.ConfirmedState.Performance.ToString() -ne 'BatterySaver' -or
     $after.ConfirmedState.Fans.ToString() -ne 'Automatic') {
     throw 'The original installed state has not been confirmed; do not submit another setting.'

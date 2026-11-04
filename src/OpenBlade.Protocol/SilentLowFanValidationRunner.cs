@@ -1,6 +1,6 @@
 namespace OpenBlade.Protocol;
 
-internal enum SilentLowFanScenario { FanStop1500, LowestSpinning }
+internal enum SilentLowFanScenario { FanStop1500, LowestSpinning, LiteralZero }
 
 internal sealed record SilentLowFanStep(int RequestedRpm,
     PerformanceFanThermalPair? Pair, FanRpmReadings? Targets,
@@ -21,7 +21,9 @@ internal sealed record SilentLowFanProgress(string Stage, DateTimeOffset Timesta
 /// Developer-only Product736 Silent experiment. Closed targets do not change product
 /// capabilities. The 2000 preparation establishes physical causality, not a firmware
 /// prerequisite. Full adapter power is required because the low-power vendor path
-/// normalizes Silent to Balanced. No zero or 100 RPM command is exposed here.
+/// normalizes Silent to Balanced. Literal zero is a separate developer experiment,
+/// requiring its own explicit approval; its firmware meaning is unknown. No 100 RPM
+/// command is exposed here.
 /// </summary>
 internal sealed class SilentLowFanValidationRunner(
     IValidationActorFactory actors, DeviceCommandCatalog catalog,
@@ -81,8 +83,7 @@ internal sealed class SilentLowFanValidationRunner(
             else
             {
                 state.Lowest = 2000;
-                int[] candidates = scenario == SilentLowFanScenario.FanStop1500
-                    ? [1500] : [1900, 1800, 1700, 1600, 1500];
+                int[] candidates = CandidateTargets(scenario);
                 foreach (int rpm in candidates)
                 {
                     SilentLowFanStep step = await ObserveTargetAsync(rpm, false, state, token);
@@ -91,7 +92,7 @@ internal sealed class SilentLowFanValidationRunner(
                         state.Lowest = rpm;
                     }
 
-                    if (scenario == SilentLowFanScenario.FanStop1500)
+                    if (scenario is SilentLowFanScenario.FanStop1500 or SilentLowFanScenario.LiteralZero)
                     {
                         if (step.Observation != "BothStopped")
                         {
@@ -217,9 +218,17 @@ internal sealed class SilentLowFanValidationRunner(
                 return await FinishAsync("StableSpinning");
             }
         }
-        return await FinishAsync(!preparation && state.Scenario == SilentLowFanScenario.FanStop1500
+        return await FinishAsync(!preparation && (state.Scenario is SilentLowFanScenario.FanStop1500 or SilentLowFanScenario.LiteralZero)
             && spinning >= 3 && StableLastThree(samples) ? "FansDidNotStop" : "RpmDidNotSettle");
     }
+
+    internal static int[] CandidateTargets(SilentLowFanScenario scenario) => scenario switch
+    {
+        SilentLowFanScenario.FanStop1500 => [1500],
+        SilentLowFanScenario.LowestSpinning => [1900, 1800, 1700, 1600, 1500],
+        SilentLowFanScenario.LiteralZero => [0],
+        _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+    };
 
     private async Task RestoreAsync(State state, CancellationToken token)
     {

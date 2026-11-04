@@ -1666,10 +1666,16 @@ if (args.Length > 0 && args[0].Equals(
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
-if (args.Length > 0 && args[0] is SilentLowFanValidationCommand.StopName or SilentLowFanValidationCommand.LowestName)
+if (args.Length > 0 && args[0] is SilentLowFanValidationCommand.StopName
+    or SilentLowFanValidationCommand.LowestName or SilentLowFanValidationCommand.ZeroName)
 {
     return await SilentLowFanValidationCommand.RunWindowsAsync(args[1..], Console.Out,
-        args[0] == SilentLowFanValidationCommand.StopName ? SilentLowFanScenario.FanStop1500 : SilentLowFanScenario.LowestSpinning);
+        args[0] switch
+        {
+            SilentLowFanValidationCommand.StopName => SilentLowFanScenario.FanStop1500,
+            SilentLowFanValidationCommand.LowestName => SilentLowFanScenario.LowestSpinning,
+            _ => SilentLowFanScenario.LiteralZero,
+        });
 }
 if (args.Length > 0 && args[0] is BatterySaverLowFanValidationCommand.Name
     or BatterySaverLowFanValidationCommand.SpinDownName

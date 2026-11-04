@@ -12,6 +12,14 @@ internal static class SilentLowFanValidationCommand
 {
     internal const string StopName = "validate-silent-fan-stop-1500";
     internal const string LowestName = "validate-silent-lowest-spinning";
+    internal const string ZeroName = "validate-silent-literal-zero";
+    internal static string NameForScenario(SilentLowFanScenario scenario) => scenario switch
+    {
+        SilentLowFanScenario.FanStop1500 => StopName,
+        SilentLowFanScenario.LowestSpinning => LowestName,
+        SilentLowFanScenario.LiteralZero => ZeroName,
+        _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+    };
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -45,7 +53,7 @@ internal static class SilentLowFanValidationCommand
         }
         if (!TryParseArguments(arguments, bios, out string? path))
         {
-            await output.WriteLineAsync($"Usage: OpenBlade.Capture {(scenario == SilentLowFanScenario.FanStop1500 ? StopName : LowestName)} --confirm-target RZ09-0581:1532:02E0:{bios} --journal <absolute-new-jsonl-path>");
+            await output.WriteLineAsync($"Usage: OpenBlade.Capture {NameForScenario(scenario)} --confirm-target RZ09-0581:1532:02E0:{bios} --journal <absolute-new-jsonl-path>");
             return 1;
         }
         using var cancellation = new CancellationTokenSource();
@@ -128,7 +136,8 @@ internal static class SilentLowFanValidationCommand
             performance = "Silent",
             productionAdmitted = false,
             preparationRpm = 2000,
-            targets = scenario == SilentLowFanScenario.FanStop1500 ? new[] { 1500 } : new[] { 1900, 1800, 1700, 1600, 1500 },
+            targets = SilentLowFanValidationRunner.CandidateTargets(scenario),
+            zeroMeaningEstablished = false,
             sourceBaseSha256 = "BC7DC47E18261AB38393589D336C11F321CC431D700ED32147997144F64628CA",
             sourcePolicySha256 = "CD29E8D89135EA967AB13B4607A6524087A6B1DDBF76F7C73A39C7E4C6EC404D"
         });

@@ -48,7 +48,15 @@ fan stop, clamp, unstable result or unsafe condition ends further candidates.
 The result bounds the lowest **observed spinning target under those conditions**,
 not a universal hardware minimum or guaranteed continuous speed.
 
-Neither operation sends zero or 100 RPM. Every submission retains fresh exact
+Neither operation sends zero or 100 RPM. A separate, developer-only
+`validate-silent-literal-zero` scenario is prepared for one literal target-byte
+`00` experiment. The source wrapper encodes zero without a special case; its
+firmware meaning remains unknown. This scenario requires separate explicit
+literal-zero approval from a present user before execution. It uses the same
+spinning preparation, independent mode/target/tach reads and exact restoration;
+it is not a known fan-off command or a product capability.
+
+Every submission retains fresh exact
 host/HID, controller, owner, active local session, AC/full-adapter and applicable
 sensor admission. Trial admission requires CPU temperature at most 55°C and
 confirmed inactive GPU activity. Sensor freshness starts before the async read.
@@ -63,7 +71,9 @@ considering a separately reviewed restoration; never replay the uncertain step.
 `build/Invoke-SilentLowFanValidation.ps1` uses the existing sole-owner handoff
 pattern, saves installed intent and protected hashes, and resumes the original
 service and user components only after confirmed restoration or no writes.
-`-Calibrate` selects the separate descending scenario. Installed files are not
+`-Calibrate` selects the separate descending scenario. `-LiteralZero` selects
+only the separately approved zero experiment; the switches cannot be combined.
+Installed files are not
 replaced. Hardware execution requires the user's explicit authorization and a
 reviewed exact build; this document alone grants none.
 
@@ -72,5 +82,25 @@ reviewed exact build; this document alone grants none.
 The read-only preflight on 2026-11-05 confirmed plugged-in Silent/Automatic,
 both fans at 2,100 RPM and a Windows CPU temperature reading of 45°C. A separate
 sensor read confirmed inactive GPU activity. These observations are provenance;
-fresh admission is still required at each write. Physical trial results will
-be recorded separately after execution and restoration.
+fresh admission is still required at each write.
+
+The [first Silent round trip](evidence/silent-2000-to-1500-rz09-0581-2026-11-05.json)
+confirmed Silent/manual (`05/01`), both 2,000 RPM preparation targets and physical
+rotation, then retained both 1,500 RPM targets. Both measured fan readings stayed
+between 1,900 and 2,000 RPM in all 30 candidate samples. This did **not** establish
+Silent fan stop or physical 1,500 RPM operation. All ten probe writes were
+acknowledged without ambiguity. Both original 3,800 RPM targets and the exact
+Silent/Automatic pair were independently restored.
+
+The installed-state check exposed a separate wrapper defect: service restart
+clears `UntilPowerSourceChange` performance overrides, so the saved Balanced
+profile replaced the temporary Silent override. A separate fresh, journaled
+typed request restored the exact original Silent override and lifetime. The
+subsequent independent read confirmed Silent/Automatic, active admission and
+equality of all ten compared intent fields. The service, tray and Session Agent
+were running from their expected installed paths. The shared wrapper helper now
+handles this specific missing-override case after confirmed probe restoration;
+it never retries an uncertain setter or accepts unrelated intent changes.
+
+Zero and 100 RPM were not sent in this round trip. Further results belong in
+separate records rather than rewriting this negative result.

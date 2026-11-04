@@ -5,6 +5,46 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class SilentLowFanValidationRunnerTests
 {
     [Fact]
+    public async Task LiteralZero_IsOneDistinctTargetExperimentAndRestoresSavedState()
+    {
+        var fixture = new Fixture();
+        var result = await fixture.Run(SilentLowFanScenario.LiteralZero);
+        Assert.True(result.Success, result.Failure);
+        Assert.True(result.Restored);
+        var step = Assert.Single(result.Steps);
+        Assert.Equal(0, step.RequestedRpm);
+        Assert.Equal("BothStopped", step.Observation);
+        Assert.Equal(new FanRpmReadings(0, 0), step.Targets);
+        Assert.Contains("010100", fixture.Writes);
+        Assert.Contains("010200", fixture.Writes);
+        Assert.Equal(result.BaselineTargets, result.RestorationTargets);
+        Assert.Equal(result.Baseline, result.Restoration);
+    }
+
+    [Fact]
+    public async Task LiteralZero_ModeChangeStopsWithoutRestorationOrAnotherTarget()
+    {
+        var fixture = new Fixture { ZeroChangesMode = true };
+        var result = await fixture.Run(SilentLowFanScenario.LiteralZero);
+        Assert.False(result.Success);
+        Assert.False(result.Restored);
+        Assert.True(result.IndeterminatePartialWrite);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(6, fixture.Writes.Count);
+    }
+
+    [Fact]
+    public async Task LiteralZero_KnownClampRestoresWithoutClaimingFanStop()
+    {
+        var fixture = new Fixture { ClampZero = true };
+        var result = await fixture.Run(SilentLowFanScenario.LiteralZero);
+        Assert.False(result.Success);
+        Assert.True(result.Restored);
+        Assert.Equal("StoredTargetClamped", Assert.Single(result.Steps).Observation);
+        Assert.Equal(result.BaselineTargets, result.RestorationTargets);
+    }
+
+    [Fact]
     public async Task Stop1500_StableSpinningIsReportedWithoutFalseStopSuccess()
     {
         var fixture = new Fixture { Keep1500Spinning = true };
@@ -136,7 +176,7 @@ public sealed class SilentLowFanValidationRunnerTests
         private bool allow = true;
         internal string? Fault;
         internal bool Clamp, DelayedSingleStop, LoseThermalAfterPreparation, FailIntent, RevokeAfterIntent, LoseAdapter;
-        internal bool Keep1500Spinning, CancelWrite, FailRetirement;
+        internal bool Keep1500Spinning, CancelWrite, FailRetirement, ZeroChangesMode, ClampZero;
         internal int Opens;
         internal bool ManualReadBeforeFirstTarget;
         internal List<string> Writes { get; } = [];
@@ -196,6 +236,10 @@ public sealed class SilentLowFanValidationRunnerTests
                 int index = payload[1] - 1;
                 if (command.CommandId == 0x82)
                 {
+                    if (owner.ZeroChangesMode && owner.Writes.Count >= 6 && owner.targets[index] == 0)
+                    {
+                        return Success([1, payload[1], 5, 0]);
+                    }
                     if (owner.Fault == "mode" && owner.Writes.Count >= 2)
                     {
                         return Success([1, payload[1], 2, 1]);
@@ -254,7 +298,8 @@ public sealed class SilentLowFanValidationRunnerTests
                 }
                 else
                 {
-                    owner.targets[index] = owner.Clamp && payload[2] == 19 ? 2000 : payload[2] * 100;
+                    owner.targets[index] = (owner.Clamp && payload[2] == 19) || (owner.ClampZero && payload[2] == 0)
+                        ? 2000 : payload[2] * 100;
                     owner.candidateSamples = 0;
                 }
                 return Success(payload);
