@@ -12,6 +12,37 @@ public sealed class ProfileStoreTests : IDisposable
         "OpenBlade.Tests",
         Guid.NewGuid().ToString("N"));
 
+    [Theory]
+    [InlineData(22, false)]
+    [InlineData(23, true)]
+    public void BatterySaverStopPreference_MigratesOffAndPreservesOrdinaryIntent(int schema, bool expected)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with { Battery = profiles.Battery with { StopFansInBatterySaver = true } };
+        var store = new ProfileStore(Path.Combine(storeDirectory, "stop-profiles.json"));
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(new ProfileDocument(schema, profiles),
+            ProfileStore.SerializerOptions);
+        ProfileSet result = store.ReadDocument(json);
+        Assert.Equal(expected, result.Battery.StopFansInBatterySaver);
+        Assert.Equal(profiles.Battery.Fans, result.Battery.Fans);
+        Assert.Equal(profiles.Battery.FanControl, result.Battery.FanControl);
+    }
+
+    [Fact]
+    public void OperationalStopCannotBeSavedAsOrdinaryFanMode()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            Battery = profiles.Battery with
+            {
+                Fans = FanMode.Stop,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Stop),
+            },
+        };
+        Assert.Throws<InvalidDataException>(() => ProfileSetValidator.CreateUnverifiedSafeDefaults().Validate(profiles));
+    }
+
     [Fact]
     public async Task SaveThenLoad_RoundTripsProfiles()
     {

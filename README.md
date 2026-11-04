@@ -48,6 +48,7 @@ to collect and submit evidence for your model.
 
 ## Features
 
+- Battery Saver **Stop fans** on RZ09-0581, with temperature and sensor safeguards.
 - Power modes, automatic or fixed fan speeds, custom fan curves, and NVIDIA GPU
   clock offsets.
 - HyperBoost on full-power AC, with or without the Razer cooling pad.

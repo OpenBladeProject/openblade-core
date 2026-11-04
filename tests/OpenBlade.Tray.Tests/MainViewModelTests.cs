@@ -10614,9 +10614,10 @@ public sealed partial class MainViewModelTests
             PerformancePreset.Performance,
             PerformancePreset.Custom,
         ];
+        IReadOnlySet<FanMode> ordinaryFanModes = CreateStatus(verified: true, blocked: false).Capabilities!.FanModes;
         foreach (PerformancePreset performance in performancePresets)
         {
-            foreach (FanMode fans in Enum.GetValues<FanMode>())
+            foreach (FanMode fans in ordinaryFanModes)
             {
                 yield return [performance, fans];
             }
@@ -11378,6 +11379,11 @@ public sealed partial class MainViewModelTests
             return SetFanOverrideAsync(value, token);
         }
 
+        public Task<ControlOperationResult> SetBatterySaverFanStopAsync(bool enabled, CancellationToken token)
+        {
+            MutationOperations.Add($"batterySaverFanStop:{enabled}");
+            return MutateAsync(token);
+        }
         public override Task<ControlOperationResult> SetLightingOverrideAsync(
             ManualOverride<LightingSettings>? value,
             CancellationToken token)

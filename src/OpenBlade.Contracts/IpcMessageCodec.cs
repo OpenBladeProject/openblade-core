@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 72;
+    public const int ProtocolVersion = 73;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -256,6 +256,7 @@ public static class IpcMessageCodec
                 set.Value is null
                 || set.Value.IsWellFormed(),
             SetHyperBoostRequest => true,
+            SetBatterySaverFanStopRequest => true,
             SetGpuClockTuningRequest set =>
                 GpuClockTuningSettings.IsWellFormed(set.Value)
                 && Enum.IsDefined(set.Lifetime),
@@ -280,6 +281,7 @@ public static class IpcMessageCodec
                 set.Value is null
                     ? set.Settings is null
                     : Enum.IsDefined(set.Value.Value)
+                        && set.Value.Value != FanMode.Stop
                         && Enum.IsDefined(set.Value.Lifetime)
                         && (set.Settings is null
                             || set.Settings.Mode == set.Value.Value),
@@ -873,6 +875,7 @@ public static class IpcMessageCodec
             ? null
             : status.Capabilities with
             {
+                FanModes = status.Capabilities.FanModes.Where(mode => mode != FanMode.Stop).ToHashSet(),
                 ChargeLimits = status.Capabilities.ChargeLimits
                     .Where(IsProtocol51BatteryLimit)
                     .ToHashSet(),
@@ -902,7 +905,8 @@ public static class IpcMessageCodec
                     ? status.ConfirmedState.Performance : null,
                 CustomPerformance = IsProtocol51CustomState(status.ConfirmedState.CustomPerformance)
                     ? status.ConfirmedState.CustomPerformance : null,
-                Fans = status.ConfirmedState.CustomPerformance?.MaximumFans == true
+                Fans = status.ConfirmedState.Fans == FanMode.Stop
+                    || status.ConfirmedState.CustomPerformance?.MaximumFans == true
                     ? null : status.ConfirmedState.Fans,
                 Lighting = status.ConfirmedState.Lighting is { } confirmedLighting
                     && !IsProtocol51LightingSetting(confirmedLighting)
@@ -927,6 +931,15 @@ public static class IpcMessageCodec
             },
             DesiredState = status.DesiredState with
             {
+                Fans = status.DesiredState.Fans with
+                {
+                    Value = status.DesiredState.Fans.Value == FanMode.Stop
+                        ? status.BatterySaverFanStopStatus?.NormalFanControl?.Mode ?? FanMode.Automatic
+                        : status.DesiredState.Fans.Value,
+                },
+                FanControl = status.DesiredState.FanControl?.Mode == FanMode.Stop
+                    ? status.BatterySaverFanStopStatus?.NormalFanControl ?? FanControlSettings.Default
+                    : status.DesiredState.FanControl,
                 Battery = new DesiredBatteryState(
                     IsProtocol51BatteryLimit(status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent)
                         ? status.DesiredState.Battery.ConfiguredPolicy
@@ -1096,6 +1109,16 @@ public static class IpcMessageCodec
         var resolver = new DefaultJsonTypeInfoResolver();
         resolver.Modifiers.Add(typeInfo =>
         {
+            if (protocol51Projection)
+            {
+                foreach (JsonPropertyInfo property in typeInfo.Properties.Where(property =>
+                    property.Name.Equals("stopFansInBatterySaver", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("supportsBatterySaverFanStop", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("batterySaverFanStopStatus", StringComparison.OrdinalIgnoreCase)))
+                {
+                    property.ShouldSerialize = static (_, _) => false;
+                }
+            }
             if (typeInfo.Type == typeof(ProfileSet))
             {
                 JsonPropertyInfo windowsPowerModes = typeInfo.Properties.Single(property =>

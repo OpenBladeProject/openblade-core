@@ -13,7 +13,7 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 22;
+    internal const int CurrentSchemaVersion = 23;
     internal const int AutomaticExperimentalSupportSchemaVersion = 19;
     internal const int ExperimentalFeaturesConsentSchemaVersion = 17;
     internal const int ExperimentalFeaturesConsentPredecessorSchemaVersion = 16;
@@ -235,7 +235,7 @@ public sealed class ProfileStore
                 migrated |= normalized != profiles;
                 profiles = normalized;
             }
-            if (schemaVersion < CurrentSchemaVersion)
+            if (schemaVersion < 22)
             {
                 profiles = ClearSchema22Settings(profiles);
             }
@@ -276,6 +276,15 @@ public sealed class ProfileStore
         if (schemaVersion <= ExperimentalFeaturesConsentSchemaVersion)
         {
             ValidateLegacyBatteryPolicy(profiles);
+        }
+        if (schemaVersion < 23)
+        {
+            profiles = profiles with
+            {
+                Battery = profiles.Battery with { StopFansInBatterySaver = false },
+                PluggedIn = profiles.PluggedIn with { StopFansInBatterySaver = false },
+                UsbC = profiles.UsbC with { StopFansInBatterySaver = false },
+            };
         }
         validator.ValidateStoredCustomIntent(profiles);
         return profiles;

@@ -2854,6 +2854,238 @@ public sealed class ProductionBatteryPortTests
         }
     }
 
+    [Theory]
+    [InlineData(15, 15, true)]
+    [InlineData(15, 20, false)]
+    [InlineData(20, 20, false)]
+    public async Task BatterySaverStop_RequiresIndependentBothTargetReadback(
+        byte firstTarget, byte secondTarget, bool expectedSuccess)
+    {
+        var session = new ScriptedSession(
+            Success([1, 1, 3, 1]), Success([1, 2, 3, 1]),
+            Success([0, 0x11]), Success([1, 1, 15]),
+            Success([0, 0x11]), Success([1, 2, 15]),
+            Success([1, 1, 3, 1]), Success([1, 2, 3, 1]),
+            Success([1, 1, firstTarget]), Success([1, 2, secondTarget]));
+        await using var port = CreatePort(session, Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true, supportsBatterySaverFanStop: true);
+        port.SetBatterySaverFanStopWriteAdmission(() => true);
+        Task action = port.SetFanControlAsync(FanControlSettings.FromLegacy(FanMode.Stop), default);
+        if (expectedSuccess)
+        {
+            await action;
+        }
+        else
+        {
+            BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => action);
+            Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        }
+        Assert.DoesNotContain(FanMode.Stop, port.Capabilities.FanModes);
+        Assert.Equal(new byte[] { 0x82, 0x82, 0x8C, 1, 0x8C, 1, 0x82, 0x82, 0x81, 0x81 },
+            session.Commands.Select(command => command.CommandId).ToArray());
+    }
+
+    [Theory]
+    [InlineData(0, WriteSubmissionState.KnownNotApplied)]
+    [InlineData(1, WriteSubmissionState.Indeterminate)]
+    public async Task BatterySaverStop_QueuedSubmissionRechecksFreshHardwareAuthority(
+        int writesBeforeCompetitor, WriteSubmissionState expected)
+    {
+        var reads = new ScriptedSession(
+            Success([1, 1, 3, 1]), Success([1, 2, 3, 1]),
+            Success([0, 0x11]), Success([0, 0x11]));
+        var session = new DeferredStopSubmissionSession(reads, writesBeforeCompetitor);
+        bool noCompetitor = true;
+        await using var port = new ProductionBatteryPort(session, Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(), new ValidationRunContext(), TimeSpan.FromSeconds(1),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true, supportsBatterySaverFanStop: true,
+            stopHardwareAdmission: () => noCompetitor);
+        port.SetBatterySaverFanStopWriteAdmission(() => true);
+        Task write = port.SetFanControlAsync(FanControlSettings.FromLegacy(FanMode.Stop), default);
+        await session.Queued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        noCompetitor = false;
+        session.Release.TrySetResult();
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => write);
+        Assert.Equal(expected, failure.SubmissionState);
+        Assert.Equal(writesBeforeCompetitor, session.NativeWrites);
+    }
+
+    [Theory]
+    [InlineData(FanMode.Automatic, 0, WriteSubmissionState.KnownNotApplied)]
+    [InlineData(FanMode.Automatic, 1, WriteSubmissionState.Indeterminate)]
+    [InlineData(FanMode.Fixed, 0, WriteSubmissionState.KnownNotApplied)]
+    [InlineData(FanMode.Fixed, 1, WriteSubmissionState.Indeterminate)]
+    public async Task BatterySaverStop_RestorationKeepsNativeHardwareGuardWithoutCoolingPredicate(
+        FanMode destination, int writesBeforeCompetitor, WriteSubmissionState expected)
+    {
+        var reads = new ScriptedSession(
+            Success([1, 1, 3, 1]), Success([1, 2, 3, 1]),
+            Success([0, 0x11]), Success([0, 0x11]));
+        var session = new DeferredStopSubmissionSession(reads, writesBeforeCompetitor);
+        bool noCompetitor = true;
+        await using var port = new ProductionBatteryPort(session, Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(), new ValidationRunContext(), TimeSpan.FromSeconds(1),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true, supportsBatterySaverFanStop: true,
+            stopHardwareAdmission: () => noCompetitor);
+        // Cooling/scope no longer permits Stop. Releasing cooling remains admitted.
+        port.SetBatterySaverFanStopWriteAdmission(() => false);
+        port.RequireBatterySaverFanStopRestorationAdmission();
+        Task write = port.SetFanControlAsync(new FanControlSettings(destination, 3800, ManualFanCurve.Default), default);
+        await session.Queued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        noCompetitor = false;
+        session.Release.TrySetResult();
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => write);
+        Assert.Equal(expected, failure.SubmissionState);
+        Assert.Equal(writesBeforeCompetitor, session.NativeWrites);
+    }
+
+    [Fact]
+    public async Task BatterySaverStop_HardwareGuardDoesNotChangeOrdinaryManualAdmission()
+    {
+        var session = new ScriptedSession(
+            Success([1, 1, 3, 1]), Success([1, 2, 3, 1]),
+            Success([0, 0x11]), Success([1, 1, 38]),
+            Success([0, 0x11]), Success([1, 2, 38]));
+        await using var port = new ProductionBatteryPort(session, Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(), new ValidationRunContext(), TimeSpan.FromSeconds(1),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true, supportsBatterySaverFanStop: true,
+            stopHardwareAdmission: () => false);
+        await port.SetFanControlAsync(new FanControlSettings(FanMode.Fixed, 3800, ManualFanCurve.Default), default);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 1));
+        Assert.All(session.Commands, command => Assert.Null(command.SubmissionAllowed));
+    }
+
+    [Fact]
+    public async Task BatterySaverStop_MissingHardwareAuthorityNeverWrites()
+    {
+        var session = new ScriptedSession(Success([1, 1, 3, 1]), Success([1, 2, 3, 1]));
+        await using var port = new ProductionBatteryPort(session, Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(), new ValidationRunContext(), TimeSpan.FromSeconds(1),
+            supportsDirectManualFanTransitions: true, supportsBatterySaverFanStop: true);
+        port.SetBatterySaverFanStopWriteAdmission(() => true);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanControlAsync(FanControlSettings.FromLegacy(FanMode.Stop), default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+    }
+
+    private sealed class DeferredStopSubmissionSession(
+        IRazerCommandSession reads, int writesBeforeQueue) : IRazerCommandSession
+    {
+        internal TaskCompletionSource Queued { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal int NativeWrites { get; private set; }
+        public RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
+        public async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+            RazerCommandSpec command, Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout, CancellationToken cancellationToken)
+        {
+            if (command.CommandId >= 0x80)
+            {
+                return await reads.ExecuteAsync(command, assignTransactionId, exchangeTimeout, cancellationToken);
+            }
+            if (NativeWrites >= writesBeforeQueue)
+            {
+                Queued.TrySetResult();
+                await Release.Task.WaitAsync(cancellationToken);
+            }
+            if (command.SubmissionAllowed?.Invoke() != true)
+            {
+                return new(default, HidSessionFailureKind.ConflictBlocked)
+                {
+                    Diagnostic = new(HidSessionFailurePhase.Guard, HidSessionFailureKind.ConflictBlocked, null, null),
+                };
+            }
+            NativeWrites++;
+            return Success(command.Arguments.ToArray());
+        }
+        public ValueTask DisposeAsync() => reads.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task BatterySaverStop_AutomaticEntryUsesSaverPairThen1500WithoutPreparation()
+    {
+        var session = new ScriptedSession(
+            Success([1, 1, 3, 0]), Success([1, 2, 3, 0]),
+            Success([0, 0x11]), Success([1, 1, 3, 1]),
+            Success([0, 0x11]), Success([1, 2, 3, 1]),
+            Success([0, 0x11]), Success([1, 1, 15]),
+            Success([0, 0x11]), Success([1, 2, 15]),
+            Success([1, 1, 3, 1]), Success([1, 2, 3, 1]),
+            Success([1, 1, 15]), Success([1, 2, 15]));
+        await using var port = CreatePort(session, Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true, supportsBatterySaverFanStop: true);
+        port.SetBatterySaverFanStopWriteAdmission(() => true);
+        await port.SetFanControlAsync(FanControlSettings.FromLegacy(FanMode.Stop), default);
+        Assert.Equal(new[] { "01010301", "01020301", "01010F", "01020F" },
+            session.Commands.Where(command => command.CommandId < 0x80)
+                .Select(command => Convert.ToHexString(command.Arguments.Span)).ToArray());
+        Assert.All(session.Commands.Where(command => command.CommandId < 0x80),
+            command => Assert.True(command.SubmissionAllowed!()));
+    }
+
+    [Fact]
+    public async Task BatterySaverStop_AdmissionLossAfterFirstTargetStopsWithoutReplay()
+    {
+        var session = new ScriptedSession(
+            Success([1, 1, 3, 1]), Success([1, 2, 3, 1]),
+            Success([0, 0x11]), Success([1, 1, 15]), Success([0, 0x11]));
+        await using var port = CreatePort(session, Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true, supportsBatterySaverFanStop: true);
+        port.SetBatterySaverFanStopWriteAdmission(() => session.Commands.Count < 4);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanControlAsync(FanControlSettings.FromLegacy(FanMode.Stop), default));
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.Single(session.Commands, command => command.CommandId == 1);
+        Assert.NotNull(session.Commands.Single(command => command.CommandId == 1).SubmissionAllowed);
+        Assert.False(session.Commands.Single(command => command.CommandId == 1).SubmissionAllowed!());
+    }
+
+    [Fact]
+    public async Task BatterySaverStop_UnsupportedBackendRejectsWithoutIo()
+    {
+        var session = new ScriptedSession();
+        await using var port = CreatePort(session, Catalog(MaximumCapabilityFixtures()),
+            supportsDirectManualFanTransitions: true);
+        port.SetBatterySaverFanStopWriteAdmission(() => true);
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            port.SetFanControlAsync(FanControlSettings.FromLegacy(FanMode.Stop), default));
+        Assert.Empty(session.Commands);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new FanControlSettings(FanMode.Fixed, 1500, ManualFanCurve.Default));
+    }
+
+    [Fact]
+    public async Task BatterySaverStop_WithoutFreshCoolingAdmissionNeverWrites()
+    {
+        var session = new ScriptedSession(Success([1, 1, 3, 0]), Success([1, 2, 3, 0]));
+        await using var port = CreatePort(session, Catalog(MaximumCapabilityFixtures()),
+            supportsDirectManualFanTransitions: true, supportsBatterySaverFanStop: true);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanControlAsync(FanControlSettings.FromLegacy(FanMode.Stop), default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+    }
+
+    [Fact]
+    public async Task BatterySaverStop_OrdinaryReadsDoNotQueryStoredTargets()
+    {
+        var session = new ScriptedSession(Success([1, 1, 3, 1]), Success([1, 2, 3, 1]));
+        await using var port = CreatePort(session, Catalog(MaximumCapabilityFixtures()),
+            supportsDirectManualFanTransitions: true, supportsBatterySaverFanStop: true);
+        Assert.Equal(FanMode.Maximum, (await port.QueryPerformanceFanStateAsync(default)).Fans);
+        Assert.Equal(2, session.Commands.Count);
+    }
+
     private static ProductionBatteryPort CreatePort(
         IRazerCommandSession session,
         DeviceCommandCatalog catalog,
@@ -2862,7 +3094,8 @@ public sealed class ProductionBatteryPortTests
         IReadOnlySet<FanMode>? admittedFanModes = null,
         IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null,
         CustomPerformanceCapabilities? customPerformanceCapabilities = null,
-        bool supportsDirectManualFanTransitions = false) => new(
+        bool supportsDirectManualFanTransitions = false,
+        bool supportsBatterySaverFanStop = false) => new(
             session,
             catalog,
             evidence ?? NoTemporaryReadEvidence(),
@@ -2872,7 +3105,9 @@ public sealed class ProductionBatteryPortTests
             admittedFanModes,
             admittedAdapterPowerStates,
             customPerformanceCapabilities,
-            supportsDirectManualFanTransitions: supportsDirectManualFanTransitions);
+            supportsDirectManualFanTransitions: supportsDirectManualFanTransitions,
+            supportsBatterySaverFanStop: supportsBatterySaverFanStop,
+            stopHardwareAdmission: () => true);
 
     private static DeviceCommandCatalog Catalog(params CapturedCommandFixture[] fixtures) =>
         DeviceCommandCatalog.Create(CapturedFixtureFile.TargetDevice, fixtures);

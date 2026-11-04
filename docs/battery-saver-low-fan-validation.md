@@ -3,8 +3,8 @@
 The initial developer-only experiment checks whether the exact RZ09-0581
 accepts and physically reaches a fixed 1,500 RPM target in Battery Saver. A
 separately authorized follow-up checks whether reducing a confirmed spinning
-2,000 RPM target to 1,500 RPM stops the fans. The installed app continues to
-admit 2,000–5,400 RPM. Results apply to the device, firmware, power source and
+2,000 RPM target to 1,500 RPM stops the fans. Ordinary fixed-target controls
+continue to admit 2,000–5,400 RPM. Results apply to the device, firmware, power source and
 command sequence exercised.
 
 ## Source and operation
@@ -138,3 +138,71 @@ change to 1,500 RPM in the sampled cool Battery Saver conditions. Steady
 mode and other models were not validated. Normal control ranges remain
 unchanged. The updated probe passes 2,717 Protocol and 505 Capture tests,
 including 59 focused runner cases, and independent safety review.
+
+## Lowest nonzero target: 100 RPM
+
+The target field uses 100 RPM units. A literal 1 RPM value cannot be represented;
+wire value `01` requests 100 RPM. Zero's firmware semantics remain unknown and
+zero was not tested.
+
+The separately authorized `validate-battery-saver-spin-down-100` trial first
+confirmed both fans spinning at the 2,000 RPM target. Both 100 RPM setters
+returned acknowledgements, but the immediate paired mode readback unexpectedly
+reported `01010000` / `01020000`. The probe stopped all further writes, including
+restoration, and left the installed owners stopped for read-only reconciliation.
+
+Fresh read-only reconciliation subsequently confirmed a stable Battery Saver /
+Manual pair, both stored targets still at 2,000 RPM, and actual readings of
+1,900/2,000 RPM. The 100 RPM request therefore was not retained at reconciliation;
+the acknowledgements alone did not establish successful application or fan stop.
+This does not establish whether wire value `01` has special firmware semantics.
+
+A separately reviewed restoration-only path repeated the stable current-state
+reads in a fresh session, then issued only the four original baseline commands:
+3,800 RPM to each target and the exact Battery Saver / Automatic pair. Independent
+readback confirmed restoration. The installed service and user components were
+restarted, protected executable hashes were checked across recovery, and all ten
+compared profile and override fields matched the saved baseline. No 100 RPM
+command was replayed. The original failed trial remains recorded as failed;
+the successful explicit recovery is a separate result.
+
+The [sanitized 100 RPM and recovery record](evidence/battery-saver-100-rz09-0581-2026-11-04.json)
+retains both outcomes. The verified 1,500 RPM path remains the basis for the
+Battery Saver fan-stop feature.
+
+## Battery Saver switch
+
+The product adds a default-off **Stop fans** switch in the Fans card for exact
+RZ09-0581 (`1532:02E0`). Its separate battery-profile preference preserves the
+normal fan mode, fixed speed and curve, including current overrides. It applies
+only on battery in Battery Saver. Turning it off or leaving that scope restores
+the current resolved normal fan intent.
+
+The service directly selects Battery Saver manual fans when needed and writes
+the established 1,500 RPM target; the experiment's 2,000 RPM preparation is not
+a product prerequisite. Paired mode and both stored targets must independently
+confirm the request. Actual RPM remains a separate measurement: confirming the
+target does not guarantee that firmware will hold the fans stopped.
+
+Admission requires CPU temperature at or below 55°C, confirmed inactive GPU
+activity and fresh sensor evidence. Unsafe or unavailable readings release
+OpenBlade-owned fan stop to firmware Automatic and suspend the request for that
+Battery Saver activation. The preference stays on; turning it off and on can
+retry after conditions permit it. Native submissions retain fresh exact-device,
+controller, physical-power and scope checks. Ambiguity pauses further writes.
+Low-power and shutdown cleanup release only service-owned fan control and do
+not change saved intent.
+
+After a service restart, a matching observed target does not establish ownership.
+A new successful, independently confirmed fan-stop write can establish it while
+conditions permit. If the observed stop target is unowned and conditions prevent
+that write, control is paused: turn the switch off to restore normal cooling.
+The service does not silently adopt or automatically overwrite unowned state.
+
+The new switch has software and disconnected-render validation. Its installed
+service integration and sleep/resume behavior have not been physically tested.
+The user-authorized hardware trials above exercised the developer tool, and the
+original installed state was restored. Contracts/IPC changed, so deployment
+requires a coordinated full install rather than a tray-only replacement.
+Other models and Silent mode remain outside this feature's admission; shared
+fan-command encoding alone does not justify a lower physical limit.

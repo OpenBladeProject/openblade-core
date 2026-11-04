@@ -2875,4 +2875,10 @@ OpenBlade did not retry any stop request.</value>
   <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
     <value>Try Razer driver first. If it doesn’t work, switch to Windows hook (SnapTap may not work in some games).</value>
   </data>
+  <data name="MainWindow_BatterySaverFanStop.Text" xml:space="preserve">
+    <value>Stop fans</value>
+  </data>
+  <data name="MainWindow_BatterySaverFanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Stop fans</value>
+  </data>
 </root>

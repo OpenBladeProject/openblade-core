@@ -1708,4 +1708,5 @@
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>Источник питания изменился. Проверьте текущий профиль и повторите попытку.</value>
   </data>
+  <data name="Fan-stop control paused. Turn it off to restore normal cooling." xml:space="preserve"><value>Управление остановкой вентиляторов приостановлено. Выключите эту функцию, чтобы восстановить обычное охлаждение.</value></data>
 </root>

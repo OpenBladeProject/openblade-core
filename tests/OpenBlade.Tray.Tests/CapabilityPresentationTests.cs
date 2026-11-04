@@ -528,7 +528,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(28, animated.Length);
+        Assert.Equal(29, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -699,7 +699,7 @@ public sealed class CapabilityPresentationTests
                 && element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate"))
             .ToArray();
 
-        Assert.Equal(14, compactRows.Length);
+        Assert.Equal(15, compactRows.Length);
         Assert.All(compactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -722,7 +722,8 @@ public sealed class CapabilityPresentationTests
             XElement title = content.Descendants().First(element =>
                 element.Name.LocalName == "TextBlock"
                 && Attribute(element, "Style") == "{StaticResource CardTitleStyle}");
-            if (CanonicalLocalizedXaml.Identity(title) == "MainWindow_TextBlockLaptopPerformance")
+            if (CanonicalLocalizedXaml.Identity(title) is "MainWindow_TextBlockLaptopPerformance"
+                or "MainWindow_BatterySaverFanStop")
             {
                 Assert.NotNull(title.Parent);
                 Assert.Equal(
@@ -745,6 +746,7 @@ public sealed class CapabilityPresentationTests
                 "GPU",
                 "Maximum fans",
                 "Fans",
+                "Stop fans",
                 "Fan speed",
                 "Battery protection",
                 "Charge limit",
@@ -774,7 +776,7 @@ public sealed class CapabilityPresentationTests
         XElement[] animatedCompactRows = compactRows
             .Where(row => Attribute(row, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
-        Assert.Equal(10, animatedCompactRows.Length);
+        Assert.Equal(11, animatedCompactRows.Length);
         Assert.All(animatedCompactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -950,6 +952,35 @@ public sealed class CapabilityPresentationTests
 
     }
 
+    [Fact]
+    public void BatterySaverFanStop_UsesSharedSingleLineTogglePresentation()
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement toggle = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "ToggleSwitch"
+            && Attribute(element, "Toggled") == "OnBatterySaverFanStopToggled");
+        XElement reference = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "ToggleSwitch"
+            && Attribute(element, "Toggled") == "OnCustomMaximumFansToggled");
+        XElement row = toggle.Ancestors().First(element => element.Name.LocalName == "Border");
+        XElement referenceRow = reference.Ancestors().First(element => element.Name.LocalName == "Border");
+        Assert.Equal(Attribute(referenceRow, "Style"), Attribute(row, "Style"));
+        Assert.Equal(Attribute(referenceRow, "Padding"), Attribute(row, "Padding"));
+        Assert.Equal(Attribute(reference, "Style"), Attribute(toggle, "Style"));
+        Assert.Equal("{x:Bind BatterySaverFanStopRequested, Mode=OneWay}", Attribute(toggle, "IsOn"));
+        Assert.Equal("{x:Bind CanToggleBatterySaverFanStop, Mode=OneWay}", Attribute(toggle, "IsEnabled"));
+        Assert.Equal("Stop fans", Attribute(toggle, "AutomationProperties.Name"));
+        XElement textStack = Assert.Single(row.Descendants(), element =>
+            element.Name.LocalName == "StackPanel"
+            && Attribute(element, "SizeChanged") == "OnDashboardTextStackSizeChanged");
+        Assert.Contains(textStack.Elements(), element => element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "{x:Bind BatterySaverFanStopPausedMessage, Mode=OneWay}"
+            && Attribute(element, "TextWrapping") == "Wrap");
+        XElement grid = toggle.Parent!;
+        XElement referenceGrid = reference.Parent!;
+        Assert.Equal(Attribute(referenceGrid, "MinHeight"), Attribute(grid, "MinHeight"));
+        Assert.Equal(Attribute(referenceGrid, "ColumnSpacing"), Attribute(grid, "ColumnSpacing"));
+    }
     [Fact]
     public void MainWindow_UsesDashboardNavigationAndImmediateControls()
     {

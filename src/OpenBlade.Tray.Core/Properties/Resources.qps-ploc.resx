@@ -1798,4 +1798,7 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>[!! Thé pówér sóúrcé chángéd. Révíéw thé cúrrént prófílé ánd trý ágáín. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Fan-stop control paused. Turn it off to restore normal cooling." xml:space="preserve">
+    <value>[!! Fán-stóp cóntról páúséd. Túrn ít óff tó réstóré nórmál cóólíng. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

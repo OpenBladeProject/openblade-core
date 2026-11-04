@@ -414,10 +414,13 @@ type interface OpenBlade.Protocol.IProductionBatteryPort
   method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, OpenBlade.Contracts.PerformancePreset baseMode, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.Rz090581CapabilityDiagnostics> QueryRz090581CapabilityDiagnosticsAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Protocol.ProductionPerformanceFanState> QueryBatterySaverFanStopStateAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode>> QueryFunctionKeyPrimaryAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> QueryGamingModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> QueryStartupAnimationAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.String> QueryMcuVersionAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Void RequireBatterySaverFanStopRestorationAdmission()
+  method virtual System.Void SetBatterySaverFanStopWriteAdmission(System.Func<System.Boolean> admission)
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
   property System.Boolean SupportsFunctionKeyPrimaryQuery { get; }
   property System.Boolean SupportsGamingModeQuery { get; }

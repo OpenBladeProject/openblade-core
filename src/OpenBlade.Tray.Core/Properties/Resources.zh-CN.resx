@@ -1708,4 +1708,5 @@
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>电源来源已更改。请检查当前配置方案后重试。</value>
   </data>
+  <data name="Fan-stop control paused. Turn it off to restore normal cooling." xml:space="preserve"><value>风扇停止控制已暂停。关闭此功能可恢复正常散热。</value></data>
 </root>

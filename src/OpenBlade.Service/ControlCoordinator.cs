@@ -563,14 +563,19 @@ public sealed class ControlCoordinator
             admittedCapabilities = capabilities;
             supportsDirectManualFanTransitions =
                 capabilities.SupportsDirectManualFanTransitions;
-            return capabilities.FanModes.Contains(value.Mode)
+            return (value.Mode == FanMode.Stop
+                ? capabilities.SupportsBatterySaverFanStop
+                : capabilities.FanModes.Contains(value.Mode))
                 && (value.Mode != FanMode.Fixed
                     || capabilities.SupportsFanSpeedInAnyPerformancePreset(
                         value.FixedSpeedRpm));
         }
         Func<ConfirmedDeviceState, string?>? manualEntryBlockReason =
             DeviceSubsystemOrder.IsManualFanMode(value.Mode)
-                ? state => value.Mode == FanMode.Fixed
+                ? state => value.Mode == FanMode.Stop
+                    ? state.Performance == PerformancePreset.BatterySaver && state.HyperBoostActive == false
+                        ? null : "Fan stop requires confirmed Battery Saver with HyperBoost off."
+                    : value.Mode == FanMode.Fixed
                         && state.Performance is { } performance
                         && admittedCapabilities?.FanSpeedRangesByPerformancePreset.Count > 0
                         ? admittedCapabilities.GetFanSpeedRange(performance)
@@ -602,7 +607,7 @@ public sealed class ControlCoordinator
             combinedBlockReason,
             writeAllowed: writeAllowed,
             acceptSetterCompletionWithoutReadback:
-                DeviceSubsystemOrder.IsManualFanMode(value.Mode),
+                value.Mode != FanMode.Stop && DeviceSubsystemOrder.IsManualFanMode(value.Mode),
             setterCompletionEvidence: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
                 ? state => DeviceSubsystemOrder.IsManualFanMode(state.Fans)
                 : null,
@@ -827,7 +832,9 @@ public sealed class ControlCoordinator
                 DeviceAccessFailed: true);
         }
 
-        if (!transitionCapabilities.FanModes.Contains(requested.Mode))
+        if (!(requested.Mode == FanMode.Stop
+            ? transitionCapabilities.SupportsBatterySaverFanStop
+            : transitionCapabilities.FanModes.Contains(requested.Mode)))
         {
             return new ScopedApplyOutcome(
                 Unsupported("Fans"),
@@ -1557,7 +1564,9 @@ public sealed class ControlCoordinator
                 "Fans",
                 thermalCombinationSupported
                     && IsDefined(desired.Fans.Value)
-                    && capabilities.FanModes.Contains(desired.Fans.Value),
+                    && (desired.Fans.Value == FanMode.Stop
+                        ? capabilities.SupportsBatterySaverFanStop
+                        : capabilities.FanModes.Contains(desired.Fans.Value)),
                 FanModeMatches(initial.Fans, desired.Fans.Value),
                 token => SetFanControlAsync(
                     desired.FanControl
@@ -2898,7 +2907,9 @@ public sealed class ControlCoordinator
         PerformancePreset performance,
         FanMode fans,
         DeviceCapabilities capabilities) =>
-        (capabilities.FanSpeedRangesByPerformancePreset.Count > 0
+        (fans == FanMode.Stop && performance == PerformancePreset.BatterySaver
+            && capabilities.SupportsBatterySaverFanStop)
+        || (capabilities.FanSpeedRangesByPerformancePreset.Count > 0
             && fans == FanMode.Fixed
             && capabilities.GetFanSpeedRange(performance) is not null)
         || (capabilities.SupportsDirectManualFanTransitions
@@ -2967,7 +2978,9 @@ public sealed class ControlCoordinator
                 && IsAutomaticPerformancePreset(performance));
 
     private static bool FanModeMatches(FanMode? confirmed, FanMode desired) =>
-        desired == FanMode.Automatic
+        desired == FanMode.Stop || confirmed == FanMode.Stop
+            ? confirmed == desired
+            : desired == FanMode.Automatic
             ? confirmed == FanMode.Automatic
             : DeviceSubsystemOrder.IsManualFanMode(desired)
                 && DeviceSubsystemOrder.IsManualFanMode(confirmed);

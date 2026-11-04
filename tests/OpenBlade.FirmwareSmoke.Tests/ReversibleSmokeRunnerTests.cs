@@ -684,7 +684,7 @@ public sealed class ReversibleSmokeRunnerTests
                 : null;
             var capabilities = new DeviceCapabilities(
                 new HashSet<PerformancePreset>(Enum.GetValues<PerformancePreset>()),
-                new HashSet<FanMode>(Enum.GetValues<FanMode>()),
+                new HashSet<FanMode>(DeviceCapabilities.SafeTargetDefaults().FanModes),
                 new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
                 new HashSet<int> { 50, 55, 60, 65, 70, 75, 80 },
                 SupportsBatteryProtectionOff: true,

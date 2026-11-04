@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add a Battery Saver **Stop fans** switch on RZ09-0581. It preserves normal fan settings and returns cooling to firmware when temperature or sensor checks no longer permit fan stop. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+
 ### Fixed
 
 - Reduce memory growth when changing app language by sharing localized resource lookups across the main window and quick controls. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
