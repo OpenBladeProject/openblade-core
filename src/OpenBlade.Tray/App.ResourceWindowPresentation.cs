@@ -15,6 +15,9 @@ public partial class App
 
     // Disconnected developer windows only. The caller owns normal disposal and
     // must call VerifyOffscreenResourceWindow again after its loaded-layout wait.
+    private static void ShowOffscreenResourceWindow(MainWindow window, bool requireInputDesktop) =>
+        ShowOffscreenResourceWindow(window.HostWindow, requireInputDesktop);
+
     private static void ShowOffscreenResourceWindow(Window window, bool requireInputDesktop)
     {
         ArgumentNullException.ThrowIfNull(window);
@@ -26,7 +29,7 @@ public partial class App
         PrepareNoninteractiveSnapshotWindow(window);
         nint handle = WindowNative.GetWindowHandle(window);
         // Initialize x:Bind explicitly; never use Window.Activate for this workload.
-        switch (window)
+        switch (window.Content is WindowContentHost host ? host.ActiveView : window.Content)
         {
             case MainWindow main:
                 main.InitializeResourceWindowBindings();
@@ -48,6 +51,9 @@ public partial class App
         resourceOffscreenShows++;
         VerifyOffscreenResourceWindow(window, requireInputDesktop);
     }
+
+    private static void VerifyOffscreenResourceWindow(MainWindow window, bool requireInputDesktop) =>
+        VerifyOffscreenResourceWindow(window.HostWindow, requireInputDesktop);
 
     private static void VerifyOffscreenResourceWindow(Window window, bool requireInputDesktop)
     {

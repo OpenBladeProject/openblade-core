@@ -1,9 +1,8 @@
-<Window x:Uid="TrayDashboardWindow_WindowOpenBladeQuickControls"
+<UserControl
     x:Class="OpenBlade.Tray.TrayDashboardWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:OpenBlade.Tray"
-    Title="OpenBlade quick controls">
+    xmlns:local="using:OpenBlade.Tray">
     <Grid x:Name="Root"
           Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
           KeyDown="OnRootKeyDown">
@@ -678,4 +677,4 @@
                 HorizontalAlignment="Left"
                 VerticalAlignment="Top" />
     </Grid>
-</Window>
+</UserControl>

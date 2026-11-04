@@ -285,7 +285,7 @@ public partial class App
         File.WriteAllText(smokeReportPath, "construct dashboard window");
         var smokeDashboardWindow = new TrayDashboardWindow(
             smokeMainWindow.ViewModel,
-            WindowNative.GetWindowHandle(smokeMainWindow),
+                WindowNative.GetWindowHandle(smokeMainWindow.HostWindow),
             _ => { });
         File.WriteAllText(smokeReportPath, "apply all-visible preferences");
         TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
@@ -1011,7 +1011,7 @@ public partial class App
             {
                 snapshotDashboardWindow = new TrayDashboardWindow(
                     snapshotMainWindow.ViewModel,
-                    WindowNative.GetWindowHandle(snapshotMainWindow),
+                    WindowNative.GetWindowHandle(snapshotMainWindow.HostWindow),
                     _ => { });
                 TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;
                 snapshotDashboardWindow.ApplyPreferences(defaults with
@@ -1081,6 +1081,12 @@ public partial class App
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern nint GetShellWindow();
 
+    private static void ShowNoninteractiveSnapshotWindow(MainWindow window) =>
+        ShowNoninteractiveSnapshotWindow(window.HostWindow);
+
+    private static void ShowNoninteractiveSnapshotWindow(TrayDashboardWindow window) =>
+        ShowNoninteractiveSnapshotWindow(window.HostWindow);
+
     private static void ShowNoninteractiveSnapshotWindow(Window window)
     {
         PrepareNoninteractiveSnapshotWindow(window);
@@ -1092,6 +1098,9 @@ public partial class App
             throw new InvalidOperationException("A snapshot window unexpectedly took foreground.");
         }
     }
+
+    private static void PrepareNoninteractiveSnapshotWindow(MainWindow window) =>
+        PrepareNoninteractiveSnapshotWindow(window.HostWindow);
 
     private static void PrepareNoninteractiveSnapshotWindow(Window window)
     {
@@ -1200,7 +1209,7 @@ public partial class App
     }
 
     private static async Task SaveFlyoutSnapshotAsync(
-        Window window,
+        MainWindow window,
         Microsoft.UI.Xaml.Controls.Flyout flyout,
         string path)
     {
@@ -2012,7 +2021,7 @@ public partial class App
 
         var popup = new TrayDashboardWindow(
             window.ViewModel,
-            WindowNative.GetWindowHandle(window),
+            WindowNative.GetWindowHandle(window.HostWindow),
             _ => { });
         double scale = root.XamlRoot?.RasterizationScale ?? 1;
         popup.AppWindow.Resize(new Windows.Graphics.SizeInt32(

@@ -2633,7 +2633,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Shut down completely", app, StringComparison.Ordinal);
         Assert.Contains("System.Windows.Forms.Application.EnableVisualStyles()", app, StringComparison.Ordinal);
         Assert.Contains("ShowTrayTaskDialog", app, StringComparison.Ordinal);
-        Assert.Contains("WindowNative.GetWindowHandle(window)", app, StringComparison.Ordinal);
+        Assert.Contains("WindowNative.GetWindowHandle(window.HostWindow)", app, StringComparison.Ordinal);
         Assert.Contains("service shutdown elevation was canceled", app, StringComparison.Ordinal);
         string compactApp = string.Concat(app.Where(character => !char.IsWhiteSpace(character)));
         Assert.Contains(
@@ -2886,24 +2886,49 @@ public sealed class WinUiShellContractTests
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
         Assert.DoesNotContain("<Window.SystemBackdrop>", xaml, StringComparison.Ordinal);
-        Assert.Contains("new MicaBackdropHost(this, Root)", window, StringComparison.Ordinal);
-        Assert.Contains("micaBackdropHost.Dispose", window, StringComparison.Ordinal);
+        string attach = SliceMethod(window, "internal void AttachToHost()", "internal void DetachFromHost()");
+        string detach = SliceMethod(window, "internal void DetachFromHost()", "public MainViewModel ViewModel");
+        Assert.Contains("ContentHost.AttachBackdrop(HostWindow, Root)", attach, StringComparison.Ordinal);
+        Assert.Contains("ContentHost.DetachBackdrop(Root)", detach, StringComparison.Ordinal);
+        Assert.DoesNotContain("DisposeBackdrop", detach, StringComparison.Ordinal);
+        Assert.DoesNotContain("new MicaBackdropHost", window, StringComparison.Ordinal);
         int ensureDispatcher = window.IndexOf(
             "dispatcherQueue.EnsureSystemDispatcherQueue()",
             StringComparison.Ordinal);
         int createBackdrop = window.IndexOf(
-            "new MicaBackdropHost(this, Root)",
+            "ContentHost.AttachBackdrop(HostWindow, Root)",
             StringComparison.Ordinal);
         Assert.True(ensureDispatcher >= 0 && ensureDispatcher < createBackdrop);
+
+        string contentHost = ReadRepositoryFile("src", "OpenBlade.Tray", "WindowContentHost.cs");
+        string attachBackdrop = SliceMethod(contentHost, "internal void AttachBackdrop", "internal void DetachBackdrop");
+        Assert.Contains("if (backdrop is null)", attachBackdrop, StringComparison.Ordinal);
+        Assert.Contains("backdrop = new MicaBackdropHost(window, themeSource)", attachBackdrop, StringComparison.Ordinal);
+        Assert.Contains("backdrop.SetThemeSource(themeSource)", attachBackdrop, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(contentHost, "new MicaBackdropHost"));
+        Assert.DoesNotContain("AttachBackdrop", ReadRepositoryFile("src", "OpenBlade.Tray", "TrayDashboardWindow.xaml.cs"), StringComparison.Ordinal);
+        string dispose = SliceMethod(window, "public async ValueTask DisposeAsync()", "private async ValueTask DisposeOwnedResourcesAsync()");
+        int ownerGuard = dispose.IndexOf("ownsHost && ReferenceEquals(ContentHost.ActiveView, this)", StringComparison.Ordinal);
+        int releaseBackdrop = dispose.IndexOf("ContentHost.DisposeBackdrop", StringComparison.Ordinal);
+        int releaseChrome = dispose.IndexOf("WindowTitleBarLifetime.Release", StringComparison.Ordinal);
+        Assert.True(ownerGuard >= 0 && ownerGuard < releaseBackdrop && releaseBackdrop < releaseChrome);
+        Assert.Equal(1, CountOccurrences(window, "ContentHost.DisposeBackdrop"));
 
         string host = ReadRepositoryFile("src", "OpenBlade.Tray", "MicaBackdropHost.cs");
         Assert.Contains("MicaController.IsSupported()", host, StringComparison.Ordinal);
         Assert.Contains("new SystemBackdropConfiguration", host, StringComparison.Ordinal);
+        Assert.Contains("Theme = ToBackdropTheme(root.ActualTheme)", host, StringComparison.Ordinal);
         Assert.Contains("window.Activated += OnWindowActivated", host, StringComparison.Ordinal);
         Assert.Contains("window.Activated -= OnWindowActivated", host, StringComparison.Ordinal);
-        Assert.Contains("root.ActualThemeChanged += OnActualThemeChanged", host, StringComparison.Ordinal);
-        Assert.Contains("root.ActualThemeChanged -= OnActualThemeChanged", host, StringComparison.Ordinal);
-        Assert.Contains("configuration.Theme = ToBackdropTheme(root.ActualTheme)", host, StringComparison.Ordinal);
+        string rebind = SliceMethod(host, "internal void SetThemeSource", "internal void DetachThemeSource");
+        int clearOldRoot = rebind.IndexOf("root = null", StringComparison.Ordinal);
+        int unsubscribe = rebind.IndexOf("previous.ActualThemeChanged -= OnActualThemeChanged", StringComparison.Ordinal);
+        int subscribe = rebind.IndexOf("source.ActualThemeChanged += OnActualThemeChanged", StringComparison.Ordinal);
+        Assert.True(clearOldRoot >= 0 && clearOldRoot < unsubscribe && unsubscribe < subscribe);
+        Assert.Contains("source is not null && configuration is not null", rebind, StringComparison.Ordinal);
+        Assert.Contains("configuration.Theme = ToBackdropTheme(source.ActualTheme)", rebind, StringComparison.Ordinal);
+        Assert.Contains("ReferenceEquals(root, sender)", host, StringComparison.Ordinal);
+        Assert.Contains("configuration.Theme = ToBackdropTheme(sender.ActualTheme)", host, StringComparison.Ordinal);
         Assert.Contains(
             "args.WindowActivationState != WindowActivationState.Deactivated",
             host,
@@ -2911,7 +2936,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ElementTheme.Light => SystemBackdropTheme.Light", host, StringComparison.Ordinal);
         Assert.Contains("ElementTheme.Dark => SystemBackdropTheme.Dark", host, StringComparison.Ordinal);
         Assert.Contains("ElementTheme.Default => SystemBackdropTheme.Default", host, StringComparison.Ordinal);
-        Assert.Contains("controller.Dispose()", host, StringComparison.Ordinal);
+        Assert.Contains("previousController?.Dispose()", host, StringComparison.Ordinal);
+        Assert.Contains("FailedInitializationCleanup", host, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2921,7 +2947,8 @@ public sealed class WinUiShellContractTests
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         Assert.Contains("x:Name=\"AppTitleBar\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Grid.Row=\"0\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Title=\"OpenBlade\"", xaml, StringComparison.Ordinal);
+        Assert.Equal("UserControl", XDocument.Parse(xaml).Root!.Name.LocalName);
+        Assert.Contains("HostWindow.Title = \"OpenBlade\"", window, StringComparison.Ordinal);
         Assert.Contains("Background=\"Transparent\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"MainNavigation\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Grid.Row=\"1\"", xaml, StringComparison.Ordinal);
@@ -2930,7 +2957,7 @@ public sealed class WinUiShellContractTests
         int initialize = window.IndexOf("InitializeComponent()", StringComparison.Ordinal);
         int extend = window.IndexOf("ExtendsContentIntoTitleBar = true", StringComparison.Ordinal);
         int setTitleBar = window.IndexOf("SetTitleBar(AppTitleBar)", StringComparison.Ordinal);
-        int createBackdrop = window.IndexOf("new MicaBackdropHost(this, Root)", StringComparison.Ordinal);
+        int createBackdrop = window.IndexOf("ContentHost.AttachBackdrop(HostWindow, Root)", StringComparison.Ordinal);
         Assert.True(initialize >= 0 && initialize < extend);
         Assert.True(extend < setTitleBar && setTitleBar < createBackdrop);
         Assert.DoesNotContain("SetDragRectangles", window, StringComparison.Ordinal);
@@ -3047,15 +3074,15 @@ public sealed class WinUiShellContractTests
             "snapshotTitleForeground;",
             inactiveTitleForeground,
             StringComparison.Ordinal);
-        int snapshotBackdrop = window.IndexOf(
-            "micaBackdropHost = new MicaBackdropHost",
+        int snapshotAttachment = window.IndexOf(
+            "AttachToHost();",
             inactiveTitleValue,
             StringComparison.Ordinal);
         Assert.True(snapshotTitleForeground >= 0);
         Assert.True(snapshotTitleForeground < activeTitleForeground);
         Assert.True(activeTitleForeground < inactiveTitleForeground);
         Assert.True(inactiveTitleForeground < inactiveTitleValue);
-        Assert.True(inactiveTitleValue < snapshotBackdrop);
+        Assert.True(inactiveTitleValue < snapshotAttachment);
         Assert.Contains(
             "ReadPresentedProductVersion(localizationSnapshotMode)",
             window,
@@ -3333,7 +3360,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void LanguageChangesRebuildEveryLocalizedTraySurfaceInProcess()
+    public void LanguageChangesReplaceLocalizedViewsTransactionallyOnStableNativeShells()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs")
             + ReadRepositoryFile("src", "OpenBlade.Tray", "App.DeveloperHarness.cs");
@@ -3367,13 +3394,13 @@ public sealed class WinUiShellContractTests
             temporaryOverride,
             StringComparison.Ordinal);
         int create = refresh.IndexOf(
-            "replacement = CreateMainWindow(",
+            "CreateMainWindow(",
             StringComparison.Ordinal);
         int initialize = refresh.IndexOf(
             "await replacementInitialization",
             StringComparison.Ordinal);
         int prepareSurfaces = refresh.IndexOf(
-            "replacementSurfaces = CreateWindowSurfaces(replacement, eventEndpoint)",
+            "CreateLocalizedWindowSurfaces(replacement, previousDashboard?.HostWindow)",
             StringComparison.Ordinal);
         int attach = refresh.IndexOf(
             "AttachWindowSurfaces(",
@@ -3388,9 +3415,8 @@ public sealed class WinUiShellContractTests
         int disposePrevious = refresh.IndexOf(
             "await DisposeWindowSafelyAsync(previousWindow)",
             StringComparison.Ordinal);
-        int closePrevious = refresh.IndexOf(
-            "await CloseWindowSafelyAsync(previousWindow)",
-            StringComparison.Ordinal);
+        int detachPrevious = refresh.IndexOf("previousWindow.DetachFromHost()", StringComparison.Ordinal);
+        int attachContent = refresh.IndexOf("replacement.AttachToHost()", StringComparison.Ordinal);
         Assert.True(
             tryBlock >= 0
             && tryBlock < temporaryOverride
@@ -3398,17 +3424,25 @@ public sealed class WinUiShellContractTests
             && apply < create
             && create < initialize
             && initialize < prepareSurfaces
-            && prepareSurfaces < attach
+            && prepareSurfaces < detachPrevious
+            && detachPrevious < attachContent
+            && attachContent < attach
             && attach < commitTrayLanguage
             && commitTrayLanguage < commit
-            && commit < disposePrevious
-            && disposePrevious < closePrevious);
+            && commit < disposePrevious);
         Assert.Contains("commitTrayLanguage: false", refresh, StringComparison.Ordinal);
         Assert.Contains("CreateTrayIconHost(replacement)", refresh, StringComparison.Ordinal);
         Assert.Contains("replacementCommitted = true", refresh, StringComparison.Ordinal);
         Assert.Contains("if (replacementCommitted)", refresh, StringComparison.Ordinal);
-        Assert.Contains("OverlappedPresenterState.Maximized", refresh, StringComparison.Ordinal);
-        Assert.Contains("presenter.Maximize()", refresh, StringComparison.Ordinal);
+        // Keeping the same shell preserves native position/size/presenter state
+        // without replaying placement over a newly created HWND.
+        Assert.Contains("hostWindow: previousWindow.HostWindow", refresh, StringComparison.Ordinal);
+        Assert.Contains("initialPlacementAttempted = hostWindow is not null", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("MoveAndResize", refresh, StringComparison.Ordinal);
+        Assert.DoesNotContain("presenter.Maximize()", refresh, StringComparison.Ordinal);
+        Assert.DoesNotContain("CloseWindowSafelyAsync", refresh, StringComparison.Ordinal);
+        Assert.Contains("previousDashboard?.DetachFromHost()", refresh, StringComparison.Ordinal);
+        Assert.Contains("replacementSurfaces.Dashboard?.AttachToHost()", refresh, StringComparison.Ordinal);
         Assert.Contains("replacement.ShowLanguageSettings()", refresh, StringComparison.Ordinal);
         Assert.Contains(
             "liveLocalizationSmokeContext?.PreferenceStore",
@@ -3427,7 +3461,7 @@ public sealed class WinUiShellContractTests
             refresh,
             StringComparison.Ordinal);
         Assert.Contains(
-            "previous window closed for {preference}",
+            "previous localized content retired for {preference}; native shells retained",
             refresh,
             StringComparison.Ordinal);
         Assert.Contains("window.Closed += OnClosed", app, StringComparison.Ordinal);
@@ -3435,10 +3469,10 @@ public sealed class WinUiShellContractTests
             "await closed.Task.WaitAsync(TimeSpan.FromSeconds(5))",
             app,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "The previous window did not close while applying {preference}.",
-            refresh,
-            StringComparison.Ordinal);
+        string rollback = refresh[refresh.IndexOf("catch (Exception exception)", StringComparison.Ordinal)..];
+        Assert.Contains("replacement?.DetachFromHost()", rollback, StringComparison.Ordinal);
+        Assert.Contains("previousWindow.AttachToHost()", rollback, StringComparison.Ordinal);
+        Assert.Contains("previousDashboard?.AttachToHost()", rollback, StringComparison.Ordinal);
         Assert.DoesNotContain("SessionAgentLauncher", refresh, StringComparison.Ordinal);
 
         int smokeStart = app.IndexOf(
@@ -3511,6 +3545,141 @@ public sealed class WinUiShellContractTests
             "initialLanguageOverride ?? preferences.EffectiveLanguage",
             window,
             StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("MainWindow")]
+    [InlineData("TrayDashboardWindow")]
+    public void LocalizedViewsOwnContentWhileNativeShellsSurviveRetirement(string name)
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", name + ".xaml.cs");
+        XDocument xaml = XDocument.Parse(ReadRepositoryFile("src", "OpenBlade.Tray", name + ".xaml"));
+        Assert.Equal("UserControl", xaml.Root!.Name.LocalName);
+        Assert.Contains("Microsoft.UI.Xaml.Controls.UserControl", source, StringComparison.Ordinal);
+        Assert.Contains("HostWindow = hostWindow ?? new Window()", source, StringComparison.Ordinal);
+        Assert.Contains("ContentHost = WindowContentHost.GetOrCreate(HostWindow)", source, StringComparison.Ordinal);
+        Assert.Contains("if (hostWindow is null)", source, StringComparison.Ordinal);
+        string attach = SliceMethod(source, "internal void AttachToHost()", "internal void DetachFromHost()");
+        string detach = SliceMethod(source, "internal void DetachFromHost()", "public MainViewModel ViewModel");
+        Assert.Contains("ContentHost.Attach(this)", attach, StringComparison.Ordinal);
+        Assert.Contains("ObjectDisposedException.ThrowIf", attach, StringComparison.Ordinal);
+        Assert.Contains("ownsHost = false", detach, StringComparison.Ordinal);
+        Assert.Contains("ReferenceEquals(ContentHost.ActiveView, this)", detach, StringComparison.Ordinal);
+        Assert.Contains("ContentHost.Detach(this)", detach, StringComparison.Ordinal);
+        Assert.DoesNotContain("HostWindow.Content =", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("HostWindow.Close()", detach, StringComparison.Ordinal);
+        Assert.DoesNotContain("WindowTitleBarLifetime.Release", detach, StringComparison.Ordinal);
+        Assert.Contains("WindowTitleBarLifetime.Release(HostWindow", source, StringComparison.Ordinal);
+        Assert.Contains("WindowXamlBindingLifetime.Release(this, Bindings, Bindings.StopTracking)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("WindowNative.GetWindowHandle(this)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NativeWindowContentKeepsOneRootAcrossLocalizedViewChanges()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "WindowContentHost.cs");
+        string create = SliceMethod(source, "internal static WindowContentHost GetOrCreate", "internal void Attach");
+        Assert.Contains("window.Content is WindowContentHost existing", create, StringComparison.Ordinal);
+        Assert.Contains("return existing", create, StringComparison.Ordinal);
+        Assert.Contains("if (window.Content is not null)", create, StringComparison.Ordinal);
+        Assert.Contains("window.Content = host", create, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(source, "window.Content ="));
+        string children = source[source.IndexOf("internal void Attach", StringComparison.Ordinal)..];
+        Assert.Contains("Children.Add(view)", children, StringComparison.Ordinal);
+        Assert.Contains("Children.Clear()", children, StringComparison.Ordinal);
+        Assert.Contains("ReferenceEquals(ActiveView, view)", children, StringComparison.Ordinal);
+        Assert.DoesNotContain("window.Content", children, StringComparison.Ordinal);
+        Assert.DoesNotContain("static readonly", source, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("MainWindow")]
+    [InlineData("TrayDashboardWindow")]
+    public void NativeEventSubscriptionsRetainTheirOriginalAppWindowProjection(string name)
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", name + ".xaml.cs");
+        int createHost = source.IndexOf("HostWindow = hostWindow ?? new Window()", StringComparison.Ordinal);
+        int cacheProjection = source.IndexOf("AppWindow = HostWindow.AppWindow;", StringComparison.Ordinal);
+        int getContentHost = source.IndexOf("ContentHost = WindowContentHost.GetOrCreate(HostWindow)", StringComparison.Ordinal);
+        Assert.True(createHost >= 0 && createHost < cacheProjection && cacheProjection < getContentHost);
+        Assert.Equal(1, CountOccurrences(source, "AppWindow = HostWindow.AppWindow;"));
+        Assert.Contains("public AppWindow AppWindow { get; }", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("AppWindow =>", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("HostWindow.AppWindow.", source, StringComparison.Ordinal);
+        string attach = SliceMethod(source, "internal void AttachToHost()", "internal void DetachFromHost()");
+        string detach = SliceMethod(source, "internal void DetachFromHost()", "public MainViewModel ViewModel");
+        Assert.Contains("AppWindow.Closing += OnClosing", attach, StringComparison.Ordinal);
+        Assert.Contains("AppWindow.Closing -= OnClosing", detach, StringComparison.Ordinal);
+        if (name == "MainWindow")
+        {
+            Assert.Contains("AppWindow.Changed += OnAppWindowChanged", attach, StringComparison.Ordinal);
+            Assert.Contains("AppWindow.Changed -= OnAppWindowChanged", detach, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void LocalizedContentBindingsDetachLoadingBeforeStoppingPropertyTracking()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "WindowXamlBindingLifetime.cs");
+        string release = SliceMethod(source, "internal static void Release(FrameworkElement", "internal static void Release(Window");
+        Assert.Contains("GetMethod(\"Loading\"", release, StringComparison.Ordinal);
+        Assert.Contains("[typeof(FrameworkElement), typeof(object)]", release, StringComparison.Ordinal);
+        int detach = release.IndexOf("element.Loading -=", StringComparison.Ordinal);
+        int stop = release.IndexOf("stopTracking();", StringComparison.Ordinal);
+        Assert.True(detach >= 0 && stop > detach);
+        Assert.Contains("CreateDelegate<TypedEventHandler<FrameworkElement, object>>(bindings)", release, StringComparison.Ordinal);
+        Assert.Contains("\"ResolveLoading\"", release, StringComparison.Ordinal);
+        Assert.Contains("\"DetachLoading\"", release, StringComparison.Ordinal);
+        Assert.Contains("\"StopTracking\"", release, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(release, "catch (Exception exception)"));
+    }
+
+    [Fact]
+    public void LanguageChangesKeepNativeNotificationSubscriptionsAndRefreshOnlyLocalizedPresenter()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string localized = SliceMethod(app, "private WindowSurfaceSet CreateLocalizedWindowSurfaces", "private void DetachWindowEvents");
+        Assert.Contains("new TrayDashboardWindow", localized, StringComparison.Ordinal);
+        Assert.Contains("new WindowSurfaceSet(dashboard, brightnessOsdHost, performanceNotificationHost,", localized, StringComparison.Ordinal);
+        Assert.Contains("OwnsShellHosts: false", localized, StringComparison.Ordinal);
+        Assert.DoesNotContain("CreateBestEffort", localized, StringComparison.Ordinal);
+        string refresh = SliceMethod(app, "private async Task RefreshLanguageAsync", "private bool TryShowTrayNotification");
+        Assert.Contains("CreateLocalizedWindowSurfaces(replacement, previousDashboard?.HostWindow)", refresh, StringComparison.Ordinal);
+        string retirement = SliceMethod(refresh, "WindowSurfaceSet previousSurfaces", "DetachWindowEvents(previousWindow)");
+        Assert.Contains("OwnsShellHosts: false", retirement, StringComparison.Ordinal);
+        string surfaces = SliceMethod(app, "private sealed record WindowSurfaceSet", "private static void DisposeSurfaceSafely");
+        Assert.Contains("bool OwnsShellHosts = true", surfaces, StringComparison.Ordinal);
+        int guard = surfaces.IndexOf("if (OwnsShellHosts)", StringComparison.Ordinal);
+        int disposeNotification = surfaces.IndexOf("DisposeSurfaceSafely(\"performance notification host\"", StringComparison.Ordinal);
+        int disposeBrightness = surfaces.IndexOf("DisposeSurfaceSafely(\"brightness OSD host\"", StringComparison.Ordinal);
+        Assert.True(guard >= 0 && guard < disposeNotification && disposeNotification < disposeBrightness);
+        Assert.Contains("DisposeSurfaceSafely(\"dashboard window\", Dashboard)", surfaces, StringComparison.Ordinal);
+        Assert.Contains("brightnessOsdHost?.Dispose()", app, StringComparison.Ordinal);
+        Assert.Contains("performanceNotificationHost?.Dispose()", app, StringComparison.Ordinal);
+        int commit = refresh.IndexOf("replacementCommitted = true", StringComparison.Ordinal);
+        int reset = refresh.IndexOf("brightnessOsdHost?.ResetLocalizedPresenter()", StringComparison.Ordinal);
+        Assert.True(commit >= 0 && reset > commit);
+        string host = ReadRepositoryFile("src", "OpenBlade.Tray", "WindowsTrayBrightnessOsdHost.cs");
+        string resetPresenter = SliceMethod(host, "internal void ResetLocalizedPresenter()", "private nint ProcessMessage");
+        Assert.Contains("presenter = null", resetPresenter, StringComparison.Ordinal);
+        Assert.Contains("previous?.Dispose()", resetPresenter, StringComparison.Ordinal);
+        Assert.DoesNotContain("RemoveWindowSubclass", resetPresenter, StringComparison.Ordinal);
+        Assert.DoesNotContain("Hosts.TryRemove", resetPresenter, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ShellNotificationCallbackCannotCaptureTheInitialLocalizedView()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string create = SliceMethod(app, "private WindowSurfaceSet CreateWindowSurfaces", "private void AttachWindowSurfaces");
+        Assert.Contains("OnPerformanceNotificationSignal,", create, StringComparison.Ordinal);
+        Assert.DoesNotContain("signal =>", create, StringComparison.Ordinal);
+        string callback = SliceMethod(app, "private void OnPerformanceNotificationSignal", "private void ShowPerformanceNotification");
+        Assert.Contains("Enqueue(() => ShowPerformanceNotification(signal))", callback, StringComparison.Ordinal);
+        Assert.DoesNotContain("MainWindow", callback, StringComparison.Ordinal);
+        string show = SliceMethod(app, "private void ShowPerformanceNotification", "public Task ExitTrayAsync");
+        Assert.Contains("mainWindow?.IsNotificationEnabled(category)", show, StringComparison.Ordinal);
+        Assert.Contains("mainWindow?.ViewModel.ActivePowerSource", show, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -3970,7 +4139,7 @@ public sealed class WinUiShellContractTests
     public void InitialPlacementUsesWindowDpiAndDisplayRelativeMoveAndResize()
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
-        Assert.Contains("WindowNative.GetWindowHandle(this)", source, StringComparison.Ordinal);
+        Assert.Contains("WindowNative.GetWindowHandle(HostWindow)", source, StringComparison.Ordinal);
         Assert.Contains("GetDpiForWindow", source, StringComparison.Ordinal);
         Assert.Contains("DisplayArea.GetFromWindowId", source, StringComparison.Ordinal);
         Assert.Contains("DisplayAreaFallback.Primary", source, StringComparison.Ordinal);
@@ -4423,7 +4592,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("ShortcutKeyDisplayString", trayHost, StringComparison.Ordinal);
         Assert.Contains("TrayIconMenu_Exit", trayHost, StringComparison.Ordinal);
         Assert.Contains("new TrayDashboardWindow(", app, StringComparison.Ordinal);
-        Assert.Contains("WindowNative.GetWindowHandle(window)", app, StringComparison.Ordinal);
+        Assert.Contains("WindowNative.GetWindowHandle(window.HostWindow)", app, StringComparison.Ordinal);
         Assert.Contains("window.SetTrayDashboardVisible(visible)", app, StringComparison.Ordinal);
         Assert.Contains("OpenMainWindowFromTrayIcon", app, StringComparison.Ordinal);
         Assert.Contains("DismissForMainWindow()", app, StringComparison.Ordinal);
@@ -4562,21 +4731,28 @@ public sealed class WinUiShellContractTests
             "public TrayDashboardWindow(",
             StringComparison.Ordinal);
         Assert.True(dashboardConstructor >= 0);
-        int dashboardViewModelProperty = dashboardWindow.IndexOf(
-            "public MainViewModel ViewModel",
+        int dashboardConstructorEnd = dashboardWindow.IndexOf(
+            "internal Window HostWindow",
             dashboardConstructor,
             StringComparison.Ordinal);
-        Assert.True(dashboardViewModelProperty > dashboardConstructor);
+        Assert.True(dashboardConstructorEnd > dashboardConstructor);
         string dashboardConstructorBody = dashboardWindow[
-            dashboardConstructor..dashboardViewModelProperty];
+            dashboardConstructor..dashboardConstructorEnd];
+        // Construction also attaches a newly created shell. Neither that path
+        // nor view replacement may show or activate it implicitly.
+        string dashboardInitialization = dashboardConstructorBody
+            + SliceMethod(dashboardWindow, "internal void AttachToHost()", "internal void DetachFromHost()");
         Assert.DoesNotContain(
             "AppWindow.Show(",
-            dashboardConstructorBody,
+            dashboardInitialization,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
             "Activate();",
-            dashboardConstructorBody,
+            dashboardInitialization,
             StringComparison.Ordinal);
+        string dashboardShow = SliceMethod(dashboardWindow, "private void ShowAt(", "private void TryPositionAt(");
+        Assert.Contains("AppWindow.Show(activateWindow: !editing)", dashboardShow, StringComparison.Ordinal);
+        Assert.DoesNotContain("Activate();", dashboardShow, StringComparison.Ordinal);
         Assert.Contains("TryStartDismissAnimation()", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("hiding: revealHiding", dashboardWindow, StringComparison.Ordinal);
         Assert.Contains("HideSurface();", dashboardWindow, StringComparison.Ordinal);

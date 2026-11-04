@@ -111,6 +111,12 @@ public sealed class TrayXamlStartupSmokeTests
         RunTraySmokeAsync("--resource-performance-audit", "OpenBlade-offscreen-resource-performance",
             localizationLanguage: "en-US", offscreenResourceWindows: true);
 
+    [InteractiveDesktopFact]
+    [Trait("Category", "InteractiveDesktop")]
+    public Task LanguageChangesReuseNativeShellsAndReleaseRetiredContent() =>
+        RunTraySmokeAsync("--resource-performance-audit", "OpenBlade-resource-localization",
+            localizationLanguage: "en-US", offscreenResourceWindows: true, resourceWindowKind: "localized-content");
+
     private static async Task RunTraySmokeAsync(
         string argument,
         string reportPrefix,
@@ -118,7 +124,8 @@ public sealed class TrayXamlStartupSmokeTests
         string? localizationLanguage = null,
         bool isolatePreferences = false,
         bool seedExistingPreferences = false,
-        bool offscreenResourceWindows = false)
+        bool offscreenResourceWindows = false,
+        string resourceWindowKind = "dashboard")
     {
         string executable = GetTrayExecutablePath(pseudoLocalized);
         Assert.True(File.Exists(executable), $"Tray executable not found: {executable}");
@@ -182,10 +189,10 @@ public sealed class TrayXamlStartupSmokeTests
             if (argument == "--resource-performance-audit")
             {
                 startInfo.Environment["OPENBLADE_RESOURCE_PHASE_SECONDS"] = "2";
-                startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_KIND"] = "dashboard";
+                startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_KIND"] = resourceWindowKind;
                 startInfo.Environment["OPENBLADE_RESOURCE_WINDOW_DWELL_MS"] = "0";
                 startInfo.Environment["OPENBLADE_RESOURCE_OBSERVE_RENDERING"] = "0";
-                startInfo.Environment["OPENBLADE_RESOURCE_OBSERVE_RETIREMENT"] = offscreenResourceWindows ? "1" : "0";
+                startInfo.Environment["OPENBLADE_RESOURCE_OBSERVE_RETIREMENT"] = offscreenResourceWindows && resourceWindowKind == "dashboard" ? "1" : "0";
                 startInfo.Environment["OPENBLADE_RESOURCE_OFFSCREEN"] = offscreenResourceWindows ? "1" : "0";
                 startInfo.Environment["OPENBLADE_RESOURCE_INPUT_DESKTOP"] = "0";
                 startInfo.Environment["OPENBLADE_RESOURCE_EXPECTED_DESKTOP"] = desktop.Name;
@@ -233,7 +240,31 @@ public sealed class TrayXamlStartupSmokeTests
                 Assert.True(new FileInfo(Path.ChangeExtension(reportPath, ".png")).Length > 0);
                 Assert.True(new FileInfo(Path.ChangeExtension(reportPath, ".gaps.png")).Length > 0);
             }
-            if (argument == "--resource-performance-audit")
+            if (argument == "--resource-performance-audit" && resourceWindowKind == "localized-content")
+            {
+                using var report = System.Text.Json.JsonDocument.Parse(diagnostic);
+                var root = report.RootElement;
+                Assert.True(root.GetProperty("disconnected").GetBoolean());
+                Assert.Equal(0, root.GetProperty("serviceCalls").GetInt32());
+                Assert.True(root.GetProperty("stableNativeShells").GetBoolean());
+                Assert.True(root.GetProperty("attachmentRollbackPassed").GetBoolean());
+                Assert.True(root.GetProperty("shellMessageHostsPreserved").GetBoolean());
+                Assert.True(root.GetProperty("languageChanges").GetInt32() >= 12);
+                Assert.Equal(0, root.GetProperty("retiredReferencesAlive").GetInt32());
+                Assert.Equal(3, root.GetProperty("checkpoints").GetArrayLength());
+                var checkpoints = root.GetProperty("checkpoints");
+                foreach (string type in new[] { "Composition", "Timer" })
+                {
+                    string index = root.GetProperty("nativeHandleTypeNames").GetProperty("names")
+                        .EnumerateObject().Single(property => property.Value.GetString() == type).Name;
+                    int baseline = checkpoints[0].GetProperty("nativeHandles").GetProperty("typeCounts").GetProperty(index).GetInt32();
+                    int retired = checkpoints[2].GetProperty("nativeHandles").GetProperty("typeCounts").GetProperty(index).GetInt32();
+                    Assert.Equal(baseline, retired);
+                }
+                Assert.Equal(desktop.Name, root.GetProperty("windowPresentation").GetProperty("desktop")
+                    .GetProperty("currentThreadDesktop").GetString());
+            }
+            if (argument == "--resource-performance-audit" && resourceWindowKind != "localized-content")
             {
                 using var report = System.Text.Json.JsonDocument.Parse(diagnostic);
                 var root = report.RootElement;
@@ -316,7 +347,7 @@ public sealed class TrayXamlStartupSmokeTests
             File.Delete(reportPath);
             if (argument == "--resource-performance-audit")
             {
-                foreach (string suffix in new[] { ".ready", ".phase", ".preferences.json", ".retired.preferences.json", ".error.txt" })
+                foreach (string suffix in new[] { ".ready", ".phase", ".phases.txt", ".retention.json", ".preferences.json", ".retired.preferences.json", ".error.txt" })
                 {
                     File.Delete(reportPath + suffix);
                 }

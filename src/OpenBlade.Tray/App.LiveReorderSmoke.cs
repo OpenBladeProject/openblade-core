@@ -166,6 +166,7 @@ public partial class App
             ShowNoninteractiveSnapshotWindow(window);
             // Exercise XAML hit testing on the private test desktop. Native no-activate
             // input guards remain in place; ordinary snapshot windows disable this.
+            window.ContentHost.IsHitTestVisible = true;
             ((UIElement)window.Content).IsHitTestVisible = true;
             Phase("wait initial layout");
             await WaitForSnapshotLayoutAsync();

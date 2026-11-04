@@ -36,9 +36,13 @@ if (windowDwellMilliseconds is < 0 or > 1000)
     throw new ArgumentException("Window dwell must be between zero and 1000 milliseconds.");
 }
 if (windowKind is not ("dashboard" or "dashboard-empty" or "empty" or "empty-toolwindow" or "empty-toolwindow-titlebar"
-    or "empty-toolwindow-restore" or "empty-toolwindow-reset"))
+    or "empty-toolwindow-restore" or "empty-toolwindow-reset" or "localized-content"))
 {
     throw new ArgumentException("Unknown window control kind.");
+}
+if (windowKind == "localized-content" && (!offscreenWindows || inputDesktop || observeRetirement || observeRendering))
+{
+    throw new ArgumentException("Localized-content validation requires --offscreen on the private desktop without other observation switches.");
 }
 if (!File.Exists(executable) || phaseSeconds is < 1 or > 600 || startupRuns is < 1 or > 10)
 {
@@ -50,7 +54,8 @@ if (Directory.Exists(output) && Directory.EnumerateFileSystemEntries(output).Any
 }
 Directory.CreateDirectory(output);
 string assembly = Path.ChangeExtension(executable, ".dll");
-RequireDeveloperHarness(assembly, requireOffscreenSupport: offscreenWindows, requireRetirementSupport: observeRetirement);
+RequireDeveloperHarness(assembly, requireOffscreenSupport: offscreenWindows, requireRetirementSupport: observeRetirement,
+    requireLocalizationSupport: windowKind == "localized-content");
 string assemblyHash = Hash(assembly);
 Dictionary<string, string> binaryHashes = HashBinaries(Path.GetDirectoryName(executable)!);
 var runs = new List<NativeRun>();
@@ -85,7 +90,7 @@ var report = new
     offscreenWindows,
     desktopMode = inputDesktop ? "input" : "private",
     runs,
-    notes = "Fresh processes with explicit desktop/presentation mode, warm/uncontrolled OS caches, fixed en-US language and per-run preferences. Compare matched offscreen modes when isolating desktop identity. Launch-to-loaded-layout is a parent-observed upper bound with 25ms polling, not first paint or installed-app startup. Process identity comes from the owned process handle, never a name search. External samples include task delays and instrumentation but no forced child GC during phases. CPU percentages are one-logical-core equivalents (CPU seconds / wall seconds * 100), not normalized to machine cores. No battery, energy, real service/driver latency or hardware behavior is measured.",
+    notes = "Fresh processes with explicit desktop/presentation mode, warm/uncontrolled OS caches, initial en-US language and per-run preferences. Compare matched offscreen modes when isolating desktop identity. Launch-to-loaded-layout is a parent-observed upper bound with 25ms polling, not first paint or installed-app startup. Process identity comes from the owned process handle, never a name search. External samples include task delays and instrumentation. The localized-content scenario cycles English, Russian and Chinese and collects at bounded retirement checkpoints, including each complete 12-change batch in longer runs; other scenarios do not force child GC during activity phases. CPU percentages are one-logical-core equivalents (CPU seconds / wall seconds * 100), not normalized to machine cores. No battery, energy, real service/driver latency or hardware behavior is measured.",
 };
 string json = JsonSerializer.Serialize(report, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
 await File.WriteAllTextAsync(Path.Combine(output, "summary.json"), json);
@@ -293,7 +298,8 @@ static Dictionary<string, string> HashBinaries(string directory) => Directory.En
     .Where(path => Path.GetExtension(path) is ".dll" or ".exe")
     .ToDictionary(path => Path.GetRelativePath(directory, path), Hash, StringComparer.Ordinal);
 
-static void RequireDeveloperHarness(string assemblyPath, bool requireOffscreenSupport, bool requireRetirementSupport)
+static void RequireDeveloperHarness(string assemblyPath, bool requireOffscreenSupport, bool requireRetirementSupport,
+    bool requireLocalizationSupport)
 {
     using FileStream stream = File.OpenRead(assemblyPath);
     using var pe = new PEReader(stream);
@@ -308,19 +314,22 @@ static void RequireDeveloperHarness(string assemblyPath, bool requireOffscreenSu
         bool resourceProbe = false;
         bool offscreenProbe = false;
         bool retirementProbe = false;
+        bool localizationProbe = false;
         foreach (MethodDefinitionHandle methodHandle in type.GetMethods())
         {
             string name = metadata.GetString(metadata.GetMethodDefinition(methodHandle).Name);
             resourceProbe |= name == "RunResourcePerformanceAuditAsync";
             offscreenProbe |= name == "ShowOffscreenResourceWindow";
             retirementProbe |= name == "ObserveResourceRetirementAsync";
+            localizationProbe |= name == "RunResourceLocalizationAuditAsync";
         }
-        if (resourceProbe && (!requireOffscreenSupport || offscreenProbe) && (!requireRetirementSupport || retirementProbe))
+        if (resourceProbe && (!requireOffscreenSupport || offscreenProbe) && (!requireRetirementSupport || retirementProbe)
+            && (!requireLocalizationSupport || localizationProbe))
         {
             return;
         }
     }
-    throw new InvalidDataException("Require an explicit developer-harness build with the requested resource/offscreen/retirement probe; nothing was launched.");
+    throw new InvalidDataException("Require an explicit developer-harness build with the requested resource/offscreen/retirement/localization probe; nothing was launched.");
 }
 
 internal sealed record ExternalSample(double ElapsedSeconds, string Phase, double CpuMilliseconds,

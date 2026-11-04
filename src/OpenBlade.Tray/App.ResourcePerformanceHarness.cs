@@ -15,6 +15,11 @@ public partial class App
     // initialization, installed IPC, input observation or hardware APIs run here.
     private static async Task RunResourcePerformanceAuditAsync(string reportPath)
     {
+        if (Environment.GetEnvironmentVariable("OPENBLADE_RESOURCE_WINDOW_KIND") == "localized-content")
+        {
+            await ((App)Current).RunResourceLocalizationAuditAsync(reportPath);
+            return;
+        }
         MainWindow? window = null;
         Exception? failure = null;
         object? report = null;
@@ -304,38 +309,30 @@ public partial class App
 
     private static async Task WaitForResourceLayoutAsync(FrameworkElement root)
     {
-        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void Inspect()
+        // Nested controls can become observably ready between notifications.
+        // Recheck the actual state while yielding the UI thread; a notification
+        // alone is neither the readiness condition nor a paint fence.
+        root.UpdateLayout();
+        long started = Stopwatch.GetTimestamp();
+        while (!root.IsLoaded || root.ActualWidth <= 0 || root.ActualHeight <= 0)
         {
-            if (root.IsLoaded && root.ActualWidth > 0 && root.ActualHeight > 0)
+            if (Stopwatch.GetElapsedTime(started) > TimeSpan.FromSeconds(15))
             {
-                ready.TrySetResult();
+                throw new TimeoutException("The resource window did not reach loaded layout.");
             }
-        }
-        void Loaded(object sender, RoutedEventArgs args) => Inspect();
-        void LayoutUpdated(object? sender, object args) => Inspect();
-        root.Loaded += Loaded;
-        root.LayoutUpdated += LayoutUpdated;
-        try
-        {
-            root.UpdateLayout();
-            Inspect();
-            await ready.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        }
-        finally
-        {
-            root.Loaded -= Loaded;
-            root.LayoutUpdated -= LayoutUpdated;
+            await Task.Delay(16);
         }
     }
 
     private static async Task CycleResourceDashboardAsync(MainWindow window, List<ResourceDashboardReference> references, string windowKind, int dwellMilliseconds,
         bool offscreenWindows, bool requireInputDesktop, bool verifyTeardown = false)
     {
-        Window dashboard = windowKind.StartsWith("empty", StringComparison.Ordinal)
-            ? new Window { Content = new Microsoft.UI.Xaml.Controls.Grid() }
+        TrayDashboardWindow? dashboardContent = windowKind.StartsWith("empty", StringComparison.Ordinal)
+            ? null
             : new TrayDashboardWindow(window.ViewModel,
-                WinRT.Interop.WindowNative.GetWindowHandle(window), _ => { });
+                WinRT.Interop.WindowNative.GetWindowHandle(window.HostWindow), _ => { });
+        Window dashboard = dashboardContent?.HostWindow
+            ?? new Window { Content = new Microsoft.UI.Xaml.Controls.Grid() };
         Microsoft.UI.Windowing.AppWindow nativeWindow = dashboard.AppWindow;
         bool destroyed = false;
         bool titleBarResetBeforeClose = false;
@@ -370,7 +367,7 @@ public partial class App
                 presenter.SetBorderAndTitleBar(hasBorder: true, hasTitleBar: windowKind == "empty-toolwindow-titlebar");
                 dashboard.AppWindow.SetPresenter(presenter);
             }
-            if (dashboard is TrayDashboardWindow quickControls)
+            if (dashboardContent is { } quickControls)
             {
                 quickControls.ApplyPreferences(TrayDashboardPreferenceDefaults.Preference);
             }
@@ -379,8 +376,8 @@ public partial class App
             {
                 // Keep the actual presenter, native subclass and timers while
                 // isolating activation/layout of the dashboard's visual tree.
-                detachedContent = new WeakReference(dashboard.Content);
-                dashboard.Content = new Microsoft.UI.Xaml.Controls.Grid();
+                detachedContent = new WeakReference(dashboardContent!.Content);
+                dashboardContent.Content = new Microsoft.UI.Xaml.Controls.Grid();
             }
             dashboard.AppWindow.Resize(new Windows.Graphics.SizeInt32(430, 760));
             if (offscreenWindows) { ShowOffscreenResourceWindow(dashboard, requireInputDesktop); }
@@ -416,7 +413,7 @@ public partial class App
             catch (Exception exception) { (failures ??= []).Add(exception); }
             try
             {
-                if (dashboard is TrayDashboardWindow quickControls) { quickControls.Dispose(); }
+                if (dashboardContent is { } quickControls) { quickControls.Dispose(); }
                 else { dashboard.Close(); }
             }
             catch (Exception exception)
@@ -465,7 +462,7 @@ public partial class App
             await WaitForResourceLayoutAsync((FrameworkElement)retired.Content);
             if (offscreenWindows) { VerifyOffscreenResourceWindow(retired, requireInputDesktop); }
             retired.VerifyResourceIsolation((GpuStartupServiceClientProxy)client);
-            VerifyResourceBindingCleanupFailures(retired);
+            VerifyResourceBindingCleanupFailures(retired.HostWindow);
             await VerifyResourceMainWindowPendingDisposalAsync(retired);
             reference = new ResourceDashboardReference(new WeakReference(retired), new WeakReference(retired.Content));
             return reference;

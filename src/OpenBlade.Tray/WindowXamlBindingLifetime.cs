@@ -7,6 +7,40 @@ namespace OpenBlade.Tray;
 
 internal static class WindowXamlBindingLifetime
 {
+    internal static void Release(FrameworkElement element, object bindings, Action stopTracking)
+    {
+        // UserControl x:Bind hooks Loading on its native FrameworkElement.
+        // StopTracking releases property listeners, but leaves this delegate
+        // and its strong dataRoot reference in place across content retirement.
+        // Remove the exact generated public handler through the public event.
+        try
+        {
+            MethodInfo? loading = bindings.GetType().GetMethod("Loading",
+                BindingFlags.Public | BindingFlags.Instance, [typeof(FrameworkElement), typeof(object)]);
+            if (loading is not null)
+            {
+                element.Loading -= loading.CreateDelegate<TypedEventHandler<FrameworkElement, object>>(bindings);
+            }
+            else
+            {
+                DiagnosticTrace.TraceException("OpenBlade.Tray.WindowXamlBindingLifetime", "ResolveLoading",
+                    new MissingMethodException(bindings.GetType().FullName, "Loading"));
+            }
+        }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.Tray.WindowXamlBindingLifetime", "DetachLoading", exception);
+        }
+        try
+        {
+            stopTracking();
+        }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.Tray.WindowXamlBindingLifetime", "StopTracking", exception);
+        }
+    }
+
     internal static void Release(Window window, object bindings, Action stopTracking)
     {
         // Window x:Bind emits this subscription but StopTracking does not remove

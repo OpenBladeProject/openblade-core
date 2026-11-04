@@ -14,7 +14,7 @@ using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
-public sealed partial class TrayDashboardWindow : Window, IDisposable
+public sealed partial class TrayDashboardWindow : Microsoft.UI.Xaml.Controls.UserControl, IDisposable
 {
     private const int PopupWidth = 360;
     private static readonly TimeSpan RevealCompletionDeadline =
@@ -80,12 +80,22 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private Thread? revealFrameClockThread;
     private bool revealSubclassAttached;
     private int disposed;
+    private bool hostAttached;
+    private bool ownsHost;
+    private bool hostConfigured;
 
     public TrayDashboardWindow(
         MainViewModel viewModel,
         nint editOwnerWindowHandle,
-        Action<bool> visibilityChanged)
+        Action<bool> visibilityChanged,
+        Window? hostWindow = null)
     {
+        HostWindow = hostWindow ?? new Window();
+        // Unsubscribe through the same projection that registered native events,
+        // rather than reacquiring a projection with a different event-state table.
+        AppWindow = HostWindow.AppWindow;
+        ContentHost = WindowContentHost.GetOrCreate(HostWindow);
+        hostConfigured = hostWindow is not null;
         ViewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         this.editOwnerWindowHandle = editOwnerWindowHandle != 0
             ? editOwnerWindowHandle
@@ -109,15 +119,61 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         gpuClockOffsetCommitTimer = dispatcherQueue.CreateTimer();
         gpuClockOffsetCommitTimer.Interval = GpuClockOffsetCommitDelay;
         gpuClockOffsetCommitTimer.Tick += OnGpuClockOffsetCommitTimerTick;
-        hostWindowHandle = WindowNative.GetWindowHandle(this);
+        hostWindowHandle = WindowNative.GetWindowHandle(HostWindow);
         advanceRevealMessage = RegisterWindowMessage(
             "OpenBlade.TrayDashboard.AdvanceReveal.v1");
-        TryAttachRevealSubclass();
 
         ThemeManager.Apply(Root, ViewModel.Theme);
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
-        Activated += OnActivated;
+        ApplyPreferences(preference);
+        if (hostWindow is null)
+        {
+            AttachToHost();
+        }
+    }
+
+    internal Window HostWindow { get; }
+    internal WindowContentHost ContentHost { get; }
+    public AppWindow AppWindow { get; }
+    public string Title { get; }
+    public void Activate()
+    {
+        if (hostAttached && Volatile.Read(ref disposed) == 0)
+        {
+            HostWindow.Activate();
+        }
+    }
+    public void Close()
+    {
+        if (ownsHost && (ContentHost.ActiveView is null || ReferenceEquals(ContentHost.ActiveView, this)))
+        {
+            HostWindow.Close();
+        }
+    }
+
+    internal void AttachToHost()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        if (hostAttached)
+        {
+            return;
+        }
+        if (ContentHost.ActiveView is not null && !ReferenceEquals(ContentHost.ActiveView, this))
+        {
+            throw new InvalidOperationException("The tray dashboard already has attached content.");
+        }
+        ownsHost = true;
+        hostAttached = true;
+        ContentHost.Attach(this);
+        HostWindow.Title = Title;
+        TryAttachRevealSubclass();
+        HostWindow.Activated += OnActivated;
         AppWindow.Closing += OnClosing;
+        if (hostConfigured)
+        {
+            return;
+        }
+        hostConfigured = true;
 #if OPENBLADE_DEVELOPER_HARNESS
         // Private test desktops have no Explorer shell; WinUI returns E_NOTIMPL
         // for switcher registration there. Rendering and layout still run.
@@ -144,10 +200,59 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
                 exception);
         }
 
-        ApplyPreferences(preference);
+    }
+
+    internal void DetachFromHost()
+    {
+        ownsHost = false;
+        if (!hostAttached)
+        {
+            return;
+        }
+        hostAttached = false;
+        DetachSafely("activation handler", () => HostWindow.Activated -= OnActivated);
+        DetachSafely("closing handler", () => AppWindow.Closing -= OnClosing);
+        DetachSafely("foreground timer", foregroundTimer.Stop);
+        DetachSafely("cancel reveal", CancelRevealAnimation);
+        DetachSafely("hide surface", HideSurface);
+        DetachSafely("restore foreground", () => WindowsPopupPositioner.TryRestoreForeground(hostWindowHandle, previousForegroundWindow));
+        DetachSafely("native subclass", DetachRevealSubclass);
+        DetachSafely("edit owner", () => TrySetEditOwner(0));
+        visible = false;
+        DetachSafely("visibility callback", () => ReportVisibility(false));
+        DetachSafely("content", () =>
+        {
+            if (ReferenceEquals(ContentHost.ActiveView, this))
+            {
+                ContentHost.Detach(this);
+            }
+        });
+    }
+
+    private static void DetachSafely(string component, Action detach)
+    {
+        try { detach(); }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.Tray.TrayDashboardWindow", "Detach", exception, component);
+        }
     }
 
     public MainViewModel ViewModel { get; }
+
+    internal readonly record struct PresentationState(
+        bool Visible, bool Editing, TrayDashboardPoint Anchor, DisplayArea? DisplayArea);
+
+    internal PresentationState CapturePresentation() =>
+        new(visible, pinnedForEditing, visibleAnchor, visibleDisplayArea);
+
+    internal void RestorePresentation(PresentationState state)
+    {
+        if (state.Visible)
+        {
+            ShowAt(state.Anchor, state.Editing, state.DisplayArea);
+        }
+    }
 
     public void ApplyPreferences(TrayDashboardPreference preferences)
     {
@@ -269,13 +374,20 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             return;
         }
 
+        bool releaseHost = ownsHost;
         Exception? failure = null;
         try { DisposeOwnedResources(); }
         catch (Exception exception) { failure = exception; throw; }
         finally
         {
-            WindowTitleBarLifetime.Release(this, usesXamlTitleBar: false);
-            try { Close(); }
+            try
+            {
+                if (releaseHost && (ContentHost.ActiveView is null || ReferenceEquals(ContentHost.ActiveView, this)))
+                {
+                    WindowTitleBarLifetime.Release(HostWindow, usesXamlTitleBar: false);
+                    HostWindow.Close();
+                }
+            }
             catch (Exception exception) when (failure is not null)
             {
                 DiagnosticTrace.TraceException("OpenBlade.Tray.TrayDashboardWindow", "CloseAfterDisposalFailure", exception);
@@ -286,11 +398,8 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
     private void DisposeOwnedResources()
     {
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
-        Activated -= OnActivated;
-        // WinUI's generated Window x:Bind activation handler otherwise roots the
-        // closed window: https://github.com/microsoft/microsoft-ui-xaml/issues/9960.
+        DetachFromHost();
         WindowXamlBindingLifetime.Release(this, Bindings, Bindings.StopTracking);
-        AppWindow.Closing -= OnClosing;
         foregroundTimer.Stop();
         foregroundTimer.Tick -= OnForegroundTimerTick;
         revealCompletionTimer.Stop();
@@ -303,12 +412,6 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             gpuClockOffsetCommitTimer = null;
         }
         CancelRevealAnimation();
-        HideSurface();
-        WindowsPopupPositioner.TryRestoreForeground(hostWindowHandle, previousForegroundWindow);
-        DetachRevealSubclass();
-        TrySetEditOwner(0);
-        visible = false;
-        ReportVisibility(false);
     }
 
     private void TrySetEditOwner(nint owner)
@@ -331,7 +434,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         bool editing,
         DisplayArea? knownDisplayArea = null)
     {
-        if (Volatile.Read(ref disposed) != 0)
+        if (!hostAttached || Volatile.Read(ref disposed) != 0)
         {
             return;
         }
@@ -394,7 +497,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
         revealPlacement = placement.Rect;
         revealStagingY = placement.Reveal.StagingY;
         revealCurrentY = placement.Rect.Y;
-        revealWindowHandle = WindowNative.GetWindowHandle(this);
+        revealWindowHandle = WindowNative.GetWindowHandle(HostWindow);
         WindowsPopupPositioner.PositionInFront(
             revealWindowHandle,
             placement.Rect.X,
@@ -480,7 +583,7 @@ public sealed partial class TrayDashboardWindow : Window, IDisposable
             revealStagingY = stagingY;
             revealStartY = stagingY;
             revealCurrentY = stagingY;
-            revealWindowHandle = WindowNative.GetWindowHandle(this);
+            revealWindowHandle = WindowNative.GetWindowHandle(HostWindow);
             revealStartedTimestamp = 0;
             revealPrimingFrames = 0;
             revealAnimationsEnabled = WindowsMotionSettings.AreAnimationsEnabled();

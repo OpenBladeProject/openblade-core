@@ -1,9 +1,8 @@
-<Window
+<UserControl
     x:Class="OpenBlade.Tray.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:OpenBlade.Tray"
-    Title="OpenBlade">
+    xmlns:local="using:OpenBlade.Tray">
     <Grid x:Name="Root" Background="Transparent">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -5701,4 +5700,4 @@
             </Grid>
         </NavigationView>
     </Grid>
-</Window>
+</UserControl>

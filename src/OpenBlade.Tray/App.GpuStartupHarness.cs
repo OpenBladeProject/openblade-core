@@ -30,7 +30,7 @@ public partial class App
                 window.SelectLocalizationSnapshotPage("laptop");
                 var dashboard = new TrayDashboardWindow(
                     window.ViewModel,
-                    WinRT.Interop.WindowNative.GetWindowHandle(window),
+                WinRT.Interop.WindowNative.GetWindowHandle(window.HostWindow),
                     _ => { });
                 dashboards.Add(dashboard);
                 TrayDashboardPreference defaults = TrayDashboardPreferenceDefaults.Preference;

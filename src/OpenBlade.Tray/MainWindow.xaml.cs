@@ -21,7 +21,7 @@ using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
-public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyPropertyChanged
+public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl, IAsyncDisposable, INotifyPropertyChanged
 {
     private const double InitialWidthDip = 840;
     private const double InitialHeightDip = 720;
@@ -36,7 +36,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private readonly DispatcherQueue dispatcherQueue;
     private readonly SemaphoreSlim contentDialogGate = new(1, 1);
-    private readonly MicaBackdropHost micaBackdropHost;
+    private bool hostAttached;
+    private bool ownsHost;
     private readonly AccentColorManager accentColorManager;
     private readonly UISettings dashboardTextSettings = new();
     private readonly SingleLineTextMeasurementCache dashboardTitleHeightCache = new();
@@ -141,12 +142,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         UpdateCheckInterval? initialUpdateCheckConsentOverride = null,
         ITouchpadController? touchpadController = null,
         bool suppressWhatsNew = false,
-        IServiceClient? snapshotServiceClient = null)
+        IServiceClient? snapshotServiceClient = null,
+        Window? hostWindow = null)
     {
         if (snapshotServiceClient is not null && !localizationSnapshotMode)
         {
             throw new ArgumentException("A snapshot service client requires disconnected snapshot mode.", nameof(snapshotServiceClient));
         }
+        HostWindow = hostWindow ?? new Window();
+        // Keep the projection that owns our WinRT event registrations alive;
+        // reacquiring it can make -= consult a different event-state table.
+        AppWindow = HostWindow.AppWindow;
+        ContentHost = WindowContentHost.GetOrCreate(HostWindow);
+        initialPlacementAttempted = hostWindow is not null;
         this.localizationSnapshotMode = localizationSnapshotMode;
         this.suppressWhatsNew = suppressWhatsNew || localizationSnapshotMode;
         TouchpadViewModel = new(touchpadController ?? new WindowsTouchpadController());
@@ -239,12 +247,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         PrimaryNavigationItems.CollectionChanged += OnPrimaryNavigationItemsCollectionChanged;
         accentColorManager = new AccentColorManager(Root, dispatcherQueue);
         accentColorManager.ColorChanged += OnAccentColorChanged;
-        if (OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath)
-        {
-            AppWindow.SetIcon(applicationIconPath);
-        }
-        ExtendsContentIntoTitleBar = true;
-        SetTitleBar(AppTitleBar);
         chargeLimitCommitTimer = dispatcherQueue.CreateTimer();
         chargeLimitCommitTimer.Interval = ChargeLimitCommitDelay;
         chargeLimitCommitTimer.IsRepeating = false;
@@ -280,7 +282,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             AppTitleBar.Resources["TitleBarDeactivatedForegroundBrush"] =
                 snapshotTitleForeground;
         }
-        micaBackdropHost = new MicaBackdropHost(this, Root);
         if (localizationSnapshotMode)
         {
             LaptopPageContent.Transitions.Clear();
@@ -292,10 +293,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         Root.DataContext = ViewModel;
         Root.ActualThemeChanged += OnRootActualThemeChanged;
-        ApplyCaptionTheme();
         Root.Loaded += OnRootLoaded;
         Root.SizeChanged += OnRootSizeChanged;
-        AppWindow.Changed += OnAppWindowChanged;
 
         this.preferenceStore = preferenceStore ?? UiPreferenceStore.CreateDefault();
         preferenceSaveQueue = new UiPreferenceSaveQueue(
@@ -312,7 +311,95 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             }
         };
         TelemetryPlot.VisibleRangeChanged += (_, _) => RefreshTelemetryEvents();
+        if (hostWindow is null)
+        {
+            // The icon belongs to the native shell, not its localized content.
+            if (OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath)
+            {
+                AppWindow.SetIcon(applicationIconPath);
+            }
+            AttachToHost();
+        }
+    }
+
+    internal Window HostWindow { get; }
+    internal WindowContentHost ContentHost { get; }
+    public AppWindow AppWindow { get; }
+    public string Title => HostWindow.Title;
+    public bool ExtendsContentIntoTitleBar
+    {
+        get => HostWindow.ExtendsContentIntoTitleBar;
+        set => HostWindow.ExtendsContentIntoTitleBar = value;
+    }
+    public void SetTitleBar(UIElement? titleBar) => HostWindow.SetTitleBar(titleBar);
+    public event Windows.Foundation.TypedEventHandler<object, WindowEventArgs> Closed
+    {
+        add => HostWindow.Closed += value;
+        remove => HostWindow.Closed -= value;
+    }
+
+    public void Activate()
+    {
+        if (hostAttached && Volatile.Read(ref disposed) == 0)
+        {
+            HostWindow.Activate();
+        }
+    }
+    public void Close()
+    {
+        if (ownsHost && (ContentHost.ActiveView is null || ReferenceEquals(ContentHost.ActiveView, this)))
+        {
+            HostWindow.Close();
+        }
+    }
+
+    // Construct replacement views detached. Only the committed view owns native
+    // callbacks and chrome; retiring a view must never close its successor's HWND.
+    internal void AttachToHost()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        if (hostAttached)
+        {
+            return;
+        }
+        if (ContentHost.ActiveView is not null && !ReferenceEquals(ContentHost.ActiveView, this))
+        {
+            throw new InvalidOperationException("The main window already has attached content.");
+        }
+        ownsHost = true;
+        hostAttached = true;
+        ContentHost.Attach(this);
+        OnHostContentAttached();
+        HostWindow.Title = "OpenBlade";
+        HostWindow.ExtendsContentIntoTitleBar = true;
+        HostWindow.SetTitleBar(AppTitleBar);
+        ContentHost.AttachBackdrop(HostWindow, Root);
+        AppWindow.Changed += OnAppWindowChanged;
         AppWindow.Closing += OnClosing;
+        ApplyCaptionTheme();
+    }
+
+    partial void OnHostContentAttached();
+
+    internal void DetachFromHost()
+    {
+        ownsHost = false;
+        if (!hostAttached)
+        {
+            return;
+        }
+        hostAttached = false;
+        DisposeComponentSafely("window closing handler", () => AppWindow.Closing -= OnClosing);
+        DisposeComponentSafely("window changed handler", () => AppWindow.Changed -= OnAppWindowChanged);
+        DisposeComponentSafely("Mica theme source detachment", () => ContentHost.DetachBackdrop(Root));
+        DisposeComponentSafely("content detachment", () =>
+        {
+            if (ReferenceEquals(ContentHost.ActiveView, this))
+            {
+                DisposeComponentSafely("title bar detachment", () => HostWindow.SetTitleBar(null));
+                ContentHost.Detach(this);
+            }
+        });
     }
 
     public MainViewModel ViewModel { get; }
@@ -470,14 +557,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     internal static MainWindow CreateLocalizationSnapshot(
         IServiceClient? serviceClient = null,
-        UiPreferenceStore? preferenceStore = null) => new(
+        UiPreferenceStore? preferenceStore = null,
+        Window? hostWindow = null,
+        UiLanguagePreference? initialLanguageOverride = null) => new(
         WindowsProcessorEfficiencyPolicy.Discover(),
         new WindowsStartupRegistration(),
         showNotification: null,
         localizationSnapshotMode: true,
         preferenceStore: preferenceStore,
         touchpadController: new SnapshotTouchpadController(),
-        snapshotServiceClient: serviceClient);
+        snapshotServiceClient: serviceClient,
+        hostWindow: hostWindow,
+        initialLanguageOverride: initialLanguageOverride);
 
     private sealed class SnapshotTouchpadController : ITouchpadController
     {
@@ -638,6 +729,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public void ShowAndActivate()
     {
+        if (!hostAttached || Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
         Volatile.Write(ref windowVisible, true);
         ApplyProcessorVisibilityPolicy();
         UpdateDashboardTelemetryPresentationState();
@@ -753,13 +848,29 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         // still attached. A retired window must not remain interactive during
         // slow cleanup, or close its HWND before native chrome is released.
         Volatile.Write(ref windowVisible, false);
-        try { AppWindow.Hide(); }
+        bool releaseHost = ownsHost;
+        try
+        {
+            if (releaseHost)
+            {
+                AppWindow.Hide();
+            }
+        }
         catch (Exception exception)
         {
             DiagnosticTrace.TraceException("OpenBlade.Tray.MainWindow", "HideForDisposal", exception);
         }
         try { await DisposeOwnedResourcesAsync(); }
-        finally { WindowTitleBarLifetime.Release(this, usesXamlTitleBar: true); }
+        finally
+        {
+            if (ownsHost && ReferenceEquals(ContentHost.ActiveView, this))
+            {
+                DisposeComponentSafely("Mica backdrop", ContentHost.DisposeBackdrop);
+                WindowTitleBarLifetime.Release(HostWindow, usesXamlTitleBar: true);
+                DetachFromHost();
+                ownsHost = true;
+            }
+        }
     }
 
     private async ValueTask DisposeOwnedResourcesAsync()
@@ -830,7 +941,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisposeComponentSafely("GPU clock-offset commits", gpuClockOffsetCommits.Dispose);
         displayRefreshTimer.Stop();
         displayRefreshTimer.Tick -= OnDisplayRefreshTimerTick;
-        DisposeComponentSafely("Mica backdrop", micaBackdropHost.Dispose);
         accentColorManager.ColorChanged -= OnAccentColorChanged;
         DisposeComponentSafely("accent colors", accentColorManager.Dispose);
         await DisposeComponentSafelyAsync(
@@ -1430,7 +1540,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void ApplyCaptionTheme()
     {
-        if (!AppWindowTitleBar.IsCustomizationSupported())
+        if (!hostAttached || !AppWindowTitleBar.IsCustomizationSupported())
         {
             return;
         }
@@ -1577,7 +1687,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         initialPlacementAttempted = true;
         try
         {
-            nint hwnd = WindowNative.GetWindowHandle(this);
+            nint hwnd = WindowNative.GetWindowHandle(HostWindow);
             uint nativeDpi = GetDpiForWindow(hwnd);
             if (nativeDpi == 0)
             {
@@ -1635,7 +1745,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
-            nint hwnd = WindowNative.GetWindowHandle(this);
+            nint hwnd = WindowNative.GetWindowHandle(HostWindow);
             uint nativeDpi = GetDpiForWindow(hwnd);
             if (nativeDpi == 0)
             {

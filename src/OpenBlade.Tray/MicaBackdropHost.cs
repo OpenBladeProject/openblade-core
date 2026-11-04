@@ -1,6 +1,7 @@
 using Microsoft.UI.Composition;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Xaml;
+using OpenBlade.Contracts;
 using WinRT;
 
 namespace OpenBlade.Tray;
@@ -8,7 +9,7 @@ namespace OpenBlade.Tray;
 internal sealed class MicaBackdropHost : IDisposable
 {
     private readonly Window window;
-    private readonly FrameworkElement root;
+    private FrameworkElement? root;
     private MicaController? controller;
     private SystemBackdropConfiguration? configuration;
     private int disposed;
@@ -16,29 +17,68 @@ internal sealed class MicaBackdropHost : IDisposable
     public MicaBackdropHost(Window window, FrameworkElement root)
     {
         this.window = window ?? throw new ArgumentNullException(nameof(window));
-        this.root = root ?? throw new ArgumentNullException(nameof(root));
+        ArgumentNullException.ThrowIfNull(root);
 
         if (!MicaController.IsSupported())
         {
             return;
         }
 
-        configuration = new SystemBackdropConfiguration
+        try
         {
-            IsInputActive = true,
-        };
-        configuration.Theme = ToBackdropTheme(root.ActualTheme);
-
-        controller = new MicaController
+            configuration = new SystemBackdropConfiguration
+            {
+                IsInputActive = true,
+                Theme = ToBackdropTheme(root.ActualTheme),
+            };
+            controller = new MicaController
+            {
+                Kind = MicaKind.Base,
+            };
+            controller.AddSystemBackdropTarget(
+                window.As<ICompositionSupportsSystemBackdrop>());
+            controller.SetSystemBackdropConfiguration(configuration);
+            window.Activated += OnWindowActivated;
+            SetThemeSource(root);
+        }
+        catch
         {
-            Kind = MicaKind.Base,
-        };
-        controller.AddSystemBackdropTarget(
-            window.As<ICompositionSupportsSystemBackdrop>());
-        controller.SetSystemBackdropConfiguration(configuration);
+            try { Dispose(); }
+            catch (Exception exception)
+            {
+                DiagnosticTrace.TraceException("OpenBlade.Tray.MicaBackdropHost", "FailedInitializationCleanup", exception);
+            }
+            throw;
+        }
+    }
 
-        window.Activated += OnWindowActivated;
-        root.ActualThemeChanged += OnActualThemeChanged;
+    internal void SetThemeSource(FrameworkElement? source)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        if (ReferenceEquals(root, source))
+        {
+            return;
+        }
+        FrameworkElement? previous = root;
+        root = null;
+        if (previous is not null)
+        {
+            previous.ActualThemeChanged -= OnActualThemeChanged;
+        }
+        if (source is not null && configuration is not null)
+        {
+            root = source;
+            source.ActualThemeChanged += OnActualThemeChanged;
+            configuration.Theme = ToBackdropTheme(source.ActualTheme);
+        }
+    }
+
+    internal void DetachThemeSource(FrameworkElement source)
+    {
+        if (ReferenceEquals(root, source))
+        {
+            SetThemeSource(null);
+        }
     }
 
     public void Dispose()
@@ -48,16 +88,29 @@ internal sealed class MicaBackdropHost : IDisposable
             return;
         }
 
-        window.Activated -= OnWindowActivated;
-        root.ActualThemeChanged -= OnActualThemeChanged;
-
-        if (controller is not null)
-        {
-            controller.Dispose();
-            controller = null;
-        }
-
+        FrameworkElement? previous = root;
+        root = null;
+        MicaController? previousController = controller;
+        controller = null;
         configuration = null;
+        try
+        {
+            window.Activated -= OnWindowActivated;
+        }
+        finally
+        {
+            try
+            {
+                if (previous is not null)
+                {
+                    previous.ActualThemeChanged -= OnActualThemeChanged;
+                }
+            }
+            finally
+            {
+                previousController?.Dispose();
+            }
+        }
     }
 
     private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
@@ -71,9 +124,9 @@ internal sealed class MicaBackdropHost : IDisposable
 
     private void OnActualThemeChanged(FrameworkElement sender, object args)
     {
-        if (configuration is not null)
+        if (configuration is not null && ReferenceEquals(root, sender))
         {
-            configuration.Theme = ToBackdropTheme(root.ActualTheme);
+            configuration.Theme = ToBackdropTheme(sender.ActualTheme);
         }
     }
 
