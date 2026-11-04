@@ -1,0 +1,785 @@
+{
+  "schemaVersion": 1,
+  "clientDate": "2026-11-05",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "4.01"
+  },
+  "powerSource": "FullExternalPower",
+  "performance": "Silent",
+  "software": {
+    "commit": "1ff7cddd493194bccf8fcb56bfc520f097639157",
+    "binarySha256": {
+      "OpenBlade.Capture.exe": "023C925F91EE880A2465913BB59C7B4680B061AE188B2882992A5BEEC44A6E20",
+      "OpenBlade.Capture.dll": "C4E1791D5FDDB231823FCEC6D87DC0B6E80E9CC10A377F039A73F15E0AB2D810",
+      "OpenBlade.Protocol.dll": "4AD8CAB90B4CAD0D375C3B8590BD880B2887C6D0E2C01C471F4B9ECAF8642227",
+      "OpenBlade.Contracts.dll": "A896D99026185A76C53688861228E9DF5B86E26388AD2C4563A6FC0FEEF66A1A",
+      "OpenBlade.Service.dll": "0808C81FACCF399F7BD6857E164E015AC20219BCEB0FE566332F9BF51C6B537D"
+    }
+  },
+  "method": {
+    "trackingToleranceRpm": 200,
+    "minimumSpinningHoldSeconds": 20,
+    "requiredConsecutiveStableSamples": 3,
+    "unexercisedTargetsInThisTrial": [
+      1600,
+      1500
+    ],
+    "zeroIncluded": false
+  },
+  "probeResult": {
+    "success": false,
+    "restored": true,
+    "manualRecoveryRequired": false,
+    "failure": "RpmDidNotSettle",
+    "writesAttempted": 14,
+    "indeterminatePartialWrite": false,
+    "scenario": "lowestSpinning",
+    "baseline": {
+      "thermal1Hex": "01010500",
+      "thermal2Hex": "01020500"
+    },
+    "baselineTargets": {
+      "selector1Rpm": 3800,
+      "selector2Rpm": 3800,
+      "maxRpm": 3800
+    },
+    "baselineFanRpm": {
+      "selector1Rpm": 2300,
+      "selector2Rpm": 2100,
+      "maxRpm": 2300
+    },
+    "preparation": {
+      "requestedRpm": 2000,
+      "pair": {
+        "thermal1Hex": "01010501",
+        "thermal2Hex": "01020501"
+      },
+      "targets": {
+        "selector1Rpm": 2000,
+        "selector2Rpm": 2000,
+        "maxRpm": 2000
+      },
+      "observation": "StableSpinning",
+      "samples": [
+        {
+          "number": 1,
+          "timestamp": "2026-11-05T01:39:18.3319985+08:00",
+          "rpm": {
+            "selector1Rpm": 2300,
+            "selector2Rpm": 2100,
+            "maxRpm": 2300
+          }
+        },
+        {
+          "number": 2,
+          "timestamp": "2026-11-05T01:39:19.7299519+08:00",
+          "rpm": {
+            "selector1Rpm": 2300,
+            "selector2Rpm": 2100,
+            "maxRpm": 2300
+          }
+        },
+        {
+          "number": 3,
+          "timestamp": "2026-11-05T01:39:21.1206902+08:00",
+          "rpm": {
+            "selector1Rpm": 2200,
+            "selector2Rpm": 2100,
+            "maxRpm": 2200
+          }
+        },
+        {
+          "number": 4,
+          "timestamp": "2026-11-05T01:39:22.6188016+08:00",
+          "rpm": {
+            "selector1Rpm": 2200,
+            "selector2Rpm": 2000,
+            "maxRpm": 2200
+          }
+        },
+        {
+          "number": 5,
+          "timestamp": "2026-11-05T01:39:24.0223577+08:00",
+          "rpm": {
+            "selector1Rpm": 2200,
+            "selector2Rpm": 2000,
+            "maxRpm": 2200
+          }
+        }
+      ]
+    },
+    "steps": [
+      {
+        "requestedRpm": 1900,
+        "pair": {
+          "thermal1Hex": "01010501",
+          "thermal2Hex": "01020501"
+        },
+        "targets": {
+          "selector1Rpm": 1900,
+          "selector2Rpm": 1900,
+          "maxRpm": 1900
+        },
+        "observation": "StableSpinning",
+        "samples": [
+          {
+            "number": 1,
+            "timestamp": "2026-11-05T01:39:27.2340742+08:00",
+            "rpm": {
+              "selector1Rpm": 2100,
+              "selector2Rpm": 1900,
+              "maxRpm": 2100
+            }
+          },
+          {
+            "number": 2,
+            "timestamp": "2026-11-05T01:39:28.6716121+08:00",
+            "rpm": {
+              "selector1Rpm": 2100,
+              "selector2Rpm": 2000,
+              "maxRpm": 2100
+            }
+          },
+          {
+            "number": 3,
+            "timestamp": "2026-11-05T01:39:30.2763723+08:00",
+            "rpm": {
+              "selector1Rpm": 2000,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 4,
+            "timestamp": "2026-11-05T01:39:31.8308054+08:00",
+            "rpm": {
+              "selector1Rpm": 2000,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 5,
+            "timestamp": "2026-11-05T01:39:33.3247056+08:00",
+            "rpm": {
+              "selector1Rpm": 2000,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 6,
+            "timestamp": "2026-11-05T01:39:34.7015187+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 7,
+            "timestamp": "2026-11-05T01:39:36.103434+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 8,
+            "timestamp": "2026-11-05T01:39:37.5039564+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 9,
+            "timestamp": "2026-11-05T01:39:39.0918106+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 10,
+            "timestamp": "2026-11-05T01:39:40.5879418+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 11,
+            "timestamp": "2026-11-05T01:39:41.9937297+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 12,
+            "timestamp": "2026-11-05T01:39:43.4018076+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 13,
+            "timestamp": "2026-11-05T01:39:44.7897455+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 14,
+            "timestamp": "2026-11-05T01:39:46.1754687+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          }
+        ]
+      },
+      {
+        "requestedRpm": 1800,
+        "pair": {
+          "thermal1Hex": "01010501",
+          "thermal2Hex": "01020501"
+        },
+        "targets": {
+          "selector1Rpm": 1800,
+          "selector2Rpm": 1800,
+          "maxRpm": 1800
+        },
+        "observation": "StableSpinning",
+        "samples": [
+          {
+            "number": 1,
+            "timestamp": "2026-11-05T01:39:49.3262789+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 2,
+            "timestamp": "2026-11-05T01:39:50.7200245+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 3,
+            "timestamp": "2026-11-05T01:39:52.1098709+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 4,
+            "timestamp": "2026-11-05T01:39:53.5049465+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 5,
+            "timestamp": "2026-11-05T01:39:54.8836407+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 6,
+            "timestamp": "2026-11-05T01:39:56.254807+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 7,
+            "timestamp": "2026-11-05T01:39:57.6450321+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 8,
+            "timestamp": "2026-11-05T01:39:59.0287163+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 9,
+            "timestamp": "2026-11-05T01:40:00.418009+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 10,
+            "timestamp": "2026-11-05T01:40:01.8034215+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 11,
+            "timestamp": "2026-11-05T01:40:03.2144347+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 12,
+            "timestamp": "2026-11-05T01:40:04.6047321+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 13,
+            "timestamp": "2026-11-05T01:40:06.0058132+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 14,
+            "timestamp": "2026-11-05T01:40:07.408961+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 15,
+            "timestamp": "2026-11-05T01:40:08.7954495+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          }
+        ]
+      },
+      {
+        "requestedRpm": 1700,
+        "pair": {
+          "thermal1Hex": "01010501",
+          "thermal2Hex": "01020501"
+        },
+        "targets": {
+          "selector1Rpm": 1700,
+          "selector2Rpm": 1700,
+          "maxRpm": 1700
+        },
+        "observation": "RpmDidNotSettle",
+        "samples": [
+          {
+            "number": 1,
+            "timestamp": "2026-11-05T01:40:11.948284+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 2,
+            "timestamp": "2026-11-05T01:40:13.3365407+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 3,
+            "timestamp": "2026-11-05T01:40:14.74214+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 4,
+            "timestamp": "2026-11-05T01:40:16.1185437+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 5,
+            "timestamp": "2026-11-05T01:40:17.5011601+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 6,
+            "timestamp": "2026-11-05T01:40:18.8996123+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 7,
+            "timestamp": "2026-11-05T01:40:20.2856738+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 8,
+            "timestamp": "2026-11-05T01:40:21.6939162+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 9,
+            "timestamp": "2026-11-05T01:40:23.0847884+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 10,
+            "timestamp": "2026-11-05T01:40:24.4806953+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 11,
+            "timestamp": "2026-11-05T01:40:25.8678063+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 12,
+            "timestamp": "2026-11-05T01:40:27.2668378+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 13,
+            "timestamp": "2026-11-05T01:40:28.6702935+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 14,
+            "timestamp": "2026-11-05T01:40:30.0747262+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 15,
+            "timestamp": "2026-11-05T01:40:31.482145+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 16,
+            "timestamp": "2026-11-05T01:40:32.8727201+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 17,
+            "timestamp": "2026-11-05T01:40:34.2747645+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 18,
+            "timestamp": "2026-11-05T01:40:35.6729698+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 19,
+            "timestamp": "2026-11-05T01:40:37.0499433+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 20,
+            "timestamp": "2026-11-05T01:40:38.4319901+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 21,
+            "timestamp": "2026-11-05T01:40:39.8384827+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 22,
+            "timestamp": "2026-11-05T01:40:41.2378728+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 23,
+            "timestamp": "2026-11-05T01:40:42.6382294+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 24,
+            "timestamp": "2026-11-05T01:40:44.0223154+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 25,
+            "timestamp": "2026-11-05T01:40:45.4089936+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 26,
+            "timestamp": "2026-11-05T01:40:46.7935693+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 27,
+            "timestamp": "2026-11-05T01:40:48.192285+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 28,
+            "timestamp": "2026-11-05T01:40:49.5935167+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 29,
+            "timestamp": "2026-11-05T01:40:50.9831038+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          },
+          {
+            "number": 30,
+            "timestamp": "2026-11-05T01:40:52.3688162+08:00",
+            "rpm": {
+              "selector1Rpm": 1900,
+              "selector2Rpm": 2000,
+              "maxRpm": 2000
+            }
+          }
+        ]
+      }
+    ],
+    "lowestObservedSpinningTargetRpm": 1800,
+    "restoration": {
+      "thermal1Hex": "01010500",
+      "thermal2Hex": "01020500"
+    },
+    "restorationTargets": {
+      "selector1Rpm": 3800,
+      "selector2Rpm": 3800,
+      "maxRpm": 3800
+    }
+  },
+  "acknowledgedWrites": [
+    {
+      "timestamp": "2026-11-05T01:39:14.503181+08:00",
+      "restoring": false,
+      "payloadHex": "01010501"
+    },
+    {
+      "timestamp": "2026-11-05T01:39:14.9678314+08:00",
+      "restoring": false,
+      "payloadHex": "01020501"
+    },
+    {
+      "timestamp": "2026-11-05T01:39:15.9330091+08:00",
+      "restoring": false,
+      "payloadHex": "010114"
+    },
+    {
+      "timestamp": "2026-11-05T01:39:16.4156943+08:00",
+      "restoring": false,
+      "payloadHex": "010214"
+    },
+    {
+      "timestamp": "2026-11-05T01:39:24.8792193+08:00",
+      "restoring": false,
+      "payloadHex": "010113"
+    },
+    {
+      "timestamp": "2026-11-05T01:39:25.3336225+08:00",
+      "restoring": false,
+      "payloadHex": "010213"
+    },
+    {
+      "timestamp": "2026-11-05T01:39:47.0041262+08:00",
+      "restoring": false,
+      "payloadHex": "010112"
+    },
+    {
+      "timestamp": "2026-11-05T01:39:47.4502012+08:00",
+      "restoring": false,
+      "payloadHex": "010212"
+    },
+    {
+      "timestamp": "2026-11-05T01:40:09.6251435+08:00",
+      "restoring": false,
+      "payloadHex": "010111"
+    },
+    {
+      "timestamp": "2026-11-05T01:40:10.0593342+08:00",
+      "restoring": false,
+      "payloadHex": "010211"
+    },
+    {
+      "timestamp": "2026-11-05T01:40:53.3402324+08:00",
+      "restoring": true,
+      "payloadHex": "010126"
+    },
+    {
+      "timestamp": "2026-11-05T01:40:53.6032192+08:00",
+      "restoring": true,
+      "payloadHex": "010226"
+    },
+    {
+      "timestamp": "2026-11-05T01:40:53.7866508+08:00",
+      "restoring": true,
+      "payloadHex": "01010500"
+    },
+    {
+      "timestamp": "2026-11-05T01:40:53.9901536+08:00",
+      "restoring": true,
+      "payloadHex": "01020500"
+    }
+  ],
+  "postChecks": {
+    "hardwareRestored": true,
+    "temporarySilentOverrideRestoredByTypedApi": true,
+    "allTenComparedIntentFieldsEqual": true,
+    "protectedInstalledHashesMatched": 10,
+    "serviceAndUserComponentsRestored": true,
+    "deviceVerified": true,
+    "writesBlocked": false
+  },
+  "interpretation": "Stored targets1900,1800 and1700 RPM were retained in Silent/manual. Actual fans settled near1900/2000 RPM. The1700 step did not enter the predeclared200 RPM tracking band on both fans and stopped further candidates;1600 and1500 were not sent in this calibration run. lowestObservedSpinningTargetRpm1800 denotes the tracking-tolerance classification, not a measured1800 RPM steady speed. The separately recorded1500 andliteral-zero trials also settled near2000 RPM. These results do not establish Silent fan stop or a universal minimum. Exact original3800 targets, Silent/Automatic state and all ten saved installed-intent fields were restored without replay."
+}

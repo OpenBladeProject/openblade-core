@@ -49,9 +49,9 @@ The result bounds the lowest **observed spinning target under those conditions**
 not a universal hardware minimum or guaranteed continuous speed.
 
 Neither operation sends zero or 100 RPM. A separate, developer-only
-`validate-silent-literal-zero` scenario is prepared for one literal target-byte
-`00` experiment. The source wrapper encodes zero without a special case; its
-firmware meaning remains unknown. This scenario requires separate explicit
+`validate-silent-literal-zero` scenario provides one literal target-byte
+`00` experiment. The source wrapper encodes zero without a special case and
+does not define a fan-off meaning. This scenario requires separate explicit
 literal-zero approval from a present user before execution. It uses the same
 spinning preparation, independent mode/target/tach reads and exact restoration;
 it is not a known fan-off command or a product capability.
@@ -104,3 +104,32 @@ it never retries an uncertain setter or accepts unrelated intent changes.
 
 Zero and 100 RPM were not sent in this round trip. Further results belong in
 separate records rather than rewriting this negative result.
+
+The user then separately authorized one
+[literal-zero round trip](evidence/silent-literal-zero-rz09-0581-2026-11-05.json).
+Both stored targets independently read back zero, and Silent/manual remained
+selected. Both actual fan readings stayed between 1,900 and 2,000 RPM across all
+30 samples. Zero did not act as a fan-off command in this tested condition.
+The exact firmware baseline and original temporary Silent override were restored;
+all ten saved intent fields and ten protected installed hashes matched.
+
+The [nonzero calibration](evidence/silent-low-rpm-calibration-rz09-0581-2026-11-05.json)
+then retained 1,900, 1,800 and 1,700 RPM targets. The measured pair settled near
+1,900/2,000 RPM at each step. At the 1,700 RPM step the second fan remained
+outside the predeclared ±200 RPM tracking tolerance, ending further candidates. That calibration
+did not send 1,600 or 1,500 RPM. Its `lowestObservedSpinningTargetRpm: 1800`
+field reflects the tolerance classification; it does not report a physical
+1,800 RPM steady speed. Exact firmware and installed intent were again restored.
+
+These observations support an approximately 2,000 RPM physical floor in
+full-power Silent/manual under the sampled cool conditions. They do not prove
+a universal firmware limit. Silent/Automatic had already reached 0/0 RPM at
+the first trial's captured baseline; it measured 1,300/0 RPM before the zero
+trial. Firmware Automatic can therefore stop idle fans in the sampled conditions.
+The manual-target results do not establish an unconditional Silent minimum.
+The pinned sources contain no separately established
+fan-off selector. They also call an overclock-mode API separately, whose complete
+implementation/readback is absent from these pins; combining another thermal
+profile with a presumed Silent CPU mode would be an unsupported inference.
+Consequently, Silent fan stop is not enabled by these results. The separately
+proven Battery Saver feature retains its existing admission.
