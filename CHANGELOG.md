@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop developer firmware-validation writes after unconfirmed changes or restoration failures, bound CPU probe callback buffering, and report matching native failures without waiting. ([#878](https://github.com/OpenBladeProject/openblade-core/pull/878))
+
 ## [0.50.3] - 2026-11-01
 
 ### Added

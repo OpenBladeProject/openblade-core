@@ -76,8 +76,10 @@ internal sealed class ExternallyLaunchedHyperBoostWorkloadSource(int processId)
             }
 
             string executableName = Path.GetFileName(path);
+            using FileStream executable = new(path, FileMode.Open, FileAccess.Read,
+                FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
             string sha256 = Convert.ToHexString(
-                SHA256.HashData(File.ReadAllBytes(path)));
+                SHA256.HashData(executable));
             var observedIdentity = new HyperBoostExternalWorkloadIdentity(
                 executableName,
                 sha256);
