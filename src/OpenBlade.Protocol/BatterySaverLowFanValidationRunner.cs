@@ -26,7 +26,17 @@ internal sealed record BatterySaverLowFanValidationResult(
     IReadOnlyList<LowFanValidationSample>? PreparationSamples = null,
     bool PreparationConfirmed = false,
     bool SpunDown = false,
-    string? Scenario = null);
+    string? Scenario = null,
+    int RequestedRpm = 1500);
+
+internal sealed record LowFanReconciliationResult(
+    bool Success,
+    string? Failure,
+    PerformanceFanThermalPair? Pair,
+    FanRpmReadings? Targets,
+    FanRpmReadings? FanRpm,
+    bool Stable,
+    ThermalModeState? Mode);
 
 internal sealed record LowFanValidationProgress(
     string Stage,
@@ -35,16 +45,18 @@ internal sealed record LowFanValidationProgress(
     byte? CommandClass = null,
     byte? CommandId = null,
     string? PayloadHex = null,
-    BatterySaverLowFanValidationResult? State = null);
+    BatterySaverLowFanValidationResult? State = null,
+    LowFanReconciliationResult? Reconciliation = null);
 
 /// <summary>
-/// One developer-only, source-reviewed 1500 RPM experiment. This deliberately does
+/// A developer-only, source-reviewed 1500 or fixed 100 RPM experiment. This deliberately does
 /// not use or expand the production fan range. The caller admits only the approved
 /// exact host, BIOS and attended battery session before every write and sample.
 /// </summary>
 internal sealed class BatterySaverLowFanValidationRunner
 {
-    private const int CandidateRpm = 1500;
+    private const int DefaultCandidateRpm = 1500;
+    private const int LowestNonzeroCandidateRpm = 100;
     private const int PreparationRpm = 2000;
     private const int RequiredConsecutiveSamples = 3;
     private const int MaximumSamples = 30;
@@ -62,6 +74,7 @@ internal sealed class BatterySaverLowFanValidationRunner
     private readonly bool honorFanInterCommandTiming;
     private readonly Func<bool, bool>? submissionAllowed;
     private readonly bool confirmSpinningAt2000;
+    private readonly int candidateRpm;
     private int started;
 
     internal BatterySaverLowFanValidationRunner(
@@ -76,7 +89,8 @@ internal sealed class BatterySaverLowFanValidationRunner
         int maximumSamples = MaximumSamples,
         bool honorFanInterCommandTiming = true,
         Func<bool, bool>? submissionAllowed = null,
-        bool confirmSpinningAt2000 = false)
+        bool confirmSpinningAt2000 = false,
+        bool useLowestNonzeroTarget = false)
     {
         this.actors = actors ?? throw new ArgumentNullException(nameof(actors));
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -99,13 +113,23 @@ internal sealed class BatterySaverLowFanValidationRunner
         this.maximumSamples = maximumSamples;
         this.honorFanInterCommandTiming = honorFanInterCommandTiming;
         this.submissionAllowed = submissionAllowed;
+        if (useLowestNonzeroTarget && !confirmSpinningAt2000)
+        {
+            throw new ArgumentException("The fixed 100 RPM experiment requires physical 2000 RPM preparation.",
+                nameof(confirmSpinningAt2000));
+        }
         this.confirmSpinningAt2000 = confirmSpinningAt2000;
+        candidateRpm = useLowestNonzeroTarget ? LowestNonzeroCandidateRpm : DefaultCandidateRpm;
     }
 
     internal async Task<BatterySaverLowFanValidationResult> RunAsync(
         CancellationToken cancellationToken)
     {
-        var state = new RunState { ConfirmSpinningAt2000 = confirmSpinningAt2000 };
+        var state = new RunState
+        {
+            ConfirmSpinningAt2000 = confirmSpinningAt2000,
+            RequestedRpm = candidateRpm,
+        };
         if (Interlocked.Exchange(ref started, 1) != 0)
         {
             return state.Fail("AlreadyRun");
@@ -171,9 +195,9 @@ internal sealed class BatterySaverLowFanValidationRunner
             if (!confirmSpinningAt2000 || state.PreparationConfirmed)
             {
                 RazerCommandDefinition[] candidate = confirmSpinningAt2000
-                    ? [SpeedCommand(1, CandidateRpm), SpeedCommand(2, CandidateRpm)]
+                    ? [SpeedCommand(1, candidateRpm), SpeedCommand(2, candidateRpm)]
                     : [ModeCommand(1, manual: true), ModeCommand(2, manual: true),
-                        SpeedCommand(1, CandidateRpm), SpeedCommand(2, CandidateRpm)];
+                        SpeedCommand(1, candidateRpm), SpeedCommand(2, candidateRpm)];
                 bool candidateApplied = true;
                 for (int index = 0; index < candidate.Length; index++)
                 {
@@ -208,7 +232,7 @@ internal sealed class BatterySaverLowFanValidationRunner
                     {
                         return state.Fail("CandidateTargetsReadFailed", ambiguous: true);
                     }
-                    bool storedTargetConfirmed = state.CandidateTargets == new FanRpmReadings(CandidateRpm, CandidateRpm);
+                    bool storedTargetConfirmed = state.CandidateTargets == new FanRpmReadings(candidateRpm, candidateRpm);
                     if (!storedTargetConfirmed)
                     {
                         state.Failure = "StoredTargetClamped";
@@ -249,7 +273,7 @@ internal sealed class BatterySaverLowFanValidationRunner
                     if (state.Failure is null && consecutive < RequiredConsecutiveSamples)
                     {
                         state.Failure = confirmSpinningAt2000
-                            ? "FansDidNotSpinDownAt1500" : "ActualRpmDidNotSettleAt1500";
+                            ? $"FansDidNotSpinDownAt{candidateRpm}" : $"ActualRpmDidNotSettleAt{candidateRpm}";
                     }
                     state.SpunDown = confirmSpinningAt2000 && consecutive >= RequiredConsecutiveSamples;
                 }
@@ -319,13 +343,209 @@ internal sealed class BatterySaverLowFanValidationRunner
         }
     }
 
+    internal async Task<LowFanReconciliationResult> QueryCurrentStateAsync(CancellationToken cancellationToken)
+    {
+        if (Interlocked.Exchange(ref started, 1) != 0)
+        {
+            return new(false, "AlreadyRun", null, null, null, false, null);
+        }
+        ValidationActor? actor = null;
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var context = new ValidationRunContext();
+            HidSessionResult<ValidationActor> opened = await actors.OpenAsync(context).ConfigureAwait(false);
+            actor = opened.Value;
+            if (opened.Failure is not null || actor is null)
+            {
+                return new(false, "OpenFailed", null, null, null, false, null);
+            }
+            var state = new RunState();
+            if (!await AdmitAsync(true, state, cancellationToken).ConfigureAwait(false))
+            {
+                return new(false, state.Failure, null, null, null, false, null);
+            }
+            LowFanReconciliationResult result = await ReadReconciliationAsync(
+                context, actor.Session, cancellationToken).ConfigureAwait(false);
+            return JournalReconciliation(result) ? result : result with { Success = false, Failure = "JournalFailed" };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new(false, "Canceled", null, null, null, false, null);
+        }
+        catch (Exception exception)
+        {
+            return new(false, $"UnexpectedFailure:{exception.GetType().Name}", null, null, null, false, null);
+        }
+        finally
+        {
+            if (actor is not null)
+            {
+                await BoundedValidationActorDisposal.DisposeAsync(actor, timeProvider,
+                    cleanupDrainTimeout, PendingDisposalRegistry.Shared).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Explicit recovery of the immutable trial-04 baseline, not another experiment.
+    /// The parent must review a separate read-only reconciliation before invoking
+    /// this named operation with fresh exact-host/BIOS, battery and owner admission.
+    /// No caller-supplied target, inferred baseline or replay of 100 RPM is accepted.
+    /// </summary>
+    internal async Task<BatterySaverLowFanValidationResult> RestoreReconciled100BaselineAsync(
+        CancellationToken cancellationToken)
+    {
+        var state = new RunState
+        {
+            RequestedRpm = LowestNonzeroCandidateRpm,
+            ScenarioOverride = "reconciled-100-trial04-original-3800-restoration",
+            RecoveryPending = true,
+            Baseline = new("01010300", "01020300"),
+            BaselineTargets = new(3800, 3800),
+        };
+        if (Interlocked.Exchange(ref started, 1) != 0)
+        {
+            return state.Fail("AlreadyRun");
+        }
+        if (!confirmSpinningAt2000 || candidateRpm != LowestNonzeroCandidateRpm)
+        {
+            return state.Fail("RecoveryRequiresNamed100Scenario");
+        }
+        ValidationActor? actor = null;
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateTemplates();
+            var context = new ValidationRunContext();
+            HidSessionResult<ValidationActor> opened = await actors.OpenAsync(context).ConfigureAwait(false);
+            actor = opened.Value;
+            if (opened.Failure is not null || actor is null)
+            {
+                return state.Fail("OpenFailed");
+            }
+            if (!await AdmitAsync(true, state, cancellationToken).ConfigureAwait(false))
+            {
+                return state.ToResult();
+            }
+            LowFanReconciliationResult current = await ReadReconciliationAsync(
+                context, actor.Session, cancellationToken).ConfigureAwait(false);
+            state.Candidate = current.Pair;
+            state.CandidateTargets = current.Targets;
+            if (!JournalReconciliation(current))
+            {
+                return state.Fail("JournalFailed");
+            }
+            // The immutable trial-04/read-only-reconciliation.json observed
+            // stored 2000/2000 after the failed 100 RPM trial. ACKs did not prove
+            // that 100 was retained; admit only that observed state freshly twice.
+            if (!current.Success || !current.Stable
+                || current.Mode != ThermalModeState.BatterySaverManual
+                || current.Pair != new PerformanceFanThermalPair("01010301", "01020301")
+                || current.Targets != new FanRpmReadings(2000, 2000))
+            {
+                return state.Fail(current.Failure ?? "RecoveryCurrentStateMismatch");
+            }
+            if (!Journal("ReconciledOriginalBaseline", true, null, state))
+            {
+                return state.ToResult();
+            }
+            RazerCommandDefinition[] restoration =
+            [
+                SpeedCommand(1, 3800), SpeedCommand(2, 3800),
+                ModeCommand(1, manual: false), ModeCommand(2, manual: false),
+            ];
+            for (int index = 0; index < restoration.Length; index++)
+            {
+                if (!await WriteAsync(context, actor.Session, restoration[index], true, state,
+                    cancellationToken).ConfigureAwait(false))
+                {
+                    return state.ToResult();
+                }
+                await DelayAsync(index switch
+                {
+                    0 => ThermalWriteTiming.MaximumInterCommandDelay(2),
+                    2 => ThermalWriteTiming.MaximumInterCommandDelay(0),
+                    _ => TimeSpan.Zero,
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            PairRead? restored = await ReadPairAsync(context, actor.Session, cancellationToken).ConfigureAwait(false);
+            state.Restoration = restored?.Pair;
+            state.RestorationTargets = await ReadSpeedsAsync(context, actor.Session, 0x81, cancellationToken)
+                .ConfigureAwait(false);
+            if (restored?.Mode != ThermalModeState.BatterySaverAutomatic
+                || restored.Pair != state.Baseline || state.RestorationTargets != state.BaselineTargets)
+            {
+                return state.Fail("RestorationNotConfirmed", ambiguous: true);
+            }
+            state.Restored = true;
+            Journal("Restored", true, null, state);
+            return state.ToResult();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return state.Fail("Canceled", ambiguous: state.WritesAttempted > 0);
+        }
+        catch (Exception exception)
+        {
+            return state.Fail($"UnexpectedFailure:{exception.GetType().Name}", ambiguous: state.WritesAttempted > 0);
+        }
+        finally
+        {
+            if (actor is not null)
+            {
+                await BoundedValidationActorDisposal.DisposeAsync(actor, timeProvider,
+                    cleanupDrainTimeout, PendingDisposalRegistry.Shared).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<LowFanReconciliationResult> ReadReconciliationAsync(ValidationRunContext context,
+        IRazerCommandSession session, CancellationToken cancellationToken)
+    {
+        PairRead? first = await ReadPairAsync(context, session, cancellationToken).ConfigureAwait(false);
+        FanRpmReadings? firstTargets = await ReadSpeedsAsync(context, session, 0x81, cancellationToken)
+            .ConfigureAwait(false);
+        if (first is null || firstTargets is null)
+        {
+            return new(false, "ReconciliationReadFailed", first?.Pair, firstTargets, null, false, first?.Mode);
+        }
+        await DelayAsync(TimeSpan.FromMilliseconds(500), cancellationToken).ConfigureAwait(false);
+        PairRead? second = await ReadPairAsync(context, session, cancellationToken).ConfigureAwait(false);
+        FanRpmReadings? secondTargets = await ReadSpeedsAsync(context, session, 0x81, cancellationToken)
+            .ConfigureAwait(false);
+        if (second is null || secondTargets is null)
+        {
+            return new(false, "ReconciliationReadFailed", second?.Pair, secondTargets, null, false, second?.Mode);
+        }
+        if (first.Pair != second.Pair || firstTargets != secondTargets)
+        {
+            return new(false, "ReconciliationNotStable", second.Pair, secondTargets, null, false, second.Mode);
+        }
+        FanRpmReadings? tach = await ReadSpeedsAsync(context, session, 0x88, cancellationToken).ConfigureAwait(false);
+        return new(tach is not null, tach is null ? "ReconciliationTachReadFailed" : null,
+            second.Pair, secondTargets, tach, true, second.Mode);
+    }
+
+    private bool JournalReconciliation(LowFanReconciliationResult result)
+    {
+        try
+        {
+            journal(new("ReadOnlyReconciliation", timeProvider.GetUtcNow(), Restoring: true, Reconciliation: result));
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
     private async Task<bool> PrepareSpinningFansAsync(ValidationRunContext context,
         IRazerCommandSession session, RunState state, CancellationToken cancellationToken)
     {
         // The earlier baseline was already stopped, so this experiment requires
         // a physically spinning 2000 RPM causal starting point. This is validation
         // provenance, not a firmware prerequisite for the legacy direct 1500 path.
-        // If 2000 does not spin, restore without trying higher values or 1500.
+        // If 2000 does not spin, restore without trying higher values or the selected low target.
         RazerCommandDefinition[] preparation =
         [
             ModeCommand(1, manual: true), ModeCommand(2, manual: true),
@@ -365,7 +585,7 @@ internal sealed class BatterySaverLowFanValidationRunner
         if (state.PreparationTargets != new FanRpmReadings(PreparationRpm, PreparationRpm))
         {
             state.Failure = "PreparationStoredTargetClamped";
-            return true; // The state is independently known; restore without trying 1500.
+            return true; // The state is independently known; restore without trying the low target.
         }
         int consecutive = 0;
         for (int index = 0; index < maximumSamples; index++)
@@ -581,6 +801,9 @@ internal sealed class BatterySaverLowFanValidationRunner
         internal FanRpmReadings? RestorationTargets { get; set; }
         internal List<LowFanValidationSample> Samples { get; } = [];
         internal bool ConfirmSpinningAt2000 { get; init; }
+        internal int RequestedRpm { get; init; } = DefaultCandidateRpm;
+        internal string? ScenarioOverride { get; init; }
+        internal bool RecoveryPending { get; init; }
         internal PerformanceFanThermalPair? Preparation { get; set; }
         internal FanRpmReadings? PreparationTargets { get; set; }
         internal List<LowFanValidationSample> PreparationSamples { get; } = [];
@@ -595,11 +818,11 @@ internal sealed class BatterySaverLowFanValidationRunner
         }
 
         internal BatterySaverLowFanValidationResult ToResult() => new(
-            Failure is null && Restored, Restored, WritesAttempted > 0 && !Restored,
+            Failure is null && Restored, Restored, (WritesAttempted > 0 || RecoveryPending) && !Restored,
             Failure, WritesAttempted, SafetyChecks, IndeterminatePartialWrite,
             Baseline, BaselineTargets, BaselineFanRpm, Candidate, CandidateTargets,
             Restoration, RestorationTargets, Samples.ToArray(),
             Preparation, PreparationTargets, ConfirmSpinningAt2000 ? PreparationSamples.ToArray() : null,
-            PreparationConfirmed, SpunDown, ConfirmSpinningAt2000 ? "2000-to-1500-spin-down" : null);
+            PreparationConfirmed, SpunDown, ScenarioOverride ?? (ConfirmSpinningAt2000 ? $"2000-to-{RequestedRpm}-spin-down" : null), RequestedRpm);
     }
 }

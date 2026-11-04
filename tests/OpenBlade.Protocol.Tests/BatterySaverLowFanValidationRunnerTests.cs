@@ -306,7 +306,7 @@ public sealed class BatterySaverLowFanValidationRunnerTests
         Assert.Equal("2000-to-1500-spin-down", result.Scenario);
         Assert.Equal(new FanRpmReadings(2000, 2000), result.PreparationTargets);
         Assert.Equal(3, result.PreparationSamples!.Count);
-        Assert.Equal(3, fixture.Session.PreparationSamplesBefore1500);
+        Assert.Equal(3, fixture.Session.PreparationSamplesBeforeCandidate);
         Assert.Equal(3, result.Samples.Count);
         Assert.All(result.Samples, sample => Assert.Equal(new FanRpmReadings(0, 0), sample.Rpm));
         Assert.Equal(result.BaselineTargets, result.RestorationTargets);
@@ -504,6 +504,293 @@ public sealed class BatterySaverLowFanValidationRunnerTests
         Assert.False(result.Restored);
         Assert.True(result.ManualRecoveryRequired);
     }
+    [Fact]
+    public async Task LowestNonzero_UsesWireOneOnlyAfterPhysical2000_AndVerifies100Readback()
+    {
+        var fixture = new Fixture(confirmSpinningAt2000: true, useLowestNonzeroTarget: true);
+
+        BatterySaverLowFanValidationResult result = await fixture.RunAsync();
+
+        Assert.True(result.Success);
+        Assert.True(result.PreparationConfirmed);
+        Assert.True(result.SpunDown);
+        Assert.True(result.Restored);
+        Assert.Equal(100, result.RequestedRpm);
+        Assert.Equal("2000-to-100-spin-down", result.Scenario);
+        Assert.Equal(new FanRpmReadings(100, 100), result.CandidateTargets);
+        Assert.Equal(3, fixture.Session.PreparationSamplesBeforeCandidate);
+        Assert.All(result.PreparationSamples!, sample => Assert.Equal(new FanRpmReadings(2000, 2000), sample.Rpm));
+        Assert.All(result.Samples, sample => Assert.Equal(new FanRpmReadings(0, 0), sample.Rpm));
+        Assert.Equal(
+            ["01010301", "01020301", "010114", "010214", "010101", "010201",
+                "010118", "01021F", "01010300", "01020300"], fixture.Session.Writes);
+        // Only the 0D01 target writes have three payload bytes. No zero target
+        // is issued; automatic-mode restoration uses its distinct 0D02 contract.
+        Assert.All(fixture.Session.Writes.Where(payload => payload.Length == 6),
+            payload => Assert.NotEqual("00", payload[^2..]));
+        Assert.Equal(result.BaselineTargets, result.RestorationTargets);
+    }
+
+    [Fact]
+    public async Task LowestNonzero_RequiresSpinningPreparation_AndRestoresWithout100WhenStopped()
+    {
+        var fixture = new Fixture(confirmSpinningAt2000: true, useLowestNonzeroTarget: true);
+        fixture.Session.PreparationTachSamples = [new(0, 0)];
+
+        BatterySaverLowFanValidationResult result = await fixture.RunAsync();
+
+        Assert.Equal("PreparationRpmDidNotSettleAt2000", result.Failure);
+        Assert.Equal(100, result.RequestedRpm);
+        Assert.True(result.Restored);
+        Assert.False(result.PreparationConfirmed);
+        Assert.False(result.SpunDown);
+        Assert.Null(result.CandidateTargets);
+        Assert.DoesNotContain("010101", fixture.Session.Writes);
+        Assert.DoesNotContain("010201", fixture.Session.Writes);
+    }
+
+    [Fact]
+    public async Task LowestNonzero_StoredTargetClampIsReportedAndRestored()
+    {
+        var fixture = new Fixture(confirmSpinningAt2000: true, useLowestNonzeroTarget: true);
+        fixture.Session.ClampStoredCandidate = true;
+
+        BatterySaverLowFanValidationResult result = await fixture.RunAsync();
+
+        Assert.False(result.Success);
+        Assert.Equal("StoredTargetClamped", result.Failure);
+        Assert.Equal(100, result.RequestedRpm);
+        Assert.Equal(new FanRpmReadings(2000, 2000), result.CandidateTargets);
+        Assert.True(result.Restored);
+        Assert.Equal(result.BaselineTargets, result.RestorationTargets);
+    }
+
+    [Fact]
+    public async Task LowestNonzero_Physical100IsNotReportedAsStopped_AndFailureNamesRequestedTarget()
+    {
+        var fixture = new Fixture(confirmSpinningAt2000: true, useLowestNonzeroTarget: true);
+        fixture.Session.CandidateActual = new(100, 100);
+
+        BatterySaverLowFanValidationResult result = await fixture.RunAsync();
+
+        Assert.Equal("FansDidNotSpinDownAt100", result.Failure);
+        Assert.Equal(100, result.RequestedRpm);
+        Assert.False(result.Success);
+        Assert.False(result.SpunDown);
+        Assert.True(result.Restored);
+        Assert.All(result.Samples, sample => Assert.Equal(new FanRpmReadings(100, 100), sample.Rpm));
+    }
+
+    [Fact]
+    public void LowestNonzero_WithoutPhysicalPreparationIsRejectedBeforeOpeningAnActor()
+    {
+        var actors = new ActorFactory(new StatefulSession());
+
+        Assert.Throws<ArgumentException>(() => new BatterySaverLowFanValidationRunner(
+            actors, CreateCatalog(), (_, _) => Task.FromResult<string?>(null), _ => { },
+            TimeProvider.System, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5),
+            useLowestNonzeroTarget: true));
+
+        Assert.Equal(0, actors.OpenCount);
+    }
+
+    [Fact]
+    public async Task LowestNonzero_AmbiguousTargetSubmissionStopsWithoutRestorationOrReplay()
+    {
+        var fixture = new Fixture(confirmSpinningAt2000: true, useLowestNonzeroTarget: true);
+        fixture.Session.FailWrite = 5;
+
+        BatterySaverLowFanValidationResult result = await fixture.RunAsync();
+
+        Assert.True(result.PreparationConfirmed);
+        Assert.True(result.IndeterminatePartialWrite);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.False(result.Restored);
+        Assert.Equal(5, fixture.Session.Writes.Count);
+        Assert.Equal("010101", fixture.Session.Writes.Last());
+        Assert.DoesNotContain("010201", fixture.Session.Writes);
+    }
+    [Fact]
+    public async Task Reconciliation_ReadsStableStateWithoutWritesOrAutomaticRecovery()
+    {
+        var fixture = RecoveryFixture();
+        LowFanReconciliationResult result = await fixture.QueryAsync();
+        Assert.True(result.Success);
+        Assert.True(result.Stable);
+        Assert.Equal(ThermalModeState.BatterySaverManual, result.Mode);
+        Assert.Equal(new PerformanceFanThermalPair("01010301", "01020301"), result.Pair);
+        Assert.Equal(new FanRpmReadings(2000, 2000), result.Targets);
+        Assert.NotNull(result.FanRpm);
+        Assert.Empty(fixture.Session.Writes);
+        LowFanValidationProgress progress = Assert.Single(fixture.Journal);
+        Assert.Equal("ReadOnlyReconciliation", progress.Stage);
+        Assert.Equal(result, progress.Reconciliation);
+        Assert.Equal("AlreadyRun", (await fixture.RecoverAsync()).Failure);
+        Assert.Empty(fixture.Session.Writes);
+    }
+
+    [Fact]
+    public async Task ReconciledRecovery_RestoresOnlyKnownTrial04TargetsAndExactAutomaticPair()
+    {
+        var fixture = RecoveryFixture();
+        BatterySaverLowFanValidationResult result = await fixture.RecoverAsync();
+        Assert.True(result.Success);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+        Assert.Equal("reconciled-100-trial04-original-3800-restoration", result.Scenario);
+        Assert.Equal(4, result.WritesAttempted);
+        Assert.Equal(5, result.SafetyChecks);
+        Assert.Equal(["010126", "010226", "01010300", "01020300"], fixture.Session.Writes);
+        Assert.Equal([true, true, true, true], fixture.WriteAdmissions);
+        Assert.Equal(new FanRpmReadings(3800, 3800), result.BaselineTargets);
+        Assert.Equal(result.BaselineTargets, result.RestorationTargets);
+        Assert.Equal(new PerformanceFanThermalPair("01010300", "01020300"), result.Restoration);
+        Assert.Equal("ReadOnlyReconciliation", fixture.Journal[0].Stage);
+        Assert.Equal("ReconciledOriginalBaseline", fixture.Journal[1].Stage);
+        Assert.DoesNotContain("010101", fixture.Session.Writes);
+        Assert.DoesNotContain("010201", fixture.Session.Writes);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 2000)]
+    [InlineData(3, 0, 2000)]
+    [InlineData(6, 1, 2000)]
+    [InlineData(3, 1, 0)]
+    [InlineData(3, 1, 1500)]
+    [InlineData(3, 1, 100)]
+    [InlineData(3, 1, 3800)]
+    public async Task ReconciledRecovery_UnknownOrDifferentStateAbortsWithoutGuessing(byte mode, byte fan, int target)
+    {
+        var fixture = RecoveryFixture();
+        fixture.Session.SetMode(mode, fan);
+        fixture.Session.Targets[1] = target;
+        BatterySaverLowFanValidationResult result = await fixture.RecoverAsync();
+        Assert.Equal("RecoveryCurrentStateMismatch", result.Failure);
+        Assert.False(result.Restored);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Empty(fixture.Session.Writes);
+    }
+
+    [Fact]
+    public async Task ReconciledRecovery_ChangingStoredTargetBetweenIndependentReadsAborts()
+    {
+        var fixture = RecoveryFixture();
+        fixture.Session.AfterTargetPair = count =>
+        {
+            if (count == 1)
+            {
+                fixture.Session.Targets[1] = 1500;
+            }
+        };
+        BatterySaverLowFanValidationResult result = await fixture.RecoverAsync();
+        Assert.Equal("ReconciliationNotStable", result.Failure);
+        Assert.Empty(fixture.Session.Writes);
+    }
+
+    [Theory]
+    [InlineData(0x82)]
+    [InlineData(0x81)]
+    [InlineData(0x88)]
+    public async Task ReconciledRecovery_InitialReadFailureStopsWithNoWrites(byte query)
+    {
+        var fixture = RecoveryFixture();
+        fixture.Session.FailQueryAfterWrite = 0;
+        fixture.Session.FailedQuery = query;
+        BatterySaverLowFanValidationResult result = await fixture.RecoverAsync();
+        Assert.False(result.Restored);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Empty(fixture.Session.Writes);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public async Task ReconciledRecovery_AmbiguousWriteStopsWithoutReplayOrAlternativeSequence(int failedWrite)
+    {
+        var fixture = RecoveryFixture();
+        fixture.Session.FailWrite = failedWrite;
+        BatterySaverLowFanValidationResult result = await fixture.RecoverAsync();
+        Assert.Equal("RestoreWriteIndeterminate", result.Failure);
+        Assert.False(result.Restored);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.True(result.IndeterminatePartialWrite);
+        Assert.Equal(failedWrite, fixture.Session.Writes.Count);
+    }
+
+    [Fact]
+    public async Task ReconciledRecovery_NativeAdmissionRevokedAfterIntentStopsBeforeSubmission()
+    {
+        var fixture = new Fixture(useSubmissionGate: true, confirmSpinningAt2000: true,
+            useLowestNonzeroTarget: true)
+        {
+            RevokeSubmissionOnIntent = 2,
+        };
+        SetRecoveryState(fixture);
+        BatterySaverLowFanValidationResult result = await fixture.RecoverAsync();
+        Assert.Single(fixture.Session.Writes);
+        Assert.Single(fixture.Session.DeniedSubmissions);
+        Assert.Equal("010126", fixture.Session.Writes[0]);
+        Assert.Equal("RestoreWriteIndeterminate", result.Failure);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.All(fixture.SubmissionChecks, restoring => Assert.True(restoring));
+    }
+
+    [Theory]
+    [InlineData("ReadOnlyReconciliation")]
+    [InlineData("ReconciledOriginalBaseline")]
+    [InlineData("WriteIntent")]
+    public async Task ReconciledRecovery_DurableJournalFailurePreventsSubmission(string failedStage)
+    {
+        var fixture = new Fixture(confirmSpinningAt2000: true, useLowestNonzeroTarget: true)
+        {
+            FailedJournalStage = failedStage,
+        };
+        SetRecoveryState(fixture);
+        BatterySaverLowFanValidationResult result = await fixture.RecoverAsync();
+        Assert.Equal("JournalFailed", result.Failure);
+        Assert.Empty(fixture.Session.Writes);
+        Assert.False(result.Restored);
+        Assert.True(result.ManualRecoveryRequired);
+    }
+
+    [Fact]
+    public async Task ReconciledRecovery_FinalReadFailureDoesNotClaimRestorationOrReplay()
+    {
+        var fixture = RecoveryFixture();
+        fixture.Session.FailQueryAfterWrite = 4;
+        fixture.Session.FailedQuery = 0x82;
+        BatterySaverLowFanValidationResult result = await fixture.RecoverAsync();
+        Assert.Equal("RestorationNotConfirmed", result.Failure);
+        Assert.False(result.Restored);
+        Assert.True(result.ManualRecoveryRequired);
+        Assert.Equal(4, fixture.Session.Writes.Count);
+    }
+
+    [Fact]
+    public async Task ReconciledRecovery_RequiresNamed100ScenarioBeforeOpeningOrWriting()
+    {
+        var fixture = new Fixture();
+        BatterySaverLowFanValidationResult result = await fixture.RecoverAsync();
+        Assert.Equal("RecoveryRequiresNamed100Scenario", result.Failure);
+        Assert.Empty(fixture.Journal);
+        Assert.Empty(fixture.Session.Writes);
+    }
+
+    private static Fixture RecoveryFixture()
+    {
+        var fixture = new Fixture(confirmSpinningAt2000: true, useLowestNonzeroTarget: true);
+        SetRecoveryState(fixture);
+        return fixture;
+    }
+
+    private static void SetRecoveryState(Fixture fixture)
+    {
+        fixture.Session.SetMode(3, 1);
+        fixture.Session.Targets[0] = 2000;
+        fixture.Session.Targets[1] = 2000;
+    }
     private sealed class Fixture
     {
         private bool latestRestoring;
@@ -512,7 +799,7 @@ public sealed class BatterySaverLowFanValidationRunnerTests
         private readonly BatterySaverLowFanValidationRunner runner;
 
         internal Fixture(int maximumSamples = 3, bool useSubmissionGate = false,
-            bool confirmSpinningAt2000 = false)
+            bool confirmSpinningAt2000 = false, bool useLowestNonzeroTarget = false)
         {
             Session = new StatefulSession { SpinDownScenario = confirmSpinningAt2000 };
             Session.BeforeWrite = count =>
@@ -525,7 +812,8 @@ public sealed class BatterySaverLowFanValidationRunnerTests
                 sampleInterval: TimeSpan.Zero, maximumSamples: maximumSamples,
                 honorFanInterCommandTiming: false,
                 submissionAllowed: useSubmissionGate ? AdmitSubmission : null,
-                confirmSpinningAt2000: confirmSpinningAt2000);
+                confirmSpinningAt2000: confirmSpinningAt2000,
+                useLowestNonzeroTarget: useLowestNonzeroTarget);
         }
 
         internal StatefulSession Session { get; }
@@ -542,6 +830,11 @@ public sealed class BatterySaverLowFanValidationRunnerTests
         internal Task<BatterySaverLowFanValidationResult> RunAsync(CancellationToken token = default) =>
             runner.RunAsync(token);
 
+        internal Task<LowFanReconciliationResult> QueryAsync(CancellationToken token = default) =>
+            runner.QueryCurrentStateAsync(token);
+
+        internal Task<BatterySaverLowFanValidationResult> RecoverAsync(CancellationToken token = default) =>
+            runner.RestoreReconciled100BaselineAsync(token);
         private bool AdmitSubmission(bool restoring)
         {
             SubmissionChecks.Add(restoring);
@@ -597,23 +890,30 @@ public sealed class BatterySaverLowFanValidationRunnerTests
 
     private sealed class ActorFactory(IRazerCommandSession session) : IValidationActorFactory
     {
-        public ValueTask<HidSessionResult<ValidationActor>> OpenAsync(ValidationRunContext context) =>
-            ValueTask.FromResult(new HidSessionResult<ValidationActor>(
+        internal int OpenCount { get; private set; }
+
+        public ValueTask<HidSessionResult<ValidationActor>> OpenAsync(ValidationRunContext context)
+        {
+            OpenCount++;
+            return ValueTask.FromResult(new HidSessionResult<ValidationActor>(
                 new ValidationActor(session, new BatteryCommandClient(session, TimeSpan.FromSeconds(3))), null));
+        }
     }
 
     private sealed class StatefulSession : IRazerCommandSession
     {
         private readonly byte[][] thermal = [[1, 1, 3, 0], [1, 2, 3, 0]];
         private int pairedModeReads;
+        private int targetPairReads;
+        internal Action<int>? AfterTargetPair { get; set; }
         private int tachSamples;
-        private bool saw1500Target;
+        private bool sawCandidateTarget;
         internal bool SpinDownScenario { get; init; }
         internal bool ClampPreparationTarget { get; set; }
         internal FanRpmReadings[]? PreparationTachSamples { get; set; }
         internal FanRpmReadings CandidateActual { get; set; } = new(0, 0);
         internal int CompletedPreparationSamples { get; private set; }
-        internal int? PreparationSamplesBefore1500 { get; private set; }
+        internal int? PreparationSamplesBeforeCandidate { get; private set; }
         internal int[] Targets { get; } = [2400, 3100];
         internal List<string> Writes { get; } = [];
         internal List<string> DeniedSubmissions { get; } = [];
@@ -664,14 +964,19 @@ public sealed class BatterySaverLowFanValidationRunnerTests
                 if (command.CommandId == 0x81)
                 {
                     Assert.Equal(new byte[] { 1, payload[1], 0 }, payload);
-                    return Success([1, payload[1], checked((byte)(Targets[index] / 100))]);
+                    byte[] response = [1, payload[1], checked((byte)(Targets[index] / 100))];
+                    if (index == 1)
+                    {
+                        AfterTargetPair?.Invoke(++targetPairReads);
+                    }
+                    return Success(response);
                 }
                 int rpm;
                 if (Writes.Count == 0)
                 {
                     rpm = index == 0 ? 2100 : 2200;
                 }
-                else if (SpinDownScenario && !saw1500Target)
+                else if (SpinDownScenario && !sawCandidateTarget)
                 {
                     FanRpmReadings sample = PreparationTachSamples is { } preparationSamples
                         ? preparationSamples[Math.Min(CompletedPreparationSamples, preparationSamples.Length - 1)]
@@ -728,11 +1033,11 @@ public sealed class BatterySaverLowFanValidationRunnerTests
                 Assert.Equal(0x01, command.CommandId);
                 if (SpinDownScenario)
                 {
-                    if (payload[2] == 15)
+                    if (payload[2] is 15 or 1)
                     {
-                        PreparationSamplesBefore1500 ??= CompletedPreparationSamples;
-                        saw1500Target = true;
-                        Targets[index] = ClampStoredCandidate ? 2000 : 1500;
+                        PreparationSamplesBeforeCandidate ??= CompletedPreparationSamples;
+                        sawCandidateTarget = true;
+                        Targets[index] = ClampStoredCandidate ? 2000 : payload[2] * 100;
                     }
                     else if (Writes.Count <= 4)
                     {

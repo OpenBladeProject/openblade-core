@@ -8,11 +8,21 @@ using OpenBlade.Service;
 
 namespace OpenBlade.Capture;
 
+internal enum LowFanValidationOperation
+{
+    Probe,
+    Reconcile100,
+    Restore100Baseline,
+}
+
 // Explicitly authorized named experiments; no production range override or raw command tool.
 internal static class BatterySaverLowFanValidationCommand
 {
     internal const string Name = "validate-battery-saver-1500";
     internal const string SpinDownName = "validate-battery-saver-spin-down-1500";
+    internal const string LowestNonzeroName = "validate-battery-saver-spin-down-100";
+    internal const string Reconcile100Name = "reconcile-battery-saver-100-state";
+    internal const string Restore100Name = "restore-battery-saver-100-baseline";
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -38,7 +48,9 @@ internal static class BatterySaverLowFanValidationCommand
 
     internal static async Task<int> RunWindowsAsync(
         IReadOnlyList<string> arguments, TextWriter output,
-        bool confirmSpinningAt2000 = false)
+        bool confirmSpinningAt2000 = false,
+        bool useLowestNonzeroTarget = false,
+        LowFanValidationOperation operation = LowFanValidationOperation.Probe)
     {
         var registry = new WindowsRegistryValueSource();
         var identity = new WindowsHostIdentitySource(
@@ -52,7 +64,13 @@ internal static class BatterySaverLowFanValidationCommand
 
         if (!TryParseArguments(arguments, bios, out string? journalPath))
         {
-            string name = confirmSpinningAt2000 ? SpinDownName : Name;
+            string name = operation switch
+            {
+                LowFanValidationOperation.Reconcile100 => Reconcile100Name,
+                LowFanValidationOperation.Restore100Baseline => Restore100Name,
+                _ => useLowestNonzeroTarget ? LowestNonzeroName
+                    : confirmSpinningAt2000 ? SpinDownName : Name,
+            };
             await output.WriteLineAsync($"Usage: OpenBlade.Capture {name} --confirm-target "
                 + $"RZ09-0581:1532:02E0:{bios} --journal <absolute-new-jsonl-path>");
             return 1;
@@ -146,16 +164,22 @@ internal static class BatterySaverLowFanValidationCommand
         {
             schemaVersion = confirmSpinningAt2000 ? 2 : 1,
             phase = "experiment",
+            operation,
+            readOnly = operation == LowFanValidationOperation.Reconcile100,
             model = "RZ09-0581",
             vendorId = "1532",
             productId = "02E0",
             biosVersion = bios,
-            requestedRpm = 1500,
+            requestedRpm = operation == LowFanValidationOperation.Probe
+                ? useLowestNonzeroTarget ? 100 : 1500 : (int?)null,
+            restorationTargetRpm = operation == LowFanValidationOperation.Restore100Baseline
+                ? 3800 : (int?)null,
             preparationRpm = confirmSpinningAt2000 ? 2000 : (int?)null,
             preparationMinimumMeasuredRpm = confirmSpinningAt2000 ? 1800 : (int?)null,
             preparationMaximumMeasuredRpm = confirmSpinningAt2000 ? 2200 : (int?)null,
             preparationRequiredConsecutiveSamples = confirmSpinningAt2000 ? 3 : (int?)null,
-            scenario = confirmSpinningAt2000 ? "2000-to-1500-spin-down" : "automaticTo1500",
+            scenario = useLowestNonzeroTarget ? "2000-to-100-spin-down"
+                : confirmSpinningAt2000 ? "2000-to-1500-spin-down" : "automaticTo1500",
             performance = "BatterySaver",
             productionAdmitted = false,
             sourceBaseSha256 = "BC7DC47E18261AB38393589D336C11F321CC431D700ED32147997144F64628CA",
@@ -163,12 +187,28 @@ internal static class BatterySaverLowFanValidationCommand
         });
         BatterySaverLowFanValidationRunner runner = BatteryValidationFactory
             .CreateWindowsBatterySaverLowFanValidation(
-                AdmitAsync, progress => Append(progress), SubmissionAllowed, confirmSpinningAt2000);
-        BatterySaverLowFanValidationResult result = await runner.RunAsync(cancellation.Token)
-            .ConfigureAwait(false);
+                AdmitAsync, progress => Append(progress), SubmissionAllowed,
+                confirmSpinningAt2000, useLowestNonzeroTarget);
+        object result;
+        bool success;
+        if (operation == LowFanValidationOperation.Reconcile100)
+        {
+            LowFanReconciliationResult reconciliation = await runner.QueryCurrentStateAsync(cancellation.Token)
+                .ConfigureAwait(false);
+            result = reconciliation;
+            success = reconciliation.Success;
+        }
+        else
+        {
+            BatterySaverLowFanValidationResult validation = operation == LowFanValidationOperation.Restore100Baseline
+                ? await runner.RestoreReconciled100BaselineAsync(cancellation.Token).ConfigureAwait(false)
+                : await runner.RunAsync(cancellation.Token).ConfigureAwait(false);
+            result = validation;
+            success = validation.Success;
+        }
         Append(new { phase = "completed", result });
         await output.WriteLineAsync(JsonSerializer.Serialize(result, JsonOptions)).ConfigureAwait(false);
-        return result.Success ? 0 : 2;
+        return success ? 0 : 2;
     }
 
     [StructLayout(LayoutKind.Sequential)]

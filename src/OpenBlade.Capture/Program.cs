@@ -1667,10 +1667,25 @@ if (args.Length > 0 && args[0].Equals(
 }
 
 if (args.Length > 0 && args[0] is BatterySaverLowFanValidationCommand.Name
-    or BatterySaverLowFanValidationCommand.SpinDownName)
+    or BatterySaverLowFanValidationCommand.SpinDownName
+    or BatterySaverLowFanValidationCommand.LowestNonzeroName
+    or BatterySaverLowFanValidationCommand.Reconcile100Name
+    or BatterySaverLowFanValidationCommand.Restore100Name)
 {
     return await BatterySaverLowFanValidationCommand.RunWindowsAsync(args[1..], Console.Out,
-        confirmSpinningAt2000: args[0] == BatterySaverLowFanValidationCommand.SpinDownName);
+        confirmSpinningAt2000: args[0] is BatterySaverLowFanValidationCommand.SpinDownName
+            or BatterySaverLowFanValidationCommand.LowestNonzeroName
+            or BatterySaverLowFanValidationCommand.Reconcile100Name
+            or BatterySaverLowFanValidationCommand.Restore100Name,
+        useLowestNonzeroTarget: args[0] is BatterySaverLowFanValidationCommand.LowestNonzeroName
+            or BatterySaverLowFanValidationCommand.Reconcile100Name
+            or BatterySaverLowFanValidationCommand.Restore100Name,
+        operation: args[0] switch
+        {
+            BatterySaverLowFanValidationCommand.Reconcile100Name => LowFanValidationOperation.Reconcile100,
+            BatterySaverLowFanValidationCommand.Restore100Name => LowFanValidationOperation.Restore100Baseline,
+            _ => LowFanValidationOperation.Probe,
+        });
 }
 
 if (args.Length > 0 && args[0] is "validate-direct-thermal-transition" or "validate-direct-battery-off" or "query-direct-thermal-state")

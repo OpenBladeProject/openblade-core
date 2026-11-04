@@ -1065,7 +1065,8 @@ public static class BatteryValidationFactory
         Func<bool, CancellationToken, Task<string?>> admission,
         Action<LowFanValidationProgress> journal,
         Func<bool, bool> submissionAllowed,
-        bool confirmSpinningAt2000 = false)
+        bool confirmSpinningAt2000 = false,
+        bool useLowestNonzeroTarget = false)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -1090,7 +1091,8 @@ public static class BatteryValidationFactory
                 : await admission(restoring, token).ConfigureAwait(false),
             journal, TimeProvider.System, DefaultExchangeTimeout, DefaultCleanupDrainTimeout,
             submissionAllowed: restoring => guard.Check().Safe && submissionAllowed(restoring),
-            confirmSpinningAt2000: confirmSpinningAt2000);
+            confirmSpinningAt2000: confirmSpinningAt2000,
+            useLowestNonzeroTarget: useLowestNonzeroTarget);
     }
 
     internal static DirectThermalTransitionValidationRunner CreateWindowsDirectThermalTransitionValidation()
