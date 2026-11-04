@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Remove failed driver-download attempt files before installation begins, while retaining packages after any installation intent or uncertain result. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
+- Keep driver installation recovery required for malformed journals or missing THX packages, preserve extraction files after uncertain termination, and distinguish timeouts from cancellation. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
 - Preserve invalid configuration and the original files when a save and its rollback both fail. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
 - Keep settings tied to the correct Windows user across interrupted activation and overlapping requests. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
 - Report incomplete profile application accurately and retain uncertain laptop-control writes across restarts without replaying them automatically. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))

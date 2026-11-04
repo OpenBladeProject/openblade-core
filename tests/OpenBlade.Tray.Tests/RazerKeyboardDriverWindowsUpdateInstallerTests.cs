@@ -405,6 +405,7 @@ public sealed class RazerKeyboardDriverWindowsUpdateInstallerTests
     {
         public bool RequiresRecovery { get; private set; }
         public string PackageDestination => "protected-staging";
+        public void BeginPackageAcquisition() { }
         internal bool ThrowIntent { get; set; }
         public void Begin(RazerDriverInstallSnapshot baseline) => events.Add("journal:baseline");
         public void Intent(RazerDriverMutation operation) { events.Add("journal:pinned-intent"); RequiresRecovery = true; }
