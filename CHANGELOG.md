@@ -14,6 +14,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Retain keyboard-hook ownership when replacement cleanup fails and stop replacements until cleanup is confirmed. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
 - Follow playback-device changes in Audio Meter lighting and preserve configured THX profile values through saving and loading. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
 - Preserve display-automation pauses after partially submitted changes and retain the latest activated app profile. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Stop developer firmware-validation writes after unconfirmed changes or restoration failures, bound CPU probe callback buffering, and report matching native failures without waiting. ([#878](https://github.com/OpenBladeProject/openblade-core/pull/878))
 
 ### Changed
 

@@ -121,8 +121,10 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
         bool applicationAccepted = false;
         bool applicationPassed = false;
         bool restorationPassed = false;
+        OperationCanceledException? cancellation = null;
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             applyAttempted = true;
             ControlOperationResult result = await client.SetHyperBoostAsync(
                 enabled: true,
@@ -134,9 +136,10 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
                 application += "; no retry was attempted.";
             }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception)
         {
             application = $"{exception.GetType().Name}: {exception.Message}; no retry was attempted.";
+            cancellation = exception as OperationCanceledException;
         }
         finally
         {
@@ -169,16 +172,26 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
             }
 
             applicationPassed = applicationAccepted && active;
-            if (!active)
+            if (!active || !applicationAccepted)
             {
                 application +=
-                    "; independent readback did not confirm HyperBoost, so no restoration write was submitted.";
+                    "; application was not independently accepted and confirmed, so no restoration write was submitted.";
             }
             else
             {
                 application += "; independent readback confirmed mode 7.";
+                bool restoreAttempted = false;
                 try
                 {
+                    ServiceStatusSnapshot inspected = await client.ObserveStateAsync(
+                        LiveReadingSensors.None,
+                        cleanup.Token).ConfigureAwait(false);
+                    ValidatePreconditions(inspected);
+                    if (inspected.ConfirmedState?.HyperBoostActive != true)
+                    {
+                        throw new InvalidOperationException("HyperBoost is no longer confirmed active before restoration.");
+                    }
+                    restoreAttempted = true;
                     ControlOperationResult result = await client.SetHyperBoostAsync(
                         enabled: false,
                         cleanup.Token).ConfigureAwait(false);
@@ -208,9 +221,19 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
                 }
                 catch (Exception exception)
                 {
-                    restoration = $"{exception.GetType().Name}: {exception.Message}";
+                    restoration = $"{exception.GetType().Name}: {exception.Message}"
+                        + (restoreAttempted ? string.Empty
+                            : "; no restoration write was submitted; the candidate state remains unresolved.");
                 }
             }
+        }
+
+        if (cancellation is not null)
+        {
+            throw new OperationCanceledException(
+                $"HyperBoost smoke was canceled. Apply={application} Restore={restoration}",
+                cancellation,
+                cancellationToken);
         }
 
         return new FirmwareSmokeCheck(
@@ -228,7 +251,9 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
         CancellationToken cancellationToken)
     {
         PerformancePreset? originalValue = original.ConfirmedState?.Performance;
-        if (originalValue is null || original.Capabilities is null)
+        if (originalValue is null || original.Capabilities is null
+            || (originalValue == PerformancePreset.Custom
+                && !CustomPerformanceSettings.IsWellFormed(original.ConfirmedState?.CustomPerformance)))
         {
             return Skipped("write.performance", "Performance preset", "Readback unavailable.");
         }
@@ -254,7 +279,10 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
                 original,
                 originalValue.Value,
                 restoreToken),
-            status => status.ConfirmedState?.Performance == originalValue,
+            status => status.ConfirmedState?.Performance == originalValue
+                && status.PerformanceOverride == original.PerformanceOverride
+                && (originalValue != PerformancePreset.Custom
+                    || status.ConfirmedState?.CustomPerformance == original.ConfirmedState?.CustomPerformance),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -276,23 +304,26 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
             ManualFanCurve.Default);
         return await RunRestoredAsync(
             "write.fans",
-            "Fixed fan mode applies, reads back, and restores",
+            "Fixed fan mode confirms (3000 RPM requested), then restores its mode and saved override",
             () => client.SetFanOverrideAsync(
                 new ManualOverride<FanMode>(
                     FanMode.Fixed,
                     OverrideLifetime.UntilPowerSourceChange),
                 settings,
                 cancellationToken),
-            status => status.FanControlOverride is
-            {
-                Mode: FanMode.Fixed,
-                FixedSpeedRpm: 3000,
-            },
+            status => status.ConfirmedState?.Fans == FanMode.Fixed
+                && status.FanControlOverride is
+                {
+                    Mode: FanMode.Fixed,
+                    FixedSpeedRpm: 3000,
+                },
             restoreToken => client.SetFanOverrideAsync(
                 original.FanOverride,
                 original.FanControlOverride,
                 restoreToken),
-            status => status.ConfirmedState?.Fans == originalMode,
+            status => status.ConfirmedState?.Fans == originalMode
+                && status.FanOverride == original.FanOverride
+                && status.FanControlOverride == original.FanControlOverride,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -327,11 +358,13 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
             () => client.SetBatteryPolicyAsync(
                 BatteryPolicy.Create(candidate),
                 cancellationToken),
-            status => status.ConfirmedState?.Battery?.ChargeLimitPercent == candidate,
+            status => status.ConfirmedState?.Battery is
+            { ProtectionEnabled: true, TemporaryFullCharge: false } candidateBattery
+                && candidateBattery.ChargeLimitPercent == candidate,
             restoreToken => client.SetBatteryPolicyAsync(
                 BatteryPolicy.Create(originalLimit),
                 restoreToken),
-            status => status.ConfirmedState?.Battery?.ChargeLimitPercent == originalLimit,
+            status => status.ConfirmedState?.Battery == battery,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -352,20 +385,23 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
         {
             LogoMode = original.ConfirmedState?.LogoLighting,
         };
+        var candidateOverride = new ManualOverride<LightingSettings>(
+            candidate,
+            OverrideLifetime.UntilPowerSourceChange);
         return await RunRestoredAsync(
             "write.lighting",
-            "Static keyboard lighting applies and the previous renderer restores",
+            "Static renderer applies and the previous renderer and saved lighting intent restore",
             () => client.SetLightingOverrideAsync(
-                new ManualOverride<LightingSettings>(
-                    candidate,
-                    OverrideLifetime.UntilPowerSourceChange),
+                candidateOverride,
                 cancellationToken),
             status => status.LightingRendererOwnership
-                == LightingRendererOwnershipState.Static,
+                == LightingRendererOwnershipState.Static
+                && status.LightingOverride == candidateOverride,
             restoreToken => client.SetLightingOverrideAsync(
                 original.LightingOverride,
                 restoreToken),
-            status => status.LightingRendererOwnership == originalRenderer,
+            status => status.LightingRendererOwnership == originalRenderer
+                && status.LightingOverride == original.LightingOverride,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -478,8 +514,12 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
         string restoration = "Not attempted";
         bool applicationPassed = false;
         bool restorationPassed = false;
+        bool applyAttempted = false;
+        OperationCanceledException? cancellation = null;
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            applyAttempted = true;
             ControlOperationResult result = await applyAsync().ConfigureAwait(false);
             application = $"{result.Status}: {result.Message}";
             applicationPassed = IsAccepted(result)
@@ -495,32 +535,88 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
                     cancellationToken).ConfigureAwait(false);
             }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception)
         {
             application = $"{exception.GetType().Name}: {exception.Message}";
+            cancellation = exception as OperationCanceledException;
         }
         finally
         {
             using var restoreCancellation = new CancellationTokenSource(
                 TimeSpan.FromSeconds(15));
+            bool restoreAttempted = false;
             try
             {
-                ControlOperationResult result = await restoreAsync(
-                    restoreCancellation.Token).ConfigureAwait(false);
-                restoration = $"{result.Status}: {result.Message}";
-                restorationPassed = IsAccepted(result)
-                    && await WaitForAsync(
-                        restoredPredicate,
-                        restoreCancellation.Token).ConfigureAwait(false);
-                if (!restorationPassed)
+                if (applyAttempted)
                 {
-                    restoration += "; readback did not confirm restoration.";
+                    // A failed/canceled submission or missing candidate readback
+                    // ends mutation authority for this run. Observation may explain
+                    // the current state, but must not trigger an automatic replay.
+                    ServiceStatusSnapshot inspected = await client.ObserveStateAsync(
+                        LiveReadingSensors.None,
+                        restoreCancellation.Token).ConfigureAwait(false);
+                    if (!applicationPassed)
+                    {
+                        restoration = "No restoration write submitted after unconfirmed application; "
+                            + (restoredPredicate(inspected)
+                                ? "independent readback matches the baseline."
+                                : "baseline restoration remains unresolved.");
+                    }
+                    else if (!appliedPredicate(inspected))
+                    {
+                        restorationPassed = restoredPredicate(inspected);
+                        restoration = restorationPassed
+                            ? "Independent readback confirms the baseline; no restoration write needed."
+                            : "Candidate state changed before restoration; no restoration write submitted.";
+                    }
+                    else
+                    {
+                        ValidatePreconditions(inspected);
+                        restoreAttempted = true;
+                        ControlOperationResult result = await restoreAsync(
+                            restoreCancellation.Token).ConfigureAwait(false);
+                        restoration = $"{result.Status}: {result.Message}";
+                        bool baselineConfirmed;
+                        if (IsAccepted(result))
+                        {
+                            baselineConfirmed = await WaitForAsync(
+                                restoredPredicate,
+                                restoreCancellation.Token).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            ServiceStatusSnapshot reconciled = await client.ObserveStateAsync(
+                                LiveReadingSensors.None,
+                                restoreCancellation.Token).ConfigureAwait(false);
+                            baselineConfirmed = restoredPredicate(reconciled);
+                        }
+                        restorationPassed = IsAccepted(result) && baselineConfirmed;
+                        if (!restorationPassed)
+                        {
+                            restoration += baselineConfirmed
+                                ? "; baseline readback confirmed, but restoration did not complete successfully."
+                                : "; readback did not confirm restoration.";
+                        }
+                    }
                 }
             }
             catch (Exception exception)
             {
-                restoration = $"{exception.GetType().Name}: {exception.Message}";
+                string failure = $"{exception.GetType().Name}: {exception.Message}"
+                    + (restoreAttempted ? string.Empty
+                        : "; no restoration write was submitted; the candidate state remains unresolved.");
+                restoration = restoration == "Not attempted"
+                    ? failure
+                    : $"{restoration}; Readback={failure}";
             }
+        }
+
+        if (cancellation is not null)
+        {
+            throw new OperationCanceledException(
+                $"Firmware smoke was canceled. Apply={application} Restore={restoration}",
+                cancellation,
+                cancellationToken);
         }
 
         return new FirmwareSmokeCheck(
@@ -571,15 +667,26 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
             await client.SetPerformanceOverrideAsync(
                 new PerformanceOverride(
                     originalValue,
-                    OverrideLifetime.UntilPowerSourceChange),
+                    OverrideLifetime.UntilPowerSourceChange,
+                    originalValue == PerformancePreset.Custom ? original.ConfirmedState?.CustomPerformance : null),
                 cancellationToken).ConfigureAwait(false);
-        if (!await WaitForAsync(
-                status => status.ConfirmedState?.Performance == originalValue,
-                cancellationToken).ConfigureAwait(false))
+        if (!IsAccepted(explicitRestore))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Failed,
-                "The original performance preset could not be explicitly restored. " +
+                "Performance restoration did not complete; the override was retained without another write. " +
+                $"Hardware result: {explicitRestore.Status}: {explicitRestore.Message}");
+        }
+        bool baselineConfirmed = await WaitForAsync(
+                status => status.ConfirmedState?.Performance == originalValue
+                    && (originalValue != PerformancePreset.Custom
+                        || status.ConfirmedState?.CustomPerformance == original.ConfirmedState?.CustomPerformance),
+                cancellationToken).ConfigureAwait(false);
+        if (!baselineConfirmed)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Performance restoration did not complete; the override was retained without another write. " +
                 $"Hardware result: {explicitRestore.Status}: {explicitRestore.Message}");
         }
 
@@ -588,16 +695,18 @@ public sealed class ReversibleSmokeRunner(IFirmwareSmokeClient client)
             cancellationToken).ConfigureAwait(false);
         bool independentlyCleared = await WaitForAsync(
             status => status.ConfirmedState?.Performance == originalValue
-                && status.PerformanceOverride is null,
+                && status.PerformanceOverride is null
+                && (originalValue != PerformancePreset.Custom
+                    || status.ConfirmedState?.CustomPerformance == original.ConfirmedState?.CustomPerformance),
             cancellationToken).ConfigureAwait(false);
-        return independentlyCleared
-            ? new ControlOperationResult(
-                ControlOperationStatus.Applied,
-                IsAccepted(cleared)
-                    ? cleared.Message
-                    : "The original preset and cleared override were confirmed by independent readback. " +
-                    $"Clear result: {cleared.Status}: {cleared.Message}")
-            : cleared;
+        if (!independentlyCleared)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Independent readback did not confirm the original preset and cleared performance override. "
+                + $"Clear result: {cleared.Status}: {cleared.Message}");
+        }
+        return cleared;
     }
 
     private static bool IsAccepted(ControlOperationResult result) =>
