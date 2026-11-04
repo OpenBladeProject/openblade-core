@@ -1,0 +1,102 @@
+{
+ "schemaVersion": 1,
+ "evidenceDate": "2026-11-04",
+ "status": "Standalone public-API control reproduces child-map retention in Windows App SDK 2.6.5; no application upgrade or fix validation.",
+ "release": {
+  "version": "2.6.5",
+  "officialReleaseUrl": "https://github.com/microsoft/WindowsAppSDK/releases/tag/v2.6.5",
+  "displayedReleaseDate": "03 Nov 03:18",
+  "checkedOn": "2026-11-04"
+ },
+ "provenance": {
+  "execution": "Standalone x64 PowerShell/Add-Type process calling exported MRM functions; no WinUI tree, managed resource projection, device access or installed-product mutation.",
+  "buildScope": "This control loads extracted vendor DLLs and the existing application PRI as data. It does not rebuild the application, change repository package references or validate an SDK upgrade.",
+  "source": "ownership.ps1 is the measured script. It differs from the earlier public-API script by dependency preload, the size-independent busy-block filter, and input/output locations.",
+  "pri": {
+   "basename": "OpenBlade.Tray.pri",
+   "sha256RecordedByBothRuns": "BF18E7D5F2E816F1FB6A2C947481BB08CC9004170D3631A0AD66800AD7C7678B",
+   "limitation": "The raw reports record the data-file hash, not its length or a clean application source revision."
+  },
+  "timestampScope": "Raw ownership report contains no run timestamp; evidenceDate identifies this investigation date."
+ },
+ "packages": [
+  {
+   "id": "Microsoft.WindowsAppSDK.Foundation",
+   "version": "2.6.5",
+   "canonicalPackageUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.windowsappsdk.foundation/2.6.5/microsoft.windowsappsdk.foundation.2.6.5.nupkg",
+   "packageFingerprint": ["microsoft.windowsappsdk.foundation.2.6.5.nupkg", 6529836, "548033E51BE965804F7119E1936FE7F78F324D668BECB731FCACB101F3BB18E4"],
+   "extractedEntry": "runtimes-framework/win-x64/native/MRM.dll",
+   "extractedBytesMatchPackage": true
+  },
+  {
+   "id": "Microsoft.WindowsAppSDK.InteractiveExperiences",
+   "version": "2.6.5",
+   "canonicalPackageUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.windowsappsdk.interactiveexperiences/2.6.5/microsoft.windowsappsdk.interactiveexperiences.2.6.5.nupkg",
+   "packageFingerprint": ["microsoft.windowsappsdk.interactiveexperiences.2.6.5.nupkg", 26261763, "3782DF5D796DFE872175DA0DB2B64B616611532FD14B06D9E2102895286DF136"],
+   "extractedEntry": "runtimes-framework/win-x64/native/Microsoft.Internal.FrameworkUdk.dll",
+   "extractedBytesMatchPackage": true
+  }
+ ],
+ "dependencyResolution": {
+  "foundationNuspecDependency": {
+   "id": "Microsoft.WindowsAppSDK.InteractiveExperiences",
+   "versionRange": "[2.6.5, 3.0.0)"
+  },
+  "resolution": "The script explicitly loads the extracted Microsoft.Internal.FrameworkUdk.dll before loading MRM.dll. Both native libraries remain loaded through the post-destroy census.",
+  "unusedDownload": {
+   "fingerprint": ["microsoft.windowsappsdk.base.2.6.5.nupkg", 91138, "CB9D3C4FB9CD98907709C95832A642CFB0331FD8E69DF649F662E96B09B8CB48"],
+   "reason": "The Base package contains no FrameworkUdk DLL and supplied no measured binary."
+  },
+  "excludedAttempt": "An earlier attempt could not load MRM without its FrameworkUdk dependency. That failed-load attempt is not a measurement."
+ },
+ "binaries": [
+  {
+   "fingerprint": ["MRM.dll", 290104, "55EBCEC165A661869E53DD9F643867BE777B9EDE4E6CE45DDA386DFCABBF01DD"],
+   "reportedFileVersion": "2.6",
+   "reportedProductVersion": "2.6",
+   "authenticodeStatus": "Valid",
+   "signerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+   "signerCertificateThumbprint": "AB172913A2960A224809EE8A0C371CD47A079B72"
+  },
+  {
+   "fingerprint": ["Microsoft.Internal.FrameworkUdk.dll", 451336, "66373563929DB8FE33C6C488918FAD34FCF03F0013793D4F06BB287BE8354757"],
+   "reportedFileVersion": "12.6.5.0",
+   "reportedProductVersion": "12.6.5.0",
+   "authenticodeStatus": "Valid",
+   "signerSubject": "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+   "signerCertificateThumbprint": "FB2C62AC6688CDE2F0BD77E9A8AFA746FB9DDF02"
+  }
+ ],
+ "protocol": {
+  "resource": "Resources/MainWindow_ButtonCheckNow",
+  "publicApis": ["MrmCreateResourceManager", "MrmGetChildResourceMap", "MrmGetResourceCount", "MrmDestroyResourceManager"],
+  "operations": "Create one resource manager, obtain the same named child map 101 times, and require a nonzero resource count after every lookup. Capture counts after lookups 1, 51 and 101, destroy the manager, clear the last map variable, and capture once more.",
+  "classifier": "HeapLock/GetProcessHeap/HeapWalk enumerate the default process heap. Count entries with PROCESS_HEAP_ENTRY_BUSY, cbData >= 8, and an allocation-leading pointer equal to the first returned map vtable. This control intentionally does not require the older 104-byte object size.",
+  "completion": "Each census must end with ERROR_NO_MORE_ITEMS (259) and successfully unlock the heap; otherwise the script throws.",
+  "measurementColumns": ["stage", "lookupCount", "matchingBusyAllocations", "terminalHeapWalkError", "heapUnlockResult"],
+  "measurements": [
+   ["after-first", 1, 1, 259, 1],
+   ["after-lookups", 51, 51, 259, 1],
+   ["after-lookups", 101, 101, 259, 1],
+   ["after-manager-destroy", 101, 101, 259, 1]
+  ]
+ },
+ "comparison": {
+  "earlierEvidence": "2026-11-04-native-resource-map-attribution.json",
+  "earlierMrmSha256": "1E542A07FD1351B40465D5A06A2B3DB7323089B01ACF40F17F6129115772BADA",
+  "earlierReportedFileVersion": "2.0",
+  "earlierCounts": [1, 51, 101, 101],
+  "samePriAndPublicApiSequence": true,
+  "classifierDifference": "Earlier census additionally required cbData == 104. The 2.6.5 census uses cbData >= 8 and the returned vtable to avoid assuming unchanged object layout.",
+  "observed": "100 additional lookups add 100 matching busy allocations, and all 101 remain allocated at the census immediately after manager destruction. This standalone repetition confirms that upgrading to the tested 2.6.5 MRM binary does not eliminate the demonstrated retention pattern."
+ },
+ "limits": ["The census establishes allocated objects through this cleanup boundary, not a complete reachability graph, exact byte attribution or all-process leak total.", "Only the default process heap and the returned allocation-leading vtable are counted. Other heaps, interior pointers, child allocations, handles and delayed cleanup beyond this snapshot are not measured.", "No private destructor, raw free, custom ABI shim or application workaround is exercised. Vendor bytes and raw memory are not included in this artifact.", "The earlier upstream source inspection is corroboration, not established source-to-binary provenance for either tested DLL. This artifact adds no claim about other SDK versions or Windows/graphics-driver retention.", "Claude review remains incomplete because the previously requested run exhausted its quota without producing findings."],
+ "rawArtifacts": [
+  ["ownership.ps1", 4640, "BD3FF56A25CF0D75AEA285ACE63694A95D9C99EC4E71E5D2A530D1DD4D92C145"],
+  ["ownership.json", 797, "7848236F1EBEED53A0083FF0E31705421D63B41434C2E614394D57831CA927F4"],
+  ["openblade-mrm-public-api-ownership-20261104.ps1", 4485, "AABE601C2C52FB819CDC90C946F560B5B52BCCE81303808F2EF6B3CD6CB1B81F"],
+  ["openblade-mrm-public-api-ownership-20261104.json", 797, "886AF2CB2357B60A6ABB70210AC3E996C31EF5E42EFD7F57941D809ED28E95D7"]
+ ],
+ "fingerprintColumns": ["basename", "lengthBytes", "sha256"],
+ "privacy": "Only public resource identifiers, package URLs, binary metadata and basename fingerprints are exported; local paths, usernames, process IDs, handles and object addresses remain local."
+}

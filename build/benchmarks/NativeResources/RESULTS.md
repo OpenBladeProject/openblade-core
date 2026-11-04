@@ -661,3 +661,68 @@ zero warnings or errors and all 11,381 tests across 17 projects passed, with no
 failures or skips. The clean Release developer harness was rebuilt and checked
 for absence of the temporary census markers. Independent Codex review found no
 actionable issue in the integrated close-handler change.
+
+## Shared XAML localization lookup (2026-11-04)
+
+The [official SDK 2.6.5 public-API control](results/2026-11-04-mrm-265-public-api-control.json)
+still retained 101 native ResourceMapSubtree allocations after 101 child-map
+lookups and manager destruction. Both Microsoft DLLs were independently matched
+to their official packages and signature-verified. An SDK upgrade alone does not
+resolve this ownership issue.
+
+A [matched compiled-XAML control](results/2026-11-04-mrm-customresource-control.json)
+compared x:Uid with the public CustomXamlResourceLoader API. Over 200 recreations,
+x:Uid grew from 9 to 409 MRM subtrees; the shared loader stayed at 3 with either
+an explicit language context or the default ResourceLoader. All 406 retired
+fixture/root references were collected in each mode. English, Russian, Chinese,
+pseudo-localization and restored-English values passed for visible text,
+accessibility, tooltips and custom selector properties, including punctuation in
+a missing-resource fallback. The default ResourceLoader now normalizes dotted
+property keys using the same namespace-aware path conversion as explicit reads.
+
+Two alternatives were rejected before migration. A custom C# MarkupExtension
+removed MRM growth but retained five 120-byte native MarkupExtension wrappers per
+fixture. Static x:Bind functions in a DataTemplate did not initialize with a null
+data context. The shared public loader resolves properties during XAML loading
+without either dependency. Its English fallback dictionary is loaded once from
+the embedded authoritative en-US catalog; it holds no view, delegate or per-language
+cache. All 586 localized properties across Main and Dashboard now use the existing
+resource keys through this loader. Extraction and validation share a parser that
+retains catalog values and rejects malformed, missing or mismatched references.
+All catalog bytes and the translator interchange format remain unchanged.
+
+The [integrated view census](results/2026-11-04-mrm-localized-view-fix.json) completed
+70 language changes plus the existing attachment-rollback control. All 293 retired
+references were collected; native shells and message hosts remained stable. MRM
+stayed at 3 across eight complete heap walks. The rejected MarkupExtension group
+and previously fixed native Changed/Closing argument groups remained absent.
+Composition and Timer handles stayed at 13 and 15; GDI changed 99 to 97 and USER
+80 to 77. Events rose from 415 to 456, then settled at 452 through later checkpoints.
+These dirty measurement builds are based on a1888894; actual launch hashes and
+archived source fingerprints are retained separately from subsequent clean builds.
+
+Overall memory stability is still unproven. Private bytes grew from 172,367,872
+to 390,197,248 after idle. Default-heap busy payload grew by 28,444,097 bytes,
+while free capacity grew by 166,115,408 and allocator overhead by 23,119,071.
+At final idle, busy payload fell by 50,976,789 bytes while heap commitment stayed
+unchanged: reclaimed allocations can remain committed heap capacity. These
+sequential, overlapping instruments must not be added together as exact memory
+ownership. The 128-256 KiB busy bucket grew by 3,888,213 bytes and remains a
+concrete allocation lead; this coarse bucket does not establish that every block
+has the earlier Intel-associated size or owner.
+
+After removing temporary instrumentation, all 181 focused tests and all 2,668
+Release Tray tests passed without failures or skips. Six fresh Main/Dashboard
+renders in English, Russian and pseudo-localization were inspected. Source-level
+comparison also confirmed both complete XAML trees and all resolved English
+properties are unchanged apart from localization representation. Windows
+PowerShell 5.1 localization tests passed, including mutation fixtures, new-literal
+extraction, invariant symbols and byte-exact catalog regeneration. Clean Release
+harness assemblies contain none of the temporary census or fixture markers.
+Independent Codex reviews found no actionable issue in runtime ownership or the
+shared extraction/validation path. Claude's requested review remains incomplete
+after its weekly quota error and is not represented as approval of this fix.
+
+The final full solution build passed with zero warnings or errors, followed by
+all 11,386 tests across 17 projects, with zero failures or skips. The refreshed
+base remains 01402f87 (0.50.3); this PR remains a patch change to 0.50.4.

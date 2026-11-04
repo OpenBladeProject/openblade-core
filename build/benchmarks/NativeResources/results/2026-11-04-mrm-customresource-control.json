@@ -1,0 +1,214 @@
+{
+ "schemaVersion": 1,
+ "evidenceDate": "2026-11-04",
+ "status": "Successful bounded public CustomXamlResourceLoader feasibility control; not a whole-application migration or complete native-memory fix.",
+ "measurementProvenance": {
+  "baseCommit": "a1888894688826fcf0583d521b3d2871e2fb72e6",
+  "dirtyDiagnosticBuild": true,
+  "application": "OpenBlade.LocalizationPreview",
+  "sourceArchive": "Eight archived diagnostic/source files plus the exact successful controller are fingerprinted below. They include the default ResourceLoader path normalization; the previously rejected LocalizedStringExtension class remains compiled but is not used by this fixture.",
+  "sameRecordedBinariesAcrossModes": true,
+  "sameRecordedBinariesAsFirstControllerAttempt": true,
+  "currentBinaryBytesRecheckedAgainstRecordedHashes": true,
+  "timestampScope": "Raw reports contain no run timestamp. evidenceDate labels the investigation date.",
+  "deliveryState": "Temporary routes and fixture sources were removed after measurement. No whole-application CustomResource migration had been measured."
+ },
+ "protocol": {
+  "isolation": "Three fresh processes on private test desktops, disconnected from product services/hardware. The same preview build runs baseline, candidate and candidate-default.",
+  "commonSetup": "One persistent offscreen Window; a shared CustomXamlResourceLoader is registered once in every mode. One public MRM child lookup supplies the known subtree vtable for classification.",
+  "workload": "Three warmup template creations followed by 200 measured creations. Each cycle adds the template content, drains the dispatcher, reads values, tracks weak fixture/content references, then clears the host and drains again.",
+  "checkpoints": ["warmup", "batch-50", "batch-100", "batch-200", "idle"],
+  "retirement": "Dispatcher drain, forced full GC, finalizer wait, another full GC and dispatcher drain precede each census; final idle also waits three seconds. 406 weak references cover the 203 fixture/content pairs, excluding the subsequent translation checks.",
+  "baseline": "Two x:Uid controls localize four properties.",
+  "candidate": "The same four properties use CustomResource and the shared public loader, which delegates to LocalizedResources.Get. An extra TextBlock exercises a missing-resource punctuation fallback.",
+  "defaultPath": "candidate-default measures ru-RU with no explicit LocalizedResources override; the default ResourceLoader now receives ToResourceMapPath(key).",
+  "fairnessLimit": "The candidate performs an additional fallback lookup and creates an extra TextBlock; total heap bytes are not an equal-work performance comparison."
+ },
+ "census": {
+  "scope": "Locked default-process HeapWalk; busy allocations whose first pointer lies within one of five selected module images. A leading-pointer bucket is not necessarily a C++ vtable or an independently reachable object.",
+  "modules": ["MRM.dll", "Microsoft.UI.Xaml.dll", "dcompi.dll", "Microsoft.UI.Input.dll", "Microsoft.UI.Windowing.dll"],
+  "successfulWalks": 15,
+  "everyWalkCompleted": true,
+  "everyTerminalError": 259,
+  "everyUnlockResult": 1,
+  "anyBucketOverflow": false,
+  "distinctModuleRvaBucketsAcrossRuns": 894,
+  "subtree": {
+   "module": "MRM.dll",
+   "rva": "0x39750",
+   "type": "Microsoft::Resources::ResourceMapSubtree",
+   "allocationBytes": 104
+  },
+  "rejectedWrapper": {
+   "module": "Microsoft.UI.Xaml.dll",
+   "rva": "0xBAAC70",
+   "type": "ctl::ComObject<DirectUI::MarkupExtension>",
+   "allocationBytes": 120
+  }
+ },
+ "runs": {
+  "baseline": {
+   "measuredLanguage": "en-US",
+   "resourceContext": "explicit en-US override; cached ResourceMap path",
+   "retiredWeakReferences": 406,
+   "retiredWeakReferencesAlive": 0,
+   "subtreeCounts": [9, 109, 209, 409, 409],
+   "subtreePayloadBytes": [936, 11336, 21736, 42536, 42536],
+   "markupExtensionWrapperCounts": [0, 0, 0, 0, 0],
+   "sharedSectionCounts": [1, 3, 3, 3, 3],
+   "defaultHeapBusyBytes": [44472163, 51481504, 50365303, 48134437, 45719706],
+   "xamlLeadingPointerCounts": [2249, 18738, 15292, 5673, 1930],
+   "distinctLeadingPointerBuckets": 808
+  },
+  "candidate": {
+   "measuredLanguage": "en-US",
+   "resourceContext": "explicit en-US override; cached ResourceMap path",
+   "retiredWeakReferences": 406,
+   "retiredWeakReferencesAlive": 0,
+   "subtreeCounts": [3, 3, 3, 3, 3],
+   "subtreePayloadBytes": [312, 312, 312, 312, 312],
+   "markupExtensionWrapperCounts": [0, 0, 0, 0, 0],
+   "sharedSectionCounts": [1, 2, 3, 4, 4],
+   "defaultHeapBusyBytes": [45176419, 48907352, 48926339, 54140497, 48164878],
+   "xamlLeadingPointerCounts": [2826, 9654, 9855, 25098, 5709],
+   "distinctLeadingPointerBuckets": 850
+  },
+  "candidate-default": {
+   "measuredLanguage": "ru-RU",
+   "resourceContext": "no explicit override; ResourceLoader path",
+   "retiredWeakReferences": 406,
+   "retiredWeakReferencesAlive": 0,
+   "subtreeCounts": [3, 3, 3, 3, 3],
+   "subtreePayloadBytes": [312, 312, 312, 312, 312],
+   "markupExtensionWrapperCounts": [0, 0, 0, 0, 0],
+   "sharedSectionCounts": [1, 2, 2, 3, 3],
+   "defaultHeapBusyBytes": [45212956, 50508486, 49806168, 52568944, 45570652],
+   "xamlLeadingPointerCounts": [2821, 15210, 13168, 20885, 1929],
+   "distinctLeadingPointerBuckets": 825
+  }
+ },
+ "functionalValidation": {
+  "oracle": "Four resource properties compared exactly with UTF-8-decoded canonical Resources.resw values; independently repeated from the saved reports.",
+  "languagesInOrder": ["en-US", "ru-RU", "zh-CN", "qps-ploc", "en-US"],
+  "propertyAssertionsPerMode": 24,
+  "translationFallbackAssertionsPerMode": 5,
+  "candidateMeasuredFallbackAlsoChecked": true,
+  "fallback": "Owner's choice, unchanged.",
+  "allPassed": true,
+  "checksOccurAfterCensus": "The five language/restore checks follow native collection and do not affect reported allocation slopes.",
+  "oracleFingerprints": [
+   {
+    "language": "en-US",
+    "fingerprint": ["Resources.resw", 137138, "E489A9BD7D097F962252016EF3CB100DF21930A3A56F52F10A85C2842A92D745"],
+    "sameAsBaseAfterLineEndingNormalization": true
+   },
+   {
+    "language": "ru-RU",
+    "fingerprint": ["Resources.resw", 168824, "9CCAAF1EB9E1A76C7247F48A29F549F606567A240716B0B41DAEAC5B4A87CF2B"],
+    "sameAsBaseAfterLineEndingNormalization": true
+   },
+   {
+    "language": "zh-CN",
+    "fingerprint": ["Resources.resw", 137032, "5349033B3C613D70947014CFDF1DEEC653E607DC704D3DFA13C7D276FC873CBF"],
+    "sameAsBaseAfterLineEndingNormalization": true
+   },
+   {
+    "language": "qps-ploc",
+    "fingerprint": ["Resources.resw", 160479, "4F54917ED06CC0FBDD4512BFE2A90834A810ACAD7F23DABBB85EDF87C60F553A"],
+    "sameAsBaseAfterLineEndingNormalization": true
+   }
+  ]
+ },
+ "findings": {
+  "resourceMap": "Baseline adds two 104-byte subtrees per measured template: 400 allocations and 41,600 payload bytes over 200 cycles. Both candidate paths stay at three subtrees across all checkpoints. Child allocations and allocator overhead are excluded from this byte count.",
+  "replacementLeakCheck": "No MarkupExtension-wrapper headers occur in any successful mode. Across all 894 buckets, no new fixture-proportional family persists into idle in either candidate. UI.Input and Windowing aggregate counts remain 161 and 28 respectively in every snapshot.",
+  "remainingSharedPool": {
+   "module": "dcompi.dll",
+   "rva": "0x126998",
+   "type": "DirectComposition::CSharedSection",
+   "allocationBytes": 88,
+   "baselineCounts": [1, 3, 3, 3, 3],
+   "candidateCounts": [1, 2, 3, 4, 4],
+   "defaultCounts": [1, 2, 2, 3, 3],
+   "interpretation": "Small shared baseline/candidate growth remains; these snapshots do not establish an eventual bound or retaining reference. It does not reproduce the rejected five-per-fixture slope."
+  },
+  "transientLimit": "The English candidate retains 5,709 XAML leading-pointer blocks at idle versus 1,930 baseline and 1,929 default. Counts fluctuate and fall sharply from batch 200; zero managed fixture/root references does not establish complete native reclamation.",
+  "classifierLimit": "The apparent small linear XAML bucket at RVA 0xA20038 resolves to GUID_4e897caa_59d5_4613_8f8c_f7ebd1f399b0, not a vtable; its candidate count falls from nine to two at idle.",
+  "unmeasured": "This fixture records no typed handle census or total process private-byte metric and does not resolve the Intel graphics allocation lead or prove every app path safe."
+ },
+ "excludedAlternatives": [
+  {
+   "candidate": "Custom MarkupExtension",
+   "decision": "Rejected: both explicit/default prototypes accumulate 120-byte native wrappers at five per fixture, counts 15/265/515/1015/1015, or 120,000 additional payload bytes over 200 measured cycles, despite dead fixture/root weak references.",
+   "symbolResolution": "RVA 0xBAAC70 was resolved exactly using cached matching Microsoft.UI.Xaml symbols in a pre-existing offline dump; this does not identify the retaining reference.",
+   "rawFingerprints": [
+    ["binary-hashes.json", 736, "F9D35ACBAFFB02FB061AB9C9EB69C10708BF2282A5C655F7173C0FCD89438896"],
+    ["candidate.json.warmup.heap.json", 89736, "81090A200319C4387ECC3D95C16D5AA3438280EB316ADFFE2BFFBFBD5201DC62"],
+    ["candidate.json.idle.heap.json", 69761, "30324D14100782B60B368D8E6C896A306D12A48078729DF81A697C392434749D"],
+    ["candidate-default.json.idle.heap.json", 70561, "8F9690E1F90CEED73971B31C9F24FF714FC2C4C117EA52BFBBF79FCBB20A9D3E"]
+   ]
+  },
+  {
+   "candidate": "Static-function x:Bind",
+   "decision": "Rejected after the null-DataContext template failed its required fallback assertion. The incomplete run is not successful localization or leak validation; no dummy DataContext was introduced.",
+   "rawFingerprints": [
+    ["baseline.json.error.txt", 292, "63CC4F8DDC44471F57769E81011822674B9E4A2F63E3951FBC9EBF684D10DD4B"],
+    ["TemporaryLocalizedLookupControl.xaml", 2251, "CCFD6E288DA92608FB7D93791ABE483692ED9BD8882F7A383AAB94B4E9E05B87"]
+   ]
+  },
+  {
+   "candidate": "First CustomResource controller",
+   "decision": "The app produced valid translated values, but Windows PowerShell read no-BOM UTF-8 resource oracles using its default encoding and rejected them. The corrected controller explicitly decodes UTF-8; all recorded binary hashes are identical between attempts. Only the corrected complete three-mode run supplies the comparison above.",
+   "rawFingerprints": [
+    ["baseline.json", 3090, "8557AC22FB86188A251F0C24F77953AA23F98719F5B0E44876EA3B3F940FB920"],
+    ["binary-hashes.json", 859, "C22D09D08CF7127CAD677339190F021DB018EB12B1970C8C79E9B123E24BB315"],
+    ["openblade-mrm-customresource-proof-controller-20261104.ps1", 4926, "4F70483E48284617667C235B54E449CA577EE7B7D43EB8DD68B7E7242FF1A1B4"]
+   ]
+  }
+ ],
+ "sourceFingerprints": [
+  ["App.DeveloperHarness.cs", 154997, "62794DBA46ED7A38DD8896B86B0683F57E263E271BCD0E9A6135147F4C9BC19B"],
+  ["App.TemporaryMrmLookup.cs", 7568, "0C63ABBFDDC65EEB4EAC697A6946628CAB8884793359020971E539D68C703EFD"],
+  ["App.TemporaryNativeHeapWalk.cs", 7068, "613C3B37D26712A7A569FF25E594B6BCB8EE67DCE53FA34D31B408ED8B6C105A"],
+  ["controller.ps1", 4976, "1A0934A23580E5539672C66C0D14D085B1A68D5AADF9B9D81AF43207E6E082F1"],
+  ["LocalizedResources.cs", 3596, "BFEFC988BAC15F2B8ACE35C9B575F591525B4732B17219762D071E6982635F8F"],
+  ["LocalizedStringExtension.cs", 403, "770AFAF34B8494C78E248E7771F6D0FAF874A23D07CC729E6175E84F4CADC556"],
+  ["TemporaryLocalizedLookupControl.xaml", 1907, "94E1253D097B94A6702366BEB3D4B4EAD9D846036D62DC37B397B7BAB90F1A7C"],
+  ["TemporaryLocalizedLookupControl.xaml.cs", 1790, "435F9D02A6B47EDD6A04E5A82DA3776F14A49C4650446E869C9A7119338F4980"],
+  ["TemporaryLocalizedResourceLoader.cs", 1178, "F8E23092C5D68635B6B9E3D41C754FB943602599E9213CD46A406E9F25E3E417"]
+ ],
+ "binaryFingerprints": [
+  ["MRM.dll", 288568, "1E542A07FD1351B40465D5A06A2B3DB7323089B01ACF40F17F6129115772BADA"],
+  ["Microsoft.UI.Xaml.dll", 15096672, "2B22EB6130821F43A26239D441EF3A898BEA24B1C1078B5941249431C4B4FBF8"],
+  ["Microsoft.Windows.ApplicationModel.Resources.dll", 158008, "5512354FD740239E0811B980C41BB89A120DC33F2114D3AFEF64FC6EAAACDBF3"],
+  ["OpenBlade.LocalizationPreview.dll", 1737216, "52E4D6233D1ABBD0898E419FBA24A9034229033152F7328D70DB559F4AA6B66D"],
+  ["OpenBlade.LocalizationPreview.exe", 315392, "6F941DA357B322855C4FE6D7803C6760699926DAC3517202D6C72C9F5CF4AF73"],
+  ["OpenBlade.LocalizationPreview.pri", 1799136, "1198AFA5EB76D6FBED66AB82A6BFBE3E6DBB1B6DDA4A8D6DE29A457B5D636F02"],
+  ["TemporaryLocalizedLookupControl.xbf", 2084, "F4A2D0C7820827F304F2ACB2C4F8554D606D9FFDA99A6E60619FF7253D713E32"],
+  ["WinRT.Runtime.dll", 528944, "BCF3A14E8712A90837FC5C0D8C8A24696AF2BD7F74E9767597EC81EDEDFB23DB"]
+ ],
+ "rawFingerprints": [
+  ["baseline.json", 3090, "8557AC22FB86188A251F0C24F77953AA23F98719F5B0E44876EA3B3F940FB920"],
+  ["baseline.json.warmup.heap.json", 81453, "58BD71770768A89239EFFC9ED1FE540CD30749C74AD9EFDCB190656560C95C70"],
+  ["baseline.json.batch-50.heap.json", 93336, "DE27D980E892E221A3FC351561C57E45CF6F53D24C704F760A0B5BCAC628B0DF"],
+  ["baseline.json.batch-100.heap.json", 96166, "3583F95CDEE0FD017CFF7CBBF5429831C1CE7BCB1B34BC69438E5DE147B6B853"],
+  ["baseline.json.batch-200.heap.json", 84498, "CB839F0AC5F47264C24E7592D1D6E83C5BF3254D274E56A625B7E8FE8E50914B"],
+  ["baseline.json.idle.heap.json", 68361, "7B5030A66BD25F49DB0350D530E207C7B3F00CACCDFDF1E1F5D12F4F30A76A12"],
+  ["candidate.json", 3120, "1A73594E21EAA154704E98AE2858DC9B3A57681C0DE73E65EF6E10A57CA47E5A"],
+  ["candidate.json.warmup.heap.json", 88207, "2A77E592A03D733028F248E6E50F53312612F05FA2C1E9DC5CCE59F225969F93"],
+  ["candidate.json.batch-50.heap.json", 84983, "3D2C1EF0ACA437FFCDD07ABAB4570B139A027EC7EF3D08F0E6D13110D50A12F5"],
+  ["candidate.json.batch-100.heap.json", 88936, "B3E7C58836C115F58F4B8723A41A8AC118D21689A5C2677B83E4172AE0EBE231"],
+  ["candidate.json.batch-200.heap.json", 99516, "6A4ED7CD217B4953489EE27E3587AF191A57A1315BF475A8EBC51393047DB99E"],
+  ["candidate.json.idle.heap.json", 85031, "0A64352BB294D9DB420B8D622F6DF8F32E83CEB57E40E64C6918205EEF1C70B7"],
+  ["candidate-default.json", 3715, "25F5AC48A5F9D4E3BE48823E6FFA8DCB8DAED1CA7634601828B0451979EA6378"],
+  ["candidate-default.json.warmup.heap.json", 88790, "CB17C440C4470B8C8CDE49D4B94E14691520DD5DC55AEC41920E49CFDC694014"],
+  ["candidate-default.json.batch-50.heap.json", 92139, "6C66B9D86471822D84AF76E0902E239A3F7D11A6C00DA429658A43E13F1CB31A"],
+  ["candidate-default.json.batch-100.heap.json", 95122, "A252D26B0445744FB1C47E61FF6AF05732831B6FC45D5F1A77F2F5FD066CD982"],
+  ["candidate-default.json.batch-200.heap.json", 96922, "277E354A0C8E825FB9B6FD414879B9BDCC06F775FDBD77A4F8846D5A755E349E"],
+  ["candidate-default.json.idle.heap.json", 68561, "A3A459EA912233D9ADD3EC6C32AE68D52605BD8085004D771F93FB8133936E0B"],
+  ["binary-hashes.json", 859, "C22D09D08CF7127CAD677339190F021DB018EB12B1970C8C79E9B123E24BB315"]
+ ],
+ "fingerprintColumns": ["basename", "lengthBytes", "sha256"],
+ "review": "Independent Codex evidence check. Claude review remains incomplete after the previously requested run exhausted its quota without findings.",
+ "privacy": "Raw dumps, object addresses, module bases, process IDs, handles and private local paths remain excluded; only module RVAs, public resource identifiers and basename fingerprints are included."
+}
