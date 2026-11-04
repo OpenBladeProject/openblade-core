@@ -54,6 +54,19 @@ namespace OpenBlade.Testing
             {
                 throw new ArgumentException("Isolated renderers require direct launch without redirected streams.", "startInfo");
             }
+            // Windows PowerShell's .NET Framework has no ArgumentList property.
+            // This launcher passes only the existing Arguments command line.
+            var argumentListProperty = typeof(ProcessStartInfo).GetProperty("ArgumentList");
+            var argumentList = argumentListProperty == null
+                ? null
+                : argumentListProperty.GetValue(startInfo, null) as IEnumerable;
+            if (argumentList != null)
+            {
+                foreach (object argument in argumentList)
+                {
+                    throw new ArgumentException("Use Arguments instead of ArgumentList for isolated renderers.", "startInfo");
+                }
+            }
             // Preserve per-process localization and evidence settings.
             var variables = new SortedList(StringComparer.OrdinalIgnoreCase);
             foreach (DictionaryEntry entry in startInfo.EnvironmentVariables)
