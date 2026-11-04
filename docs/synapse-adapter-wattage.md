@@ -96,10 +96,13 @@ fallback is not an admission path. Confirmed full power admits the profile's
 normal thermal controls. Confirmed limited power admits Balanced, returning
 fans directly to Automatic, and manual targets or curves on RZ09-0528 and
 RZ09-0581. Battery admits Automatic and fixed targets on those models and the
-experimental RZ09-0483 and RZ09-0482. Battery curves remain unavailable.
+experimental RZ09-0483 and RZ09-0482, plus Balanced fixed targets on RZ09-0484.
+Battery curves remain unavailable.
 Experimental fixed targets on limited power retain the Automatic-only gate
-because their pinned source does not establish manual entry there; experimental
-curves also lack admitted temperature telemetry. Turning Custom Maximum Fans off remains allowed when required for
+because their pinned source does not establish manual entry there. Blade 18
+admits host curves in Balanced on full external power, holding the maximum
+target when CPU temperature is unavailable; the other experimental models
+expose no curve. Turning Custom Maximum Fans off remains allowed when required for
 cleanup. All setters retain fresh source checks; see the
 [fan power-source policy](fan-power-source-policy.md).
 

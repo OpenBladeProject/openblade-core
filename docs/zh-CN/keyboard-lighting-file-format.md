@@ -117,11 +117,14 @@ Razer 也提供了客户端按顺序渲染这些帧的说明。
 即使源文件包含多帧相同画面，这种转换也是无损的。
 
 经典 `Keyboard` 格式的逐键灯效文件可用于 RZ09-0581 和 RZ09-0528，这两种布局已经分别验证。
+RZ09-0484 也提供实验性支持。Blade 18 按自身的区域键位映射转换为 6×16 帧；
+导入单帧文件时会保持各键颜色。详见
+[Blade 18 灯光](../blade18-spatial-lighting.md#per-key-colors-and-playback)。
 转换程序以 Razer 官方的
 [按键名称网格](https://github.com/razerofficial/CChromaEditor/blob/6ce8b24db8e4e00ddafe027de7589b2a0b4dc618/CChromaEditorLibrary/RzChromaSDKTypes.h#L173-L300)
 为起点，只转换那些在当前型号上已有获准目标槽位的逻辑按键。
-它不会把通用 22 列画布直接压成 Blade 的 17 列协议帧，
-也不会套用其他型号的槽位映射。例如，这两个型号的 Right Alt 键就在不同的协议槽位上。
+它不会把通用 22 列画布直接压成 Blade 16 的 17 列协议帧，
+也不会套用其他型号的槽位映射。例如，RZ09-0581 和 RZ09-0528 的 Right Alt 键就在不同的协议槽位上。
 
 这种按逻辑按键转换的方法不保证与 Synapse 的效果完全相同。
 如果源文件在当前笔记本没有获准按键映射的位置设置了颜色，确认对话框会说明将忽略多少个网格单元。

@@ -58,5 +58,5 @@ every requested control. An application rule grants no new model support or
 firmware command.
 
 Persisted profiles use schema 22, exported profiles use schema 14, service IPC is
-71 and display IPC is 2. Older profiles migrate with no application rules and no
+72 and display IPC is 2. Older profiles migrate with no application rules and no
 brightness overrides.

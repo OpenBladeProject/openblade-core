@@ -3,6 +3,16 @@
 Tracking issue: [#532](https://github.com/OSSBlade/openblade-core/issues/532).
 Baseline: `e179191292329eed7257a7d8736ceb529ac327f2` (2026-09-20).
 
+## Completion status
+
+This bounded cycle completed on 2026-09-20 at
+`7135dbc31fc380e75a05a71272420d1c3fc2ba04` (version 0.21.6).
+[Issue #532](https://github.com/OSSBlade/openblade-core/issues/532) records the
+merged delivery and final verification: lighting editor work in #537/#539/#541/#549,
+the dashboard editor in #543, translator failure evidence in #546, and exact-fan
+ownership in #547. The plan below is retained as historical scope and acceptance
+criteria. Start later maintainability work from current source and a new scope.
+
 ## Goal and boundaries
 
 Make recurring changes to OpenBlade easier to reason about by giving each

@@ -8,8 +8,9 @@ Nightly release workflow. For ordinary source builds, use the commands in the
 
 ## Publish artifacts
 
-Create the graphical installer, `win-x64` production bundle,
-and separate developer tools:
+Run production publishing from a short dedicated worktree outside OneDrive,
+at the intended commit. Create the graphical installer, `win-x64` production
+bundle, and separate developer tools:
 
 ```powershell
 .\build\Publish.ps1
@@ -61,8 +62,9 @@ the final installer.
   installed `OpenBlade.Tray.exe` from its original normal-integrity process and
   confirm that the Tray and Session Agent are running.
 - This caller-controlled relaunch does not apply to the Microsoft Store EXE
-  channel because Partner Center owns the quiet invocation. The remaining gap
-  is tracked in [issue #25](https://github.com/OSSBlade/openblade-core/issues/25).
+  channel because Partner Center owns the quiet invocation. The original
+  [launch-gap report](https://github.com/OSSBlade/openblade-core/issues/25)
+  describes this limitation.
 
 ## Versioned development builds
 
@@ -129,8 +131,8 @@ If the graphical installer is gone but its ownership marker remains, use:
 - Store installs use `/install /quiet /norestart`; direct downloads retain the
   graphical UI.
 - The Store caller cannot perform the normal-integrity relaunch required after
-  a quiet install, so lifecycle support remains incomplete until
-  [issue #25](https://github.com/OSSBlade/openblade-core/issues/25) is resolved.
+  a quiet install. Store lifecycle support remains incomplete for this step;
+  see the original [report](https://github.com/OSSBlade/openblade-core/issues/25).
 
 See [Microsoft Store submission](microsoft-store-submission.md) for the package
 contract, certification notes, hardware disclosure, and remaining external

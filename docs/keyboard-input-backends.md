@@ -1,7 +1,8 @@
 # Keyboard input methods
 
-Open **Laptop → Keyboard** to choose **Windows hook** or **Razer driver**
-separately for SnapTap and the function row. These are per-user choices and
+Open **Laptop → Keyboard** and expand **SnapTap (A/D)** for **SnapTap input**,
+or **Function key behavior** for **Multimedia key input**. Choose **Windows hook**
+or **Razer driver** separately for each feature. These are per-user choices and
 remain selected across profiles.
 
 Existing preferences keep SnapTap on the Razer driver and the function row on

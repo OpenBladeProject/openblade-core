@@ -8,17 +8,20 @@ command limits, recovery behavior, and evidence. For setup and test reports, use
 
 | Laptop | Exact Windows product name | USB identity | Admitted controls |
 | --- | --- | --- | --- |
-| Blade 16 (2023), RZ09-0483 | `Blade 16 - RZ09-0483` | `1532:029F` | Balanced, Silent, Performance, Custom, fixed fan targets, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
-| Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, Custom, fixed fan targets, keyboard and logo lighting, 50-100% charge limits |
+| Blade 16 (2023), RZ09-0483 | `Blade 16 - RZ09-0483` | `1532:029F` | Balanced, Silent, Performance, Custom, HyperBoost with or without the cooling pad, fixed fan targets, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
+| Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, Custom, HyperBoost with or without the cooling pad, fixed fan targets, keyboard and logo lighting, 50-100% charge limits |
 | Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, Battery Saver, Battery Balanced, Custom, keyboard and logo lighting, 50-100% charge limits |
 | Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced, Silent, Gaming, Custom, single-zone keyboard lighting |
 | Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, Custom, Balanced/Silent linked fixed targets and Balanced curves, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
 
 Admission checks Razer and the exact product name in both Windows registry
 sources, then the exact USB identity and 91-byte HID feature-report geometry.
-Independent queries must identify one responding interface. SKU and firmware
-versions are diagnostic metadata. Unknown models and ambiguous interfaces stay
-blocked. Exact profiles enable their supported controls automatically.
+Independent queries must identify one responding interface. SKU, BIOS and EC
+versions are diagnostic metadata. HyperBoost entry on RZ09-0482 and RZ09-0483
+also requires the exact model's reviewed minimum MCU version; see
+[experimental support](experimental-blade-support.md). Unknown models and
+ambiguous interfaces stay blocked. Exact profiles enable their supported
+controls automatically.
 
 Every experimental profile pins its own official Synapse module that enables
 the `07/8C` adapter wattage query. OpenBlade reads the current and recommended
@@ -30,7 +33,9 @@ describes available power; it does not identify barrel or USB-C.
 A confirmed limited adapter admits Balanced and Automatic handback. RZ09-0483
 and RZ09-0482 also admit fixed fans on battery. Their pinned Synapse low-power
 path explicitly selects Automatic before writing targets, so limited-power fixed
-entry remains blocked. Curves remain unavailable without admitted temperature telemetry.
+entry remains blocked. Curves remain unavailable on those two models. Blade 18
+admits Balanced host curves on full external power and holds its admitted maximum
+target when the Windows CPU-temperature reading is unavailable.
 See [fan power-source policy](fan-power-source-policy.md) for Synapse evidence.
 Automatic handback keeps the freshly confirmed
 performance mode instead of forcing an intermediate preset. The Blade 14
@@ -272,7 +277,7 @@ checks succeed, choose the setting again. The uncertain request is not replayed.
 A new lighting choice or an active profile edit that changes effective lighting
 releases its hold. Failed reads or checks keep controls paused.
 
-Install the complete coordinated pre-release. A tray-only replacement cannot
+Install the complete coordinated release. A tray-only replacement cannot
 update shared contracts or the service backend.
 
 ## Diagnostic evidence
