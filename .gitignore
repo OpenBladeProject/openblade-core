@@ -60,3 +60,6 @@ src/OpenBlade.Tray/Assets/Brand/TrayStatus/*
 
 # Trail-Code runtime statistics
 /graft/.cache/
+# Keep benchmark measurements in the linked evidence archive.
+/build/benchmarks/*/results/*.json
+/build/benchmarks/*/results/*.csv

@@ -3,7 +3,7 @@
 Release, .NET 10.0.12, Windows build 26300, x64. One warmup set and three measured
 rounds completed all 27 phases and semantic checks. The measured production source
 was unchanged from `295d7e6d`; the benchmark was added in the working tree. The
-[sanitized report](results/2026-11-03-measurements.json) records source/assembly
+[sanitized report](https://github.com/OpenBladeProject/openblade-core/blob/0ba5840e45fa6ba80183ab1a2c9c397295f3b99f/build/benchmarks/BackgroundWorkloads/results/2026-11-03-measurements.json) records source/assembly
 hashes, module identities, raw measurements and the original report hash.
 
 | Workload | Concurrency | Observed wall-time range |
