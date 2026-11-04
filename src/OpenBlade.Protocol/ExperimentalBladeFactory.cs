@@ -36,6 +36,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     public string EvidenceSource => model.EvidenceSource;
 
+    internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
+
     public DeviceCapabilities Capabilities => ExperimentalBladePort.WithTemporaryFullChargeReadAdmission(
         ExperimentalBladePort.WithStartupReadAdmission(
             ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState), temporaryFullChargeState);

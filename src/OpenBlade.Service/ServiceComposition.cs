@@ -40,7 +40,9 @@ internal static class ServiceComposition
                 displayBrightnessHidController:
                     provider.GetRequiredService<IDisplayBrightnessHidController>(),
                 hyperBoostOwnershipJournalStore:
-                    provider.GetRequiredService<IHyperBoostOwnershipJournalStore>()));
+                    provider.GetRequiredService<IHyperBoostOwnershipJournalStore>(),
+                laptopControlPendingStore: new LaptopControlPendingStore(
+                    Path.Combine(machineDataDirectory, "laptop-control-pending.json"))));
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();
         return services;
     }

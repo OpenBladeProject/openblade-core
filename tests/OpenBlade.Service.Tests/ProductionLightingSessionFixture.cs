@@ -56,10 +56,13 @@ internal static class ProductionLightingSessionFixture
 
         public Func<bool>? DriverModeWriteAllowed { get; private set; }
 
+        public Action<Func<bool>>? Opening { get; init; }
+
         public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
             Func<bool> driverModeWriteAllowed, CancellationToken cancellationToken)
         {
             DriverModeWriteAllowed = driverModeWriteAllowed;
+            Opening?.Invoke(driverModeWriteAllowed);
             return OpenAsync(cancellationToken);
         }
 
@@ -105,7 +108,7 @@ internal static class ProductionLightingSessionFixture
             inner.Log(logLevel, eventId, state, exception, formatter);
     }
 
-    internal sealed class FakeLightingPort : IProductionLightingPort
+    internal sealed class FakeLightingPort : IProductionLightingPort, ILightingRecoveryWriteAdmission
     {
         public FakeLightingPort(
             bool supportsKeyboardBrightness = true,
@@ -139,6 +142,10 @@ internal static class ProductionLightingSessionFixture
         }
 
         public DeviceCapabilities Capabilities { get; }
+
+        public Func<bool>? RecoveryWriteAdmission { get; private set; }
+
+        public void SetRecoveryWriteAdmission(Func<bool> admission) => RecoveryWriteAdmission = admission;
 
         public LightingRendererOwnershipState OwnershipState { get; set; }
 

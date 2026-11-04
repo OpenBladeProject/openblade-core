@@ -385,7 +385,7 @@ public sealed class WindowsGpuActivityTests
     }
 
     [Fact]
-    public void ActivitySampling_RetriesTransientStartupFailureAndPrimesRateCounter()
+    public async Task ActivitySampling_RetriesTransientStartupFailureAndPrimesRateCounter()
     {
         var first = new WindowsGpuActivitySnapshot(
             true,
@@ -402,9 +402,13 @@ public sealed class WindowsGpuActivityTests
         ]);
         List<int> delays = [];
 
-        WindowsGpuActivitySnapshot actual = WindowsGpuAppManager.ReadActivitySample(
+        WindowsGpuActivitySnapshot actual = await WindowsGpuAppManager.ReadActivitySampleAsync(
             snapshots.Dequeue,
-            delays.Add,
+            (milliseconds, _) =>
+            {
+                delays.Add(milliseconds);
+                return Task.CompletedTask;
+            },
             CancellationToken.None);
 
         WindowsGpuProcessActivity process = Assert.Single(actual.Processes);
@@ -414,26 +418,121 @@ public sealed class WindowsGpuActivityTests
     }
 
     [Fact]
-    public void ActivitySampling_RefreshFailureReturnsBeforeReadingOrWaiting()
+    public async Task ActivitySampling_RefreshFailureReturnsBeforeReadingOrWaiting()
     {
         int readCalls = 0;
         List<int> delays = [];
 
         WindowsGpuActivitySnapshot actual =
-            WindowsGpuAppManager.RefreshAndReadActivitySample(
+            await WindowsGpuAppManager.RefreshAndReadActivitySampleAsync(
                 () => false,
                 () =>
                 {
                     readCalls++;
                     return new WindowsGpuActivitySnapshot(true, []);
                 },
-                delays.Add,
+                (milliseconds, _) =>
+                {
+                    delays.Add(milliseconds);
+                    return Task.CompletedTask;
+                },
                 CancellationToken.None);
 
         Assert.False(actual.IsAvailable);
         Assert.Empty(actual.Processes);
         Assert.Equal(0, readCalls);
         Assert.Empty(delays);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ActivitySampling_YieldsDuringDelayAndStopsReadingAfterCancellation(bool cancellableWait)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int reads = 0;
+        Task<WindowsGpuActivitySnapshot> sampling = WindowsGpuAppManager.ReadActivitySampleAsync(
+            () =>
+            {
+                reads++;
+                return new WindowsGpuActivitySnapshot(true, []);
+            },
+            (milliseconds, token) =>
+            {
+                Assert.Equal(150, milliseconds);
+                Assert.Equal(cancellation.Token, token);
+                return cancellableWait ? release.Task.WaitAsync(token) : release.Task;
+            },
+            cancellation.Token);
+
+        try
+        {
+            Assert.False(sampling.IsCompleted);
+            Assert.Equal(1, reads);
+            cancellation.Cancel();
+            if (!cancellableWait)
+            {
+                release.SetResult();
+            }
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                sampling.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.Equal(!cancellableWait, release.Task.IsCompleted);
+            Assert.Equal(1, reads);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            release.TrySetResult();
+            _ = await Record.ExceptionAsync(() => sampling.WaitAsync(TimeSpan.FromSeconds(10)));
+        }
+    }
+
+    [Fact]
+    public async Task ActivitySampling_UnavailableCountersStopAtTwentyAttempts()
+    {
+        int reads = 0;
+        List<int> delays = [];
+        WindowsGpuActivitySnapshot sample = await WindowsGpuAppManager.ReadActivitySampleAsync(
+            () =>
+            {
+                reads++;
+                return new WindowsGpuActivitySnapshot(false, []);
+            },
+            (milliseconds, _) =>
+            {
+                delays.Add(milliseconds);
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.False(sample.IsAvailable);
+        Assert.Empty(sample.Processes);
+        Assert.Equal(20, reads);
+        Assert.Equal(19, delays.Count);
+        Assert.All(delays, milliseconds => Assert.Equal(150, milliseconds));
+    }
+
+    [Fact]
+    public async Task ActivitySampling_UnavailableReadResetsPrimeAndStablePair()
+    {
+        Queue<WindowsGpuActivitySnapshot> snapshots = new(
+        [
+            new(true, []),
+            new(true, [new WindowsGpuProcessActivity(41, 1)]),
+            new(false, []),
+            new(true, [new WindowsGpuProcessActivity(41, 1)]),
+            new(true, [new WindowsGpuProcessActivity(42, 1)]),
+            new(true, [new WindowsGpuProcessActivity(42, 2)]),
+        ]);
+        WindowsGpuActivitySnapshot sample = await WindowsGpuAppManager.ReadActivitySampleAsync(
+            snapshots.Dequeue,
+            (_, _) => Task.CompletedTask,
+            CancellationToken.None);
+
+        Assert.True(sample.IsAvailable);
+        Assert.Equal(42, Assert.Single(sample.Processes).ProcessId);
+        Assert.Empty(snapshots);
     }
 
     [Fact]

@@ -283,6 +283,53 @@ public sealed class SessionGpuRequestDispatcherTests
             });
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Close_CancellationWhileScanIsSuspendedDoesNotAct(bool force)
+    {
+        WindowsGpuApp app = App(42, 123, "browser", canClose: true);
+        using var cancellation = new CancellationTokenSource();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var manager = new FakeGpuAppManager
+        {
+            ScanResult = Scan(app),
+            ScanWait = _ =>
+            {
+                entered.SetResult();
+                return release.Task;
+            },
+        };
+        var dispatcher = new SessionGpuRequestDispatcher(manager);
+        Task<SessionGpuResponse> dispatch = dispatcher.DispatchAsync(
+            new CloseGpuAppsRequest(
+                SessionGpuIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                force,
+                [Identity(app)]),
+            cancellation.Token);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.False(dispatch.IsCompleted);
+            cancellation.Cancel();
+            release.SetResult();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                dispatch.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.Equal(1, manager.ScanCount);
+            Assert.Equal(0, manager.CloseCount);
+            Assert.Equal(0, manager.ForceCount);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            release.TrySetResult();
+            _ = await Record.ExceptionAsync(() => dispatch.WaitAsync(TimeSpan.FromSeconds(10)));
+        }
+    }
+
     private static WindowsGpuAppScan Scan(params WindowsGpuApp[] apps) =>
         new(true, null, apps);
 
@@ -307,6 +354,8 @@ public sealed class SessionGpuRequestDispatcherTests
 
         public Action? ScanAction { get; init; }
 
+        public Func<CancellationToken, Task>? ScanWait { get; init; }
+
         public Action? CloseAction { get; init; }
 
         public IReadOnlyList<WindowsGpuAppActionResult>? CloseResult { get; init; }
@@ -323,10 +372,14 @@ public sealed class SessionGpuRequestDispatcherTests
 
         public IReadOnlyList<WindowsGpuApp> LastTargets { get; private set; } = [];
 
-        public WindowsGpuAppScan Scan(CancellationToken cancellationToken = default)
+        public async Task<WindowsGpuAppScan> ScanAsync(CancellationToken cancellationToken = default)
         {
             ScanCount++;
             ScanAction?.Invoke();
+            if (ScanWait is not null)
+            {
+                await ScanWait(cancellationToken);
+            }
             return ScanResult;
         }
 

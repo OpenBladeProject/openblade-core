@@ -23,19 +23,67 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
             cancellationToken).ConfigureAwait(false);
         ValidatePreconditions(current, baseline.TargetModel);
 
-        var checks = new List<FirmwareSmokeCheck>
+        (string Id, string Description, Func<Task<FirmwareSmokeCheck>> Run)[] operations =
         {
-            await RestorePerformanceAsync(baseline, current, cancellationToken)
-                .ConfigureAwait(false),
-            await RestoreFansAsync(baseline, current, cancellationToken)
-                .ConfigureAwait(false),
-            await RestoreBatteryAsync(baseline, current, cancellationToken)
-                .ConfigureAwait(false),
-            await RestoreLightingOverrideAsync(current, cancellationToken)
-                .ConfigureAwait(false),
-            await RestoreLaptopControlsAsync(baseline, cancellationToken)
-                .ConfigureAwait(false),
+            ("recovery.performance", "Restore baseline performance",
+                () => RestorePerformanceAsync(baseline, current, cancellationToken)),
+            ("recovery.fans", "Restore baseline fan mode",
+                () => RestoreFansAsync(baseline, current, cancellationToken)),
+            ("recovery.battery", "Restore baseline charge limit",
+                () => RestoreBatteryAsync(baseline, current, cancellationToken)),
+            ("recovery.lighting", "Clear firmware-smoke lighting override",
+                () => RestoreLightingOverrideAsync(current, cancellationToken)),
+            ("recovery.laptop-controls", "Restore baseline laptop controls",
+                () => RestoreLaptopControlsAsync(baseline, cancellationToken)),
         };
+        var checks = new List<FirmwareSmokeCheck>();
+        bool stopped = false;
+        foreach (var operation in operations)
+        {
+            if (stopped)
+            {
+                checks.Add(new FirmwareSmokeCheck(
+                    operation.Id,
+                    operation.Description,
+                    FirmwareSmokeOutcome.Skipped,
+                    "Previous restoration confirmed",
+                    "Not attempted because an earlier restoration failed or was unconfirmed."));
+                continue;
+            }
+
+            FirmwareSmokeCheck check;
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                // Earlier restoration can change another control as part of its
+                // typed transition. Do not skip it using the initial snapshot.
+                if (checks.Count > 0)
+                {
+                    current = await client.ObserveStateAsync(
+                        LiveReadingSensors.None,
+                        cancellationToken).ConfigureAwait(false);
+                    ValidatePreconditions(current, baseline.TargetModel);
+                }
+                check = await operation.Run().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException exception)
+            {
+                string completed = string.Join("; ", checks.Select(check =>
+                    $"{check.Id}={check.Outcome}: {check.Actual}"));
+                throw new OperationCanceledException(
+                    $"Baseline recovery was canceled during {operation.Id}; its completion may be unresolved. "
+                    + $"Later restorations were not attempted. Earlier outcomes: {completed}",
+                    exception,
+                    cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                check = Failed(operation.Id, operation.Description,
+                    $"{exception.GetType().Name}: {exception.Message}; no further restoration was attempted.");
+            }
+            checks.Add(check);
+            stopped = check.Outcome == FirmwareSmokeOutcome.Failed;
+        }
         return checks;
     }
 
@@ -53,6 +101,16 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
                 "recovery.performance",
                 "Restore baseline performance",
                 "Baseline performance is unavailable.");
+        }
+
+        // This snapshot schema retains only the preset name. Current Custom
+        // levels cannot stand in for the missing saved CPU/GPU baseline.
+        if (target == PerformancePreset.Custom)
+        {
+            return Failed(
+                "recovery.performance",
+                "Restore baseline performance",
+                "The baseline snapshot does not retain exact Custom CPU/GPU levels; no restoration write was attempted.");
         }
 
         if (current.ConfirmedState?.Performance == target
@@ -96,7 +154,7 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
             status => status.ConfirmedState?.Performance == target
                 && status.PerformanceOverride is null,
             cancellationToken).ConfigureAwait(false);
-        return confirmed
+        return confirmed && IsAccepted(cleared)
             ? Passed(
                 "recovery.performance",
                 "Restore baseline performance",
@@ -213,6 +271,7 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
             value: null,
             cancellationToken).ConfigureAwait(false);
         return IsAccepted(result)
+            && await WaitForAsync(status => status.LightingOverride is null, cancellationToken).ConfigureAwait(false)
             ? Passed(
                 "recovery.lighting",
                 "Clear firmware-smoke lighting override",
@@ -230,13 +289,17 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
         var failures = new List<string>();
         if (baseline.Controls.StartupAnimationEnabled is { } startup)
         {
-            await ApplyIfNeededAsync(
+            if (!await ApplyIfNeededAsync(
                 OneShotLaptopControl.StartupAnimation,
                 startup,
                 null,
                 status => status.StartupAnimationEnabled == startup,
                 failures,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false))
+            {
+                failures.Add("Function-key primary and Gaming mode were not attempted after failed startup-animation restoration.");
+                return LaptopControlsResult(failures);
+            }
         }
 
         if (Enum.TryParse(
@@ -244,13 +307,17 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
             ignoreCase: false,
             out FunctionKeyPrimaryMode functionMode))
         {
-            await ApplyIfNeededAsync(
+            if (!await ApplyIfNeededAsync(
                 OneShotLaptopControl.FunctionKeyPrimary,
                 null,
                 functionMode,
                 status => status.FunctionKeyPrimary == functionMode,
                 failures,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false))
+            {
+                failures.Add("Gaming mode was not attempted after failed function-key restoration.");
+                return LaptopControlsResult(failures);
+            }
         }
 
         if (baseline.Controls.GamingModeEnabled is { } gaming)
@@ -264,7 +331,11 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
                 cancellationToken).ConfigureAwait(false);
         }
 
-        return failures.Count == 0
+        return LaptopControlsResult(failures);
+    }
+
+    private static FirmwareSmokeCheck LaptopControlsResult(IReadOnlyCollection<string> failures) =>
+        failures.Count == 0
             ? Passed(
                 "recovery.laptop-controls",
                 "Restore baseline laptop controls",
@@ -273,9 +344,8 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
                 "recovery.laptop-controls",
                 "Restore baseline laptop controls",
                 string.Join("; ", failures));
-    }
 
-    private async Task ApplyIfNeededAsync(
+    private async Task<bool> ApplyIfNeededAsync(
         OneShotLaptopControl control,
         bool? enabled,
         FunctionKeyPrimaryMode? functionMode,
@@ -283,11 +353,11 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
         ICollection<string> failures,
         CancellationToken cancellationToken)
     {
-        ServiceStatusSnapshot current = await client.GetStatusAsync(cancellationToken)
+        ServiceStatusSnapshot current = await client.ObserveStateAsync(LiveReadingSensors.None, cancellationToken)
             .ConfigureAwait(false);
         if (predicate(current))
         {
-            return;
+            return true;
         }
 
         ControlOperationResult result = await client.ApplyLaptopControlAsync(
@@ -297,7 +367,9 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
             || !await WaitForAsync(predicate, cancellationToken).ConfigureAwait(false))
         {
             failures.Add($"{control}: {result.Status}: {result.Message}");
+            return false;
         }
+        return true;
     }
 
     private async Task<bool> WaitForAsync(

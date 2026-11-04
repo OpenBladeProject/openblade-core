@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
-using System.Threading.Channels;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Capture;
@@ -176,19 +175,8 @@ internal sealed class WindowsRzAmdOverclockProbe : IConnectedCpuPowerServiceProb
         bool initialized = false;
         bool registered = false;
         string eventName = $"{{{Guid.NewGuid():D}}}".ToUpperInvariant();
-        var messages = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
-        {
-            SingleReader = true,
-            SingleWriter = true,
-        });
-        NativeMessageCallback callback = messagePointer =>
-        {
-            string? message = Marshal.PtrToStringUTF8(messagePointer);
-            if (!string.IsNullOrWhiteSpace(message))
-            {
-                messages.Writer.TryWrite(message);
-            }
-        };
+        var messages = new CpuPowerProbeResponses();
+        NativeMessageCallback callback = messages.AddUtf8;
 
         try
         {
@@ -233,17 +221,17 @@ internal sealed class WindowsRzAmdOverclockProbe : IConnectedCpuPowerServiceProb
             }
             EnsureSynapseInactive();
             afterSynapseInactive?.Invoke();
-            int powerLimit = await QueryValueAsync(
-                getPowerLimit,
-                messages.Reader,
+            int powerLimit = await messages.QueryValueAsync(
+                () => getPowerLimit(),
                 "GetPowerLimitValue",
                 "powerLimit",
+                ResponseTimeout,
                 cancellationToken);
-            int curveOptimizer = await QueryValueAsync(
-                getCurveOptimizer,
-                messages.Reader,
+            int curveOptimizer = await messages.QueryValueAsync(
+                () => getCurveOptimizer(),
                 "GetCurveOptimizerValue",
                 "curveOptimizer",
+                ResponseTimeout,
                 cancellationToken);
 
             return new CpuPowerServiceState(
@@ -275,49 +263,6 @@ internal sealed class WindowsRzAmdOverclockProbe : IConnectedCpuPowerServiceProb
         }
     }
 
-    private static async Task<int> QueryValueAsync(
-        BoolNoArgument getter,
-        ChannelReader<string> messages,
-        string expectedFunction,
-        string valueName,
-        CancellationToken cancellationToken)
-    {
-        if (!getter())
-        {
-            throw new InvalidOperationException(
-                $"{expectedFunction} did not accept the read-only request.");
-        }
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken);
-        timeout.CancelAfter(ResponseTimeout);
-        try
-        {
-            while (await messages.WaitToReadAsync(timeout.Token))
-            {
-                while (messages.TryRead(out string? message))
-                {
-                    if (TryParseValue(
-                        message,
-                        expectedFunction,
-                        valueName,
-                        out int value))
-                    {
-                        return value;
-                    }
-                }
-            }
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new TimeoutException(
-                $"Timed out waiting for {expectedFunction}.");
-        }
-
-        throw new InvalidDataException(
-            $"{expectedFunction} ended without a response.");
-    }
-
     internal static bool TryParseValue(
         string message,
         string expectedFunction,
@@ -325,24 +270,37 @@ internal sealed class WindowsRzAmdOverclockProbe : IConnectedCpuPowerServiceProb
         out int value)
     {
         value = default;
-        using JsonDocument document = JsonDocument.Parse(message);
-        JsonElement root = document.RootElement;
-        return root.TryGetProperty("dllName", out JsonElement dllName)
-            && string.Equals(
-                dllName.GetString(),
-                "RzAMDOverClockDLL",
-                StringComparison.Ordinal)
-            && root.TryGetProperty("dllFunc", out JsonElement function)
-            && string.Equals(
-                function.GetString(),
-                expectedFunction,
-                StringComparison.Ordinal)
-            && root.TryGetProperty("status", out JsonElement status)
-            && string.Equals(status.GetString(), "SUCCESS", StringComparison.Ordinal)
-            && root.TryGetProperty("error", out JsonElement error)
-            && string.IsNullOrEmpty(error.GetString())
-            && root.TryGetProperty(valueName, out JsonElement valueElement)
-            && valueElement.TryGetInt32(out value);
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(message);
+            JsonElement root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("dllName", out JsonElement dllName)
+                && dllName.ValueKind == JsonValueKind.String
+                && string.Equals(
+                    dllName.GetString(),
+                    "RzAMDOverClockDLL",
+                    StringComparison.Ordinal)
+                && root.TryGetProperty("dllFunc", out JsonElement function)
+                && function.ValueKind == JsonValueKind.String
+                && string.Equals(
+                    function.GetString(),
+                    expectedFunction,
+                    StringComparison.Ordinal)
+                && root.TryGetProperty("status", out JsonElement status)
+                && status.ValueKind == JsonValueKind.String
+                && string.Equals(status.GetString(), "SUCCESS", StringComparison.Ordinal)
+                && root.TryGetProperty("error", out JsonElement error)
+                && error.ValueKind == JsonValueKind.String
+                && string.IsNullOrEmpty(error.GetString())
+                && root.TryGetProperty(valueName, out JsonElement valueElement)
+                && valueElement.ValueKind == JsonValueKind.Number
+                && valueElement.TryGetInt32(out value);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static async Task VerifyFileAsync(

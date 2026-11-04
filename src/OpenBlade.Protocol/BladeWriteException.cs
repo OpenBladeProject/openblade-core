@@ -14,6 +14,7 @@ internal enum BladeWriteFailurePhase
     AdjustableFanSecondManualEntrySubmission,
     HyperBoostAdapterEligibilityRead,
     ThermalFinalConfirmationRead,
+    ControlRecoveryAdmission,
 }
 
 public sealed class BladeWriteException : Exception

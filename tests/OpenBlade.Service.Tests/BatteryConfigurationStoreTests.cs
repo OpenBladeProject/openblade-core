@@ -1002,6 +1002,243 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
     }
 
     [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task SaveAsync_FailedRollbackRetainsExactPriorAggregateForRecovery(
+        bool profilesOnly,
+        bool afterMarkerReplacement)
+    {
+        Paths paths = CreatePaths();
+        bool armed = false;
+        FileStream? destinationLock = null;
+        var store = CreateStore(
+            paths,
+            (boundary, _) =>
+            {
+                BatteryConfigurationCommitBoundary failureBoundary = afterMarkerReplacement
+                    ? BatteryConfigurationCommitBoundary.AfterMarkerReplacement
+                    : BatteryConfigurationCommitBoundary.AfterProfileReplacement;
+                if (armed && boundary == failureBoundary)
+                {
+                    // This permits backup reads and cleanup but prevents the prior
+                    // profile from replacing the already submitted destination.
+                    destinationLock = new FileStream(
+                        paths.Profiles, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    throw new IOException("Injected commit failure with rollback destination locked.");
+                }
+
+                return Task.CompletedTask;
+            });
+        BatteryConfiguration priorConfiguration = await store.LoadAsync(CancellationToken.None);
+        FileSnapshot prior = await ReadSnapshotAsync(paths);
+        ProfileSet intendedProfiles = priorConfiguration.Profiles with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+        armed = true;
+
+        IOException failure;
+        try
+        {
+            failure = await Assert.ThrowsAsync<IOException>(() => profilesOnly
+                ? store.SaveProfilesAsync(intendedProfiles, CancellationToken.None)
+                : store.SaveConfigurationAsync(
+                    intendedProfiles, priorConfiguration.Preferences, CancellationToken.None));
+        }
+        finally
+        {
+            destinationLock?.Dispose();
+        }
+
+        AggregateException causes = Assert.IsType<AggregateException>(failure.InnerException);
+        Assert.Equal(2, causes.InnerExceptions.Count);
+        string[] backups = Directory.GetFiles(directory, "*.transaction-*.backup");
+        Assert.Equal(paths.All.Length, backups.Length);
+        string transactionSuffix = backups.Single(path => path.StartsWith(
+            paths.Profiles + ".transaction-", StringComparison.Ordinal))[
+                paths.Profiles.Length..^".backup".Length];
+        Assert.Contains(transactionSuffix[".transaction-".Length..], failure.Message, StringComparison.Ordinal);
+        foreach ((string path, byte[] expected) in new[]
+        {
+            (paths.Profiles, prior.Profiles),
+            (paths.Preferences, prior.Preferences),
+            (paths.Marker, prior.Marker),
+        })
+        {
+            Assert.Contains(path, failure.Message, StringComparison.Ordinal);
+            Assert.Equal(expected, await File.ReadAllBytesAsync(path + transactionSuffix + ".backup"));
+        }
+
+        // Retaining recovery bytes does not make the mixed primary aggregate
+        // authoritative, or allow a later load to restore it automatically.
+        FileSnapshot failed = await ReadSnapshotAsync(paths);
+        Assert.False(SnapshotEquals(prior, failed));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            store.SaveProfilesAsync(intendedProfiles, CancellationToken.None));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            store.LoadAsync(CancellationToken.None));
+        BatteryConfigurationStore newStore = CreateStore(paths);
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            newStore.LoadAsync(CancellationToken.None));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            newStore.SaveConfigurationAsync(
+                intendedProfiles, priorConfiguration.Preferences, CancellationToken.None));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            CreateStore(paths).SaveProfilesAsync(intendedProfiles, CancellationToken.None));
+        AssertSnapshotEqual(failed, await ReadSnapshotAsync(paths));
+        Assert.Equal(backups.Order(), Directory.GetFiles(directory, "*.transaction-*.backup").Order());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LoadAsync_FailedInitialRollbackDistinguishesAbsentPriorFiles(
+        bool legacyProfilePresent)
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        if (legacyProfilePresent)
+        {
+            await File.WriteAllTextAsync(paths.Profiles, LegacyJson);
+        }
+        FileStream? destinationLock = null;
+        BatteryConfigurationStore store = CreateStore(paths, (boundary, _) =>
+        {
+            if (boundary == BatteryConfigurationCommitBoundary.AfterMarkerReplacement)
+            {
+                destinationLock = new FileStream(
+                    paths.Profiles, FileMode.Open, FileAccess.Read, FileShare.Read);
+                throw new IOException("Injected initial commit failure with rollback destination locked.");
+            }
+            return Task.CompletedTask;
+        });
+
+        IOException failure;
+        try
+        {
+            failure = await Assert.ThrowsAsync<IOException>(() => store.LoadAsync(CancellationToken.None));
+        }
+        finally
+        {
+            destinationLock?.Dispose();
+        }
+
+        string[] backups = Directory.GetFiles(directory, "*.transaction-*.backup");
+        Assert.Equal(legacyProfilePresent ? 1 : 0, backups.Length);
+        Assert.Contains("Prior file absent (no backup)", failure.Message, StringComparison.Ordinal);
+        if (legacyProfilePresent)
+        {
+            string backup = Assert.Single(backups);
+            Assert.Contains(backup, failure.Message, StringComparison.Ordinal);
+            Assert.Equal(LegacyJson, await File.ReadAllTextAsync(backup));
+        }
+        FileSnapshot failed = await ReadSnapshotAsync(paths);
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            CreateStore(paths).LoadAsync(CancellationToken.None));
+        AssertSnapshotEqual(failed, await ReadSnapshotAsync(paths));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not a valid recovery record")]
+    public async Task RecoveryRequiredRecord_BlocksCoherentAggregateWithoutTrustingItsContents(string contents)
+    {
+        Paths paths = CreatePaths();
+        BatteryConfiguration initial = await CreateStore(paths).LoadAsync(CancellationToken.None);
+        FileSnapshot prior = await ReadSnapshotAsync(paths);
+        string recoveryPath = paths.Marker + ".recovery-required";
+        await File.WriteAllTextAsync(recoveryPath, contents);
+
+        BatteryConfigurationStore store = CreateStore(paths);
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            store.LoadAsync(CancellationToken.None));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            store.InspectAsync(CancellationToken.None));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            CreateStore(paths).SaveConfigurationAsync(
+                initial.Profiles, initial.Preferences, CancellationToken.None));
+        AssertSnapshotEqual(prior, await ReadSnapshotAsync(paths));
+        Assert.Equal(contents, await File.ReadAllTextAsync(recoveryPath));
+    }
+
+    [Fact]
+    public async Task SaveAsync_RecoveryRecordCannotBeCreatedStopsBeforePrimaryReplacement()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfigurationStore store = CreateStore(paths);
+        BatteryConfiguration initial = await store.LoadAsync(CancellationToken.None);
+        FileSnapshot prior = await ReadSnapshotAsync(paths);
+        // Make only the record's creation fail after ordinary save admission.
+        // The primary targets remain writable, so this tests the pre-write gate.
+        string recoveryPath = paths.Marker + ".recovery-required";
+        bool blocked = false;
+        BatteryConfigurationStore guarded = CreateStore(paths, (boundary, _) =>
+        {
+            if (boundary == BatteryConfigurationCommitBoundary.BeforeProfileReplacement)
+            {
+                Directory.CreateDirectory(recoveryPath);
+                blocked = true;
+            }
+            return Task.CompletedTask;
+        });
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            guarded.SaveProfilesAsync(initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(75) },
+                CancellationToken.None));
+
+        Assert.True(blocked);
+        AssertSnapshotEqual(prior, await ReadSnapshotAsync(paths));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            CreateStore(paths).LoadAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SaveAsync_RecoveryRecordCleanupFailureRetainsEvidenceAndReportsCommittedState()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfiguration initial = await CreateStore(paths).LoadAsync(CancellationToken.None);
+        FileSnapshot prior = await ReadSnapshotAsync(paths);
+        FileStream? recordLock = null;
+        string recoveryPath = paths.Marker + ".recovery-required";
+        BatteryConfigurationStore store = CreateStore(paths, (boundary, _) =>
+        {
+            if (boundary == BatteryConfigurationCommitBoundary.AfterVerification)
+            {
+                recordLock = new FileStream(
+                    recoveryPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            }
+            return Task.CompletedTask;
+        });
+
+        IOException failure;
+        try
+        {
+            failure = await Assert.ThrowsAsync<IOException>(() =>
+                store.SaveProfilesAsync(initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(75) },
+                    CancellationToken.None));
+        }
+        finally
+        {
+            recordLock?.Dispose();
+        }
+
+        Assert.Contains("committed and verified", failure.Message, StringComparison.Ordinal);
+        Assert.Contains(recoveryPath, failure.Message, StringComparison.Ordinal);
+        Assert.True(File.Exists(recoveryPath));
+        Assert.Equal(3, Directory.GetFiles(directory, "*.transaction-*.backup").Length);
+        FileSnapshot committed = await ReadSnapshotAsync(paths);
+        Assert.False(SnapshotEquals(prior, committed));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            store.LoadAsync(CancellationToken.None));
+        await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            CreateStore(paths).SaveConfigurationAsync(
+                initial.Profiles, initial.Preferences, CancellationToken.None));
+        AssertSnapshotEqual(committed, await ReadSnapshotAsync(paths));
+    }
+
+    [Theory]
     [MemberData(nameof(AllCommitBoundaries))]
     public async Task SaveProfilesAsync_CancellationHonorsMarkerCommitPoint(
         string boundaryName)
@@ -1090,6 +1327,54 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.Equal(
             Hash(await File.ReadAllBytesAsync(paths.Preferences)),
             marker.RootElement.GetProperty("preferencesSha256").GetString());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SaveAsync_RoundTripsConfiguredThxProfilesAsVerifiedAggregate(
+        bool profilesOnly)
+    {
+        Paths paths = CreatePaths();
+        BatteryConfigurationStore store = CreateStore(paths);
+        BatteryConfiguration initial = await store.LoadAsync(CancellationToken.None);
+        ThxAudioProfileSettings audio = CreateConfiguredThxAudioProfile();
+        Assert.True(ThxAudioProfileSettings.IsWellFormed(audio));
+        ProfileSet profiles = initial.Profiles with
+        {
+            PluggedIn = initial.Profiles.PluggedIn with { ThxAudio = audio },
+            Battery = initial.Profiles.Battery with
+            {
+                ThxAudio = audio with { ApplicationRoutingEnabled = false },
+            },
+            UsbC = initial.Profiles.UsbC with { ThxAudio = audio },
+        };
+        BatteryAutomationPreferences preferences = profilesOnly
+            ? initial.Preferences
+            : initial.Preferences with { AlwaysOverrideExternalLightingChanges = true };
+        byte[] priorPreferences = await File.ReadAllBytesAsync(paths.Preferences);
+
+        if (profilesOnly)
+        {
+            await store.SaveProfilesAsync(profiles, CancellationToken.None);
+            Assert.Equal(priorPreferences, await File.ReadAllBytesAsync(paths.Preferences));
+        }
+        else
+        {
+            await store.SaveConfigurationAsync(profiles, preferences, CancellationToken.None);
+        }
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(CancellationToken.None);
+        Assert.True(loaded.IsAuthoritative);
+        Assert.Equal(profiles, loaded.Profiles);
+        Assert.Equal(preferences, loaded.Preferences);
+        Assert.NotSame(audio, loaded.Profiles.PluggedIn.ThxAudio);
+        using JsonDocument marker = JsonDocument.Parse(await File.ReadAllBytesAsync(paths.Marker));
+        Assert.Equal(Hash(await File.ReadAllBytesAsync(paths.Profiles)),
+            marker.RootElement.GetProperty("profileSha256").GetString());
+        Assert.Equal(Hash(await File.ReadAllBytesAsync(paths.Preferences)),
+            marker.RootElement.GetProperty("preferencesSha256").GetString());
+        Assert.Empty(Directory.GetFiles(directory, "*.transaction-*"));
     }
 
     [Theory]
@@ -1288,6 +1573,28 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             """
         },
     };
+
+    private static ThxAudioProfileSettings CreateConfiguredThxAudioProfile()
+    {
+        static ThxAudioEndpointSettings Endpoint(int bandCount, bool speakers)
+        {
+            double[] Curve(double gain) => Enumerable.Repeat(gain, bandCount).ToArray();
+            return new ThxAudioEndpointSettings(
+                SpatialEnabled: true,
+                EqualizerEnabled: true,
+                ThxEqualizerPreset.Music,
+                new ThxEqualizerCurves(Curve(1), Curve(-2), Curve(3), Curve(-4), Curve(5)),
+                new ThxAudioEnhancementSettings(true, 40),
+                speakers ? new ThxAudioEnhancementSettings(false, 60) : null);
+        }
+
+        return new ThxAudioProfileSettings(
+            ApplicationRoutingEnabled: true,
+            Endpoint(ThxAudioProfileSettings.SpeakerEqualizerBandCount, speakers: true),
+            Endpoint(ThxAudioProfileSettings.HeadphoneEqualizerBandCount, speakers: false),
+            [new("game.exe", ThxApplicationAudioOutput.Competitive),
+                new("player.exe", ThxApplicationAudioOutput.Music)]);
+    }
 
     private BatteryConfigurationStore CreateStore(Paths paths) =>
         new(paths.Profiles, paths.Preferences, paths.Marker);
