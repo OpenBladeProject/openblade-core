@@ -31,9 +31,13 @@ internal sealed record PadlessHyperBoostLifecycleValidationBuildIdentity(
             && marker.Equals("true", StringComparison.OrdinalIgnoreCase);
         metadata.TryGetValue("OpenBladeValidationSourceRevision", out string? revision);
         string path = assembly.Location;
-        string assemblySha256 = string.IsNullOrWhiteSpace(path)
-            ? string.Empty
-            : Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+        string assemblySha256 = string.Empty;
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            using FileStream stream = new(path, FileMode.Open, FileAccess.Read,
+                FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
+            assemblySha256 = Convert.ToHexString(SHA256.HashData(stream));
+        }
         return new(
             enabled,
             revision,

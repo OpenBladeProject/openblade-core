@@ -143,6 +143,11 @@ internal sealed partial class ExperimentalBladePort
                             CancellationToken.None).ConfigureAwait(false);
                         policy.RecordAnimationFrameApplied(settings.Effect);
                     }
+                    catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsDeferral(exception))
+                    {
+                        // Nothing was submitted. Advance to the next animation time;
+                        // recovery admission keeps every later row paused as needed.
+                    }
                     catch (Exception error)
                     {
                         SetLightingFaulted();
@@ -192,8 +197,9 @@ internal sealed partial class ExperimentalBladePort
         }
         RequireWriteAdmission();
         var commands = new RazerCommandSpec[Blade18LightingFrame.Rows + (activate ? 1 : 0)];
-        bool StillAdmitted() => policy.WritesAllowed && exactHostStillPresent()
-            && additionalWriteAdmission?.Invoke() != false;
+        LightingRecoveryWriteGate.SubmissionGuard recoveryGuard = recoveryWriteGate.CreateSubmissionGuard(
+            () => policy.WritesAllowed && exactHostStillPresent() && additionalWriteAdmission?.Invoke() != false);
+        bool StillAdmitted() => recoveryGuard.Allow();
         for (int row = 0; row < Blade18LightingFrame.Rows; row++)
         {
             commands[row] = new(0x03, 0x0B, frame.EncodeRow(row),
@@ -222,6 +228,7 @@ internal sealed partial class ExperimentalBladePort
             throw new BladeWriteException(WriteSubmissionState.Indeterminate,
                 "The animation frame may have been partially submitted.", error);
         }
+        recoveryGuard.ThrowIfRefused(result.Diagnostic);
         if (result.Failure is null)
         {
             return;

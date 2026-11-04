@@ -655,7 +655,8 @@ public static class BatteryValidationFactory
             supportsDirectManualFanTransitions: true,
             thxAudioCapabilities: new ThxAudioCapabilities(
                 DeviceFeatureAccess.ReadWrite,
-                ThxAudioProductIds.Rznb11));
+                ThxAudioProductIds.Rznb11),
+            laptopControlRecoveryIdentity: $"{target.Model}|{target.VendorId:X4}:{target.ProductId:X4}");
     }
 
     internal static ProductionBatteryReadEvidence

@@ -199,6 +199,57 @@ public sealed class DisplayAutomationCoordinatorTests
     }
 
     [Fact]
+    public async Task MissingBrightnessAfterRefreshPausesWithoutRetryAndRetainsRecovery()
+    {
+        var context = new DisplayPowerContextState();
+        var controller = new MissingBrightnessController();
+        using var applier = new DisplayProfileApplier(controller, context);
+        DisplayAutomationRecoveryState? checkpoint = null;
+        int retryCount = 0;
+        await using var coordinator = new DisplayAutomationCoordinator(
+            context,
+            applier,
+            retryDelay: (_, _) =>
+            {
+                retryCount++;
+                return Task.CompletedTask;
+            },
+            recordRecoveryState: state =>
+            {
+                checkpoint = state;
+                return true;
+            });
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            Battery = profiles.Battery with
+            {
+                Display = new DisplayProfileSettings("fixed-120", null, null)
+                {
+                    BrightnessPercent = 50,
+                },
+            },
+        };
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        coordinator.Observe(Status(PowerSource.Battery, profiles));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(SessionDisplayOperationStatus.Indeterminate,
+            coordinator.LastTransitionResult?.Result.Status);
+        Assert.Equal(0, retryCount);
+        Assert.Equal(1, controller.RefreshCalls);
+        Assert.True(checkpoint?.AutomaticWritesPaused);
+        Assert.True(checkpoint?.UncertainRefreshRate);
+        Assert.True(checkpoint?.UncertainBrightness);
+        Assert.False(coordinator.ResumeAfterSuccessfulExplicitRead(controller.State));
+
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        await coordinator.WhenIdleAsync();
+        Assert.Equal(1, controller.RefreshCalls);
+        Assert.True(checkpoint?.AutomaticWritesPaused);
+    }
+
+    [Fact]
     public async Task FailedWriteAheadCheckpointBlocksAutomaticMutation()
     {
         int saves = 0;
@@ -1086,6 +1137,33 @@ public sealed class DisplayAutomationCoordinatorTests
         FullChargeOverride: false,
         Firmware: null,
         ServiceVersion: "test");
+
+    private sealed class MissingBrightnessController : IDisplaySettingsController
+    {
+        internal DisplaySettingsSnapshot State { get; private set; } =
+            SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native");
+        internal int RefreshCalls { get; private set; }
+
+        public Task<DisplaySettingsSnapshot> QueryAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(State);
+
+        public Task<DisplayOperationResult> SetRefreshAsync(string key,
+            CancellationToken cancellationToken = default)
+        {
+            RefreshCalls++;
+            State = State with { CurrentRefreshKey = key };
+            return Task.FromResult(DisplayOperationResult.Success(State));
+        }
+
+        public Task<DisplayOperationResult> SetHdrAsync(bool enabled,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<DisplayOperationResult> SetColorProfileAsync(string id,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<DisplayOperationResult> SetBrightnessAsync(byte percent,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
 
     private sealed class FakeApplier : IDisplayProfileApplier
     {

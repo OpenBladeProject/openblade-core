@@ -7,7 +7,7 @@ using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class ServiceControlRuntimeTests : IDisposable
+public sealed partial class ServiceControlRuntimeTests : IDisposable
 {
     [Fact]
     public async Task PadlessLifecycle_NormalBuildRejectsRequestWithoutDeviceWrites()
@@ -5299,6 +5299,67 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Stored, repeated.Status);
         Assert.Equal(writesWhileSuppressed, context.Device.LightingSetCalls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ProfileEdit_LightingRestoreFailureStillReportsDurableSave(bool unavailable)
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(true, null),
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.DisplayOff, true, CancellationToken.None);
+        int previousWrites = context.Device.LightingSetCalls;
+        context.Provider.Available = !unavailable;
+        if (!unavailable)
+        {
+            context.Device.LightingFailure = new IOException("Lighting restore failed.");
+        }
+        ProfileSet updated = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                LightingPowerPolicy = LightingPowerPolicy.Disabled,
+            },
+        };
+
+        ControlOperationResult result = await context.Runtime.UpdateProfilesAsync(
+            updated, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Contains("Lighting restore result:", result.Message);
+        Assert.Equal(updated, context.Runtime.GetStatus().Profiles);
+        Assert.Equal(updated, (await context.Store.LoadAsync(CancellationToken.None)).Profiles);
+        Assert.Equal(previousWrites + (unavailable ? 0 : 1), context.Device.LightingSetCalls);
+        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+    }
+
+    [Fact]
+    public async Task ProfileEdit_QuarantinedConfigurationDoesNotReportDurableSave()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "profiles.json");
+        byte[] original = "invalid profile document"u8.ToArray();
+        await File.WriteAllBytesAsync(path, original);
+        TestContext context = CreateContext(providerAvailable: true);
+        ProfileSet prior = context.Runtime.GetStatus().Profiles;
+
+        ControlOperationResult result = await context.Runtime.UpdateProfilesAsync(
+            prior with { BatteryPolicy = BatteryPolicy.Create(75) }, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(prior, context.Runtime.GetStatus().Profiles);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
     [Fact]
@@ -31079,7 +31140,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             hyperBoostPadDiscoverySource: hyperBoostPadDiscoverySource
                 ?? new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
-            hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary);
+            hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary,
+            laptopControlPendingStore: new LaptopControlPendingStore(Path.Combine(directory, "laptop-control-pending.json")));
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -31675,6 +31737,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     private sealed class CountingProvider(bool available, IBladeDevice device)
         : IVerifiedBladeDeviceProvider, IGpuClockOffsetConfirmationInvalidator
     {
+        public string? LaptopControlRecoveryIdentity { get; set; } = "RZ09-0581|1532:02E0";
+
+        public Func<bool>? RecoveryWriteAdmission { get; private set; }
+
+        public void SetRecoveryWriteAdmission(Func<bool> admission) => RecoveryWriteAdmission = admission;
+
         public IBladeDevice Device { get; set; } = device;
 
         public bool Available { get; set; } = available;
@@ -31757,6 +31825,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Action? AfterGpuClockOffsetInvalidation { get; set; }
 
         public Exception? InvalidationFailure { get; set; }
+
+        public Action? AfterLightingInvalidation { get; set; }
 
         public Exception? RelinquishFailure { get; set; }
 
@@ -31868,6 +31938,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 counting.ConfirmedState = counting.ConfirmedState with { Lighting = null };
             }
 
+            AfterLightingInvalidation?.Invoke();
             return Task.FromResult(new LightingRendererInvalidationResult(
                 observed,
                 lowPower ? DriverModeRestoreOutcome.NotOwned : InvalidationDriverModeRestoreOutcome));
@@ -32065,6 +32136,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Action? BeforeLightingRefreshRateSet { get; set; }
 
         public Exception? OneShotFailure { get; set; }
+
+        public Action<ApplyOneShotLaptopControl>? AfterOneShotSet { get; set; }
+
+        public Exception? FunctionKeyReadFailure { get; set; }
+
+        public Action? BeforeFunctionKeyRead { get; set; }
 
         public bool? StartupAnimationEnabled { get; set; }
 
@@ -32856,6 +32933,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             {
                 GamingModeEnabled = gamingModeEnabled;
             }
+            AfterOneShotSet?.Invoke(value);
             return OneShotFailure is null
                 ? Task.CompletedTask
                 : Task.FromException(OneShotFailure);
@@ -32874,6 +32952,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             TotalCalls++;
+            BeforeFunctionKeyRead?.Invoke();
+            if (FunctionKeyReadFailure is { } failure)
+            {
+                return Task.FromException<FunctionKeyPrimaryMode?>(failure);
+            }
             return Task.FromResult(FunctionKeyPrimary);
         }
 

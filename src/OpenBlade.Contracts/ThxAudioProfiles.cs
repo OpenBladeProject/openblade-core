@@ -29,7 +29,43 @@ public sealed record ThxEqualizerCurves(
     IReadOnlyList<double> Movie,
     IReadOnlyList<double> Music,
     IReadOnlyList<double> Voice,
-    IReadOnlyList<double> Custom);
+    IReadOnlyList<double> Custom)
+{
+    public bool Equals(ThxEqualizerCurves? other) => ReferenceEquals(this, other)
+        || other is not null
+            && CurvesEqual(Game, other.Game)
+            && CurvesEqual(Movie, other.Movie)
+            && CurvesEqual(Music, other.Music)
+            && CurvesEqual(Voice, other.Voice)
+            && CurvesEqual(Custom, other.Custom);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        AddCurveHash(ref hash, Game);
+        AddCurveHash(ref hash, Movie);
+        AddCurveHash(ref hash, Music);
+        AddCurveHash(ref hash, Voice);
+        AddCurveHash(ref hash, Custom);
+        return hash.ToHashCode();
+    }
+
+    private static bool CurvesEqual(IReadOnlyList<double>? left, IReadOnlyList<double>? right) =>
+        ReferenceEquals(left, right)
+        || left is not null && right is not null && left.SequenceEqual(right);
+
+    private static void AddCurveHash(ref HashCode hash, IReadOnlyList<double>? curve)
+    {
+        hash.Add(curve?.Count);
+        if (curve is not null)
+        {
+            foreach (double gain in curve)
+            {
+                hash.Add(gain);
+            }
+        }
+    }
+}
 
 public sealed record ThxAudioEndpointSettings(
     bool SpatialEnabled,
@@ -78,6 +114,34 @@ public sealed record ThxAudioProfileSettings(
     ThxAudioEndpointSettings Headphones,
     IReadOnlyList<ThxApplicationAudioRule> ApplicationRules)
 {
+    // Profiles cross IPC and durable storage boundaries; collection identity is
+    // not part of their value, just as for ProfileSet and ManualFanCurve.
+    public bool Equals(ThxAudioProfileSettings? other) => ReferenceEquals(this, other)
+        || other is not null
+            && ApplicationRoutingEnabled == other.ApplicationRoutingEnabled
+            && Speakers == other.Speakers
+            && Headphones == other.Headphones
+            && (ReferenceEquals(ApplicationRules, other.ApplicationRules)
+                || ApplicationRules is not null && other.ApplicationRules is not null
+                    && ApplicationRules.SequenceEqual(other.ApplicationRules));
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(ApplicationRoutingEnabled);
+        hash.Add(Speakers);
+        hash.Add(Headphones);
+        hash.Add(ApplicationRules?.Count);
+        if (ApplicationRules is not null)
+        {
+            foreach (ThxApplicationAudioRule rule in ApplicationRules)
+            {
+                hash.Add(rule);
+            }
+        }
+        return hash.ToHashCode();
+    }
+
     // RZ09-0581 speaker geometry. Rznb11 speaker curves use all ten native bands.
     public const int SpeakerEqualizerBandCount = 7;
     public const int HeadphoneEqualizerBandCount = 10;
