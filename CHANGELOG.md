@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Reuse native windows, backdrops and icons when changing language, and release retired views and their event subscriptions. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Release generated XAML bindings and native title-bar resources when closing main and quick-controls windows, and complete cleanup after failed window initialization. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Keep display edits and refresh messages in order, use current brightness levels, and confirm display profiles only from supported brightness readback and matching HDR/color state. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
 - Remove failed driver-download attempt files before installation begins, while retaining packages after any installation intent or uncertain result. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))

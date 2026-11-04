@@ -23,6 +23,7 @@ dwell after each window's loaded layout (defaults: `dashboard 0`):
 | Kind | Window/presenter and permanent-close behavior |
 | --- | --- |
 | `dashboard` | Actual quick-controls window, including shared production lifetime cleanup |
+| `localized-content` | Real language-change transaction with two persistent native shells; requires `--offscreen` on the private desktop |
 | `dashboard-empty` | Actual dashboard construction/presenter/subclass/timers, then replace its content with Grid; track the detached content too |
 | `empty` | Plain Window/Grid with the default presenter |
 | `empty-toolwindow` | Plain Window/Grid with the dashboard's tool-window presenter and hidden native title bar |
@@ -152,6 +153,25 @@ verifies that synchronous cleanup failures do not skip later teardown. All 2,650
 Tray tests and the final 600-second idle/activity workload passed those lifetime
 checks; [the results](RESULTS.md) retain the remaining native growth and validation
 limits. No product GC or forced COM release is involved.
+
+The `localized-content` workload tests the current production language-change path.
+Main and quick-controls content are UserControls hosted inside two permanent native
+windows. Three languages and an injected attachment failure warm the transaction;
+the measured phase performs at least 12 more language changes. It verifies shell
+identity, shared native notification subscriptions, rollback and collection of
+retired views and roots. Shell-owned Mica and icons survive view replacement.
+Unlike the older window-creation workloads, this diagnostic collects after every
+12 changes during a longer run, after activity and after three seconds idle. Its
+elapsed time includes those checkpoints and is not a production timing benchmark.
+
+```powershell
+dotnet run --project build/benchmarks/NativeResources/NativeResources.csproj -c Release --no-build -- "<harness exe>" "<new evidence directory>" 60 1 localized-content 0 --offscreen
+```
+
+The historical window-creation controls remain useful for reproducing framework
+retention, but do not represent the current language-change transaction. The new
+workload does not establish visible rendering, installed-app performance or the
+absence of native allocation growth.
 
 No fixed timing or memory-growth threshold is a CI gate. Validate bounded history,
 accepted samples, zero service calls, process identity and cleanup first. Compare

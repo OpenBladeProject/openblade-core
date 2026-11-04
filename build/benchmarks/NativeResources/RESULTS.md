@@ -424,6 +424,58 @@ The final committed diagnostic code `a6f0e54b` rebuilt and passed all 2,650 Tray
 tests, with zero failures or skips, including both real native resource regressions.
 Formatting and the older-probe rejection check also passed.
 
+## Native retaining reference and persistent shells, November 4
+
+The [sanitized native reference ledger](results/2026-11-04-native-layoutsync-reference.json)
+identifies the remaining Composition reference in the exact measured Microsoft
+UI Input and composition binaries. `LocalContentOutput` acquires a
+`SystemVisualTarget::LayoutSync` interface. Its disposal path transfers another
+interface to deferred cleanup, but leaves LayoutSync in the allocation. The
+observed `ContentIsland::Destroy` path frees that allocation without running the
+derived cleanup that releases LayoutSync. The target's actual Close runs; its
+final reference count remains one, with the same Composition handle still open.
+Deletion through a nonvirtual base is a source-level inference; the skipped
+cleanup and unmatched reference are the binary observations. This does not
+attribute all Event or private-memory growth to the same cause.
+
+Production language changes now keep both native Window shells and their permanent
+content hosts. Localized MainWindow and TrayDashboardWindow views are UserControls.
+The main shell retains its Mica controller and icon across replacements, while
+rebinding the backdrop's theme source. Existing native notification subscriptions
+also survive the transaction. A failed attachment restores the old views; retired
+views cannot close or hide their successor. No private COM release, borrowed-handle
+closure, SDK patch or production GC is used.
+
+This exposed two application retaining references. A notification lambda shared a
+compiler-generated closure with a dashboard callback and held the original main
+view. It is now a method-group callback that resolves the active view. Native
+AppWindow callbacks also retained retired main and dashboard views after ordinary
+managed roots were gone. Reacquiring `HostWindow.AppWindow` for removal used a
+different managed projection's event-state table. Each view now retains the
+projection through which it registered and unregisters through that same instance.
+The diagnostic native callback routes and weak-reference results, rather than an
+empty ordinary `gcroot` result alone, established this cause.
+
+The [localized-shell comparison](results/2026-11-04-localized-shell-retirement.json)
+records the controls and provenance. Keeping native shells alone still added one
+Composition handle per language change when Mica was recreated. Reusing Mica held
+Composition at 13. Caching AppWindow removed the remaining retired views and held
+Timers at 15. Reapplying the invariant icon on every attachment still increased
+GUI objects; setting it only when creating the native shell removed that trend.
+
+In the final 71-change run, all 297 retired weak references were collected.
+Composition remained 13 and Timers 15. GDI objects were 99 before and after;
+USER objects changed from 79 to 77. Events stabilized within 449–452 after the
+24-change checkpoint. These are bounded observations of the disconnected,
+private-desktop workload. Private memory still increased, so the handle and
+view-retirement fixes do not establish complete native-memory stability.
+
+The requested sanitized Claude Opus 5.5/high review was attempted with explicit
+approval, but returned the weekly usage limit with zero model tokens and no
+findings. It is incomplete. Earlier completed reviews cover earlier changes,
+not this persistent-shell refactor. A separate Codex review found no consequential
+production regression; execution checks remain independently required.
+
 ## Interpretation
 
 Baseline launch-to-loaded-layout upper bounds ranged from 2.33 to 3.70 seconds
@@ -475,3 +527,47 @@ Hide failure deliberately stops reset; checked-state output follows successful
 assertions; and the omitted-cleanup negative control demonstrates that the native
 marker detects missing cleanup. These reviews do not substitute for execution
 evidence.
+
+## Native resource-map and graphics attribution (2026-11-04)
+
+The [sanitized attribution ledger](results/2026-11-04-native-resource-map-attribution.json)
+separates three remaining native allocation trends. In a standalone public-API
+reproduction, repeated `MrmGetChildResourceMap` and `MrmGetResourceCount` calls for
+`Resources/MainWindow_ButtonCheckNow` produced 1, 51 and 101 allocated subtrees.
+All 101 remained after `MrmDestroyResourceManager`. Completed locked heap walks
+counted the returned native type in the pinned `MRM.dll`; this process used no
+WinUI, managed resource projection or hardware calls.
+
+A separate 36-change application dump identifies four sampled four-byte ID arrays
+as fields at offsets 72/80 of native `ResourceMapSubtree` allocations. Pinned
+[Windows App SDK source](https://github.com/microsoft/WindowsAppSDK/blob/2c807cd64d7d51f5cae2294332eea82d90e48246/dev/MRTCore/mrt/mrm/mrmmin/ResourceMap.cpp#L934)
+allocates a subtree per lookup, while its
+[managed-facing native projection](https://github.com/microsoft/WindowsAppSDK/blob/2c807cd64d7d51f5cae2294332eea82d90e48246/dev/MRTCore/mrt/Microsoft.Windows.ApplicationModel.Resources/src/ResourceMap.h#L21)
+assigns ownership to the manager and performs no destruction. XAML's
+[property-bag path](https://github.com/microsoft/microsoft-ui-xaml/blob/b229fbd15ceb090a2952985955805650e41390d8/dxaml/xcp/components/mrt/ModernResourceProvider.cpp#L703)
+uses subtree lookup and resource counting. This source corroborates the ownership
+mismatch; its revisions are not established build provenance of the measured DLL.
+
+The separate 192-change run reclaimed all 781 retired references. Composition
+stayed 13 and Timers 15. Events stepped from 414 to 604 by change 36, then stayed
+within 604–609 through final idle. Three native Windowing ChangedArgs/adapter
+allocation types each grew by two per change: 304 payload bytes per change,
+58,368 bytes total. Their cleanup remains unresolved. An earlier 70-change dump
+contained no managed event-argument RCW instances; it is a different process and
+does not exclude every possible retaining owner.
+
+In the 60-change exact-size run, 131,351-byte allocated blocks increased from 2
+to 24 and stayed 24 after idle. A sampled block's common-object function pointers
+resolve into `igd10umt64xe.DLL`, supporting an Intel graphics-runtime connection.
+This does not establish a leak, pool bound, reclamation policy or Vulkan path.
+Both allocation-stack attempts failed, first with debugger syntax and then a
+120-second timeout; no valid direct allocation stack was captured.
+
+Native memory is not fully resolved: private bytes in the 192-change run rose
+from 174,538,752 after warmup to 513,323,008 after idle. Allocated heap storage,
+free allocator capacity and total private memory are different measurements.
+These dirty investigation builds used base `7f457076`; their exact binary and
+raw-artifact hashes are in the ledger. Temporary instrumentation was removed and
+pre-instrumentation backups restored. No private native free or custom ABI shim
+was shipped. The requested sanitized Claude review remains incomplete after the
+weekly quota failure, with zero model tokens and no findings.
