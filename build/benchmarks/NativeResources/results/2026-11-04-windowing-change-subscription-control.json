@@ -1,0 +1,335 @@
+{
+ "schemaVersion": 1,
+ "evidenceDate": "2026-11-04",
+ "status": "Bounded diagnostic control; production replacement is not validated by this result.",
+ "question": "Does omitting MainWindow AppWindow.Changed registration remove the sampled retained native ChangedArgs allocation family?",
+ "controlManifest": {
+  "baseCommit": "645bf03ea5ad5ade93b10095393dfa76f83a4794",
+  "cleanCommitMeasurement": false,
+  "changes": ["Omit MainWindow AppWindow.Changed += OnAppWindowChanged; keep Closing registration and the rest of shell setup.", "Add temporary heap captures after warmup, each 12-change batch, and final idle.", "Forward OPENBLADE_RESOURCE_HEAP_CENSUS and OPENBLADE_NATIVE_HEAP_WALK through the diagnostic runner."],
+  "sourceArtifacts": [
+   {
+    "file": "MainWindow.xaml.cs",
+    "bytes": 235638,
+    "sha256": "DAAB1F9917A775D7A2ED28D5D46238013830845E43C796CF556401919A7F3DCC",
+    "role": "Unmodified base backup; verified against base with CRLF normalized."
+   },
+   {
+    "file": "App.ResourceLocalizationHarness.cs",
+    "bytes": 18656,
+    "sha256": "8FE427E353FE3739591EB6B8BFFBB8464351E6E7EC8532385A0D6188ACA67088",
+    "role": "Unmodified base backup; verified against base with CRLF normalized."
+   },
+   {
+    "file": "Program.cs",
+    "bytes": 17714,
+    "sha256": "2E9D2F02FF3DDC1A7240776EB9B786DDCDFC32C75EE1D277A6BD459B6E10441A",
+    "role": "Unmodified base backup; verified against base with CRLF normalized."
+   },
+   {
+    "file": "control.patch",
+    "bytes": 4831,
+    "sha256": "6E5ECF0AC74C7499D9C7D28215A3F527A6BDCA10F93FB73A73AAFF5BEF00161C",
+    "role": "Diagnostic diff over the three base backups; helper source is listed separately."
+   },
+   {
+    "file": "openblade-temporary-vtable-census-20261104.cs",
+    "bytes": 7055,
+    "sha256": "B05C8B479168C12A4E65AB01C15693BD157C8B9ED269FCED1720B8232274A567",
+    "role": "Temporary default-process-heap census helper copied for the control."
+   },
+   {
+    "file": "openblade-final-owner-probe-harness-20261104.cs",
+    "bytes": 19713,
+    "sha256": "D4EC73F27AE84E8EB66982551264067AD6632B09E95178CBE9CA65B999DF89F1",
+    "role": "Exact instrumented localization harness input."
+   },
+   {
+    "file": "openblade-final-owner-probe-runner-20261104.cs",
+    "bytes": 17986,
+    "sha256": "EA60D697D46ABF2B1681E3E163DF3D8D3DAA53665A55429BC38B00EDEEBA511F",
+    "role": "Exact runner input forwarding census environment switches."
+   }
+  ],
+  "temporaryCodeDelivery": "The census helper was removed after the control. This file does not claim validation of the subsequent production sizing replacement.",
+  "excludedAttempt": "The first no-Changed run produced no heap artifacts because an incremental build reused a runner without environment forwarding. It is excluded from all allocation comparisons here."
+ },
+ "binaryProvenance": {
+  "control": {
+   "capturedAtUtc": "2026-11-04T05:13:21.6816922+00:00",
+   "productVersion": "0.50.4+645bf03ea5ad5ade93b10095393dfa76f83a4794",
+   "assemblySha256": "9551870C8D2031A5785D693215C270E95938CE6D345C046B8D0A6E9578BC39E5",
+   "executableSha256": "C8A318C3E303FFD851D345A7D62FC796B5D3826A36796C294ABE255A52683986"
+  },
+  "baseline": {
+   "baseCommit": "7f4570760b50a28b40511b53e094dd370650c071",
+   "cleanCommitMeasurement": false,
+   "capturedAtUtc": "2026-11-04T04:00:23.0745417+00:00",
+   "assemblySha256": "8A1ED24BB5C14A13E5D551572AF755FF2F9853C0F1D9572B96AAC7C428A42481",
+   "executableSha256": "F872CC4A35749E24C6E6A4FB28265A3457FDABFD650BF642CCC6243070A74D37"
+  },
+  "identicalNativeAndProjectionHashes": {
+   "Microsoft.UI.Windowing.dll": "DE777FC7F88256DC3158138B5E267A151FDA461A2EF71B24320CCAC7CC5A3B75",
+   "Microsoft.ui.xaml.dll": "2B22EB6130821F43A26239D441EF3A898BEA24B1C1078B5941249431C4B4FBF8",
+   "Microsoft.UI.Input.dll": "7E24FB014303D387C140DE4FEDD4C65D079A2B0DD6DDDE01135972B887A8E403",
+   "dcompi.dll": "1BAB52ACF1BBC45F1469AF675160DA8B2CE0BDCCDD4ADCE3CA3032E674AD6EE3",
+   "WinRT.Runtime.dll": "BCF3A14E8712A90837FC5C0D8C8A24696AF2BD7F74E9767597EC81EDEDFB23DB",
+   "Microsoft.InteractiveExperiences.Projection.dll": "59FF8F319DB3AFC59C27C23EB5A33D53C13303540F458372885BECCF866BF504"
+  },
+  "environment": "Both: x64, .NET 10.0.12, Windows 10.0.26300, private-desktop offscreen localized-content scenario, disconnected factories and zero service calls. Dirty builds differ; this is not a timing benchmark."
+ },
+ "types": {
+  "module": "Microsoft.UI.Windowing.dll",
+  "columnOrder": ["0x58D20", "0x58D68", "0x57118"],
+  "symbols": ["Windowing::ChangedArgs::ComExportAdapterContainer$", "Windowing::ChangedArgs", "Api::IAppWindowChangedEventArgs::ExportAdapter$"],
+  "bytesPerAllocation": [64, 64, 24],
+  "identification": "Exact native symbols were established in 2026-11-04-native-resource-map-attribution.json; the module hash is unchanged."
+ },
+ "checkpoints": {
+  "control": [
+   {
+    "stage": "warmup",
+    "languageChanges": 0,
+    "counts": [0, 0, 0],
+    "payloadBytes": [0, 0, 0],
+    "heapWalk": {
+     "completed": true,
+     "error": 259,
+     "unlocked": 1,
+     "headerTableOverflow": false,
+     "windowingCovered": true
+    },
+    "capturedAtUtc": "2026-11-04T05:12:56.5153411+00:00",
+    "privateBytes": 172662784,
+    "processHandles": 1171,
+    "Composition": 13,
+    "Timer": 15,
+    "Event": 419
+   },
+   {
+    "stage": "batch-12",
+    "languageChanges": 12,
+    "counts": [0, 0, 0],
+    "payloadBytes": [0, 0, 0],
+    "heapWalk": {
+     "completed": true,
+     "error": 259,
+     "unlocked": 1,
+     "headerTableOverflow": false,
+     "windowingCovered": true
+    },
+    "capturedAtUtc": "2026-11-04T05:13:06.2817822+00:00",
+    "privateBytes": 308297728,
+    "processHandles": 1190,
+    "Composition": 13,
+    "Timer": 15,
+    "Event": 440
+   },
+   {
+    "stage": "batch-24",
+    "languageChanges": 24,
+    "counts": [0, 0, 0],
+    "payloadBytes": [0, 0, 0],
+    "heapWalk": {
+     "completed": true,
+     "error": 259,
+     "unlocked": 1,
+     "headerTableOverflow": false,
+     "windowingCovered": true
+    },
+    "capturedAtUtc": "2026-11-04T05:13:16.4574964+00:00",
+    "privateBytes": 364998656,
+    "processHandles": 1202,
+    "Composition": 13,
+    "Timer": 15,
+    "Event": 452
+   },
+   {
+    "stage": "idle",
+    "languageChanges": 24,
+    "counts": [0, 0, 0],
+    "payloadBytes": [0, 0, 0],
+    "heapWalk": {
+     "completed": true,
+     "error": 259,
+     "unlocked": 1,
+     "headerTableOverflow": false,
+     "windowingCovered": true
+    },
+    "capturedAtUtc": "2026-11-04T05:13:20.9222429+00:00",
+    "privateBytes": 297099264,
+    "processHandles": 1202,
+    "Composition": 13,
+    "Timer": 15,
+    "Event": 452
+   }
+  ],
+  "baseline": [
+   {
+    "stage": "warmup",
+    "languageChanges": 0,
+    "counts": [12, 12, 12],
+    "payloadBytes": [768, 768, 288],
+    "heapWalk": {
+     "completed": true,
+     "error": 259,
+     "unlocked": 1,
+     "headerTableOverflow": false,
+     "windowingCovered": true
+    },
+    "capturedAtUtc": "2026-11-04T03:57:14.5488454+00:00",
+    "privateBytes": 174538752,
+    "processHandles": 1165,
+    "Composition": 13,
+    "Timer": 15,
+    "Event": 414
+   },
+   {
+    "stage": "batch-12",
+    "languageChanges": 12,
+    "counts": [36, 36, 36],
+    "payloadBytes": [2304, 2304, 864],
+    "heapWalk": {
+     "completed": true,
+     "error": 259,
+     "unlocked": 1,
+     "headerTableOverflow": false,
+     "windowingCovered": true
+    },
+    "capturedAtUtc": "2026-11-04T03:57:24.0255071+00:00",
+    "privateBytes": 305623040,
+    "processHandles": 1184,
+    "Composition": 13,
+    "Timer": 15,
+    "Event": 435
+   },
+   {
+    "stage": "batch-24",
+    "languageChanges": 24,
+    "counts": [60, 60, 60],
+    "payloadBytes": [3840, 3840, 1440],
+    "heapWalk": {
+     "completed": true,
+     "error": 259,
+     "unlocked": 1,
+     "headerTableOverflow": false,
+     "windowingCovered": true
+    },
+    "capturedAtUtc": "2026-11-04T03:57:34.2708448+00:00",
+    "privateBytes": 372404224,
+    "processHandles": 1202,
+    "Composition": 13,
+    "Timer": 15,
+    "Event": 451
+   },
+   {
+    "stage": "idle",
+    "languageChanges": 192,
+    "counts": [396, 396, 396],
+    "payloadBytes": [25344, 25344, 9504],
+    "heapWalk": {
+     "completed": true,
+     "error": 259,
+     "unlocked": 1,
+     "headerTableOverflow": false,
+     "windowingCovered": true
+    },
+    "capturedAtUtc": "2026-11-04T04:00:22.2014438+00:00",
+    "privateBytes": 513323008,
+    "processHandles": 1353,
+    "Composition": 13,
+    "Timer": 15,
+    "Event": 606
+   }
+  ]
+ },
+ "result": {
+  "baselineGrowthPerTypePerChange": 2,
+  "controlGrowthPerTypePerChange": 0,
+  "baselinePayloadGrowthBytesPerChange": 304,
+  "controlPayloadGrowthBytesPerChange": 0,
+  "matchedComparison": "Warmup, 12 and 24 changes are directly matched. Baseline final idle follows 192 changes; control final idle follows 24, so these are not matched-duration endpoints.",
+  "interpretation": "Removing the listener suppresses this family of retained allocations in all four control censuses. Sparse-table absence means zero observed matching busy-block headers; other Windowing headers remain present. This does not establish that no transient event arguments were allocated."
+ },
+ "retirementAndLimits": {
+  "controlLanguageChanges": 24,
+  "controlRetiredReferences": 109,
+  "controlRetiredReferencesAlive": 0,
+  "attachmentRollbackPassed": true,
+  "shellMessageHostsPreserved": true,
+  "stableNativeShells": true,
+  "CompositionConstant": 13,
+  "TimerConstant": 15,
+  "EventWarmupAndIdle": [419, 452],
+  "privateBytesWarmupAndIdle": [172662784, 297099264],
+  "privateGrowthBytes": 124436480,
+  "limits": "Other native growth remains. Four completed default-process HeapWalks cover the sampled vtable families, not all heaps, mappings, reachability or long-term behavior. Listener omission alone is a diagnostic, not a complete feature-preserving production fix. No claim that Claude reviewed this new control."
+ },
+ "rawArtifacts": {
+  "control": [
+   {
+    "file": "summary.json",
+    "bytes": 29617,
+    "sha256": "8264590D717FA98F48849169E4A068C0E3E05017B5F8159C390E10B0E5D43A96"
+   },
+   {
+    "file": "sustained.json",
+    "bytes": 10587,
+    "sha256": "E2449653B0418C6C1B1B31AE49E2ED715DA4EFA3CC102C57648BB40AF67D1EAE"
+   },
+   {
+    "file": "sustained.json.warmup.heap.json",
+    "bytes": 124018,
+    "sha256": "63209214DAEAC2388CB7095CFE8D7CD79466D70ED2922948A8D8742B1D9D6A93"
+   },
+   {
+    "file": "sustained.json.batch-12.heap.json",
+    "bytes": 135980,
+    "sha256": "4B68501E16EF89BB5694041585E43E2C5E8AD0137FA89FCF5F39F29D0241DD21"
+   },
+   {
+    "file": "sustained.json.batch-24.heap.json",
+    "bytes": 142718,
+    "sha256": "29E6FB0848CBE7613D083720EF213270AF3AC1364720C68B5570852156D2C164"
+   },
+   {
+    "file": "sustained.json.idle.heap.json",
+    "bytes": 128348,
+    "sha256": "CD191AB1C1AE160E5ED064BB0E47773E0B571783A0FD0D78EFBBFE31AEEA8F3B"
+   }
+  ],
+  "baseline": [
+   {
+    "file": "summary.json",
+    "bytes": 62638,
+    "sha256": "0F2BC1E3E0BA7AF8F6032E761875E05434FF46707324E93C419198B511AE10A5"
+   },
+   {
+    "file": "sustained.json",
+    "bytes": 29794,
+    "sha256": "1717FADA96218460F58266B972DA96B30CA8A0EA88C55B342F3574F274BA10F3"
+   },
+   {
+    "file": "sustained.json.warmup.heap.json",
+    "bytes": 124296,
+    "sha256": "CB6A3A4B3AAE5B52DE02072303072506F4E23467991F676B087E27ED6459F94D"
+   },
+   {
+    "file": "sustained.json.batch-12.heap.json",
+    "bytes": 139157,
+    "sha256": "F0BC02BFA702E67C1FF8AC9E68E2A5BE3B9ED70B518274E635F8452CE9DB35B5"
+   },
+   {
+    "file": "sustained.json.batch-24.heap.json",
+    "bytes": 141710,
+    "sha256": "B2E7DB90AD60926EE3377D8842F3DFA4148545E6D339E47ADE953F5E3A21F69C"
+   },
+   {
+    "file": "sustained.json.idle.heap.json",
+    "bytes": 139077,
+    "sha256": "E15DA188D80E53A029E92B3FBA0E16C659C7BD6C1C9E49E5A0DAD84AC7AAE711"
+   }
+  ]
+ },
+ "privacy": "Artifact filenames are basenames only. Raw dumps/logs, memory addresses, handles, process IDs and private paths remain local."
+}

@@ -571,3 +571,51 @@ raw-artifact hashes are in the ledger. Temporary instrumentation was removed and
 pre-instrumentation backups restored. No private native free or custom ABI shim
 was shipped. The requested sanitized Claude review remains incomplete after the
 weekly quota failure, with zero model tokens and no findings.
+
+## Windowing event-argument mitigation (2026-11-04)
+
+A [subscription-removal control](results/2026-11-04-windowing-change-subscription-control.json)
+isolated the remaining native ChangedArgs families. Omitting only the main
+window's `AppWindow.Changed` registration removed all three sampled types at
+warmup, 12 and 24 language changes, and final idle. The matched earlier samples
+contained 12, 36 and 60 objects of each type. This eliminates the observed
+304-byte payload increase per language change; it does not establish that no
+event arguments are transiently allocated. The first attempted control had no
+heap instrumentation in its runner and is excluded.
+
+The production fix moves size enforcement into a shell-owned native subclass
+and uses the pinned SDK's public `OverlappedPresenter` minimum/maximum properties.
+Actual projection metadata contains these APIs even though the selected XML
+reference omitted them. The newer XAML `Window.MinWidth` properties are absent
+from the pinned WinUI projection. Microsoft documents presenter limits for both
+[user and programmatic resizing](https://learn.microsoft.com/en-us/windows/apps/develop/ui/manage-app-windows#overlapped-presenter).
+The helper retains the existing 800-by-600 DIP outer-window policy, clamps it to
+the work area, updates on native DPI/display changes, and survives localized
+content replacement. The DPI transition guard covers clearing, default message
+handling and reapplication, including a failed clear. Maximized bounds can
+include [invisible resize borders](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowrect#remarks);
+explicit reconciliation applies only to restored windows.
+
+The [fix census](results/2026-11-04-window-sizing-native-fix.json) completed 58
+language changes and reclaimed all 245 tracked retired references. All three
+ChangedArgs families remained absent at six checkpoints, including idle.
+Composition stayed 13 and Timers 15; GDI stayed 89, USER changed 80 to 77, and
+Events ended at 448 after starting at 417. Every locked heap walk completed,
+unlocked successfully and included the Windowing module. These are dirty
+diagnostic builds based on `645bf03e`, with actual binary and input hashes in the
+ledger. Temporary census code is excluded from the delivered product.
+
+Private bytes still increased from 176,136,192 to 388,198,400. The independent MRM
+ownership leak and Intel-linked allocation investigation remain unresolved;
+this fix does not establish overall native-memory stability. The new native
+sizing smoke covers hidden and visible resizing, available displays, changed
+constraints while minimized, maximize/restore, a same-DPI undersized suggested
+rectangle, range replacement and native callback destruction. Tests use an
+isolated desktop and do not change monitor configuration or installed services.
+
+After removing instrumentation, the full solution build passed with zero warnings
+or errors and all 11,378 tests across 17 projects passed, with no failures or
+skips. The separate Release Tray suite passed all 2,660 tests, including direct
+Win32 resizing. Fresh English and pseudo-localized Main-window renders were
+inspected. Independent Codex review found no remaining actionable issue in this
+fix; the requested Claude review remains incomplete because of its weekly quota.
