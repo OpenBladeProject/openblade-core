@@ -4,7 +4,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
-public sealed partial class WindowsPid02E0MatrixFeatureWriterTests
+public sealed class WindowsPid02E0MatrixFeatureWriterTests
 {
     private static readonly HostIdentityReadResult ExactHost = new(
         new HostIdentityEvidence(

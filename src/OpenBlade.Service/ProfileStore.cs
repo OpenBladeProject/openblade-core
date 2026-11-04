@@ -205,7 +205,7 @@ public sealed class ProfileStore
             ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
                 json,
                 SerializerOptions);
-            if (document?.Profiles is null)
+            if (document is null)
             {
                 throw new InvalidDataException("The profile document is missing.");
             }
@@ -245,7 +245,7 @@ public sealed class ProfileStore
         {
             LegacyProfileDocument? document =
                 JsonSerializer.Deserialize<LegacyProfileDocument>(json, SerializerOptions);
-            if (document?.Profiles is null)
+            if (document is null)
             {
                 throw new InvalidDataException("The legacy profile document is missing.");
             }
@@ -311,11 +311,6 @@ public sealed class ProfileStore
         out bool migrated,
         bool? batteryProtectionDefault)
     {
-        if (profiles?.PluggedIn is null || profiles.Battery is null || profiles.UsbC is null)
-        {
-            throw new InvalidDataException("The profile document is missing a required power profile.");
-        }
-
         PerformancePreset normalized = profiles.Battery.Performance switch
         {
             PerformancePreset.Silent => PerformancePreset.BatterySaver,

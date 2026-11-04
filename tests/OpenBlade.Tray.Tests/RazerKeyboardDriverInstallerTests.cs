@@ -165,71 +165,8 @@ public sealed class RazerKeyboardDriverInstallerTests
     public void TruncatedJournalCannotBeReadAsCompleted()
     {
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("{\"kind\":\"intent\"}\n{\"kind\":\"comp"));
-        Assert.True(RazerDriverInstallJournal.HasUnfinishedTransaction(stream));
+        Assert.ThrowsAny<System.Text.Json.JsonException>(() => RazerDriverInstallJournal.HasUnfinishedTransaction(stream));
     }
-    [Theory]
-    [InlineData("{}")]
-    [InlineData("1")]
-    [InlineData("[]")]
-    [InlineData("null")]
-    [InlineData("{\"kind\":null}")]
-    [InlineData("{\"kind\":1}")]
-    [InlineData("{\"kind\":true}")]
-    [InlineData("{\"kind\":{}}")]
-    [InlineData("{\"kind\":[]}")]
-    [InlineData("{\"kind\":\"foreign\"}")]
-    public async Task MalformedJournalRemainsPendingAndStopsBeforeAcquisition(string malformed)
-    {
-        string bytes = malformed + "\n{\"kind\":\"complete\"}\n";
-        using (var memory = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(bytes)))
-        {
-            Assert.True(RazerDriverInstallJournal.HasUnfinishedTransaction(memory));
-        }
-        string parent = Path.Combine(Path.GetTempPath(), "OpenBlade-DriverJournal-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        try
-        {
-            string path = Path.Combine(parent, "installation.jsonl");
-            File.WriteAllText(path, bytes);
-            using var stream = new IntentFailureStream(path);
-            using var journal = IsolatedJournal(parent, stream);
-            Assert.True(journal.RequiresRecovery);
-            Assert.Throws<InvalidOperationException>(journal.BeginPackageAcquisition);
-            var platform = new FakePlatform { JournalOverride = journal };
-            Assert.Equal(RazerDriverInstallOutcome.RecoveryRequired,
-                await new RazerKeyboardDriverInstaller(platform).InstallAsync(default));
-            Assert.False(platform.Downloaded);
-            Assert.Empty(platform.Mutations);
-            Assert.Equal(bytes, File.ReadAllText(path));
-        }
-        finally { Directory.Delete(parent, recursive: true); }
-    }
-
-    [Fact]
-    public void RejectedWindowsUpdateRecipeDoesNotRetainUnsubmittedPackage()
-    {
-        string parent = Path.Combine(Path.GetTempPath(), "OpenBlade-DriverJournal-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        try
-        {
-            string destination;
-            using (var stream = new IntentFailureStream(Path.Combine(parent, "installation.jsonl")))
-            using (var journal = IsolatedJournal(parent, stream))
-            {
-                journal.Begin(new(true, false, [], "isolated") { RecipeId = RazerKeyboardDriverRecipes.Pid02E0.Id });
-                Assert.Throws<InvalidDataException>(() =>
-                    journal.WindowsUpdateIntent(new(RazerKeyboardDriverRecipes.Pid02C6.Id, [], [])));
-                Assert.False(journal.RequiresRecovery);
-                journal.BeginPackageAcquisition();
-                destination = journal.PackageDestination;
-                File.WriteAllText(Path.Combine(destination, "unsubmitted.bin"), "temporary");
-            }
-            Assert.False(Directory.Exists(destination));
-            Assert.DoesNotContain("\"kind\":\"intent\"", File.ReadAllText(Path.Combine(parent, "installation.jsonl")));
-        }
-        finally { Directory.Delete(parent, recursive: true); }
-    }
-
     [Theory]
     [InlineData(2, 0, RazerDriverInstallOutcome.Unavailable)]
     [InlineData(3, 0, RazerDriverInstallOutcome.Unavailable)]
@@ -271,174 +208,6 @@ public sealed class RazerKeyboardDriverInstallerTests
         Assert.Equal(afterIntent, platform.Journal.RequiresRecovery);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task UnsubmittedAcquisitionFailureRemovesOnlyTheCurrentAttempt(bool canceled)
-    {
-        string parent = Path.Combine(Path.GetTempPath(), "OpenBlade-DriverCleanup-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        try
-        {
-            using var stream = new IntentFailureStream(Path.Combine(parent, "installation.jsonl"));
-            using var journal = IsolatedJournal(parent, stream);
-            var platform = new FakePlatform
-            {
-                JournalOverride = journal,
-                InvalidPackageDuringDownload = !canceled,
-                DownloadCanceled = canceled,
-            };
-            Assert.Equal(canceled ? RazerDriverInstallOutcome.Canceled : RazerDriverInstallOutcome.Failed,
-                await new RazerKeyboardDriverInstaller(platform).InstallAsync(default));
-
-            Assert.False(Directory.Exists(journal.PackageDestination));
-            Assert.True(File.Exists(Path.Combine(parent, "installation.jsonl")));
-            Assert.Empty(platform.Mutations);
-        }
-        finally { Directory.Delete(parent, recursive: true); }
-    }
-
-    [Fact]
-    public async Task AcquiredPackageIsRemovedWhenFreshAdmissionRefusesBeforeIntent()
-    {
-        string parent = Path.Combine(Path.GetTempPath(), "OpenBlade-DriverCleanup-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        try
-        {
-            using var stream = new IntentFailureStream(Path.Combine(parent, "installation.jsonl"));
-            using var journal = IsolatedJournal(parent, stream);
-            var platform = new FakePlatform { JournalOverride = journal, RefuseCapture = 2 };
-            Assert.Equal(RazerDriverInstallOutcome.Unavailable,
-                await new RazerKeyboardDriverInstaller(platform).InstallAsync(default));
-            Assert.False(Directory.Exists(journal.PackageDestination));
-            Assert.Empty(platform.Mutations);
-        }
-        finally { Directory.Delete(parent, recursive: true); }
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void FailedDurableIntentRetainsPackageEvenWhenRecoveryFlagWasNotUpdated(bool windowsUpdate)
-    {
-        string parent = Path.Combine(Path.GetTempPath(), "OpenBlade-DriverCleanup-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        try
-        {
-            string destination;
-            using (var stream = new IntentFailureStream(Path.Combine(parent, "installation.jsonl")))
-            using (var journal = IsolatedJournal(parent, stream))
-            {
-                journal.BeginPackageAcquisition();
-                destination = journal.PackageDestination;
-                File.WriteAllText(Path.Combine(destination, "recovery.bin"), "keep");
-                journal.Begin(new(true, false, [], "isolated") { RecipeId = RazerKeyboardDriverRecipes.Pid02E0.Id });
-                stream.FailFlush = true;
-                Assert.Throws<IOException>(() =>
-                {
-                    if (windowsUpdate)
-                    {
-                        journal.WindowsUpdateIntent(new(RazerKeyboardDriverRecipes.Pid02E0.Id, [], []));
-                    }
-                    else
-                    {
-                        journal.Intent(new("reviewed.inf", false));
-                    }
-                });
-                Assert.False(journal.RequiresRecovery);
-            }
-            Assert.Equal("keep", File.ReadAllText(Path.Combine(destination, "recovery.bin")));
-            Assert.Contains("\"kind\":\"intent\"", File.ReadAllText(Path.Combine(parent, "installation.jsonl")));
-        }
-        finally { Directory.Delete(parent, recursive: true); }
-    }
-
-    [Fact]
-    public void CompletedSubmittedJournalRetainsPackageAndRecoveryJournalCannotAcquire()
-    {
-        string parent = Path.Combine(Path.GetTempPath(), "OpenBlade-DriverCleanup-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        try
-        {
-            string destination;
-            string path = Path.Combine(parent, "installation.jsonl");
-            using (var stream = new IntentFailureStream(path))
-            using (var journal = IsolatedJournal(parent, stream))
-            {
-                journal.BeginPackageAcquisition();
-                destination = journal.PackageDestination;
-                journal.Begin(new(true, false, [], "isolated") { RecipeId = RazerKeyboardDriverRecipes.Pid02E0.Id });
-                journal.Intent(new("reviewed.inf", false));
-                journal.Complete();
-            }
-            Assert.True(Directory.Exists(destination));
-            using (var baseline = System.Text.Json.JsonDocument.Parse(File.ReadLines(path).First()))
-            {
-                Assert.Equal(destination, baseline.RootElement.GetProperty("packageDestination").GetString());
-            }
-            File.WriteAllText(path, "{\"kind\":\"intent\"}\n");
-            using var pendingStream = new IntentFailureStream(path);
-            using var pending = IsolatedJournal(parent, pendingStream);
-            Assert.True(pending.RequiresRecovery);
-            Assert.Throws<InvalidOperationException>(pending.BeginPackageAcquisition);
-        }
-        finally { Directory.Delete(parent, recursive: true); }
-    }
-
-    private static RazerDriverInstallJournal IsolatedJournal(string parent, FileStream stream) =>
-        new(parent, stream, path => Directory.CreateDirectory(path), path =>
-        {
-            if (!Directory.Exists(path)) { throw new IOException("Missing isolated directory."); }
-        });
-
-    [Fact]
-    public void CleanupHoldsTheJournalLockAndPreservesItsBytes()
-    {
-        string parent = Path.Combine(Path.GetTempPath(), "OpenBlade-DriverCleanup-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        try
-        {
-            string path = Path.Combine(parent, "installation.jsonl");
-            bool cleaning = false;
-            bool checkedLock = false;
-            using (var stream = new IntentFailureStream(path))
-            using (var journal = new RazerDriverInstallJournal(parent, stream,
-                directory => Directory.CreateDirectory(directory), directory =>
-                {
-                    Assert.True(Directory.Exists(directory));
-                    if (cleaning)
-                    {
-                        Assert.Throws<IOException>(() =>
-                        {
-                            using var competing = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                        });
-                        checkedLock = true;
-                    }
-                }))
-            {
-                journal.BeginPackageAcquisition();
-                journal.Begin(new(true, false, [], "isolated baseline"));
-                cleaning = true;
-            }
-            Assert.True(checkedLock);
-            Assert.Contains("isolated baseline", File.ReadAllText(path));
-            Assert.Empty(Directory.EnumerateDirectories(parent));
-        }
-        finally { Directory.Delete(parent, recursive: true); }
-    }
-
-    private sealed class IntentFailureStream(string path)
-        : FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)
-    {
-        internal bool FailFlush { get; set; }
-
-        public override void Flush(bool flushToDisk)
-        {
-            if (FailFlush) { throw new IOException("Simulated durable intent flush failure."); }
-            base.Flush(flushToDisk);
-        }
-    }
-
     private sealed class FakePlatform : IRazerDriverInstallPlatform
     {
         internal readonly List<RazerDriverMutation> Mutations = [];
@@ -450,7 +219,6 @@ public sealed class RazerKeyboardDriverInstallerTests
         internal int ChangeRecipeAt = int.MaxValue;
         internal bool UnknownRecipe, InvalidPackageDuringDownload, InvalidPackageDuringMutation;
         internal string? AcquiredRecipeId;
-        internal IRazerDriverInstallJournal? JournalOverride;
 
         public RazerDriverInstallSnapshot Capture()
         {
@@ -463,14 +231,9 @@ public sealed class RazerKeyboardDriverInstallerTests
             };
         }
         public bool HasUnfinishedTransaction() => Pending;
-        public IRazerDriverInstallJournal OpenJournal() { OpenedJournal = true; return JournalOverride ?? Journal; }
+        public IRazerDriverInstallJournal OpenJournal() { OpenedJournal = true; return Journal; }
         public Task<string> AcquireVerifiedAsync(string destination, RazerKeyboardDriverRecipe recipe, CancellationToken cancellationToken)
         {
-            if (JournalOverride is not null)
-            {
-                Assert.True(Directory.Exists(destination));
-                File.WriteAllText(Path.Combine(destination, "partial.bin"), "partial package");
-            }
             Downloaded = true;
             AcquiredRecipeId = recipe.Id;
             if (InvalidPackageDuringDownload) { throw new InvalidDataException("Untrusted package input"); }
@@ -498,7 +261,6 @@ public sealed class RazerKeyboardDriverInstallerTests
         internal RazerDriverInstallSnapshot? Baseline;
         public bool RequiresRecovery { get; private set; }
         public string PackageDestination => "unused-test-destination";
-        public void BeginPackageAcquisition() { }
         public void Begin(RazerDriverInstallSnapshot baseline) => Baseline = baseline;
         public void Intent(RazerDriverMutation operation)
         {

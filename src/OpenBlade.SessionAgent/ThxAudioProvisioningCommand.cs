@@ -79,8 +79,6 @@ internal interface IThxAudioProvisioningJournal : IDisposable
     bool RequiresRecovery { get; }
     ThxAudioProvisioningRecovery? Recovery { get; }
     string PackageDestination { get; }
-    void BeginPackageAcquisition();
-    void RetainPackage();
     void Begin(ThxAudioProvisioningSnapshot baseline, string bootIdentity);
     void Intent(ThxAudioProvisioningStep step);
     void RecordResult(ThxAudioProvisioningProcessResult result, string bootIdentity);
@@ -146,20 +144,8 @@ internal sealed class ThxAudioProvisioningCommand
                 return baseline.Refusal;
             }
 
-            journal.BeginPackageAcquisition();
-            string root;
-            try
-            {
-                root = await platform.AcquireVerifiedAsync(journal.PackageDestination, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (ProvisioningPackageInUseException)
-            {
-                // The owned extractor may still be running. Retain before the
-                // journal's using-disposal can try to remove its working tree.
-                journal.RetainPackage();
-                throw;
-            }
+            string root = await platform.AcquireVerifiedAsync(journal.PackageDestination, cancellationToken)
+                .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             baseline = platform.Capture();
             if (!baseline.Ready || baseline.Installed)
@@ -171,25 +157,21 @@ internal sealed class ThxAudioProvisioningCommand
             journal.Begin(baseline, platform.ReadBootIdentity());
             return await ExecuteRemainingAsync(journal, root, null, cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
             return submissionMayHaveOccurred
                 ? ThxAudioProvisioningResult.RecoveryRequired : ThxAudioProvisioningResult.Canceled;
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException
             or InvalidOperationException or Win32Exception or CryptographicException
-            or JsonException or TimeoutException or HttpRequestException or ManagementException or COMException
-            or OperationCanceledException)
+            or JsonException or TimeoutException or HttpRequestException or ManagementException or COMException)
         {
             DiagnosticTrace.TraceException(
                 "OpenBlade.SessionAgent.ThxAudioProvisioningCommand",
                 "Run",
                 exception);
-            return submissionMayHaveOccurred || exception is ThxProvisioningRecoveryException
-                ? ThxAudioProvisioningResult.RecoveryRequired
-                : cancellationToken.IsCancellationRequested
-                    && exception is ProvisioningPackageInUseException { AcquisitionFailure: OperationCanceledException }
-                    ? ThxAudioProvisioningResult.Canceled : ThxAudioProvisioningResult.Failed;
+            return submissionMayHaveOccurred
+                ? ThxAudioProvisioningResult.RecoveryRequired : ThxAudioProvisioningResult.Failed;
         }
     }
 
@@ -227,7 +209,7 @@ internal sealed class ThxAudioProvisioningCommand
             journal.Complete();
             return ThxAudioProvisioningResult.Installed;
         }
-        return await ExecuteRemainingAsync(journal, journal.PackageDestination,
+        return await ExecuteRemainingAsync(journal, recovery.PackageDestination,
             recovery.RestartStep, cancellationToken).ConfigureAwait(false);
     }
 

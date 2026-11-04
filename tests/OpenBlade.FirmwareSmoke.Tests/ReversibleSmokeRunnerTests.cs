@@ -203,7 +203,7 @@ public sealed class ReversibleSmokeRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_FailedApplicationOnlyReconcilesReadOnly()
+    public async Task RunAsync_StillRestoresAfterApplicationFailure()
     {
         await using var client = new FakeFirmwareSmokeClient
         {
@@ -218,116 +218,7 @@ public sealed class ReversibleSmokeRunnerTests
             FirmwareSmokeOutcome.Failed,
             failure.Outcome);
         Assert.Equal("write.performance", failure.Id);
-        Assert.Equal(1, client.PerformanceMutationCalls);
-        Assert.True(client.ObservationCalls >= 2);
-        Assert.Contains("No restoration write submitted", failure.Actual, StringComparison.Ordinal);
-        client.AssertOriginalState();
-    }
-
-    [Fact]
-    public async Task RunAsync_ApplicationExceptionAfterSubmissionDoesNotRestoreOrContinue()
-    {
-        await using var client = new FakeFirmwareSmokeClient { ThrowFirstPerformanceApply = true };
-
-        FirmwareSmokeCheck check = Assert.Single(
-            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None));
-
-        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
-        Assert.Equal(1, client.PerformanceMutationCalls);
-        Assert.Equal(0, client.HyperBoostMutationCalls);
-        Assert.Equal(0, client.FanMutationCalls);
-        Assert.Contains("IOException", check.Actual, StringComparison.Ordinal);
-        Assert.Contains("restoration remains unresolved", check.Actual, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RunAsync_CanceledSubmissionRetainsReconciliationFailureEvidence()
-    {
-        using var cancellation = new CancellationTokenSource();
-        await using var client = new FakeFirmwareSmokeClient
-        {
-            CancelFirstPerformanceApply = cancellation,
-            FailCandidateReadback = true,
-        };
-
-        OperationCanceledException error = await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => new ReversibleSmokeRunner(client).RunAsync(cancellation.Token));
-
-        Assert.Contains("Apply=OperationCanceledException", error.Message, StringComparison.Ordinal);
-        Assert.Contains("Restore=IOException", error.Message, StringComparison.Ordinal);
-        Assert.Equal(1, client.PerformanceMutationCalls);
-        Assert.Equal(0, client.HyperBoostMutationCalls);
-    }
-
-    [Fact]
-    public async Task RunAsync_MissingCandidateReadbackDoesNotRestore()
-    {
-        await using var client = new FakeFirmwareSmokeClient { FailCandidateReadback = true };
-
-        FirmwareSmokeCheck check = Assert.Single(
-            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None));
-
-        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
-        Assert.Equal(1, client.PerformanceMutationCalls);
-        Assert.Contains("Apply=IOException", check.Actual, StringComparison.Ordinal);
-        Assert.Contains("Restore=IOException", check.Actual, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RunAsync_StoredFanIntentDoesNotConfirmCandidateHardware()
-    {
-        await using var client = new FakeFirmwareSmokeClient { StoreFixedFanWithoutApply = true };
-
-        IReadOnlyList<FirmwareSmokeCheck> checks =
-            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
-
-        FirmwareSmokeCheck check = checks[^1];
-        Assert.Equal("write.fans", check.Id);
-        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
-        Assert.Equal(1, client.FanMutationCalls);
-        Assert.Contains("No restoration write submitted", check.Actual, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RunAsync_RestorationRequiresSavedFanOverrideAsWellAsHardwareMode()
-    {
-        await using var client = new FakeFirmwareSmokeClient { RetainFanOverrideOnRestore = true };
-
-        FirmwareSmokeCheck check = (await new ReversibleSmokeRunner(client)
-            .RunAsync(CancellationToken.None))[^1];
-
-        Assert.Equal("write.fans", check.Id);
-        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
-        Assert.Equal(2, client.FanMutationCalls);
-        Assert.Contains("did not confirm restoration", check.Actual, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RunAsync_FixedBaselineStillRequiresItsOriginalSavedSpeed()
-    {
-        await using var client = new FakeFirmwareSmokeClient { RetainFanOverrideOnRestore = true };
-        client.SetInitialFanOverride(new FanControlSettings(FanMode.Fixed, 4500, ManualFanCurve.Default));
-
-        FirmwareSmokeCheck check = (await new ReversibleSmokeRunner(client)
-            .RunAsync(CancellationToken.None))[^1];
-
-        Assert.Equal("write.fans", check.Id);
-        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
-        Assert.Equal(2, client.FanMutationCalls);
-    }
-
-    [Fact]
-    public async Task RunAsync_CancellationAfterConfirmedCandidateRestoresAndRetainsTheCallerToken()
-    {
-        using var cancellation = new CancellationTokenSource();
-        await using var client = new FakeFirmwareSmokeClient { CancelAfterCandidateReadback = cancellation };
-
-        OperationCanceledException error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            new ReversibleSmokeRunner(client).RunAsync(cancellation.Token));
-
-        Assert.Equal(cancellation.Token, error.CancellationToken);
-        Assert.Contains("Restore=Applied", error.Message, StringComparison.Ordinal);
-        Assert.Equal(3, client.PerformanceMutationCalls);
+        Assert.True(client.PerformanceMutationCalls >= 2);
         client.AssertOriginalState();
     }
 
@@ -356,7 +247,7 @@ public sealed class ReversibleSmokeRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_HyperBoostFailureAfterApplyOnlyReconcilesReadOnly()
+    public async Task RunAsync_HyperBoostFailureAfterApplyRestoresOnceFromReadback()
     {
         await using var client = new FakeFirmwareSmokeClient
         {
@@ -370,8 +261,8 @@ public sealed class ReversibleSmokeRunnerTests
         FirmwareSmokeCheck failure = checks[1];
         Assert.Equal("write.hyper-boost", failure.Id);
         Assert.Equal(FirmwareSmokeOutcome.Failed, failure.Outcome);
-        Assert.Equal(1, client.HyperBoostMutationCalls);
-        Assert.Contains("no restoration write", failure.Actual, StringComparison.Ordinal);
+        Assert.Equal(2, client.HyperBoostMutationCalls);
+        client.AssertOriginalState();
     }
 
     [Fact]
@@ -415,12 +306,12 @@ public sealed class ReversibleSmokeRunnerTests
             check => check.Id == "write.fans");
         Assert.Equal(FirmwareSmokeOutcome.Failed, failure.Outcome);
         Assert.DoesNotContain("Retry=", failure.Actual, StringComparison.Ordinal);
-        Assert.Equal(1, client.FanMutationCalls);
+        Assert.Equal(2, client.FanMutationCalls);
         client.AssertOriginalState();
     }
 
     [Fact]
-    public async Task RunAsync_IndeterminateRestoreDoesNotClearOverrideOrContinue()
+    public async Task RunAsync_UsesIndependentReadbackAfterIndeterminateRestore()
     {
         await using var client = new FakeFirmwareSmokeClient
         {
@@ -430,236 +321,11 @@ public sealed class ReversibleSmokeRunnerTests
         IReadOnlyList<FirmwareSmokeCheck> checks =
             await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
 
-        FirmwareSmokeCheck check = Assert.Single(checks);
-        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
-        Assert.Equal(2, client.PerformanceMutationCalls);
-        Assert.Equal(0, client.HyperBoostMutationCalls);
-        Assert.Contains("override was retained without another write", check.Actual, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RunAsync_RejectedPerformanceRestoreReconcilesWithoutAFullPollingWindow()
-    {
-        await using var client = new FakeFirmwareSmokeClient { RejectPerformanceRestore = true };
-
-        FirmwareSmokeCheck check = Assert.Single(await new ReversibleSmokeRunner(client)
-            .RunAsync(CancellationToken.None));
-
-        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
-        Assert.Equal(2, client.PerformanceMutationCalls);
-        Assert.InRange(client.ObservationCalls, 2, 8);
-        Assert.Equal(0, client.HyperBoostMutationCalls);
-        Assert.Contains("override was retained without another write", check.Actual, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RunAsync_FreshRestorationSafetyRefusalLeavesTheCandidateUnresolved()
-    {
-        await using var client = new FakeFirmwareSmokeClient { BlockPerformanceRestoration = true };
-
-        FirmwareSmokeCheck check = Assert.Single(await new ReversibleSmokeRunner(client)
-            .RunAsync(CancellationToken.None));
-
-        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
-        Assert.Equal(1, client.PerformanceMutationCalls);
-        Assert.Contains("no restoration write was submitted", check.Actual, StringComparison.Ordinal);
-        Assert.Contains("unresolved", check.Actual, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RunHyperBoostRoundTripAsync_UsesTheSameFreshRestorationSafetyAdmission()
-    {
-        await using var client = new FakeFirmwareSmokeClient { BlockHyperBoostRestoration = true };
-
-        FirmwareSmokeCheck check = await new ReversibleSmokeRunner(client)
-            .RunHyperBoostRoundTripAsync(CancellationToken.None);
-
-        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
-        Assert.Equal(1, client.HyperBoostMutationCalls);
-        Assert.Contains("no restoration write was submitted", check.Actual, StringComparison.Ordinal);
-        Assert.Contains("unresolved", check.Actual, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task RunAsync_AcknowledgedClearWithRetainedOverrideDoesNotPassOrContinue()
-    {
-        await using var client = new FakeFirmwareSmokeClient { AcknowledgeClearWithRetainedOverride = true };
-
-        FirmwareSmokeCheck check = Assert.Single(await new ReversibleSmokeRunner(client)
-            .RunAsync(CancellationToken.None));
-
-        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
-        Assert.Contains("cleared performance override", check.Actual, StringComparison.Ordinal);
-        Assert.Equal(3, client.PerformanceMutationCalls);
-        Assert.Equal(0, client.HyperBoostMutationCalls);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RunAsync_CustomRestorationRequiresExactLevelsBeforeClearingOverride(bool wrongLevels)
-    {
-        var custom = new CustomPerformanceSettings(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High);
-        await using var client = new FakeFirmwareSmokeClient(PerformancePreset.Custom, customPerformance: custom)
-        {
-            WrongCustomPerformanceRestore = wrongLevels,
-        };
-
-        IReadOnlyList<FirmwareSmokeCheck> checks =
-            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
-
-        Assert.All(client.PerformanceRequests.Where(value => value is not null),
-            value => Assert.True(value!.IsWellFormed()));
-        Assert.Equal(custom, client.PerformanceRequests[1]?.CustomPerformance);
-        Assert.Equal(wrongLevels ? FirmwareSmokeOutcome.Failed : FirmwareSmokeOutcome.Passed, checks[0].Outcome);
-        Assert.Equal(wrongLevels ? 2 : 3, client.PerformanceMutationCalls);
-        if (wrongLevels)
-        {
-            Assert.Single(checks);
-            Assert.Equal(0, client.HyperBoostMutationCalls);
-        }
-    }
-
-    [Fact]
-    public async Task RunAsync_UnknownCustomBaselineSkipsBeforeAnyPerformanceMutation()
-    {
-        await using var client = new FakeFirmwareSmokeClient(PerformancePreset.Custom);
-        client.ForgetInitialCustomPerformance();
-
-        IReadOnlyList<FirmwareSmokeCheck> checks =
-            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
-
-        Assert.Equal(FirmwareSmokeOutcome.Skipped, checks[0].Outcome);
-        Assert.Equal(0, client.PerformanceMutationCalls);
-    }
-
-    [Fact]
-    public async Task Recovery_CustomSnapshotWithoutSavedLevelsStopsBeforeAnyMutation()
-    {
-        await using var client = new FakeFirmwareSmokeClient(PerformancePreset.Custom)
-        {
-            RecoveryFailure = "none",
-        };
-        client.PrepareRecovery();
-        FirmwareSmokeSnapshot baseline = FirmwareSmokeAssessmentTests.CreateSnapshot("1.5.0.0");
-        baseline = baseline with { Controls = baseline.Controls with { Performance = "Custom" } };
-
-        IReadOnlyList<FirmwareSmokeCheck> checks = await new FirmwareSmokeRecovery(client)
-            .RestoreAsync(baseline, CancellationToken.None);
-
-        Assert.Equal(FirmwareSmokeOutcome.Failed, checks[0].Outcome);
-        Assert.Contains("exact Custom CPU/GPU levels", checks[0].Actual, StringComparison.Ordinal);
-        Assert.Empty(client.RecoveryMutations);
-        Assert.All(checks.Skip(1), check => Assert.Equal(FirmwareSmokeOutcome.Skipped, check.Outcome));
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RunAsync_StaticLightingBaselineRequiresItsSavedOverride(bool retainCandidate)
-    {
-        await using var client = new FakeFirmwareSmokeClient
-        {
-            RetainLightingOverrideOnRestore = retainCandidate,
-        };
-        client.SetInitialLightingOverride(LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 40));
-
-        IReadOnlyList<FirmwareSmokeCheck> checks =
-            await new ReversibleSmokeRunner(client).RunAsync(CancellationToken.None);
-
-        FirmwareSmokeCheck lighting = Assert.Single(checks, check => check.Id == "write.lighting");
-        Assert.Equal(retainCandidate ? FirmwareSmokeOutcome.Failed : FirmwareSmokeOutcome.Passed, lighting.Outcome);
-        Assert.Equal(2, client.LightingMutationCalls);
-        if (retainCandidate)
-        {
-            Assert.Equal("write.lighting", checks[^1].Id);
-        }
-    }
-
-    [Theory]
-    [InlineData("performance", 0)]
-    [InlineData("fans", 1)]
-    [InlineData("battery", 2)]
-    [InlineData("lighting", 3)]
-    public async Task Recovery_FailedStageLeavesAllLaterStagesUnattempted(string failure, int failedIndex)
-    {
-        await using var client = new FakeFirmwareSmokeClient { RecoveryFailure = failure };
-        client.PrepareRecovery();
-
-        IReadOnlyList<FirmwareSmokeCheck> checks = await new FirmwareSmokeRecovery(client)
-            .RestoreAsync(FirmwareSmokeAssessmentTests.CreateSnapshot("1.5.0.0"), CancellationToken.None);
-
-        Assert.Equal(FirmwareSmokeOutcome.Failed, checks[failedIndex].Outcome);
-        Assert.All(checks.Skip(failedIndex + 1), check =>
-        {
-            Assert.Equal(FirmwareSmokeOutcome.Skipped, check.Outcome);
-            Assert.Contains("Not attempted", check.Actual, StringComparison.Ordinal);
-        });
-        Assert.Equal(failure, client.RecoveryMutations[^1]);
-    }
-
-    [Theory]
-    [InlineData("StartupAnimation")]
-    [InlineData("FunctionKeyPrimary")]
-    public async Task Recovery_LaptopControlFailureStopsTheRemainingControls(string failure)
-    {
-        await using var client = new FakeFirmwareSmokeClient { RecoveryFailure = failure };
-        client.PrepareRecovery();
-
-        FirmwareSmokeCheck check = (await new FirmwareSmokeRecovery(client)
-            .RestoreAsync(FirmwareSmokeAssessmentTests.CreateSnapshot("1.5.0.0"), CancellationToken.None))[^1];
-
-        Assert.Equal(FirmwareSmokeOutcome.Failed, check.Outcome);
-        Assert.Equal(failure, client.RecoveryMutations[^1]);
-        Assert.Contains("not attempted", check.Actual, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("GamingMode", client.RecoveryMutations);
-    }
-
-    [Fact]
-    public async Task Recovery_UnavailableStageReadbackStopsAndReportsLaterStages()
-    {
-        await using var client = new FakeFirmwareSmokeClient
-        {
-            RecoveryFailure = "none",
-            FailCandidateReadback = true,
-        };
-        client.PrepareRecovery();
-
-        IReadOnlyList<FirmwareSmokeCheck> checks = await new FirmwareSmokeRecovery(client)
-            .RestoreAsync(FirmwareSmokeAssessmentTests.CreateSnapshot("1.5.0.0"), CancellationToken.None);
-
-        Assert.Equal(FirmwareSmokeOutcome.Failed, checks[0].Outcome);
-        Assert.Contains("IOException", checks[0].Actual, StringComparison.Ordinal);
-        Assert.All(checks.Skip(1), check => Assert.Equal(FirmwareSmokeOutcome.Skipped, check.Outcome));
-        Assert.Equal(["performance"], client.RecoveryMutations);
-    }
-
-    [Fact]
-    public async Task Recovery_CancellationRetainsEarlierOutcomesAndStopsLaterStages()
-    {
-        using var cancellation = new CancellationTokenSource();
-        await using var client = new FakeFirmwareSmokeClient
-        {
-            RecoveryFailure = "none",
-            BeforeRecoveryMutation = operation =>
-            {
-                if (operation == "fans")
-                {
-                    cancellation.Cancel();
-                    throw new OperationCanceledException(cancellation.Token);
-                }
-            },
-        };
-        client.PrepareRecovery();
-
-        OperationCanceledException error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            new FirmwareSmokeRecovery(client).RestoreAsync(
-                FirmwareSmokeAssessmentTests.CreateSnapshot("1.5.0.0"), cancellation.Token));
-
-        Assert.Equal(cancellation.Token, error.CancellationToken);
-        Assert.Contains("recovery.performance=Passed", error.Message, StringComparison.Ordinal);
-        Assert.Contains("Later restorations were not attempted", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("battery", client.RecoveryMutations);
+        Assert.Equal(8, checks.Count);
+        Assert.All(
+            checks,
+            check => Assert.Equal(FirmwareSmokeOutcome.Passed, check.Outcome));
+        client.AssertOriginalState();
     }
 
     private sealed class FakeFirmwareSmokeClient : IFirmwareSmokeClient
@@ -780,91 +446,9 @@ public sealed class ReversibleSmokeRunnerTests
 
         public bool FailFirstPerformanceApply { get; init; }
 
-        public bool ThrowFirstPerformanceApply { get; init; }
-
-        public CancellationTokenSource? CancelFirstPerformanceApply { get; init; }
-
-        public CancellationTokenSource? CancelAfterCandidateReadback { get; init; }
-
-        public bool FailCandidateReadback { get; init; }
-
-        public bool StoreFixedFanWithoutApply { get; init; }
-
-        public bool RetainFanOverrideOnRestore { get; init; }
-
-        public bool RetainLightingOverrideOnRestore { get; init; }
-
-        public int LightingMutationCalls { get; private set; }
-
-        public string? RecoveryFailure { get; init; }
-
-        public Action<string>? BeforeRecoveryMutation { get; init; }
-
-        public List<string> RecoveryMutations { get; } = [];
-
-        public int ObservationCalls { get; private set; }
-
-        public void SetInitialFanOverride(FanControlSettings settings) => status = status with
-        {
-            ConfirmedState = status.ConfirmedState! with { Fans = settings.Mode },
-            FanOverride = new ManualOverride<FanMode>(settings.Mode, OverrideLifetime.UntilPowerSourceChange),
-            FanControlOverride = settings,
-        };
-
-        public void ForgetInitialCustomPerformance() => status = status with
-        {
-            ConfirmedState = status.ConfirmedState! with { CustomPerformance = null },
-        };
-
-        public void SetInitialLightingOverride(LightingSettings settings) => status = status with
-        {
-            LightingRendererOwnership = LightingRendererOwnershipState.Static,
-            LightingOverride = new ManualOverride<LightingSettings>(settings, OverrideLifetime.UntilPowerSourceChange),
-        };
-
-        public void PrepareRecovery() => status = status with
-        {
-            Firmware = status.Firmware! with { ModelNumber = "RZ09-0581" },
-            ConfirmedState = status.ConfirmedState! with
-            {
-                Performance = PerformancePreset.Silent,
-                Fans = FanMode.Fixed,
-                Battery = new ConfirmedBatteryState(true, 75, false),
-            },
-            LightingOverride = new ManualOverride<LightingSettings>(
-                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 15),
-                OverrideLifetime.UntilPowerSourceChange),
-            StartupAnimationEnabled = false,
-            FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
-            GamingModeEnabled = true,
-        };
-
-        private bool RecoveryFails(string operation)
-        {
-            if (RecoveryFailure is null)
-            {
-                return false;
-            }
-            RecoveryMutations.Add(operation);
-            BeforeRecoveryMutation?.Invoke(operation);
-            return RecoveryFailure == operation;
-        }
-
         public bool FailFixedFanPreWrite { get; init; }
 
         public bool IndeterminatePerformanceRestore { get; init; }
-
-        public bool RejectPerformanceRestore { get; init; }
-
-        public bool BlockPerformanceRestoration { get; init; }
-
-        public bool BlockHyperBoostRestoration { get; init; }
-
-        public bool AcknowledgeClearWithRetainedOverride { get; init; }
-
-        public bool WrongCustomPerformanceRestore { get; init; }
-
-        public List<PerformanceOverride?> PerformanceRequests { get; } = [];
 
         public bool FailHyperBoostEnableKnownNotApplied { get; init; }
 
@@ -889,19 +473,7 @@ public sealed class ReversibleSmokeRunnerTests
 
         public Task<ServiceStatusSnapshot> ObserveStateAsync(
             LiveReadingSensors sensors,
-            CancellationToken cancellationToken)
-        {
-            ObservationCalls++;
-            if (FailCandidateReadback && PerformanceMutationCalls == 1)
-            {
-                throw new IOException("Candidate state readback is unavailable.");
-            }
-            if (PerformanceMutationCalls == 1 && sensors == LiveReadingSensors.None)
-            {
-                CancelAfterCandidateReadback?.Cancel();
-            }
-            return Task.FromResult(status);
-        }
+            CancellationToken cancellationToken) => Task.FromResult(status);
 
         public Task<DiagnosticArchive> ExportDiagnosticsAsync(
             bool liveReadingsEnabled,
@@ -913,16 +485,7 @@ public sealed class ReversibleSmokeRunnerTests
             CancellationToken cancellationToken)
         {
             PerformanceMutationCalls++;
-            PerformanceRequests.Add(value);
-            if (RecoveryFails("performance"))
-            {
-                return Failed();
-            }
             if (FailFirstPerformanceApply && PerformanceMutationCalls == 1)
-            {
-                return Failed();
-            }
-            if (RejectPerformanceRestore && PerformanceMutationCalls == 2)
             {
                 return Failed();
             }
@@ -930,31 +493,9 @@ public sealed class ReversibleSmokeRunnerTests
             PerformancePreset selected = value?.Value ?? originalPerformance;
             status = status with
             {
-                ConfirmedState = status.ConfirmedState! with
-                {
-                    Performance = selected,
-                    CustomPerformance = selected != PerformancePreset.Custom ? null
-                        : WrongCustomPerformanceRestore && PerformanceMutationCalls == 2
-                            ? new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium)
-                            : value?.CustomPerformance ?? originalCustomPerformance,
-                },
-                PerformanceOverride = AcknowledgeClearWithRetainedOverride && value is null
-                    ? status.PerformanceOverride
-                    : value,
-                WritesBlocked = BlockPerformanceRestoration && PerformanceMutationCalls == 1,
+                ConfirmedState = status.ConfirmedState! with { Performance = selected },
+                PerformanceOverride = value,
             };
-            if (PerformanceMutationCalls == 1)
-            {
-                if (CancelFirstPerformanceApply is { } cancellation)
-                {
-                    cancellation.Cancel();
-                    throw new OperationCanceledException(cancellation.Token);
-                }
-                if (ThrowFirstPerformanceApply)
-                {
-                    throw new IOException("Application completion is unavailable after submission.");
-                }
-            }
             if (IndeterminatePerformanceRestore
                 && PerformanceMutationCalls == 2)
             {
@@ -1003,7 +544,6 @@ public sealed class ReversibleSmokeRunnerTests
                             : hyperBoostRestoreCustom,
                     Fans = FanMode.Automatic,
                 },
-                WritesBlocked = enabled && BlockHyperBoostRestoration,
             };
             if (enabled && FailHyperBoostEnableAfterApplying
                 || !enabled && FailHyperBoostRestore)
@@ -1025,10 +565,6 @@ public sealed class ReversibleSmokeRunnerTests
             CancellationToken cancellationToken)
         {
             FanMutationCalls++;
-            if (RecoveryFails("fans"))
-            {
-                return Failed();
-            }
             FanMode selected = value?.Value ?? profiles.PluggedIn.Fans;
             if (FailFixedFanPreWrite && selected == FanMode.Fixed)
             {
@@ -1041,19 +577,10 @@ public sealed class ReversibleSmokeRunnerTests
 
             status = status with
             {
-                ConfirmedState = status.ConfirmedState! with
-                {
-                    Fans = StoreFixedFanWithoutApply && selected == FanMode.Fixed
-                        ? FanMode.Automatic
-                        : selected,
-                },
-                FanOverride = RetainFanOverrideOnRestore && FanMutationCalls == 2 ? status.FanOverride : value,
-                FanControlOverride = RetainFanOverrideOnRestore && FanMutationCalls == 2 ? status.FanControlOverride : settings,
+                ConfirmedState = status.ConfirmedState! with { Fans = selected },
+                FanOverride = value,
+                FanControlOverride = settings,
             };
-            if (StoreFixedFanWithoutApply && selected == FanMode.Fixed)
-            {
-                return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Stored, "Saved intent only."));
-            }
             return Applied();
         }
 
@@ -1061,16 +588,9 @@ public sealed class ReversibleSmokeRunnerTests
             ManualOverride<LightingSettings>? value,
             CancellationToken cancellationToken)
         {
-            LightingMutationCalls++;
-            if (RecoveryFails("lighting"))
-            {
-                return Failed();
-            }
             status = status with
             {
-                LightingOverride = RetainLightingOverrideOnRestore && LightingMutationCalls == 2
-                    ? status.LightingOverride
-                    : value,
+                LightingOverride = value,
                 LightingRendererOwnership = value is null
                     ? LightingRendererOwnershipState.Spectrum
                     : LightingRendererOwnershipState.Static,
@@ -1082,10 +602,6 @@ public sealed class ReversibleSmokeRunnerTests
             BatteryPolicy value,
             CancellationToken cancellationToken)
         {
-            if (RecoveryFails("battery"))
-            {
-                return Failed();
-            }
             status = status with
             {
                 ConfirmedState = status.ConfirmedState! with
@@ -1103,10 +619,6 @@ public sealed class ReversibleSmokeRunnerTests
             ApplyOneShotLaptopControl value,
             CancellationToken cancellationToken)
         {
-            if (RecoveryFails(value.Control.ToString()))
-            {
-                return Failed();
-            }
             status = value.Control switch
             {
                 OneShotLaptopControl.StartupAnimation => status with

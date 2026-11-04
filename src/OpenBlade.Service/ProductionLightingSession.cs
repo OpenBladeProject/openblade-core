@@ -16,32 +16,6 @@ internal sealed class ProductionLightingSession
     private readonly IProductionLightingPortFactory lightingFactory;
     private readonly ILogger<WindowsVerifiedBladeDeviceProvider>? logger;
     private readonly LowPowerGate? lowPowerGate;
-    private Func<bool>? recoveryWriteAdmission;
-
-    internal void SetRecoveryWriteAdmission(Func<bool> admission)
-    {
-        ArgumentNullException.ThrowIfNull(admission);
-        Volatile.Write(ref recoveryWriteAdmission, admission);
-        if (lightingPort is ILightingRecoveryWriteAdmission retained)
-        {
-            retained.SetRecoveryWriteAdmission(RecoveryWritesAllowed);
-        }
-    }
-
-    private bool RecoveryWritesAllowed() => Volatile.Read(ref recoveryWriteAdmission)?.Invoke() != false;
-
-    private void BindRecoveryWriteAdmission(IProductionLightingPort port)
-    {
-        if (Volatile.Read(ref recoveryWriteAdmission) is null)
-        {
-            return;
-        }
-        if (port is not ILightingRecoveryWriteAdmission admitted)
-        {
-            throw new CapabilityUnavailableException("The lighting backend has no retained recovery admission.");
-        }
-        admitted.SetRecoveryWriteAdmission(RecoveryWritesAllowed);
-    }
     private readonly Func<CancellationToken, Task> enterHardwareOperation;
     private readonly Action releaseHardwareOperation;
     private readonly object lightingPortOpenDiagnosticSync = new();
@@ -415,8 +389,7 @@ internal sealed class ProductionLightingSession
         }
         catch (BladeWriteException exception)
         {
-            if (!LightingRecoveryWriteGate.IsRejection(exception)
-                && exception.SubmissionState == WriteSubmissionState.Indeterminate
+            if (exception.SubmissionState == WriteSubmissionState.Indeterminate
                 && port?.OwnershipState is
                     LightingRendererOwnershipState.None or
                     LightingRendererOwnershipState.Faulted)
@@ -491,8 +464,7 @@ internal sealed class ProductionLightingSession
         }
         catch (BladeWriteException exception)
         {
-            if (!LightingRecoveryWriteGate.IsRejection(exception)
-                && exception.SubmissionState == WriteSubmissionState.Indeterminate)
+            if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
             {
                 await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
             }
@@ -657,8 +629,7 @@ internal sealed class ProductionLightingSession
         }
         catch (BladeWriteException exception)
         {
-            if (!LightingRecoveryWriteGate.IsRejection(exception)
-                && exception.SubmissionState == WriteSubmissionState.Indeterminate)
+            if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
             {
                 await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
             }
@@ -766,8 +737,7 @@ internal sealed class ProductionLightingSession
         }
         catch (BladeWriteException exception)
         {
-            if (!LightingRecoveryWriteGate.IsRejection(exception)
-                && exception.SubmissionState == WriteSubmissionState.Indeterminate)
+            if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
             {
                 await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
             }
@@ -840,11 +810,10 @@ internal sealed class ProductionLightingSession
         }
         catch (BladeWriteException exception)
         {
-            if (!LightingRecoveryWriteGate.IsRejection(exception)
-                && (exception.SubmissionState == WriteSubmissionState.Indeterminate
-                    || port?.OwnershipState is
-                        LightingRendererOwnershipState.None or
-                        LightingRendererOwnershipState.Faulted))
+            if (exception.SubmissionState == WriteSubmissionState.Indeterminate
+                || port?.OwnershipState is
+                    LightingRendererOwnershipState.None or
+                    LightingRendererOwnershipState.Faulted)
             {
                 await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
             }
@@ -914,9 +883,9 @@ internal sealed class ProductionLightingSession
             }
             await DisposeLightingPortWithinDeadlineAsync().ConfigureAwait(false);
         }
-        if (lowPowerGate?.IsActive == true || !RecoveryWritesAllowed())
+        if (lowPowerGate?.IsActive == true)
         {
-            // A read during suspend or unresolved control recovery may inspect a retained session, but must
+            // A read during suspend may inspect a retained session, but must
             // not open one or reconcile cadence/playback state as a side effect.
             return lightingPort;
         }
@@ -933,7 +902,7 @@ internal sealed class ProductionLightingSession
             {
                 throw;
             }
-            catch (Exception admissionException) when (!LightingRecoveryWriteGate.IsRejection(admissionException))
+            catch
             {
                 await ResetLightingPortCoreAsync(retainedPort).ConfigureAwait(false);
                 throw;
@@ -943,14 +912,10 @@ internal sealed class ProductionLightingSession
         HidSessionResult<IProductionLightingPort> opened;
         try
         {
-            // Initial Driver-mode acquisition occurs inside OpenAsync, before
-            // the retained port receives its separate recovery callback.
-            opened = await (lowPowerGate is null && Volatile.Read(ref recoveryWriteAdmission) is null
+            opened = await (lowPowerGate is null
                 ? lightingFactory.OpenAsync(cancellationToken)
-                : lightingFactory.OpenAsync(
-                    () => lowPowerGate?.IsActive != true
-                        && Volatile.Read(ref recoveryWriteAdmission)?.Invoke() != false,
-                    cancellationToken)).ConfigureAwait(false);
+                : lightingFactory.OpenAsync(() => !lowPowerGate.IsActive, cancellationToken))
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -988,16 +953,10 @@ internal sealed class ProductionLightingSession
 
         try
         {
-            BindRecoveryWriteAdmission(port);
             await ReconcileLightingRefreshRateCoreAsync(port, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsRejection(exception))
-        {
-            lightingPort = port;
-            throw;
-        }
-        catch (Exception admissionException) when (!LightingRecoveryWriteGate.IsRejection(admissionException))
+        catch
         {
             ClearLightingRefreshRateReconciliation(port);
             await port.DisposeAsync().ConfigureAwait(false);
@@ -1014,12 +973,7 @@ internal sealed class ProductionLightingSession
                     muted != 0,
                     cancellationToken).ConfigureAwait(false);
             }
-            catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsRejection(exception))
-            {
-                lightingPort = port;
-                throw;
-            }
-            catch (Exception admissionException) when (!LightingRecoveryWriteGate.IsRejection(admissionException))
+            catch
             {
                 ClearLightingRefreshRateReconciliation(port);
                 await port.DisposeAsync().ConfigureAwait(false);
@@ -1400,12 +1354,6 @@ internal sealed class ProductionLightingSession
 
     internal void ThrowIfOrdinaryLightingWriteBlocked()
     {
-        if (!RecoveryWritesAllowed())
-        {
-            throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                BladeWriteFailurePhase.ControlRecoveryAdmission,
-                "Keyboard lighting writes are paused until the pending laptop control is reconciled.");
-        }
         if (lowPowerGate?.IsActive == true)
         {
             throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,

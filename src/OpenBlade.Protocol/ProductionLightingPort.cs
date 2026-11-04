@@ -2,12 +2,8 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-internal sealed class ProductionLightingPort : IProductionLightingPort, ILightingRecoveryWriteAdmission
+internal sealed class ProductionLightingPort : IProductionLightingPort
 {
-    private readonly LightingRecoveryWriteGate recoveryWriteGate = new();
-
-    public void SetRecoveryWriteAdmission(Func<bool> admission) => recoveryWriteGate.Set(admission);
-
     private const byte KeyboardBrightnessRawStep = 0x10;
     private const int MaximumPendingKeyTriggeredPulses = 1024;
     private const int PendingKeyTriggeredPulseTrimTarget = 256;
@@ -250,7 +246,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         Func<bool> stillSuspending,
         CancellationToken cancellationToken)
     {
-        recoveryWriteGate.ThrowIfBlocked();
         ArgumentNullException.ThrowIfNull(stillSuspending);
         LightingRendererOwnershipState before = OwnershipState;
         if (!stillSuspending() || cancellationToken.IsCancellationRequested
@@ -337,7 +332,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         LightingSettings settings,
         CancellationToken cancellationToken)
     {
-        recoveryWriteGate.ThrowIfBlocked();
         ArgumentNullException.ThrowIfNull(settings);
         settings = LightingSettingsFactory.NormalizeLegacyOff(settings);
         if (!LightingSettingsValidation.IsWellFormed(settings))
@@ -366,14 +360,12 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
 
             if (!wakingFromDark && CanRetainRenderer(previous, settings))
             {
-                bool brightnessSubmitted = false;
                 try
                 {
                     if (baselineRaw != requestedRaw)
                     {
                         await SetBrightnessAndVerifyCoreAsync(requestedRaw, cancellationToken)
                             .ConfigureAwait(false);
-                        brightnessSubmitted = true;
                     }
 
                     if (settings.LogoMode is { } requestedLogo
@@ -390,13 +382,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
 
                     return;
                 }
-                catch (BladeWriteException exception) when (brightnessSubmitted && LightingRecoveryWriteGate.IsDeferral(exception))
-                {
-                    throw new BladeWriteException(WriteSubmissionState.Indeterminate,
-                        BladeWriteFailurePhase.ControlRecoveryAdmission,
-                        "Brightness was applied before recovery admission closed.", exception);
-                }
-                catch (Exception exception) when (!LightingRecoveryWriteGate.IsRejection(exception))
+                catch (Exception exception)
                 {
                     DiagnosticTrace.TraceException(nameof(ProductionLightingPort), nameof(SetLightingAsync), exception,
                         "Brightness-only lighting transition failed.");
@@ -421,7 +407,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             // On wake, keep the keyboard dark until the selected frame is ready.
             // Raising brightness first exposes stale firmware/transition colors.
             bool brightnessAttempted = false;
-            bool transitionSubmitted = false;
             await StopStreamCoreAsync().ConfigureAwait(false);
 
             try
@@ -431,7 +416,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                     brightnessAttempted = true;
                     await SetBrightnessAndVerifyCoreAsync(requestedRaw, cancellationToken)
                         .ConfigureAwait(false);
-                    transitionSubmitted = true;
                 }
 
                 if (settings.Effect == LightingEffect.Off)
@@ -451,7 +435,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                     IPid02E0LightingEffect effect = CreateEffect(settings);
                     await ExecuteTransitionHandshakeCoreAsync(cancellationToken)
                         .ConfigureAwait(false);
-                    transitionSubmitted = true;
 
                     effectStartedTimestamp = timeProvider.GetTimestamp();
                     Pid02E0MatrixFrame initialFrame;
@@ -490,31 +473,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                         .ConfigureAwait(false);
                 }
             }
-            catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsRejection(exception))
-            {
-                if (exception.SubmissionState == WriteSubmissionState.Indeterminate || transitionSubmitted)
-                {
-                    lock (effectSync)
-                    {
-                        activeEffect = null;
-                        activeKeyTriggeredEffect = null;
-                        activeUsesSelectableCadence = false;
-                        pendingKeyTriggeredPulses.Clear();
-                        lastDeliveredState = null;
-                    }
-                    SetOwnership(LightingRendererOwnershipState.Faulted);
-                    throw new BladeWriteException(WriteSubmissionState.Indeterminate,
-                        BladeWriteFailurePhase.ControlRecoveryAdmission,
-                        "The lighting transition stopped after partial submission.", exception);
-                }
-                if (previous is not null)
-                {
-                    effectStartedTimestamp = previous.StartedTimestamp;
-                    StartStreamCore(previous.Effect);
-                }
-                throw;
-            }
-            catch (Exception exception) when (!LightingRecoveryWriteGate.IsRejection(exception))
+            catch (Exception exception)
             {
                 DiagnosticTrace.TraceException(nameof(ProductionLightingPort), nameof(SetLightingAsync), exception,
                     "Lighting transition failed.");
@@ -667,7 +626,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         AmbientLightingFrame frame,
         CancellationToken cancellationToken)
     {
-        recoveryWriteGate.ThrowIfBlocked();
         ArgumentNullException.ThrowIfNull(frame);
         if (!frame.IsWellFormed())
         {
@@ -695,7 +653,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             {
                 await WriteMatrixCoreAsync(matrixFrame, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception exception) when (!LightingRecoveryWriteGate.IsDeferral(exception))
+            catch
             {
                 lock (effectSync)
                 {
@@ -719,7 +677,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         bool muted,
         CancellationToken cancellationToken)
     {
-        recoveryWriteGate.ThrowIfBlocked();
         await EnterWriteAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -749,14 +706,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             try
             {
                 await WriteMatrixCoreAsync(frame, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception exception) when (LightingRecoveryWriteGate.IsDeferral(exception))
-            {
-                lock (effectSync)
-                {
-                    renderPlaybackMuted = previousMuted;
-                }
-                throw;
             }
             catch
             {
@@ -826,7 +775,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
     public async Task<bool?> MaintainDriverModeAsync(
         CancellationToken cancellationToken)
     {
-        recoveryWriteGate.ThrowIfBlocked();
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -882,7 +830,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         Func<bool>? stillSuspending,
         CancellationToken cancellationToken)
     {
-        recoveryWriteGate.ThrowIfBlocked();
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -1083,45 +1030,34 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         LogoLightingMode mode,
         CancellationToken cancellationToken)
     {
-        bool effectSubmitted = false;
-        try
+        if (mode != LogoLightingMode.Off)
         {
-            if (mode != LogoLightingMode.Off)
-            {
-                byte[] effect = LogoLightingProtocol.SetEffectArguments(mode);
-                await ExecuteWriteCoreAsync(
-                    Spec(
-                        LogoLightingProtocol.CommandClass,
-                        LogoLightingProtocol.SetEffectCommandId,
-                        effect,
-                        effect),
-                    cancellationToken).ConfigureAwait(false);
-                effectSubmitted = true;
-            }
-
-            byte[] state = LogoLightingProtocol.SetStateArguments(mode);
+            byte[] effect = LogoLightingProtocol.SetEffectArguments(mode);
             await ExecuteWriteCoreAsync(
                 Spec(
                     LogoLightingProtocol.CommandClass,
-                    LogoLightingProtocol.SetStateCommandId,
-                    state,
-                    state),
+                    LogoLightingProtocol.SetEffectCommandId,
+                    effect,
+                    effect),
                 cancellationToken).ConfigureAwait(false);
-
-            LogoLightingMode confirmed = await QueryLogoModeCoreAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (confirmed != mode)
-            {
-                throw new BladeWriteException(
-                    WriteSubmissionState.Indeterminate,
-                    "Logo lighting did not match independent readback.");
-            }
         }
-        catch (BladeWriteException exception) when (effectSubmitted && LightingRecoveryWriteGate.IsDeferral(exception))
+
+        byte[] state = LogoLightingProtocol.SetStateArguments(mode);
+        await ExecuteWriteCoreAsync(
+            Spec(
+                LogoLightingProtocol.CommandClass,
+                LogoLightingProtocol.SetStateCommandId,
+                state,
+                state),
+            cancellationToken).ConfigureAwait(false);
+
+        LogoLightingMode confirmed = await QueryLogoModeCoreAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (confirmed != mode)
         {
-            throw new BladeWriteException(WriteSubmissionState.Indeterminate,
-                BladeWriteFailurePhase.ControlRecoveryAdmission,
-                "The logo effect was submitted before recovery admission closed.", exception);
+            throw new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Logo lighting did not match independent readback.");
         }
     }
 
@@ -1288,18 +1224,12 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         RazerCommandSpec command,
         CancellationToken cancellationToken)
     {
-        LightingRecoveryWriteGate.SubmissionGuard? recoveryGuard = recoveryWriteGate.CreateSubmissionGuard(command.SubmissionAllowed);
-        if (recoveryGuard is not null)
-        {
-            command = command with { SubmissionAllowed = recoveryGuard.Allow };
-        }
         await featureIoGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         HidSessionResult<ReadOnlyMemory<byte>> result;
         try
         {
             if (command.SubmissionAllowed?.Invoke() == false)
             {
-                recoveryGuard?.ThrowIfRefused();
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "The device-mode write was blocked by a changed power boundary.");
             }
@@ -1314,7 +1244,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             featureIoGate.Release();
         }
 
-        recoveryGuard?.ThrowIfRefused(result.Diagnostic);
         if (result.Failure is null)
         {
             return result.Value;
@@ -1368,15 +1297,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             throw Unavailable("The matrix writer is not admitted.");
         }
 
-        LightingRecoveryWriteGate.SubmissionGuard recoveryGuard = recoveryWriteGate.CreateSubmissionGuard();
         await featureIoGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         HidSessionResult<HidUnit> result;
         try
         {
-            if (!recoveryGuard.Allow())
-            {
-                recoveryGuard.ThrowIfRefused();
-            }
             lock (effectSync)
             {
                 if (renderPlaybackMuted)
@@ -1388,10 +1312,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             }
 
             result = await matrixWriter.WriteAsync(
-                new Pid02E0MatrixReport(AllocateMatrixTransaction(), frame)
-                {
-                    SubmissionAllowed = recoveryGuard.Allow,
-                },
+                new Pid02E0MatrixReport(AllocateMatrixTransaction(), frame),
                 cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -1399,7 +1320,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             featureIoGate.Release();
         }
 
-        recoveryGuard.ThrowIfRefused(result.Diagnostic);
         if (result.Failure is null)
         {
             return;
@@ -1605,16 +1525,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                 // A native feature write that has already been submitted must drain,
                 // otherwise the Windows writer correctly marks its handle poisoned.
                 cancellationToken.ThrowIfCancellationRequested();
-                try
-                {
-                    recoveryWriteGate.ThrowIfBlocked();
-                    await WriteMatrixCoreAsync(frame, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsDeferral(exception))
-                {
-                    // This frame was never submitted. Keep the owned stream idle;
-                    // later cadence renders a new frame only after read-only recovery.
-                }
+                await WriteMatrixCoreAsync(frame, CancellationToken.None).ConfigureAwait(false);
 
                 TimeSpan observedAfterWrite = timeProvider.GetElapsedTime(
                     effectStartedTimestamp);

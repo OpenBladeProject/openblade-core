@@ -62,13 +62,9 @@ internal sealed record ThermalExternalDriftValidationBuildIdentity(
     private static string HashAssembly(Assembly assembly)
     {
         string path = assembly.Location;
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return string.Empty;
-        }
-        using FileStream stream = new(path, FileMode.Open, FileAccess.Read,
-            FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
-        return Convert.ToHexString(SHA256.HashData(stream));
+        return string.IsNullOrWhiteSpace(path)
+            ? string.Empty
+            : Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
     }
 
     private static bool IsMatchingHash(string actual, string expected) =>

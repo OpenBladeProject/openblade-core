@@ -23,7 +23,6 @@ internal interface IRazerDriverInstallJournal : IDisposable
 {
     bool RequiresRecovery { get; }
     string PackageDestination { get; }
-    void BeginPackageAcquisition();
     void Begin(RazerDriverInstallSnapshot baseline);
     void Intent(RazerDriverMutation operation);
     void RecordResult(RazerDriverMutationResult result);
@@ -133,7 +132,6 @@ public sealed partial class RazerKeyboardDriverInstaller
                 }
             }
 
-            journal.BeginPackageAcquisition();
             string root = await platform.AcquireVerifiedAsync(journal.PackageDestination, recipe, cancellationToken)
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();

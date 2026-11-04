@@ -1,4 +1,3 @@
-using System.Security;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
@@ -7,14 +6,10 @@ using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
 
-internal sealed class ThxProvisioningRecoveryException(Exception innerException)
-    : IOException("The submitted THX installation requires recovery.", innerException);
-
 internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
 {
     private const int MaximumLength = 4 * 1024 * 1024;
     private readonly FileStream stream;
-    private readonly ProvisioningPackageDirectory packageDirectory;
     private bool hasIntent;
     private readonly string productId;
     private readonly string modelNumber;
@@ -29,19 +24,15 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
     public string PackageDestination { get; }
 
     internal ThxAudioProvisioningJournal(string productId, string modelNumber)
-        : this(productId, modelNumber, Root, OpenJournalStream(productId, modelNumber),
-            EnsureProtectedDirectory, ValidateProtectedDirectory)
-    {
-    }
-
-    internal ThxAudioProvisioningJournal(string productId, string modelNumber, string root, FileStream stream,
-        Action<string> createProtectedDirectory, Action<string> validateProtectedDirectory)
     {
         _ = ThxAudioProvisioningPackage.ForProduct(productId);
         _ = ThxBaseAudioPackage.ForModel(modelNumber);
         this.productId = productId;
         this.modelNumber = modelNumber;
-        this.stream = stream;
+        EnsureProtectedDirectory(Root);
+        RejectReparse(JournalPath);
+        stream = new FileStream(JournalPath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
+            FileShare.None, 4096, FileOptions.WriteThrough);
         try
         {
             JournalState state = ReadState(stream);
@@ -49,13 +40,8 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
             Recovery = state.Recovery;
             stream.Position = stream.Length;
             PackageDestination = Recovery is null
-                ? Path.Combine(root, Guid.NewGuid().ToString("N"))
-                : ValidatePackageDestination(Recovery.PackageDestination, root, validateProtectedDirectory);
-            packageDirectory = new(root, PackageDestination, createProtectedDirectory, validateProtectedDirectory);
-            if (RequiresRecovery)
-            {
-                packageDirectory.Retain();
-            }
+                ? Path.Combine(Root, Guid.NewGuid().ToString("N"))
+                : ValidatePackageDestination(Recovery.PackageDestination);
         }
         catch
         {
@@ -63,20 +49,6 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
             throw;
         }
     }
-
-    private static FileStream OpenJournalStream(string productId, string modelNumber)
-    {
-        _ = ThxAudioProvisioningPackage.ForProduct(productId);
-        _ = ThxBaseAudioPackage.ForModel(modelNumber);
-        EnsureProtectedDirectory(Root);
-        RejectReparse(JournalPath);
-        return new FileStream(JournalPath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
-            FileShare.None, 4096, FileOptions.WriteThrough);
-    }
-
-    public void BeginPackageAcquisition() => packageDirectory.BeginAcquisition();
-
-    public void RetainPackage() => packageDirectory.Retain();
 
     internal static bool HasUnfinishedTransaction()
     {
@@ -222,8 +194,6 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
 
     public void Intent(ThxAudioProvisioningStep step)
     {
-        // Retain before append: failed durable intent must never erase recovery input.
-        packageDirectory.Retain();
         if (step == ThxAudioProvisioningStep.InstallBaseAudio)
         {
             ThxBaseAudioRecipe recipe = ThxBaseAudioPackage.ForModel(modelNumber);
@@ -359,27 +329,17 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
         }
     }
 
-    private static string ValidatePackageDestination(string value, string parent, Action<string> validateProtectedDirectory)
+    private static string ValidatePackageDestination(string value)
     {
-        try
+        string root = Path.GetFullPath(Root);
+        string destination = Path.GetFullPath(value);
+        if (!string.Equals(Path.GetDirectoryName(destination), root, StringComparison.OrdinalIgnoreCase)
+            || !Guid.TryParseExact(Path.GetFileName(destination), "N", out _))
         {
-            string root = Path.GetFullPath(parent);
-            string destination = Path.GetFullPath(value);
-            if (!string.Equals(Path.GetDirectoryName(destination), root, StringComparison.OrdinalIgnoreCase)
-                || !Guid.TryParseExact(Path.GetFileName(destination), "N", out _))
-            {
-                throw new InvalidDataException("THX provisioning journal has an invalid package destination.");
-            }
-            validateProtectedDirectory(destination);
-            return destination;
+            throw new InvalidDataException("THX provisioning journal has an invalid package destination.");
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-            or InvalidDataException or ArgumentException or SecurityException)
-        {
-            // This method is reached only after a durable pending restart record
-            // was loaded. Missing or untrusted recovery input cannot make it fresh.
-            throw new ThxProvisioningRecoveryException(exception);
-        }
+        ValidateProtectedDirectory(destination);
+        return destination;
     }
 
     private static bool IsKnownStep(int value, int formatVersion) =>
@@ -407,9 +367,5 @@ internal sealed class ThxAudioProvisioningJournal : IThxAudioProvisioningJournal
 
     private sealed record JournalState(bool Pending, ThxAudioProvisioningRecovery? Recovery);
 
-    public void Dispose()
-    {
-        try { packageDirectory.Dispose(); }
-        finally { stream.Dispose(); }
-    }
+    public void Dispose() => stream.Dispose();
 }

@@ -17,10 +17,10 @@ public sealed class SessionGpuRequestDispatcher
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return Task.Run(() => DispatchCoreAsync(request, cancellationToken), cancellationToken);
+        return Task.Run(() => Dispatch(request, cancellationToken), cancellationToken);
     }
 
-    private async Task<SessionGpuResponse> DispatchCoreAsync(
+    private SessionGpuResponse Dispatch(
         SessionGpuRequest request,
         CancellationToken cancellationToken)
     {
@@ -44,7 +44,7 @@ public sealed class SessionGpuRequestDispatcher
                 []);
         }
 
-        WindowsGpuAppScan scan = await manager.ScanAsync(cancellationToken).ConfigureAwait(false);
+        WindowsGpuAppScan scan = manager.Scan(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (!scan.IsAvailable)
         {

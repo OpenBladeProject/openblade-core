@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using OpenBlade.Contracts;
 
 namespace OpenBlade.Session;
 
@@ -98,7 +97,7 @@ public static class SessionBatteryIpcCodec
         await stream.ReadExactlyAsync(payload, cancellationToken).ConfigureAwait(false);
         try
         {
-            IpcJsonValidation.ValidateNoDuplicateMembers(payload);
+            ValidateNoDuplicateObjectMembers(payload);
             return JsonSerializer.Deserialize<T>(payload, SerializerOptions)
                 ?? throw new InvalidDataException("Session battery IPC body is missing.");
         }
@@ -214,4 +213,33 @@ public static class SessionBatteryIpcCodec
         && error.Length <= SessionBatteryIpc.MaximumErrorCharacters
         && string.Equals(error, error.Trim(), StringComparison.Ordinal)
         && !error.Any(char.IsControl);
+
+    private static void ValidateNoDuplicateObjectMembers(ReadOnlyMemory<byte> payload)
+    {
+        using JsonDocument document = JsonDocument.Parse(payload);
+        ValidateNoDuplicateObjectMembers(document.RootElement);
+    }
+
+    private static void ValidateNoDuplicateObjectMembers(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if (!names.Add(property.Name))
+                {
+                    throw new JsonException("Session battery IPC contains a duplicate member.");
+                }
+                ValidateNoDuplicateObjectMembers(property.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                ValidateNoDuplicateObjectMembers(item);
+            }
+        }
+    }
 }

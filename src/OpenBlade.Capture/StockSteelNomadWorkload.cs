@@ -73,10 +73,8 @@ internal sealed class StockSteelNomadWorkload(
                 }
 
                 string path = process.MainModule?.FileName ?? throw new InvalidOperationException("Workload identity unavailable.");
-                using FileStream executable = new(path, FileMode.Open, FileAccess.Read,
-                    FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
                 result.Add(new(process.Id, process.StartTime.ToUniversalTime(), Path.GetFullPath(path),
-                    Convert.ToHexString(SHA256.HashData(executable)),
+                    Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))),
                     FileVersionInfo.GetVersionInfo(path).FileVersion ?? string.Empty));
             }
         }

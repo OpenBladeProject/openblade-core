@@ -429,7 +429,6 @@ internal sealed partial class ExperimentalBladePort
         LightingSettings settings,
         CancellationToken cancellationToken)
     {
-        recoveryWriteGate.ThrowIfBlocked();
         RequireLightingModel();
         if (!IsSupportedLightingSetting(settings))
         {
@@ -1010,7 +1009,6 @@ internal sealed partial class ExperimentalBladePort
         UniformLightingFrame frame,
         CancellationToken cancellationToken)
     {
-        recoveryWriteGate.ThrowIfBlocked();
         ArgumentNullException.ThrowIfNull(frame);
         if (!SupportsExperimentalUniformFrames(model, enabled: true))
         {

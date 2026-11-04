@@ -90,9 +90,6 @@ public sealed class FanRpmQueryRunFactoryTests
     [Fact]
     public async Task QueryAsync_CoordinatesWithLightingSessionThroughSharedGate()
     {
-        // Phase signals establish ordering; this watchdog only bounds a stalled test.
-        TimeSpan schedulingTimeout = TimeSpan.FromSeconds(10);
-        using var schedulingWatchdog = new CancellationTokenSource(schedulingTimeout);
         using var sharedCommandGate = new SemaphoreSlim(1, 1);
         var fanInner = new BlockingFanSession();
         var lightingInner = new BlockingCommandSession();
@@ -110,63 +107,35 @@ public sealed class FanRpmQueryRunFactoryTests
             lightingInner,
             sharedCommandGate);
 
-        Task<HidSessionResult<FanRpmReadings>> query = port.QueryAsync(schedulingWatchdog.Token);
-        Task<HidSessionResult<ReadOnlyMemory<byte>>>? lighting = null;
-        bool assertionsCompleted = false;
-        try
-        {
-            await fanInner.FirstStarted.Task.WaitAsync(schedulingWatchdog.Token);
-            lighting = lightingSession.ExecuteAsync(
+        Task<HidSessionResult<FanRpmReadings>> query = port.QueryAsync(default);
+        await fanInner.FirstStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> lighting =
+            lightingSession.ExecuteAsync(
                 new(0x03, 0x83, [0x01, 0x05, 0x00], 3),
                 static () => TransactionIdAssignment.Valid(3),
-                schedulingTimeout,
-                schedulingWatchdog.Token);
+                TimeSpan.FromSeconds(1),
+                default);
 
-            Assert.False(lightingInner.Entered.Task.IsCompleted);
+        Assert.False(lightingInner.Entered.Task.IsCompleted);
 
-            fanInner.ReleaseFirst.TrySetResult();
-            fanInner.ReleaseSecond.TrySetResult();
-            lightingInner.Release.TrySetResult();
-            HidSessionResult<FanRpmReadings> fanResult =
-                await query.WaitAsync(schedulingWatchdog.Token);
-            HidSessionResult<ReadOnlyMemory<byte>> lightingResult =
-                await lighting.WaitAsync(schedulingWatchdog.Token);
+        fanInner.ReleaseFirst.TrySetResult();
+        fanInner.ReleaseSecond.TrySetResult();
+        lightingInner.Release.TrySetResult();
+        HidSessionResult<FanRpmReadings> fanResult =
+            await query.WaitAsync(TimeSpan.FromSeconds(1));
+        HidSessionResult<ReadOnlyMemory<byte>> lightingResult =
+            await lighting.WaitAsync(TimeSpan.FromSeconds(1));
 
-            Assert.Null(fanResult.Failure);
-            Assert.Null(lightingResult.Failure);
-            Assert.True(lightingInner.Entered.Task.IsCompletedSuccessfully);
-            assertionsCompleted = true;
-        }
-        finally
-        {
-            fanInner.ReleaseFirst.TrySetResult();
-            fanInner.ReleaseSecond.TrySetResult();
-            lightingInner.Release.TrySetResult();
-            schedulingWatchdog.Cancel();
-            try
-            {
-                try
-                {
-                    await Task.WhenAll(query, (Task?)lighting ?? Task.CompletedTask);
-                }
-                finally
-                {
-                    await port.DisposeAsync();
-                    await lightingSession.DisposeAsync();
-                }
-            }
-            catch when (!assertionsCompleted)
-            {
-                // Preserve the assertion/timeout failure after observing both operations.
-            }
-        }
+        Assert.Null(fanResult.Failure);
+        Assert.Null(lightingResult.Failure);
+        Assert.True(lightingInner.Entered.Task.IsCompletedSuccessfully);
+
+        await port.DisposeAsync();
     }
 
     [Fact]
     public async Task QueryAsync_HoldsSharedFeatureCommandGateThroughEachSetGetResponse()
     {
-        // Phase signals establish ordering; this watchdog only bounds a stalled test.
-        using var schedulingWatchdog = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var sharedCommandGate = new SemaphoreSlim(1, 1);
         var session = new BlockingFanSession();
         var factory = new FanRpmQueryRunFactory(
@@ -180,58 +149,23 @@ public sealed class FanRpmQueryRunFactoryTests
         IFanRpmQueryPort port = Assert.IsAssignableFrom<IFanRpmQueryPort>(
             (await factory.OpenAsync(default)).Value);
 
-        Task<HidSessionResult<FanRpmReadings>> query = port.QueryAsync(schedulingWatchdog.Token);
-        bool assertionsCompleted = false;
-        try
-        {
-            await session.FirstStarted.Task.WaitAsync(schedulingWatchdog.Token);
-            AssertSharedCommandGateHeld();
+        Task<HidSessionResult<FanRpmReadings>> query = port.QueryAsync(default);
+        await session.FirstStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.False(sharedCommandGate.Wait(0));
 
-            session.ReleaseFirst.TrySetResult();
-            await session.SecondStarted.Task.WaitAsync(schedulingWatchdog.Token);
-            AssertSharedCommandGateHeld();
+        session.ReleaseFirst.TrySetResult();
+        await session.SecondStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.False(sharedCommandGate.Wait(0));
 
-            session.ReleaseSecond.TrySetResult();
-            HidSessionResult<FanRpmReadings> result =
-                await query.WaitAsync(schedulingWatchdog.Token);
-            Assert.Null(result.Failure);
-            Assert.Equal(new FanRpmReadings(3200, 3000), result.Value);
-            Assert.True(sharedCommandGate.Wait(0));
-            sharedCommandGate.Release();
-            assertionsCompleted = true;
-        }
-        finally
-        {
-            session.ReleaseFirst.TrySetResult();
-            session.ReleaseSecond.TrySetResult();
-            schedulingWatchdog.Cancel();
-            try
-            {
-                try
-                {
-                    await query;
-                }
-                finally
-                {
-                    await port.DisposeAsync();
-                }
-            }
-            catch when (!assertionsCompleted)
-            {
-                // Preserve the assertion/timeout failure after observing the query.
-            }
-        }
+        session.ReleaseSecond.TrySetResult();
+        HidSessionResult<FanRpmReadings> result =
+            await query.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Null(result.Failure);
+        Assert.Equal(new FanRpmReadings(3200, 3000), result.Value);
+        Assert.True(sharedCommandGate.Wait(0));
+        sharedCommandGate.Release();
 
-        void AssertSharedCommandGateHeld()
-        {
-            bool acquired = sharedCommandGate.Wait(0);
-            if (acquired)
-            {
-                sharedCommandGate.Release();
-            }
-
-            Assert.False(acquired);
-        }
+        await port.DisposeAsync();
     }
 
     private static ValidationActor Actor(IRazerCommandSession session) =>
@@ -330,7 +264,7 @@ public sealed class FanRpmQueryRunFactoryTests
                 throw new InvalidOperationException("Only two fan selectors are expected.");
             }
 
-            await release.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await release.WaitAsync(cancellationToken);
             byte selector = command.Arguments.Span[1];
             ReadOnlyMemory<byte> payload = selector switch
             {
@@ -369,7 +303,7 @@ public sealed class FanRpmQueryRunFactoryTests
             _ = assignTransactionId();
             _ = exchangeTimeout;
             Entered.TrySetResult();
-            await Release.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await Release.Task.WaitAsync(cancellationToken);
             return new(ReadOnlyMemory<byte>.Empty, null);
         }
 

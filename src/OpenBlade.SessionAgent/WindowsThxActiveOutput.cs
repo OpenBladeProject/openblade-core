@@ -147,14 +147,9 @@ internal static partial class WindowsThxActiveOutput
         }
     }
 
-    internal static IDisposable Subscribe(Action changed) => Subscribe(changed, defaultMultimediaOnly: false);
-
-    internal static IDisposable SubscribeDefaultMultimediaOutput(Action changed) =>
-        Subscribe(changed, defaultMultimediaOnly: true);
-
-    private static IDisposable Subscribe(Action changed, bool defaultMultimediaOnly)
+    internal static IDisposable Subscribe(Action changed)
     {
-        var callback = new Notification(changed, defaultMultimediaOnly);
+        var callback = new Notification(changed);
         return CoreAudioNotificationRegistration.Acquire(
             CoreAudioDeviceEnumerator.Create,
             instance => (IMMDeviceEnumerator)instance,
@@ -241,7 +236,7 @@ internal static partial class WindowsThxActiveOutput
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal readonly struct PropertyKey(Guid formatId, uint propertyId)
+    private readonly struct PropertyKey(Guid formatId, uint propertyId)
     {
         internal readonly Guid FormatId = formatId;
         internal readonly uint PropertyId = propertyId;
@@ -286,7 +281,7 @@ internal static partial class WindowsThxActiveOutput
     }
 
     [ComVisible(true), Guid("7991EEC9-7E89-4D85-8390-6C703CEC60C0"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    internal interface IMMNotificationClient
+    private interface IMMNotificationClient
     {
         [PreserveSig] int OnDeviceStateChanged([MarshalAs(UnmanagedType.LPWStr)] string id, uint state);
         [PreserveSig] int OnDeviceAdded([MarshalAs(UnmanagedType.LPWStr)] string id);
@@ -296,25 +291,18 @@ internal static partial class WindowsThxActiveOutput
     }
 
     [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-    internal sealed class Notification(Action changed, bool defaultMultimediaOnly = false) : IMMNotificationClient
+    private sealed class Notification(Action changed) : IMMNotificationClient
     {
-        public int OnDeviceStateChanged(string id, uint state) => OnEndpointChanged();
-        public int OnDeviceAdded(string id) => OnEndpointChanged();
-        public int OnDeviceRemoved(string id) => OnEndpointChanged();
-        public int OnPropertyValueChanged(string id, PropertyKey key) => OnEndpointChanged();
+        public int OnDeviceStateChanged(string id, uint state) { changed(); return 0; }
+        public int OnDeviceAdded(string id) { changed(); return 0; }
+        public int OnDeviceRemoved(string id) { changed(); return 0; }
+        public int OnPropertyValueChanged(string id, PropertyKey key) { changed(); return 0; }
         public int OnDefaultDeviceChanged(CoreAudioDataFlow flow, CoreAudioRole role, string? id)
         {
-            if (flow == CoreAudioDataFlow.Render
-                && (role == CoreAudioRole.Multimedia || (!defaultMultimediaOnly && role == CoreAudioRole.Console)))
+            if (flow == CoreAudioDataFlow.Render && role is CoreAudioRole.Console or CoreAudioRole.Multimedia)
             {
                 changed();
             }
-            return 0;
-        }
-
-        private int OnEndpointChanged()
-        {
-            if (!defaultMultimediaOnly) { changed(); }
             return 0;
         }
     }

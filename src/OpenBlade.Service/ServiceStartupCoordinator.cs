@@ -12,19 +12,8 @@ public sealed class ServiceStartupCoordinator(
 {
     public async Task<bool> InitializeAsync(CancellationToken cancellationToken)
     {
-        BatteryConfiguration configuration;
-        try
-        {
-            configuration = await profileBootstrapper.InitializeAsync(cancellationToken);
-        }
-        catch (ConfigurationQuarantinedException exception)
-        {
-            // No authoritative bootstrap intent exists. Do not initialize a
-            // default-valued runtime: nonthermal paths also need known intent.
-            logger.LogError(exception,
-                "Machine configuration transaction recovery is required; service initialization was refused before runtime or background work. Preserve the recovery record and original transaction artifacts.");
-            return false;
-        }
+        BatteryConfiguration configuration =
+            await profileBootstrapper.InitializeAsync(cancellationToken);
         if (configuration.Disposition == ConfigurationLoadDisposition.Quarantined)
         {
             logger.LogWarning(

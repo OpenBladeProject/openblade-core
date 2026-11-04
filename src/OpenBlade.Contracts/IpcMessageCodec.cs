@@ -198,7 +198,7 @@ public static class IpcMessageCodec
         await stream.ReadExactlyAsync(payload, cancellationToken).ConfigureAwait(false);
         try
         {
-            IpcJsonValidation.ValidateNoDuplicateMembers(payload);
+            ValidateNoDuplicateObjectMembers(payload);
             ValidatePayloadVersion(payload, allowProtocol51);
             T message = JsonSerializer.Deserialize<T>(payload, SerializerOptions)
                 ?? throw new InvalidDataException("IPC message body is invalid.");
@@ -841,6 +841,36 @@ public static class IpcMessageCodec
         }
     }
 
+    private static void ValidateNoDuplicateObjectMembers(ReadOnlyMemory<byte> payload)
+    {
+        using JsonDocument document = JsonDocument.Parse(payload);
+        ValidateNoDuplicateObjectMembers(document.RootElement);
+    }
+
+    private static void ValidateNoDuplicateObjectMembers(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if (!names.Add(property.Name))
+                {
+                    throw new JsonException("IPC message contains a duplicate member.");
+                }
+
+                ValidateNoDuplicateObjectMembers(property.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                ValidateNoDuplicateObjectMembers(item);
+            }
+        }
+    }
+
     private static bool ValidLiveReadings(LiveReadings readings) =>
         readings.BatteryPowerFlowMilliwatts is null
             or >= -1_000_000 and <= 1_000_000
@@ -1065,10 +1095,7 @@ public static class IpcMessageCodec
         && ValidDisplay(value.Display);
 
     private static bool ValidProfileDisplays(ProfileSet profiles) =>
-        profiles.PluggedIn is not null
-        && profiles.Battery is not null
-        && profiles.UsbC is not null
-        && ValidDisplay(profiles.PluggedIn.Display)
+        ValidDisplay(profiles.PluggedIn.Display)
         && ValidDisplay(profiles.Battery.Display)
         && ValidDisplay(profiles.UsbC.Display);
 

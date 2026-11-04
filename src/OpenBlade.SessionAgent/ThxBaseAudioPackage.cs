@@ -1,9 +1,7 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
@@ -448,76 +446,22 @@ internal static class ThxBaseAudioPackage
                 throw new InvalidDataException("Windows cabinet extraction failed.");
             }
         }
-        catch (Exception acquisitionFailure)
+        catch
         {
             // Only terminate this extraction process; no vendor/installer process is launched here.
-            await FinishFailedExtractionAsync(drains.CancelAsync,
-                () => StopExtractionAsync(() => process.HasExited,
-                    () => process.Kill(entireProcessTree: true), process.WaitForExitAsync, acquisitionFailure),
-                Task.WhenAll(output, error)).ConfigureAwait(false);
-            throw;
-        }
-    }
-
-    internal static async Task StopExtractionAsync(Func<bool> hasExited, Action kill,
-        Func<CancellationToken, Task> waitForExit, Exception acquisitionFailure)
-    {
-        try
-        {
+            await drains.CancelAsync().ConfigureAwait(false);
             try
             {
-                if (!hasExited()) { kill(); }
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
             }
             catch (InvalidOperationException) { }
             using var stopTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            await waitForExit(stopTimeout.Token).ConfigureAwait(false);
-        }
-        catch (Exception stopFailure) when (stopFailure is IOException or Win32Exception
-            or InvalidOperationException or OperationCanceledException or TimeoutException
-            or AggregateException or NotSupportedException)
-        {
-            // Keep both causes and forbid directory cleanup when process exit
-            // was not confirmed. This is extraction uncertainty, not submission.
-            throw new ProvisioningPackageInUseException(acquisitionFailure, stopFailure);
-        }
-    }
-
-    internal static async Task FinishFailedExtractionAsync(Func<Task> cancelDrains, Func<Task> stopExtraction,
-        Task drainCompletion, TimeSpan? drainTimeout = null, Action<Exception>? reportFailure = null)
-    {
-        reportFailure ??= exception => DiagnosticTrace.TraceException(
-            nameof(ThxBaseAudioPackage), "ObserveExtractionDrains", exception);
-        try
-        {
-            try { await cancelDrains().ConfigureAwait(false); }
-            catch (Exception exception)
-            {
-                // A drain callback failure must not skip stopping the owned extractor.
-                reportFailure(exception);
-            }
-            await stopExtraction().ConfigureAwait(false);
-        }
-        finally
-        {
-            // Observe both drains even when stopping failed. Keep a fault observer
-            // after the bounded wait so late pipe disposal failures stay observed.
-            Task observation = ObserveDrainCompletionAsync(drainCompletion, reportFailure);
-            try
-            {
-                await observation.WaitAsync(drainTimeout ?? TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-            }
-            catch (TimeoutException exception) { reportFailure(exception); }
-        }
-    }
-
-    private static async Task ObserveDrainCompletionAsync(Task completion, Action<Exception> reportFailure)
-    {
-        try { await completion.ConfigureAwait(false); }
-        catch (Exception exception)
-        {
-            // The acquisition/stop exception remains primary. Drain failures are
-            // diagnostic evidence and cannot replace it while unwinding.
-            reportFailure(exception);
+            await process.WaitForExitAsync(stopTimeout.Token).ConfigureAwait(false);
+            try { await Task.WhenAll(output, error).ConfigureAwait(false); } catch (OperationCanceledException) { }
+            throw;
         }
     }
 

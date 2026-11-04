@@ -110,11 +110,7 @@ internal static class Pid02E0MatrixLayout
 
 internal readonly record struct Pid02E0MatrixReport(
     byte TransactionId,
-    Pid02E0MatrixFrame Frame)
-{
-    // Managed admission only; this delegate is never encoded in the HID report.
-    internal Func<bool>? SubmissionAllowed { get; init; }
-}
+    Pid02E0MatrixFrame Frame);
 
 /// <summary>
 /// Offline codec for already-understood PID 02E0 matrix envelopes. This type

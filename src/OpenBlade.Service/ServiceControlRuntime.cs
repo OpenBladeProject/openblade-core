@@ -435,18 +435,7 @@ internal sealed record ScopedIntentApplyExecution(
     ScopedApplyOutcome Outcome,
     ThermalTransitionTrace? ThermalTrace = null);
 
-internal interface IServiceUserAdmission
-{
-    IDisposable BeginUserAdmission(ServiceClientContext client, Func<bool> stillControlsSession,
-        ServiceUserRequestOwner? requestOwner);
-
-    bool TryReadCurrentUserStatus(SecurityIdentifier userSid, Func<bool> stillControlsSession,
-        out ServiceStatusSnapshot? snapshot);
-}
-
-internal sealed record ServiceUserRequestOwner(ServiceClientContext Client, Func<bool> StillControlsSession);
-
-public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUserAdmission, IDisposable
+public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 {
     private const string UnclassifiedExternalPowerMessage =
         "The external power adapter could not be classified; control writes are blocked.";
@@ -503,9 +492,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
     private readonly Func<CancellationToken, Task> hyperBoostLifecycleExitBoundary;
     private readonly TimeProvider timeProvider;
     private readonly SemaphoreSlim operationGate = new(1, 1);
-    private readonly LaptopControlExecutor laptopControlExecutor;
-    private int laptopRecoveryObservationActive;
-    private int laptopRecoveryPowerDestinationPending;
     private static readonly TimeSpan ApplicationContextLeaseDuration = TimeSpan.FromSeconds(15);
     private CancellationTokenSource? applicationContextLeaseCancellation;
     private Guid applicationContextInstanceId;
@@ -620,7 +606,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
     private bool suppressInitialKnownPowerSourceApplyAfterUnexpectedExit;
     private string? activeUserSid;
     private Func<bool>? activeUserStillControlsSession;
-    private bool activeUserActivationIncomplete;
     private ThermalConvergenceStateStore? thermalConvergenceStore;
     private ThermalConvergenceLedgerState? thermalConvergenceLedger;
     private string? thermalConvergenceLedgerSha256;
@@ -839,23 +824,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         IDisplayBrightnessHidController? displayBrightnessHidController = null,
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
-        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
-        LaptopControlPendingStore? laptopControlPendingStore = null)
+        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null)
     {
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
             overrideStore ?? throw new ArgumentNullException(nameof(overrideStore)));
-        laptopControlExecutor = new LaptopControlExecutor(laptopControlPendingStore);
         this.powerStateProvider = powerStateProvider
             ?? throw new ArgumentNullException(nameof(powerStateProvider));
         this.subscriptionHub = subscriptionHub
             ?? throw new ArgumentNullException(nameof(subscriptionHub));
         this.deviceProvider = deviceProvider
             ?? throw new ArgumentNullException(nameof(deviceProvider));
-        this.deviceProvider.SetRecoveryWriteAdmission(() =>
-            !laptopControlExecutor.RequiresReconciliation
-            && Volatile.Read(ref laptopRecoveryObservationActive) == 0
-            && Volatile.Read(ref laptopRecoveryPowerDestinationPending) == 0);
         this.history = history ?? throw new ArgumentNullException(nameof(history));
         this.lowPowerGate = lowPowerGate
             ?? throw new ArgumentNullException(nameof(lowPowerGate));
@@ -976,18 +955,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             ?? throw new InvalidOperationException("The service runtime is not initialized.");
         bool experimental = deviceProvider.IsExperimentalDevice;
         bool paused = deviceProvider.IsExperimentalWritesPaused;
-        bool laptopPending = laptopControlExecutor.RequiresReconciliation;
         if (current.AllowExperimentalFeatures != experimental
             || current.IsExperimentalDevice != experimental
             || current.ExperimentalWritesPaused != paused
-            || (paused || laptopPending) && !current.WritesBlocked)
+            || paused && !current.WritesBlocked)
         {
             current = current with
             {
                 AllowExperimentalFeatures = experimental,
                 IsExperimentalDevice = experimental,
                 ExperimentalWritesPaused = paused,
-                WritesBlocked = current.WritesBlocked || paused || laptopPending,
+                WritesBlocked = current.WritesBlocked || paused,
             };
         }
         return ApplyConfigurationQuarantineAdvisory(current);
@@ -1088,85 +1066,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             static () => true,
             cancellationToken).ConfigureAwait(false);
 
-    IDisposable IServiceUserAdmission.BeginUserAdmission(
-        ServiceClientContext client, Func<bool> stillControlsSession, ServiceUserRequestOwner? requestOwner)
-    {
-        if (userConfigurationRepository is null)
-        {
-            return EmptyDisposable.Instance;
-        }
-        // A second request from the same live Windows session is a waiter for
-        // the current finite operation, not a competing user admission. Keep
-        // all other pending leases and their advanced epochs unchanged.
-        if (requestOwner is not null
-            && requestOwner.Client.UserSid == client.UserSid
-            && requestOwner.Client.SessionId == client.SessionId
-            && requestOwner.Client.LogonKind == client.LogonKind
-            && RequestOwnerControlsSession(requestOwner)
-            && stillControlsSession())
-        {
-            return EmptyDisposable.Instance;
-        }
-        if (requestOwner is null
-            && Volatile.Read(ref pendingSessionAdmissions) == 0
-            && !Volatile.Read(ref activeUserActivationIncomplete) && string.Equals(
-                Volatile.Read(ref activeUserSid), client.UserSid.Value, StringComparison.OrdinalIgnoreCase)
-            || !stillControlsSession())
-        {
-            return EmptyDisposable.Instance;
-        }
-        return BeginSessionAdmission();
-    }
-
-    private static bool RequestOwnerControlsSession(ServiceUserRequestOwner owner)
-    {
-        try
-        {
-            return owner.StillControlsSession();
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    bool IServiceUserAdmission.TryReadCurrentUserStatus(
-        SecurityIdentifier userSid, Func<bool> stillControlsSession, out ServiceStatusSnapshot? snapshot)
-    {
-        snapshot = null;
-        long epoch = Interlocked.Read(ref sessionAdmissionEpoch);
-        if (!CurrentUserStatusReadable(userSid, stillControlsSession))
-        {
-            return false;
-        }
-        ServiceStatusSnapshot current = GetStatus();
-        if (!CurrentUserStatusReadable(userSid, stillControlsSession)
-            || epoch != Interlocked.Read(ref sessionAdmissionEpoch))
-        {
-            return false;
-        }
-        snapshot = current;
-        return true;
-    }
-
-    private bool CurrentUserStatusReadable(SecurityIdentifier userSid, Func<bool> stillControlsSession) =>
-        Volatile.Read(ref pendingSessionAdmissions) == 0
-        && !Volatile.Read(ref activeUserActivationIncomplete)
-        && !unexpectedExitRecoveryDeferredForUserConfiguration
-        && string.Equals(Volatile.Read(ref activeUserSid), userSid.Value, StringComparison.OrdinalIgnoreCase)
-        && activeUserStillControlsSession?.Invoke() == true
-        && stillControlsSession();
-
-    private IDisposable BeginSessionAdmission()
-    {
-        CloseThermalConvergenceAdmission(
-            ThermalConvergenceReason.InactiveSession,
-            thermalConvergenceShutdown: false);
-        Interlocked.Increment(ref sessionAdmissionEpoch);
-        Interlocked.Increment(ref pendingSessionAdmissions);
-        return new ActionDisposable(() => Interlocked.Decrement(ref pendingSessionAdmissions));
-    }
-
     public async Task ActivateUserAsync(
         SecurityIdentifier userSid,
         Func<bool> stillControlsSession,
@@ -1179,45 +1078,57 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             return;
         }
 
-        // A different-user admission must latch its epoch before waiting for
-        // ongoing recovery. Only a potentially completed same-user activation
-        // takes this fast-path gate; identity is checked again once acquired.
-        if (!Volatile.Read(ref activeUserActivationIncomplete) && string.Equals(
-                Volatile.Read(ref activeUserSid), userSid.Value, StringComparison.OrdinalIgnoreCase))
+        bool alreadyActive = string.Equals(
+            Volatile.Read(ref activeUserSid),
+            userSid.Value,
+            StringComparison.OrdinalIgnoreCase);
+        if (alreadyActive)
         {
+            activeUserStillControlsSession = stillControlsSession;
+            if (!unexpectedExitRecoveryDeferredForUserConfiguration)
+            {
+                return;
+            }
+
             await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                if (!activeUserActivationIncomplete && string.Equals(
-                        activeUserSid, userSid.Value, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(
+                        activeUserSid,
+                        userSid.Value,
+                        StringComparison.OrdinalIgnoreCase)
+                    && stillControlsSession())
                 {
-                    activeUserStillControlsSession = stillControlsSession;
-                    if (unexpectedExitRecoveryDeferredForUserConfiguration
-                        && stillControlsSession())
-                    {
-                        await TryCompleteDeferredUnexpectedExitRecoveryCoreAsync(
-                            stillControlsSession,
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                    return;
+                    await TryCompleteDeferredUnexpectedExitRecoveryCoreAsync(
+                        stillControlsSession,
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
             finally
             {
                 operationGate.Release();
             }
+
+            return;
         }
 
-        IDisposable sessionAdmission = BeginSessionAdmission();
+        CloseThermalConvergenceAdmission(
+            ThermalConvergenceReason.InactiveSession,
+            thermalConvergenceShutdown: false);
+        Interlocked.Increment(ref sessionAdmissionEpoch);
+        Interlocked.Increment(ref pendingSessionAdmissions);
+        bool sessionAdmissionPending = true;
         try
         {
             UserConfigurationContext context = await userConfigurationRepository
                 .LoadAsync(userSid, cancellationToken)
                 .ConfigureAwait(false);
             await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            Interlocked.Decrement(ref pendingSessionAdmissions);
+            sessionAdmissionPending = false;
             try
             {
-                if (!activeUserActivationIncomplete && string.Equals(
+                if (string.Equals(
                         activeUserSid,
                         userSid.Value,
                         StringComparison.OrdinalIgnoreCase))
@@ -1250,11 +1161,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 {
                     suppressInitialUserProfileApplyAfterUnexpectedExit = false;
                 }
-                // Old-context teardown can retire a renderer even when its
-                // caller is canceled before the new context is installed.
-                // Keep the prior SID/stores, but make that activation retryable.
-                Volatile.Write(ref activeUserActivationIncomplete, true);
-                sessionAdmission.Dispose();
                 if (!suppressProfileApply)
                 {
                     explicitLightingOwnershipActive = false;
@@ -1291,12 +1197,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     preserveDeferredRecoveryBaseline:
                         unexpectedExitRecoveryDeferredForUserConfiguration);
                 AdvanceFanDesiredRevision();
-                // Bind ownership before replacing any user context. A canceled
-                // or interrupted application must not leave the prior SID
-                // paired with these stores, and the new user must be able to
-                // retry finalization without replaying uncertain hardware work.
-                activeUserStillControlsSession = stillControlsSession;
-                Volatile.Write(ref activeUserSid, userSid.Value);
                 Volatile.Write(
                     ref userStores,
                     new UserConfigurationStores(context.Store, context.OverrideStore));
@@ -1344,7 +1244,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 if (!suppressProfileApply
                     && powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
                 {
-                    _ = await ApplyFullTransitionAsync(
+                    await ApplyFullTransitionAsync(
                             powerSource,
                             cancellationToken,
                             preserveObservedExternalChanges: false,
@@ -1399,6 +1299,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
                 if (stillControlsSession())
                 {
+                    Volatile.Write(ref activeUserSid, userSid.Value);
+                    activeUserStillControlsSession = stillControlsSession;
                     thermalConvergenceShutdown = false;
                     RefreshThermalConvergenceIntentState(
                         GetStatus().ConfirmedState ?? UnknownConfirmedState);
@@ -1416,7 +1318,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                             ThermalConvergenceReason.AwaitingFreshObservation,
                             thermalConvergenceShutdown: false);
                     }
-                    Volatile.Write(ref activeUserActivationIncomplete, false);
                 }
             }
             finally
@@ -1426,7 +1327,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         }
         finally
         {
-            sessionAdmission.Dispose();
+            if (sessionAdmissionPending)
+            {
+                Interlocked.Decrement(ref pendingSessionAdmissions);
+            }
         }
     }
 
@@ -1612,7 +1516,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             ConfirmedDeviceState profileResolutionState =
                 GetStatus().ConfirmedState ?? UnknownConfirmedState;
             DesiredDeviceState priorDesired = ResolveAutomationDesired(profileResolutionState);
-            LaptopBehaviorProfileSettings priorLaptopBehavior = Automation.EffectiveLaptopBehavior;
             LightingSettings priorLightingIntent =
                 ResolveAutomationDesired(profileResolutionState).Lighting.Value;
             try
@@ -1684,11 +1587,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
             bool activeApplicationIntentChanged = priorApplicationProfileId.HasValue
                 && (Automation.ActiveApplicationProfileId != priorApplicationProfileId
-                    || ResolveAutomationDesired(confirmed) != priorDesired
-                    || Automation.EffectiveLaptopBehavior != priorLaptopBehavior);
+                    || ResolveAutomationDesired(confirmed) != priorDesired);
 
-            if (lightingWasSuppressed && lightingSuppressions.Count == 0
-                && !activeApplicationIntentChanged)
+            if (lightingWasSuppressed && lightingSuppressions.Count == 0)
             {
                 await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                     .ConfigureAwait(false);
@@ -1708,11 +1609,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                         token).ConfigureAwait(false);
                     if (restored.Status != ControlOperationStatus.Applied)
                     {
-                        // Saving profiles has already committed. Report that durable
-                        // outcome even when the separate lighting restore is blocked.
                         return restored with
                         {
-                            Status = ControlOperationStatus.Stored,
                             Message = $"Profiles were stored. Lighting restore result: {restored.Message}",
                         };
                     }
@@ -1725,12 +1623,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
                 && current.DeviceVerified && !current.WritesBlocked)
             {
-                ServiceTransitionApplicationOutcome application = await ApplyFullTransitionAsync(current.ActivePowerSource, token)
+                await ApplyFullTransitionAsync(current.ActivePowerSource, token)
                     .ConfigureAwait(false);
-                return application.ToOperationResult(intentStored: true) with
-                {
-                    Message = $"Profiles were stored. {application.Message}",
-                };
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    "Profiles were stored and the active application profile was reconciled.");
             }
 
             return new ControlOperationResult(ControlOperationStatus.Stored, message);
@@ -1809,14 +1706,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
                 && current.DeviceVerified && !current.WritesBlocked)
             {
-                ServiceTransitionApplicationOutcome application = await ApplyFullTransitionAsync(
+                await ApplyFullTransitionAsync(
                     current.ActivePowerSource,
                     token,
                     stillControlsSession: stillControlsSession).ConfigureAwait(false);
-                return application.ToOperationResult() with
-                {
-                    Message = $"The active application profile was recorded. {application.Message}",
-                };
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    "The active application profile was reconciled.");
             }
             return new ControlOperationResult(
                 ControlOperationStatus.Stored,
@@ -1835,16 +1731,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         long sequence,
         CancellationTokenSource ownedCancellation)
     {
-        // Renewal may dispose the old source while its continuation is queued.
-        // The captured token remains usable after that source is disposed.
-        CancellationToken token = ownedCancellation.Token;
         try
         {
             await Task.Delay(
                 ApplicationContextLeaseDuration,
                 timeProvider,
-                token).ConfigureAwait(false);
-            await operationGate.WaitAsync(token).ConfigureAwait(false);
+                ownedCancellation.Token).ConfigureAwait(false);
+            await operationGate.WaitAsync(ownedCancellation.Token).ConfigureAwait(false);
             try
             {
                 if (!ReferenceEquals(applicationContextLeaseCancellation, ownedCancellation)
@@ -1867,7 +1760,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 {
                     await ApplyFullTransitionAsync(
                         current.ActivePowerSource,
-                        token).ConfigureAwait(false);
+                        ownedCancellation.Token).ConfigureAwait(false);
                 }
             }
             finally
@@ -1875,7 +1768,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 operationGate.Release();
             }
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        catch (OperationCanceledException) when (ownedCancellation.IsCancellationRequested)
         {
         }
         finally
@@ -2198,11 +2091,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
             if (ChangePowerSourceCore(powerSource))
             {
-                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
-                if (transition.StopFurtherWrites)
-                {
-                    return transition.ToOperationResult();
-                }
+                await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
             if (!stillControlsSession())
             {
@@ -2745,11 +2634,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
             if (ChangePowerSourceCore(powerSource))
             {
-                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
-                if (transition.StopFurtherWrites)
-                {
-                    return transition.ToOperationResult();
-                }
+                await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
 
             ServiceStatusSnapshot current = GetStatus();
@@ -3330,11 +3215,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
             if (ChangePowerSourceCore(powerSource))
             {
-                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
-                if (transition.StopFurtherWrites)
-                {
-                    return transition.ToOperationResult();
-                }
+                await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
             if (!stillControlsSession())
             {
@@ -4536,11 +4417,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
             if (ChangePowerSourceCore(powerSource))
             {
-                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
-                if (transition.StopFurtherWrites)
-                {
-                    return transition.ToOperationResult();
-                }
+                await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
             }
 
             bool wasSuppressed = lightingSuppressions.Count > 0;
@@ -4601,8 +4478,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         token.ThrowIfCancellationRequested();
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
-            || laptopControlExecutor.RequiresReconciliation
-            || Volatile.Read(ref laptopRecoveryObservationActive) != 0
             || current.ActivePowerSource == PowerSource.ExternalUnknown)
         {
             return new ControlOperationResult(
@@ -4964,10 +4839,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
             ServiceStatusSnapshot current = GetStatus();
-            if (laptopControlExecutor.RequiresReconciliation)
-            {
-                return new(ControlOperationStatus.Blocked, laptopControlExecutor.PendingMessage);
-            }
             if (!current.DeviceVerified
                 || current.WritesBlocked
                 || current.Capabilities is null
@@ -6084,7 +5955,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         CancellationToken token,
         bool operationGateAlreadyHeld = false,
         Action<bool>? writeAttemptObserver = null,
-        Action<bool, bool, bool>? applicationProgressObserver = null,
         Func<bool>? stillPreparing = null,
         long? lowPowerResumeGeneration = null,
         PadlessHyperBoostLifecycleTarget? lifecycleTarget = null)
@@ -6119,11 +5989,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         }
         try
         {
-            if (laptopControlExecutor.RequiresReconciliation)
-            {
-                return new(ControlOperationStatus.Blocked, laptopControlExecutor.PendingMessage);
-            }
-
             if (expectedOwnershipGeneration is { } expected
                 && (!ownsHyperBoost || hyperBoostOwnershipGeneration != expected))
             {
@@ -7340,17 +7205,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         finally
         {
             writeAttemptObserver?.Invoke(hyperBoostWriteAttempted);
-            if (applicationProgressObserver is not null)
-            {
-                ScopedApplyOutcome[] steps = transitionRunner?.Steps
-                    .SelectMany(step => step.Attempts).Select(attempt => attempt.Outcome).ToArray() ?? [];
-                bool hyperBoostConfirmed = hyperBoostWriteAttempted && finalHyperBoostReadbackCompleted
-                    && GetStatus().ConfirmedState?.HyperBoostActive == enabled;
-                applicationProgressObserver(
-                    hyperBoostWriteAttempted || steps.Any(step => step.WriteAttempted),
-                    hyperBoostWriteAttempted && !hyperBoostConfirmed || steps.Any(step => step.ConfirmationUnavailable),
-                    hyperBoostConfirmed || steps.Any(step => step.WriteAttempted && step.ReadbackMatched));
-            }
             if (hyperBoostWriteAttempted)
             {
                 RebaseLowPowerResumeState(lowPowerResumeGeneration);
@@ -9749,36 +9603,85 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         ApplyOneShotLaptopControl value,
         CancellationToken token)
     {
-        if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
-        {
-            return new(ControlOperationStatus.Blocked, "This laptop control is unavailable right now.");
-        }
         try
         {
-            LaptopControlApplyOutcome outcome = await laptopControlExecutor.ExecuteAsync(
-                device, deviceProvider.LaptopControlRecoveryIdentity, value,
-                explicitRequest: true, LaptopControlWriteAllowed, token).ConfigureAwait(false);
-            ControlOperationResult result = outcome.Result.Status == ControlOperationStatus.Applied
-                ? CreateOneShotLaptopControlResult(value, outcome.Readback)
-                : outcome.Result;
-            PublishLaptopControlReadback(outcome.Readback, result);
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "This laptop control is unavailable right now.");
+            }
+
+            await device.ApplyOneShotLaptopControlAsync(value, token)
+                .ConfigureAwait(false);
+            OneShotLaptopControlReadback readback =
+                await ReadOneShotLaptopControlStateAsync(device, value.Control, token)
+                    .ConfigureAwait(false);
+            ControlOperationResult result = CreateOneShotLaptopControlResult(value, readback);
+            PublishOneShotLaptopControlReadback(readback, result);
             history.RecordSummary(result.Status, result.Message);
-            PublishIfChanged(GetStatus() with { Message = result.Message });
             return result;
         }
-        finally
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            PublishIfChanged(GetStatus());
+            throw;
+        }
+        catch (CapabilityUnavailableException exception)
+        {
+            var result = new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                exception.Message);
+            history.RecordSummary(result.Status, result.Message);
+            return result;
+        }
+        catch
+        {
+            var result = new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "The laptop control could not be applied.");
+            history.RecordSummary(result.Status, result.Message);
+            return result;
         }
     }
 
-    private bool LaptopControlWriteAllowed() => !lowPowerGate.IsActive
-        && !Volatile.Read(ref status)!.WritesBlocked
-        && activeUserStillControlsSession?.Invoke() != false
-        && deviceProvider.TryGetVerifiedDevice(out _);
+    private static async Task<OneShotLaptopControlReadback>
+        ReadOneShotLaptopControlStateAsync(
+            IBladeDevice device,
+            OneShotLaptopControl control,
+            CancellationToken token)
+    {
+        try
+        {
+            return control switch
+            {
+                OneShotLaptopControl.StartupAnimation => new(
+                    await device.ReadStartupAnimationAsync(token).ConfigureAwait(false),
+                    null,
+                    null),
+                OneShotLaptopControl.FunctionKeyPrimary => new(
+                    null,
+                    await device.ReadFunctionKeyPrimaryAsync(token).ConfigureAwait(false),
+                    null),
+                OneShotLaptopControl.GamingMode => new(
+                    null,
+                    null,
+                    await device.ReadGamingModeAsync(token).ConfigureAwait(false)),
+                _ => new(null, null, null),
+            };
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return new(null, null, null);
+        }
+    }
+
     private static ControlOperationResult CreateOneShotLaptopControlResult(
         ApplyOneShotLaptopControl value,
-        LaptopControlReadback readback)
+        OneShotLaptopControlReadback readback)
     {
         string label = value.Control switch
         {
@@ -9831,8 +9734,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             });
     }
 
-    private void PublishLaptopControlReadback(
-        LaptopControlReadback readback,
+    private void PublishOneShotLaptopControlReadback(
+        OneShotLaptopControlReadback readback,
         ControlOperationResult result)
     {
         if (readback.StartupAnimation is not null)
@@ -9926,15 +9829,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
             if (ChangePowerSourceCore(powerSource))
             {
-                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
-                // A rejected battery-only request may still report its validation
-                // error after a read-only refusal; it performs no follow-on write.
-                if (transition.StopFurtherWrites
-                    && !(enabled && powerSource == PowerSource.Battery
-                        && !transition.AnyWritesAttempted && !transition.SubmissionPossible))
-                {
-                    return transition.ToOperationResult();
-                }
+                await ApplyFullTransitionAsync(powerSource, token);
             }
 
             if (enabled && powerSource == PowerSource.Battery)
@@ -10020,33 +9915,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 LiveReadingSensors.BatteryPower)
                 ? powerStateProvider.CaptureBatteryPowerFlowMilliwatts()
                 : null;
-            laptopControlExecutor.Refresh();
-            if (laptopControlExecutor.RequiresReconciliation)
-            {
-                // A recovery observation is read-only for its entire operation,
-                // even when the fresh laptop-control read resolves uncertainty.
-                if (powerSource != PowerSource.ExternalUnknown)
-                {
-                    // Retained frame writers must not resume the old power
-                    // profile while its freshly observed destination is deferred.
-                    // The shared lighting gate also briefly defers Driver acquisition.
-                    Volatile.Write(ref laptopRecoveryPowerDestinationPending,
-                        Automation.PowerSource != powerSource ? 1 : 0);
-                }
-                Interlocked.Exchange(ref laptopRecoveryObservationActive, 1);
-                try
-                {
-                    RefreshControllerPresenceCore(cancellationToken);
-                    await ObserveCoreAsync(PowerSourceForStatus(powerSource),
-                        powerSource != PowerSource.ExternalUnknown, requestedLiveReadings,
-                        batteryPowerFlow, cancellationToken, reconcileLaptopControls: true).ConfigureAwait(false);
-                }
-                finally
-                {
-                    Volatile.Write(ref laptopRecoveryObservationActive, 0);
-                }
-                return;
-            }
             bool sourceChanged = powerSource != PowerSource.ExternalUnknown
                 && Automation.PowerSource != powerSource;
             bool canUseReadOnlyFastPath = !resumeStateValidation.ResumeStarted
@@ -10056,7 +9924,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     powerSource != PowerSource.ExternalUnknown);
             Exception? lightingRelinquishFailure = null;
             bool transitionMessageHasPriority = false;
-            bool transitionStopped = false;
             try
             {
                 await RefreshControllerPresenceAndRelinquishLightingAsync(
@@ -10091,14 +9958,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             else if (ShouldRetryPendingOwnedHyperBoostPowerBoundaryExit(
                 powerSource))
             {
-                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, cancellationToken);
-                transitionStopped = transition.StopFurtherWrites;
+                await ApplyFullTransitionAsync(powerSource, cancellationToken);
                 transitionMessageHasPriority = true;
             }
             else if (changed && !startupProfileReconciliationPending)
             {
-                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, cancellationToken);
-                transitionStopped = transition.StopFurtherWrites;
+                await ApplyFullTransitionAsync(powerSource, cancellationToken);
                 transitionMessageHasPriority = true;
             }
             else
@@ -10131,10 +9996,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 PublishLightingRelinquishFailure(
                     lightingRelinquishFailure,
                     publishStatus: !transitionMessageHasPriority);
-            }
-            if (transitionStopped)
-            {
-                return;
             }
             ServiceStatusSnapshot observed = GetStatus();
             if (ownsHyperBoost && ownedHyperBoostRequiresCoolingPad
@@ -11731,7 +11592,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (lowPowerGate.IsActive || laptopControlExecutor.RequiresReconciliation)
+            if (lowPowerGate.IsActive)
             {
                 return;
             }
@@ -12487,10 +12348,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         long? lowPowerGeneration = null,
         Func<bool>? stillAuthorized = null)
     {
-        if (laptopControlExecutor.RequiresReconciliation)
-        {
-            return new(ControlOperationStatus.Blocked, laptopControlExecutor.PendingMessage);
-        }
         string boundary = reasonLabel == "shutdown"
             ? "before shutdown"
             : $"before {reasonLabel}";
@@ -12996,10 +12853,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         CancellationToken cancellationToken,
         Func<bool>? stillControlsSession = null)
     {
-        if (laptopControlExecutor.RequiresReconciliation)
-        {
-            return false;
-        }
         if (experimentalLightingResumeAwaitingRequest)
         {
             // Skip the old lighting intent while allowing fresh status observation.
@@ -13460,11 +13313,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
             if (ChangePowerSourceCore(powerSource))
             {
-                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
-                if (transition.StopFurtherWrites)
-                {
-                    return transition.ToOperationResult();
-                }
+                await ApplyFullTransitionAsync(powerSource, token);
             }
             if (stillControlsSession?.Invoke() == false)
             {
@@ -13566,11 +13415,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
             if (ChangePowerSourceCore(powerSource))
             {
-                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
-                if (transition.StopFurtherWrites)
-                {
-                    return transition.ToOperationResult();
-                }
+                await ApplyFullTransitionAsync(powerSource, token);
             }
             DesiredBatteryState? staged = stageIntent(Automation.DesiredBattery);
             if (staged is null)
@@ -13619,10 +13464,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         PendingBatteryIntentCommit? pendingBatteryIntentCommit = null,
         bool gpuClockTuningOnly = false)
     {
-        if (laptopControlExecutor.RequiresReconciliation)
-        {
-            return new(ControlOperationStatus.Blocked, laptopControlExecutor.PendingMessage);
-        }
         if (subsystem == DeviceSubsystem.Lighting && lowPowerGate.IsActive)
         {
             return DeferLightingIntentForLowPower();
@@ -14617,42 +14458,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         });
     }
 
-    private async Task ReconcilePendingLaptopControlsAsync(
-        CancellationToken token, IBladeDevice? verifiedDevice = null)
-    {
-        laptopControlExecutor.Refresh();
-        if (!laptopControlExecutor.RequiresReconciliation)
-        {
-            return;
-        }
-        if (verifiedDevice is null && !deviceProvider.TryGetVerifiedDevice(out verifiedDevice))
-        {
-            PublishIfChanged(GetStatus() with { Message = laptopControlExecutor.PendingMessage });
-            return;
-        }
-        IReadOnlyList<LaptopControlReadback> readings = await laptopControlExecutor.ReconcileAsync(
-            verifiedDevice, deviceProvider.LaptopControlRecoveryIdentity, token).ConfigureAwait(false);
-        foreach (LaptopControlReadback reading in readings)
-        {
-            PublishLaptopControlReadback(reading, new(ControlOperationStatus.Stored,
-                "Laptop-control state was read. An unconfirmed request will not be replayed automatically; use its explicit control to request it again."));
-        }
-        if (laptopControlExecutor.RequiresReconciliation)
-        {
-            PublishIfChanged(GetStatus() with { Message = laptopControlExecutor.PendingMessage });
-        }
-        // Ordinary full observation clears the presentation block only after all
-        // other safety conditions have been refreshed. Reconciliation alone does not.
-    }
-
     private async Task RefreshControllerPresenceAndRelinquishLightingAsync(
         CancellationToken cancellationToken,
         bool allowRecentObservation = false)
     {
-        if (laptopControlExecutor.RequiresReconciliation)
-        {
-            return;
-        }
         RefreshControllerPresenceCore(cancellationToken, allowRecentObservation);
         ServiceStatusSnapshot current = GetStatus();
         if (!ShouldRelinquishLightingOwnership(current))
@@ -14804,8 +14613,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
     private async Task<bool> ExitOwnedHyperBoostForPowerSourceTransitionAsync(
         IBladeDevice device,
         PowerSource powerSource,
-        CancellationToken cancellationToken,
-        Action<bool, bool, bool> recordApplicationProgress)
+        CancellationToken cancellationToken)
     {
         if (powerSource is not (PowerSource.Battery or PowerSource.UsbC))
         {
@@ -14904,8 +14712,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     freshConfirmed,
                     destinationIntent,
                     powerSource,
-                    cancellationToken,
-                    recordApplicationProgress)
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -14919,7 +14726,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 expectedExitPowerSourceGeneration: powerSourceGeneration,
                 token: cancellationToken,
                 operationGateAlreadyHeld: true,
-                applicationProgressObserver: recordApplicationProgress,
                 writeAttemptObserver: attempted =>
                 {
                     pendingOwnedHyperBoostPowerBoundaryExit =
@@ -14945,8 +14751,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             ConfirmedDeviceState confirmed,
             DesiredDeviceState destinationIntent,
             PowerSource powerSource,
-            CancellationToken cancellationToken,
-            Action<bool, bool, bool> recordApplicationProgress)
+            CancellationToken cancellationToken)
     {
         HyperBoostRestoreIntent restoreIntent = !ConfigurationIsAdmitted
             ? ownedHyperBoostRestoreIntent
@@ -15106,11 +14911,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         }
         catch (Exception exception)
         {
-            ScopedApplyOutcome[] failedSteps = transitionRunner.Steps
-                .SelectMany(step => step.Attempts).Select(attempt => attempt.Outcome).ToArray();
-            recordApplicationProgress(failedSteps.Any(step => step.WriteAttempted),
-                failedSteps.Any(step => step.ConfirmationUnavailable),
-                failedSteps.Any(step => step.WriteAttempted && step.ReadbackMatched));
             hyperBoostJournalSafetyBlock = true;
             ClearOwnedHyperBoostState();
             string failure =
@@ -15125,11 +14925,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             return false;
         }
 
-        ScopedApplyOutcome[] boundarySteps = transitionRunner.Steps
-            .SelectMany(step => step.Attempts).Select(attempt => attempt.Outcome).ToArray();
-        recordApplicationProgress(boundarySteps.Any(step => step.WriteAttempted),
-            boundarySteps.Any(step => step.ConfirmationUnavailable),
-            boundarySteps.Any(step => step.WriteAttempted && step.ReadbackMatched));
         ConfirmedDeviceState restored = restoration.Readback ?? confirmed;
         ClearOwnedHyperBoostState();
         if (!restoration.Succeeded)
@@ -15209,7 +15004,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         return journalCleared;
     }
 
-    private async Task<ServiceTransitionApplicationOutcome> ApplyFullTransitionAsync(
+    private async Task ApplyFullTransitionAsync(
         PowerSource powerSource,
         CancellationToken token,
         bool preserveLiveReadings = false,
@@ -15217,14 +15012,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         Func<bool>? stillControlsSession = null,
         PendingTransitionContinuation? continuation = null)
     {
-        if (laptopControlExecutor.RequiresReconciliation)
-        {
-            return ServiceTransitionApplicationOutcome.Interrupted(laptopControlExecutor.PendingMessage);
-        }
         if (lowPowerGate.IsActive)
         {
-            ControlOperationResult lowPowerDeferred = DeferLightingIntentForLowPower();
-            return ServiceTransitionApplicationOutcome.Interrupted(lowPowerDeferred.Message);
+            _ = DeferLightingIntentForLowPower();
+            return;
         }
         pendingTransitionContinuation = null;
         ServiceStatusSnapshot current = GetStatus();
@@ -15247,7 +15038,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     LiveReadings = retainedLiveReadings,
                 });
             }
-            return ServiceTransitionApplicationOutcome.Interrupted(GetStatus().Message);
+            return;
         }
 
         if (powerSource is PowerSource.Battery or PowerSource.UsbC
@@ -15267,7 +15058,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             if (!available)
             {
                 PublishFullUnavailable(powerSource, "No verified supported device is available.");
-                return ServiceTransitionApplicationOutcome.Interrupted(GetStatus().Message);
+                return;
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -15280,15 +15071,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 powerSource,
                 $"Verified device admission failed: {exception.Message}",
                 failed: true);
-            return ServiceTransitionApplicationOutcome.Interrupted(GetStatus().Message);
+            return;
         }
 
-        bool boundaryWriteAttempted = false;
-        bool boundarySubmissionPossible = false;
-        bool boundaryConfirmedWrites = false;
-        ServiceTransitionApplicationOutcome InterruptedAfterBoundary(string message) =>
-            ServiceTransitionApplicationOutcome.Interrupted(message,
-                new ServiceTransitionWriteProgress(boundaryWriteAttempted, boundarySubmissionPossible, boundaryConfirmedWrites));
         bool hyperBoostBoundaryWorkRequired =
             powerSource is PowerSource.Battery or PowerSource.UsbC
             && ownsHyperBoost
@@ -15296,16 +15081,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         if (!await ExitOwnedHyperBoostForPowerSourceTransitionAsync(
                 device,
                 powerSource,
-                token,
-                (writeAttempted, submissionPossible, confirmedWrites) =>
-                {
-                    boundaryWriteAttempted |= writeAttempted;
-                    boundarySubmissionPossible |= submissionPossible;
-                    boundaryConfirmedWrites |= confirmedWrites;
-                })
+                token)
             .ConfigureAwait(false))
         {
-            return InterruptedAfterBoundary(GetStatus().Message);
+            return;
         }
 
         if (hyperBoostBoundaryWorkRequired)
@@ -15320,7 +15099,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     PublishFullUnavailable(
                         powerSource,
                         "The verified device session changed after HyperBoost restoration.");
-                    return InterruptedAfterBoundary(GetStatus().Message);
+                    return;
                 }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -15333,7 +15112,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     powerSource,
                     $"Verified device re-admission failed after HyperBoost restoration: {exception.Message}",
                     failed: true);
-                return InterruptedAfterBoundary(GetStatus().Message);
+                return;
             }
         }
 
@@ -15341,7 +15120,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         cachedConfirmed = current.ConfirmedState;
         if (stillControlsSession?.Invoke() == false)
         {
-            return InterruptedAfterBoundary("The active Windows session changed before the destination profile could be applied.");
+            return;
         }
 
         DesiredDeviceState desired = ResolveHardwareDesired(
@@ -15405,14 +15184,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             confirmed = outcome.Readback;
         }
 
-        LaptopControlBatchOutcome laptopBehavior = continuation is not null
+        string? laptopBehaviorMessage = continuation is not null
             || current.WritesBlocked
-            || outcome.DeviceAccessFailed
-            || GetStatus().WritesBlocked
             || outcome.ConfirmationUnavailable?.Count > 0
-            ? new(!Automation.EffectiveLaptopBehavior.IsConfigured, false, false, false,
-                Automation.EffectiveLaptopBehavior.IsConfigured
-                    ? "Laptop behavior was not applied because the preceding transition did not complete safely." : null)
+            ? null
             : await ApplyProfileLaptopBehaviorAsync(
                 device,
                 powerSource,
@@ -15420,8 +15195,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 token).ConfigureAwait(false);
 
         LightingRendererOwnershipState observedLightingOwnership = current.LightingRendererOwnership;
-        if (!laptopBehavior.StopFurtherWrites
-            && (continuation is null || continuation.Subsystems.Contains(DeviceSubsystem.Lighting)))
+        if (continuation is null || continuation.Subsystems.Contains(DeviceSubsystem.Lighting))
         {
             (outcome, observedLightingOwnership) = await ReconcileFullTransitionLightingAsync(
                     device,
@@ -15437,15 +15211,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             powerSource,
             confirmed,
             current.Capabilities,
-            laptopBehavior.Message,
+            laptopBehaviorMessage,
             preserveLiveReadings,
             lightingExternalBeforeReadback,
             token,
             continuation?.Subsystems).ConfigureAwait(false);
-        return ServiceTransitionApplicationOutcome.From(outcome, laptopBehavior,
-            laptopBehavior.AnyWritesAttempted && laptopControlExecutor.RequiresReconciliation,
-            new ServiceTransitionWriteProgress(boundaryWriteAttempted, boundarySubmissionPossible, boundaryConfirmedWrites),
-            GetStatus().Message);
     }
 
     private bool ShouldRetryPendingOwnedHyperBoostPowerBoundaryExit(
@@ -15855,74 +15625,157 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     : null);
     }
 
-    private async Task<LaptopControlBatchOutcome> ApplyProfileLaptopBehaviorAsync(
+    private async Task<string?> ApplyProfileLaptopBehaviorAsync(
         IBladeDevice device,
         PowerSource powerSource,
         DeviceCapabilities? capabilities,
         CancellationToken token)
     {
         LaptopBehaviorProfileSettings behavior = Automation.EffectiveLaptopBehavior;
-        var requests = new List<ApplyOneShotLaptopControl>(3);
+        if (!behavior.IsConfigured)
+        {
+            return null;
+        }
+
+        var failures = new List<string>();
         if (behavior.FunctionKeyPrimary is { } functionKeyMode)
         {
-            requests.Add(new(OneShotLaptopControl.FunctionKeyPrimary, FunctionKeyMode: functionKeyMode));
+            await ApplyProfileLaptopControlAsync(
+                device,
+                capabilities,
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: functionKeyMode),
+                failures,
+                token).ConfigureAwait(false);
         }
-        if (behavior.GamingModeEnabled is { } gamingMode)
+        if (behavior.GamingModeEnabled is { } gamingModeEnabled)
         {
-            requests.Add(new(OneShotLaptopControl.GamingMode, Enabled: gamingMode));
+            await ApplyProfileLaptopControlAsync(
+                device,
+                capabilities,
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.GamingMode,
+                    Enabled: gamingModeEnabled),
+                failures,
+                token).ConfigureAwait(false);
         }
-        if (behavior.StartupAnimationEnabled is { } startup)
+        if (behavior.StartupAnimationEnabled is { } startupAnimationEnabled)
         {
-            requests.Add(new(OneShotLaptopControl.StartupAnimation, Enabled: startup));
+            await ApplyProfileLaptopControlAsync(
+                device,
+                capabilities,
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.StartupAnimation,
+                    Enabled: startupAnimationEnabled),
+                failures,
+                token).ConfigureAwait(false);
         }
-        var failures = new List<string>();
-        bool confirmedWrite = false;
-        bool attemptedWrite = false;
-        foreach (ApplyOneShotLaptopControl requested in requests)
-        {
-            // Host-managed Gaming Mode is a Session Agent preference, not firmware state.
-            if (capabilities?.HostManagedLaptopControls.Contains(requested.Control) == true)
-            {
-                continue;
-            }
-            if (capabilities?.OneShotLaptopControls.Contains(requested.Control) != true)
-            {
-                failures.Add($"{requested.Control} is unsupported.");
-                continue;
-            }
-            ServiceStatusSnapshot current = GetStatus();
-            var confirmed = new LaptopControlReadback(current.StartupAnimationEnabled,
-                current.FunctionKeyPrimary, current.GamingModeEnabled);
-            if (confirmed.Matches(requested))
-            {
-                continue;
-            }
-            LaptopControlApplyOutcome outcome;
-            try
-            {
-                outcome = await laptopControlExecutor.ExecuteAsync(
-                    device, deviceProvider.LaptopControlRecoveryIdentity, requested,
-                    explicitRequest: false, LaptopControlWriteAllowed, token).ConfigureAwait(false);
-            }
-            finally
-            {
-                PublishIfChanged(GetStatus());
-            }
-            PublishLaptopControlReadback(outcome.Readback, outcome.Result);
-            attemptedWrite |= outcome.WriteAttempted;
-            confirmedWrite |= outcome.WriteAttempted && outcome.Result.Status == ControlOperationStatus.Applied;
-            if (outcome.Result.Status != ControlOperationStatus.Applied)
-            {
-                failures.Add(outcome.Result.Message);
-            }
-            if (outcome.StopFurtherWrites)
-            {
-                return new(false, true, confirmedWrite, attemptedWrite, string.Join(" ", failures));
-            }
-        }
-        return new(failures.Count == 0, false, confirmedWrite, attemptedWrite,
-            failures.Count == 0 ? null : $"Laptop behavior could not be synchronized: {string.Join(" ", failures)}");
+
+        return failures.Count == 0
+            ? null
+            : $"Laptop behavior could not be synchronized: {string.Join(" ", failures)}";
     }
+
+    private async Task ApplyProfileLaptopControlAsync(
+        IBladeDevice device,
+        DeviceCapabilities? capabilities,
+        ApplyOneShotLaptopControl requested,
+        ICollection<string> failures,
+        CancellationToken token)
+    {
+        // Host-managed preferences are consumed by the Session Agent from the
+        // durable profile. They must never become firmware writes or readback.
+        if (capabilities?.HostManagedLaptopControls.Contains(requested.Control) is true)
+        {
+            return;
+        }
+
+        string label = requested.Control switch
+        {
+            OneShotLaptopControl.FunctionKeyPrimary => "Function key behavior",
+            OneShotLaptopControl.GamingMode => "Gaming mode",
+            OneShotLaptopControl.StartupAnimation => "Startup animation",
+            _ => "Unknown laptop control",
+        };
+        if (capabilities is null
+            || !capabilities.OneShotLaptopControls.Contains(requested.Control))
+        {
+            failures.Add($"{label} is unsupported.");
+            return;
+        }
+
+        ServiceStatusSnapshot current = GetStatus();
+        bool alreadyMatches = requested.Control switch
+        {
+            OneShotLaptopControl.FunctionKeyPrimary =>
+                current.FunctionKeyPrimary == requested.FunctionKeyMode,
+            OneShotLaptopControl.GamingMode =>
+                current.GamingModeEnabled == requested.Enabled,
+            OneShotLaptopControl.StartupAnimation =>
+                current.StartupAnimationEnabled == requested.Enabled,
+            _ => false,
+        };
+        if (alreadyMatches)
+        {
+            return;
+        }
+
+        try
+        {
+            await device.ApplyOneShotLaptopControlAsync(requested, token)
+                .ConfigureAwait(false);
+            switch (requested.Control)
+            {
+                case OneShotLaptopControl.FunctionKeyPrimary:
+                    {
+                        FunctionKeyPrimaryMode? readback = await device
+                            .ReadFunctionKeyPrimaryAsync(token)
+                            .ConfigureAwait(false);
+                        if (readback != requested.FunctionKeyMode)
+                        {
+                            failures.Add($"{label} was not confirmed.");
+                            return;
+                        }
+                        PublishIfChanged(GetStatus() with { FunctionKeyPrimary = readback });
+                        break;
+                    }
+                case OneShotLaptopControl.GamingMode:
+                    {
+                        bool? readback = await device.ReadGamingModeAsync(token)
+                            .ConfigureAwait(false);
+                        if (readback != requested.Enabled)
+                        {
+                            failures.Add($"{label} was not confirmed.");
+                            return;
+                        }
+                        PublishIfChanged(GetStatus() with { GamingModeEnabled = readback });
+                        break;
+                    }
+                case OneShotLaptopControl.StartupAnimation:
+                    {
+                        bool? readback = await device.ReadStartupAnimationAsync(token)
+                            .ConfigureAwait(false);
+                        if (readback != requested.Enabled)
+                        {
+                            failures.Add($"{label} was not confirmed.");
+                            return;
+                        }
+                        PublishIfChanged(GetStatus() with { StartupAnimationEnabled = readback });
+                        break;
+                    }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            failures.Add($"{label} could not be applied.");
+        }
+    }
+
     private static ConfirmedDeviceState MergeScopedReadback(
         DeviceSubsystem subsystem,
         ConfirmedDeviceState? cached,
@@ -16131,8 +15984,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         LiveReadingSensors requestedLiveReadings,
         int? batteryPowerFlowMilliwatts,
         CancellationToken cancellationToken,
-        bool skipLightingHandoff = false,
-        bool reconcileLaptopControls = false)
+        bool skipLightingHandoff = false)
     {
         bool includeLiveReadings = requestedLiveReadings != LiveReadingSensors.None;
         bool deviceAvailable = deviceProvider.TryGetVerifiedDevice(out IBladeDevice device);
@@ -16147,12 +15999,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             return;
         }
 
-        bool laptopRecoveryObservation = reconcileLaptopControls || laptopControlExecutor.RequiresReconciliation;
-        if (reconcileLaptopControls)
-        {
-            await ReconcilePendingLaptopControlsAsync(cancellationToken, device).ConfigureAwait(false);
-        }
-
         consecutiveDeviceProbeFailures = 0;
 
         try
@@ -16163,25 +16009,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 includeLiveReadings,
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            if (laptopRecoveryObservation)
-            {
-                PublishVerifiedDeviceObservation(powerSource, powerSourceConfirmed,
-                    includeLiveReadings, batteryPowerFlowMilliwatts, observation, batteryHealth: null,
-                    preserveRecoveryState: true);
-                string recoveryMessage = laptopControlExecutor.RequiresReconciliation
-                    ? laptopControlExecutor.PendingMessage
-                    : "Laptop-control recovery was read and reconciled without writes. Unconfirmed intent will not be replayed automatically; use the explicit laptop control to request it again.";
-                if (powerSourceConfirmed && powerSource != Automation.PowerSource)
-                {
-                    recoveryMessage += " The new power profile is waiting to apply; controls still show the previously active targets.";
-                }
-                PublishIfChanged(GetStatus() with
-                {
-                    Message = recoveryMessage,
-                });
-                return;
-            }
-
             // An unclassified adapter cannot resolve a pending submission. Defer
             // only its battery drift comparison; publish the actual readback and
             // keep the pending write block, existing latches, and other drift.
@@ -16607,16 +16434,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         bool includeLiveReadings,
         int? batteryPowerFlowMilliwatts,
         FullDeviceObservation observation,
-        BatteryHealthStatus? batteryHealth,
-        bool preserveRecoveryState = false)
+        BatteryHealthStatus? batteryHealth)
     {
         ServiceStatusSnapshot current = GetStatus();
-        // A laptop-control recovery observation must not consume another
-        // recovery owner's provenance before its normal journal reconciliation.
-        bool deferredHyperBoostRecovery = preserveRecoveryState
-            && (ownsHyperBoost || hyperBoostRestorePending
-                || pendingIndeterminateHyperBoostEntryIntent is not null
-                || pendingIndeterminateHyperBoostExitIntent is not null);
         if (observation.Confirmed.HyperBoostActive == true
             && current.ConfirmedState?.HyperBoostActive != true
             && !ownsHyperBoost
@@ -16630,7 +16450,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             // their direct journaled restoration path.
             AdvanceFanAuthorityEpoch();
         }
-        if (!preserveRecoveryState && observation.Confirmed.HyperBoostActive == false)
+        if (observation.Confirmed.HyperBoostActive == false)
         {
             if (ownsHyperBoost || ownedHyperBoostBaseMode is not null)
             {
@@ -16648,7 +16468,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         PublishIfChanged(current with
         {
             DeviceVerified = true,
-            WritesBlocked = !powerSourceConfirmed || hyperBoostJournalSafetyBlock || deferredHyperBoostRecovery,
+            WritesBlocked = !powerSourceConfirmed || hyperBoostJournalSafetyBlock,
             ObservationReason = !powerSourceConfirmed && powerSource != PowerSource.ExternalUnknown
                 ? DeviceObservationReason.RetainedPowerSource
                 : DeviceObservationReason.None,
@@ -16867,17 +16687,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
     private bool ChangePowerSourceCore(PowerSource powerSource)
     {
-        if (laptopControlExecutor.RequiresReconciliation)
-        {
-            // Keep the destination unconsumed until the read-only recovery
-            // operation finishes. A later ordinary observation applies that
-            // destination through fresh admission, without replaying the laptop write.
-            return false;
-        }
         bool changed = Automation.ChangePowerSource(powerSource);
-        // Normal fresh destination processing now owns admission, even if the
-        // source reverted while recovery was pending and no transition is needed.
-        Volatile.Write(ref laptopRecoveryPowerDestinationPending, 0);
         if (changed)
         {
             deferredRecoveredHyperBoostEntryIntent = null;
@@ -19579,7 +19389,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         FanControlSettings currentSettings = current.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(current.DesiredState.Fans.Value);
         return settings.Mode == FanMode.ManualCurve
-            && Automation.PowerSource == current.ActivePowerSource
             && FanControlPowerPolicy.IsAvailable(current.ActivePowerSource, settings.Mode,
                 current.Capabilities?.SupportsManualFansOnLimitedPower == true)
             && currentSettings == settings
@@ -20060,8 +19869,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 WritesBlocked = updated.WritesBlocked
                     || hyperBoostJournalSafetyBlock
                     || unconfirmedWrites.Count > 0
-                    || deviceProvider.IsExperimentalWritesPaused
-                    || laptopControlExecutor.RequiresReconciliation,
+                    || deviceProvider.IsExperimentalWritesPaused,
                 UnconfirmedWrites = unconfirmedWrites,
                 HyperBoostRestorePending = hyperBoostRestorePending,
                 AllowExperimentalFeatures = deviceProvider.IsExperimentalDevice,
@@ -20491,6 +20299,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
         public FirmwareVersions Capture() => FirmwareVersions.Unavailable();
     }
+
+    private sealed record OneShotLaptopControlReadback(
+        bool? StartupAnimation,
+        FunctionKeyPrimaryMode? FunctionKeyPrimary,
+        bool? GamingMode);
 
     private enum IndeterminateHyperBoostResolution
     {

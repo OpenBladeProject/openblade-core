@@ -137,30 +137,6 @@ public sealed class DisplayProfileApplierTests
         Assert.Equal(["query", "brightness:40"], controller.Calls);
     }
 
-    [Theory]
-    [InlineData(false, SessionDisplayOperationStatus.Failed)]
-    [InlineData(true, SessionDisplayOperationStatus.Indeterminate)]
-    public async Task MissingBrightnessPreservesEarlierSubmission(
-        bool changeRefresh, SessionDisplayOperationStatus expectedStatus)
-    {
-        var context = ConfirmedContext();
-        var controller = new FakeDisplayController(
-            SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native"));
-        using var applier = new DisplayProfileApplier(controller, context);
-
-        SessionDisplayExecutionResult result = await applier.ApplyProfileAsync(
-            PowerSource.PluggedIn,
-            new DisplayProfileSettings(changeRefresh ? "fixed-120" : null, null, null)
-            {
-                BrightnessPercent = 50,
-            });
-
-        Assert.Equal(expectedStatus, result.Status);
-        Assert.Equal(changeRefresh ? "fixed-120" : "fixed-60", result.State.CurrentRefreshKey);
-        string[] expectedCalls = changeRefresh ? ["query", "refresh:fixed-120"] : ["query"];
-        Assert.Equal(expectedCalls, controller.Calls);
-    }
-
     [Fact]
     public async Task OperationsShareOneGate()
     {

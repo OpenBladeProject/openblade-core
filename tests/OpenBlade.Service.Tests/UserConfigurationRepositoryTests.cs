@@ -256,68 +256,6 @@ public sealed class UserConfigurationRepositoryTests : IDisposable
         Assert.Equal(evidence, await File.ReadAllBytesAsync(sidecarPath));
     }
 
-    [Theory]
-    [InlineData("healthy")]
-    [InlineData("empty")]
-    [InlineData("corrupt")]
-    public async Task LoadAsync_RecoveryRequiredLegacySourceUsesOnlyIndependentNonemptyUserIntent(
-        string destinationState)
-    {
-        Directory.CreateDirectory(directory);
-        var ownerSid = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
-        string sourceMarker = Path.Combine(directory, "battery-configuration.commit.json");
-        var source = new BatteryConfigurationStore(Path.Combine(directory, "profiles.json"),
-            Path.Combine(directory, "battery-preferences.json"), sourceMarker, validator);
-        await source.LoadAsync(CancellationToken.None);
-        string sourceRecovery = sourceMarker + ".recovery-required";
-        await File.WriteAllTextAsync(sourceRecovery, "unresolved legacy transaction");
-        await File.WriteAllTextAsync(Path.Combine(directory, "authorized-user.sid"), ownerSid.Value);
-        var sourceBytes = Directory.GetFiles(directory).ToDictionary(
-            path => path, File.ReadAllBytes, StringComparer.OrdinalIgnoreCase);
-        string userDirectory = Path.Combine(directory, "users", ownerSid.Value);
-        string profilePath = Path.Combine(userDirectory, "profiles.json");
-        string markerPath = Path.Combine(userDirectory, "battery-configuration.commit.json");
-        ProfileSet independent = ProfileDefaults.CreateSafeDefaults() with { BatteryPolicy = BatteryPolicy.Create(65) };
-        if (destinationState == "healthy")
-        {
-            await new BatteryConfigurationStore(profilePath,
-                Path.Combine(userDirectory, "battery-preferences.json"), markerPath, validator)
-                .SaveConfigurationAsync(independent, new BatteryAutomationPreferences(), CancellationToken.None);
-        }
-        else if (destinationState == "corrupt")
-        {
-            Directory.CreateDirectory(userDirectory);
-            await File.WriteAllTextAsync(profilePath, "{invalid-json");
-        }
-        var repository = new UserConfigurationRepository(directory, validator);
-
-        if (destinationState == "healthy")
-        {
-            UserConfigurationContext loaded = await repository.LoadAsync(ownerSid, CancellationToken.None);
-            Assert.True(loaded.Configuration.IsAuthoritative);
-            Assert.Equal(independent, loaded.Configuration.Profiles);
-        }
-        else
-        {
-            await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
-                repository.LoadAsync(ownerSid, CancellationToken.None));
-            Assert.False(File.Exists(markerPath));
-            if (destinationState == "corrupt")
-            {
-                Assert.Equal("{invalid-json", await File.ReadAllTextAsync(profilePath));
-            }
-            else
-            {
-                Assert.False(File.Exists(profilePath));
-            }
-        }
-        Assert.False(File.Exists(Path.Combine(userDirectory, ".legacy-migration-complete")));
-        foreach ((string path, byte[] bytes) in sourceBytes)
-        {
-            Assert.Equal(bytes, await File.ReadAllBytesAsync(path));
-        }
-    }
-
     public void Dispose()
     {
         if (Directory.Exists(directory))

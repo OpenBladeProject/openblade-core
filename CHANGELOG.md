@@ -12,27 +12,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Preserve window size limits while reducing memory growth during language changes. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Reuse native windows, backdrops and icons when changing language, and release retired views and their event subscriptions. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Release generated XAML bindings and native title-bar resources when closing main and quick-controls windows, and complete cleanup after failed window initialization. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
-- Keep display edits and refresh messages in order, use current brightness levels, and confirm display profiles only from supported brightness readback and matching HDR/color state. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Remove failed driver-download attempt files before installation begins, while retaining packages after any installation intent or uncertain result. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Keep driver installation recovery required for malformed journals or missing THX packages, preserve extraction files after uncertain termination, and distinguish timeouts from cancellation. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Keep settings tied to the correct Windows user when session activation is interrupted or requests overlap. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Preserve brightness-failure diagnostics and allow display automation to recover after a canceled manual change. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Retain keyboard-hook ownership when replacement cleanup fails and stop further replacements until cleanup is confirmed. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Save configured THX audio profiles correctly and avoid refreshing unrelated controls when audio settings have not changed. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Preserve the original configuration files for recovery when a save and its rollback both fail. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Follow the current default playback device in Audio Meter lighting, including switches where the previous device remains connected. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Stop firmware-validation writes after unconfirmed changes or restoration failures, and bound CPU probe callback buffering. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Preserve overlapping profile edits, refresh service state before later saves, and retain drafts when a save is rejected or its result is uncertain. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Reject malformed profile requests safely and preserve invalid saved configuration for recovery. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Keep display automation paused after a partially submitted change, retain the most recently activated app profile, and honor the latest telemetry replay selection. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Report saved profiles honestly when their settings could not be fully applied, reconcile laptop-behavior edits, and retain uncertain laptop-control writes across service restarts without replaying them automatically. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Keep intermittent telemetry readings visible when a chart contains many gaps, without drawing lines across missing readings. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+- Keep display edits and refresh messages in order and use current brightness levels. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Preserve brightness-failure diagnostics and allow display automation to recover after a canceled manual change. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Avoid refreshing unrelated controls when THX audio settings have not changed. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Preserve overlapping profile edits, refresh service state before later saves, and retain drafts when a save is rejected or its result is uncertain. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Honor the latest telemetry replay selection and keep intermittent readings visible without drawing chart lines across missing readings. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 
 ### Changed
 
-- Release the worker thread between GPU activity samples and cancel pending sample waits promptly. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Reduce service and battery IPC decoding overhead with shared streaming validation. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
-- Reduce telemetry chart allocations and redraw each accepted live sample once, while keeping freshness labels and missing-sample time progression current. ([#874](https://github.com/OSSBlade/openblade-core/pull/874))
+- Reduce telemetry chart allocations and redraw each accepted live sample once, while keeping freshness labels and missing-sample time progression current. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 
 ## [0.50.3] - 2026-11-01
 

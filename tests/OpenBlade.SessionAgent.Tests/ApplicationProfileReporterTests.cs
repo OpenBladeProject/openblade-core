@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Threading.Channels;
 using OpenBlade.Contracts;
 using OpenBlade.Session;
 using OpenBlade.SessionAgent;
@@ -45,94 +44,6 @@ public sealed class ApplicationProfileReporterTests
                 [second with { Enabled = false }, first],
                 null,
                 activated));
-    }
-
-    [Fact]
-    public async Task ReactivationUpdatesRecencyWithoutReplacingExitSubscription()
-    {
-        var first = new ApplicationProfileDefinition(Guid.NewGuid(), "First", @"C:\Games\first.exe",
-            ApplicationActivationMode.WhileRunningAfterActivation, new ApplicationProfileOverrideSet());
-        var second = new ApplicationProfileDefinition(Guid.NewGuid(), "Second", @"C:\Games\second.exe",
-            ApplicationActivationMode.WhileRunningAfterActivation, new ApplicationProfileOverrideSet());
-        var foregroundOnly = new ApplicationProfileDefinition(Guid.NewGuid(), "Foreground", @"C:\Games\foreground.exe",
-            ApplicationActivationMode.Foreground, new ApplicationProfileOverrideSet());
-        var firstProcess = new FakeProcessHandle(first.ExecutablePath);
-        var secondProcess = new FakeProcessHandle(second.ExecutablePath);
-        int openCount = 0;
-        Channel<string?> reports = Channel.CreateUnbounded<string?>();
-        await using var reporter = new ApplicationProfileReporter(
-            (request, _) =>
-            {
-                reports.Writer.TryWrite(request.ExecutablePath);
-                return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Applied, "Applied"));
-            },
-            processId =>
-            {
-                openCount++;
-                return processId == 1 ? firstProcess : secondProcess;
-            },
-            TimeSpan.FromSeconds(30));
-        using var cancellation = new CancellationTokenSource();
-        Task running = reporter.RunAsync(cancellation.Token);
-        ApplicationProfileDefinition[] profiles = [first, second, foregroundOnly];
-        try
-        {
-            reporter.Observe(Status(profiles));
-            await ObserveAndExpectAsync(first, 1);
-            Action staleFirstExit = firstProcess.CaptureExitNotification();
-            await ObserveAndExpectAsync(second, 2);
-            await ObserveAndExpectAsync(first, 1);
-
-            // Repeated status/audio-output observations of the same foreground
-            // must neither replace the process subscription nor report again.
-            reporter.Observe(Status(profiles));
-            reporter.ObserveForeground(Observation(first, 1));
-            await ObserveAndExpectAsync(foregroundOnly, 3);
-            reporter.ObserveForeground(ThxForegroundObservation.Unknown);
-            await ExpectAsync(first.ExecutablePath);
-            Assert.Equal(2, openCount);
-
-            secondProcess.RaiseExit();
-            await ObserveAndExpectAsync(foregroundOnly, 3);
-            reporter.ObserveForeground(ThxForegroundObservation.Unknown);
-            await ExpectAsync(first.ExecutablePath);
-            Assert.True(secondProcess.Disposed);
-
-            // The original first-process callback must still clear its record
-            // after its activation sequence changed; no timer pruning is involved.
-            firstProcess.RaiseExit();
-            await ExpectAsync(null);
-            Assert.True(firstProcess.Disposed);
-
-            // A delayed exit notification for the old lifetime cannot retire a
-            // new process that Windows assigned the same PID and executable.
-            firstProcess = new FakeProcessHandle(first.ExecutablePath);
-            await ObserveAndExpectAsync(first, 1);
-            staleFirstExit();
-            await ObserveAndExpectAsync(foregroundOnly, 3);
-            reporter.ObserveForeground(ThxForegroundObservation.Unknown);
-            await ExpectAsync(first.ExecutablePath);
-            Assert.False(firstProcess.Disposed);
-            Assert.Equal(3, openCount);
-            Assert.False(reports.Reader.TryRead(out _));
-        }
-        finally
-        {
-            cancellation.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
-        }
-
-        static ThxForegroundObservation Observation(ApplicationProfileDefinition profile, int id) =>
-            new(Path.GetFileName(profile.ExecutablePath), ExecutablePath: profile.ExecutablePath, ProcessId: id);
-
-        async Task ObserveAndExpectAsync(ApplicationProfileDefinition profile, int id)
-        {
-            reporter.ObserveForeground(Observation(profile, id));
-            await ExpectAsync(profile.ExecutablePath);
-        }
-
-        async Task ExpectAsync(string? path) =>
-            Assert.Equal(path, await reports.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2)));
     }
 
     [Fact]
@@ -329,18 +240,6 @@ public sealed class ApplicationProfileReporterTests
         }
 
         public void MarkExitedWithoutRaisingEvent() => HasExited = true;
-
-        public void RaiseExit()
-        {
-            HasExited = true;
-            exited?.Invoke(this, EventArgs.Empty);
-        }
-
-        public Action CaptureExitNotification()
-        {
-            EventHandler? notification = exited;
-            return () => notification?.Invoke(this, EventArgs.Empty);
-        }
 
         public void Dispose()
         {

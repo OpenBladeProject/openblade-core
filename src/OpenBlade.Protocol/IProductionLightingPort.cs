@@ -38,13 +38,6 @@ internal static class OwnedRendererOffObservation
 /// Closed, typed production lighting surface. Raw Razer commands and matrix
 /// buffers never cross the protocol boundary.
 /// </summary>
-// Retained renderers must carry the service's recovery admission through their
-// native queue, independently of the low-power Driver-mode cleanup exception.
-internal interface ILightingRecoveryWriteAdmission
-{
-    void SetRecoveryWriteAdmission(Func<bool> admission);
-}
-
 public interface IProductionLightingPort : IAsyncDisposable
 {
     DeviceCapabilities Capabilities { get; }

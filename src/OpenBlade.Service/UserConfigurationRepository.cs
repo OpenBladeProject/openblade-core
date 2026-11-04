@@ -1,5 +1,4 @@
 using System.Security.Principal;
-using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
 
@@ -160,28 +159,16 @@ public sealed class UserConfigurationRepository : IUserConfigurationRepository
             Path.Combine(machineDataDirectory, "battery-preferences.json"),
             Path.Combine(machineDataDirectory, "battery-configuration.commit.json"),
             validator);
-        BatteryConfigurationInspection destinationConfiguration = await destination
+        BatteryConfigurationInspection legacy = await source
             .InspectAsync(cancellationToken)
             .ConfigureAwait(false);
-        BatteryConfigurationInspection legacy;
-        try
-        {
-            legacy = await source.InspectAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (ConfigurationQuarantinedException exception) when (
-            destinationConfiguration.Configuration.IsAuthoritative && !destinationConfiguration.WasEmpty)
-        {
-            // Only independently verified, existing user intent can bypass an
-            // unresolved legacy source. Do not import it, mark migration complete,
-            // or materialize new default intent for an empty user destination.
-            DiagnosticTrace.TraceException(nameof(UserConfigurationRepository), nameof(MigrateLegacyOwnerAsync),
-                exception, "Unresolved legacy configuration was preserved; the existing authoritative user aggregate remains independent.");
-            return;
-        }
 
         var sourceOverrides = new PersistentOverrideStore(
             Path.Combine(machineDataDirectory, "manual-overrides.json"));
         PersistentOverrideInspection legacyOverrides = await sourceOverrides
+            .InspectAsync(cancellationToken)
+            .ConfigureAwait(false);
+        BatteryConfigurationInspection destinationConfiguration = await destination
             .InspectAsync(cancellationToken)
             .ConfigureAwait(false);
         PersistentOverrideInspection destinationOverride = await destinationOverrides

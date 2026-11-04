@@ -30,7 +30,7 @@ public sealed record WindowsGpuAppActionResult(
 
 public interface IWindowsGpuAppManager
 {
-    Task<WindowsGpuAppScan> ScanAsync(CancellationToken cancellationToken = default);
+    WindowsGpuAppScan Scan(CancellationToken cancellationToken = default);
 
     IReadOnlyList<WindowsGpuAppActionResult> CloseGracefully(
         IReadOnlyList<WindowsGpuApp> apps,
@@ -128,13 +128,13 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
             ?? throw new ArgumentNullException(nameof(processActionTargetFactory));
     }
 
-    public async Task<WindowsGpuAppScan> ScanAsync(CancellationToken cancellationToken = default)
+    public WindowsGpuAppScan Scan(CancellationToken cancellationToken = default)
     {
-        WindowsGpuActivitySnapshot sample = await RefreshAndReadActivitySampleAsync(
+        WindowsGpuActivitySnapshot sample = RefreshAndReadActivitySample(
             reader.Refresh,
             reader.Read,
-            Task.Delay,
-            cancellationToken).ConfigureAwait(false);
+            Thread.Sleep,
+            cancellationToken);
         if (!sample.IsAvailable)
         {
             return new WindowsGpuAppScan(
@@ -143,7 +143,6 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
                 []);
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
         IReadOnlyList<WindowsGpuProcessActivity> stableProcesses = sample.Processes;
         Dictionary<int, int> parents = WindowsProcessTree.ReadParents();
         Dictionary<int, ProcessEntry> processTable = ReadProcessTable(
@@ -177,20 +176,19 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
     internal static bool IsIgnoredGpuProcessName(string name) =>
         IgnoredGpuProcessNames.Contains(name);
 
-    internal static async Task<WindowsGpuActivitySnapshot> ReadActivitySampleAsync(
+    internal static WindowsGpuActivitySnapshot ReadActivitySample(
         Func<WindowsGpuActivitySnapshot> read,
-        Func<int, CancellationToken, Task> wait,
+        Action<int> sleep,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(read);
-        ArgumentNullException.ThrowIfNull(wait);
+        ArgumentNullException.ThrowIfNull(sleep);
         bool hasPrime = false;
         WindowsGpuActivitySnapshot? previous = null;
         for (int attempt = 0; attempt < ActivitySampleAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             WindowsGpuActivitySnapshot snapshot = read();
-            cancellationToken.ThrowIfCancellationRequested();
             if (snapshot.IsAvailable)
             {
                 if (!hasPrime)
@@ -216,23 +214,23 @@ public sealed class WindowsGpuAppManager : IWindowsGpuAppManager, IDisposable
 
             if (attempt + 1 < ActivitySampleAttempts)
             {
-                await wait(ActivitySampleIntervalMilliseconds, cancellationToken).ConfigureAwait(false);
+                sleep(ActivitySampleIntervalMilliseconds);
             }
         }
 
         return new WindowsGpuActivitySnapshot(false, []);
     }
 
-    internal static async Task<WindowsGpuActivitySnapshot> RefreshAndReadActivitySampleAsync(
+    internal static WindowsGpuActivitySnapshot RefreshAndReadActivitySample(
         Func<bool> refresh,
         Func<WindowsGpuActivitySnapshot> read,
-        Func<int, CancellationToken, Task> wait,
+        Action<int> sleep,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(refresh);
         cancellationToken.ThrowIfCancellationRequested();
         return refresh()
-            ? await ReadActivitySampleAsync(read, wait, cancellationToken).ConfigureAwait(false)
+            ? ReadActivitySample(read, sleep, cancellationToken)
             : new WindowsGpuActivitySnapshot(false, []);
     }
 

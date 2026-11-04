@@ -161,19 +161,9 @@ public sealed partial class ExperimentalBladeLightingTests
                         null),
                 });
             }
-            int rowIndex = 0;
             foreach (RazerCommandSpec command in commands)
             {
-                BeforeSubmission?.Invoke(command);
-                if (command.SubmissionAllowed?.Invoke() == false)
-                {
-                    HidSessionFailureKind failure = rowIndex == 0 ? HidSessionFailureKind.ConflictBlocked : HidSessionFailureKind.NativeIoFailure;
-                    return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, failure)
-                    {
-                        Diagnostic = new(rowIndex == 0 ? HidSessionFailurePhase.Guard : HidSessionFailurePhase.SetCompletion, failure, null, null),
-                    });
-                }
-                rowIndex++;
+                Assert.True(command.SubmissionAllowed?.Invoke());
                 TransactionIdAssignment id = assignTransactionId();
                 Assert.Null(id.Failure);
                 AnimationTransactions.Add(id.TransactionId);

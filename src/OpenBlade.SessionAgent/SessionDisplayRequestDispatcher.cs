@@ -30,7 +30,7 @@ public sealed class SessionDisplayRequestDispatcher
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        SessionDisplayExecutionResult? result = null;
+        SessionDisplayExecutionResult result;
         bool manualOperationAdmitted = false;
         try
         {
@@ -100,18 +100,10 @@ public sealed class SessionDisplayRequestDispatcher
                 exception.Message,
                 cancellationToken).ConfigureAwait(false);
         }
-        finally
+
+        if (manualOperationAdmitted)
         {
-            if (manualOperationAdmitted)
-            {
-                // Cancellation can escape either the mutation or its failure
-                // readback. Until a result returns, submission is unconfirmed.
-                result ??= new SessionDisplayExecutionResult(
-                    SessionDisplayOperationStatus.Indeterminate,
-                    "The display operation did not return a confirmed result.",
-                    Unavailable("The display operation did not return a confirmed result."));
-                manualOperationCompleted?.Invoke(result.Status, result.State);
-            }
+            manualOperationCompleted?.Invoke(result.Status, result.State);
         }
 
         return Response(request, result);

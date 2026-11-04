@@ -64,43 +64,4 @@ public sealed class WindowsThxActiveOutputTests
         Assert.Null(WindowsThxActiveOutput.Classify("Speakers (Realtek Audio Jack)", null));
         Assert.Null(WindowsThxActiveOutput.Classify("Speakers (Realtek Audio Jack)", Guid.Empty));
     }
-
-    [Fact]
-    public void DefaultMultimediaNotificationOnlyRoutesItsSelectedRenderRole()
-    {
-        int changes = 0;
-        var notification = new WindowsThxActiveOutput.Notification(() => changes++, defaultMultimediaOnly: true);
-
-        _ = notification.OnDeviceStateChanged("device", 1);
-        _ = notification.OnDeviceAdded("device");
-        _ = notification.OnDeviceRemoved("device");
-        _ = notification.OnPropertyValueChanged("device", default);
-        _ = notification.OnDefaultDeviceChanged(CoreAudioDataFlow.Capture, CoreAudioRole.Multimedia, "device");
-        _ = notification.OnDefaultDeviceChanged(CoreAudioDataFlow.Render, CoreAudioRole.Console, "device");
-        _ = notification.OnDefaultDeviceChanged(CoreAudioDataFlow.Render, CoreAudioRole.Communications, "device");
-        Assert.Equal(0, changes);
-
-        _ = notification.OnDefaultDeviceChanged(CoreAudioDataFlow.Render, CoreAudioRole.Multimedia, "device");
-        _ = notification.OnDefaultDeviceChanged(CoreAudioDataFlow.Render, CoreAudioRole.Multimedia, null);
-        Assert.Equal(2, changes);
-    }
-
-    [Fact]
-    public void ThxNotificationKeepsBroadEndpointAndBothDefaultRenderRoles()
-    {
-        int changes = 0;
-        var notification = new WindowsThxActiveOutput.Notification(() => changes++);
-
-        _ = notification.OnDeviceStateChanged("device", 1);
-        _ = notification.OnDeviceAdded("device");
-        _ = notification.OnDeviceRemoved("device");
-        _ = notification.OnPropertyValueChanged("device", default);
-        _ = notification.OnDefaultDeviceChanged(CoreAudioDataFlow.Render, CoreAudioRole.Console, "device");
-        _ = notification.OnDefaultDeviceChanged(CoreAudioDataFlow.Render, CoreAudioRole.Multimedia, "device");
-        Assert.Equal(6, changes);
-
-        _ = notification.OnDefaultDeviceChanged(CoreAudioDataFlow.Capture, CoreAudioRole.Multimedia, "device");
-        _ = notification.OnDefaultDeviceChanged(CoreAudioDataFlow.Render, CoreAudioRole.Communications, "device");
-        Assert.Equal(6, changes);
-    }
 }

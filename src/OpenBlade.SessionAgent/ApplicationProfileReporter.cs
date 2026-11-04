@@ -31,7 +31,6 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
     private bool statusPending;
     private long sequence;
     private long activationSequence;
-    private long processLifetimeSequence;
     private int disposed;
 
     internal ApplicationProfileReporter(
@@ -124,21 +123,18 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
                 ApplyLatestStatus();
                 break;
             case ForegroundObserved observed:
-                bool foregroundChanged = foreground.ProcessId != observed.Observation.ProcessId
-                    || !string.Equals(foreground.ExecutablePath, observed.Observation.ExecutablePath,
-                        StringComparison.OrdinalIgnoreCase);
                 foreground = observed.Observation;
-                TrackWhileRunningForeground(foregroundChanged);
+                TrackWhileRunningForeground();
                 break;
             case ProcessExited exited:
                 if (tracked.TryGetValue(exited.ProcessId, out TrackedProcess? process)
-                    && process.LifetimeSequence == exited.LifetimeSequence
+                    && process.ActivationSequence == exited.ActivationSequence
                     && tracked.Remove(exited.ProcessId))
                 {
                     process.Process.Dispose();
                 }
                 if (foreground.ProcessId == exited.ProcessId
-                    && process?.LifetimeSequence == exited.LifetimeSequence)
+                    && process?.ActivationSequence == exited.ActivationSequence)
                 {
                     foreground = ThxForegroundObservation.Unknown;
                 }
@@ -242,7 +238,7 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
             .FirstOrDefault();
     }
 
-    private void TrackWhileRunningForeground(bool refreshActivation = false)
+    private void TrackWhileRunningForeground()
     {
         ApplicationProfileDefinition? profile = Match(foreground.ExecutablePath);
         if (profile?.ActivationMode != ApplicationActivationMode.WhileRunningAfterActivation
@@ -257,15 +253,6 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
                 profile.ExecutablePath,
                 StringComparison.OrdinalIgnoreCase))
         {
-            if (refreshActivation)
-            {
-                // Recency changes on reactivation; the lifetime identity captured
-                // by the existing exit subscription must remain stable.
-                tracked[foreground.ProcessId] = current with
-                {
-                    ActivationSequence = checked(++activationSequence),
-                };
-            }
             return;
         }
         IApplicationProcessHandle? process = null;
@@ -286,21 +273,19 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
                 replaced.Process.Dispose();
             }
             long currentActivationSequence = checked(++activationSequence);
-            long currentLifetimeSequence = checked(++processLifetimeSequence);
             process.Exited += (_, _) => events.Writer.TryWrite(
-                new ProcessExited(processId, currentLifetimeSequence));
+                new ProcessExited(processId, currentActivationSequence));
             var trackedProcess = new TrackedProcess(
                 profile.Id,
                 profile.ExecutablePath,
                 currentActivationSequence,
-                currentLifetimeSequence,
                 process);
             tracked.Add(processId, trackedProcess);
             if (process.HasExited)
             {
                 events.Writer.TryWrite(new ProcessExited(
                     processId,
-                    currentLifetimeSequence));
+                    currentActivationSequence));
             }
         }
         catch (Exception exception) when (exception is
@@ -351,7 +336,7 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
             }
             if (!exited
                 || !tracked.TryGetValue(processId, out TrackedProcess? current)
-                || current.LifetimeSequence != trackedProcess.LifetimeSequence
+                || current.ActivationSequence != trackedProcess.ActivationSequence
                 || !tracked.Remove(processId))
             {
                 continue;
@@ -370,12 +355,11 @@ internal sealed class ApplicationProfileReporter : IAsyncDisposable
         internal static readonly StatusObserved Instance = new();
     }
     private sealed record ForegroundObserved(ThxForegroundObservation Observation) : Event;
-    private sealed record ProcessExited(int ProcessId, long LifetimeSequence) : Event;
+    private sealed record ProcessExited(int ProcessId, long ActivationSequence) : Event;
     private sealed record TrackedProcess(
         Guid ProfileId,
         string ExecutablePath,
         long ActivationSequence,
-        long LifetimeSequence,
         IApplicationProcessHandle Process);
 }
 
