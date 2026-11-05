@@ -44,7 +44,7 @@ internal sealed record So6120DutyResult(So6120DutyFailure Failure,
     public bool PermissionExposureMayRemain => PermissionPublicationPossible && !PermissionRestoredConfirmed;
 }
 
-// No implementation is supplied. The outer owner must implement durable claims,
+// The injected-only session composes this boundary. A live outer owner still needs durable claims,
 // journal generations, exact-device/power/session/caller admission and the
 // reviewed treatment of residual contention. These methods do not promise
 // exclusion of firmware writers or atomic snapshot-to-publication stability.

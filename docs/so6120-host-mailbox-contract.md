@@ -23,9 +23,10 @@ a retry or cleanup command.
 The [fixed-port adapter](../src/OpenBlade.Capture/So6120InpOutBytePort.cs)
 encodes the reviewed byte IOCTLs for ports `300`/`301` and preserves native
 Boolean/count/error results. Its handle-lifetime lock is not mailbox exclusion.
-Live acquisition explicitly refuses, and no CLI route uses it. Real durable
-intent, exact-device and lifecycle admission, and the accepted transport/field
-ownership conditions must be supplied by the outer owner. A matching read does
+Live acquisition explicitly refuses, and no CLI route uses it. The offline
+session composes durable intent and admission through injected sources; the
+trusted live owner must still supply verified inputs and the accepted
+transport/field ownership conditions. A matching read does
 not prove a transition or establish ownership if the byte was already present.
 Policy-command/status registers are read-only in this interface; writing full
 override bytes still requires reviewed bit preservation outside the byte
@@ -36,7 +37,7 @@ accessing hardware.
 
 The developer [entry and Auto-exit coordinators](../src/OpenBlade.Capture/So6120DirectDutyCoordinator.cs)
 sequence the host-mailbox path independently of the MCU gate/bank backend.
-Their injected boundary has no live implementation. The first experiment may
+Their session boundary remains disconnected from live acquisition. The first experiment may
 be restricted to Silent by its outer admission; the generic exit restores
 the captured, separately admitted Balanced, Performance, Battery Saver,
 Silent or Battery Balanced profile. It does not switch through Balanced or
@@ -76,9 +77,9 @@ handback and owned-byte cleanup, not complete internal-policy restoration.
 
 Snapshots are ordered reads, not atomic exclusion. Expected mapped controls
 are checked before staging `A1`; its publication callback must not issue nested
-`A0` requests over the staged command. Live use still needs the journal,
-admission and transport connected under one owner, accepted caller conditions
-and a reviewed attended recovery procedure.
+`A0` requests over the staged command. The offline session connects these
+components under one owner. Live use still needs native acquisition, verified
+caller conditions and a reviewed attended recovery procedure.
 
 ## Durable records and admission
 
@@ -110,7 +111,44 @@ An already stopped OpenBlade baseline needs no invented exit record. If this
 run stopped it, the supplied handoff must identify the original process and
 observed exit; either path still requires a fresh stopped-service/no-writer
 observation. This component does not perform that handoff. The native adapter's
-live acquisition and the coordinator boundary remain unbound.
+live acquisition remains unbound.
+
+## Offline session composition
+
+The [session](../src/OpenBlade.Capture/So6120DirectDutySession.cs) connects the
+coordinators, byte transaction core, journal and admission policy through
+injected dependencies. One serialized owner holds the operation and its port
+lifetime through entry, explicit Auto restoration and disposal. Restoration
+uses only that operation's current checkpoint; inspected journals cannot
+resume a session. Disposal closes resources without issuing cleanup commands.
+
+Each observation records thirteen sequential mapped reads with start and end
+timestamps. They are not an atomic snapshot. Every command, including each
+read and a write's independent readback, records its intent before publication
+and passes fresh admission. Admission callbacks do not issue mailbox commands.
+An uncertain command, failed journal or lost admission prevents subsequent
+commands. A definitely unsubmitted operation needs durable evidence before
+the existing coordinator can allow explicit cleanup of a confirmed prefix.
+
+The session binds the run, clock, console and evidence identities rather than
+accepting a new set of mutually matching inputs mid-operation. It separately
+binds caller-risk acceptance and hardware-test consent fields. These checks
+do not authenticate the injected evidence or grant authority to touch hardware.
+The journal retains its operation, device, firmware and consent binding;
+the session also pins challenge evidence in memory. A live runner must retain
+the reviewed caller evidence alongside the run instead of inferring it from
+the command journal.
+Tests exercise the real composition with memory ports and temporary journals.
+There is no native acquisition, CLI command or service handoff in this layer.
+
+A live runner still needs the fixed reviewed test and consent, accepted caller
+evidence, an observed OpenBlade writer handoff, the pinned native handle, and
+an attended response to a stalled command or failed handback. Software
+deadlines cannot interrupt synchronous kernel I/O or guarantee thermal recovery.
+The snapshot time bound is checked between transfers and before accepting an
+observation; an in-flight transaction can overrun it, even without a native stall.
+Exposure begins at possible override-bit publication, before direct mode is
+confirmed. Passing offline tests does not establish physical PWM or RPM control.
 
 ## Inputs and verification
 
