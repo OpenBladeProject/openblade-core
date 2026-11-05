@@ -1,8 +1,14 @@
 # SO6120 mailbox trigger test plan
 
-Status: design only. No new trace, transition, device open or firmware call
+Status: scripts prepared; live execution pending. No new trace, transition, device open or firmware call
 has been performed for this plan. It follows the
 [passive observations](so6120-mailbox-runtime-observation.md).
+
+The [prepared scripts](../tools/mailbox-observation/README.md) implement the
+bounded recorder, saved-trace export/analysis and offline image inspection.
+Their tests use fake sessions and existing captures; the new recorder has
+not run live. Calibration checks collection mechanics before action windows;
+marker validity is determined offline afterward and can invalidate a window.
 
 The question is whether ordinary actions activate another mailbox client on
 this exact RZ09-0581 / SO6120 configuration. A clean, adequately observed

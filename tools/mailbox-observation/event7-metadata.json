@@ -1,0 +1,13 @@
+{
+  "provider_guid": "c514638f-7723-485b-bcfc-96565d735d4a",
+  "event_id": 7,
+  "version": 0,
+  "channel": 16,
+  "level": 4,
+  "opcode": 0,
+  "task": 105,
+  "keywords": "0x8000200000000001",
+  "provenance": "Installed Microsoft-Windows-Kernel-Acpi provider metadata reviewed 2026-11-05",
+  "acpi_sys_sha256": "5de94c7819c690178fef3d656e4f743b2c46bfd58d6fd981e8bdfe7efa3d3022",
+  "provider_resource_sha256": "161f3c27e426d17fd34a5dcf4fe6a41bab89febcf060900f481ac9ae6f123181"
+}

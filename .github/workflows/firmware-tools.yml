@@ -1,15 +1,17 @@
-name: Offline firmware tools
+name: Offline firmware and observation tools
 
 on:
   push:
     branches: [main]
     paths:
       - 'tools/firmware/**'
+      - 'tools/mailbox-observation/**'
       - '.github/workflows/firmware-tools.yml'
   pull_request:
     branches: [main]
     paths:
       - 'tools/firmware/**'
+      - 'tools/mailbox-observation/**'
       - '.github/workflows/firmware-tools.yml'
   workflow_dispatch:
 
@@ -46,3 +48,13 @@ jobs:
         run: node --test tests/test_explorer.js
       - name: Validate shipped profiles
         run: python firmware.py profiles
+      - name: Test offline observation inspectors
+        working-directory: tools/mailbox-observation
+        run: python -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Test recorder with fake sessions and offline exporter fixtures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: tools/mailbox-observation
+        run: |
+          & ./tests/Test-MailboxTraceController.ps1
+          & ./tests/Test-MailboxTraceExporter.ps1
