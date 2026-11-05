@@ -105,6 +105,11 @@ are broad transfers; no fan-specific range check or explicit payload-length
 bound was found in the examined handler/helper path. This report does not
 provide a hardware test sequence or expose the interface in OpenBlade.
 
+The [register follow-up](so6120-ec-register-semantics.md) distinguishes outer
+report success from the embedded bus result: a failed generic read can leave
+its data area unchanged while the outer response still reports success.
+Mapped read-only entries can also ignore a write while the bus completes.
+
 The EC maintains eight banks of 256 mapped entries. Each entry contains
 metadata and a target pointer; metadata value 1 is read-only, while the
 following control entries carry value 2. The actual table bytes and both EC

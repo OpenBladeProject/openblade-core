@@ -140,6 +140,12 @@ The existing firmware's Silent Automatic zero-target stage remains a separate,
 normal-policy route; its paused idle comparison is not replaced by this review.
 Production fan-stop admission and other-model scope remain unchanged.
 
+The subsequent [register review](so6120-ec-register-semantics.md) maps all
+override bits, follows the held contributor into the host event queue, and
+resolves the saved-mode fallback. It also establishes ordinary zero writes
+at the PWM layer and the generic interface's separate bus-result status.
+Those details refine the contract without supplying independent recovery.
+
 Independent review checked the surviving protections and their limits, the
 permission-bit side effect, queue/cache behavior, watchdog and bounded USB
 findings. It confirmed the scoped conclusions after resolving the NDS32
