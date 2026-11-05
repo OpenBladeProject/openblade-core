@@ -121,6 +121,11 @@ The separate Ghidra research scripts remain useful for instruction analysis and
 reviewing a new profile. Automated Ghidra orchestration and new decoder families
 are follow-up work; this CLI has no dependency on a local Ghidra project.
 
+The [PWM writer census](../../docs/so6120-ec-pwm-writers.md) extends the direct-duty
+recovery analysis. A separate developer [Windows battery observer](../../docs/windows-battery-observation.md)
+records optional OS battery data without service or raw-register access. It is
+not part of this offline CLI and cannot confirm fan RPM or Silent mode.
+
 ## Development and validation
 
 ```powershell

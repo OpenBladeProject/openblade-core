@@ -56,6 +56,11 @@ alone establish a durable override of this branch. No independent emergency
 high-duty writer was found in the recovered paths; unrecovered or indirect
 code prevents treating that as a universal absence proof.
 
+The follow-up [PWM writer census](so6120-ec-pwm-writers.md) checks 24 direct
+stores plus variable-channel and command-supplied destinations. Lifecycle
+paths can replace `FE`, but the recovered EC watchdog is serviced internally,
+independently of host traffic. No bounded host-loss handback was established.
+
 ## Complete Silent policy preservation is unproved
 
 The `FE` branch precedes normal table loading at `0x16314`. It retains the

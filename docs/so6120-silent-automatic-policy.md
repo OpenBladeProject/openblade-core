@@ -77,6 +77,10 @@ this is not a calibrated physical measurement or a reading of this laptop.
 Override bit 5 in `0x80425` skips conversion while still publishing the cached
 derived byte. The new identification does not assign units to the other inputs.
 
+The subsequent [Windows-only battery probe](windows-battery-observation.md#rz09-0581-observation-on-2026-11-05)
+returned unsupported temperature on this laptop. It did not read the live EC
+input or fan RPM, so these factory stopping conditions remain untested.
+
 ## Dwell, target decoding and PWM are separate
 
 The five row-tail bytes decoded at `0x15222..0x15260` specify down dwell,
