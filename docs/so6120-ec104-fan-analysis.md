@@ -7,9 +7,11 @@ Other normal selectors, including Silent `5`, clamp them to the minimum.
 The image's four Silent factory tables specify a 2,000 RPM manual minimum.
 
 Silent Automatic has a separate zero-target stage. It depends on multiple
-inputs, timing, state and overrides. An internal direct-duty path also exists,
-but no verified command reaching it through `1532:02E0` was established.
-This analysis changes no production capability or hardware admission.
+inputs, timing, state and overrides. An internal direct-duty path also exists.
+The [MCU 1.07 follow-up](so6120-mcu107-ec-fan-bridge.md) establishes a generic
+register bridge through `1532:02E0`, but no supported, thermally supervised
+fan-off operation. This analysis changes no production capability or hardware
+admission.
 
 ## Input and method
 
@@ -125,10 +127,11 @@ The gating bit's precise permission semantics remain unresolved.
 The image includes a 90-byte USB feature parser and a class-`0x0D` dispatcher
 whose command 2 assigns the mode. However, its USB descriptor at `0x2EC44`
 identifies **1532:F003**, rather than the admitted laptop controller
-**1532:02E0**. A normal controller-to-EC path to this duty override was not
-established, nor a bounded vendor command that supplies the permission and
-duty bytes with known protection, readback, ownership and restoration semantics.
-Generic memory/debug machinery does not establish that contract.
+**1532:02E0**. The subsequent [MCU analysis](so6120-mcu107-ec-fan-bridge.md)
+traced non-USB EC interfaces and the normal controller's generic register
+bridge. A bounded fan-duty command with known protection, ownership and
+restoration semantics remains unestablished. Generic access and register
+readback do not establish that contract.
 
 Consequently, neither `0xFE`/`0xFF` nor raw RAM writes are proposed as tests or
 product controls. This finding is scoped to the supplied RZ09-0581 image;

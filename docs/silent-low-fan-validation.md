@@ -140,9 +140,11 @@ Subsequent [static EC 1.04 analysis](so6120-ec104-fan-analysis.md) found a
 normal-manual clamp consistent with these observations: Silent's factory
 minimum is 2,000 RPM, while selector 3 has a separate below-minimum zero
 exception. It also found Automatic zero-target stages and a distinct internal
-duty override whose normal host access remains unresolved. This supplies
-firmware evidence for different behavior between the two modes; it does not
-change the recorded trials or enable a production control.
+duty override. The [MCU 1.07 follow-up](so6120-mcu107-ec-fan-bridge.md) traces
+generic host register access to that path, while the normal duty API is
+rejected and protection/ownership/restoration remain unresolved. These findings
+supply firmware evidence for different behavior between the two modes; they
+do not change the recorded trials or enable a production control.
 
 ## Automatic and custom curves
 
