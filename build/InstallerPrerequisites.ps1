@@ -1,8 +1,9 @@
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
+# The CDN path identifies the exact approved payload.
 $script:OpenBladeVcRedistUri =
-    'https://aka.ms/vs/18/release/14.50.35719/VC_redist.x64.exe'
+    'https://download.visualstudio.microsoft.com/download/pr/6f02464a-5e9b-486d-a506-c99a17db9a83/8995548DFFFCDE7C49987029C764355612BA6850EE09A7B6F0FDDC85BDC5C280/VC_redist.x64.exe'
 $script:OpenBladeVcRedistSha256 =
     '8995548DFFFCDE7C49987029C764355612BA6850EE09A7B6F0FDDC85BDC5C280'
 
