@@ -155,11 +155,17 @@ supplies validated named-handle evidence, with no named InpOut client observed
 and explicit coverage limits. Neither result supplies a reservation that
 blocks competing access across the index/data pair and whole transaction.
 
-Before a supervised direct-PWM experiment, the remaining ownership question
-is a supported mechanism that covers the actual host and firmware actors,
-or source-backed exclusion of each noncooperating path during the experiment.
-Another quiet trace would not answer that question. Request-specific
+Formal mailbox ownership would require a supported mechanism that covers
+the actual host and firmware actors, or source-backed exclusion of each
+noncooperating path during the experiment. Another quiet trace would not
+establish that guarantee. Request-specific
 completion, independent applied-state readback and bounded restoration also
 remain necessary. The generic Auto-exit requirements and the distinction
 between [attended exit and host-loss recovery](so6120-direct-pwm-handback.md)
 remain unchanged. These observations add no direct-PWM write authority.
+
+The subsequent [trigger-test plan](so6120-mailbox-trigger-test-plan.md)
+defines a finite empirical alternative for assessing competing-client risk:
+validate detection, deliberately exercise plausible callers, and make a
+scoped decision from the result. It distinguishes accepting residual risk
+for an attended experiment from proving a transport ownership guarantee.
