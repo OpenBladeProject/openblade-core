@@ -1,0 +1,783 @@
+{
+  "schema_version": 1,
+  "id": "so6120-ec-1.04",
+  "label": "SO6120 EC 1.04",
+  "model": "RZ09-0581",
+  "component": "EC",
+  "version": "1.04",
+  "architecture": "NDS32",
+  "endianness": "little-data/big-instruction",
+  "image": {
+    "sha256": "8537e9fd55b7b35504d8d87b0191acc4391b67365b3fe72f6e1029a424c9e707",
+    "size": 262144,
+    "base_address": 0
+  },
+  "carriers": [
+    {
+      "sha256": "e6e105ca059b96c7dd0ae0bc2fbc0e259b29250b97f09447044624f2447cdae7",
+      "size": 652560,
+      "format": "nsis-blocks-v1",
+      "block_index": 7,
+      "payload_format": "binary",
+      "payload_sha256": "8537e9fd55b7b35504d8d87b0191acc4391b67365b3fe72f6e1029a424c9e707"
+    }
+  ],
+  "bank_map": {
+    "pointer_table_offset": 199640,
+    "bank_count": 8,
+    "entries_per_bank": 256,
+    "entry_size": 8,
+    "metadata_offset": 0,
+    "metadata_size": 4,
+    "address_offset": 4,
+    "address_size": 4,
+    "byte_order": "little",
+    "access_values": {
+      "1": "read-only",
+      "2": "read-write"
+    }
+  },
+  "thermal_tables": {
+    "group_offsets": [
+      241664,
+      245760,
+      249856,
+      253952
+    ],
+    "mode_count": 8,
+    "table_size": 512,
+    "decoder": "so6120-thermal-v1",
+    "mode_names": {
+      "3": "Battery Saver",
+      "5": "Silent"
+    }
+  },
+  "annotations": [
+    {
+      "bank": 0,
+      "index": 15,
+      "address": 529484,
+      "width_bits": 8,
+      "name": "Shared bank selector",
+      "description": "Selects the register mapping used by the SMBus interface. Shared across all eight banks.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9616,
+          "label": "Shared bank lookup"
+        }
+      ],
+      "category": "transport",
+      "access": "read-write",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "A mapped write replaces the byte. The SMBus path has no local bank-range check.",
+        "This mapping is not permission to write the register."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 1,
+      "index": 15,
+      "address": 529484,
+      "width_bits": 8,
+      "name": "Shared bank selector",
+      "description": "Selects the register mapping used by the SMBus interface. Shared across all eight banks.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9616,
+          "label": "Shared bank lookup"
+        }
+      ],
+      "category": "transport",
+      "access": "read-write",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "A mapped write replaces the byte. The SMBus path has no local bank-range check.",
+        "This mapping is not permission to write the register."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 2,
+      "index": 15,
+      "address": 529484,
+      "width_bits": 8,
+      "name": "Shared bank selector",
+      "description": "Selects the register mapping used by the SMBus interface. Shared across all eight banks.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9616,
+          "label": "Shared bank lookup"
+        }
+      ],
+      "category": "transport",
+      "access": "read-write",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "A mapped write replaces the byte. The SMBus path has no local bank-range check.",
+        "This mapping is not permission to write the register."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 3,
+      "index": 15,
+      "address": 529484,
+      "width_bits": 8,
+      "name": "Shared bank selector",
+      "description": "Selects the register mapping used by the SMBus interface. Shared across all eight banks.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9616,
+          "label": "Shared bank lookup"
+        }
+      ],
+      "category": "transport",
+      "access": "read-write",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "A mapped write replaces the byte. The SMBus path has no local bank-range check.",
+        "This mapping is not permission to write the register."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 4,
+      "index": 15,
+      "address": 529484,
+      "width_bits": 8,
+      "name": "Shared bank selector",
+      "description": "Selects the register mapping used by the SMBus interface. Shared across all eight banks.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9616,
+          "label": "Shared bank lookup"
+        }
+      ],
+      "category": "transport",
+      "access": "read-write",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "A mapped write replaces the byte. The SMBus path has no local bank-range check.",
+        "This mapping is not permission to write the register."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 5,
+      "index": 15,
+      "address": 529484,
+      "width_bits": 8,
+      "name": "Shared bank selector",
+      "description": "Selects the register mapping used by the SMBus interface. Shared across all eight banks.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9616,
+          "label": "Shared bank lookup"
+        }
+      ],
+      "category": "transport",
+      "access": "read-write",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "A mapped write replaces the byte. The SMBus path has no local bank-range check.",
+        "This mapping is not permission to write the register."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 6,
+      "index": 15,
+      "address": 529484,
+      "width_bits": 8,
+      "name": "Shared bank selector",
+      "description": "Selects the register mapping used by the SMBus interface. Shared across all eight banks.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9616,
+          "label": "Shared bank lookup"
+        }
+      ],
+      "category": "transport",
+      "access": "read-write",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "A mapped write replaces the byte. The SMBus path has no local bank-range check.",
+        "This mapping is not permission to write the register."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 7,
+      "index": 15,
+      "address": 529484,
+      "width_bits": 8,
+      "name": "Shared bank selector",
+      "description": "Selects the register mapping used by the SMBus interface. Shared across all eight banks.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9616,
+          "label": "Shared bank lookup"
+        }
+      ],
+      "category": "transport",
+      "access": "read-write",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "A mapped write replaces the byte. The SMBus path has no local bank-range check.",
+        "This mapping is not permission to write the register."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 8,
+      "address": 526358,
+      "width_bits": 8,
+      "name": "Fan 1 tachometer byte",
+      "description": "Quantized speed telemetry used by the firmware. No live reading is present in this image.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 84436,
+          "label": "Tachometer acquisition"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 71212,
+          "label": "Warm zero-tach response"
+        }
+      ],
+      "category": "fans",
+      "access": "read-only",
+      "units": "100 RPM per count",
+      "evidence_status": "firmware-confirmed",
+      "notes": [],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 9,
+      "address": 526359,
+      "width_bits": 8,
+      "name": "Fan 2 tachometer byte",
+      "description": "Quantized speed telemetry used by the firmware. No live reading is present in this image.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 84436,
+          "label": "Tachometer acquisition"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 71212,
+          "label": "Warm zero-tach response"
+        }
+      ],
+      "category": "fans",
+      "access": "read-only",
+      "units": "100 RPM per count",
+      "evidence_status": "firmware-confirmed",
+      "notes": [],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 16,
+      "address": 524886,
+      "width_bits": 8,
+      "name": "Filtered sensor value",
+      "description": "Filtered sensor data retained when acquisition fails. Its physical temperature scale is not established.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 80190,
+          "label": "Filtered sensor update"
+        }
+      ],
+      "category": "thermal",
+      "access": "read-write",
+      "units": "raw sensor units",
+      "evidence_status": "firmware-confirmed",
+      "notes": [],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 26,
+      "address": 525151,
+      "width_bits": 8,
+      "name": "Thermal mode selector",
+      "description": "Selects normal thermal policy or an internal special-duty branch.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 89670,
+          "label": "Mode dispatch"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 90722,
+          "label": "Internal direct-duty branch"
+        }
+      ],
+      "category": "thermal",
+      "access": "read-write",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Reviewed vendor definitions identify 3 as Battery Saver and 5 as Silent.",
+        "FE and FF are internal selectors; ordinary MCU mode commands reject values above 7."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 27,
+      "address": 525104,
+      "width_bits": 8,
+      "name": "Fan 1 requested manual speed",
+      "description": "Normal manual target before firmware clamping. This is neither actual rotation nor raw PWM duty.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 89186,
+          "label": "Manual target selection"
+        }
+      ],
+      "category": "fans",
+      "access": "read-write",
+      "units": "100 RPM per count",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Below-minimum targets become zero only for selector 3 in the reviewed path; Silent selector 5 clamps to its minimum."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 28,
+      "address": 525105,
+      "width_bits": 8,
+      "name": "Fan 2 requested manual speed",
+      "description": "Normal manual target before firmware clamping. This is neither actual rotation nor raw PWM duty.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 89186,
+          "label": "Manual target selection"
+        }
+      ],
+      "category": "fans",
+      "access": "read-write",
+      "units": "100 RPM per count",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Below-minimum targets become zero only for selector 3 in the reviewed path; Silent selector 5 clamps to its minimum."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 54,
+      "address": 525133,
+      "width_bits": 8,
+      "name": "Manual fan flags",
+      "description": "Normal manual-control state, separate from the thermal selector and override permission byte.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 89850,
+          "label": "Manual control call"
+        }
+      ],
+      "category": "fans",
+      "access": "read-write",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Clearing direct-duty permission does not clear this manual-enable bit."
+      ],
+      "bits": [
+        {
+          "bit": 0,
+          "name": "Manual enable",
+          "description": "Selects normal manual target handling under its other admission gates.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 EC 1.04 firmware",
+              "address": 89850,
+              "label": "Manual enable"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 176,
+      "address": 15734791,
+      "width_bits": 8,
+      "name": "Fan 1 actual PWM register",
+      "description": "Hardware duty counter exposed read-only through the bank map. The firmware writes this register internally.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 90762,
+          "label": "Direct-duty copy"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 87312,
+          "label": "Normal feedback controller"
+        }
+      ],
+      "category": "fans",
+      "access": "read-only",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Zero is an ordinary value written by normal firmware; register zero does not prove a mechanically stopped fan.",
+        "Reviewed initialization writes cycle ceiling 183. The running value is not captured."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 177,
+      "address": 15734787,
+      "width_bits": 8,
+      "name": "Fan 2 actual PWM register",
+      "description": "Hardware duty counter exposed read-only through the bank map. The firmware writes this register internally.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 90810,
+          "label": "Direct-duty copy"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 87312,
+          "label": "Normal feedback controller"
+        }
+      ],
+      "category": "fans",
+      "access": "read-only",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Zero is an ordinary value written by normal firmware; register zero does not prove a mechanically stopped fan.",
+        "Reviewed initialization writes cycle ceiling 183. The running value is not captured."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 184,
+      "address": 525204,
+      "width_bits": 8,
+      "name": "Fan 1 direct-duty request",
+      "description": "Raw byte copied to actual PWM only in the active FE path with its permission bit set.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 90762,
+          "label": "Verbatim request copy"
+        }
+      ],
+      "category": "fans",
+      "access": "read-write",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "No percentage conversion or ceiling check occurs in this copy branch.",
+        "The normal automatic fan loop is skipped while FE is selected."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 185,
+      "address": 525205,
+      "width_bits": 8,
+      "name": "Fan 2 direct-duty request",
+      "description": "Raw byte copied to actual PWM only in the active FE path with its permission bit set.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 90810,
+          "label": "Verbatim request copy"
+        }
+      ],
+      "category": "fans",
+      "access": "read-write",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "No percentage conversion or ceiling check occurs in this copy branch.",
+        "The normal automatic fan loop is skipped while FE is selected."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 240,
+      "address": 525349,
+      "width_bits": 8,
+      "name": "Override flags",
+      "description": "Eight independent override bits. Bit 6 permits special fan duty and also holds one policy/event contributor.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 90722,
+          "label": "FE permission"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 69658,
+          "label": "Policy contributor gate"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 77064,
+          "label": "Power-transition clear"
+        }
+      ],
+      "category": "system",
+      "access": "read-write",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Mapped writes replace all eight bits; no masked or compare-and-swap operation is established.",
+        "Clearing bit 6 selects a saved power-dependent mode later, without immediately restoring PWM or Automatic.",
+        "No bounded independent cooling recovery after host failure is established."
+      ],
+      "bits": [
+        {
+          "bit": 0,
+          "name": "Other PWM override",
+          "description": "Uses bits in 0x80426 to drive three other PWM channels; external loads are unidentified.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 EC 1.04 firmware",
+              "address": 50446,
+              "label": "Other PWM override"
+            }
+          ]
+        },
+        {
+          "bit": 1,
+          "name": "Input/state override A",
+          "description": "Paired handlers update status bit 0x10 in 0x80427 and skip their normal paths.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 EC 1.04 firmware",
+              "address": 42480,
+              "label": "Input/state override A"
+            }
+          ]
+        },
+        {
+          "bit": 2,
+          "name": "Input/state override B",
+          "description": "Paired handlers update status bit 0x08 in 0x80427 and skip normal state/event handling.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 EC 1.04 firmware",
+              "address": 42684,
+              "label": "Input/state override B"
+            }
+          ]
+        },
+        {
+          "bit": 3,
+          "name": "Peripheral policy bit",
+          "description": "Under surrounding gates, mirrors into bit 1 of peripheral-policy word 0x80246.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 EC 1.04 firmware",
+              "address": 67410,
+              "label": "Peripheral policy bit"
+            }
+          ]
+        },
+        {
+          "bit": 4,
+          "name": "Peripheral policy zero",
+          "description": "Under surrounding gates, forces peripheral-policy word 0x8023C to zero.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 EC 1.04 firmware",
+              "address": 67442,
+              "label": "Peripheral policy zero"
+            }
+          ]
+        },
+        {
+          "bit": 5,
+          "name": "Sensor update hold",
+          "description": "Suppresses several acquisition and derivation paths while previous readings may still be copied.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 EC 1.04 firmware",
+              "address": 80282,
+              "label": "Sensor update hold"
+            }
+          ]
+        },
+        {
+          "bit": 6,
+          "name": "Special duty / policy hold",
+          "description": "Permits FE/FF and skips recomputation of contributor 0x80493; other contributors remain active.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 EC 1.04 firmware",
+              "address": 69658,
+              "label": "Special duty / policy hold"
+            }
+          ]
+        },
+        {
+          "bit": 7,
+          "name": "Policy candidate coupling",
+          "description": "Copies one computed policy candidate into another before later limits and peripheral submissions.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 EC 1.04 firmware",
+              "address": 73566,
+              "label": "Policy candidate coupling"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "title": "Zero is ordinary at the PWM layer",
+      "description": "Normal firmware writes zero to the same actual PWM registers used by FE. This differs from a normal zero-RPM request and does not establish mechanical fan stop.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 87692,
+          "label": "Zero is ordinary at the PWM layer"
+        }
+      ]
+    },
+    {
+      "title": "Manual and automatic scales differ",
+      "description": "Manual target bytes use 100 RPM per count; automatic table targets use 50 RPM per count. Sensor bounds remain raw units.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 85824,
+          "label": "Manual and automatic scales differ"
+        }
+      ]
+    },
+    {
+      "title": "Factory tables are not live state",
+      "description": "The image contains four groups of factory thermal tables. Running firmware may load checked persistent tables; no live active table was read.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 88318,
+          "label": "Factory tables are not live state"
+        }
+      ]
+    },
+    {
+      "title": "Ordinary register mapping is not a write contract",
+      "description": "Transport reachability does not establish ownership, independent completion, thermal supervision or exact restoration.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9372,
+          "label": "Ordinary register mapping is not a write contract"
+        }
+      ]
+    },
+    {
+      "title": "Surviving thermal responses do not establish cooling handback",
+      "description": "PROCHOT and high-sensor GPIO paths remain, but reviewed responses do not restart normal fans; stale sensor data and host-loss recovery remain unresolved.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 73996,
+          "label": "Surviving thermal responses do not establish cooling handback"
+        }
+      ]
+    }
+  ]
+}

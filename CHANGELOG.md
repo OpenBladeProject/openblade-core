@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add a developer-only offline firmware CLI and HTML register explorer with exact-image EC/MCU profiles, factory table decoding and report comparison. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+
 ### Fixed
 
 - Recognize a confirmed Silent/manual thermal state without enabling an unvalidated fan-stop capability. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))

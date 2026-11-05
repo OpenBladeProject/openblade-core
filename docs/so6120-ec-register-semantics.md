@@ -16,6 +16,10 @@ All findings use the same exact RZ09-0581 EC 1.04 and MCU 1.07 images pinned in
 those reports. No hardware access, vendor execution, installed-state change,
 or live fan comparison occurred. Other models are not inferred from this map.
 
+The [offline firmware inspector](../tools/firmware/README.md) reproduces the
+bank map and factory tables from those images and presents the reviewed
+annotations in a searchable HTML explorer. It performs no hardware access.
+
 ## Duty requests, actual PWM and zero
 
 | Bank-0 field | Backing location | Meaning and access |
