@@ -867,6 +867,87 @@
           "label": "Surviving thermal responses do not establish cooling handback"
         }
       ]
+    },
+    {
+      "title": "Separate host mailbox selects its own bank",
+      "description": "The BRAM mailbox takes bank, index and count from F02290..92 and uses the common register map. It does not require changing the SMBus bank selector, unless the selected mapped operation itself writes that selector. Exact updater code uses host ports 300/301 for this path; no supported OpenBlade transport or exclusive field ownership follows.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 8918,
+          "label": "Mailbox bank and length checks"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 8940,
+          "label": "Mailbox-selected bank table"
+        },
+        {
+          "kind": "document",
+          "source": "docs/so6120-host-mailbox-alternatives.md",
+          "address": null,
+          "label": "Pinned updater metadata and host-port evidence"
+        }
+      ]
+    },
+    {
+      "title": "Mailbox completion is not applied-state confirmation",
+      "description": "Status 80 is set before mapped processing. Read-only writes are skipped without changing it; writable fields receive whole-byte stores. The event wrapper clears the command afterward. This does not establish immutable requests, exclusive ownership, independent fan readback or a recovery lease.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 8948,
+          "label": "Status set before processing"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9096,
+          "label": "Read-only entry skipped"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 77196,
+          "label": "Command cleared after handler"
+        }
+      ]
+    },
+    {
+      "title": "Legacy mailbox lifetime does not restore direct-duty cooling",
+      "description": "The updater method named Enable_Finite_Life_time corresponds to a guarded persistent-record write path, not an established volatile fan lease. A separate mailbox countdown clears legacy mailbox state; the FE direct-duty branch bypasses the ordinary fan countdown check. No host-loss cooling handback follows.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 78524,
+          "label": "Guarded command-22 persistent-record path"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 92562,
+          "label": "Copy record bytes and invoke persistent storage"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 99452,
+          "label": "Legacy mailbox countdown cleanup"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 89710,
+          "label": "FE branches before ordinary countdown check"
+        }
+      ]
     }
   ]
 }

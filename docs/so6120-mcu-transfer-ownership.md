@@ -101,3 +101,9 @@ independently established serialized access path covering every relevant client.
 None is established by these gates. Until then, constructing a generic read-only
 collector would not by itself make its live use justified. Thermal recovery and
 exact restoration also remain necessary before a direct-duty experiment.
+
+The subsequent [host mailbox and pause-command review](so6120-host-mailbox-alternatives.md)
+finds a vendor host-port mailbox path that bypasses the MCU descriptor, while
+retaining unresolved mailbox ownership and thermal recovery. It also resolves
+the concrete application-state-5 branch: it enables generic access without
+excluding the normal bus clients. Neither finding admits a live test.

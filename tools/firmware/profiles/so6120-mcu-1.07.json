@@ -36,6 +36,12 @@
           "source": "SO6120 MCU 1.07 firmware",
           "address": 29820,
           "label": "Generic EC access gate"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 29398,
+          "label": "Application-state command updates access gate"
         }
       ],
       "category": "transport",
@@ -43,7 +49,8 @@
       "units": "",
       "evidence_status": "firmware-confirmed",
       "notes": [
-        "The generic access gate does not pause or acquire normal firmware bus clients."
+        "The generic access gate does not pause or acquire normal firmware bus clients.",
+        "Class 00/04 value 5 sets this gate and application state without draining or pausing normal bus clients."
       ],
       "bits": []
     },
@@ -404,13 +411,19 @@
       "address": 268435944,
       "width_bits": 8,
       "name": "Application state",
-      "description": "State 3 bypasses the timer application-flag bit-3 restriction. The complete state meanings are not established by this annotation.",
+      "description": "State 3 bypasses the timer application-flag bit-3 restriction. Class 00/04 stores this state; value 5 also opens generic access without pausing bus clients. Complete external mode meanings remain unresolved.",
       "references": [
         {
           "kind": "instruction",
           "source": "SO6120 MCU 1.07 firmware",
           "address": 13774,
           "label": "Application state"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 29382,
+          "label": "Class 00/04 stores application state"
         }
       ],
       "category": "transport",
@@ -418,7 +431,8 @@
       "units": "",
       "evidence_status": "firmware-confirmed",
       "notes": [
-        "Internal MCU RAM annotation; no host-readable EC register mapping is implied."
+        "Internal MCU RAM annotation; no host-readable EC register mapping is implied.",
+        "GET 00/84 returns the state byte; it is not a transport-drain acknowledgment. Value 1 reaches a nonreturning MCU reset path."
       ],
       "bits": []
     },
@@ -572,6 +586,37 @@
           "source": "SO6120 MCU 1.07 firmware",
           "address": 26344,
           "label": "Normal worker precedes later main-loop flag checks"
+        }
+      ]
+    },
+    {
+      "title": "Application state 5 does not reserve the bus",
+      "description": "The recovered 00/04 value-5 branch changes application state and generic access only. Thermal queued work remains eligible; the peripheral writer also has transfer paths preceding or bypassing its state check. No main-context arbitrary-register queue or ownership token was established in the reviewed handlers. No actual collision is claimed.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 29382,
+          "label": "Application-state setter"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19294,
+          "label": "Thermal worker entry"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 43356,
+          "label": "Peripheral transfer before state check"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 43402,
+          "label": "Alternative peripheral transfer"
         }
       ]
     }
