@@ -200,3 +200,13 @@ identifies a defined AML client of the same ports, checks its private mutex and
 different raw-address completion branch, and traces the exact 02E0 driver's
 feature forwarding. Neither route establishes the missing transaction owner;
 defined ACPI methods are not evidence of observed runtime contention.
+
+That investigation also traces the installed Intel IPF transport and the exact
+BIOS 4.01 image. IPF serializes individual ACPI primitives but has no established
+lease across SET, independent readback and restoration. Its normal setter
+confirms transport completion only. The BIOS's Razer initializer uses a
+distinct secondary `302/303` bulk-transfer sequence with bounded individual
+polls, no recovered overall continuation bound and unconfirmed cleanup. Its `F0/F1/F2`
+rules must not be substituted for this mailbox's `A0/A1/D0/D1` contract.
+The recovered software-SMI command 3 is a panel setup-variable operation, not
+a fan or mailbox ownership API. These static findings add no live writes.
