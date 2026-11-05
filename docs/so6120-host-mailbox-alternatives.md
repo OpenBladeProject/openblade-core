@@ -86,6 +86,12 @@ leaving that status intact. Writable entries receive whole-byte stores at
 does not establish an immutable request snapshot. Command zero plus status
 `80` is therefore insufficient to prove a particular fan setting changed.
 
+The subsequent [ownership and completion audit](so6120-host-mailbox-contract.md)
+traces the updater's startup mutex, actual callers, split-request error handling,
+and the EC's live fields and pending-event flag. It distinguishes the useful
+handler-return ordering from request identity and lifecycle interruption; no
+exclusive live transport is established.
+
 ## MCU state 5 is an access gate, not a pause
 
 The recovered class-00 switch table at `0x71CE/0x71CF` maps command `04` to

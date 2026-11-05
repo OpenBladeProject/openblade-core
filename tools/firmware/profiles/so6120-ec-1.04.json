@@ -1042,7 +1042,7 @@
     },
     {
       "title": "Mailbox completion is not applied-state confirmation",
-      "description": "Status 80 is set before mapped processing. Read-only writes are skipped without changing it; writable fields receive whole-byte stores. The event wrapper clears the command afterward. This does not establish immutable requests, exclusive ownership, independent fan readback or a recovery lease.",
+      "description": "Status 80 is set before mapped processing and survives zero count or skipped read-only writes. For an isolated request with stable fields and no lifecycle interruption, the event wrapper clears the command after the handler returns. It does not bind that clear to a request identity; initialization also clears the command. Independent fan readback, ownership and cooling recovery remain separate.",
       "evidence_status": "firmware-confirmed",
       "references": [
         {
@@ -1062,6 +1062,80 @@
           "source": "SO6120 EC 1.04 firmware",
           "address": 77196,
           "label": "Command cleared after handler"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 77178,
+          "label": "Initialization also clears command"
+        }
+      ]
+    },
+    {
+      "title": "Mailbox request fields remain live during processing",
+      "description": "The mapped path samples command and bank/table once, but rereads count, index and write data during the loop. The initial count limit is not revalidated there. Index arithmetic wraps to a byte, so a two-byte request at FF reaches FF then 00. These are static semantics under the stated input conditions, not tested hardware behavior or admitted bulk access.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 8984,
+          "label": "Read loop reloads count"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 8990,
+          "label": "Read loop reloads index"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 8994,
+          "label": "Mapped index narrowed to byte"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9068,
+          "label": "Write loop reloads count"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9100,
+          "label": "Write loop reads live payload"
+        }
+      ]
+    },
+    {
+      "title": "Mailbox event flag does not identify queued requests",
+      "description": "The notification path sets one pending byte, and the main dispatcher clears it before calling the handler. The post-handler command clear is unconditional. Repeated notifications do not create software request records, and an overlapping replacement is not correlated with the old completion. The bundled x64 driver's reviewed create and byte-I/O paths add no owner check or paired-port transaction. These are static findings, not an observed collision or live transport admission.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 48876,
+          "label": "Set mailbox event pending"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 135562,
+          "label": "Clear event before dispatch"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 77196,
+          "label": "Clear command after handler without an owner check"
+        },
+        {
+          "kind": "document",
+          "source": "docs/so6120-host-mailbox-contract.md",
+          "address": null,
+          "label": "Pinned host and EC completion audit"
         }
       ]
     },
