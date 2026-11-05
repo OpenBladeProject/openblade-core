@@ -130,10 +130,13 @@ isolated from the normal `1532:02E0` MCU.
 
 - The EC `FE` path copies raw duty bytes and skips the ordinary curve/minimum
   path. Periodic routine `0x1586A` also suppresses the normal adjustment loop
-  for `FE`. Coverage by other thermal protections has not been established;
-  the analysis does not claim all hardware emergency protection is disabled.
+  for `FE`. The [protection and restoration review](so6120-direct-duty-safety.md)
+  confirms surviving PROCHOT and high-sensor GPIO responses, but none of those
+  established responses restores normal cooling. Sensor freshness and a
+  bounded independent handback remain unproved.
 - `FE` is a separate internal selector. Preservation of Silent's complete
-  performance/power behavior is not established by reaching its duty fields.
+  performance/power behavior is not established; its required permission bit
+  also skips a non-fan policy calculation while retaining the previous value.
 - Enabling the MCU register gate does not pause the ordinary queued worker.
   That worker does not consult the gate and assumes the current EC bank has
   the normal mapping. Gate access does not grant exclusive thermal ownership.
@@ -147,9 +150,10 @@ isolated from the normal `1532:02E0` MCU.
   found for this direct-duty path.
 
 The supported conclusion is **static reachability through a generic register
-bridge**, with a rejected normal duty API. A review of protection, ownership
-and exact recovery would be needed before proposing a new typed reversible
-experiment. No such experiment was implemented or run. Production fan-stop
+bridge**, with a rejected normal duty API. The subsequent protection,
+ownership and recovery review found concrete queue/cache, policy and host-loss
+obstacles; it did not establish a fail-safe typed experiment. No such
+experiment was implemented or run. Production fan-stop
 admission remains withheld, other models are not inferred from this image,
 and the live Silent Automatic comparison remains paused.
 

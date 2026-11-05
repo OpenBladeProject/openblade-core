@@ -122,7 +122,10 @@ Selector `0xFE` in `0x15E46` reaches a separate path at `0x16262`. When
 `RAM[0x80425]` bit 6 is set, it copies duty values from `0x80394/0x80395` to
 `0xF01807/0xF01803`; otherwise it returns to the selected normal policy.
 Routine `0x1586A` suppresses the ordinary adjustment loop for selector `0xFE`.
-The gating bit's precise permission semantics remain unresolved.
+The [protection and restoration follow-up](so6120-direct-duty-safety.md) finds
+that some thermal responses survive, but no bounded independent cooling
+handback is established. The gating bit also changes a non-fan policy
+calculation; it is not solely a fan-access permission.
 
 The image includes a 90-byte USB feature parser and a class-`0x0D` dispatcher
 whose command 2 assigns the mode. However, its USB descriptor at `0x2EC44`
