@@ -231,3 +231,8 @@ conditional 32-chunk bound for isolated stored-record reads. It also shows
 that a new start can displace an active transfer, cleanup supplies no fan
 handback, and the related write family programs persistent thermal tables.
 Those source findings do not close ownership or restoration, and add no live writes.
+
+The [passive runtime follow-up](so6120-mailbox-runtime-observation.md) checks
+the installed IPF catalog, ACPI method tracing and Windows handle metadata.
+It separates observed callers from tracing coverage and from an enforceable
+reservation of the mailbox; those are different requirements.

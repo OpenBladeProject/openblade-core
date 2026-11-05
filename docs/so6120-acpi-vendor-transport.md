@@ -362,6 +362,11 @@ must not inherit the original mailbox's contract.
 
 ## Remaining boundary
 
+The [passive runtime follow-up](so6120-mailbox-runtime-observation.md) finds
+no literal `TBCC/ECRR` selector in the complete installed DSP catalog and no
+matching method-name event in one working trace. Its nested-method coverage
+is unproved, so it does not establish that these paths are unreachable.
+
 The additional sources refine the ownership requirements rather than remove
 them. A usable route must establish a complete transaction owner across its
 actual participants, bounded completion tied to that request, independent
