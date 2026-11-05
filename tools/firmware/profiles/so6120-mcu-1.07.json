@@ -386,14 +386,26 @@
       "index": null,
       "address": 268435790,
       "width_bits": 16,
-      "name": "Application flags",
-      "description": "The timer tests bit 3 unless application state equals 3. These flags do not acquire the shared transfer descriptor.",
+      "name": "USB lifecycle flags",
+      "description": "Bit 3 set is necessary for initial entry to the reviewed main-loop parking path; timer generic dispatch instead needs bit 3 clear or application state 3. These gates do not acquire the shared transfer descriptor.",
       "references": [
         {
           "kind": "instruction",
           "source": "SO6120 MCU 1.07 firmware",
           "address": 13782,
-          "label": "Application flags"
+          "label": "Timer USB-status gate"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 17518,
+          "label": "Main-loop parking tests the same USB status bit"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 16930,
+          "label": "USB handler sets bit 3"
         }
       ],
       "category": "transport",
@@ -411,7 +423,7 @@
       "address": 268435944,
       "width_bits": 8,
       "name": "Application state",
-      "description": "State 3 bypasses the timer application-flag bit-3 restriction. Class 00/04 stores this state; value 5 also opens generic access without pausing bus clients. Complete external mode meanings remain unresolved.",
+      "description": "Class 00/04 stores the full payload byte before comparisons with 1, 5 and 2; no 0..5 range restriction is established. State 3 bypasses the timer USB-status gate but excludes initial entry to the reviewed main-loop parking path. Complete external mode meanings remain unresolved.",
       "references": [
         {
           "kind": "instruction",
@@ -424,6 +436,24 @@
           "source": "SO6120 MCU 1.07 firmware",
           "address": 29382,
           "label": "Class 00/04 stores application state"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 16642,
+          "label": "USB reset path clears application state"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 24184,
+          "label": "Application initialization clears state"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 8722,
+          "label": "Decoded startup zero run covers application state"
         }
       ],
       "category": "transport",
@@ -432,7 +462,9 @@
       "evidence_status": "firmware-confirmed",
       "notes": [
         "Internal MCU RAM annotation; no host-readable EC register mapping is implied.",
-        "GET 00/84 returns the state byte; it is not a transport-drain acknowledgment. Value 1 reaches a nonreturning MCU reset path."
+        "GET 00/84 returns the sampled state byte; it is not a transport-drain acknowledgment. Value 1 reaches a nonreturning MCU reset path.",
+        "Value 5 opens generic access; other returning values clear that gate. Value 2, entry to 3 and the transition from 3 to 0 also change auxiliary fields. Replaying the old byte does not establish exact restoration.",
+        "Three explicit store sites and decoded startup initialization are recovered. Bounded alias scanning does not prove absence of computed, bulk, interprocedural or unrecovered writers."
       ],
       "bits": []
     },
@@ -617,6 +649,62 @@
           "source": "SO6120 MCU 1.07 firmware",
           "address": 43402,
           "label": "Alternative peripheral transfer"
+        }
+      ]
+    },
+    {
+      "title": "Application state is not a reversible ownership token",
+      "description": "The recovered setter stores the full input byte before comparisons with 1, 5 and 2. It resets without returning for 1 and changes auxiliary fields for 2; effects on entry to 3 or transition from 3 to 0 precede the store. It does not save prior auxiliary state. GET returns only the sampled byte. Replaying that byte supplies neither exact restoration nor a bus-drain acknowledgement; these are static findings, not admitted probe values.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 29382,
+          "label": "Store precedes comparisons with 1, 5 and 2"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 18100,
+          "label": "Nonreturning reset routine"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 29338,
+          "label": "GET returns the earlier state sample"
+        }
+      ]
+    },
+    {
+      "title": "Parking entry and generic dispatch need incompatible state",
+      "description": "Initial entry to the reviewed parking path needs USB status bit 3 set and application state neither 3 nor 2. Timer generic dispatch needs state 3 or that bit clear. No unchanged state/bit combination admits both across all 256 bytes and both bit values. The parked loop can retry without resampling the application byte; this is an entry predicate, not a continuous invariant or exclusion of asynchronous transitions. No hardware collision is claimed.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 17518,
+          "label": "Parking requires USB status bit 3"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 17564,
+          "label": "Parking excludes application state 3"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 17578,
+          "label": "Parking excludes application state 2"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 13774,
+          "label": "Timer state and status gate"
         }
       ]
     },
