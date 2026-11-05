@@ -136,6 +136,26 @@ earlier stop observation also lacks a sustained 2,000 RPM control and a reversal
 its causal effect remains uncertain. Production fan-stop admission is withheld
 for both modes. See the [Battery Saver reassessment](battery-saver-low-fan-validation.md#withheld-production-capability).
 
+## Automatic and custom curves
+
+A further static inspection of the same pinned Product 736 files distinguishes
+firmware Automatic from Synapse's custom curve. Policy module `50779` maps
+`auto` to manual flag `0`, while both `manual` and `smartFanCurve` map to flag
+`1`. In module `91058`, the Automatic monitoring branch reads the two actual fan
+speeds and returns. The custom-curve branch selects targets from temperature
+data and calls the same `setThermalFanSpeed(1, fan, rpm / 100)` operation.
+Consequently, a custom curve does not supply a separately established way around
+the observed manual RPM floor. These inspected paths expose no automatic fan-stop
+temperature setter.
+
+Further investigation is focused on Silent. Its existing Automatic idle stop
+can be studied against temperature, GPU activity and power use before considering
+a quieter power policy. Such a policy would encourage firmware idle stopping;
+it would not establish a guaranteed off command. Silent and Battery Saver use
+different thermal selectors, so common report geometry alone does not establish
+identical firmware behavior. No additional probe or hardware write was made for
+this source inspection.
+
 ## Online source review, 2026-11-05
 
 The reviewed online sources do not establish a forced fan-off operation for
