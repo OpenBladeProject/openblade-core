@@ -21,8 +21,10 @@ import tempfile
 
 OBJECT = "89497f50-effe-4440-8cf2-ce6b1cdcaca7"
 ACPI = "c514638f-7723-485b-bcfc-96565d735d4a"
-MAX_EVENTS = 2_000_000
-MAX_EXPORT = 512 * 1024 * 1024
+MAX_EVENTS = 4_000_000
+MAX_EXPORT = 1536 * 1024 * 1024
+MAX_ETL = 256 * 1024 * 1024
+CAPS_MIB = {1: {"object": 128, "acpi": 16}, 2: {"object": 256, "acpi": 32}}
 MAX_LINE = 1024 * 1024
 MAX_OPEN = 300_000
 ALIASES = ("\\device\\inpoutx64", "\\??\\inpoutx64", "\\\\.\\inpoutx64",
@@ -224,7 +226,7 @@ def analyze_export(path, markers=()):
                 if not re.fullmatch(r"[0-9a-f]{64}", record.get("etl_sha256", "")):
                     raise EvidenceError("Invalid bound ETL hash")
                 integer(record.get("schema_version"), 1)
-                integer(record.get("etl_bytes"), 128 * 1024 * 1024)
+                integer(record.get("etl_bytes"), MAX_ETL)
                 header = record
                 continue
             if footer is not None:
@@ -451,10 +453,11 @@ def analyze_manifest(path):
     if len(text) > 4 * 1024 * 1024:
         raise EvidenceError("Manifest grew beyond bound")
     manifest = parse_json(text.decode("utf-8"))
-    if (manifest.get("schema"), manifest.get("schema_version"), manifest.get("architecture")) != (
-            "openblade.mailbox-observation", 1, "x64"):
+    if (manifest.get("schema"), manifest.get("architecture")) != ("openblade.mailbox-observation", "x64"):
         raise EvidenceError("Unsupported recorder manifest")
-    integer(manifest.get("schema_version"), 1)
+    version = integer(manifest.get("schema_version"), max(CAPS_MIB))
+    if version not in CAPS_MIB:
+        raise EvidenceError("Unsupported recorder manifest version")
     frequency = integer(manifest.get("qpc_frequency"), 10_000_000_000)
     if frequency == 0:
         raise EvidenceError("Invalid QPC frequency")
@@ -528,7 +531,7 @@ def analyze_manifest(path):
                     raise EvidenceError("Shared interval outside session")
             except (ValueError, TypeError, KeyError, OverflowError):
                 session_issues.append("session_timing_unconfirmed")
-            cap = (128 if kind == "object" else 16) * 1024 * 1024
+            cap = CAPS_MIB[version][kind] * 1024 * 1024
             expected_provider = "febd7460-3d1d-47eb-af49-c9eeb1e146f2" if kind == "object" else ACPI
             if (session.get("provider_guid") != expected_provider or session.get("keyword") != (2 if kind == "object" else 1)
                     or session.get("level") != (5 if kind == "object" else 4)

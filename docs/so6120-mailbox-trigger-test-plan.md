@@ -2,7 +2,12 @@
 
 Status: calibration completed; physical-action recording pending. The
 [first calibration](so6120-mailbox-calibration.md) stopped cleanly but did not
-qualify the transient-name control or current action-window budget. It follows the
+qualify the transient-name control or v1 action-window budget. Recorder v2
+prepares the file before tracing and provides a coordinated larger
+capture/export budget. Its separately authorized repeat captured the short
+lifetime but still lacked the close name. Further qualification should target
+the actual device-handle path rather than repeat filesystem variations.
+The plan follows the
 [passive observations](so6120-mailbox-runtime-observation.md).
 
 The [prepared scripts](../tools/mailbox-observation/README.md) implement the
@@ -54,6 +59,9 @@ Do not rely on an older parser comment claiming live-close names are empty.
 3. Resolve the specific ACPI detection gap with one bounded offline review
    of the pinned `ACPI.sys` Event 7 emitter: external ordinary/EX method
    evaluation, EC-query dispatch, filters, and root versus nested emission.
+   The completed [instruction audit](so6120-acpi-event-coverage.md) establishes
+   new-context root coverage and nested/reentrant blind spots. Use that scoped
+   result with the AML caller graph; do not require repeated silence to infer it.
    This is a concrete prerequisite for interpreting a missing target event.
    A generic method event or a synthetic parser fixture is insufficient.
 
@@ -106,16 +114,21 @@ inconclusive. Trace failure alone must not strand a changed state. Existing
 stop-on-ambiguous-hardware-submission rules still apply; never guess or replay
 an uncertain profile write.
 
-Retain the 128 MiB System Object cap and 128/512 requested 64 KiB buffers.
+Use the v2 256 MiB System Object cap and 128/512 requested 64 KiB buffers.
 Use a short marker-only calibration window first to check volume and controls.
 Reserve 32 MiB for up to 512 buffered blocks and another 32 MiB for the
-previously approximately 21 MiB end rundown. Stop at an on-disk watermark of
-64 MiB or the 60-second ceiling, accounting for larger actual allocations if
+previously approximately 21–24 MiB end rundown. Stop at an on-disk watermark of
+192 MiB or the 60-second ceiling, accounting for larger actual allocations if
 Windows reports them. These are collection bounds,
 not a guarantee against a sudden burst. Cap exhaustion, any lost events or
 buffers, failed stop, or missing control makes that window inconclusive.
-If calibration cannot support the planned duration, shorten the agreed action
-window before running it; do not silently change masks or drop records.
+ACPI has a 32 MiB cap and 24 MiB watermark, preserving its 4+4 MiB reserves.
+Offline export/inspection admit at most 256 MiB input, four million events
+and 1.5 GiB JSONL; export has a 300-second deadline. The first capture's
+fixed rundown plus projected live records fits the event and byte bounds at 50 seconds,
+with more headroom than 60 seconds. Prefer 50 seconds for the first action
+batch. If calibration cannot support even that duration, revise the agreed
+budget/window before running it; do not silently change masks or drop records.
 
 Stop by the acquired session handle in `finally`, verify that the unique
 session is absent, and retain controller/decoder statuses. A sequential

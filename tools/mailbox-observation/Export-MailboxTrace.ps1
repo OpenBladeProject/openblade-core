@@ -2,8 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$EtlPath,
     [Parameter(Mandatory)][string]$OutputPath,
-    [ValidateRange(1, 2000000)][int]$MaximumEvents = 2000000,
-    [ValidateRange(1, 300)][int]$TimeoutSeconds = 120
+    [ValidateRange(1, 4000000)][int]$MaximumEvents = 4000000,
+    [ValidateRange(1, 300)][int]$TimeoutSeconds = 300
 )
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -ne 'Core' -or $PSVersionTable.PSVersion -lt [version]'7.4' -or -not $IsWindows -or

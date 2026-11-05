@@ -74,4 +74,62 @@ The separate bounded ACPI emitter review also remains unfinished.
 Raw ETLs, exports and process/path identities remain in ignored local
 artifacts. Independent read-only review verified the native stages, hashes,
 volume gate, controls and raw transient pair. No second recording or
-action-window test was performed.
+action-window test was performed in that first authorization.
+
+## Separately authorized v2 calibration
+
+At **2026-11-06, 01:48 Asia/Shanghai**, the user authorized one corrected
+five-second calibration. Recorder v2 prepared and closed a one-byte ordinary
+file before tracing, then reopened it read-only during the shared window.
+A bounded same-handle path query and byte read succeeded before closing it.
+The named ETW control still failed; no physical-action window followed.
+
+Both sessions again reported successful start/enable/stop, zero loss and
+post-stop absence. The recording process exited. The held marker passed.
+The transient's unique File create/close pair lasted **0.8046 ms**, with the
+same PID, handle, File type and object inside its narrow recorded lifetime.
+The raw payload names are empty. The same PID/handle was reused 0.605 ms
+after the marker closed, and its object pointer appeared in a separate later
+lifetime. Borrowing either later name would falsely validate this control.
+
+| Observation | v2 result |
+| --- | --- |
+| Object-provider events / handle rundown | 279,592 / 240,836 |
+| File handles in rundown | 20,198 named, 888 unnamed |
+| File-create records | 1,592, all unnamed |
+| File-close records | 1,528 named, 124 unnamed |
+| ACPI events | 68: 34 starts and 34 finishes |
+| Named InpOut or target-method observations | Zero |
+| Object live bytes / final bytes | 4,587,520 / 27,131,904 |
+| ACPI live bytes / final bytes | 1,048,576 / 1,179,648 |
+
+The v2 60-second live-byte projections are 55,050,240 and 12,582,912 bytes,
+within its respective 192 MiB and 24 MiB watermarks. The revised capacity is
+adequate for this calibration's projection, not a guarantee against bursts.
+The offline tool still reports `marker_control_failed` and `inconclusive`.
+
+This separates two observations: short-lived handle **detection worked**,
+while name visibility for this controlled lifetime did not. The held-file
+name and other named closes show that names can be decoded. The unknown-name
+population remains an attribution limit; it is neither proof of a competitor
+nor evidence that every potential InpOut client would be visible. Further
+filesystem-path variations would not resolve that uncertainty. A target-device
+handle positive control, if separately source-reviewed and authorized without
+port commands, is a more relevant next measurement.
+
+The [Event 7 instruction audit](so6120-acpi-event-coverage.md) separately
+establishes conditional external-root and EC-query coverage, and the nested
+and reentrant blind spots. No additional quiet capture is needed to infer
+that static distinction.
+
+v2 provenance (SHA-256):
+
+- Recorder script: `e726f7a3047522152c5250e2b9724ed2c6871b7b121440764ecf011be4d9c12a`
+- Controller source: `3893bb3a47a93fe320244813602f0795c12a36985be35e94393e7b086d70b894`
+- Manifest: `9f661b453e17d45b27a8faf28c4c50dc9f46325076b2fb72f5bf51cee3ef7fb0`
+- Object ETL: `54b5b9444e31a2d53b852fa6e137f06d4f748c378b3954de1550b4f88c4e11bd`
+- ACPI ETL: `3932d5fe97f93a70b916040ddc8534880fdbfbfdfd57abd47b597bb6d3226e78`
+
+Independent review checked the pair directly in the ETL as well as decoded
+records, its reuse/duplicate history, and both clock anchors. No driver device
+was opened, no port/AML command ran, and fan/profile settings were unchanged.

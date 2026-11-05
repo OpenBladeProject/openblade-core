@@ -41,22 +41,37 @@ namespace OpenBlade.MailboxObservation
             results.Add("collision_not_owned");
 
             backend = new FakeBackend();
-            runtime = new FakeRuntime { ObjectBytes = 64 * 1024 * 1024 };
+            runtime = new FakeRuntime { ObjectBytes = 192 * 1024 * 1024 };
             result = Observe(root, ActionBatch, backend, runtime);
             Require(result.Windows.Single().StopReason == "disk_watermark" && runtime.ReadyCalls == 0,
                 "a full watermark stops before action");
             Require(backend.Stopped.Count == 2 && backend.Owned.Count == 0, "watermark cleanup");
             backend = new FakeBackend { ActualObjectBuffers = 768 };
-            runtime = new FakeRuntime { ObjectBytes = 49 * 1024 * 1024 };
+            runtime = new FakeRuntime { ObjectBytes = 177 * 1024 * 1024 };
             result = Observe(root, ActionBatch, backend, runtime);
-            Require(result.Windows.Single().Sessions.First().DiskWatermarkBytes == 48 * 1024 * 1024 &&
+            Require(result.Windows.Single().Sessions.First().DiskWatermarkBytes == 176 * 1024 * 1024 &&
                 result.Windows.Single().StopReason == "disk_watermark", "actual buffer allocation lowers the watermark");
             backend = new FakeBackend();
-            runtime = new FakeRuntime { ObjectFinalBytes = 128 * 1024 * 1024, Backend = backend };
+            runtime = new FakeRuntime { ObjectFinalBytes = 256 * 1024 * 1024 };
             result = Observe(root, Calibration, backend, runtime);
             Require(result.Windows.Single().FailureReasons.Contains("object_file_missing_empty_or_at_cap"),
                 "hard-cap equality cannot pass");
             results.Add("watermark_actual_buffers_hard_cap");
+
+            runtime = new FakeRuntime { ObjectBytes = 15_335_424, AcpiBytes = 1_507_328, ArmAction = false };
+            result = Observe(root, ActionBatch, new FakeBackend(), runtime);
+            Window measured = result.Windows.Single();
+            Require(result.SchemaVersion == 2 && measured.Status == "captured" && runtime.ReadyCalls == 1 &&
+                measured.Sessions.Select(session => session.FileCapBytes).SequenceEqual(new long[] {
+                    256 * 1024 * 1024, 32 * 1024 * 1024
+                }) && measured.Sessions.Select(session => session.DiskWatermarkBytes).SequenceEqual(new long?[] {
+                    192 * 1024 * 1024, 24 * 1024 * 1024
+                }), "v2 caps and watermarks accept the measured calibration projection");
+            runtime = new FakeRuntime { AcpiBytes = 2 * 1024 * 1024 };
+            result = Observe(root, ActionBatch, new FakeBackend(), runtime);
+            Require(runtime.ReadyCalls == 0 && result.FailureReasons.Contains("calibration_volume_exceeds_action_budget"),
+                "ACPI projection at the v2 watermark still blocks arming");
+            results.Add("v2_measured_calibration_budget");
 
             backend = new FakeBackend { LoseAfterQueries = 3 };
             runtime = new FakeRuntime();
@@ -88,6 +103,21 @@ namespace OpenBlade.MailboxObservation
             results.Add("transient_close_failure");
 
             backend = new FakeBackend();
+            runtime = new FakeRuntime { FailTransientValidation = true };
+            result = Observe(root, ActionBatch, backend, runtime);
+            Require(result.Windows.Single().StopReason == "recorder_error" && runtime.ReadyCalls == 0 &&
+                result.Windows.Single().Markers.Count == 1 && runtime.Prepared.Count == 1,
+                "transient handle validation failure cannot publish a marker or arm an action");
+            Require(backend.Owned.Count == 0 && runtime.Markers.Count == 2 && runtime.Markers.All(marker => marker.Closed),
+                "transient validation failure closes its marker, both traces and the held marker");
+            backend = new FakeBackend();
+            runtime = new FakeRuntime { FailSeed = true };
+            result = Observe(root, ActionBatch, backend, runtime);
+            Require(backend.NextHandle == 0 && runtime.ReadyCalls == 0 && result.Status == "incomplete",
+                "seed failure prevents any trace from starting");
+            results.Add("seed_and_transient_validation_failure");
+
+            backend = new FakeBackend();
             runtime = new FakeRuntime();
             result = Observe(root, ActionBatch, backend, runtime);
             Require(result.Windows.Count == 3 && result.Windows[0].Status == "captured" &&
@@ -103,6 +133,8 @@ namespace OpenBlade.MailboxObservation
                 result.Windows[0].Markers[0].CloseQpc >= result.Windows[2].EndQpc, "held marker spans batch");
             Require(backend.Owned.Count == 0 && runtime.Markers.Count == 3 &&
                 runtime.Markers.All(marker => marker.Closed), "timeout cleanup");
+            Require(runtime.Prepared.Count == 2 && runtime.Reopened.SetEquals(runtime.Prepared) &&
+                result.Windows[1].Markers.Count == 1, "calibration and action reopen the seeded file and baseline does not");
             results.Add("timeout_baseline_and_held_marker");
 
             backend = new FakeBackend();
@@ -182,6 +214,7 @@ namespace OpenBlade.MailboxObservation
         private static Manifest Observe(string root, ActionKind[] actions, FakeBackend backend, FakeRuntime runtime)
         {
             Guid runId = Guid.NewGuid();
+            runtime.Backend = backend;
             return Recorder.Run(Recorder.CreateRunDirectory(root, runId), runId.ToString("N"),
                 actions, 60, backend, runtime);
         }
@@ -251,14 +284,20 @@ namespace OpenBlade.MailboxObservation
             public long CancelAt = long.MaxValue;
             public bool Cancelled => Qpc >= CancelAt;
             public long ObjectBytes = 64 * 1024;
+            public long AcpiBytes = 64 * 1024;
             public long ObjectFinalBytes;
             public FakeBackend Backend;
             public bool CreateMarkerFiles;
             public bool FailTransientClose;
+            public bool FailTransientValidation;
+            public bool FailSeed;
+            public bool ArmAction = true;
             public long DelayJumpAt = long.MaxValue;
             public long DelayJumpBy;
             public int ReadyCalls;
             public readonly List<FakeMarker> Markers = new();
+            public readonly HashSet<string> Prepared = new();
+            public readonly HashSet<string> Reopened = new();
             public readonly List<string> Messages = new();
             public Queue<Input> Inputs = new();
 
@@ -273,7 +312,7 @@ namespace OpenBlade.MailboxObservation
                 }
             }
             public void Tell(string message) => Messages.Add(message);
-            public bool Ready(ActionKind action) { ReadyCalls++; return true; }
+            public bool Ready(ActionKind action) { ReadyCalls++; return ArmAction; }
             public Input? NextInput() => Inputs.TryPeek(out Input input) && input.Qpc <= Qpc ? Inputs.Dequeue() : null;
             public IDisposable OpenMarker(string path, out ulong handle)
             {
@@ -281,6 +320,25 @@ namespace OpenBlade.MailboxObservation
                 {
                     using var file = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite);
                 }
+                return OpenFakeMarker(out handle);
+            }
+            public void PrepareTransientMarker(string path)
+            {
+                Require(Backend.Owned.Count == 0 && Prepared.Add(path), "seed happens once before starting either trace");
+                if (FailSeed) throw new IOException("Test marker seed failed");
+            }
+            public IDisposable OpenTransientMarker(string path, out ulong handle)
+            {
+                Require(Backend.Owned.Count == 2 && Prepared.Contains(path) && Reopened.Add(path),
+                    "one open of the seeded path happens while both traces are active");
+                var marker = OpenFakeMarker(out handle);
+                if (!FailTransientValidation)
+                    return marker;
+                marker.Dispose();
+                throw new IOException("Test transient path validation failed");
+            }
+            private FakeMarker OpenFakeMarker(out ulong handle)
+            {
                 var marker = new FakeMarker { FailClose = FailTransientClose && Markers.Count > 0 };
                 Markers.Add(marker);
                 handle = (ulong)Markers.Count;
@@ -288,7 +346,7 @@ namespace OpenBlade.MailboxObservation
             }
             public long? FileLength(string path)
             {
-                if (!path.Contains("-object-")) return 64 * 1024;
+                if (!path.Contains("-object-")) return AcpiBytes;
                 if (ObjectFinalBytes != 0 && Backend.Stopped.Count > 0) return ObjectFinalBytes;
                 return ObjectBytes;
             }

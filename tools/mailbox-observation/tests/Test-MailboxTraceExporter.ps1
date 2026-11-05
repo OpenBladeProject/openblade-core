@@ -47,7 +47,17 @@ try {
     Assert-Throws { [OpenBlade.MailboxObservation.TraceExporter]::Export($inputPath,$outputPath,10,1) } 'Existing output overwritten.'
     Assert-True ([IO.File]::ReadAllText($outputPath) -eq 'preserve') 'Existing output changed.'
     $newPath = Join-Path $temporary 'new.jsonl'
-    Assert-Throws { [OpenBlade.MailboxObservation.TraceExporter]::Export($inputPath,$newPath,10,1) } 'Invalid ETL exported.'
+    $invalidEtlRejected = $false
+    try { [OpenBlade.MailboxObservation.TraceExporter]::Export($inputPath,$newPath,4000000,1) } catch {
+        if ($_.Exception.GetBaseException() -is [ArgumentOutOfRangeException]) { throw 'Reviewed event budget was rejected before inspecting the ETL.' }
+        $invalidEtlRejected = $true
+    }
+    Assert-True $invalidEtlRejected 'Invalid ETL exported.'
+    $overBudgetRejected = $false
+    try { [OpenBlade.MailboxObservation.TraceExporter]::Export($inputPath,$newPath,4000001,1) } catch {
+        $overBudgetRejected = $_.Exception.GetBaseException() -is [ArgumentOutOfRangeException]
+    }
+    Assert-True $overBudgetRejected 'Unbounded event request was accepted.'
     Assert-True (-not [IO.File]::Exists($newPath)) 'Invalid ETL published a report.'
     Assert-True (@([IO.Directory]::GetFiles($temporary,'.mailbox-export-*.tmp')).Count -eq 0) 'Owned partial temporary file leaked.'
 } finally {

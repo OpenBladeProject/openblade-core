@@ -2,8 +2,14 @@
 
 Developer tooling for the [SO6120 caller-challenge plan](../../docs/so6120-mailbox-trigger-test-plan.md).
 The first [live calibration](../../docs/so6120-mailbox-calibration.md) stopped
-cleanly but exposed a failed transient-name control and insufficient budget
-for the current action windows. Resolve those before a physical-action batch.
+cleanly but exposed a failed transient-name control and insufficient budget.
+Recorder v2 prepares and closes the transient file before tracing, then reopens
+it read-only and verifies its path and byte on that same handle. Its larger,
+bounded capture/export budget covers the measured projection. A separately
+authorized v2 calibration verified that path/read and short lifetime, but its
+ETW close was still unnamed. That naming limit remains explicit; another file
+path variation is not a qualification strategy. See the calibration report for
+the proposed target-device positive control before a physical-action batch.
 The recorder collects Windows ETW metadata only. Physical
 actions stay with the operator. There is no port I/O, driver loading, AML
 evaluation, fan/profile setter or self-elevation in these scripts.
@@ -36,7 +42,7 @@ one-run diagnostic authorizations do not cover a new recording.
 ```powershell
 & tools/mailbox-observation/Start-MailboxObservation.ps1 `
   -Actions Calibration,TypeC,AcPower,ThermalProfile `
-  -WindowSeconds 60 -Record `
+  -WindowSeconds 50 -Record `
   -Consent 'Record SO6120 mailbox observation only'
 ```
 
@@ -44,7 +50,8 @@ Choose only applicable actions. `Calibration` is required first and can be
 run alone. It records for five seconds. A batch with physical actions adds
 one immediate Handle-only baseline before the first action. Each action
 window is 50–60 seconds, default 60, with an overall 60-second setup/recording
-ceiling per window. Prompts require enough remaining time for both settling
+ceiling per window. The example uses 50 seconds to retain more budget headroom
+at the measured event rate. Prompts require enough remaining time for both settling
 periods and operator response. Enter arms an action while tracing is stopped;
 wait for its departure/return cues and press D/R **after** completing each
 edge. Q or Escape cancels. Ctrl+C requests cleanup. Do not terminate the
@@ -62,9 +69,10 @@ artifacts are never overwritten. The manifest preserves native stage codes,
 loss, file hashes, planned and actual interval boundaries, operator marks and
 cleanup. A failed publication attempts a separate `manifest.failed.json`.
 
-Object recording uses the Handle keyword only, a 128 MiB cap, and a conservative
-64 MiB disk watermark reduced for larger actual buffer allocation. ACPI has
-a 16 MiB cap. Calibration gates numeric collection integrity and estimated
+Object recording uses the Handle keyword only, a 256 MiB cap, and a conservative
+192 MiB disk watermark reduced for larger actual buffer allocation. ACPI has
+a 32 MiB cap and 24 MiB watermark. These preserve the original buffer and
+rundown reserves. Calibration gates numeric collection integrity and estimated
 volume; **marker validity is checked offline afterward**. A failed marker
 invalidates the associated measurement even when recording says `captured`.
 Clean collection never means that ACPI target coverage has been established.
@@ -74,8 +82,11 @@ Clean collection never means that ACPI target coverage has been established.
 These steps read existing local files. They start no trace and require no
 administrator elevation by design. The ETL exporter uses Windows' event-file
 reader, preserving undecoded raw payloads and flagging unsupported forms.
-It publishes only complete JSONL exports and has input, output, event-count
-and elapsed-time bounds.
+It publishes only complete JSONL exports, bounded to a 256 MiB ETL, 1.5 GiB
+JSONL, four million records and 300 seconds. A burst or bound failure stays
+inconclusive; records are not filtered out to fit. Inspection accepts v1
+and v2 manifests with their own recorded cap contracts. Allow disk space for
+the exports as well as ETLs; the recorder's free-space check covers ETLs only.
 
 ```powershell
 $run = 'artifacts/mailbox-observations/REPLACE_WITH_RUN_ID'
@@ -132,6 +143,11 @@ The pinned input has one candidate at RVA/file offset `0x75D78` and 2,043
 function intervals. These are starting points for the emitter audit, **not
 decoded call references or proof of external/nested tracing coverage**.
 A different image is refused; there is no CLI hash-pin override or download.
+
+The separate [instruction audit](../../docs/so6120-acpi-event-coverage.md)
+locates the actual emitters and distinguishes new evaluation contexts from
+nested/reentrant methods. The image inspector itself still reports only byte
+candidates; its output does not inherit that manual audit's conclusions.
 
 ## Offline checks
 

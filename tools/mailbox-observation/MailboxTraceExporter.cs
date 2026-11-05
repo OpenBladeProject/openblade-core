@@ -15,8 +15,10 @@ namespace OpenBlade.MailboxObservation
 {
     public static class TraceExporter
     {
-        private const long MaximumInputBytes = 128L * 1024 * 1024;
-        private const long MaximumOutputBytes = 512L * 1024 * 1024;
+        // v2 recorder: one bounded Object trace plus fixed rundown. Keep the
+        // offline bounds aligned with the analyzer; larger files are refused.
+        private const long MaximumInputBytes = 256L * 1024 * 1024;
+        private const long MaximumOutputBytes = 1536L * 1024 * 1024;
         private const int MaximumXmlCharacters = 131072;
 
         // Public for offline fixture tests. Event XML is never interpreted as code.
@@ -95,7 +97,7 @@ namespace OpenBlade.MailboxObservation
         public static string Export(string input, string output, int maximumEvents, int timeoutSeconds)
         {
             if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("ETL export needs Windows");
-            if (maximumEvents < 1 || maximumEvents > 2000000) throw new ArgumentOutOfRangeException(nameof(maximumEvents));
+            if (maximumEvents < 1 || maximumEvents > 4000000) throw new ArgumentOutOfRangeException(nameof(maximumEvents));
             if (timeoutSeconds < 1 || timeoutSeconds > 300) throw new ArgumentOutOfRangeException(nameof(timeoutSeconds));
             if (input.Replace('/', '\\').StartsWith("\\\\", StringComparison.Ordinal) ||
                 output.Replace('/', '\\').StartsWith("\\\\", StringComparison.Ordinal))
@@ -114,7 +116,7 @@ namespace OpenBlade.MailboxObservation
             string temporary = Path.Combine(directory, ".mailbox-export-" + Guid.NewGuid().ToString("N") + ".tmp");
             using var sourceLock = new FileStream(input, FileMode.Open, FileAccess.Read, FileShare.Read);
             if (sourceLock.Length == 0 || sourceLock.Length > MaximumInputBytes)
-                throw new InvalidDataException("ETL input exceeds the 128 MiB bound or is empty");
+                throw new InvalidDataException("ETL input exceeds the 256 MiB bound or is empty");
             string hash = Convert.ToHexString(SHA256.HashData(sourceLock)).ToLowerInvariant();
             var clock = Stopwatch.StartNew();
             bool ownsTemporary = false;

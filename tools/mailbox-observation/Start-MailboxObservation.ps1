@@ -68,8 +68,10 @@ if (-not ('OpenBlade.MailboxObservation.Recorder' -as [type])) {
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
 $outputRoot = Join-Path $repoRoot 'artifacts/mailbox-observations'
 $drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($outputRoot))
-$reserve = ($Actions.Count * 144MB) + 64MB
-if ($Actions.Count -gt 1) { $reserve += 128MB }
+$objectCap = [OpenBlade.MailboxObservation.Recorder]::ObjectFileCapBytes
+$acpiCap = [OpenBlade.MailboxObservation.Recorder]::AcpiFileCapBytes
+$reserve = ($Actions.Count * ($objectCap + $acpiCap)) + 64MB
+if ($Actions.Count -gt 1) { $reserve += $objectCap }
 if ($drive.AvailableFreeSpace -lt $reserve) {
     throw 'Insufficient free space for the agreed trace caps and reserve.'
 }
@@ -127,7 +129,7 @@ try {
     if ($null -eq $json) {
         $json = [ordered]@{
             schema = 'openblade.mailbox-observation'
-            schema_version = 1
+            schema_version = 2
             architecture = 'x64'
             run_id = $runId.ToString('N')
             status = 'incomplete'

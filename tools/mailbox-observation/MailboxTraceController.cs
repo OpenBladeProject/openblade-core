@@ -92,7 +92,7 @@ namespace OpenBlade.MailboxObservation
     public sealed class Manifest
     {
         public string Schema => "openblade.mailbox-observation";
-        public int SchemaVersion => 1;
+        public int SchemaVersion => 2;
         public string Architecture => "x64";
         public string RunId { get; init; }
         public string CreatedUtc { get; init; }
@@ -128,6 +128,8 @@ namespace OpenBlade.MailboxObservation
         bool Ready(ActionKind action);
         Input? NextInput();
         IDisposable OpenMarker(string path, out ulong handle);
+        void PrepareTransientMarker(string path);
+        IDisposable OpenTransientMarker(string path, out ulong handle);
         long? FileLength(string path);
         string FileHash(string path);
     }
@@ -135,6 +137,8 @@ namespace OpenBlade.MailboxObservation
     public static class Recorder
     {
         private const long MiB = 1024 * 1024;
+        public const long ObjectFileCapBytes = 256 * MiB;
+        public const long AcpiFileCapBytes = 32 * MiB;
         private const uint NotFound = 4201;
         private const int CalibrationSeconds = 5;
         private const int BeforeDepartureSeconds = 10;
@@ -267,8 +271,11 @@ namespace OpenBlade.MailboxObservation
             bool departurePrompted = false;
             long setupStart = runtime.Qpc;
             long? plannedDeadline = null;
+            string transientName = kind == "baseline" ? null : kind + "-" + action + "-transient-marker.txt";
             try
             {
+                if (transientName != null && !runtime.Cancelled)
+                    runtime.PrepareTransientMarker(Path.Combine(directory, transientName));
                 foreach (Session session in window.Sessions)
                 {
                     if (runtime.Cancelled)
@@ -323,8 +330,7 @@ namespace OpenBlade.MailboxObservation
                 plannedDeadline = deadline;
                 window.PlannedDeadlineQpc = deadline;
 
-                Marker pulse = OpenMarker(directory, kind + "-" + action + "-transient-marker.txt",
-                    "transient", runtime, out IDisposable transient);
+                Marker pulse = OpenMarker(directory, transientName, "transient", runtime, out IDisposable transient);
                 window.Markers.Add(pulse);
                 transient.Dispose();
                 pulse.CloseQpc = runtime.Qpc;
@@ -535,7 +541,10 @@ namespace OpenBlade.MailboxObservation
             out IDisposable file)
         {
             long open = runtime.Qpc;
-            file = runtime.OpenMarker(Path.Combine(directory, relativePath), out ulong handle);
+            string path = Path.Combine(directory, relativePath);
+            file = kind == "transient"
+                ? runtime.OpenTransientMarker(path, out ulong handle)
+                : runtime.OpenMarker(path, out handle);
             return new Marker { Kind = kind, Path = relativePath, Pid = runtime.Pid,
                 Handle = $"0x{handle:X}", OpenQpc = open };
         }
@@ -556,7 +565,7 @@ namespace OpenBlade.MailboxObservation
                 Keyword = system ? 2UL : 1UL, Level = system ? (byte)5 : (byte)4,
                 InstanceGuid = guid, Name = "OpenBladeMailbox-" + guid.ToString("N"),
                 File = $"{kind}-{action}-{provider}-{guid:N}.etl",
-                FileCapBytes = (system ? 128 : 16) * MiB,
+                FileCapBytes = system ? ObjectFileCapBytes : AcpiFileCapBytes,
                 MinimumBuffers = system ? 128U : 16U, MaximumBuffers = system ? 512U : 64U
             };
         }
@@ -565,6 +574,7 @@ namespace OpenBlade.MailboxObservation
     // Console input runs on a background thread. The sampler never waits on input.
     public sealed class ConsoleRuntime : IObservationRuntime, IDisposable
     {
+        private const byte MarkerByte = 0xA5;
         private readonly ConcurrentQueue<Input> inputs = new();
         private readonly Thread reader;
         private volatile bool stopped;
@@ -606,6 +616,52 @@ namespace OpenBlade.MailboxObservation
             handle = unchecked((ulong)file.SafeFileHandle.DangerousGetHandle().ToInt64());
             return file;
         }
+
+        public void PrepareTransientMarker(string path)
+        {
+            // Create and close before tracing so the measured open is a read of an existing file.
+            using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                file.WriteByte(MarkerByte);
+                file.Flush(flushToDisk: true);
+            }
+            if ((File.GetAttributes(path) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+                throw new IOException("The seeded transient marker is not an ordinary file.");
+        }
+
+        public IDisposable OpenTransientMarker(string path, out ulong handle)
+        {
+            var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1);
+            try
+            {
+                var name = new StringBuilder(1024);
+                uint length = GetFinalPathNameByHandleW(file.SafeFileHandle, name, (uint)name.Capacity, 0);
+                if (length == 0)
+                    throw new IOException($"Transient marker path query failed (Win32 {Marshal.GetLastWin32Error()}).");
+                if (length >= name.Capacity)
+                    throw new IOException("The transient marker path exceeds the query bound.");
+                string opened = name.ToString();
+                const string extendedDos = @"\\?\";
+                if (opened.StartsWith(extendedDos, StringComparison.Ordinal))
+                    opened = opened.Substring(extendedDos.Length);
+                if (!string.Equals(opened, Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("The transient marker handle does not name the expected file.");
+                if (file.Length != 1 || file.ReadByte() != MarkerByte)
+                    throw new IOException("The seeded transient marker is unreadable or has changed.");
+                // Offline inspection still requires the ETW close to carry this marker name.
+                handle = unchecked((ulong)file.SafeFileHandle.DangerousGetHandle().ToInt64());
+                return file;
+            }
+            catch
+            {
+                file.Dispose();
+                throw;
+            }
+        }
+
+        [DllImport("kernel32.dll", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetFinalPathNameByHandleW(Microsoft.Win32.SafeHandles.SafeFileHandle handle,
+            StringBuilder path, uint pathCapacity, uint flags);
 
         public long? FileLength(string path)
         {

@@ -159,7 +159,7 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text()), {"x": 1})
         self.assertEqual(list(self.root.glob(".mailbox-analysis-*")), [])
 
-    def manifest(self, loss=0):
+    def manifest(self, loss=0, version=1):
         run_id = "1" * 32
         held, pulse = "held-marker.txt", "calibration-Calibration-transient-marker.txt"
         for name in (held, pulse):
@@ -189,8 +189,8 @@ class ObservationTests(unittest.TestCase):
             sessions.append(dict(kind=kind, file=kind + ".etl", bytes=len(etl.read_bytes()), sha256=digest,
                                  provider_guid="febd7460-3d1d-47eb-af49-c9eeb1e146f2" if kind == "object" else M.ACPI,
                                  keyword=2 if kind == "object" else 1, level=5 if kind == "object" else 4,
-                                 file_cap_bytes=(128 if kind == "object" else 16) * 1024 * 1024, **stages))
-        manifest = dict(schema="openblade.mailbox-observation", schema_version=1, architecture="x64",
+                                 file_cap_bytes=M.CAPS_MIB[version][kind] * 1024 * 1024, **stages))
+        manifest = dict(schema="openblade.mailbox-observation", schema_version=version, architecture="x64",
                         run_id=run_id, status="captured", failure_reasons=[], qpc_frequency=1000,
                         window_seconds=60, actions=["Calibration"],
                         windows=[dict(kind="calibration", action="Calibration", status="captured", failure_reasons=[],
@@ -208,6 +208,37 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(report["assessment"], "requires_review")
         self.assertEqual(report["acpi_target_coverage"], "unresolved")
         self.assertFalse(report["hardware_write_authority"])
+
+    def test_v2_preserves_controls_and_binds_caps_to_manifest_version(self):
+        path, manifest = self.manifest(version=2)
+        report = M.analyze_manifest(path)
+        self.assertEqual(report["collection_integrity"], "controls_valid")
+        self.assertFalse(report["hardware_write_authority"])
+        manifest["schema_version"] = 1
+        path.write_text(json.dumps(manifest))
+        report = M.analyze_manifest(path)
+        self.assertEqual(report["collection_integrity"], "inconclusive")
+        self.assertIn("object:provider_contract_not_confirmed", report["windows"][0]["integrity_issues"])
+        self.assertIn("acpi:provider_contract_not_confirmed", report["windows"][0]["integrity_issues"])
+
+    def test_unknown_manifest_version_cannot_inherit_new_caps(self):
+        path, manifest = self.manifest()
+        for version in (0, 3, True, "2"):
+            manifest["schema_version"] = version
+            path.write_text(json.dumps(manifest))
+            with self.subTest(version=version), self.assertRaises(M.EvidenceError):
+                M.analyze_manifest(path)
+
+    def test_export_bounds_refuse_extra_records_and_larger_declared_inputs(self):
+        events, _ = fixture()
+        path = self.export(events)
+        with patch.object(M, "MAX_EVENTS", len(events) - 1), self.assertRaises(M.EvidenceError):
+            M.analyze_export(path)
+        with patch.object(M, "MAX_EXPORT", path.stat().st_size - 1), self.assertRaises(M.EvidenceError):
+            M.analyze_export(path)
+        oversized = self.export([], "oversized.jsonl", etl_bytes=M.MAX_ETL + 1)
+        with self.assertRaises(M.EvidenceError):
+            M.analyze_export(oversized)
 
     def test_manifest_hash_pins_parsed_bytes_after_path_replacement(self):
         path, _ = self.manifest()
