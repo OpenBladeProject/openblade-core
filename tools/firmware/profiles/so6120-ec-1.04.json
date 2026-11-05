@@ -314,7 +314,7 @@
       "index": 16,
       "address": 524886,
       "width_bits": 8,
-      "name": "Filtered sensor value",
+      "name": "Filtered channel 0 source",
       "description": "Filtered sensor data retained when acquisition fails. Its physical temperature scale is not established.",
       "references": [
         {
@@ -322,13 +322,21 @@
           "source": "SO6120 EC 1.04 firmware",
           "address": 80190,
           "label": "Filtered sensor update"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 80364,
+          "label": "Publish filtered channel 0"
         }
       ],
       "category": "thermal",
       "access": "read-write",
       "units": "raw sensor units",
       "evidence_status": "firmware-confirmed",
-      "notes": [],
+      "notes": [
+        "Copied to comparator input 8053C at 139EC. Silent uses a ten-sample history; this source alias is not an atomic snapshot of all active stage inputs."
+      ],
       "bits": []
     },
     {
@@ -800,6 +808,131 @@
           ]
         }
       ]
+    },
+    {
+      "bank": 0,
+      "index": 17,
+      "address": 524888,
+      "width_bits": 8,
+      "name": "Channel 1 source value",
+      "description": "Source byte copied to automatic comparator input 8053D. No live reading is present in this image.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 68924,
+          "label": "Publish channel 1 input"
+        }
+      ],
+      "category": "thermal-inputs",
+      "access": "read-write",
+      "units": "processed byte",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Bus address byte 9E and command 00; physical sensor identity and units remain unassigned.",
+        "Map access metadata is not permission to modify this input. Source aliases are not a simultaneous comparator snapshot."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 48,
+      "address": 525090,
+      "width_bits": 8,
+      "name": "Channel 2 source value",
+      "description": "Source byte copied to automatic comparator input 8053E. No live reading is present in this image.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 76944,
+          "label": "Publish channel 2 input"
+        }
+      ],
+      "category": "thermal-inputs",
+      "access": "read-write",
+      "units": "processed byte",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "First source in the four bus records at 29BCC; address byte 90, command 00.",
+        "Map access metadata is not permission to modify this input. Source aliases are not a simultaneous comparator snapshot."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 50,
+      "address": 525092,
+      "width_bits": 8,
+      "name": "Channel 3 source value",
+      "description": "Source byte copied to automatic comparator input 8053F. No live reading is present in this image.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 76966,
+          "label": "Publish channel 3 input"
+        }
+      ],
+      "category": "thermal-inputs",
+      "access": "read-write",
+      "units": "processed byte",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Second source in the four bus records at 29BCC; address byte 92, command 00.",
+        "Map access metadata is not permission to modify this input. Source aliases are not a simultaneous comparator snapshot."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 52,
+      "address": 525094,
+      "width_bits": 8,
+      "name": "Channel 4 source value",
+      "description": "Source byte copied to automatic comparator input 80540. No live reading is present in this image.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 76988,
+          "label": "Publish channel 4 input"
+        }
+      ],
+      "category": "thermal-inputs",
+      "access": "read-write",
+      "units": "processed byte",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Third source in the four bus records at 29BCC; address byte 94, command 00.",
+        "Map access metadata is not permission to modify this input. Source aliases are not a simultaneous comparator snapshot."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 23,
+      "address": 525150,
+      "width_bits": 8,
+      "name": "Channel 7 source value",
+      "description": "Source byte copied to automatic comparator input 80543. No live reading is present in this image.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 65176,
+          "label": "Publish channel 7 input"
+        }
+      ],
+      "category": "thermal-inputs",
+      "access": "read-write",
+      "units": "processed byte",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Derived from word 8035C: zero below 2731, otherwise the low byte of integer (word - 2731) / 10. Exact bus record and SBS command semantics strongly support a battery-temperature interpretation.",
+        "Map access metadata is not permission to modify this input. Source aliases are not a simultaneous comparator snapshot."
+      ],
+      "bits": []
     }
   ],
   "findings": [
@@ -946,6 +1079,149 @@
           "source": "SO6120 EC 1.04 firmware",
           "address": 89710,
           "label": "FE branches before ordinary countdown check"
+        }
+      ]
+    },
+    {
+      "title": "Silent Automatic requires seven-input hysteresis",
+      "description": "For the factory Silent curve, any enabled input at or above its current upper bound requests a rise; all seven must be strictly below their lower bounds to request a fall. Stage 1 lower bounds for channels 0,1,2,3,4,5,7 are 50,50,46,50,46,35,33. Equality prevents the fall. These are processed values, not interchangeable CPU/GPU Celsius thresholds.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 86636,
+          "label": "Compare enabled inputs"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 87274,
+          "label": "Reduce hot and cold conditions"
+        }
+      ]
+    },
+    {
+      "title": "Stage dwell and PWM settling are separate",
+      "description": "Factory Silent stage-0/1 dwell limit 40 uses a strict counter comparison: the 42nd uninterrupted eligible evaluation selects the adjacent stage from a cleared count; its target is decoded later. Reload scans use a different initial selection. A zero target does not by itself prove sustained zero duty or stopped fans, because cadence, tach and cached duty state also participate.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 90018,
+          "label": "Strict stage-up dwell comparison"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 90382,
+          "label": "Stage-down dwell comparison"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 88504,
+          "label": "Reload stage scan"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 87692,
+          "label": "Zero target/tach duty write"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 87732,
+          "label": "Cached duty may replace the zero write"
+        }
+      ]
+    },
+    {
+      "title": "Channel 7 strongly matches battery temperature",
+      "description": "Exact record 29A1C reads address byte 16, command 08 into word 8035C; FE60 converts it using (word - 2731) / 10 into channel 7. SBS command 08 reports pack temperature in tenths of Kelvin. This supports approximate degree-Celsius interpretation for channel 7 only; cached values and the unobserved live table remain relevant.",
+      "evidence_status": "inferred",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 170524,
+          "label": "Battery-compatible bus record"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 65120,
+          "label": "Derived channel 7 conversion"
+        },
+        {
+          "kind": "document",
+          "source": "https://sbs-forum.org/specs/sbdat110.pdf",
+          "address": null,
+          "label": "Smart Battery Data 1.1 section 5.1.9 Temperature"
+        }
+      ]
+    },
+    {
+      "title": "Decoded zero targets can receive a 3000 RPM floor",
+      "description": "If either 80B08 or 80C08 equals one, the row decoder floors low targets at 3000 RPM. BRAM commands set/clear these flags; their additional effects include suppression of several sensor and peripheral paths. They are not fan-stop controls, and changing them does not establish a harmless or immediate policy transition.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 86064,
+          "label": "Conditional target floor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 8600,
+          "label": "First mailbox-controlled flag"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 8622,
+          "label": "Second mailbox-controlled flag"
+        }
+      ]
+    },
+    {
+      "title": "Legacy session timeout does not roll back persistent policy",
+      "description": "Legacy F0/F1 read storage; F3 prepares a write and admitted F4/F5 reach persistent writes. The Silent curve record 0x25 and auxiliary policy record 0x2D are distinct. The session countdown skips a conditional reload block while ordinary control remains reachable; expiry clears mailbox state without restoring old records, targets or PWM.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 79162,
+          "label": "Legacy write-session handler"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 97298,
+          "label": "Silent curve record 0x25"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 97470,
+          "label": "Separate Silent policy record 0x2D"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 90904,
+          "label": "Countdown reload gate"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 98714,
+          "label": "Mailbox-only cleanup"
         }
       ]
     }

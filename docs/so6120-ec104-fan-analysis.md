@@ -116,6 +116,11 @@ did not read the running EC's active table, so the factory bytes are not a live
 table dump. Earlier Silent/Automatic zero tach readings remain separate
 physical evidence of idle stopping.
 
+The [Automatic-policy follow-up](so6120-silent-automatic-policy.md) resolves
+the any-input rise/all-input fall comparisons, strict lower bounds, separate
+dwell/PWM timing and the battery-temperature interpretation of channel 7.
+It preserves the distinction between a factory zero target and live fan stop.
+
 ## Internal duty control and the missing host contract
 
 Selector `0xFE` in `0x15E46` reaches a separate path at `0x16262`. When

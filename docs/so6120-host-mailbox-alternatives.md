@@ -132,6 +132,42 @@ restoring the fan selector. The direct-duty branch is evaluated before the
 ordinary fan path's countdown check. Neither the method name nor that
 countdown supplies bounded cooling recovery from a failed host.
 
+## Legacy timed commands are storage transactions
+
+The parallel follow-up traces commands `F0/F1/F3/F4/F5` instead of inferring
+their purpose from the shared countdown. `F0` starts a checked storage read and
+`F1` continues it. `F3` prepares write-session state; an admitted `F4` already
+reaches persistent directory, metadata and payload writes. `F5` continues the
+payload transaction when its session and continuation gates pass.
+
+The concrete Silent example is record `0x2D`: the `F4` dispatcher branch at
+`0x17CBE..0x17CC2` reaches `0x17F14..0x17F20`, then `0x180D6/0x17B50`.
+The latter calls `0x17A90` for directory/metadata and `0x17934` for payload
+work; `0x178D2` erases and programs payload sectors. Ordinary loader
+`0x17026` selects `mode + 0x28`, so Silent selects this record. This policy
+record loads 256 bytes into `0x87C00`, distinct from the 512-byte fan-curve
+record `0x25` loaded into `0x8A000` by `0x158FE`. `F4` separately admits that
+curve record at `0x17C12..0x17C16`, reaching `0x17E96..0x17EA2` and the
+same persistent write chain. Neither stored record is an expiring override.
+
+While countdown `0x8044E` is nonzero, `0x16318..0x1632C` skips the conditional
+policy/curve reload and initialization block. The continuation still reaches
+manual clamping and automatic stage logic. Periodic supervisor `0x1586A`
+also continues its ordinary tach/PWM path without a countdown check. The
+storage-session commands do not supply temporary target or duty values.
+
+Countdown handler `0x1847C` is reached through `0xCBEC/0xCC32` and pending-work
+dispatch `0x21038..0x21048`. The refresh value `0x78` is an invocation count,
+not a verified time bound. Expiry and explicit `F2` both use cleanup `0x1819A`;
+it clears mailbox state without restoring the old record, target or PWM, or
+requesting a policy refresh. Even at zero count, unchanged mode and clear
+refresh/transition flags can bypass reload at `0x15E84..0x15EC8`.
+
+This rules out the reviewed legacy family as a volatile fan-stop lease. Its
+persistent write path is not proposed as a test or implementation. The parallel
+[Silent Automatic review](so6120-silent-automatic-policy.md) instead resolves
+the existing seven-input zero-stage conditions and ordinary restart path.
+
 ## Consequence for a Silent experiment
 
 | Candidate | What is established | What it does not establish |
