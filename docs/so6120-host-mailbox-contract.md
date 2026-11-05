@@ -176,6 +176,22 @@ The updater further weakens completion handling:
 
 ## Consequence for an adapter
 
+A 2026-11-05 read-only Windows driver-service inventory reported an already
+running `inpoutx64` service with automatic start. Its configured driver file
+has the same 15,008-byte size and SHA-256
+`f8965fdce668692c3785afa3559159f9a18287bc0d53abb21902895a8ecf221b`
+as the embedded driver reviewed above. Windows Authenticode reported Valid,
+Red Fox UK Limited. This extends the byte-level audit to the configured file
+on this development laptop; it is not loaded-memory attestation, a handle-owner
+inventory or runtime API admission. No device was opened and no driver was
+installed, started or changed.
+
+This observation removes the assumption that investigating a port-access
+route necessarily needs a new driver installation here. It does not change
+the reviewed nonexclusive create handler, separate byte requests or absence
+of transaction ownership. Other users and any cooperation/exclusion mechanism
+remain to be established before using that existing service.
+
 The useful boundary is now clearer: this mailbox avoids the MCU shared
 descriptor and has command-last publication followed by handler-return clear.
 It still lacks an established owner and request/response correlation. A host
@@ -206,7 +222,12 @@ BIOS 4.01 image. IPF serializes individual ACPI primitives but has no establishe
 lease across SET, independent readback and restoration. Its normal setter
 confirms transport completion only. The BIOS's Razer initializer uses a
 distinct secondary `302/303` bulk-transfer sequence with bounded individual
-polls, no recovered overall continuation bound and unconfirmed cleanup. Its `F0/F1/F2`
+polls, no local continuation counter in the BIOS client and unconfirmed cleanup. Its `F0/F1/F2`
 rules must not be substituted for this mailbox's `A0/A1/D0/D1` contract.
 The recovered software-SMI command 3 is a panel setup-variable operation, not
-a fan or mailbox ownership API. These static findings add no live writes.
+a fan or mailbox ownership API. The subsequent
+[secondary EC analysis](so6120-secondary-mailbox-contract.md) establishes a
+conditional 32-chunk bound for isolated stored-record reads. It also shows
+that a new start can displace an active transfer, cleanup supplies no fan
+handback, and the related write family programs persistent thermal tables.
+Those source findings do not close ownership or restoration, and add no live writes.

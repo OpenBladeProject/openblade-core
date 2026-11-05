@@ -352,10 +352,13 @@ rules distinguish another transaction from the `93/94` mailbox:
 
 This is evidence of a vendor boot data-read sequence, not an exposed Windows
 fan API or proof of current runtime contention. It establishes no transferable
-ownership lease for either port pair. The secondary EC handler and its actual
-ready/continuation/cleanup semantics are a concrete follow-up; substituting
-these commands for the original mailbox would require their own source
-contract. The inspected SMM dispatcher does not provide that contract.
+ownership lease for either port pair. The subsequent
+[EC-side secondary mailbox analysis](so6120-secondary-mailbox-contract.md)
+identifies stored-record transfers and a conditional 32-chunk bound, while
+confirming that the busy flag does not reject a replacement start and cleanup
+does not restore fan control. The paired write family includes persistent
+thermal tables; it is not an admitted runtime PWM interface. These commands
+must not inherit the original mailbox's contract.
 
 ## Remaining boundary
 
