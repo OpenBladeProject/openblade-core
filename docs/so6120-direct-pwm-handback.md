@@ -1,22 +1,23 @@
-# SO6120 direct-PWM handback to Automatic
+# SO6120 direct PWM exit to Auto
 
-**An explicitly applied Silent Automatic command can leave direct-duty mode.**
-The EC can resume normal fan feedback without switching through another profile
-or clearing the direct-duty permission first. This establishes a candidate for
-the ordinary switch-off operation. It does not establish that reselecting the
-current UI option sends that command, or that the entire research state has
-been restored.
+**Switch to Auto to exit direct duty while preserving the intended normal
+performance profile.** The orderly exit applies that profile's admitted normal
+selector and Automatic fan state, then independently confirms both in the EC.
+Static firmware analysis shows that normal feedback can resume without an
+intermediate profile or an initial permission clear. Silent selector `5` is the
+exact fixture example for this path. Physical handback remains untested.
 
 This offline review uses the pinned SO6120 EC 1.04 and MCU 1.07 images in the
 [bridge analysis](so6120-mcu107-ec-fan-bridge.md#exact-inputs-and-method), and
 OpenBlade source at `628c096076f23f588a6404d1fffa26a3fdfba2fb`. No hardware,
-service or installed configuration was accessed. Physical handback remains
-untested; other models do not inherit these addresses or semantics.
+service or installed configuration was accessed. The findings apply only to
+this firmware pair and exact device.
 
 ## Why the normal command can work
 
-The exact-device `performance-silent` fixture requests normal selector `5`
-and fan flag `0` through the ordinary thermal-mode command. MCU handler
+The ordinary thermal-mode command carries a normal performance selector and a
+separate fan flag. The exact-device `performance-silent` fixture demonstrates
+this shape with selector `5` and fan flag `0`. MCU handler
 `0x9798..0x97B2` accepts normal selectors, puts the requested mode and flag in
 cache `0x10000228/0x10000229`, and queues mode work.
 
@@ -28,8 +29,8 @@ queued flag update needs a later pass. The worker does not itself force bank 0;
 another selected bank can change those destinations. Mode and Automatic are
 separate writes.
 
-Once the EC selector at `0x8035F` really holds `5`, dispatch
-`0x15E66..0x15E80` no longer takes the `FE` branch. Active-state and cadence
+Once the EC selector at `0x8035F` actually holds the intended normal selector,
+dispatch `0x15E66..0x15E80` leaves the `FE` branch. Active-state and cadence
 gates permitting, supervisor `0x158AE..0x158B6` calls ordinary PWM feedback
 `0x15510`. Permission `0x80425.6` does not block this normal feedback path.
 Automatic additionally requires the normal manual state to be restored;
@@ -59,7 +60,7 @@ definition of a successful handback.
 | Permission byte `0x80425` | Remains unchanged. Bit 6 can still suppress recomputation of non-fan contributor `0x80493` under its normal gates. |
 | Staged duty `0x80394/0x80395` | Remains stored, though the normal selector stops consuming it through `FE`. |
 | Generic MCU gate and changed bank state | Not closed or restored by the normal thermal command. |
-| Targets and saved normal state | A profile change can affect them; restore captured intent rather than substitute defaults. |
+| Targets and saved normal state | A profile change can affect them. Preserve the intended admitted normal performance profile and account for captured state during cleanup. |
 
 The [register review](so6120-ec-register-semantics.md) documents why replacing
 the whole permission byte with zero is not a valid cleanup shortcut. A complete
@@ -83,7 +84,7 @@ reviewed shared transport:
   Later normal policy can update flags independently. A bus acknowledgment
   therefore does not establish the requested Automatic flag.
 
-## Current UI and future switch behavior
+## Auto exit and the installed UI
 
 The current [thermal decoder](../src/OpenBlade.Protocol/ThermalModeProtocol.cs)
 does not admit `FE`. The production performance and fan setters perform a
@@ -93,14 +94,29 @@ a stale cache that already looks like the destination can take an
 [ProductionBatteryPort](../src/OpenBlade.Protocol/ProductionBatteryPort.cs).
 Reselecting a UI option is consequently not a guaranteed exit from raw `FE`.
 
-A future exact-device PWM switch should have an explicit handback operation
-for its owned direct-duty state, using the intended normal destination and
-independent confirmation. It must preserve fresh write admission and stop on
-ambiguous submission; this finding does not justify weakening the production
-decoder or retrying an uncertain SET.
+The Auto exit applies to owned direct duty on the exact device. It uses the
+intended admitted normal performance profile, performs fresh write admission,
+and verifies the EC selector and manual state independently. Ambiguous
+submission stops further writes and permits read-only reconciliation.
 
-Orderly handback and host-loss recovery remain distinct. The user-proposed
-Automatic command addresses an operating host that can send and confirm it.
+The developer [Auto-exit coordinator](../src/OpenBlade.Capture/DirectDutyAutomaticExit.cs)
+uses the captured or explicitly intended performance profile. It always submits
+both admitted Auto channels, even after the first independently matches. For
+Custom it preserves the power settings and clears the maximum-fan intent.
+After independent confirmation it restores the owned override and staged duty
+values, then the bank and finally the access gate. Unchanged fields are skipped;
+unrelated drift or uncertain submission stops the operation without replay.
+
+Tests inject a simulated port, including faults at each submission and a shared
+single-use claim across coordinator instances. The future port must provide
+real durable ownership and intent records, atomic claim enforcement, exact
+model/power/session admission, transport exclusion and independent readback.
+Those properties are not established by the simulated tests. There is no live
+adapter, executable command or installed UI integration. The ordinary
+production decoder and setters are unchanged.
+
+Orderly handback and host-loss recovery remain distinct. Auto exit requires an
+operating host that can send and confirm the command.
 An unattended switch still needs independent cooling recovery. An attended
 experiment needs a justified abort/recovery procedure and bounded exposure;
 it is not required to prove an unattended watchdog merely to establish the

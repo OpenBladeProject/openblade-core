@@ -1240,8 +1240,8 @@
       ]
     },
     {
-      "title": "An explicit normal selector can hand fans back from FE",
-      "description": "A committed Silent selector 5 leaves the FE branch and permits ordinary cadence-gated PWM feedback. Automatic also needs confirmed normal manual state. Another profile is not required, and idle Automatic may still request zero. The normal command leaves override permission and staged duty in place, so orderly fan handback is distinct from complete state restoration and host-loss recovery.",
+      "title": "Auto exits FE under the intended admitted normal selector",
+      "description": "The intended admitted normal selector leaves the FE branch once committed and permits ordinary cadence-gated PWM feedback. Silent selector 5 is the exact fixture example. Auto requires independent confirmation of the selector and normal manual state. Idle Automatic may request zero. Override permission, staged duty, and host-loss recovery require separate treatment.",
       "evidence_status": "firmware-confirmed",
       "references": [
         {
