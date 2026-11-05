@@ -11,6 +11,27 @@ This is exact SO6120 evidence. It does not establish an admitted live transport,
 physical fan behavior, or another model's command contract. The generic Auto
 exit coordinator remains unbound to hardware.
 
+The developer [one-byte transaction core](../src/OpenBlade.Capture/So6120HostMailboxTransaction.cs)
+implements the mapped request sequence over an injected fixed-port boundary.
+It restricts the register set, publishes the command last, and rechecks live
+descriptor/status/idle fields and any staged payload after fresh publication
+admission. A write is confirmed only after a separate newly admitted `A0`
+read matches. Its bounded ledger retains native outcomes, possible publication
+and completed-handler counts across confirmation failures. No failure causes
+a retry or cleanup command.
+
+The [fixed-port adapter](../src/OpenBlade.Capture/So6120InpOutBytePort.cs)
+encodes the reviewed byte IOCTLs for ports `300`/`301` and preserves native
+Boolean/count/error results. Its handle-lifetime lock is not mailbox exclusion.
+Live acquisition explicitly refuses, and no CLI route uses it. Real durable
+intent, exact-device and lifecycle admission, and the accepted transport/field
+ownership conditions must be supplied by the outer owner. A matching read does
+not prove a transition or establish ownership if the byte was already present.
+Policy-command/status registers are read-only in this interface; writing full
+override bytes still requires reviewed bit preservation outside the byte
+protocol. The core and adapter have 65 focused fake-port/native tests; the full
+Capture suite passed all 676 tests. These tests do not access hardware.
+
 ## Inputs and verification
 
 The [host mailbox investigation](so6120-host-mailbox-alternatives.md#exact-inputs-and-method)
