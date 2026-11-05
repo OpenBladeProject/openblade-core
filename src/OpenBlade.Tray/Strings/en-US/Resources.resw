@@ -2875,4 +2875,7 @@ OpenBlade did not retry any stop request.</value>
   <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
     <value>Try Razer driver first. If it doesn’t work, switch to Windows hook (SnapTap may not work in some games).</value>
   </data>
+  <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
+    <value>Use Razer driver to change F1–F12 behavior. Windows hook keeps the default Fn shortcuts.</value>
+  </data>
 </root>

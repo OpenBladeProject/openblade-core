@@ -84,6 +84,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Func<KeyboardInputBackend> readFunctionRowBackend;
     private readonly bool observeOnly;
     private int windowsFunctionRowHeld;
+    private int blade18FunctionRowHeld;
     private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
     private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
     private readonly Func<byte?> readBlade18KeyboardLayoutId;
@@ -188,7 +189,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     public Task Completion => completion.Task;
 
-    public bool HasActiveFunctionRowKeys => Volatile.Read(ref windowsFunctionRowHeld) != 0;
+    public bool HasActiveFunctionRowKeys => Volatile.Read(ref windowsFunctionRowHeld) != 0
+        || Volatile.Read(ref blade18FunctionRowHeld) != 0;
 
     public bool CanTransferFunctionRowOwnership => observeOnly
         || functionRowOwnership?.CanTransferOwnership(
@@ -203,9 +205,33 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     internal bool? FunctionKeyState => functionKeyObservation.Read();
 
+    internal bool? ReadDriverFunctionKeyState(RazerBladeInputDeviceKind expectedDevice)
+    {
+        if (Volatile.Read(ref disposed) != 0 || completion.Task.IsCompleted
+            || expectedDevice == RazerBladeInputDeviceKind.Rz09_0484
+                && Volatile.Read(ref blade18ResetRequested) != 0
+            || readVerifiedInputDeviceKind() != expectedDevice)
+        {
+            return null;
+        }
+        if (expectedDevice != RazerBladeInputDeviceKind.Rz09_0484)
+        {
+            return functionKeyObservation.Read();
+        }
+        // The driver subscription identifies the keyboard. Revalidate the
+        // separate Fn collection and local session before using its snapshot.
+        return blade18Fn.ReadAdmitted(isBlade18FnInputAdmitted() && IsLocalInputSession(),
+            collection => TryResolveInputDevice(collection) == expectedDevice);
+    }
+
+    internal static bool? ReadBlade18DriverFunctionKeyState(
+        Rz090484FnInputState state, bool admitted, bool collectionCurrent)
+        => state.ReadAdmitted(admitted, _ => collectionCurrent);
+
     public void ResetFunctionPInput()
     {
         functionKeyObservation.Invalidate();
+        blade18Fn.InvalidateKnowledge();
         rz090528FunctionPInput.RequestReset();
         Interlocked.Exchange(ref blade18ResetRequested, 1);
     }
@@ -337,6 +363,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     private void PublishBlade18Input(Blade18DefaultFnInputEvent input)
     {
+        if (input.Phase != FunctionRowInputPhase.Up
+            && !AllowsBlade18DefaultFunctionRow(input.ScanCode, readFunctionRowBackend()))
+        {
+            return;
+        }
         if (input.Action is Blade18DefaultFnAction.Performance
             or Blade18DefaultFnAction.RefreshRate or Blade18DefaultFnAction.Touchpad)
         {
@@ -385,6 +416,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             return;
         }
 
+        ResetFunctionPInput();
         nint handle = Volatile.Read(ref windowHandle);
         bool closePosted = handle != 0 && PostMessage(handle, WindowMessageClose, 0, 0);
         if (!closePosted && Volatile.Read(ref messageThreadId) is uint threadId and not 0)
@@ -494,6 +526,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
         finally
         {
+            ResetFunctionPInput();
             bool hookCleanupConfirmed = keyboardHooks.ReleaseAll();
             Interlocked.CompareExchange(ref keyboardHookOwner, null, this);
             ReleaseRawInputBuffer();
@@ -650,17 +683,21 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 bool keyWasAlreadyDown = keyDown
                     && (GetAsyncKeyState(checked((int)input.VirtualKey)) & 0x8000) != 0;
                 bool blade18Admitted = owner.ReadBlade18Admission();
-                if (ProcessBlade18KeyboardInput(
+                bool blade18Suppressed = ProcessBlade18KeyboardInput(
                     owner.blade18Keyboard,
                     input.ScanCode,
                     extended: (input.Flags & 0x01) != 0,
                     keyDown,
                     keyWasAlreadyDown,
                     owner.blade18Fn.FunctionHeld,
-                    blade18Admitted,
+                    blade18Admitted && AllowsBlade18DefaultFunctionRow(
+                        input.ScanCode, owner.readFunctionRowBackend()),
                     HasExclusiveBlade18Keyboard,
                     owner.CancelBlade18InputForTopology,
-                    out Blade18DefaultFnInputEvent? blade18Event))
+                    out Blade18DefaultFnInputEvent? blade18Event);
+                Volatile.Write(ref owner.blade18FunctionRowHeld,
+                    owner.blade18Keyboard.HasActiveFunctionRowKeys ? 1 : 0);
+                if (blade18Suppressed)
                 {
                     if (!owner.blade18Correlation.Record(
                         input.ScanCode, (input.Flags & 0x01) != 0,
@@ -692,6 +729,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
         return CallNextHookEx(0, code, windowParameter, messageParameter);
     }
+
+    internal static bool AllowsBlade18DefaultFunctionRow(uint scanCode, KeyboardInputBackend backend) =>
+        scanCode is not (>= 0x3B and <= 0x44 or 0x57 or 0x58)
+        || backend == KeyboardInputBackend.WindowsHook;
 
     internal static bool ProcessBlade18KeyboardInput(
         Blade18DefaultFnInputState state,
@@ -991,6 +1032,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             }
             ReinstallKeyboardHook();
         }
+        Volatile.Write(ref blade18FunctionRowHeld, blade18Keyboard.HasActiveFunctionRowKeys ? 1 : 0);
         FunctionRowHookRecoveryResult recovery =
             readFunctionRowBackend() != KeyboardInputBackend.WindowsHook && !functionRowInput.HasActiveKeys
                 ? default

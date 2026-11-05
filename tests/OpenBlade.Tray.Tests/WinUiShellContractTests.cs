@@ -301,6 +301,15 @@ public sealed class WinUiShellContractTests
         Assert.Contains("SnapTapStatusStore.Read()", source, StringComparison.Ordinal);
         Assert.Contains("FunctionRowBackendStatusStore.Read()", source, StringComparison.Ordinal);
         Assert.DoesNotContain("ApplyLaptopControlAsync", source, StringComparison.Ordinal);
+        XElement description = NamedElement(document, "TextBlock", "KeyboardBackend_FunctionRowDescription");
+        Assert.Equal("Wrap", Attribute(description, "TextWrapping"));
+        string descriptionSelection = source[source.IndexOf("string descriptionText =", StringComparison.Ordinal)..source.IndexOf("string statusText =", StringComparison.Ordinal)];
+        Assert.Contains("HostManagedLaptopControls.Contains", descriptionSelection, StringComparison.Ordinal);
+        Assert.Contains("KeyboardBackend_FunctionRowRequiresDriver", descriptionSelection, StringComparison.Ordinal);
+        Assert.Contains("KeyboardBackend_FunctionRowDescription.Text", descriptionSelection, StringComparison.Ordinal);
+        Assert.DoesNotContain("functionRowBackend", descriptionSelection, StringComparison.Ordinal);
+        Assert.Contains("controls.Description.Text = descriptionText;", source, StringComparison.Ordinal);
+        Assert.Contains("controls.Status.Text = statusText;", source, StringComparison.Ordinal);
     }
 
     [Fact]

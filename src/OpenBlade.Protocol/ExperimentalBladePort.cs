@@ -174,7 +174,7 @@ internal sealed partial class ExperimentalBladePort(
             OneShotLaptopControls = enabled && model.ProductId == 0x02A0
                 ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.StartupAnimation } : [],
             HostManagedLaptopControls = enabled && model.ProductId == 0x02A0
-                ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.GamingMode } : [],
+                ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.GamingMode, OneShotLaptopControl.FunctionKeyPrimary } : [],
             KeyboardLightingLayoutId = enabled && model.ProductId == 0x02A0
                 ? KeyboardLightingLayoutIds.Rz09_0484 : null,
             ObservedLightingEffects = CreateObservedExperimentalLightingEffects(model),

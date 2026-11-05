@@ -37,9 +37,26 @@ internal sealed class FunctionRowDriverInputProcessor(
         else { held.Remove(stroke.ScanCode); }
         try
         {
-            bool suppress = FunctionRowKeyboardHookProcessor.Process(state, deviceKind,
-                stroke.ScanCode, stroke.IsDown, wasDown, functionKeyPressed, primaryMode,
-                driverModeActive && !stopping, Publish);
+            // The exact 02A0 driver owns these per-device F-key packets. Its
+            // Product 672 host map shares the actions, not the Blade 16 firmware
+            // Driver-mode requirement or global Windows-hook admission.
+            bool suppress;
+            if (deviceKind == RazerBladeInputDeviceKind.Rz09_0484)
+            {
+                if (stroke.IsDown && state.PrepareKeyDown(stroke.ScanCode, wasDown) is { } stale)
+                {
+                    Publish(stale);
+                }
+                suppress = state.Process(stroke.ScanCode, stroke.IsDown, functionKeyPressed,
+                    primaryMode, driverModeActive && !stopping, out FunctionRowInputEvent? input);
+                if (input is { } observed) { Publish(observed); }
+            }
+            else
+            {
+                suppress = FunctionRowKeyboardHookProcessor.Process(state, deviceKind,
+                    stroke.ScanCode, stroke.IsDown, wasDown, functionKeyPressed, primaryMode,
+                    driverModeActive && !stopping, Publish);
+            }
             if (!suppress)
             {
                 // An intercepted original never reaches Windows automatically.

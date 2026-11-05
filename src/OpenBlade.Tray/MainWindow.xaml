@@ -1245,7 +1245,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="4" VerticalAlignment="Center">
                                         <TextBlock Text="{CustomResource KeyboardBackend_FunctionRowTitle.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
-                                        <TextBlock
+                                        <TextBlock x:Name="KeyboardBackend_FunctionRowDescription"
                                                    Text="{CustomResource KeyboardBackend_FunctionRowDescription.Text}"
                                                    Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
                                         <TextBlock x:Name="FunctionRowBackendStatusText" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />

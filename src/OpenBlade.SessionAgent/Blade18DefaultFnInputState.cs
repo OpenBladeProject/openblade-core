@@ -35,6 +35,9 @@ internal sealed class Blade18DefaultFnInputState
 {
     private readonly Dictionary<KeyIdentity, ActivePress> activePresses = [];
 
+    internal bool HasActiveFunctionRowKeys => activePresses.Keys.Any(key =>
+        key.ScanCode is >= 0x3B and <= 0x44 or 0x57 or 0x58);
+
     public bool Process(
         uint scanCode,
         bool extended,
