@@ -21014,7 +21014,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         ];
         foreach (PerformancePreset performance in fullPowerProfiles)
         {
-            foreach (FanMode fanMode in Enum.GetValues<FanMode>())
+            // The operational Battery Saver stop target is not an ordinary
+            // full-power fan preference or a HyperBoost entry intent.
+            foreach (FanMode fanMode in DeviceCapabilities.SafeTargetDefaults().FanModes)
             {
                 matrix.Add(performance, fanMode);
             }
@@ -31042,7 +31044,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         IDisplayBrightnessHidController? displayBrightnessHidController = null,
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
-        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null)
+        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
+        Func<PowerSource>? batterySaverFanStopPowerReader = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -31141,7 +31144,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 ?? new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
             hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary,
-            laptopControlPendingStore: new LaptopControlPendingStore(Path.Combine(directory, "laptop-control-pending.json")));
+            laptopControlPendingStore: new LaptopControlPendingStore(Path.Combine(directory, "laptop-control-pending.json")),
+            batterySaverFanStopPowerReader: batterySaverFanStopPowerReader ?? (() => telemetry.Current.PowerSource));
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -31742,6 +31746,15 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public Func<bool>? RecoveryWriteAdmission { get; private set; }
 
         public void SetRecoveryWriteAdmission(Func<bool> admission) => RecoveryWriteAdmission = admission;
+
+        public Func<bool>? BatterySaverFanStopWriteAdmission { get; private set; }
+        public bool BatterySaverFanStopReadInterest { get; private set; }
+
+        public void SetBatterySaverFanStopContext(bool readbackRequested, Func<bool>? writeAdmission)
+        {
+            BatterySaverFanStopReadInterest = readbackRequested;
+            BatterySaverFanStopWriteAdmission = writeAdmission;
+        }
 
         public IBladeDevice Device { get; set; } = device;
 

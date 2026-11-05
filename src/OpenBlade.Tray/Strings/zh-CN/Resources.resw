@@ -2858,4 +2858,6 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="KeyboardBackend_SnapTapExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>SnapTap（A/D）</value>
   </data>
+  <data name="MainWindow_BatterySaverFanStop.Text" xml:space="preserve"><value>停止风扇</value></data>
+  <data name="MainWindow_BatterySaverFanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>停止风扇</value></data>
 </root>

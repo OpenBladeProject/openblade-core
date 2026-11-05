@@ -1708,4 +1708,5 @@ Details: {1}</value>
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>The power source changed. Review the current profile and try again.</value>
   </data>
+  <data name="Fan-stop control paused. Turn it off to restore normal cooling." xml:space="preserve"><value>Fan-stop control paused. Turn it off to restore normal cooling.</value></data>
 </root>

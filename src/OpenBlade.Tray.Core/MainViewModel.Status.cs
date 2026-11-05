@@ -41,6 +41,7 @@ public sealed partial class MainViewModel
         && left.PerformanceOverride == right.PerformanceOverride
         && left.FanOverride == right.FanOverride
         && left.FanControlOverride == right.FanControlOverride
+        && left.BatterySaverFanStopStatus == right.BatterySaverFanStopStatus
         && left.LightingOverride == right.LightingOverride
         && left.BatteryPolicyOverride == right.BatteryPolicyOverride
         && left.BatteryProtectionOverride == right.BatteryProtectionOverride
@@ -113,6 +114,7 @@ public sealed partial class MainViewModel
                     entry.Key,
                     out FanSpeedRange? rightRange)
                 && entry.Value == rightRange)
+            && left.SupportsBatterySaverFanStop == right.SupportsBatterySaverFanStop
             && left.SupportsDirectManualFanTransitions
                 == right.SupportsDirectManualFanTransitions
             && left.ReportsPerformanceWithManualFans == right.ReportsPerformanceWithManualFans

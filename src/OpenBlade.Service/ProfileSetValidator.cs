@@ -390,6 +390,10 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
     {
         FanControlSettings settings = profile.FanControl
             ?? FanControlSettings.FromLegacy(profile.Fans);
+        if (profile.Fans == FanMode.Stop || settings.Mode == FanMode.Stop)
+        {
+            throw Invalid("Fan stop is selected only through the Battery Saver preference.");
+        }
         bool legacyMaximum = profile.Fans == FanMode.Maximum
             && settings.Mode == FanMode.Fixed
             && settings.FixedSpeedRpm == FanControlSettings.MaximumSpeedRpm;

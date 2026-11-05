@@ -27,6 +27,8 @@ internal enum ThermalModeState
     // enabled. Keep these distinct so readback retains the active selector.
     BatterySaverManual,
     BatteryBalancedManual,
+    // Read-only recognition of Product736's Silent selector with manual fans.
+    SilentManual,
 }
 
 internal readonly record struct ThermalModeReading(
@@ -103,6 +105,7 @@ internal static class ThermalModeProtocol
         {
             (0x00, 0x00) => Assign(ThermalModeState.BalancedAutomatic, out state),
             (0x05, 0x00) => Assign(ThermalModeState.SilentAutomatic, out state),
+            (0x05, 0x01) => Assign(ThermalModeState.SilentManual, out state),
             (0x02, 0x00) => Assign(ThermalModeState.PerformanceAutomatic, out state),
             (0x04, 0x00) => Assign(ThermalModeState.CustomAutomatic, out state),
             (0x03, 0x00) => Assign(ThermalModeState.BatterySaverAutomatic, out state),

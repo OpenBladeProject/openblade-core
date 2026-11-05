@@ -70,6 +70,15 @@ public interface IServiceControlRuntime
         ProfileSet profiles,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetBatterySaverFanStopAsync(
+        bool enabled, CancellationToken cancellationToken) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked,
+                "Battery Saver fan stop is unavailable."));
+
+    Task<ControlOperationResult> SetBatterySaverFanStopAsync(
+        bool enabled, Func<bool> stillControlsSession, CancellationToken cancellationToken) =>
+        SetBatterySaverFanStopAsync(enabled, cancellationToken);
+
     Task<ControlOperationResult> ReportApplicationContextAsync(
         ReportApplicationContextRequest request,
         Func<bool> stillControlsSession,
@@ -593,6 +602,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
     private bool explicitLightingOwnershipActive;
     private string? lightingRecoveryPauseMessage;
     private readonly IFanTemperatureSource fanTemperatureSource;
+    private readonly Func<PowerSource> batterySaverFanStopPowerReader;
+    private readonly BatterySaverFanStopRuntimePolicy batterySaverFanStopPolicy = new();
+    private BatterySaverFanStopThermalSample? batterySaverFanStopThermalSample;
+    private bool batterySaverFanStopReadbackActive;
     private readonly ICoolingPadDiscoverySource hyperBoostPadDiscoverySource;
     private readonly IHyperBoostOwnershipJournalStore hyperBoostOwnershipJournalStore;
     private int? lastCurveFan1Rpm;
@@ -840,7 +853,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
         Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
-        LaptopControlPendingStore? laptopControlPendingStore = null)
+        LaptopControlPendingStore? laptopControlPendingStore = null,
+        Func<PowerSource>? batterySaverFanStopPowerReader = null)
     {
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
@@ -872,6 +886,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
             ?? new SafeWindowsFanTemperatureSource();
+        this.batterySaverFanStopPowerReader = batterySaverFanStopPowerReader
+            ?? WindowsPowerStateProvider.CaptureWindowsPowerSource;
         this.displayBrightnessHidController = displayBrightnessHidController
             ?? UnavailableDisplayBrightnessHidController.Instance;
         this.hyperBoostPadDiscoverySource = hyperBoostPadDiscoverySource
@@ -880,6 +896,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             ?? UnavailableHyperBoostOwnershipJournalStore.Instance;
         this.hyperBoostLifecycleExitBoundary = hyperBoostLifecycleExitBoundary
             ?? (static _ => Task.CompletedTask);
+        this.deviceProvider.SetBatterySaverFanStopContext(false, BatterySaverFanStopWriteAdmitted);
     }
 
     public void Initialize(BatteryConfiguration configuration, PowerSource powerSource) =>
@@ -966,7 +983,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     .Resolve(UnknownConfirmedState)
                     .Lighting
                     .Value;
-            Volatile.Write(ref status, CreateInitialSnapshot(powerSource));
+            Volatile.Write(ref status, ProjectBatterySaverFanStopStatus(CreateInitialSnapshot(powerSource)));
+            RefreshBatterySaverFanStopReadInterest();
         }
     }
 
@@ -990,7 +1008,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 WritesBlocked = current.WritesBlocked || paused || laptopPending,
             };
         }
-        return ApplyConfigurationQuarantineAdvisory(current);
+        return ApplyConfigurationQuarantineAdvisory(ProjectBatterySaverFanStopStatus(current));
     }
 
     public IDisposable RegisterProtocolCompatibilityClient()
@@ -1593,6 +1611,84 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         }
     }
 
+    public Task<ControlOperationResult> SetBatterySaverFanStopAsync(
+        bool enabled, CancellationToken cancellationToken) =>
+        SetBatterySaverFanStopAsync(enabled, static () => true, cancellationToken);
+
+    public async Task<ControlOperationResult> SetBatterySaverFanStopAsync(
+        bool enabled, Func<bool> stillControlsSession, CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!ConfigurationIsAdmitted)
+            {
+                return ConfigurationQuarantineBlocked(DeviceSubsystem.Fans);
+            }
+            if (!stillControlsSession())
+            {
+                return SessionAuthorityChanged("The active Windows session changed before the fan preference could be saved.");
+            }
+            ServiceStatusSnapshot current = GetStatus();
+            if (enabled && current.Capabilities?.SupportsBatterySaverFanStop != true)
+            {
+                return new(ControlOperationStatus.Blocked, "Battery Saver fan stop is unavailable on this device.");
+            }
+
+            ProfileSet profiles = Automation.Profiles;
+            if (profiles.Battery.StopFansInBatterySaver != enabled)
+            {
+                profiles = profiles with
+                {
+                    Battery = profiles.Battery with { StopFansInBatterySaver = enabled },
+                };
+                try
+                {
+                    await ConfigurationStore.SaveProfilesAsync(profiles, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (IsIntentFailure(exception))
+                {
+                    return RecordRejectedIntent(exception);
+                }
+                Automation.UpdateProfiles(profiles);
+                batterySaverFanStopPolicy.Reset();
+            }
+            RefreshBatterySaverFanStopReadInterest();
+            PublishIfChanged(current with { Profiles = profiles });
+            const string stored = "Battery Saver fan-stop preference saved.";
+            // Saving a preference never retires an earlier uncertain hardware write.
+            current = GetStatus();
+            if (!stillControlsSession() || current.WritesBlocked || lowPowerGate.IsActive
+                || !current.DeviceVerified
+                || !BatterySaverFanStopInScope(current) && !OwnsBatterySaverFanStop
+                    && (enabled || current.ConfirmedState?.Fans != FanMode.Stop))
+            {
+                return new(ControlOperationStatus.Stored, stored);
+            }
+            await RefreshBatterySaverFanStopThermalSampleAsync(cancellationToken).ConfigureAwait(false);
+            if (enabled && !BatterySaverFanStopThermalSampleIsCool() && !OwnsBatterySaverFanStop)
+            {
+                PublishIfChanged(GetStatus());
+                return new(ControlOperationStatus.Stored,
+                    $"{stored} Fan stop is paused because cool CPU and inactive GPU readings are required.");
+            }
+
+            ControlOperationResult application = await ApplyBatterySaverFanStopIntentAsync(
+                current, cancellationToken, stillControlsSession).ConfigureAwait(false);
+            return application with
+            {
+                Status = application.Status == ControlOperationStatus.Applied
+                    ? ControlOperationStatus.Applied : ControlOperationStatus.Stored,
+                Message = $"{stored} {application.Message}",
+            };
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
         CancellationToken token)
@@ -1623,6 +1719,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     batteryProtectionDefault: null);
                 validator.ValidateStoredCustomIntent(profiles);
                 DeviceCapabilities? editCapabilities = GetStatus().Capabilities;
+                if (profiles.Battery.StopFansInBatterySaver
+                    && !Automation.Profiles.Battery.StopFansInBatterySaver
+                    && editCapabilities?.SupportsBatterySaverFanStop != true)
+                {
+                    throw new InvalidDataException("Battery Saver fan stop requires explicit support from the current device.");
+                }
                 foreach ((PowerProfile requested, PowerProfile saved) in new[]
                 {
                     (profiles.PluggedIn, Automation.Profiles.PluggedIn),
@@ -1640,7 +1742,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     }
                 }
                 await ConfigurationStore.SaveProfilesAsync(profiles, token);
+                bool fanStopPreferenceChanged = Automation.Profiles.Battery.StopFansInBatterySaver
+                    != profiles.Battery.StopFansInBatterySaver;
                 Automation.UpdateProfiles(profiles);
+                if (fanStopPreferenceChanged)
+                {
+                    batterySaverFanStopPolicy.Reset();
+                }
+                RefreshBatterySaverFanStopReadInterest();
                 if (ResolveAutomationDesired(profileResolutionState).Lighting.Value
                     != priorLightingIntent)
                 {
@@ -2450,6 +2559,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
     public async Task MaintainFanCurveAsync(CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        await MaintainBatterySaverFanStopAsync(cancellationToken).ConfigureAwait(false);
         if (!ConfigurationIsAdmitted)
         {
             ClearLastFanCurveTargets();
@@ -12177,9 +12287,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     captureResumeState: !activeBoundary,
                     stillAuthorized: stillAuthorized)
                 .ConfigureAwait(false);
+            ControlOperationResult? fanStopResult = null;
+            if (activeBoundary && StillPreparing() && OwnsBatterySaverFanStop)
+            {
+                using var fanCleanupBudget = CancellationTokenSource.CreateLinkedTokenSource(cleanupToken);
+                fanCleanupBudget.CancelAfter(LowPowerLightingBudget);
+                await operationGate.WaitAsync(fanCleanupBudget.Token).ConfigureAwait(false);
+                try
+                {
+                    if (StillPreparing() && OwnsBatterySaverFanStop)
+                    {
+                        fanStopResult = await RestoreAutomaticFansForShutdownCoreAsync(
+                            fanCleanupBudget.Token, "low power",
+                            () => StillPreparing() && OwnsBatterySaverFanStop).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    operationGate.Release();
+                }
+            }
             ControlOperationResult cleanupResult = CombineLowPowerCleanupResults(
                 hyperBoostResult,
-                coolingPadFanResult: null,
+                coolingPadFanResult: fanStopResult,
                 coolingPadLightingResult: null,
                 driverModeResult);
             return lightingResult is null ? cleanupResult : new ControlOperationResult(
@@ -12594,7 +12724,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
     }
 
     private async Task<ControlOperationResult> RestoreAutomaticFansForShutdownCoreAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string boundary = "shutdown",
+        Func<bool>? lowPowerFanCleanupAdmission = null)
     {
         if (ShutdownFanHandbackBlockReason(requireControllerClear: false) is { } initialBlock)
         {
@@ -12604,7 +12735,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
         history.RecordSummary(
             ControlOperationStatus.Stored,
-            "Attempting to restore firmware-managed Automatic fan control before shutdown.");
+            $"Attempting to restore firmware-managed Automatic fan control before {boundary}.");
         await RefreshControllerPresenceAndRelinquishLightingAsync(
             cancellationToken).ConfigureAwait(false);
         if (ShutdownFanHandbackBlockReason(requireControllerClear: true) is { } refreshedBlock)
@@ -12632,13 +12763,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 ScopedThermalFreshSessionRetryPolicy.BlockDuringBoundedCleanup,
                 () => RefreshAndGetShutdownFanHandbackBlockReason(
                     cancellationToken),
-                ScopedThermalAuthorityPurpose.PriorAuthorityCleanup)).ConfigureAwait(false);
+                ScopedThermalAuthorityPurpose.PriorAuthorityCleanup,
+                lowPowerFanCleanupAdmission)).ConfigureAwait(false);
         if (result.Status == ControlOperationStatus.Applied)
         {
             lastCurveFan1Rpm = null;
             lastCurveFan2Rpm = null;
-            const string restored =
-                "Firmware-managed Automatic fan control was confirmed before shutdown.";
+            string restored =
+                $"Firmware-managed Automatic fan control was confirmed before {boundary}.";
             history.RecordSummary(ControlOperationStatus.Applied, restored);
             return result with { Message = restored };
         }
@@ -13670,6 +13802,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 preserveCurrentAvailability: true);
         }
 
+        if (authorityPurpose != ScopedThermalAuthorityPurpose.PriorAuthorityCleanup)
+        {
+            await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
+        }
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
         DesiredDeviceState desired = ResolveHardwareDesired(
@@ -14024,7 +14160,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                                          stillControlsSession,
                                          options.Components,
                                          options.AdditionalWriteBlockReason,
-                                         options.AuthorityPurpose)),
+                                         options.AuthorityPurpose,
+                                         options.LowPowerFanCleanupAdmission)),
                         (runner, cancellationToken) => apply(
                             runner.CreateRecipeCoordinator(),
                             desired,
@@ -14306,7 +14443,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         IReadOnlyList<DeviceSubsystem> components,
         Func<string?>? additionalThermalWriteBlockReason = null,
         ScopedThermalAuthorityPurpose authorityPurpose =
-            ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent)
+            ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
+        Func<bool>? lowPowerFanCleanupAdmission = null)
     {
         if (ConfigurationThermalWriteBlockReason(authorityPurpose) is { } quarantineBlock)
         {
@@ -14316,7 +14454,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         {
             return "The active Windows session changed before the thermal command was submitted.";
         }
-        if (lowPowerGate.IsActive)
+        bool lowPowerFanCleanup = authorityPurpose == ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
+            && components.Count == 1 && components[0] == DeviceSubsystem.Fans
+            && expected.Fans.Value == FanMode.Automatic
+            && lowPowerFanCleanupAdmission?.Invoke() == true;
+        if (lowPowerGate.IsActive && !lowPowerFanCleanup
+            || lowPowerFanCleanupAdmission is not null && !lowPowerFanCleanup)
         {
             return "The laptop entered a low-power transition before the thermal command was submitted.";
         }
@@ -15344,6 +15487,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             return InterruptedAfterBoundary("The active Windows session changed before the destination profile could be applied.");
         }
 
+        await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
         DesiredDeviceState desired = ResolveHardwareDesired(
             cachedConfirmed ?? UnknownConfirmedState);
         ThermalFullTransitionExecution transitionExecution =
@@ -18079,6 +18223,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         DesiredDeviceState desired = ResolveExperimentalFanHardwareDesired(
             ResolveAutomationDesired(confirmed), confirmed);
         DeviceCapabilities? capabilities = GetStatus().Capabilities;
+        bool stopScope = BatterySaverFanStopRuntimePolicy.IsInScope(
+            Automation.Profiles.Battery.StopFansInBatterySaver, capabilities,
+            Automation.PowerSource, desired.Performance.Value);
+        FanMode? stopMode = batterySaverFanStopPolicy.Resolve(stopScope,
+            BatterySaverFanStopThermalSampleIsCool(), OwnsBatterySaverFanStop);
+        if (stopMode is { } operationalMode)
+        {
+            desired = desired with
+            {
+                Fans = new ResolvedSetting<FanMode>(operationalMode, desired.Fans.Source),
+                FanControl = operationalMode == FanMode.Stop
+                    ? BatterySaverFanStopRuntimePolicy.StopSettings : FanControlSettings.Default,
+            };
+        }
         // Custom maximum fans is a separate firmware override, not a fixed RPM
         // target. During a performance override, keep saved manual-fan intent but
         // reach the necessary Automatic fan state directly. Profiles reject the
@@ -19572,6 +19730,174 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             ?? FanControlSettings.FromLegacy(desired.Fans.Value);
     }
 
+    private sealed record BatterySaverFanStopThermalSample(
+        FanTemperatureReadings Readings, long Timestamp);
+
+    private bool OwnsBatterySaverFanStop =>
+        IsExactFanIntentOwned(BatterySaverFanStopRuntimePolicy.StopSettings);
+
+    private bool BatterySaverFanStopInScope(ServiceStatusSnapshot current)
+    {
+        DesiredDeviceState ordinary = ResolveAutomationDesired(
+            current.ConfirmedState ?? UnknownConfirmedState, current.Capabilities);
+        return current.ActivePowerSource == PowerSource.Battery
+            && BatterySaverFanStopRuntimePolicy.IsInScope(
+                Automation.Profiles.Battery.StopFansInBatterySaver, current.Capabilities,
+                Automation.PowerSource, ordinary.Performance.Value);
+    }
+
+    private bool BatterySaverFanStopThermalSampleIsCool()
+    {
+        BatterySaverFanStopThermalSample? sample = Volatile.Read(ref batterySaverFanStopThermalSample);
+        return sample is not null
+            && timeProvider.GetElapsedTime(sample.Timestamp) <= BatterySaverFanStopRuntimePolicy.MaximumSampleAge
+            && BatterySaverFanStopRuntimePolicy.IsCool(sample.Readings);
+    }
+
+    private bool BatterySaverFanStopWriteAdmitted()
+    {
+        ServiceStatusSnapshot? current = Volatile.Read(ref status);
+        return automation is not null && current is not null
+            && ConfigurationIsAdmitted && BatterySaverFanStopInScope(current)
+            && !batterySaverFanStopPolicy.ThermallyLatched
+            && BatterySaverFanStopThermalSampleIsCool()
+            && current.DeviceVerified && !current.WritesBlocked
+            && !lowPowerGate.IsActive && !thermalConvergenceShutdown
+            && Volatile.Read(ref pendingPowerAdmissions) == 0
+            && Volatile.Read(ref pendingSessionAdmissions) == 0
+            && !activeUserActivationIncomplete
+            && activeUserStillControlsSession?.Invoke() != false
+            && !laptopControlExecutor.RequiresReconciliation
+            && !pendingWriteConfirmations.Blocks(DeviceSubsystem.Fans)
+            && !pendingWriteConfirmations.Blocks(DeviceSubsystem.Performance)
+            && !FanControllerAdmissionUnsafe(current)
+            && BatterySaverFanStopPhysicalPowerAdmitted();
+    }
+
+    private bool BatterySaverFanStopPhysicalPowerAdmitted()
+    {
+        try
+        {
+            // Native submission invokes this synchronously for every command;
+            // an AC arrival must close stop authority before queued events run.
+            return batterySaverFanStopPowerReader() == PowerSource.Battery;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void RefreshBatterySaverFanStopReadInterest()
+    {
+        ServiceStatusSnapshot? current = Volatile.Read(ref status);
+        batterySaverFanStopReadbackActive = current is not null
+            && (BatterySaverFanStopInScope(current) || OwnsBatterySaverFanStop
+                || current.ConfirmedState?.Fans == FanMode.Stop
+                || batterySaverFanStopReadbackActive && pendingWriteConfirmations.Blocks(DeviceSubsystem.Fans));
+        deviceProvider.SetBatterySaverFanStopContext(
+            batterySaverFanStopReadbackActive, BatterySaverFanStopWriteAdmitted);
+    }
+
+    private async Task RefreshBatterySaverFanStopThermalSampleAsync(CancellationToken token)
+    {
+        RefreshBatterySaverFanStopReadInterest();
+        if (!BatterySaverFanStopInScope(GetStatus()) && !OwnsBatterySaverFanStop)
+        {
+            batterySaverFanStopPolicy.Reset();
+            Volatile.Write(ref batterySaverFanStopThermalSample, null);
+            return;
+        }
+        FanTemperatureReadings readings;
+        long sampleTimestamp = timeProvider.GetTimestamp();
+        try
+        {
+            readings = await fanTemperatureSource.ReadAsync(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch
+        {
+            // Unavailable cooling evidence closes admission just like a hot CPU.
+            readings = default;
+        }
+        Volatile.Write(ref batterySaverFanStopThermalSample,
+            new BatterySaverFanStopThermalSample(readings, sampleTimestamp));
+    }
+
+    private ServiceStatusSnapshot ProjectBatterySaverFanStopStatus(ServiceStatusSnapshot current)
+    {
+        if (automation is null)
+        {
+            return current;
+        }
+        DesiredDeviceState ordinary = ResolveAutomationDesired(
+            current.ConfirmedState ?? UnknownConfirmedState, current.Capabilities);
+        bool scope = BatterySaverFanStopInScope(current);
+        var fanStopStatus = new BatterySaverFanStopStatus(
+            Automation.Profiles.Battery.StopFansInBatterySaver,
+            OwnsBatterySaverFanStop && current.ConfirmedState?.Fans == FanMode.Stop
+                && !pendingWriteConfirmations.Blocks(DeviceSubsystem.Fans),
+            batterySaverFanStopPolicy.IsSuspended(scope, BatterySaverFanStopThermalSampleIsCool()),
+            ordinary.FanControl ?? FanControlSettings.FromLegacy(ordinary.Fans.Value));
+        return current.BatterySaverFanStopStatus == fanStopStatus
+            ? current : current with { BatterySaverFanStopStatus = fanStopStatus };
+    }
+
+    private async Task MaintainBatterySaverFanStopAsync(CancellationToken token)
+    {
+        if (!ConfigurationIsAdmitted || lowPowerGate.IsActive || thermalConvergenceShutdown)
+        {
+            return;
+        }
+        // Reuse the existing one-second fan loop. Never queue periodic work behind
+        // an active transition; the next tick obtains fresh evidence instead.
+        if (!await operationGate.WaitAsync(0, token).ConfigureAwait(false))
+        {
+            return;
+        }
+        try
+        {
+            ServiceStatusSnapshot current = GetStatus();
+            if (!BatterySaverFanStopInScope(current) && !OwnsBatterySaverFanStop)
+            {
+                batterySaverFanStopPolicy.Reset();
+                RefreshBatterySaverFanStopReadInterest();
+                return;
+            }
+            await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
+            DesiredDeviceState desired = ResolveHardwareDesired(
+                current.ConfirmedState ?? UnknownConfirmedState);
+            bool needsStop = desired.Fans.Value == FanMode.Stop
+                && current.ConfirmedState?.Fans != FanMode.Stop
+                && current.ConfirmedState?.Performance == PerformancePreset.BatterySaver
+                && !current.ExternalChanges.Contains(DeviceSubsystem.Performance);
+            bool needsRelease = OwnsBatterySaverFanStop && desired.Fans.Value != FanMode.Stop;
+            if ((needsStop || needsRelease) && current.DeviceVerified && !current.WritesBlocked
+                && !current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+            {
+                await RefreshControllerPresenceAndRelinquishLightingAsync(token).ConfigureAwait(false);
+                await ApplyBatterySaverFanStopIntentAsync(current, token).ConfigureAwait(false);
+            }
+            PublishIfChanged(GetStatus());
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private Task<ControlOperationResult> ApplyBatterySaverFanStopIntentAsync(
+        ServiceStatusSnapshot current, CancellationToken token, Func<bool>? stillControlsSession = null) =>
+        ApplyScopedIntentAsync(DeviceSubsystem.Fans, current.ActivePowerSource,
+            (coordinator, desired, cancellationToken) => coordinator.ApplyRecoveryFanControlOutcomeAsync(
+                desired.FanControl ?? FanControlSettings.FromLegacy(desired.Fans.Value), cancellationToken,
+                initialStateBlockReason: observed => desired.Fans.Value == FanMode.Stop
+                    && (observed.Performance != PerformancePreset.BatterySaver
+                        || GetStatus().ExternalChanges.Contains(DeviceSubsystem.Performance))
+                    ? "Fan stop requires independently confirmed Battery Saver performance without external thermal drift."
+                    : null), token, stillControlsSession: stillControlsSession,
+            thermalExecutionOptions: new ScopedThermalExecutionOptions([DeviceSubsystem.Fans]));
+
     private bool CanMaintainFanCurve(
         ServiceStatusSnapshot current,
         FanControlSettings settings)
@@ -19719,7 +20045,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
     private void AdvanceFanDesiredRevision()
     {
+        bool retainOperationalStopOwnership = OwnsBatterySaverFanStop;
         fanDesiredRevision++;
+        if (retainOperationalStopOwnership)
+        {
+            // Ordinary fan edits change the restore destination, not the existing
+            // service-owned stop target. Authority-epoch invalidation still drops
+            // ownership on controller, session and uncertain-submission changes.
+            exactFanControlOwnership = ExactFanControlOwnership.Owned(
+                BatterySaverFanStopRuntimePolicy.StopSettings, fanAuthorityEpoch, fanDesiredRevision);
+        }
         ClearLastFanCurveTargets();
     }
 
@@ -20051,7 +20386,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         bool publishToSubscribers = false;
         lock (statusPublishGate)
         {
-            ServiceStatusSnapshot previous = GetStatus();
+            ServiceStatusSnapshot previous = GetStatus() with
+            {
+                // Compare the previously published cooling status, while retaining
+                // the existing live safety overlays for every other field.
+                BatterySaverFanStopStatus = Volatile.Read(ref status)?.BatterySaverFanStopStatus,
+            };
             ServiceStatusSnapshot updated = update(previous);
             IReadOnlyList<DeviceSubsystem> unconfirmedWrites =
                 pendingWriteConfirmations.SnapshotSubsystems();
@@ -20071,7 +20411,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                     && deviceProvider.GetCachedDeviceVerificationDiagnostics()
                         .LatestAttemptFoundUnsupportedLaptop,
             };
-            candidate = ApplyConfigurationQuarantineAdvisory(candidate);
+            candidate = ApplyConfigurationQuarantineAdvisory(ProjectBatterySaverFanStopStatus(candidate));
             if (!previous.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 && candidate.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 && exactFanControlOwnership.Disposition ==

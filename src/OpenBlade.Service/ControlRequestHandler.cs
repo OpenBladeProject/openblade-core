@@ -265,6 +265,10 @@ public sealed class ControlRequestHandler
             UpdateProfilesRequest update => Result(
                 request.RequestId,
                 await runtime.UpdateProfilesAsync(update.Profiles, cancellationToken)),
+            SetBatterySaverFanStopRequest set => Result(
+                request.RequestId,
+                await runtime.SetBatterySaverFanStopAsync(
+                    set.Enabled, stillControlsSession, cancellationToken)),
             ReportApplicationContextRequest report => Result(
                 request.RequestId,
                 await runtime.ReportApplicationContextAsync(

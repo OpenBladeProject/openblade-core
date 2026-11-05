@@ -363,7 +363,7 @@ public sealed class HyperBoostLifecycleValidationTests : IDisposable
                 PerformancePreset.Custom,
             })
             {
-                foreach (FanMode fans in Enum.GetValues<FanMode>())
+                foreach (FanMode fans in DeviceCapabilities.SafeTargetDefaults().FanModes)
                 {
                     values.Add(performance, fans);
                 }

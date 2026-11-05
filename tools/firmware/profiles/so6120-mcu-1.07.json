@@ -1,0 +1,661 @@
+{
+  "schema_version": 1,
+  "id": "so6120-mcu-1.07",
+  "label": "SO6120 MCU 1.07",
+  "model": "RZ09-0581",
+  "component": "MCU",
+  "version": "1.07",
+  "architecture": "ARM Thumb",
+  "endianness": "little",
+  "image": {
+    "sha256": "90bbe0d8dd1ca31614a2465c7c8821347b2a667606c39bedadbd59b98886344f",
+    "size": 57764,
+    "base_address": 0
+  },
+  "carriers": [
+    {
+      "sha256": "252618ae4cb3c865de557d198ac3b7cf1310865e529eb1daab9790675792feb7",
+      "size": 1387888,
+      "format": "nsis-blocks-v1",
+      "block_index": 7,
+      "payload_format": "intel-hex",
+      "payload_sha256": "1306b80533ee78e82bbcdb91ab646f650a511af379ef36ad3662a1e149782386"
+    }
+  ],
+  "annotations": [
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435649,
+      "width_bits": 8,
+      "name": "Generic EC access gate",
+      "description": "Boolean gate for generic EC transfers. It does not pause the normal thermal worker.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 29820,
+          "label": "Generic EC access gate"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 29398,
+          "label": "Application-state command updates access gate"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "The generic access gate does not pause or acquire normal firmware bus clients.",
+        "Class 00/04 value 5 sets this gate and application state without draining or pausing normal bus clients."
+      ],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435656,
+      "width_bits": 32,
+      "name": "Pending thermal work",
+      "description": "Shared pending-bit mask. Failed normal transfers can remain queued for retry.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19292,
+          "label": "Pending thermal work"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Internal MCU RAM annotation, not an EC register address or an admitted host access operation."
+      ],
+      "bits": [
+        {
+          "bit": 1,
+          "name": "Manual-state write pending",
+          "description": "Writes EC index 36. Successful completion clears this bit and sets bit 16; it does not itself set manual-readback bit 18.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 MCU 1.07 firmware",
+              "address": 19556,
+              "label": "Manual-state write pending"
+            }
+          ]
+        },
+        {
+          "bit": 16,
+          "name": "Parameter-group reads pending",
+          "description": "Reads EC indices DC, 78, DE, 79, DD and DF. Successful manual write sets this bit with 2 << 15.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 MCU 1.07 firmware",
+              "address": 19370,
+              "label": "Parameter-group reads pending"
+            }
+          ]
+        },
+        {
+          "bit": 18,
+          "name": "Manual-state read pending",
+          "description": "Independently reads EC index 36 into the cached manual byte; distinct from bit 16.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 MCU 1.07 firmware",
+              "address": 19520,
+              "label": "Manual-state read pending"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435660,
+      "width_bits": 16,
+      "name": "Queued-work countdown",
+      "description": "Countdown checked before queued work. It is separate from telemetry refresh timing.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19292,
+          "label": "Queued-work countdown"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435662,
+      "width_bits": 16,
+      "name": "Periodic-work countdown",
+      "description": "Periodic work can enqueue new reads, so an empty queue is not a durable pause.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 20668,
+          "label": "Periodic-work countdown"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435664,
+      "width_bits": 16,
+      "name": "Telemetry countdown",
+      "description": "Separate telemetry refresh countdown. Value 50 after a manual write is not its readback delay.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19580,
+          "label": "Telemetry countdown"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435672,
+      "width_bits": 32,
+      "name": "Shared I2C transfer status",
+      "description": "Used by normal and generic transfer helpers. A generic outer success can still contain a bus failure.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 9504,
+          "label": "Shared I2C transfer status"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Shared by thermal and non-EC peripheral work; observing a status value does not acquire an ownership interval."
+      ],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268436000,
+      "width_bits": 8,
+      "name": "Thermal cache active marker",
+      "description": "Worker initializes or services its cache based on this marker; not a host lease.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19180,
+          "label": "Thermal cache active marker"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268436008,
+      "width_bits": 8,
+      "name": "Cached thermal mode",
+      "description": "Shared by host intent and independent EC reads. Ordinary GET can echo intent before transfer completion.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 38788,
+          "label": "Cached thermal mode"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268436009,
+      "width_bits": 8,
+      "name": "Cached manual flags",
+      "description": "Shared requested/read state for normal manual control.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 38788,
+          "label": "Cached manual flags"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268436017,
+      "width_bits": 8,
+      "name": "Cached fan 1 target",
+      "description": "Shared requested/read target. Normal target GET does not synchronously read the EC.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 38736,
+          "label": "Cached fan 1 target"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268436018,
+      "width_bits": 8,
+      "name": "Cached fan 2 target",
+      "description": "Shared requested/read target. No live value is present in the image.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 38736,
+          "label": "Cached fan 2 target"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435784,
+      "width_bits": 8,
+      "name": "Command report ready",
+      "description": "USB report handling marks a command ready; the timer-dispatched handler consumes this flag. It is not a bus-idle or completion token.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 9458,
+          "label": "Command report ready"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Internal MCU RAM annotation; no host-readable EC register mapping is implied."
+      ],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435789,
+      "width_bits": 8,
+      "name": "USB configuration value",
+      "description": "USB configuration getter/setter state. Nonzero permits the timer command-processing block subject to other gates; it does not pause normal bus workers.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 16236,
+          "label": "Store accepted USB configuration"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 16306,
+          "label": "Clear USB configuration"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 13750,
+          "label": "Timer configuration gate"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Internal MCU RAM annotation; no host-readable EC register mapping is implied."
+      ],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435790,
+      "width_bits": 16,
+      "name": "Application flags",
+      "description": "The timer tests bit 3 unless application state equals 3. These flags do not acquire the shared transfer descriptor.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 13782,
+          "label": "Application flags"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Internal MCU RAM annotation; no host-readable EC register mapping is implied."
+      ],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435944,
+      "width_bits": 8,
+      "name": "Application state",
+      "description": "State 3 bypasses the timer application-flag bit-3 restriction. Class 00/04 stores this state; value 5 also opens generic access without pausing bus clients. Complete external mode meanings remain unresolved.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 13774,
+          "label": "Application state"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 29382,
+          "label": "Class 00/04 stores application state"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Internal MCU RAM annotation; no host-readable EC register mapping is implied.",
+        "GET 00/84 returns the state byte; it is not a transport-drain acknowledgment. Value 1 reaches a nonreturning MCU reset path."
+      ],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435945,
+      "width_bits": 8,
+      "name": "Initialization phase",
+      "description": "Startup assigns phases 1, 2 and 3; timer command work requires at least 3. This is not a per-transfer lease.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 26318,
+          "label": "Initialization phase"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Internal MCU RAM annotation; no host-readable EC register mapping is implied."
+      ],
+      "bits": []
+    }
+  ],
+  "findings": [
+    {
+      "title": "The named duty API is rejected",
+      "description": "The actual duty setter/getter wrappers reach unsupported handling in this MCU; generic register access is a separate interface.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 39080,
+          "label": "The named duty API is rejected"
+        }
+      ]
+    },
+    {
+      "title": "Two response status layers",
+      "description": "Generic register handlers store bus status separately from outer report status. Failed reads leave the supplied data area unchanged.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 29812,
+          "label": "Two response status layers"
+        }
+      ]
+    },
+    {
+      "title": "Shared transfer state",
+      "description": "Normal main-loop work and timer-dispatched generic transfers share bus state and buffers. Full reentrancy and exclusive access are not established. The transport wait feeds a watchdog helper that re-enables interrupts, so blanket interrupt masking is not an established ownership guarantee.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 22628,
+          "label": "Shared transfer state"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 45092,
+          "label": "Watchdog feed unconditionally re-enables interrupts"
+        }
+      ]
+    },
+    {
+      "title": "A running watchdog is not a host-loss lease",
+      "description": "The MCU main loop continues feeding its watchdog after host-process loss. No independent bounded fan handback is established.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 26332,
+          "label": "A running watchdog is not a host-loss lease"
+        }
+      ]
+    },
+    {
+      "title": "Manual write does not enqueue its own flag readback",
+      "description": "The successful manual-write branch sets bit 16 for a separate parameter group; index 36 readback uses bit 18. A cached GET therefore cannot be treated as confirmation of that bus write.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19586,
+          "label": "2 shifted left by 15 sets bit 16"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19520,
+          "label": "Independent manual read uses bit 18"
+        }
+      ]
+    },
+    {
+      "title": "Transport clients extend beyond the thermal worker",
+      "description": "The main loop services peripheral writes through the same helpers immediately before the thermal worker. Quiescing only the thermal queue would not establish whole-transport ownership.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 26340,
+          "label": "Main-loop peripheral writer before thermal worker"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 43356,
+          "label": "Peripheral write through the shared helper"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 43402,
+          "label": "Additional peripheral write through the shared helper"
+        }
+      ]
+    },
+    {
+      "title": "Ready to dispatch is not exclusive access",
+      "description": "Command-report readiness, initialization phase and application-state checks do not compare transfer busy state, drain pending thermal work or acquire a transaction identity. Actual collision is not established.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 13798,
+          "label": "Timer dispatch"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 38298,
+          "label": "Report-ready check"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 26344,
+          "label": "Normal worker precedes later main-loop flag checks"
+        }
+      ]
+    },
+    {
+      "title": "Application state 5 does not reserve the bus",
+      "description": "The recovered 00/04 value-5 branch changes application state and generic access only. Thermal queued work remains eligible; the peripheral writer also has transfer paths preceding or bypassing its state check. No main-context arbitrary-register queue or ownership token was established in the reviewed handlers. No actual collision is claimed.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 29382,
+          "label": "Application-state setter"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19294,
+          "label": "Thermal worker entry"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 43356,
+          "label": "Peripheral transfer before state check"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 43402,
+          "label": "Alternative peripheral transfer"
+        }
+      ]
+    },
+    {
+      "title": "Normal-mode exit remains queued and needs independent confirmation",
+      "description": "The ordinary mode command caches a normal selector and manual flag, then queues work. With shared EC bank 0 selected, the worker writes mode and mailbox before arming a separate flag write; it does not itself force bank 0. Existing pending mode/manual reads can replace those same cached request bytes before their write branches; SET preserves the read bits. A matching cached GET does not prove that the EC left FE or reached Automatic. This is a conditional instruction-backed path, not an observed failed transition.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 38824,
+          "label": "Requested mode and flag cache"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19758,
+          "label": "Pending mode read before mode write"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19798,
+          "label": "Mode submission"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19532,
+          "label": "Pending flag read before flag write"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 20888,
+          "label": "Conditional mode and flag read scheduling"
+        }
+      ]
+    }
+  ]
+}

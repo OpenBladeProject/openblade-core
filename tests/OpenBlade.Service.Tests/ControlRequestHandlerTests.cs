@@ -30,6 +30,7 @@ public sealed class ControlRequestHandlerTests
                 PerformanceShortcutSource.FunctionP),
             new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
+            new SetBatterySaverFanStopRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), null),
             new StepKeyboardBrightnessRequest(
                 OpenBladeIpc.ProtocolVersion,
@@ -125,7 +126,7 @@ public sealed class ControlRequestHandlerTests
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "ReportApplicationContext",
             "SetPerformanceOverride",
-            "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
+            "CyclePerformanceShortcut", "SetFanOverride", "SetBatterySaverFanStop", "SetLightingOverride",
             "StepKeyboardBrightness", "SetDisplayBrightnessHidUsage",
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
             "SetFirmwareCompatibilityOverride",
@@ -671,6 +672,14 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) =>
             Record("SetFanOverride");
+
+        public Task<ControlOperationResult> SetBatterySaverFanStopAsync(
+            bool enabled, Func<bool> stillControlsSession, CancellationToken token)
+        {
+            Assert.True(enabled);
+            Assert.True(stillControlsSession());
+            return Record("SetBatterySaverFanStop");
+        }
 
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) =>
             Record("SetLightingOverride");

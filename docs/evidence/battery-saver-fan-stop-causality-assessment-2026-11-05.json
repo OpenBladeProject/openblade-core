@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "clientDate": "2026-11-05",
+  "type": "OfflineEvidenceReassessment",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "4.01"
+  },
+  "sourceEvidence": [
+    {
+      "path": "docs/evidence/battery-saver-1500-rz09-0581-2026-11-04.json",
+      "gitBlobSha1": "d6a601db898fb741bfc21490293e008ca10316ca"
+    },
+    {
+      "path": "docs/evidence/battery-saver-2000-to-1500-rz09-0581-2026-11-04.json",
+      "gitBlobSha1": "b9234c890e3379a0ff883bd275e4bf2bcbb9df2b"
+    }
+  ],
+  "newHardwareTestPerformed": false,
+  "literalZeroTargetTestedInBatterySaver": false,
+  "confirmedObservations": [
+    "Both fans were rotating before the target change.",
+    "Both stored 1500 RPM targets and Battery Saver/manual state were retained.",
+    "Three consecutive paired zero tach readings followed; first paired zero was 10.755 seconds after the second target acknowledgement.",
+    "Exact original firmware targets/mode and installed intent were restored."
+  ],
+  "limitations": [
+    "The 2000 RPM target was held only about 5.4 seconds before reduction.",
+    "There was no sustained unchanged-target control window.",
+    "There was no return-to-2000 phase to demonstrate resumed sustained rotation.",
+    "The original probe recorded CPU temperature but did not control GPU/workload activity.",
+    "Natural idle cooling or firmware behavior remains a possible explanation; the record does not establish that it was coincidence."
+  ],
+  "causalVerdict": "Uncertain",
+  "productionFanStopAdmission": false,
+  "ordinaryManualFanAdmissionChanged": false,
+  "proposedFollowup": {
+    "authorized": false,
+    "implemented": false,
+    "sequence": [
+      "Hold 2000 RPM/manual unchanged for 30 seconds and verify sustained rotation.",
+      "Change only targets to 1500 RPM and observe mode, stored targets and tach for 30 seconds.",
+      "Return only targets to 2000 RPM and verify sustained rotation over 30 seconds.",
+      "Restore exact original firmware and software state."
+    ],
+    "stopRule": "Stop all writes on ambiguous submission/readback; no retry or fallback."
+  },
+  "interpretation": "The observation is real, but the experiment did not isolate causation. Preserve historical records; withhold the consumer fan-stop capability rather than presenting an accepted target as proven forced fan stop."
+}

@@ -2416,6 +2416,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SelectedLaptopPerformanceOption));
             Notify(nameof(SelectedWindowsPowerModeOption));
             Notify(nameof(SelectedWindowsPowerModeDescription));
+            Notify(nameof(IsBatterySaverFanStopVisible));
+            Notify(nameof(CanToggleBatterySaverFanStop));
+            Notify(nameof(IsBatterySaverFanStopSuspended));
             Notify(nameof(IsSilentSelected));
             Notify(nameof(IsBalancedSelected));
             Notify(nameof(IsPerformanceSelected));
@@ -2723,11 +2726,50 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             NotifyCommands();
             Notify(nameof(CanEditFanControl));
             Notify(nameof(CanChangeFanMode));
+            Notify(nameof(CanToggleBatterySaverFanStop));
             NotifyFanControlAvailability();
         }
     }
 
+    public bool IsBatterySaverFanStopVisible => Capabilities.SupportsBatterySaverFanStop
+        && ActivePowerSource == PowerSource.Battery
+        && SelectedPerformance == PerformancePreset.BatterySaver;
+
+    public bool BatterySaverFanStopRequested =>
+        latestStatus?.BatterySaverFanStopStatus?.Requested
+        ?? Profiles.Battery.StopFansInBatterySaver;
+
+    public bool IsBatterySaverFanStopSuspended => IsBatterySaverFanStopVisible
+        && latestStatus?.BatterySaverFanStopStatus?.ThermallySuspended == true;
+
+    public string BatterySaverFanStopPausedMessage =>
+        TrayText.Get("Fan-stop control paused. Turn it off to restore normal cooling.");
+
+    public bool CanToggleBatterySaverFanStop => IsBatterySaverFanStopVisible
+        && CanRequestHardwareControl && !IsFanControlOperationInProgress;
+
+    public async Task SetBatterySaverFanStopAsync(bool enabled, CancellationToken token)
+    {
+        if (!CanToggleBatterySaverFanStop || enabled == BatterySaverFanStopRequested)
+        {
+            return;
+        }
+        IsFanControlOperationInProgress = true;
+        var stamp = new ObservationRequestStamp(connectionGeneration, subscriptionConnected);
+        try
+        {
+            await RunOperationAsync(ct => serviceClient.SetBatterySaverFanStopAsync(enabled, ct), token);
+            ServiceStatusSnapshot status = await serviceClient.GetStatusAsync(token);
+            await dispatcher.InvokeAsync(() => ApplyObservedStatus(status, stamp, trayOnly: false), token);
+        }
+        finally
+        {
+            IsFanControlOperationInProgress = false;
+            Notify(nameof(BatterySaverFanStopRequested));
+        }
+    }
     public bool CanEditFanControl =>
+        !(IsBatterySaverFanStopVisible && BatterySaverFanStopRequested) &&
         CanRequestHardwareControl
         && !IsFanControlOperationInProgress
         && !HyperBoostActive
@@ -2746,6 +2788,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         HasHardwareControlUnavailableMessage
         || IsUnsupportedLaptop
         || IsFanControlOperationInProgress
+        || (IsBatterySaverFanStopVisible && BatterySaverFanStopRequested)
             ? string.Empty
             : IsThermalStateUnknown
                 ? TrayText.Get("OpenBlade is waiting for a fresh, complete read of the laptop state.")
@@ -4904,6 +4947,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (parameter is not FanMode value
             || !Enum.IsDefined(value)
             || IsFanControlOperationInProgress
+            || (IsBatterySaverFanStopVisible && BatterySaverFanStopRequested)
             || HyperBoostActive
             || !CanMutate
             || !HasConfirmedPowerSource
@@ -5483,10 +5527,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IsThermalStateUnknown = confirmed is { HyperBoostActive: null };
         SelectedPerformance = pendingPerformance?.Requested.Value
             ?? ResolvePresentedPerformance(status, confirmed, capabilities);
+        FanControlSettings? normalFanControl = status.BatterySaverFanStopStatus is { Requested: true }
+            ? status.BatterySaverFanStopStatus.NormalFanControl : null;
         SelectedFanMode = pendingFanControl?.Requested.Mode
+            ?? normalFanControl?.Mode
             ?? ResolvePresentedFanMode(status, confirmed, capabilities);
         LoadFanControlEditor(
             pendingFanControl?.Requested
+            ?? normalFanControl
             ?? status.FanControlOverride
             ?? status.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(SelectedFanMode));
@@ -9175,6 +9223,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyHyperBoostAvailability();
         NotifyComputed(nameof(AvailableLaptopPerformanceOptions), AvailableLaptopPerformanceOptions);
         NotifyComputed(nameof(SelectedLaptopPerformanceOption), SelectedLaptopPerformanceOption);
+        NotifyComputed(nameof(IsBatterySaverFanStopVisible), IsBatterySaverFanStopVisible);
+        NotifyComputed(nameof(BatterySaverFanStopRequested), BatterySaverFanStopRequested);
+        NotifyComputed(nameof(IsBatterySaverFanStopSuspended), IsBatterySaverFanStopSuspended);
+        NotifyComputed(nameof(CanToggleBatterySaverFanStop), CanToggleBatterySaverFanStop);
         NotifyComputed(nameof(CanEditFanControl), CanEditFanControl);
         NotifyComputed(nameof(CanChangeFanMode), CanChangeFanMode);
         NotifyFanControlAvailability();

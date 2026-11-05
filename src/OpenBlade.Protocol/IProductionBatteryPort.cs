@@ -36,6 +36,13 @@ public interface IProductionBatteryPort : IAsyncDisposable
     Task<ProductionPerformanceFanState> QueryPerformanceFanStateAsync(
         CancellationToken cancellationToken);
 
+    Task<ProductionPerformanceFanState> QueryBatterySaverFanStopStateAsync(
+        CancellationToken cancellationToken) => QueryPerformanceFanStateAsync(cancellationToken);
+
+    void SetBatterySaverFanStopWriteAdmission(Func<bool>? admission) { }
+
+    void RequireBatterySaverFanStopRestorationAdmission() { }
+
     Task<AdapterPowerState> QueryAdapterPowerStateAsync(
         CancellationToken cancellationToken);
 

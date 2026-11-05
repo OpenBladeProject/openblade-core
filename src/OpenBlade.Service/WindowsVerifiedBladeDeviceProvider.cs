@@ -96,6 +96,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             lowPowerGate);
     }
 
+    public void SetBatterySaverFanStopContext(bool readbackRequested, Func<bool>? writeAdmission) =>
+        device.SetBatterySaverFanStopContext(readbackRequested, writeAdmission);
+
     public void SetAllowUntestedFirmware(bool enabled)
     {
         compatibilityPolicy.AllowUntestedFirmware = enabled;
@@ -436,6 +439,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         IThermalExternalDriftValidationDevice,
         IDisposable
     {
+        private int batterySaverFanStopReadbackRequested;
+        private Func<bool>? batterySaverFanStopWriteAdmission;
+
+        internal void SetBatterySaverFanStopContext(bool requested, Func<bool>? admission)
+        {
+            Volatile.Write(ref batterySaverFanStopWriteAdmission, admission);
+            Volatile.Write(ref batterySaverFanStopReadbackRequested, requested ? 1 : 0);
+        }
+
+        private Task<ProductionPerformanceFanState> ReadThermalStateAsync(
+            IProductionBatteryPort port, CancellationToken cancellationToken) =>
+            Volatile.Read(ref batterySaverFanStopReadbackRequested) != 0
+                && port.Capabilities.SupportsBatterySaverFanStop
+                ? port.QueryBatterySaverFanStopStateAsync(cancellationToken)
+                : port.QueryPerformanceFanStateAsync(cancellationToken);
+
         private const int MaximumStateReadAttempts = 3;
         // A failed thermal pre-write exchange can leave the EC busy through the
         // full protocol timeout. Wait that window plus a bounded settling margin
@@ -972,7 +991,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         lease,
                         DeviceStateQuery.PerformanceAndFans,
                         ThermalStateSubsystems,
-                        port => port.QueryPerformanceFanStateAsync(cancellationToken),
+                        port => ReadThermalStateAsync(port, cancellationToken),
                         failures).ConfigureAwait(false);
                 ProductionPerformanceFanState? performanceFan =
                     performanceFanRead ? performanceFanState : null;
@@ -1167,7 +1186,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
 
                 ProductionPerformanceFanState performanceFan =
-                    await port.QueryPerformanceFanStateAsync(cancellationToken)
+                    await ReadThermalStateAsync(port, cancellationToken)
                         .ConfigureAwait(false);
                 GpuClockOffsetCapabilities? managedGpuClockOffsets =
                     await ReadManagedGpuClockOffsetsAsync(cancellationToken)
@@ -2177,6 +2196,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             DeviceCapabilities capabilities = batteryFactory.Capabilities;
             Func<IProductionBatteryPort, Task>? continueAfterSecondFanManualEntry = null;
             if (allowSecondManualEntryContinuation
+                && value.Mode != FanMode.Stop
                 && DeviceSubsystemOrder.IsManualFanMode(value.Mode)
                 && capabilities.FanSpeedRange is { } fanSpeedRange)
             {
@@ -2189,16 +2209,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     cancellationToken);
             }
 
-            return capabilities.FanModes.Contains(value.Mode)
+            return (capabilities.FanModes.Contains(value.Mode)
+                    || value.Mode == FanMode.Stop && capabilities.SupportsBatterySaverFanStop)
                 && (value.Mode != FanMode.Fixed
                     || capabilities.SupportsFanSpeedInAnyPerformancePreset(
                         value.FixedSpeedRpm))
                 ? ExecuteProductionWriteAsync(
-                    port => port.SetFanControlAsync(value, cancellationToken),
+                    port =>
+                    {
+                        port.SetBatterySaverFanStopWriteAdmission(
+                            () => Volatile.Read(ref batterySaverFanStopWriteAdmission)?.Invoke() == true);
+                        return port.SetFanControlAsync(value, cancellationToken);
+                    },
                     cancellationToken,
                     continueAfterSecondFanManualEntry:
                         continueAfterSecondFanManualEntry,
-                    allowFreshSessionRetry: allowFreshSessionRetry)
+                    allowFreshSessionRetry: allowFreshSessionRetry && value.Mode != FanMode.Stop)
                 : RejectProductionWrite("The requested fan control is not admitted.");
         }
 
@@ -2530,6 +2556,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             bool isManualEntryContinuation = false)
         {
             ArgumentNullException.ThrowIfNull(write);
+            // Capture before queueing. Scope exit may clear read interest while this
+            // restoration waits, but must not remove its per-native hardware gate.
+            bool requireStopRestorationAdmission =
+                Volatile.Read(ref batterySaverFanStopReadbackRequested) != 0;
             BladeWriteException? afterWriteFailure = null;
             BladeWriteException? exhaustedRetriablePreWrite = null;
             BladeWriteException? canceledRetriablePreWrite = null;
@@ -2611,6 +2641,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
                             cancellationToken.ThrowIfCancellationRequested();
                             retryPreWriteOpen = false;
+                            if (requireStopRestorationAdmission)
+                            {
+                                port.RequireBatterySaverFanStopRestorationAdmission();
+                            }
                             writeDelegateEntered = true;
                             await attemptWrite(port).ConfigureAwait(false);
                             try

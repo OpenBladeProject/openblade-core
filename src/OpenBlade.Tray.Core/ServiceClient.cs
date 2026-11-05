@@ -224,6 +224,10 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
             },
             token);
 
+    public Task<ControlOperationResult> SetBatterySaverFanStopAsync(bool enabled, CancellationToken token) =>
+        SendMutationAsync(new SetBatterySaverFanStopRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), enabled), token);
+
     public Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token) => SendMutationAsync(

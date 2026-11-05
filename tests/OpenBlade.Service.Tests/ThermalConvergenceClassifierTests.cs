@@ -4,6 +4,18 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ThermalConvergenceClassifierTests
 {
+    [Theory]
+    [InlineData(FanMode.Stop, FanMode.Maximum)]
+    [InlineData(FanMode.Fixed, FanMode.Stop)]
+    public void StopIsNotInterchangeableWithOtherManualTargets(FanMode desired, FanMode observed)
+    {
+        ThermalConvergenceAssessment result = ThermalConvergenceClassifier.Classify(
+            Desired(PerformancePreset.BatterySaver, desired),
+            Confirmed(PerformancePreset.BatterySaver, observed), exactManualIntentOwned: true);
+        Assert.Equal(ThermalConvergenceObservationKind.Candidate, result.Kind);
+        Assert.True(result.Contradiction.HasFlag(ThermalConvergenceContradiction.FanTopology));
+    }
+
     [Fact]
     public void ExactAutomaticStateIsMatched()
     {

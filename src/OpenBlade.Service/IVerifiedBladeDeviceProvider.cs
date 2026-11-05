@@ -19,6 +19,9 @@ public interface IVerifiedBladeDeviceProvider
 
     void SetAllowUntestedFirmware(bool enabled);
 
+    // Read interest is not ownership. The callback must recheck fresh cooling admission.
+    void SetBatterySaverFanStopContext(bool readbackRequested, Func<bool>? writeAdmission) { }
+
     void SetRecoveryWriteAdmission(Func<bool> admission)
     {
     }

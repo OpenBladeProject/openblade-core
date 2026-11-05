@@ -324,6 +324,35 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
+    public void Rz090581FanAdmission_WithholdsUnprovenStopAndPreservesOrdinaryManualControls()
+    {
+        DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
+            ProductionFixtureSource.Read()!.Value,
+            TrustedFixtureHashRegistry.Production);
+        (bool directManual, bool fanStop) = ProductionBatteryFactory.GetRz090581FanCapabilityAdmission(
+            ExactRz090581Identity("4.01"), catalog, trustedExactFixture: true);
+        var actors = new RecordingActorFactory();
+        var factory = new ProductionBatteryFactory(
+            catalog,
+            ProductionBatteryReadEvidence.Rz090581ModelScoped,
+            static () => new ValidationRunContext(),
+            _ => actors,
+            TimeProvider.System,
+            ExchangeTimeout,
+            DrainTimeout,
+            new PendingDisposalRegistry(),
+            supportsDirectManualFanTransitions: directManual,
+            supportsBatterySaverFanStop: fanStop);
+
+        Assert.True(factory.Capabilities.SupportsDirectManualFanTransitions);
+        Assert.False(factory.Capabilities.SupportsBatterySaverFanStop);
+        Assert.True(factory.Capabilities.FanModes.SetEquals(
+            [FanMode.Automatic, FanMode.Maximum, FanMode.Fixed, FanMode.ManualCurve]));
+        Assert.Equal(FanSpeedRange.Standard, factory.Capabilities.FanSpeedRange);
+        Assert.Equal(0, actors.OpenCount);
+    }
+
+    [Fact]
     public void Rz090581AdapterAdmission_UsesSynapseDefinitionsForTheExactModel()
     {
         foreach (string bios in new[] { "3.01", "4.00", "99.99" })

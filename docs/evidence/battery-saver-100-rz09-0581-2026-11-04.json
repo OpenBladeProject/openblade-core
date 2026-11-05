@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 3,
+  "clientDate": "2026-11-04",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "4.01"
+  },
+  "powerSource": "Battery",
+  "performance": "BatterySaver",
+  "requestedRpm": 100,
+  "wireTargetByte": 1,
+  "zeroTargetTested": false,
+  "software": {
+    "baseCommit": "5dff031ac48a8323b0ebfa9aa2a977371e556a76",
+    "reviewedWorkingTreeChanges": true,
+    "trialBinarySha256": {
+      "OpenBlade.Capture.exe": "2E5219A677834E04BF048A4A52CADD8F1E0499B557791419257AB5D5BC715B24",
+      "OpenBlade.Capture.dll": "A269DF23E9186EE1DBE820E8C20AD95D5E16297143B37CAEACAED8BAA3050EA1",
+      "OpenBlade.Protocol.dll": "DD0162066A2F40580A51A4FAA8CE664612E3D18161F1F900D0D4D362314FD6EB",
+      "OpenBlade.Contracts.dll": "F736F5181AB66F8189D62301935ECEE762241E9E3762815FD1F4EFB7EC3AACE2",
+      "OpenBlade.Service.dll": "406D1D6857A53B85474539BEE48F535463936756BD71E9EB239DC12EE4588106"
+    },
+    "separateRecoveryBinarySha256": {
+      "OpenBlade.Capture.exe": "2E5219A677834E04BF048A4A52CADD8F1E0499B557791419257AB5D5BC715B24",
+      "OpenBlade.Capture.dll": "045507A53471B07D71169545079520BFBE83F006A0AF89E659F6C141B77AC32E",
+      "OpenBlade.Protocol.dll": "0576BE529E3225BEF6BEAFA7CFE14B82B879DAAB6B8B6265FE5F3F3422076B04",
+      "OpenBlade.Contracts.dll": "F736F5181AB66F8189D62301935ECEE762241E9E3762815FD1F4EFB7EC3AACE2",
+      "OpenBlade.Service.dll": "F5AE4BBFC97555D974D68C832F26F90F84B73666D91EF3F3B3EE2925A8B12580"
+    }
+  },
+  "trialResult": {
+    "success": false,
+    "restored": false,
+    "manualRecoveryRequired": true,
+    "failure": "CandidateModeReadAmbiguous",
+    "writesAttempted": 6,
+    "safetyChecks": 11,
+    "indeterminatePartialWrite": true,
+    "baseline": {
+      "thermal1Hex": "01010300",
+      "thermal2Hex": "01020300"
+    },
+    "baselineTargets": {
+      "selector1Rpm": 3800,
+      "selector2Rpm": 3800,
+      "maxRpm": 3800
+    },
+    "baselineFanRpm": {
+      "selector1Rpm": 0,
+      "selector2Rpm": 0,
+      "maxRpm": 0
+    },
+    "candidate": {
+      "thermal1Hex": "01010000",
+      "thermal2Hex": "01020000"
+    },
+    "candidateTargets": null,
+    "restoration": null,
+    "restorationTargets": null,
+    "samples": [],
+    "preparation": {
+      "thermal1Hex": "01010301",
+      "thermal2Hex": "01020301"
+    },
+    "preparationTargets": {
+      "selector1Rpm": 2000,
+      "selector2Rpm": 2000,
+      "maxRpm": 2000
+    },
+    "preparationSamples": [
+      {
+        "number": 1,
+        "timestamp": "2026-11-04T22:58:21.5992237+08:00",
+        "rpm": {
+          "selector1Rpm": 1700,
+          "selector2Rpm": 1800,
+          "maxRpm": 1800
+        }
+      },
+      {
+        "number": 2,
+        "timestamp": "2026-11-04T22:58:22.955347+08:00",
+        "rpm": {
+          "selector1Rpm": 1800,
+          "selector2Rpm": 1800,
+          "maxRpm": 1800
+        }
+      },
+      {
+        "number": 3,
+        "timestamp": "2026-11-04T22:58:24.2635918+08:00",
+        "rpm": {
+          "selector1Rpm": 1800,
+          "selector2Rpm": 1800,
+          "maxRpm": 1800
+        }
+      },
+      {
+        "number": 4,
+        "timestamp": "2026-11-04T22:58:25.618021+08:00",
+        "rpm": {
+          "selector1Rpm": 1900,
+          "selector2Rpm": 1900,
+          "maxRpm": 1900
+        }
+      }
+    ],
+    "preparationConfirmed": true,
+    "spunDown": false,
+    "scenario": "2000-to-100-spin-down",
+    "requestedRpm": 100
+  },
+  "readOnlyReconciliation": {
+    "success": true,
+    "failure": null,
+    "pair": {
+      "thermal1Hex": "01010301",
+      "thermal2Hex": "01020301"
+    },
+    "targets": {
+      "selector1Rpm": 2000,
+      "selector2Rpm": 2000,
+      "maxRpm": 2000
+    },
+    "fanRpm": {
+      "selector1Rpm": 1900,
+      "selector2Rpm": 2000,
+      "maxRpm": 2000
+    },
+    "stable": true,
+    "mode": "batterySaverManual"
+  },
+  "explicitOriginalStateRestoration": {
+    "success": true,
+    "restored": true,
+    "manualRecoveryRequired": false,
+    "failure": null,
+    "writesAttempted": 4,
+    "safetyChecks": 5,
+    "indeterminatePartialWrite": false,
+    "baseline": {
+      "thermal1Hex": "01010300",
+      "thermal2Hex": "01020300"
+    },
+    "baselineTargets": {
+      "selector1Rpm": 3800,
+      "selector2Rpm": 3800,
+      "maxRpm": 3800
+    },
+    "baselineFanRpm": null,
+    "candidate": {
+      "thermal1Hex": "01010301",
+      "thermal2Hex": "01020301"
+    },
+    "candidateTargets": {
+      "selector1Rpm": 2000,
+      "selector2Rpm": 2000,
+      "maxRpm": 2000
+    },
+    "restoration": {
+      "thermal1Hex": "01010300",
+      "thermal2Hex": "01020300"
+    },
+    "restorationTargets": {
+      "selector1Rpm": 3800,
+      "selector2Rpm": 3800,
+      "maxRpm": 3800
+    },
+    "samples": [],
+    "preparation": null,
+    "preparationTargets": null,
+    "preparationSamples": null,
+    "preparationConfirmed": false,
+    "spunDown": false,
+    "scenario": "reconciled-100-trial04-original-3800-restoration",
+    "requestedRpm": 100
+  },
+  "acknowledgedRestorationWrites": [
+    {
+      "timestamp": "2026-11-04T23:19:07.1587041+08:00",
+      "commandClass": 13,
+      "commandId": 1,
+      "payloadHex": "010126"
+    },
+    {
+      "timestamp": "2026-11-04T23:19:07.5536514+08:00",
+      "commandClass": 13,
+      "commandId": 1,
+      "payloadHex": "010226"
+    },
+    {
+      "timestamp": "2026-11-04T23:19:07.7901837+08:00",
+      "commandClass": 13,
+      "commandId": 2,
+      "payloadHex": "01010300"
+    },
+    {
+      "timestamp": "2026-11-04T23:19:08.1492471+08:00",
+      "commandClass": 13,
+      "commandId": 2,
+      "payloadHex": "01020300"
+    }
+  ],
+  "postChecks": {
+    "serviceRunning": true,
+    "userComponentsRestarted": true,
+    "recoveryDidNotChangeProtectedInstalledExecutables": true,
+    "allTenComparedProfileAndOverrideFieldsUnchanged": true,
+    "deviceVerified": true,
+    "controlAccess": "Active",
+    "writesBlocked": false,
+    "confirmedPerformance": "BatterySaver",
+    "confirmedFans": "Automatic"
+  },
+  "interpretation": "The 100 RPM request received acknowledgements but immediate mode readback was unexpected, so the trial stopped without restoration writes. Separate stable read-only reconciliation found Battery Saver Manual with stored 2000/2000 targets and measured 1900/2000 RPM. This does not establish retained 100 RPM or fan stop. A separately reviewed, fresh-state-gated four-command restoration returned the exact original 3800/3800 targets and Battery Saver Automatic; no 100 RPM request was replayed. Zero semantics remain unknown."
+}

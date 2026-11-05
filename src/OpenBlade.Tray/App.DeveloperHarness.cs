@@ -1675,6 +1675,11 @@ public partial class App
         {
             return;
         }
+        if (state is "fan-stop-off" or "fan-stop-on" or "fan-stop-paused" or "fan-stop-unsupported")
+        {
+            ApplyBatterySaverFanStopSnapshotState(window, state);
+            return;
+        }
         if (state == "experimental-custom")
         {
             ApplyExperimentalCustomSnapshotState(window);
@@ -1878,6 +1883,31 @@ public partial class App
             .Invoke(window, null);
     }
 
+    private static void ApplyBatterySaverFanStopSnapshotState(MainWindow window, string state)
+    {
+        // Synthetic status in a disconnected snapshot window; no service or hardware access.
+        bool requested = state is "fan-stop-on" or "fan-stop-paused";
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        FanControlSettings normal = FanControlSettings.Default;
+        var status = new ServiceStatusSnapshot(
+            1, true, false, [], null, [], "Fan stop preview",
+            DeviceCapabilities.SafeTargetDefaults() with { SupportsBatterySaverFanStop = state != "fan-stop-unsupported" },
+            new ConfirmedDeviceState(PerformancePreset.BatterySaver, requested ? FanMode.Stop : FanMode.Automatic, null, null),
+            profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.BatterySaver, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.Battery.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, false, false)),
+            PowerSource.Battery, null, null, null, null, false)
+        {
+            BatterySaverFanStopStatus = new(requested, requested, state == "fan-stop-paused", normal),
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        applyStatus.Invoke(window.ViewModel, [status, false]);
+    }
     private static void ApplyExperimentalBatterySnapshotState(MainWindow window, bool off, bool paused = false)
     {
         // Disconnected, synthetic observations: no service or hardware access.
