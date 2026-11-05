@@ -29,6 +29,8 @@ annotations in a searchable HTML explorer. It performs no hardware access.
 | `F0` | RAM `0x80425` | Writable override flags; bit 6 permits `FE/FF`, with other effects below. |
 | `1A` | RAM `0x8035F` | Mode selector, separate from permission and duty requests. |
 | `0F` | RAM `0x8144C` | Shared bank selector, present at the same index in all eight banks. |
+| `B2/B3` | MMIO `0xF01841` | Two read-only aliases of the shared PWM cycle byte. |
+| `E7` | RAM `0x802AA` | Read-only low byte; bit 0 selects the normal-mode fallback source. |
 
 Normal control `0x15510` writes zero at `0x1568C/0x15838` when target and
 measured speed are zero. Its deceleration paths also write zero below their
@@ -147,3 +149,36 @@ recovery or exact restoration. The next register-side uncertainty is how to
 obtain exclusive access and reconcile MCU pending work, not another ordinary
 zero-RPM request. Production admission and the paused live comparison remain
 unchanged.
+
+## Offline inspector follow-up and test readiness
+
+The inspector's complete 2,048-entry map confirms the `B2/B3` and `E7`
+read-only aliases above. Their meanings are independently supported by cycle
+initialization `0x14772..0x1477A` and fallback selection `0x162CA..0x162DC`.
+The map contains no exact-address entry for last-normal mode `0x8034F` or
+saved modes `0x86062/0x86063`. This is an absence from this bank map, not proof
+that no other interface can expose those fields. It prevents treating the
+permission-clear fallback as an independently verified baseline restore.
+The MCU explorer's `0x100000xx` fields are internal RAM annotations, not
+host-readable EC register indices.
+
+Before a direct-duty write experiment, the remaining work is concrete:
+
+1. Establish an exclusive or quiescent transfer interval despite normal MCU
+   work, including bank ownership and pending-write reconciliation.
+2. Implement typed confirmation that checks both response statuses and obtains
+   actual EC values, separately from cached intent, PWM and tachometer RPM.
+3. Establish a direct restore of captured mode, manual flags, requests and
+   override state, preserving other flag bits and installed intent. Permission
+   clearing alone is insufficient; unmapped fallback inputs remain unknown.
+4. Define credible recovery if the test host or transfer fails. Existing
+   PROCHOT/GPIO responses do not establish timely fan restart, and stale sensor
+   values can survive. Host-independent automatic recovery is required for an
+   unattended switch; an attended experiment still needs a justified recovery
+   procedure and bounded exposure rather than assuming a host `finally` works.
+
+The next offline target is MCU ownership and completion, before preparing a
+read-only observation harness. Even a generic read needs admission: its access
+gate changes MCU state and its bus transaction shares the worker's storage.
+This does not authorize a gate, bank or duty write. Earlier RPM-test approvals
+do not cover this different register-control path.

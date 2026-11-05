@@ -711,6 +711,95 @@
           ]
         }
       ]
+    },
+    {
+      "bank": 0,
+      "index": 178,
+      "address": 15734849,
+      "width_bits": 8,
+      "name": "Shared PWM cycle",
+      "description": "Read-only alias of the cycle byte used as the normal fan-duty ceiling. Initialization writes 183.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 83834,
+          "label": "Initialize shared cycle byte"
+        }
+      ],
+      "category": "fans",
+      "access": "read-only",
+      "units": "raw counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "B2 and B3 address the same byte. Running configuration has not been read.",
+        "This does not establish physical frequency, polarity or a percentage scale."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 179,
+      "address": 15734849,
+      "width_bits": 8,
+      "name": "Shared PWM cycle",
+      "description": "Read-only alias of the cycle byte used as the normal fan-duty ceiling. Initialization writes 183.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 83834,
+          "label": "Initialize shared cycle byte"
+        }
+      ],
+      "category": "fans",
+      "access": "read-only",
+      "units": "raw counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "B2 and B3 address the same byte. Running configuration has not been read.",
+        "This does not establish physical frequency, polarity or a percentage scale."
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 231,
+      "address": 524970,
+      "width_bits": 8,
+      "name": "Fallback branch flag",
+      "description": "Low byte of the state field whose bit 0 selects the mode source when FE permission is absent.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 90826,
+          "label": "Read fallback branch flag"
+        }
+      ],
+      "category": "state",
+      "access": "read-only",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "The selected saved-mode bytes are not exposed by an exact-address entry in this bank map."
+      ],
+      "bits": [
+        {
+          "bit": 0,
+          "name": "Saved-mode source selector",
+          "description": "Set selects the helper reading 0x86062; clear selects the helper reading 0x86063. This is not proof of exact Silent restoration.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 EC 1.04 firmware",
+              "address": 90832,
+              "label": "Select fallback helper"
+            }
+          ]
+        }
+      ]
     }
   ],
   "findings": [

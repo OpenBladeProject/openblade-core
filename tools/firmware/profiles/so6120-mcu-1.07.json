@@ -64,8 +64,53 @@
       "access": "internal",
       "units": "",
       "evidence_status": "firmware-confirmed",
-      "notes": [],
-      "bits": []
+      "notes": [
+        "Internal MCU RAM annotation, not an EC register address or an admitted host access operation."
+      ],
+      "bits": [
+        {
+          "bit": 1,
+          "name": "Manual-state write pending",
+          "description": "Writes EC index 36. Successful completion clears this bit and sets bit 16; it does not itself set manual-readback bit 18.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 MCU 1.07 firmware",
+              "address": 19556,
+              "label": "Manual-state write pending"
+            }
+          ]
+        },
+        {
+          "bit": 16,
+          "name": "Parameter-group reads pending",
+          "description": "Reads EC indices DC, 78, DE, 79, DD and DF. Successful manual write sets this bit with 2 << 15.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 MCU 1.07 firmware",
+              "address": 19370,
+              "label": "Parameter-group reads pending"
+            }
+          ]
+        },
+        {
+          "bit": 18,
+          "name": "Manual-state read pending",
+          "description": "Independently reads EC index 36 into the cached manual byte; distinct from bit 16.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6120 MCU 1.07 firmware",
+              "address": 19520,
+              "label": "Manual-state read pending"
+            }
+          ]
+        }
+      ]
     },
     {
       "bank": null,
@@ -295,7 +340,7 @@
     },
     {
       "title": "Shared transfer state",
-      "description": "Normal main-loop work and timer-dispatched generic transfers share bus state and buffers. Full reentrancy and exclusive access are not established.",
+      "description": "Normal main-loop work and timer-dispatched generic transfers share bus state and buffers. Full reentrancy and exclusive access are not established. The transport wait feeds a watchdog helper that re-enables interrupts, so blanket interrupt masking is not an established ownership guarantee.",
       "evidence_status": "firmware-confirmed",
       "references": [
         {
@@ -303,6 +348,12 @@
           "source": "SO6120 MCU 1.07 firmware",
           "address": 22628,
           "label": "Shared transfer state"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 45092,
+          "label": "Watchdog feed unconditionally re-enables interrupts"
         }
       ]
     },
@@ -316,6 +367,25 @@
           "source": "SO6120 MCU 1.07 firmware",
           "address": 26332,
           "label": "A running watchdog is not a host-loss lease"
+        }
+      ]
+    },
+    {
+      "title": "Manual write does not enqueue its own flag readback",
+      "description": "The successful manual-write branch sets bit 16 for a separate parameter group; index 36 readback uses bit 18. A cached GET therefore cannot be treated as confirmation of that bus write.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19586,
+          "label": "2 shifted left by 15 sets bit 16"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19520,
+          "label": "Independent manual read uses bit 18"
         }
       ]
     }

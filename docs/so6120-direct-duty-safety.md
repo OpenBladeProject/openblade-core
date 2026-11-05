@@ -93,9 +93,12 @@ cache `0x10000220` remain live independently of the host process.
   completion marker. A matching GET can be an intent echo. If read and write
   bits are both pending, a worker read can replace the byte before its write.
 - Successful target writes clear their write bits without scheduling target
-  readback. Successful manual writes do schedule manual readback. Countdown
-  `0x100000D0 = 50` concerns separate telemetry, not that readback's delay;
-  queue delay is `0x100000CC`.
+  readback. Successful manual writes set pending bit 16, which reads indices
+  `DC/78/DE/79/DD/DF`; the separate manual-flag read at index `36` uses bit 18.
+  Instructions `0x4C82..0x4C88` compute `2 << 15`, not `1 << 18`. This corrects
+  the earlier manual-readback interpretation: that successful-write branch
+  does not itself enqueue manual-flag confirmation. Countdown
+  `0x100000D0 = 50` concerns separate telemetry; queue delay is `0x100000CC`.
 - Periodic work can enqueue fresh reads. Stopping host requests or observing
   an empty queue would not establish a durable pause. The normal worker
   neither checks the generic gate nor forces the shared EC bank to zero.
@@ -103,6 +106,19 @@ cache `0x10000220` remain live independently of the host process.
   runs in main context. Both use helpers `0x5864/0x58B0`, transfer state
   `0x100000D4` and buffer `0x1000024C`. Full interrupt priority and reentrancy
   behavior remain unresolved; no actual or inevitable collision is claimed.
+
+The inspector follow-up narrows that interrupt uncertainty. Startup `0x5E18`
+calls priority initialization `0x6094`; setter `0x28EC` keeps only the low two
+priority bits. The recovered initialization assigns timer IRQ16 logical
+priority 3, I2C IRQ15 priority 0 and USB IRQ22 priority 1. This is source
+configuration, not live readback or proof about every later priority change.
+Transport wait `0x2520` repeatedly calls watchdog feed `0xB018`, whose final
+`cpsie i` at `0xB024` re-enables interrupts without restoring a saved mask.
+A blanket interrupt-mask assumption therefore cannot establish ownership.
+The next unresolved interval is the timer dispatch gates and all shared-helper
+callers: if generic dispatch reaches the helpers during a normal worker
+transaction, the examined path can replace shared state. No such overlap was
+observed on hardware.
 
 The MCU feeds its hardware watchdog from the main loop and inside transfer
 waits. A host-process crash does not stop this execution or itself trigger a
