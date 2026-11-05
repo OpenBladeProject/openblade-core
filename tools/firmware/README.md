@@ -9,8 +9,8 @@ an updater or writes firmware.
 The first profiles cover the exact RZ09-0581 SO6120 EC 1.04 and MCU 1.07 images
 reviewed in [the register investigation](../../docs/so6120-ec-register-semantics.md).
 The EC profile decodes all eight banks (2,048 entries) and 32 factory thermal
-tables. Reviewed annotations identify 20 entries, including the bank selector
-in each bank. The MCU profile documents 11 reviewed internal fields. These are
+tables. Reviewed annotations identify 28 entries, including the bank selector
+in each bank. The MCU profile documents 16 reviewed internal fields. These are
 offline analysis profiles, not additions to OpenBlade's supported-device catalog.
 
 ## Run it
@@ -122,7 +122,9 @@ reviewing a new profile. Automated Ghidra orchestration and new decoder families
 are follow-up work; this CLI has no dependency on a local Ghidra project.
 
 The [PWM writer census](../../docs/so6120-ec-pwm-writers.md) extends the direct-duty
-recovery analysis. A separate developer [Windows battery observer](../../docs/windows-battery-observation.md)
+recovery analysis. The [normal-mode handback](../../docs/so6120-direct-pwm-handback.md)
+review distinguishes an explicit Automatic exit from cached UI state and full
+experiment cleanup. A separate developer [Windows battery observer](../../docs/windows-battery-observation.md)
 records optional OS battery data without service or raw-register access. It is
 not part of this offline CLI and cannot confirm fan RPM or Silent mode.
 

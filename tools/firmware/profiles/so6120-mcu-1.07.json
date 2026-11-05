@@ -619,6 +619,43 @@
           "label": "Alternative peripheral transfer"
         }
       ]
+    },
+    {
+      "title": "Normal-mode exit remains queued and needs independent confirmation",
+      "description": "The ordinary mode command caches a normal selector and manual flag, then queues work. With shared EC bank 0 selected, the worker writes mode and mailbox before arming a separate flag write; it does not itself force bank 0. Existing pending mode/manual reads can replace those same cached request bytes before their write branches; SET preserves the read bits. A matching cached GET does not prove that the EC left FE or reached Automatic. This is a conditional instruction-backed path, not an observed failed transition.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 38824,
+          "label": "Requested mode and flag cache"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19758,
+          "label": "Pending mode read before mode write"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19798,
+          "label": "Mode submission"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 19532,
+          "label": "Pending flag read before flag write"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 20888,
+          "label": "Conditional mode and flag read scheduling"
+        }
+      ]
     }
   ]
 }

@@ -149,6 +149,12 @@ clearing can leave `FE`. They select a normal policy or reset state; they do
 not restore an independently captured host baseline. No bounded active-mode
 lease or exact handback was established.
 
+The subsequent [ordinary-command handback review](so6120-direct-pwm-handback.md)
+establishes that an applied normal selector and Automatic flag can return fan
+control directly to Silent Automatic. That narrows the orderly exit question;
+full experiment-state cleanup, independent confirmation and recovery when the
+host cannot send the command remain separate requirements.
+
 ## Decision and remaining evidence
 
 The static bridge is real, and some thermal protection survives. Present

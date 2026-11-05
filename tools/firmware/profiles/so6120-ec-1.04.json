@@ -358,6 +358,12 @@
           "source": "SO6120 EC 1.04 firmware",
           "address": 90722,
           "label": "Internal direct-duty branch"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 88238,
+          "label": "Only FE bypasses ordinary PWM feedback here"
         }
       ],
       "category": "thermal",
@@ -366,7 +372,8 @@
       "evidence_status": "firmware-confirmed",
       "notes": [
         "Reviewed vendor definitions identify 3 as Battery Saver and 5 as Silent.",
-        "FE and FF are internal selectors; ordinary MCU mode commands reject values above 7."
+        "FE and FF are internal selectors; ordinary MCU mode commands reject values above 7.",
+        "A committed normal selector leaves FE and permits ordinary PWM feedback even while override bit 6 remains set. Automatic needs independent confirmation of normal manual state; no intermediate profile is required by this dispatch."
       ],
       "bits": []
     },
@@ -431,6 +438,12 @@
           "source": "SO6120 EC 1.04 firmware",
           "address": 89850,
           "label": "Manual control call"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 9542,
+          "label": "Conditional manual-flag staging"
         }
       ],
       "category": "fans",
@@ -438,7 +451,8 @@
       "units": "",
       "evidence_status": "firmware-confirmed",
       "notes": [
-        "Clearing direct-duty permission does not clear this manual-enable bit."
+        "Clearing direct-duty permission does not clear this manual-enable bit.",
+        "The SMBus receiver can stage a first bank-0 index-36 payload instead of storing it when the existing bit 7 is set. Mapped read-write access and bus completion alone do not prove the flag changed."
       ],
       "bits": [
         {
@@ -1222,6 +1236,31 @@
           "source": "SO6120 EC 1.04 firmware",
           "address": 98714,
           "label": "Mailbox-only cleanup"
+        }
+      ]
+    },
+    {
+      "title": "An explicit normal selector can hand fans back from FE",
+      "description": "A committed Silent selector 5 leaves the FE branch and permits ordinary cadence-gated PWM feedback. Automatic also needs confirmed normal manual state. Another profile is not required, and idle Automatic may still request zero. The normal command leaves override permission and staged duty in place, so orderly fan handback is distinct from complete state restoration and host-loss recovery.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 89702,
+          "label": "Selector dispatch"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 88238,
+          "label": "PWM feedback admission"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 EC 1.04 firmware",
+          "address": 69658,
+          "label": "Non-fan contributor hold remains"
         }
       ]
     }

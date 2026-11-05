@@ -103,6 +103,12 @@ immediately write PWM, restore captured duty, or clear ordinary manual flag
 `0x8034D`. Returning to mode 5 therefore does not mean returning to Automatic.
 Saved normal modes, current manual state and subsequent scheduling matter.
 
+An [explicit normal-mode handback](so6120-direct-pwm-handback.md) is a separate
+route: an applied Silent selector plus confirmed Automatic flag can leave `FE`
+without relying on the permission-clear fallback or visiting another profile.
+It leaves the override byte and staged duty in place, and a cached UI selection
+does not establish that the normal command reached the EC.
+
 ## A register response has two success checks
 
 Unlike normal thermal GETs, the generic MCU read invokes an actual EC bus
