@@ -55,6 +55,8 @@ public sealed record ReactiveKeyboardSourceOptions(
 
     public Func<bool> IsBlade18FnInputAdmitted { get; init; } = () => false;
 
+    public Func<bool> IsBlade18DriverFunctionRowAdmitted { get; init; } = () => false;
+
     public Action ResetFunctionRowInput { get; init; } = () => { };
 
     public Func<byte?> ReadBlade18KeyboardLayoutId { get; init; } = () => null;
@@ -419,6 +421,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                         }
                     },
                     IsBlade18FnInputAdmitted = IsBlade18FnInputAdmitted,
+                    IsBlade18DriverFunctionRowAdmitted = IsBlade18DriverFunctionRowAdmitted,
                     ReadBlade18KeyboardLayoutId = ReadBlade18KeyboardLayoutId,
                     ReadFunctionRowBackend = () => readFunctionRowBackend().Normalize(),
                     ResetFunctionRowInput = () => functionRowInputPump?.Reset(),
@@ -453,12 +456,23 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     lastWindowsFunctionRowStatus = null;
                     return;
                 }
-                SnapTapRuntimeState state = Volatile.Read(ref source) is { } current
-                    && !current.Completion.IsCompleted
-                    && ReadDriverModeObservation().AllowsFunctionRowInterception
-                    && ReadFunctionKeyPrimaryMode() is not null
-                    && RazerBladeFunctionRowMediaInput.SupportsDevice(ReadVerifiedInputDeviceKind())
-                        ? SnapTapRuntimeState.Armed : SnapTapRuntimeState.Paused;
+                RazerBladeInputDeviceKind deviceKind = ReadVerifiedInputDeviceKind();
+                SnapTapRuntimeState state = SnapTapRuntimeState.Paused;
+                if (Volatile.Read(ref source) is { } current && !current.Completion.IsCompleted)
+                {
+                    if (deviceKind == RazerBladeInputDeviceKind.Rz09_0484 && IsBlade18FnInputAdmitted())
+                    {
+                        // Blade 18 uses the Windows hook for its default Fn shortcuts.
+                        // Only the Razer backend applies its saved primary-mode preference.
+                        state = SnapTapRuntimeState.Off;
+                    }
+                    else if (RazerBladeFunctionRowMediaInput.SupportsDevice(deviceKind)
+                        && ReadDriverModeObservation().AllowsFunctionRowInterception
+                        && ReadFunctionKeyPrimaryMode() is not null)
+                    {
+                        state = SnapTapRuntimeState.Armed;
+                    }
+                }
                 status = new(state, DateTimeOffset.UtcNow, Environment.ProcessId)
                 { Backend = KeyboardInputBackend.WindowsHook };
             }
@@ -583,7 +597,11 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             // pass keys through instead of risking a stale hook decision.
             FunctionKeyPrimaryMode? effectivePrimaryMode =
                 status.FunctionKeyPrimary
-                ?? FunctionKeyPrimaryFromActiveProfile(status);
+                ?? FunctionKeyPrimaryFromActiveProfile(status)
+                ?? (IsBlade18Model(status)
+                    && status.Capabilities?.HostManagedLaptopControls.Contains(
+                        OneShotLaptopControl.FunctionKeyPrimary) == true
+                        ? FunctionKeyPrimaryMode.FunctionKeys : null);
             if (effectivePrimaryMode is { } primaryMode)
             {
                 Interlocked.Exchange(ref functionKeyPrimaryMode, (int)primaryMode);
@@ -744,6 +762,16 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private bool IsBlade18FnInputAdmitted() =>
         blade18FnShortcutPump is not null
         && Volatile.Read(ref blade18FnInputAdmitted) != 0;
+
+    private bool IsBlade18DriverFunctionRowAdmitted()
+    {
+        lock (performanceShortcutStateSync)
+        {
+            return Volatile.Read(ref blade18FnInputAdmitted) != 0
+                && latestStatus?.Capabilities?.HostManagedLaptopControls.Contains(
+                    OneShotLaptopControl.FunctionKeyPrimary) == true;
+        }
+    }
 
     private static bool IsBlade18FnInputAdmitted(ServiceStatusSnapshot status) =>
         status.DeviceVerified

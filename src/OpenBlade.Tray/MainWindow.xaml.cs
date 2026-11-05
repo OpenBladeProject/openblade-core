@@ -3657,12 +3657,17 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         ApplyNavigationDestination(destination);
     }
 
-    internal void ShowLocalizationSnapshotOneShotControls() =>
+    internal void ShowLocalizationSnapshotOneShotControls()
+    {
+#if OPENBLADE_DEVELOPER_HARNESS
+        SetLocalizationSnapshotKeyboardBackends();
+#endif
         KeyboardSection.StartBringIntoView(new BringIntoViewOptions
         {
             AnimationDesired = false,
             VerticalAlignmentRatio = 0,
         });
+    }
 
     internal void ShowLocalizationSnapshotSettingsAppearance()
     {

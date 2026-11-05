@@ -55,7 +55,8 @@ internal sealed class ActiveProfileDraftState
     public bool HasBatteryProtectionProfileDraft =>
         BatteryProtectionEnabled is not null;
 
-    public PowerProfile? GetDraft(ProfileSet profiles)
+    public PowerProfile? GetDraft(
+        ProfileSet profiles, IReadOnlySet<OneShotLaptopControl>? hostManagedControls = null)
     {
         if (Source is not { } source)
         {
@@ -76,19 +77,19 @@ internal sealed class ActiveProfileDraftState
             LightingPowerPolicy = LightingPowerPolicy
                 ?? profile.LightingPowerPolicy,
             Display = Display ?? profile.Display,
-            LaptopBehavior = LaptopBehavior
-                ?? profile.LaptopBehavior,
+            LaptopBehavior = MergeLaptopBehavior(profile, hostManagedControls),
             BatteryProtectionEnabled = BatteryProtectionEnabled
                 ?? profile.BatteryProtectionEnabled,
         };
         return NormalizeLegacyGpuClockTuning(draft);
     }
 
-    public ProfileSet CreateProfileSet(ProfileSet savedProfiles)
+    public ProfileSet CreateProfileSet(
+        ProfileSet savedProfiles, IReadOnlySet<OneShotLaptopControl>? hostManagedControls = null)
     {
         PowerSource source = Source
             ?? throw new InvalidOperationException("No active profile draft exists.");
-        PowerProfile draft = GetDraft(savedProfiles)
+        PowerProfile draft = GetDraft(savedProfiles, hostManagedControls)
             ?? throw new InvalidOperationException("No active profile draft exists.");
         ProfileSet profiles = source switch
         {
@@ -100,7 +101,9 @@ internal sealed class ActiveProfileDraftState
         return profiles with { WindowsPowerModes = WindowsPowerModes ?? savedProfiles.WindowsPowerModes };
     }
 
-    public ProfileSet CreateProfileSet(ProfileSet savedProfiles, ProfileDraftGroup group)
+    public ProfileSet CreateProfileSet(
+        ProfileSet savedProfiles, ProfileDraftGroup group,
+        IReadOnlySet<OneShotLaptopControl>? hostManagedControls = null)
     {
         PowerSource source = Source
             ?? throw new InvalidOperationException("No active profile draft exists.");
@@ -136,8 +139,7 @@ internal sealed class ActiveProfileDraftState
                     ?? saved.GpuClockTuning,
                 Fans = Fans ?? saved.Fans,
                 FanControl = FanControl ?? saved.FanControl,
-                LaptopBehavior = LaptopBehavior
-                    ?? saved.LaptopBehavior,
+                LaptopBehavior = MergeLaptopBehavior(saved, hostManagedControls),
             },
             _ => throw new ArgumentOutOfRangeException(nameof(group)),
         };
@@ -152,6 +154,25 @@ internal sealed class ActiveProfileDraftState
         return group is ProfileDraftGroup.Thermal or ProfileDraftGroup.Laptop
             ? profiles with { WindowsPowerModes = WindowsPowerModes ?? savedProfiles.WindowsPowerModes }
             : profiles;
+    }
+
+    private LaptopBehaviorProfileSettings? MergeLaptopBehavior(
+        PowerProfile saved, IReadOnlySet<OneShotLaptopControl>? hostManagedControls)
+    {
+        if (LaptopBehavior is not { } draft)
+        {
+            return saved.LaptopBehavior;
+        }
+        // Host settings are saved directly. A whole laptop draft must never
+        // replay their older snapshot after reconciliation or another writer.
+        return draft with
+        {
+            FunctionKeyPrimary = hostManagedControls?.Contains(OneShotLaptopControl.FunctionKeyPrimary) == true
+                ? saved.EffectiveLaptopBehavior.FunctionKeyPrimary : draft.FunctionKeyPrimary,
+            GamingModeEnabled = hostManagedControls?.Contains(OneShotLaptopControl.GamingMode) == true
+                ? saved.EffectiveLaptopBehavior.GamingModeEnabled : draft.GamingModeEnabled,
+            GamingModeKeyPolicy = saved.EffectiveLaptopBehavior.GamingModeKeyPolicy,
+        };
     }
 
     public bool Stage(
@@ -392,6 +413,31 @@ internal sealed class ActiveProfileDraftState
         }
         LaptopBehavior = draft with { GamingModeKeyPolicy = policy };
         return LaptopBehavior;
+    }
+
+    public LaptopBehaviorProfileSettings? RebaseHostLaptopControl(
+        PowerSource source, ApplyOneShotLaptopControl accepted)
+    {
+        if (Source != source || LaptopBehavior is null)
+        {
+            return null;
+        }
+        // Only the independently persisted field becomes the new baseline.
+        // Pending firmware edits and their original values keep their meaning.
+        if (OriginalLaptopBehavior is not null)
+        {
+            OriginalLaptopBehavior = Rebase(OriginalLaptopBehavior);
+        }
+        LaptopBehavior = Rebase(LaptopBehavior);
+        return LaptopBehavior;
+
+        LaptopBehaviorProfileSettings Rebase(LaptopBehaviorProfileSettings settings) =>
+            accepted.Control switch
+            {
+                OneShotLaptopControl.FunctionKeyPrimary => settings with { FunctionKeyPrimary = accepted.FunctionKeyMode },
+                OneShotLaptopControl.GamingMode => settings with { GamingModeEnabled = accepted.Enabled },
+                _ => throw new ArgumentOutOfRangeException(nameof(accepted)),
+            };
     }
 
     public static bool HasSaveableUnsetField(

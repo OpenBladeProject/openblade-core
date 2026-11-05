@@ -2858,4 +2858,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="KeyboardBackend_SnapTapExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>SnapTap（A/D）</value>
   </data>
+  <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
+    <value>使用 Razer 驱动可更改 F1–F12 的默认行为。Windows 钩子保留默认 Fn 快捷键。</value>
+  </data>
 </root>

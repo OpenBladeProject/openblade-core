@@ -174,7 +174,7 @@ internal sealed partial class ExperimentalBladePort(
             OneShotLaptopControls = enabled && model.ProductId == 0x02A0
                 ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.StartupAnimation } : [],
             HostManagedLaptopControls = enabled && model.ProductId == 0x02A0
-                ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.GamingMode } : [],
+                ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.GamingMode, OneShotLaptopControl.FunctionKeyPrimary } : [],
             KeyboardLightingLayoutId = enabled && model.ProductId == 0x02A0
                 ? KeyboardLightingLayoutIds.Rz09_0484 : null,
             ObservedLightingEffects = CreateObservedExperimentalLightingEffects(model),
@@ -372,8 +372,13 @@ internal sealed partial class ExperimentalBladePort(
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             policy.Record("Performance", "Baseline", "Confirmed", requested: value.ToString(),
                 confirmed: $"{(baseline.HyperBoostActive ? "HyperBoost" : baseline.Performance?.ToString())}/{baseline.Fans}");
+            if (baseline.Performance == value)
+            {
+                return;
+            }
             // Models without a target getter cannot preserve a manual baseline.
-            // 02A0 can read its targets, but only admits them in Balanced.
+            // 02A0 admits manual targets in Balanced and Silent, but changing
+            // presets still requires confirmed Automatic fans.
             if (baseline.Fans != FanMode.Automatic
                 && (GetExperimentalFanRange(model) is null || model.ProductId == 0x02A0))
             {
@@ -388,10 +393,6 @@ internal sealed partial class ExperimentalBladePort(
             }
             (int First, int Second)? baselineTargets = baseline.Fans == FanMode.Fixed
                 ? await ReadFanTargetsAsync(cancellationToken).ConfigureAwait(false) : null;
-            if (baseline.Performance == value)
-            {
-                return;
-            }
             if (CreateCustomCapabilities(model).SupportsMaximumFans)
             {
                 // Synapse clears Maximum Fans before leaving Custom; 0D/02

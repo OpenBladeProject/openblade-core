@@ -29,6 +29,7 @@ internal sealed class FunctionRowDriverContext : IDisposable, IReactiveKeyboardS
         {
             "02E0" => RazerBladeInputDeviceKind.Rz09_0581,
             "02C6" => RazerBladeInputDeviceKind.Rz09_0528,
+            "02A0" => RazerBladeInputDeviceKind.Rz09_0484,
             _ => throw new ArgumentOutOfRangeException(nameof(profile)),
         };
         using WindowsIdentity identity = WindowsIdentity.GetCurrent();
@@ -46,15 +47,18 @@ internal sealed class FunctionRowDriverContext : IDisposable, IReactiveKeyboardS
 
     internal bool Failed => Volatile.Read(ref failed) != 0 || actions.Failed
         || observation.IsFaulted || Volatile.Read(ref source)?.Completion.IsCompleted == true;
-    internal bool FunctionKeyPressed => Volatile.Read(ref source)?.FunctionKeyPressed == true;
-    internal bool FunctionKeyKnown => Volatile.Read(ref source)?.FunctionKeyKnown == true;
-    internal bool? FunctionKeyState => Volatile.Read(ref source)?.FunctionKeyState;
+    internal bool FunctionKeyPressed => FunctionKeyState == true;
+    internal bool FunctionKeyKnown =>
+        Volatile.Read(ref source)?.IsDriverFunctionKeyKnown(expectedDevice) == true;
+    internal bool? FunctionKeyState => Volatile.Read(ref source)?.ReadDriverFunctionKeyState(expectedDevice);
     internal FunctionKeyPrimaryMode? PrimaryMode => Volatile.Read(ref options)?.ReadFunctionKeyPrimaryMode();
     internal KeyboardDriverModeObservation DriverMode =>
         Volatile.Read(ref options)?.ReadDriverModeObservation() ?? KeyboardDriverModeObservation.Unknown;
     internal RazerBladeInputDeviceKind DeviceKind =>
         Volatile.Read(ref options)?.ReadVerifiedInputDeviceKind() ?? default;
-    internal bool Ready => Volatile.Read(ref source) is not null && !Failed && DriverMode.AllowsFunctionRowInterception
+    internal bool Ready => Volatile.Read(ref source) is not null && !Failed && (expectedDevice == RazerBladeInputDeviceKind.Rz09_0484
+            ? Volatile.Read(ref options)?.IsBlade18DriverFunctionRowAdmitted() == true
+            : DriverMode.AllowsFunctionRowInterception)
         && PrimaryMode is not null && DeviceKind == expectedDevice;
 
     public IReactiveKeyboardSource Create(ReactiveKeyboardSourceOptions value)
@@ -75,7 +79,7 @@ internal sealed class FunctionRowDriverContext : IDisposable, IReactiveKeyboardS
             ReadGamingModeKeyPolicy = () => new(false, false),
             IsSpecialKeyInputAdmitted = _ => false,
             PublishBlade18FnShortcut = _ => { },
-            IsBlade18FnInputAdmitted = () => false,
+            IsBlade18FnInputAdmitted = value.IsBlade18DriverFunctionRowAdmitted,
             ResetFunctionRowInput = pump.Reset,
         });
         Volatile.Write(ref source, metadata);

@@ -881,9 +881,11 @@ public partial class App
                         await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync(destination);
                         await WaitForSnapshotLayoutAsync();
                     }
-                    if (destination == "laptop" && Environment.GetEnvironmentVariable(
-                        "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE")?.StartsWith(
-                            "one-shot-", StringComparison.Ordinal) == true)
+                    string? controlSnapshot = Environment.GetEnvironmentVariable(
+                        "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE");
+                    if (destination == "laptop" && (controlSnapshot?.StartsWith(
+                            "one-shot-", StringComparison.Ordinal) == true
+                        || controlSnapshot == "blade18-function-row"))
                     {
                         snapshotMainWindow.ShowLocalizationSnapshotOneShotControls();
                         await WaitForSnapshotLayoutAsync();
@@ -1697,7 +1699,7 @@ public partial class App
         }
         if (state is not ("read-failure" or "battery" or "unsupported"
             or "direct-manual" or "battery-drift" or "keyboard"
-            or "one-shot-unavailable" or "one-shot-checking" or "one-shot-confirmed"))
+            or "one-shot-unavailable" or "one-shot-checking" or "one-shot-confirmed" or "blade18-function-row"))
         {
             throw new InvalidOperationException("Unknown control availability snapshot state.");
         }
@@ -1706,20 +1708,31 @@ public partial class App
         // the real UI with synthetic observations and perform no device access.
         bool oneShot = state.StartsWith("one-shot-", StringComparison.Ordinal);
         bool oneShotConfirmed = state == "one-shot-confirmed";
-        bool keyboard = state == "keyboard" || oneShot;
+        bool hostFunctionRow = state == "blade18-function-row";
+        bool keyboard = state == "keyboard" || oneShot || hostFunctionRow;
         bool directManual = state == "direct-manual";
         bool driftedBattery = state == "battery-drift";
         bool fullPower = directManual || driftedBattery || keyboard;
         bool unsupported = state == "unsupported";
         bool blocked = state == "read-failure" || unsupported;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        if (hostFunctionRow)
+        {
+            profiles = profiles with
+            {
+                PluggedIn = profiles.PluggedIn with
+                {
+                    LaptopBehavior = new(null, FunctionKeyPrimaryMode.MultimediaKeys, null),
+                },
+            };
+        }
         ServiceStatusSnapshot status = new(
             1, !unsupported, blocked, [], null, [], "Control availability snapshot",
             unsupported
                 ? DeviceCapabilities.Unavailable()
                 : DeviceCapabilities.SafeTargetDefaults() with
                 {
-                    OneShotLaptopControls = oneShot
+                    OneShotLaptopControls = hostFunctionRow ? [] : oneShot
                         ? new HashSet<OneShotLaptopControl>
                         {
                             OneShotLaptopControl.StartupAnimation,
@@ -1733,6 +1746,8 @@ public partial class App
                                 OneShotLaptopControl.GamingMode,
                             }
                             : new HashSet<OneShotLaptopControl>(),
+                    HostManagedLaptopControls = hostFunctionRow
+                        ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.FunctionKeyPrimary } : [],
                     SupportsDirectManualFanTransitions = directManual,
                     ChargeLimits = driftedBattery
                         ? new HashSet<int> { 70, 80 }
@@ -1756,13 +1771,15 @@ public partial class App
             null, null, null, null, false)
         {
             UnsupportedLaptop = unsupported,
+            IsExperimentalDevice = hostFunctionRow,
+            ExperimentalSupportSource = hostFunctionRow ? "SynapseSourceBacked" : null,
             ObservationReason = state == "one-shot-checking"
                 ? DeviceObservationReason.RefreshingControls : DeviceObservationReason.None,
             StartupAnimationEnabled = oneShotConfirmed ? true : null,
-            FunctionKeyPrimary = keyboard && (!oneShot || oneShotConfirmed)
+            FunctionKeyPrimary = keyboard && !hostFunctionRow && (!oneShot || oneShotConfirmed)
                 ? FunctionKeyPrimaryMode.FunctionKeys : null,
             GamingModeEnabled = keyboard && (!oneShot || oneShotConfirmed) ? false : null,
-            KeyboardDriverModeActive = keyboard ? true : null,
+            KeyboardDriverModeActive = keyboard && !hostFunctionRow ? true : null,
         };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
             "ApplyStatus",

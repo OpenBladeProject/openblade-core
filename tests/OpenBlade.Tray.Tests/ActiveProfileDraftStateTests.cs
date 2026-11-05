@@ -5,6 +5,64 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class ActiveProfileDraftStateTests
 {
+    [Theory]
+    [InlineData(OneShotLaptopControl.FunctionKeyPrimary)]
+    [InlineData(OneShotLaptopControl.GamingMode)]
+    public void HostPreferenceRebase_UpdatesOnlyTheMatchingSourceFieldAndDiscardBaseline(OneShotLaptopControl control)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var original = new LaptopBehaviorProfileSettings(false, FunctionKeyPrimaryMode.FunctionKeys, false)
+        {
+            GamingModeKeyPolicy = new GamingModeKeyPolicy(true, false),
+        };
+        var draft = original with { StartupAnimationEnabled = true };
+        var state = new ActiveProfileDraftState();
+        Assert.True(state.Stage(profiles, PowerSource.PluggedIn, PowerSource.PluggedIn,
+            laptopBehavior: draft, previousLaptopBehavior: original));
+        ApplyOneShotLaptopControl accepted = control == OneShotLaptopControl.FunctionKeyPrimary
+            ? new(control, FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys)
+            : new(control, Enabled: true);
+        Assert.Null(state.RebaseHostLaptopControl(PowerSource.Battery, accepted));
+        Assert.Equal(draft, state.LaptopBehavior);
+        Assert.Equal(original, state.OriginalLaptopBehavior);
+        LaptopBehaviorProfileSettings expectedBaseline = control == OneShotLaptopControl.FunctionKeyPrimary
+            ? original with { FunctionKeyPrimary = FunctionKeyPrimaryMode.MultimediaKeys }
+            : original with { GamingModeEnabled = true };
+        Assert.Equal(expectedBaseline with { StartupAnimationEnabled = true },
+            state.RebaseHostLaptopControl(PowerSource.PluggedIn, accepted));
+        Assert.Equal(expectedBaseline, state.OriginalLaptopBehavior);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void HostPreferenceMaterialization_PreservesAuthoritativeChangesFromAnotherWriter(bool dashboard)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var original = new LaptopBehaviorProfileSettings(false, FunctionKeyPrimaryMode.FunctionKeys, false);
+        var state = new ActiveProfileDraftState();
+        Assert.True(state.Stage(profiles, PowerSource.PluggedIn, PowerSource.PluggedIn,
+            laptopBehavior: original with { StartupAnimationEnabled = true }, previousLaptopBehavior: original));
+        LaptopBehaviorProfileSettings current = original with
+        {
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.MultimediaKeys,
+            GamingModeEnabled = true,
+            GamingModeKeyPolicy = new GamingModeKeyPolicy(true, false),
+        };
+        profiles = profiles with { PluggedIn = profiles.PluggedIn with { LaptopBehavior = current } };
+        var hostControls = new HashSet<OneShotLaptopControl>
+        {
+            OneShotLaptopControl.FunctionKeyPrimary, OneShotLaptopControl.GamingMode,
+        };
+        ProfileSet saved = dashboard
+            ? state.CreateProfileSet(profiles, hostControls)
+            : state.CreateProfileSet(profiles, ProfileDraftGroup.Laptop, hostControls);
+        Assert.Equal(current with { StartupAnimationEnabled = true }, saved.PluggedIn.LaptopBehavior);
+        Assert.Equal(saved.PluggedIn, state.GetDraft(profiles, hostControls));
+        Assert.Equal(profiles.Battery, saved.Battery);
+        Assert.Equal(profiles.UsbC, saved.UsbC);
+    }
+
     [Fact]
     public void Stage_RejectsInactiveAndUnsupportedPowerSources()
     {

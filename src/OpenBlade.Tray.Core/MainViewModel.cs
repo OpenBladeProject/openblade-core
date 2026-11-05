@@ -2887,7 +2887,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool CanEditFunctionKeyPrimary =>
         CanMutate && SupportsFunctionKeyPrimary && !IsFunctionKeyFieldLoading
-        && !observation.FunctionKeyReadPending;
+        && !observation.FunctionKeyReadPending
+        && (!Capabilities.HostManagedLaptopControls.Contains(OneShotLaptopControl.FunctionKeyPrimary)
+            || HasConfirmedPowerSource);
 
     public bool CanEditGamingMode =>
         CanMutate && SupportsGamingMode && !IsGamingModeFieldLoading
@@ -3415,7 +3417,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IsStartupAnimationFieldLoading);
 
     public bool SupportsFunctionKeyPrimary => Capabilities.OneShotLaptopControls.Contains(
-        OneShotLaptopControl.FunctionKeyPrimary);
+        OneShotLaptopControl.FunctionKeyPrimary)
+        || Capabilities.HostManagedLaptopControls.Contains(OneShotLaptopControl.FunctionKeyPrimary);
 
     public FunctionKeyPrimaryMode? FunctionKeyPrimary
     {
@@ -3580,9 +3583,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private GamingModeKeyPolicy CurrentGamingModeKeyPolicy =>
         ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
-            ? (activeProfileDraft.LaptopBehavior
-                    ?? GetProfile(ActivePowerSource).EffectiveLaptopBehavior)
-                .EffectiveGamingModeKeyPolicy
+            ? GetProfile(ActivePowerSource).EffectiveLaptopBehavior.EffectiveGamingModeKeyPolicy
             : GamingModeKeyPolicy.Disabled;
 
     public LiveReadings? LiveReadings
@@ -4935,7 +4936,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && HasOneShotReadback(value.Control)
         && CanMutate
         && (CommandCapabilities.OneShotLaptopControls.Contains(value.Control)
-            || value.Control == OneShotLaptopControl.GamingMode
+            || value.Control is OneShotLaptopControl.GamingMode or OneShotLaptopControl.FunctionKeyPrimary
                 && HasConfirmedPowerSource
                 && CommandCapabilities.HostManagedLaptopControls.Contains(value.Control));
 
@@ -7185,10 +7186,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CancellationToken token)
     {
         ApplyOneShotLaptopControl requested = (ApplyOneShotLaptopControl)parameter!;
-        if (requested.Control == OneShotLaptopControl.GamingMode
-            && CommandCapabilities.HostManagedLaptopControls.Contains(requested.Control))
+        if (CommandCapabilities.HostManagedLaptopControls.Contains(requested.Control))
         {
-            await SetHostGamingModeAsync(requested.Enabled!.Value, token);
+            await SetHostLaptopControlAsync(requested, token);
             return;
         }
         bool? previousStartupAnimation = StartupAnimationEnabled;
@@ -7243,7 +7243,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    private async Task SetHostGamingModeAsync(bool enabled, CancellationToken token)
+    private async Task SetHostLaptopControlAsync(ApplyOneShotLaptopControl requested, CancellationToken token)
     {
         PowerSource source = ActivePowerSource;
         using var persistenceCancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -7270,7 +7270,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 LaptopBehavior = savedProfile.EffectiveLaptopBehavior with
                 {
-                    GamingModeEnabled = enabled,
+                    GamingModeEnabled = requested.Control == OneShotLaptopControl.GamingMode
+                        ? requested.Enabled : savedProfile.EffectiveLaptopBehavior.GamingModeEnabled,
+                    FunctionKeyPrimary = requested.Control == OneShotLaptopControl.FunctionKeyPrimary
+                        ? requested.FunctionKeyMode : savedProfile.EffectiveLaptopBehavior.FunctionKeyPrimary,
                 },
             };
             ProfileSet updatedProfiles = source switch
@@ -7280,7 +7283,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 PowerSource.UsbC => Profiles with { UsbC = updatedProfile },
                 _ => throw new ArgumentOutOfRangeException(nameof(source)),
             };
-            SetOneShotOperationInProgress(OneShotLaptopControl.GamingMode, true);
+            SetOneShotOperationInProgress(requested.Control, true);
             try
             {
                 // This is a durable Session Agent preference, not a firmware setter.
@@ -7288,14 +7291,36 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 bool accepted = await PersistProfileSetAsync(updatedProfiles, token);
                 if (accepted)
                 {
-                    GamingModeEnabled = HasConfirmedPowerSource
-                        ? GetProfile(ActivePowerSource).EffectiveLaptopBehavior.GamingModeEnabled ?? false
-                        : null;
+                    await dispatcher.InvokeAsync(
+                        () =>
+                        {
+                            if (ActivePowerSource != source)
+                            {
+                                return;
+                            }
+                            LaptopBehaviorProfileSettings? rebasedDraft =
+                                activeProfileDraft.RebaseHostLaptopControl(source, requested);
+                            if (rebasedDraft is not null)
+                            {
+                                MarkActiveProfileDraft(source, laptopBehavior: rebasedDraft);
+                            }
+                            if (requested.Control == OneShotLaptopControl.FunctionKeyPrimary)
+                            {
+                                FunctionKeyPrimary = GetProfile(source).EffectiveLaptopBehavior.FunctionKeyPrimary;
+                            }
+                            else
+                            {
+                                GamingModeEnabled = GetProfile(source).EffectiveLaptopBehavior.GamingModeEnabled ?? false;
+                            }
+                        },
+                        // An accepted save must reach the draft even if the user
+                        // cancels afterward. Disposal still ends UI work.
+                        lifetime.Token);
                 }
             }
             finally
             {
-                SetOneShotOperationInProgress(OneShotLaptopControl.GamingMode, false);
+                SetOneShotOperationInProgress(requested.Control, false);
             }
         }
         finally
@@ -8145,7 +8170,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ? GetActiveProfileDraft() ?? GetProfile(source)
             : GetProfile(source);
 
-    private PowerProfile? GetActiveProfileDraft() => activeProfileDraft.GetDraft(Profiles);
+    private PowerProfile? GetActiveProfileDraft() =>
+        activeProfileDraft.GetDraft(Profiles, Capabilities.HostManagedLaptopControls);
 
     private ProfileSet CreateProfileSetWithDashboardDraft()
     {
@@ -8157,10 +8183,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : draft;
     }
 
-    private ProfileSet CreateProfileSetWithActiveDraft() => activeProfileDraft.CreateProfileSet(Profiles);
+    private ProfileSet CreateProfileSetWithActiveDraft() =>
+        activeProfileDraft.CreateProfileSet(Profiles, Capabilities.HostManagedLaptopControls);
 
     private ProfileSet CreateProfileSetWithActiveDraft(ProfileDraftGroup group) =>
-        activeProfileDraft.CreateProfileSet(Profiles, group);
+        activeProfileDraft.CreateProfileSet(Profiles, group, Capabilities.HostManagedLaptopControls);
 
     private ProfileSet CreateLegacyProfileEditorDraft() => new(
         Profiles.PluggedIn with
@@ -8371,8 +8398,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LogoLightingModeEditor is { } logoMode && Capabilities.LogoLightingModes.Contains(logoMode)
             ? logoMode : null,
         SupportsStartupAnimation ? StartupAnimationEnabled : null,
-        SupportsFunctionKeyPrimary ? FunctionKeyPrimary : null,
-        SupportsGamingMode ? GamingModeEnabled : null);
+        SupportsFunctionKeyPrimary
+            && !Capabilities.HostManagedLaptopControls.Contains(OneShotLaptopControl.FunctionKeyPrimary)
+                ? FunctionKeyPrimary : null,
+        SupportsGamingMode
+            && !Capabilities.HostManagedLaptopControls.Contains(OneShotLaptopControl.GamingMode)
+                ? GamingModeEnabled : null);
 
     private bool HasSaveableUnsetProfileField(ProfileDraftGroup group) =>
         HasConfirmedPowerSource && ActiveProfileDraftState.HasSaveableUnsetField(
@@ -8753,7 +8784,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CancellationToken token)
     {
         bool restored = true;
-        if (settings.FunctionKeyPrimary is { } functionKeyMode)
+        if (settings.FunctionKeyPrimary is { } functionKeyMode
+            && !CommandCapabilities.HostManagedLaptopControls.Contains(OneShotLaptopControl.FunctionKeyPrimary))
         {
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.ApplyOneShotLaptopControlAsync(
@@ -8767,7 +8799,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             return false;
         }
-        if (settings.GamingModeEnabled is { } gamingModeEnabled)
+        if (settings.GamingModeEnabled is { } gamingModeEnabled
+            && !CommandCapabilities.HostManagedLaptopControls.Contains(OneShotLaptopControl.GamingMode))
         {
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.ApplyOneShotLaptopControlAsync(
@@ -9121,7 +9154,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             GamingModeReadPending = readbacks.GamingModeReadPending,
         };
         StartupAnimationEnabled = readbacks.StartupAnimationEnabled;
-        FunctionKeyPrimary = readbacks.FunctionKeyPrimary;
+        FunctionKeyPrimary = status.DeviceVerified
+            && status.Capabilities?.HostManagedLaptopControls.Contains(OneShotLaptopControl.FunctionKeyPrimary) is true
+            && status.ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+                ? status.Profiles.ForPowerSource(status.ActivePowerSource).EffectiveLaptopBehavior.FunctionKeyPrimary
+                    ?? FunctionKeyPrimaryMode.FunctionKeys
+                : readbacks.FunctionKeyPrimary;
         // Host-managed Gaming Mode is the saved input policy. Do not manufacture
         // firmware confirmation in the service snapshot for this presentation.
         GamingModeEnabled = status.DeviceVerified
