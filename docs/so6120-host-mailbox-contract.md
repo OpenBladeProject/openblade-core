@@ -194,3 +194,9 @@ port-access dependency in this change.
 Even a solved mailbox contract would leave the separate requirements for
 [direct-duty restoration and cooling recovery](so6120-direct-duty-safety.md#decision-and-remaining-evidence).
 This audit does not establish those properties or justify a fan-stop switch.
+
+The subsequent [ACPI and installed-driver investigation](so6120-acpi-vendor-transport.md)
+identifies a defined AML client of the same ports, checks its private mutex and
+different raw-address completion branch, and traces the exact 02E0 driver's
+feature forwarding. Neither route establishes the missing transaction owner;
+defined ACPI methods are not evidence of observed runtime contention.
