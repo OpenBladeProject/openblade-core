@@ -29,8 +29,56 @@ ownership conditions must be supplied by the outer owner. A matching read does
 not prove a transition or establish ownership if the byte was already present.
 Policy-command/status registers are read-only in this interface; writing full
 override bytes still requires reviewed bit preservation outside the byte
-protocol. The core and adapter have 65 focused fake-port/native tests; the full
-Capture suite passed all 676 tests. These tests do not access hardware.
+protocol. Focused fake-port/native tests cover these boundaries without
+accessing hardware.
+
+## Offline entry and Auto handback
+
+The developer [entry and Auto-exit coordinators](../src/OpenBlade.Capture/So6120DirectDutyCoordinator.cs)
+sequence the host-mailbox path independently of the MCU gate/bank backend.
+Their injected boundary has no live implementation. The first experiment may
+be restricted to Silent by its outer admission; the generic exit restores
+the captured, separately admitted Balanced, Performance, Battery Saver,
+Silent or Battery Balanced profile. It does not switch through Balanced or
+offer an arbitrary new destination. Custom requires a retained-settings
+contract that this slice does not supply.
+
+Entry captures Automatic (`36=00`), an idle policy command (`0A=00`), a nonzero
+PWM cycle, and an override with bits 5 and 6 clear. Read-only bank-zero index
+`06` maps to `802E3`; its bit 0 gates the `FE` path at `15E4A..15E54`.
+Requested duties must fit the observed cycle; they are counts, not percentages
+or RPM. These checks do not independently authorize a cooling level.
+
+1. Stage changed `B8/B9` values, then set only override bit 6, confirming each
+   write through a separately admitted read. Unchanged fields are not claimed.
+2. Recheck the full expected controls and enter `FE` last. Observe actual duty
+   separately; matching samples do not prove a mechanical effect or causality.
+3. For Auto exit, restore the captured normal selector directly and observe
+   both that selector and `Manual=00`. Restore the changed owned override and
+   staged bytes, then confirm the final controls. There is no redundant manual,
+   policy-command, gate, bank or paired-HID write. Original inactive staged
+   bytes are restored exactly, even if they exceed the current cycle.
+
+Before `FE`, a confirmed partial-entry checkpoint permits an explicitly claimed
+cleanup of its changed prefix. Ambiguous commands, field drift or journal
+uncertainty fence all further commands, including `A0`. A failed durable fence
+is reported separately from the in-process fence. Observation sequence and time
+advance across entry and exit, including polls after the last checkpoint, so
+cached entry observations cannot qualify a later exit.
+
+Mapped writes queue event 14. An idle `0A` does not establish that earlier work
+drained, and same-profile reload can restore saved manual settings at
+`165EE..165F2`. Fresh post-handback and final observations must still show
+Automatic and idle `0A`. Override bit 6 also affects a gated policy contributor
+at `1101A..11022`; exposure starts when its publication becomes possible and
+ends only after its original value is confirmed. The result records observed
+handback and owned-byte cleanup, not complete internal-policy restoration.
+
+Snapshots are ordered reads, not atomic exclusion. Expected mapped controls
+are checked before staging `A1`; its publication callback must not issue nested
+`A0` requests over the staged command. The outer owner still needs real durable
+storage, exact-device/lifecycle admission, accepted caller conditions and a
+reviewed attended recovery procedure before any live binding.
 
 ## Inputs and verification
 

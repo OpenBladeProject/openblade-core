@@ -3,7 +3,7 @@ namespace OpenBlade.Capture;
 // Exact SO6120 EC 1.04 bank-zero mapping. This enum is not a raw-address API.
 internal enum So6120MailboxRegister : byte
 {
-    Tachometer1 = 0x08, Tachometer2 = 0x09, PolicyCommand = 0x0A, PolicyStatus = 0x0B,
+    ActiveState = 0x06, Tachometer1 = 0x08, Tachometer2 = 0x09, PolicyCommand = 0x0A, PolicyStatus = 0x0B,
     Selector = 0x1A, Manual = 0x36, ActualDuty1 = 0xB0, ActualDuty2 = 0xB1,
     Cycle = 0xB2, StagedDuty1 = 0xB8, StagedDuty2 = 0xB9, Override = 0xF0,
 }
@@ -251,7 +251,7 @@ internal sealed class So6120HostMailboxTransaction
     }
 
     private static bool Readable(So6120MailboxRegister register) => register is
-        So6120MailboxRegister.Tachometer1 or So6120MailboxRegister.Tachometer2 or
+        So6120MailboxRegister.ActiveState or So6120MailboxRegister.Tachometer1 or So6120MailboxRegister.Tachometer2 or
         So6120MailboxRegister.PolicyCommand or So6120MailboxRegister.PolicyStatus or
         So6120MailboxRegister.Selector or So6120MailboxRegister.Manual or
         So6120MailboxRegister.ActualDuty1 or So6120MailboxRegister.ActualDuty2 or

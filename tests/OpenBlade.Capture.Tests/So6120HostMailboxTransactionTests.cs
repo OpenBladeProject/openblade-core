@@ -64,6 +64,7 @@ public sealed class So6120HostMailboxTransactionTests
     }
 
     [Theory]
+    [InlineData(0x06)]
     [InlineData(0x08)]
     [InlineData(0x09)]
     [InlineData(0x0A)]
