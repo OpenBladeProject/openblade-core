@@ -76,9 +76,41 @@ handback and owned-byte cleanup, not complete internal-policy restoration.
 
 Snapshots are ordered reads, not atomic exclusion. Expected mapped controls
 are checked before staging `A1`; its publication callback must not issue nested
-`A0` requests over the staged command. The outer owner still needs real durable
-storage, exact-device/lifecycle admission, accepted caller conditions and a
-reviewed attended recovery procedure before any live binding.
+`A0` requests over the staged command. Live use still needs the journal,
+admission and transport connected under one owner, accepted caller conditions
+and a reviewed attended recovery procedure.
+
+## Durable records and admission
+
+The [developer journal](../src/OpenBlade.Capture/So6120DirectDutyJournal.cs)
+records one operation's binding, claims, intent, request publication, results
+and checkpoints. Each bounded, sequenced frame is flushed before its append
+returns. A failed write or flush poisons the in-process journal; it cannot
+record a fictitious successful fence afterward. Its held file excludes other
+file access, not mailbox writers. The trusted outer owner must select the one
+agreed run root; a different directory is not excluded by this mechanism.
+
+Existing journals are never reopened for writing. Post-release inspection
+checks framing, hashes, required fields, duplicates and state transitions.
+A successful result must retain its separate `A0` completion-byte evidence.
+Inspection reports confirmed and unresolved milestones but never grants
+restart or recovery authority. Valid bytes after interruption do not prove
+the old caller received the flush acknowledgement.
+
+The [supervised admission component](../src/OpenBlade.Capture/So6120SupervisedAdmission.cs)
+collects exact host, reported EC version, present HID descriptor, power/console,
+configured driver and known-controller metadata. Failed relevant HID reads and
+inventory failures remain visible. Its policy separately requires trusted,
+same-run caller-challenge acceptance and OpenBlade handoff evidence. A supplied
+digest does not authenticate that evidence, and an accepted assessment grants
+no hardware authority. Current context freshness does not require repeating
+unchanged source or caller-challenge evidence solely because it is older.
+
+An already stopped OpenBlade baseline needs no invented exit record. If this
+run stopped it, the supplied handoff must identify the original process and
+observed exit; either path still requires a fresh stopped-service/no-writer
+observation. This component does not perform that handoff. The native adapter's
+live acquisition and the coordinator boundary remain unbound.
 
 ## Inputs and verification
 
@@ -99,6 +131,27 @@ of `RWIoI2C.I2C_Read_Write` match the earlier verified IL dump. Method offsets
 below are IL offsets within the specified metadata token, not file addresses.
 No vendor assembly, firmware or native driver was loaded or executed; there
 was no hardware access. Raw inputs and working dumps remain ignored artifacts.
+
+A separate read-only `Win32_BIOS` query on 2026-11-06 reported manufacturer
+Razer, BIOS `4.01`, and embedded-controller major/minor `1/4` on the investigated
+laptop. This matches the reviewed EC version label `1.04`; it does not hash the
+running EC image. The ignored metadata report has SHA-256
+`ace4dd00ca4883ca39080c9cbd4433219991cd817b339e53db8c91c0ffcbef03`.
+The query opened no InpOut device and published no mailbox command. A live
+session must still acquire its own fresh, correctly bound admission evidence.
+
+The separately reviewed metadata collector then completed a read-only check in
+79.3416 ms. It read all ten present matching VID/PID HID candidates and found
+one `1532:02E0`, usage `0001:0002`, 91-byte control collection. Host identity and
+reported EC version matched the experiment pins; the process was on the active
+local console with AC power. The configured driver was running, matched the
+pinned size/hash and resolved to `\Device\inpoutx64`. There were no known
+Razer-controller detections;
+OpenBlade was running with one writer process. No handoff, admission acceptance,
+InpOut device open or mailbox command occurred. The ignored report SHA-256 is
+`db242a8b38e09b7e50d59c136196ac7334f23d6c7d9f2e1c62556715b0bd9e34`.
+The host helper's `Tested` label means the BIOS matched this experiment's
+explicit pin; it is not new physical validation of fan commands.
 
 ## Request publication and ownership
 
