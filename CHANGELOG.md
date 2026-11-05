@@ -8,6 +8,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Add a developer-only offline firmware CLI and HTML register explorer with exact-image EC/MCU profiles, factory table decoding and report comparison. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Add a bounded developer Windows battery recorder that preserves unsupported temperature results without changing fan or profile settings. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 
 ### Fixed
 
