@@ -42,7 +42,9 @@
       "access": "internal",
       "units": "",
       "evidence_status": "firmware-confirmed",
-      "notes": [],
+      "notes": [
+        "The generic access gate does not pause or acquire normal firmware bus clients."
+      ],
       "bits": []
     },
     {
@@ -197,7 +199,9 @@
       "access": "internal",
       "units": "",
       "evidence_status": "firmware-confirmed",
-      "notes": [],
+      "notes": [
+        "Shared by thermal and non-EC peripheral work; observing a status value does not acquire an ownership interval."
+      ],
       "bits": []
     },
     {
@@ -309,6 +313,138 @@
       "evidence_status": "firmware-confirmed",
       "notes": [],
       "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435784,
+      "width_bits": 8,
+      "name": "Command report ready",
+      "description": "USB report handling marks a command ready; the timer-dispatched handler consumes this flag. It is not a bus-idle or completion token.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 9458,
+          "label": "Command report ready"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Internal MCU RAM annotation; no host-readable EC register mapping is implied."
+      ],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435789,
+      "width_bits": 8,
+      "name": "USB configuration value",
+      "description": "USB configuration getter/setter state. Nonzero permits the timer command-processing block subject to other gates; it does not pause normal bus workers.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 16236,
+          "label": "Store accepted USB configuration"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 16306,
+          "label": "Clear USB configuration"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 13750,
+          "label": "Timer configuration gate"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Internal MCU RAM annotation; no host-readable EC register mapping is implied."
+      ],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435790,
+      "width_bits": 16,
+      "name": "Application flags",
+      "description": "The timer tests bit 3 unless application state equals 3. These flags do not acquire the shared transfer descriptor.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 13782,
+          "label": "Application flags"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Internal MCU RAM annotation; no host-readable EC register mapping is implied."
+      ],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435944,
+      "width_bits": 8,
+      "name": "Application state",
+      "description": "State 3 bypasses the timer application-flag bit-3 restriction. The complete state meanings are not established by this annotation.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 13774,
+          "label": "Application state"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Internal MCU RAM annotation; no host-readable EC register mapping is implied."
+      ],
+      "bits": []
+    },
+    {
+      "bank": null,
+      "index": null,
+      "address": 268435945,
+      "width_bits": 8,
+      "name": "Initialization phase",
+      "description": "Startup assigns phases 1, 2 and 3; timer command work requires at least 3. This is not a per-transfer lease.",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 26318,
+          "label": "Initialization phase"
+        }
+      ],
+      "category": "transport",
+      "access": "internal",
+      "units": "",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Internal MCU RAM annotation; no host-readable EC register mapping is implied."
+      ],
+      "bits": []
     }
   ],
   "findings": [
@@ -386,6 +522,56 @@
           "source": "SO6120 MCU 1.07 firmware",
           "address": 19520,
           "label": "Independent manual read uses bit 18"
+        }
+      ]
+    },
+    {
+      "title": "Transport clients extend beyond the thermal worker",
+      "description": "The main loop services peripheral writes through the same helpers immediately before the thermal worker. Quiescing only the thermal queue would not establish whole-transport ownership.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 26340,
+          "label": "Main-loop peripheral writer before thermal worker"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 43356,
+          "label": "Peripheral write through the shared helper"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 43402,
+          "label": "Additional peripheral write through the shared helper"
+        }
+      ]
+    },
+    {
+      "title": "Ready to dispatch is not exclusive access",
+      "description": "Command-report readiness, initialization phase and application-state checks do not compare transfer busy state, drain pending thermal work or acquire a transaction identity. Actual collision is not established.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 13798,
+          "label": "Timer dispatch"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 38298,
+          "label": "Report-ready check"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6120 MCU 1.07 firmware",
+          "address": 26344,
+          "label": "Normal worker precedes later main-loop flag checks"
         }
       ]
     }

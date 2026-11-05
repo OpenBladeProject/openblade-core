@@ -120,6 +120,12 @@ callers: if generic dispatch reaches the helpers during a normal worker
 transaction, the examined path can replace shared state. No such overlap was
 observed on hardware.
 
+The subsequent [transfer ownership audit](so6120-mcu-transfer-ownership.md)
+enumerates the recovered direct callers, including main-loop non-EC peripheral
+transfers. It distinguishes report-ready, initialization and application-state
+gates from bus ownership; pausing only thermal work would not prove exclusive
+access to the shared transport.
+
 The MCU feeds its hardware watchdog from the main loop and inside transfer
 waits. A host-process crash does not stop this execution or itself trigger a
 USB reset. MCU initialization clears the gate and refreshes cache, but is not
