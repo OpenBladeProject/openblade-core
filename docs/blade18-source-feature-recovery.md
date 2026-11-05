@@ -8,6 +8,10 @@ extraction, signature checks, and the existing sanitized Observer inventory.
 No vendor code, installer, driver operation, input injection, or hardware
 write was executed.
 
+The [November vendor-source audit](blade18-vendor-support-audit.md) rechecks the
+current Synapse entry and official BIOS/EC packages, and records remaining
+support gaps against issue #739.
+
 ## Pinned vendor sources
 
 | Source | SHA-256 |
@@ -207,9 +211,10 @@ the firmware or hardware cannot support the feature.
   firmware prohibition. The experimental backend uses the inherited exact-model
   command definitions, admits the control after a valid getter, and verifies
   every change by another getter.
-- Function-key-primary mode: Synapse's host mapping behavior is established.
-  OpenBlade still needs per-device suppression before it can safely invert
-  this laptop's function row without swallowing an external keyboard's F keys.
+- Function-key-primary mode: the Razer-driver backend combines the reviewed
+  per-device interception API with Blade 18's own Fn decoder. It is source-backed
+  experimental host handling. The Windows-hook backend retains the existing
+  default shortcuts and does not invert this model's function row.
 - Independent fan targets: source defines separately addressed getters/setters
   for both zones. Synapse supplies one scalar, but OpenBlade now preserves
   independent target requests experimentally within the existing preset ranges.
@@ -272,9 +277,15 @@ can identify input but its legacy-message suppression does not implement a
 system-wide filter for one physical keyboard. Correlation alone cannot make
 media-primary inversion safe for external keyboards.
 
-The preferred next investigation is the public interception interface of the
-exact installed signed PID02A0 keyboard filter and control child, deriving its
-ABI without loading Synapse DLLs. Its internal callbacks are not that ABI.
-If it cannot provide the needed path, a new signed device filter would be
-required; OpenBlade does not add one. Existing Fn shortcuts, whose actions
-wait for matching device evidence, remain separate from always-on inversion.
+The [reviewed filter API](snap-tap-filter-abi.md) now establishes per-device
+interception for the exact installed signed PID02A0 filter and shared control
+stack. Function-row primary handling uses that API with the separate 16-byte
+Blade 18 Fn report grammar, including IDs 0A and 0B; it does not reuse the
+Blade 16 Fn parser or request firmware Driver mode. Unknown Fn state passes
+F keys through. The selected driver owner handles F1-F12 while the existing
+shortcut route retains P/R/T and navigation. Switching input owners must finish
+subscription closure and owned-hook restoration before replacement.
+
+This path is source-backed experimental and requires a coordinated install.
+Its physical input behavior remains unverified. See
+[keyboard input methods](keyboard-input-backends.md) for backend selection.
