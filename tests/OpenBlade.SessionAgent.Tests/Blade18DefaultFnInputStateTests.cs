@@ -282,6 +282,7 @@ public sealed class Blade18DefaultFnInputStateTests
             0x19,
             extended: false,
             keyDown: true,
+            allowUntrackedEdge: true,
             out Blade18DefaultFnInputEvent? recovery));
         Assert.Null(recovery);
         Assert.False(Process(
@@ -306,6 +307,7 @@ public sealed class Blade18DefaultFnInputStateTests
             0x42,
             extended: false,
             keyDown: false,
+            allowUntrackedEdge: true,
             out Blade18DefaultFnInputEvent? release));
         Assert.Equal(
             new Blade18DefaultFnInputEvent(
@@ -347,6 +349,7 @@ public sealed class Blade18DefaultFnInputStateTests
             0x20,
             extended: false,
             keyDown: true,
+            allowUntrackedEdge: true,
             out Blade18DefaultFnInputEvent? inputEvent));
         Assert.Null(inputEvent);
     }

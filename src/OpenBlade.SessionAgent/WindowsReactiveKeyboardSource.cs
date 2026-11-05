@@ -205,12 +205,17 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     internal bool? FunctionKeyState => functionKeyObservation.Read();
 
+    // Status polling only reports whether an observation is available.
+    // Each intercepted stroke still verifies the session and collection.
+    internal bool IsDriverFunctionKeyKnown(RazerBladeInputDeviceKind expectedDevice) =>
+        CanReadDriverFunctionKeyState(expectedDevice)
+        && (expectedDevice == RazerBladeInputDeviceKind.Rz09_0484
+            ? isBlade18FnInputAdmitted() && blade18Fn.Read().HasValue
+            : functionKeyObservation.Known);
+
     internal bool? ReadDriverFunctionKeyState(RazerBladeInputDeviceKind expectedDevice)
     {
-        if (Volatile.Read(ref disposed) != 0 || completion.Task.IsCompleted
-            || expectedDevice == RazerBladeInputDeviceKind.Rz09_0484
-                && Volatile.Read(ref blade18ResetRequested) != 0
-            || readVerifiedInputDeviceKind() != expectedDevice)
+        if (!CanReadDriverFunctionKeyState(expectedDevice))
         {
             return null;
         }
@@ -220,13 +225,16 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
         // The driver subscription identifies the keyboard. Revalidate the
         // separate Fn collection and local session before using its snapshot.
-        return blade18Fn.ReadAdmitted(isBlade18FnInputAdmitted() && IsLocalInputSession(),
-            collection => TryResolveInputDevice(collection) == expectedDevice);
+        return blade18Fn.ReadAdmitted(collection =>
+            isBlade18FnInputAdmitted() && IsLocalInputSession()
+            && TryResolveInputDevice(collection) == expectedDevice);
     }
 
-    internal static bool? ReadBlade18DriverFunctionKeyState(
-        Rz090484FnInputState state, bool admitted, bool collectionCurrent)
-        => state.ReadAdmitted(admitted, _ => collectionCurrent);
+    private bool CanReadDriverFunctionKeyState(RazerBladeInputDeviceKind expectedDevice) =>
+        Volatile.Read(ref disposed) == 0 && !completion.Task.IsCompleted
+        && (expectedDevice != RazerBladeInputDeviceKind.Rz09_0484
+            || Volatile.Read(ref blade18ResetRequested) == 0)
+        && readVerifiedInputDeviceKind() == expectedDevice;
 
     public void ResetFunctionPInput()
     {
@@ -734,6 +742,24 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         scanCode is not (>= 0x3B and <= 0x44 or 0x57 or 0x58)
         || backend == KeyboardInputBackend.WindowsHook;
 
+    internal static bool ReconcileBlade18PassedThroughEdge(
+        Blade18DefaultFnInputState state,
+        uint scanCode,
+        bool extended,
+        bool keyDown,
+        KeyboardInputBackend backend,
+        out Blade18DefaultFnInputEvent? release,
+        out bool reinstallHook)
+    {
+        // A backend handoff can leave an existing Windows press to drain.
+        // Only keys owned by the Windows hook can start recovery.
+        bool ownsKey = AllowsBlade18DefaultFunctionRow(scanCode, backend);
+        bool reconciled = state.ReconcilePassedThroughEdge(
+            scanCode, extended, keyDown, ownsKey, out release);
+        reinstallHook = reconciled && ownsKey;
+        return reconciled;
+    }
+
     internal static bool ProcessBlade18KeyboardInput(
         Blade18DefaultFnInputState state,
         uint scanCode,
@@ -1019,8 +1045,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
         else if (!observedByHook
             && deviceKind == RazerBladeInputDeviceKind.Rz09_0484
-            && blade18Keyboard.ReconcilePassedThroughEdge(
-                keyboard.MakeCode, extended, keyDown, out Blade18DefaultFnInputEvent? release))
+            && ReconcileBlade18PassedThroughEdge(
+                blade18Keyboard, keyboard.MakeCode, extended, keyDown, readFunctionRowBackend(),
+                out Blade18DefaultFnInputEvent? release, out bool reinstallBlade18Hook))
         {
             if (blade18Admitted && release is { } released)
             {
@@ -1030,7 +1057,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 resetFunctionRowInput();
             }
-            ReinstallKeyboardHook();
+            if (reinstallBlade18Hook)
+            {
+                ReinstallKeyboardHook();
+            }
         }
         Volatile.Write(ref blade18FunctionRowHeld, blade18Keyboard.HasActiveFunctionRowKeys ? 1 : 0);
         FunctionRowHookRecoveryResult recovery =

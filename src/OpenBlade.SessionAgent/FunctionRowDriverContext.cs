@@ -48,7 +48,8 @@ internal sealed class FunctionRowDriverContext : IDisposable, IReactiveKeyboardS
     internal bool Failed => Volatile.Read(ref failed) != 0 || actions.Failed
         || observation.IsFaulted || Volatile.Read(ref source)?.Completion.IsCompleted == true;
     internal bool FunctionKeyPressed => FunctionKeyState == true;
-    internal bool FunctionKeyKnown => FunctionKeyState.HasValue;
+    internal bool FunctionKeyKnown =>
+        Volatile.Read(ref source)?.IsDriverFunctionKeyKnown(expectedDevice) == true;
     internal bool? FunctionKeyState => Volatile.Read(ref source)?.ReadDriverFunctionKeyState(expectedDevice);
     internal FunctionKeyPrimaryMode? PrimaryMode => Volatile.Read(ref options)?.ReadFunctionKeyPrimaryMode();
     internal KeyboardDriverModeObservation DriverMode =>

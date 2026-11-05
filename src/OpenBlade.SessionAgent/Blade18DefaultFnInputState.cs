@@ -144,6 +144,7 @@ internal sealed class Blade18DefaultFnInputState
         uint scanCode,
         bool extended,
         bool keyDown,
+        bool allowUntrackedEdge,
         out Blade18DefaultFnInputEvent? inputEvent)
     {
         inputEvent = null;
@@ -153,6 +154,11 @@ internal sealed class Blade18DefaultFnInputState
         }
 
         var key = new KeyIdentity(scanCode, extended);
+        if (!allowUntrackedEdge && !activePresses.ContainsKey(key))
+        {
+            return false;
+        }
+
         if (keyDown)
         {
             // The physical edge already reached its foreground target. Drop

@@ -3583,9 +3583,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private GamingModeKeyPolicy CurrentGamingModeKeyPolicy =>
         ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
-            ? (activeProfileDraft.LaptopBehavior
-                    ?? GetProfile(ActivePowerSource).EffectiveLaptopBehavior)
-                .EffectiveGamingModeKeyPolicy
+            ? GetProfile(ActivePowerSource).EffectiveLaptopBehavior.EffectiveGamingModeKeyPolicy
             : GamingModeKeyPolicy.Disabled;
 
     public LiveReadings? LiveReadings
@@ -7293,18 +7291,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 bool accepted = await PersistProfileSetAsync(updatedProfiles, token);
                 if (accepted)
                 {
-                    if (requested.Control == OneShotLaptopControl.FunctionKeyPrimary)
-                    {
-                        FunctionKeyPrimary = HasConfirmedPowerSource
-                            ? GetProfile(ActivePowerSource).EffectiveLaptopBehavior.FunctionKeyPrimary
-                            : null;
-                    }
-                    else
-                    {
-                        GamingModeEnabled = HasConfirmedPowerSource
-                            ? GetProfile(ActivePowerSource).EffectiveLaptopBehavior.GamingModeEnabled ?? false
-                            : null;
-                    }
+                    await dispatcher.InvokeAsync(
+                        () =>
+                        {
+                            if (ActivePowerSource != source)
+                            {
+                                return;
+                            }
+                            LaptopBehaviorProfileSettings? rebasedDraft =
+                                activeProfileDraft.RebaseHostLaptopControl(source, requested);
+                            if (rebasedDraft is not null)
+                            {
+                                MarkActiveProfileDraft(source, laptopBehavior: rebasedDraft);
+                            }
+                            if (requested.Control == OneShotLaptopControl.FunctionKeyPrimary)
+                            {
+                                FunctionKeyPrimary = GetProfile(source).EffectiveLaptopBehavior.FunctionKeyPrimary;
+                            }
+                            else
+                            {
+                                GamingModeEnabled = GetProfile(source).EffectiveLaptopBehavior.GamingModeEnabled ?? false;
+                            }
+                        },
+                        // An accepted save must reach the draft even if the user
+                        // cancels afterward. Disposal still ends UI work.
+                        lifetime.Token);
                 }
             }
             finally
@@ -8159,7 +8170,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ? GetActiveProfileDraft() ?? GetProfile(source)
             : GetProfile(source);
 
-    private PowerProfile? GetActiveProfileDraft() => activeProfileDraft.GetDraft(Profiles);
+    private PowerProfile? GetActiveProfileDraft() =>
+        activeProfileDraft.GetDraft(Profiles, Capabilities.HostManagedLaptopControls);
 
     private ProfileSet CreateProfileSetWithDashboardDraft()
     {
@@ -8171,10 +8183,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : draft;
     }
 
-    private ProfileSet CreateProfileSetWithActiveDraft() => activeProfileDraft.CreateProfileSet(Profiles);
+    private ProfileSet CreateProfileSetWithActiveDraft() =>
+        activeProfileDraft.CreateProfileSet(Profiles, Capabilities.HostManagedLaptopControls);
 
     private ProfileSet CreateProfileSetWithActiveDraft(ProfileDraftGroup group) =>
-        activeProfileDraft.CreateProfileSet(Profiles, group);
+        activeProfileDraft.CreateProfileSet(Profiles, group, Capabilities.HostManagedLaptopControls);
 
     private ProfileSet CreateLegacyProfileEditorDraft() => new(
         Profiles.PluggedIn with
@@ -8385,8 +8398,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LogoLightingModeEditor is { } logoMode && Capabilities.LogoLightingModes.Contains(logoMode)
             ? logoMode : null,
         SupportsStartupAnimation ? StartupAnimationEnabled : null,
-        SupportsFunctionKeyPrimary ? FunctionKeyPrimary : null,
-        SupportsGamingMode ? GamingModeEnabled : null);
+        SupportsFunctionKeyPrimary
+            && !Capabilities.HostManagedLaptopControls.Contains(OneShotLaptopControl.FunctionKeyPrimary)
+                ? FunctionKeyPrimary : null,
+        SupportsGamingMode
+            && !Capabilities.HostManagedLaptopControls.Contains(OneShotLaptopControl.GamingMode)
+                ? GamingModeEnabled : null);
 
     private bool HasSaveableUnsetProfileField(ProfileDraftGroup group) =>
         HasConfirmedPowerSource && ActiveProfileDraftState.HasSaveableUnsetField(

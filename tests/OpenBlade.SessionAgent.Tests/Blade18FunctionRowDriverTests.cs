@@ -35,10 +35,10 @@ public sealed class Blade18FunctionRowDriverTests
         var fn = new Rz090484FnInputState();
         Observe(fn, 1, 0);
         Assert.False(fn.Read());
-        Assert.Null(WindowsReactiveKeyboardSource.ReadBlade18DriverFunctionKeyState(fn, admitted, collectionCurrent));
-        Assert.Null(WindowsReactiveKeyboardSource.ReadBlade18DriverFunctionKeyState(fn, true, true));
+        Assert.Null(fn.ReadAdmitted(_ => admitted && collectionCurrent));
+        Assert.Null(fn.ReadAdmitted(_ => true));
         Observe(fn, 1, 11);
-        Assert.True(WindowsReactiveKeyboardSource.ReadBlade18DriverFunctionKeyState(fn, true, true));
+        Assert.True(fn.ReadAdmitted(_ => true));
         fn.Reset();
         Assert.Null(fn.Read());
     }
@@ -78,14 +78,38 @@ public sealed class Blade18FunctionRowDriverTests
     {
         var fn = new Rz090484FnInputState();
         Observe(fn, 1, 0);
-        Assert.Null(fn.ReadAdmitted(true, collection =>
+        Assert.Null(fn.ReadAdmitted(collection =>
         {
             Assert.Equal((nint)1, collection);
             fn.Reset();
             Observe(fn, 2, 11);
             return true;
         }));
-        Assert.True(fn.ReadAdmitted(true, collection => collection == 2));
+        Assert.True(fn.ReadAdmitted(collection => collection == 2));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedProbeCannotClearNewerFnReport(bool changeCollection)
+    {
+        var fn = new Rz090484FnInputState();
+        Observe(fn, 1, 0);
+        nint currentCollection = changeCollection ? 2 : 1;
+
+        Assert.Null(fn.ReadAdmitted(collection =>
+        {
+            Assert.Equal((nint)1, collection);
+            if (changeCollection)
+            {
+                fn.Reset();
+            }
+            Observe(fn, currentCollection, 11);
+            return false;
+        }));
+
+        Assert.True(fn.Read());
+        Assert.True(fn.ReadAdmitted(collection => collection == currentCollection));
     }
 
     [Fact]
@@ -123,6 +147,62 @@ public sealed class Blade18FunctionRowDriverTests
         {
             Assert.True(WindowsReactiveKeyboardSource.AllowsBlade18DefaultFunctionRow(scan, backend));
         }
+    }
+
+    [Theory]
+    [InlineData(KeyboardInputBackend.RazerDriver)]
+    [InlineData(KeyboardInputBackend.Unknown)]
+    public void UnmatchedFunctionRowEdgesCannotStartRecoveryWithoutWindowsOwnership(KeyboardInputBackend backend)
+    {
+        var state = new Blade18DefaultFnInputState();
+        Assert.False(WindowsReactiveKeyboardSource.ReconcileBlade18PassedThroughEdge(
+            state, 0x3C, false, true, backend, out var down, out bool reinstallOnDown));
+        Assert.False(WindowsReactiveKeyboardSource.ReconcileBlade18PassedThroughEdge(
+            state, 0x3C, false, false, backend, out var up, out bool reinstallOnUp));
+        Assert.False(reinstallOnDown);
+        Assert.False(reinstallOnUp);
+        Assert.Null(down);
+        Assert.Null(up);
+        Assert.False(state.HasActiveFunctionRowKeys);
+    }
+
+    [Theory]
+    [InlineData(KeyboardInputBackend.RazerDriver, true)]
+    [InlineData(KeyboardInputBackend.Unknown, false)]
+    public void UnmatchedReleaseDrainsAnExistingWindowsPressAfterHandoff(
+        KeyboardInputBackend backend, bool consumed)
+    {
+        var state = new Blade18DefaultFnInputState();
+        Assert.Equal(consumed, state.Process(0x3C, false, true, false, consumed, true, out _));
+        Assert.True(state.HasActiveFunctionRowKeys);
+
+        Assert.True(WindowsReactiveKeyboardSource.ReconcileBlade18PassedThroughEdge(
+            state, 0x3C, false, false, backend, out var release, out bool reinstallHook));
+
+        Assert.False(state.HasActiveFunctionRowKeys);
+        Assert.False(reinstallHook);
+        if (consumed)
+        {
+            Assert.Equal(Blade18DefaultFnAction.VolumeDown, release?.Action);
+            Assert.Equal(FunctionRowInputPhase.Up, release?.Phase);
+        }
+        else
+        {
+            Assert.Null(release);
+        }
+    }
+
+    [Theory]
+    [InlineData(0x3C, false, KeyboardInputBackend.WindowsHook)]
+    [InlineData(0x19, false, KeyboardInputBackend.RazerDriver)]
+    [InlineData(0x48, true, KeyboardInputBackend.Unknown)]
+    public void UnmatchedEdgesStillRecoverKeysOwnedByWindows(uint scanCode, bool extended, KeyboardInputBackend backend)
+    {
+        var state = new Blade18DefaultFnInputState();
+        Assert.True(WindowsReactiveKeyboardSource.ReconcileBlade18PassedThroughEdge(
+            state, scanCode, extended, true, backend, out var release, out bool reinstallHook));
+        Assert.True(reinstallHook);
+        Assert.Null(release);
     }
 
     [Fact]

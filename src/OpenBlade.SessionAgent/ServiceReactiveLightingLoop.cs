@@ -456,12 +456,23 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     lastWindowsFunctionRowStatus = null;
                     return;
                 }
-                SnapTapRuntimeState state = Volatile.Read(ref source) is { } current
-                    && !current.Completion.IsCompleted
-                    && ReadDriverModeObservation().AllowsFunctionRowInterception
-                    && ReadFunctionKeyPrimaryMode() is not null
-                    && RazerBladeFunctionRowMediaInput.SupportsDevice(ReadVerifiedInputDeviceKind())
-                        ? SnapTapRuntimeState.Armed : SnapTapRuntimeState.Paused;
+                RazerBladeInputDeviceKind deviceKind = ReadVerifiedInputDeviceKind();
+                SnapTapRuntimeState state = SnapTapRuntimeState.Paused;
+                if (Volatile.Read(ref source) is { } current && !current.Completion.IsCompleted)
+                {
+                    if (deviceKind == RazerBladeInputDeviceKind.Rz09_0484 && IsBlade18FnInputAdmitted())
+                    {
+                        // Blade 18 uses the Windows hook for its default Fn shortcuts.
+                        // Only the Razer backend applies its saved primary-mode preference.
+                        state = SnapTapRuntimeState.Off;
+                    }
+                    else if (RazerBladeFunctionRowMediaInput.SupportsDevice(deviceKind)
+                        && ReadDriverModeObservation().AllowsFunctionRowInterception
+                        && ReadFunctionKeyPrimaryMode() is not null)
+                    {
+                        state = SnapTapRuntimeState.Armed;
+                    }
+                }
                 status = new(state, DateTimeOffset.UtcNow, Environment.ProcessId)
                 { Backend = KeyboardInputBackend.WindowsHook };
             }

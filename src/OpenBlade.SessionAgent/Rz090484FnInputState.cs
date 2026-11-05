@@ -24,16 +24,20 @@ internal sealed class Rz090484FnInputState
 
     internal bool? Read() => Volatile.Read(ref observation)?.Pressed;
 
-    internal bool? ReadAdmitted(bool admitted, Func<nint, bool> isCollectionCurrent)
+    internal bool? ReadAdmitted(Func<nint, bool> isCurrent)
     {
         Observation? current = Volatile.Read(ref observation);
-        if (!admitted || current is null || !isCollectionCurrent(current.Collection))
+        if (current is null)
         {
-            InvalidateKnowledge();
             return null;
         }
-        // Device arrival/reset and another report may race the native identity
-        // read. Never combine the old collection with a newer Fn snapshot.
+        // Native admission can race a topology reset or a newer Fn report.
+        // Apply its result only to the observation it actually checked.
+        if (!isCurrent(current.Collection))
+        {
+            Interlocked.CompareExchange(ref observation, null, current);
+            return null;
+        }
         return ReferenceEquals(current, Volatile.Read(ref observation)) ? current.Pressed : null;
     }
 
