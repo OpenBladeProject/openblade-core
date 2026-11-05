@@ -102,18 +102,50 @@ submission stops further writes and permits read-only reconciliation.
 The developer [Auto-exit coordinator](../src/OpenBlade.Capture/DirectDutyAutomaticExit.cs)
 uses the captured or explicitly intended performance profile. It always submits
 both admitted Auto channels, even after the first independently matches. For
-Custom it preserves the power settings and clears the maximum-fan intent.
+Custom, the intended CPU/GPU levels must match independently observed retained
+levels. Legacy GPU offsets are host-only intent and are excluded from firmware
+comparison. Auto clears the requested maximum-fan intent, but it does not
+implement the separate hardware setter: an active maximum-fan flag, missing
+Custom readback or a requested level change is refused before either command.
+The simulated Auto operation preserves retained settings instead of copying
+the desired record into readback.
 After independent confirmation it restores the owned override and staged duty
 values, then the bank and finally the access gate. Unchanged fields are skipped;
 unrelated drift or uncertain submission stops the operation without replay.
 
-Tests inject a simulated port, including faults at each submission and a shared
-single-use claim across coordinator instances. The future port must provide
-real durable ownership and intent records, atomic claim enforcement, exact
-model/power/session admission, transport exclusion and independent readback.
-Those properties are not established by the simulated tests. There is no live
-adapter, executable command or installed UI integration. The ordinary
-production decoder and setters are unchanged.
+Bank and gate have separate confirmation boundaries. The bank is read while
+the gate remains open immediately before closure. The pinned MCU `00/22`
+handler changes only gate RAM `0x100000C1`; dedicated `00/A2` then confirms the
+closed gate without an EC transaction. The durable gate intent and confirmation
+bind both observation sequences. Continuous exclusion and that exact
+bank-preserving command contract keep the earlier bank observation valid; the
+closed-gate proof contains no invented fresh bank value. An adapter lacking
+these properties is refused before any mutation.
+
+Results preserve the underlying readback/journal cause alongside submission
+uncertainty. Invalid captured manual flags are refused before acquisition;
+acquisition failure leaves claim status unknown. Session-release failure is
+reported separately and cannot overwrite an earlier failure or erase already
+confirmed fan handback and hardware cleanup. It still prevents overall success.
+
+The separate developer
+[unsubmitted-attempt reconciliation](../src/OpenBlade.Capture/DirectDutyUnsubmittedReconciliation.cs)
+can authorize a fresh attempt only after durable journal evidence proves no
+hardware submission, the previous session is positively released, and fresh
+independent observations match the owned starting state. It atomically checks
+and fences the old attempt/generation before authorizing one new attempt.
+Missing records, unresolved intents, possible or actual submission, drift and
+uncertain session release remain blocked. Neither a local submission counter
+nor matching hardware state alone permits reuse. Exit never invokes this
+reconciliation automatically, and reconciliation performs no hardware writes.
+
+Tests inject simulated ports, including faults at each submission, field-specific
+readback and a fenced journal model. The future ports must supply real durable
+ownership and intent records, atomic claims/fencing, exact model/power/session
+admission, transport exclusion and independent readback. Those properties are
+not established by the simulated tests. There is no live adapter, executable
+command or installed UI integration. The ordinary production decoder and
+setters are unchanged.
 
 Orderly handback and host-loss recovery remain distinct. Auto exit requires an
 operating host that can send and confirm the command.
