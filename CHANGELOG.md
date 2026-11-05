@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.51.0-nightly.107] - 2026-11-05
+
 ### Added
 
 - Choose F1–F12 or multimedia keys as the default on Blade 18 (2023) with the Razer driver. This input path is experimental. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
@@ -14,7 +16,6 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Keep confirmed fixed-fan settings when reapplying the current performance preset. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
 - Preserve saved function-key and Gaming Mode preferences when saving or discarding other laptop edits. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
 - Show Blade 18's default Fn shortcuts without a paused warning and keep status checks from interrupting Razer-driver remapping. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
-
 - Reduce memory growth when changing app language by sharing localized resource lookups across the main window and quick controls. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Avoid native event-argument memory growth when closing main and quick-controls windows to the tray. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Preserve window size limits while reducing memory growth during language changes. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
@@ -2316,7 +2317,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.50.3...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.51.0-nightly.107-attempt.2...HEAD
+[0.51.0-nightly.107]: https://github.com/OSSBlade/openblade-core/compare/v0.50.3...v0.51.0-nightly.107-attempt.2
 [0.44.1-nightly.105]: https://github.com/OSSBlade/openblade-core/compare/v0.44.0-nightly.104...v0.44.1-nightly.105
 [0.44.0-nightly.104]: https://github.com/OSSBlade/openblade-core/compare/v0.43.0-nightly.103...v0.44.0-nightly.104
 [0.43.0-nightly.103]: https://github.com/OSSBlade/openblade-core/compare/v0.42.2-nightly.102...v0.43.0-nightly.103
