@@ -1,8 +1,10 @@
 # Mailbox observation and inspection tools
 
 Developer tooling for the [SO6120 caller-challenge plan](../../docs/so6120-mailbox-trigger-test-plan.md).
-Preparation and offline verification are complete; the new recorder has not
-been used for a live capture. It collects Windows ETW metadata only. Physical
+The first [live calibration](../../docs/so6120-mailbox-calibration.md) stopped
+cleanly but exposed a failed transient-name control and insufficient budget
+for the current action windows. Resolve those before a physical-action batch.
+The recorder collects Windows ETW metadata only. Physical
 actions stay with the operator. There is no port I/O, driver loading, AML
 evaluation, fan/profile setter or self-elevation in these scripts.
 
