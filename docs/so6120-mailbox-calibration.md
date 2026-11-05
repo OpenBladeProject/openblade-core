@@ -133,3 +133,79 @@ v2 provenance (SHA-256):
 Independent review checked the pair directly in the ETL as well as decoded
 records, its reuse/duplicate history, and both clock anchors. No driver device
 was opened, no port/AML command ran, and fan/profile settings were unchanged.
+
+## Separately authorized InpOut handle control
+
+At **2026-11-06, 06:53 Asia/Shanghai**, one attended, separately authorized
+test opened the existing InpOut device with zero access and immediately
+closed it. The CREATE and default CLEANUP/CLOSE paths in the pinned on-disk
+driver image were reviewed before execution; this was not loaded-stack or
+filter attestation.
+The helper sent no device I/O or mailbox commands and made no service,
+driver, profile or fan-setting changes. The fixed attempt was consumed once;
+it was not repeated.
+
+The native open and close both reported success. Their recorded durations
+were 291.3 and 133.8 microseconds, and close completed 8.3278 ms after the
+parent's one-second permit began. The parent separately observed the child's
+successful exit. Start, enable, query and stop succeeded with zero reported
+loss; the post-stop query confirmed that the owned trace was absent. The
+five-second deadline was followed by a stop request 28.1 ms later and about
+986 ms of stop/rundown processing. This was a configured five-second window,
+not a claim of exactly five seconds of wall-clock trace lifetime.
+
+| Observation | Device-handle control |
+| --- | --- |
+| UTC-exported events | 656,296 |
+| File handles in rundown | 20,321 named, 932 unnamed |
+| File-create records | 44,343, all unnamed |
+| File-close records | 23,281 named, 21,169 unnamed |
+| Exact InpOut File-name records | One |
+| Held-file named rundown control | Passed |
+| Object live bytes / final bytes | 22,347,776 / 47,054,848 |
+
+The first offline inspection retained `ambiguous_or_missing_lifetime`: its
+13.1-microsecond UTC-to-QPC uncertainty overlapped the native call boundaries
+and a different object type's earlier close on the reused handle number.
+The exported File-create and named-close records share the helper's PID,
+handle and object. A separate offline replay of the same ETL resolved the
+timing using the original QPC timestamps; the initial inspection is retained
+unchanged.
+
+The raw replay verified clock type 1, frequency 10 MHz, zero reported loss
+and successful processing/close. All **655,562 Object-provider events**
+matched the UTC export in order, PID, version, opcode and payload bytes.
+The total callback count was 656,297 because file replay also delivered one
+synthetic trace-header event; no Object event was added or missing.
+
+The controlled File-create and close fall strictly inside their respective
+native call intervals. They describe one **0.2372 ms** lifetime, share the
+same object, and have no duplicate-event ambiguity in that interval. The
+create name is empty; the close names exactly `\Device\inpoutx64`. The raw
+inspection therefore reports **`named_target_lifetime`**. This qualifies
+name visibility for this single controlled zero-access lifetime on this
+system. It does not qualify every access mode, attribute unnamed File
+handles, establish mailbox exclusion or authorize mailbox commands.
+
+This control does not qualify a longer action window. Applying the existing
+50-second volume projection to this run gives 223,477,760 live bytes, above
+the 192 MiB Object watermark. That is a planning projection, not a measured
+long-run rate. Physical-action recording and finite contention acceptance
+remain separate from this controlled device open.
+
+Device-control provenance (SHA-256):
+
+- Request: `1bc3864d6b4884bd84df62a5abb535c27c3ff227bbd65af5b872b2adeccbff23`
+- Calibration report: `feeee82ad519b9184276b8413a52e898b318fedb4847d6eec8631ae66e522163`
+- Helper journal: `52a243ce920b454e1fc2bc2bac7a719ce17d7a9229c1e6c29d9e7e7d6c1da479`
+- Object ETL: `12883577690109964a11450aa8f5943c48d1243cb4dfdbdf3d89bcf5e805e0e8`
+- Initial UTC inspection: `b3409651d0c7bc61c3c0409de011595a4a4c30a2709bd6c3ba6f84803331e8a8`
+- Raw-QPC reader source: `b2186297ad3e7dd4c3438fc50fe818f9ade0a6a351a44990637c192ee19e8774`
+- Raw-QPC export: `0a9c48fa9c645dc341aebca03285e0f995b6cefccc881f0748d824a2a2b58e9f`
+- Raw-QPC inspection: `af1a1648aa2fd19db79352aa31dfab50b93cd49df84ce959a7c9ac3fbd01efe9`
+
+Raw captures, exports and process/path identities remain in ignored local
+artifacts. No physical-action window, AML evaluation or fan command was
+included in this authorization. Independent review verified the native
+lifecycle and raw-timestamp qualification. Offline decoding did not repeat
+the device open or start another recording.

@@ -6,7 +6,13 @@ qualify the transient-name control or v1 action-window budget. Recorder v2
 prepares the file before tracing and provides a coordinated larger
 capture/export budget. Its separately authorized repeat captured the short
 lifetime but still lacked the close name. Further qualification should target
-the actual device-handle path rather than repeat filesystem variations.
+the actual device-handle path rather than repeat filesystem variations. A
+separately authorized [device-handle control](so6120-mailbox-calibration.md#separately-authorized-inpout-handle-control)
+subsequently captured a named InpOut close, with the exact lifetime confirmed
+using original timestamps from the same saved ETL. That one positive control
+does not make the ordinary-file name controls pass or establish visibility
+of every client. Action-window controls and capacity still need to account
+for those limits; no physical-action window has run.
 The plan follows the
 [passive observations](so6120-mailbox-runtime-observation.md).
 
@@ -73,10 +79,12 @@ established, report that path as unmeasured; additional silent recordings do
 not improve its detection probability.
 
 Do not directly invoke `TBCC/ECRR` as a positive control. `ECRR` publishes a
-mailbox request, while `TBCC` can also change `TYPC` and call `SPNT`. A future
-target-device open/close control would likewise require a separately reviewed
-fixed CREATE/CLEANUP/CLOSE path and explicit execution scope; an ordinary-file
-control does not prove that every InpOut handle will receive a name.
+mailbox request, while `TBCC` can also change `TYPC` and call `SPNT`. The
+completed target-device open/close control used a separately reviewed fixed
+CREATE/CLEANUP/CLOSE path and explicit one-attempt authorization. Its positive
+result covers that zero-access lifetime only. Any further device open needs
+its own execution scope; an ordinary-file control does not prove that every
+InpOut handle will receive a name.
 
 ## Three candidate action windows
 
