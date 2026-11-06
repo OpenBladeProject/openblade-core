@@ -9,6 +9,228 @@ public sealed class So6120SilentTrialTests
     private static So6120SilentTrialHooks Hooks(Action<So6120SilentTrialProgress>? progress = null) => new(() => true, () => true, progress);
     private static So6120SilentTrialApproval Approve(So6120SilentTrialPlan plan) => new(plan.PlanId, plan.PlanSha256, Guid.NewGuid(), new('C', 64));
 
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(91, 20)]
+    public void StopTrialConfirmsTwoZeroSamplesAndRestoresSavedStaging(byte saved1, byte saved2)
+    {
+        using var f = StopFixture(saved1, saved2);
+        using (var session = f.Create())
+        {
+            var plan = session.PrepareBalancedStop(Hooks());
+            Assert.Equal(So6120TrialTargetPolicy.HalfCycleThenStop, plan.TargetPolicy);
+            Assert.Equal((byte)91, plan.RequestedDuty1);
+            Assert.NotEqual(plan.PlanSha256, (plan with { TargetPolicy = So6120TrialTargetPolicy.HalfCycle }).PlanSha256);
+            Assert.Empty(f.Port.Writes);
+
+            var result = session.ExecuteApproved(plan, Approve(plan));
+
+            Assert.True(result.Success);
+            Assert.True(result.StopStage!.ZeroTachObserved);
+            Assert.NotNull(result.StopStage.ZeroPwmObservation);
+            Assert.Equal(2, result.StopStage.Work.Writes.Count);
+            Assert.All(result.StopStage.Work.Writes, write =>
+                Assert.True(write.Transaction is { WriteConfirmed: true, CommandsCompleted: 2, Value: 0 }));
+            Assert.Equal(new (byte Register, byte Value)[] { (0xB8, 0), (0xB9, 0), (0x1A, 0), (0xF0, 0x11) },
+                f.Port.Writes.SkipWhile(write => write != (0x1A, 0xFE)).Skip(1).Take(4));
+            Assert.Equal(saved1, f.Port.Mapped[0xB8]);
+            Assert.Equal(saved2, f.Port.Mapped[0xB9]);
+            Assert.True(result.Restoration!.CleanupConfirmed);
+        }
+        AssertCompleteStopJournal(f);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void StopTrialRequiresHalfCycleAndFreshNonzeroTachBeforeZero(bool failHalfCycle)
+    {
+        using var f = StopFixture();
+        f.Port.UpdatePwm = !failHalfCycle;
+        f.Port.AfterWrite += (register, value) =>
+        {
+            if (register == 0x1A && value == 0xFE) { f.Port.Mapped[0x09] = 0; }
+        };
+        using var session = f.Create();
+        var plan = session.PrepareBalancedStop(Hooks());
+
+        var result = session.ExecuteApproved(plan, Approve(plan));
+
+        Assert.False(result.Success);
+        Assert.Equal(failHalfCycle ? So6120SilentTrialStop.PwmNotObserved : So6120SilentTrialStop.SpinNotObserved, result.StopReason);
+        Assert.DoesNotContain(f.Port.Writes, write => write is (0xB8 or 0xB9, 0));
+        Assert.True(result.Restoration!.CleanupConfirmed);
+    }
+
+    [Theory]
+    [InlineData("cancel", nameof(So6120SilentTrialStop.Cancelled))]
+    [InlineData("unsubmitted", nameof(So6120SilentTrialStop.StopStageFailed))]
+    [InlineData("thermal", nameof(So6120SilentTrialStop.ThermalRefused))]
+    [InlineData("pwm", nameof(So6120SilentTrialStop.SpinNotObserved))]
+    public void StopTrialUsesConfirmedFirstZeroForPartialAutoHandback(string stop, string reason)
+    {
+        using var f = StopFixture();
+        using var cancellation = new CancellationTokenSource();
+        bool thermal = true;
+        f.Port.AfterWrite += (register, value) =>
+        {
+            if (register == 0x1A && value == 0) { f.Port.UnperformedSecondWrite = false; }
+            if (register != 0xB8 || value != 0) { return; }
+            switch (stop)
+            {
+                case "cancel": cancellation.Cancel(); break;
+                case "unsubmitted": f.Port.UnperformedSecondWrite = true; break;
+                case "thermal": thermal = false; break;
+                case "pwm": f.Port.Mapped[0xB0] = 92; break;
+            }
+        };
+        using (var session = f.Create())
+        {
+            var plan = session.PrepareBalancedStop(new(() => thermal, () => thermal));
+
+            var result = session.ExecuteApproved(plan, Approve(plan), cancellation.Token);
+
+            Assert.Equal(reason, result.StopReason.ToString());
+            Assert.False(result.Success);
+            Assert.True(result.Restoration!.CleanupConfirmed);
+            Assert.Contains(((byte)0xB8, (byte)0), f.Port.Writes);
+            Assert.DoesNotContain(((byte)0xB9, (byte)0), f.Port.Writes);
+            Assert.True(result.StopStage!.Work.Writes[0].Transaction!.WriteConfirmed);
+            Assert.Equal((byte)0, result.StopStage.Work.CleanupCheckpoint!.Expected.Staged1);
+            Assert.Equal((byte)10, f.Port.Mapped[0xB8]);
+            Assert.Equal((byte)20, f.Port.Mapped[0xB9]);
+        }
+        AssertCompleteStopJournal(f);
+    }
+
+    [Fact]
+    public void PermissionCutoffAfterHalfCyclePreventsZeroButStillHandsBackAuto()
+    {
+        using var f = StopFixture();
+        using var session = f.Create();
+        var plan = session.PrepareBalancedStop(Hooks(progress =>
+        {
+            if (progress.Phase == "EntryFinished") { f.Clock.Advance(TimeSpan.FromSeconds(30)); }
+        }));
+
+        var result = session.ExecuteApproved(plan, Approve(plan));
+
+        Assert.Equal(So6120SilentTrialStop.EntryBudget, result.StopReason);
+        Assert.Null(result.StopStage);
+        Assert.DoesNotContain(f.Port.Writes, write => write is (0xB8 or 0xB9, 0));
+        Assert.True(result.Restoration!.CleanupConfirmed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AmbiguousSecondZeroFencesWithoutAutoOrAnotherCommand(bool confirmation)
+    {
+        using var f = StopFixture();
+        f.Port.AfterWrite += (register, value) =>
+        {
+            if (register == 0xB9 && value == 0 && !confirmation) { f.Port.AmbiguousFirstWrite = true; }
+        };
+        f.Port.AfterPublication = () =>
+        {
+            if (confirmation && f.Port.Mapped[0x1A] == 0xFE && f.Port.Mapped[0xB9] == 0
+                && f.Port.Publications[^1] is { Command: 0xA0, Register: 0xB9 })
+            { f.Clock.Advance(TimeSpan.FromSeconds(3)); }
+        };
+        using (var session = f.Create())
+        {
+            var plan = session.PrepareBalancedStop(Hooks());
+
+            var result = session.ExecuteApproved(plan, Approve(plan));
+
+            Assert.True(result.CommandsFenced);
+            Assert.Null(result.Restoration);
+            Assert.Null(result.StopStage!.Work.CleanupCheckpoint);
+            Assert.Equal((confirmation ? (byte)0xA0 : (byte)0xA1, (byte)0xB9),
+                (f.Port.Publications[^1].Command, f.Port.Publications[^1].Register));
+        }
+        var journal = So6120DirectDutyJournal.Inspect(f.Root);
+        Assert.True(journal.Fenced);
+        Assert.False(journal.Complete);
+        Assert.False(journal.Corrupt);
+    }
+
+    [Theory]
+    [InlineData(false, true, 11)]
+    [InlineData(true, true, 8)]
+    [InlineData(false, false, 11)]
+    public void StopTrialCoastCapsNewReadsAndSeparatelyReportsZeroPwm(bool hitTimeLimit, bool pwmZero, int observations)
+    {
+        using var f = StopFixture();
+        int zeroSelectors = 0;
+        f.Port.AfterWrite += (register, value) =>
+        {
+            if (register == 0xB9 && value == 0)
+            {
+                f.Port.Mapped[0x09] = 1;
+                if (!pwmZero) { f.Port.Mapped[0xB1] = 91; }
+            }
+        };
+        f.Port.AfterPublication = () =>
+        {
+            var last = f.Port.Publications[^1];
+            if (!hitTimeLimit || f.Port.Mapped[0x1A] != 0xFE || f.Port.Mapped[0xB9] != 0
+                || last is not { Command: 0xA0, Register: 0x1A } || ++zeroSelectors != 2) { return; }
+            int calls = 0;
+            f.Source.OnCapture = () =>
+            {
+                if (++calls <= 12) { f.Clock.Advance(TimeSpan.FromMilliseconds(450)); }
+            };
+        };
+        using (var session = f.Create())
+        {
+            var plan = session.PrepareBalancedStop(Hooks());
+
+            var result = session.ExecuteApproved(plan, Approve(plan));
+
+            Assert.Equal(So6120SilentTrialStop.ZeroTachNotObserved, result.StopReason);
+            Assert.False(result.StopStage!.ZeroTachObserved);
+            Assert.Equal(pwmZero, result.StopStage.ZeroPwmObservation is not null);
+            Assert.Equal(observations, result.StopStage.Work.Observations.Count);
+            Assert.True(result.Restoration!.CleanupConfirmed);
+        }
+        AssertCompleteStopJournal(f);
+    }
+
+    internal static Fixture StopFixture(byte saved1 = 10, byte saved2 = 20)
+    {
+        var f = new Fixture(PerformancePreset.Balanced, 0, preparing: true);
+        f.Port.Mapped[0xB8] = saved1;
+        f.Port.Mapped[0xB9] = saved2;
+        f.Port.AfterWrite = (register, value) =>
+        {
+            if (f.Port.Mapped[0x1A] != 0xFE) { return; }
+            switch (register)
+            {
+                case 0x1A when value == 0xFE:
+                    f.Port.Mapped[0x08] = f.Port.Mapped[0x09] = 38;
+                    break;
+                case 0xB8 when value == 0:
+                    f.Port.Mapped[0xB0] = f.Port.Mapped[0x08] = 0;
+                    break;
+                case 0xB9 when value == 0:
+                    f.Port.Mapped[0xB1] = f.Port.Mapped[0x09] = 0;
+                    break;
+            }
+        };
+        return f;
+    }
+
+    private static void AssertCompleteStopJournal(Fixture fixture)
+    {
+        var journal = So6120DirectDutyJournal.Inspect(fixture.Root);
+        Assert.True(journal.Complete);
+        Assert.False(journal.Corrupt);
+        Assert.InRange(journal.Records, 1, So6120DirectDutyJournal.MaximumRecords);
+        Assert.InRange(new FileInfo(Path.Combine(fixture.Root, So6120DirectDutyJournal.FileName)).Length, 1,
+            So6120DirectDutyJournal.MaximumFileBytes);
+    }
+
     [Fact]
     public void PreparationIsReadOnlyUnplannedVersionTwoAndRejectsFixedEntry()
     {

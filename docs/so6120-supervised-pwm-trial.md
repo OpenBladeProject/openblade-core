@@ -84,6 +84,12 @@ and ends only when the original permission is confirmed restored. Initial
 F0.5/F0.6, inactive state, pending policy command or unexpected manual state
 reject entry. Idle policy command is not proof that event14 work is drained.
 
+The separate [fixed stop trial](so6120-supervised-fan-stop-trial.md) prepares a
+half-cycle spinning baseline, two active zero-duty staging writes, bounded
+PWM/tach observations and the same Auto exit. It has its own hash-bound policy
+and approval. A successful half-cycle run does not authorize or establish
+commanded fan stop.
+
 ## Ownership and operator approval
 
 Before starting the live command, use the installed application's normal

@@ -413,7 +413,9 @@ internal sealed class So6120DutyWorkflow(So6120DirectDutyOperation operation, Ca
         {
             Generation = current.Generation + 1,
             Expected = next,
-            Owned = restoring ? current.Owned & ~field : current.Owned | field,
+            // Stop-stage staging can return to its saved byte while FE is
+            // still active, or touch staging that entry left unchanged.
+            Owned = value == Get(current.Baseline, register) ? current.Owned & ~field : current.Owned | field,
             Observation = after,
         });
     }

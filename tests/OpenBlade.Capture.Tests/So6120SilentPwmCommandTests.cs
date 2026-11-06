@@ -48,6 +48,23 @@ public sealed class So6120SilentPwmCommandTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StopTrialPlanIsOfflineAndIdentifiesBothStagesAndTachLimit(bool explicitPlan)
+    {
+        using var output = new StringWriter();
+        int result = await So6120SilentPwmCommand.RunBalancedStopAsync(explicitPlan ? ["--plan"] : [],
+            new StringReader(""), output, (_, _, _) => throw new InvalidOperationException("Live path invoked"));
+        Assert.Equal(0, result);
+        string plan = output.ToString();
+        Assert.Contains(So6120SilentPwmCommand.StopName, plan);
+        Assert.Contains("half the captured cycle count", plan);
+        Assert.Contains("B8=0 and B9=0 in order", plan);
+        Assert.Contains("two consecutive complete samples", plan);
+        Assert.Contains("cannot establish absolute impeller standstill", plan);
+    }
+
+    [Theory]
     [InlineData("--rpm", "1500")]
     [InlineData("--register", "B8")]
     [InlineData("--profile", "Silent")]
@@ -66,6 +83,8 @@ public sealed class So6120SilentPwmCommandTests
         Assert.Equal(1, await So6120SilentPwmCommand.RunBalancedAsync([option, value], new StringReader(""),
             new StringWriter(), (_, _, _) => { called = true; return Task.FromResult(9); }));
         Assert.Equal(1, await So6120SilentPwmCommand.RunBalancedHalfCycleAsync([option, value], new StringReader(""),
+            new StringWriter(), (_, _, _) => { called = true; return Task.FromResult(9); }));
+        Assert.Equal(1, await So6120SilentPwmCommand.RunBalancedStopAsync([option, value], new StringReader(""),
             new StringWriter(), (_, _, _) => { called = true; return Task.FromResult(9); }));
         Assert.False(called);
     }

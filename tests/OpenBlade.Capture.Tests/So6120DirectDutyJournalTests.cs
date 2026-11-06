@@ -78,6 +78,19 @@ public sealed class So6120DirectDutyJournalTests
             journal.RecordObservation(baseline);
             plan = damage == 3 ? new(Guid.NewGuid(), baseline, 54, 64, 11)
                 : new(Guid.NewGuid(), baseline, 91, 91, 11) { TargetPolicy = So6120TrialTargetPolicy.HalfCycle };
+            if (damage != 3)
+            {
+                var legacyHalfCycle = new
+                {
+                    plan.PlanId,
+                    plan.Baseline,
+                    plan.RequestedDuty1,
+                    plan.RequestedDuty2,
+                    plan.PreparedTimestamp,
+                    TargetPolicy = 1,
+                };
+                Assert.Equal(Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(legacyHalfCycle))), plan.PlanSha256);
+            }
             journal.ApprovePlan(plan, new(plan.PlanId, plan.PlanSha256, Guid.NewGuid(), new('A', 64)));
         }
         Assert.False(So6120DirectDutyJournal.Inspect(fixture.Root).Corrupt);
@@ -105,6 +118,78 @@ public sealed class So6120DirectDutyJournalTests
         var inspected = So6120DirectDutyJournal.Inspect(fixture.Root);
         Assert.True(inspected.Corrupt);
         Assert.Equal(record["Sequence"]!.GetValue<long>() - 1, inspected.Records);
+        Assert.False(inspected.CanResume);
+    }
+
+    [Theory]
+    [InlineData("policy")]
+    [InlineData("spin")]
+    [InlineData("order")]
+    [InlineData("fresh")]
+    [InlineData("above-half")]
+    public void StopReplayRejectsHashValidUnapprovedOrOutOfOrderZeroEvidence(string damage)
+    {
+        using var fixture = So6120SilentTrialTests.StopFixture();
+        So6120SilentTrialPlan plan;
+        using (var session = fixture.Create())
+        {
+            plan = session.PrepareBalancedStop(new(() => true, () => true));
+            Assert.True(session.ExecuteApproved(plan, new(plan.PlanId, plan.PlanSha256, Guid.NewGuid(), new('C', 64))).Success);
+        }
+        Assert.True(So6120DirectDutyJournal.Inspect(fixture.Root).Complete);
+
+        string path = Path.Combine(fixture.Root, So6120DirectDutyJournal.FileName);
+        byte[] original = File.ReadAllBytes(path);
+        var frames = new List<(int Offset, JsonNode Record)>();
+        for (int offset = 11; offset < original.Length;)
+        {
+            int bodyLength = BinaryPrimitives.ReadInt32LittleEndian(original.AsSpan(offset, 4));
+            frames.Add((offset, JsonNode.Parse(original.AsSpan(offset + 4, bodyLength))!));
+            offset += 36 + bodyLength;
+        }
+        int stop = frames.FindIndex(frame => frame.Record["Kind"]!.GetValue<int>() == 16);
+        int intent = frames.FindIndex(stop + 1, frame => frame.Record["Kind"]!.GetValue<int>() == 4);
+        if (damage == "above-half") { intent = frames.FindIndex(intent + 1, frame => frame.Record["Kind"]!.GetValue<int>() == 4); }
+        int transfer = intent + 1 + frames.Skip(intent + 1).TakeWhile(frame => frame.Record["Kind"]!.GetValue<int>() != 5
+            || frame.Record["Data"]!["WriteValue"] is null).Count();
+        int end = damage switch { "order" => intent, "fresh" or "above-half" => transfer, _ => stop };
+        int start = end;
+        switch (damage)
+        {
+            case "policy":
+                start = frames.FindIndex(frame => frame.Record["Kind"]!.GetValue<int>() == 15);
+                var halfCycle = plan with { TargetPolicy = So6120TrialTargetPolicy.HalfCycle };
+                frames[start].Record["Data"]!["Plan"] = JsonSerializer.SerializeToNode(halfCycle);
+                frames[start].Record["Data"]!["Approval"]!["PlanSha256"] = halfCycle.PlanSha256;
+                break;
+            case "spin":
+                start = stop - 1;
+                frames[start].Record["Data"]!["Snapshot"]!["Tach1"] = 0;
+                frames[stop].Record["Data"]!["Observation"]!["Snapshot"]!["Tach1"] = 0;
+                break;
+            case "order":
+                frames[intent].Record["Data"]!["Mutation"]!["Register"] = (byte)So6120MailboxRegister.StagedDuty2;
+                break;
+            case "fresh":
+                start = transfer - 1;
+                frames[start].Record["Data"]!["Snapshot"]!["Tach2"] = 0;
+                break;
+            case "above-half":
+                start = transfer - 1;
+                frames[start].Record["Data"]!["Snapshot"]!["Actual1"] = 92;
+                break;
+        }
+
+        int startOffset = frames[start].Offset;
+        using (var file = new FileStream(path, FileMode.Create, FileAccess.Write))
+        {
+            file.Write(original.AsSpan(0, startOffset));
+            byte[] previous = original.AsSpan(startOffset - 32, 32).ToArray();
+            for (int index = start; index <= end; index++) { previous = WriteFrame(file, frames[index].Record, previous); }
+        }
+        var inspected = So6120DirectDutyJournal.Inspect(fixture.Root);
+        Assert.True(inspected.Corrupt);
+        Assert.Equal(frames[end].Record["Sequence"]!.GetValue<long>() - 1, inspected.Records);
         Assert.False(inspected.CanResume);
     }
 

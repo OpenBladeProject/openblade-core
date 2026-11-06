@@ -1686,6 +1686,11 @@ if (args.Length > 0 && args[0] == So6120SilentPwmCommand.HalfCycleName)
     return await So6120SilentPwmCommand.RunBalancedHalfCycleAsync(args[1..], Console.In, Console.Out);
 }
 
+if (args.Length > 0 && args[0] == So6120SilentPwmCommand.StopName)
+{
+    return await So6120SilentPwmCommand.RunBalancedStopAsync(args[1..], Console.In, Console.Out);
+}
+
 if (args.Length > 0 && args[0] == So6120MailboxObservationCommand.Name)
 {
     return await So6120MailboxObservationCommand.RunAsync(args[1..], Console.In, Console.Out);

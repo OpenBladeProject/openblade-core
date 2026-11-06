@@ -100,6 +100,8 @@ internal sealed class So6120DirectDutyJournal : IDisposable
         Append(Kind.ApprovedPlan, new ApprovedPlan(plan, approval));
     public void ClaimEntry(DirectDutyOwner owner, PerformancePreset profile) => Append(Kind.EntryClaim, new Claim(owner, profile));
     public void ClaimExit(So6120DutyCheckpoint checkpoint) => Append(Kind.ExitClaim, checkpoint);
+    public void ClaimStop(So6120DutyCheckpoint checkpoint, So6120DutyObservation observation) =>
+        Append(Kind.StopClaim, new StopClaim(checkpoint, observation));
     public void RecordObservation(So6120DutyObservation observation) => Append(Kind.Observation, observation);
     public void RecordIntent(DirectDutyOwner owner, So6120DutyMutation mutation, So6120DutyObservation observation) =>
         Append(Kind.Intent, new Intent(owner, mutation, observation));
@@ -255,9 +257,20 @@ internal sealed class So6120DirectDutyJournal : IDisposable
                     && claim.Owner == owner && claim.Profile == next.Identity.CapturedProfile);
                 next.Phase = Phase.Entry;
                 break;
+            case Kind.StopClaim:
+                StopClaim stop = Payload<StopClaim>(record);
+                Require(next.Phase == Phase.Entry && next.Plan is { IncludesStop: true } stopPlan
+                    && next.Checkpoint is { } spunUp && stop.Checkpoint == spunUp && spunUp.Owner == owner
+                    && next.Intent is null && next.Transfer is null
+                    && stop.Observation is { } spinning && spinning == next.Observation
+                    && spinning.Sequence > spunUp.Observation.Sequence && spinning.Snapshot.Controls == spunUp.Expected
+                    && spunUp.Expected == stopPlan.HalfCycleControls() && (spinning.Snapshot.ActiveState & 1) != 0
+                    && stopPlan.AdmitsStopWrite(So6120MailboxRegister.StagedDuty1, spinning.Snapshot));
+                next.Phase = Phase.Stop;
+                break;
             case Kind.ExitClaim:
                 So6120DutyCheckpoint exit = Payload<So6120DutyCheckpoint>(record);
-                Require(next.Phase is Phase.Entry or Phase.EntryStopped && next.Checkpoint == exit
+                Require(next.Phase is Phase.Entry or Phase.EntryStopped or Phase.Stop && next.Checkpoint == exit
                     && exit.Owner == owner && next.Intent is null && next.Transfer is null);
                 next.Phase = Phase.Exit;
                 break;
@@ -269,7 +282,7 @@ internal sealed class So6120DirectDutyJournal : IDisposable
                 next.Observation = observation;
                 break;
             case Kind.Intent:
-                Require(next.Phase is Phase.Entry or Phase.Exit);
+                Require(next.Phase is Phase.Entry or Phase.Stop or Phase.Exit);
                 Intent intent = Payload<Intent>(record);
                 Require(next.Intent is null && next.Transfer is null && next.Checkpoint is not null && intent.Owner == owner);
                 Require(intent.Mutation == NextMutation(next));
@@ -286,9 +299,9 @@ internal sealed class So6120DirectDutyJournal : IDisposable
                 Require(next.Transfer is null && transfer.Id != Guid.Empty && next.Ids.Add(transfer.Id) && Readable(transfer.Register));
                 if (transfer.WriteValue is byte value)
                 {
-                    Require(next.Phase is Phase.Entry or Phase.Exit && next.Intent is not null && !next.WriteAttempted);
+                    Require(next.Phase is Phase.Entry or Phase.Stop or Phase.Exit && next.Intent is not null && !next.WriteAttempted);
                     Require(transfer.Register == next.Intent!.Mutation.Register && value == next.Intent.Mutation.Value);
-                    if (next.Phase == Phase.Entry && next.Plan is { } plan)
+                    if (next.Phase is Phase.Entry or Phase.Stop && next.Plan is { } plan)
                     {
                         // The session records its fresh pre-write snapshot
                         // after the intent and before beginning the transfer.
@@ -296,7 +309,8 @@ internal sealed class So6120DirectDutyJournal : IDisposable
                             && live.Snapshot.Controls == next.Intent.Mutation.Expected
                             && (live.Snapshot.ActiveState & 1) != 0
                             && (!plan.RequiresPostIntentObservation || live.Sequence > next.Intent.Observation.Sequence)
-                            && plan.AdmitsLivePwm(live.Snapshot));
+                            && (next.Phase == Phase.Stop ? plan.AdmitsStopWrite(transfer.Register, live.Snapshot)
+                                : plan.AdmitsLivePwm(live.Snapshot)));
                     }
                     next.WriteAttempted = true;
                 }
@@ -415,7 +429,8 @@ internal sealed class So6120DirectDutyJournal : IDisposable
                     So6120DutyMutation mutation = next.Intent!.Mutation;
                     So6120DutyOwnedFields field = Field(mutation.Register);
                     Require(checkpoint.Expected == Set(next.Checkpoint.Expected, mutation.Register, mutation.Value));
-                    Require(checkpoint.Owned == (next.Phase == Phase.Exit ? next.Checkpoint.Owned & ~field : next.Checkpoint.Owned | field));
+                    Require(checkpoint.Owned == (mutation.Value == Get(checkpoint.Baseline, mutation.Register)
+                        ? next.Checkpoint.Owned & ~field : next.Checkpoint.Owned | field));
                     if (next.Phase == Phase.Exit && mutation.Register == So6120MailboxRegister.Override)
                     { next.PermissionRestored = true; }
                 }
@@ -446,14 +461,18 @@ internal sealed class So6120DirectDutyJournal : IDisposable
     private static So6120DutyMutation? NextMutation(State state)
     {
         So6120DutyCheckpoint current = state.Checkpoint!;
-        So6120DutyControls target = state.Phase == Phase.Exit ? current.Baseline
-            : current.Baseline with
+        So6120DutyControls target = state.Phase switch
+        {
+            Phase.Exit => current.Baseline,
+            Phase.Stop => current.Expected with { Staged1 = 0, Staged2 = 0 },
+            _ => current.Baseline with
             {
                 Staged1 = RequestedDuty(state, true),
                 Staged2 = RequestedDuty(state, false),
                 Override = (byte)(current.Baseline.Override | 0x40),
                 Selector = 0xFE,
-            };
+            },
+        };
         So6120MailboxRegister[] order = state.Phase == Phase.Exit
             ? [So6120MailboxRegister.Selector, So6120MailboxRegister.Override, So6120MailboxRegister.StagedDuty1, So6120MailboxRegister.StagedDuty2]
             : [So6120MailboxRegister.StagedDuty1, So6120MailboxRegister.StagedDuty2, So6120MailboxRegister.Override, So6120MailboxRegister.Selector];
@@ -510,7 +529,8 @@ internal sealed class So6120DirectDutyJournal : IDisposable
     }
     private static bool IsDigest(string? value) => value is { Length: 64 } && value.All(Uri.IsHexDigit);
     private static bool Readable(So6120MailboxRegister register) => Enum.IsDefined(register);
-    private static void RequireActive(State state) => Require(state.Phase is Phase.Entry or Phase.Exit or Phase.EntryStopped or Phase.ExitStopped or Phase.Preparing or Phase.PlanApproved);
+    private static void RequireActive(State state) => Require(state.Phase is Phase.Entry or Phase.Stop or Phase.Exit
+        or Phase.EntryStopped or Phase.ExitStopped or Phase.Preparing or Phase.PlanApproved);
     private static void Require([DoesNotReturnIf(false)] bool condition)
     {
         if (!condition) { throw new InvalidDataException("Invalid or out-of-order SO6120 journal evidence."); }
@@ -589,12 +609,13 @@ internal sealed class So6120DirectDutyJournal : IDisposable
     private enum Kind
     {
         Binding, EntryClaim, ExitClaim, Observation, Intent, TransferBegin, RequestPrepared, Publication,
-        TransferResult, TransferNotSubmitted, IntentNotSubmitted, Checkpoint, Fence, Complete, PreparationClaim, ApprovedPlan,
+        TransferResult, TransferNotSubmitted, IntentNotSubmitted, Checkpoint, Fence, Complete, PreparationClaim, ApprovedPlan, StopClaim,
     }
-    private enum Phase { Empty, Bound, Entry, EntryStopped, Exit, ExitStopped, Complete, Preparing, PlanApproved }
+    private enum Phase { Empty, Bound, Entry, EntryStopped, Exit, ExitStopped, Complete, Preparing, PlanApproved, Stop }
     private sealed record Record(long Sequence, Kind Kind, JsonElement Data);
     private sealed record ApprovedPlan(So6120SilentTrialPlan Plan, So6120SilentTrialApproval Approval);
     private sealed record Claim(DirectDutyOwner Owner, PerformancePreset Profile);
+    private sealed record StopClaim(So6120DutyCheckpoint Checkpoint, So6120DutyObservation Observation);
     private sealed record Intent(DirectDutyOwner Owner, So6120DutyMutation Mutation, So6120DutyObservation Observation);
     private sealed record Resolution(DirectDutyOwner Owner, So6120DutyMutation Mutation, So6120DutyFailure Reason);
     private sealed record Fence(DirectDutyOwner Owner, So6120DutyFailure Reason);

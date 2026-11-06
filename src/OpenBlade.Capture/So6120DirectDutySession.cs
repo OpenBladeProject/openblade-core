@@ -121,7 +121,7 @@ internal sealed partial class So6120DirectDutySession : IDisposable
 
     private So6120DutyResult RestoreWorkflow(CancellationToken cancellationToken)
     {
-        if (restored || entry?.CleanupCheckpoint is not { } checkpoint)
+        if (restored || entry?.CleanupCheckpoint is null || operation.Latest is not { } checkpoint)
         { throw new InvalidOperationException("No unused in-memory cleanup checkpoint."); }
         restored = true;
         var result = new So6120DirectDutyAutoExit(operation).Restore(checkpoint, cancellationToken);
@@ -348,12 +348,14 @@ internal sealed partial class So6120DirectDutySession : IDisposable
             { session.Fence(So6120DutyFailure.StateChanged); return new(So6120DutyIoDisposition.Unresolved, null); }
             if (session.trialExecuting && !session.trialRestoring)
             {
-                if (!session.preparedPlan!.AdmitsLivePwm(before.Snapshot))
+                var plan = session.preparedPlan!;
+                if (session.trialStopping ? !plan.AdmitsStopWrite(mutation.Register, before.Snapshot)
+                    : !plan.AdmitsLivePwm(before.Snapshot))
                 {
-                    // PWM can leave the approved increase range without
-                    // invalidating confirmed mapped-control ownership. Stop
-                    // before A1 and retain the explicit known-prefix handback.
-                    session.trialStop = So6120SilentTrialStop.PwmNotObserved;
+                    // PWM/tach drift alone does not invalidate confirmed
+                    // mapped-control ownership. Stop before A1 and hand back.
+                    session.trialStop = session.trialStopping
+                        ? So6120SilentTrialStop.SpinNotObserved : So6120SilentTrialStop.PwmNotObserved;
                     return new(So6120DutyIoDisposition.DefinitelyUnsubmitted,
                         new(So6120MailboxFailure.AdmissionRefused, null, 0, 0, false, []));
                 }

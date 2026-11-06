@@ -15,11 +15,15 @@ internal static class So6120SilentPwmCommand
     internal const string Name = "validate-so6120-silent-pwm-increase";
     internal const string BalancedName = "validate-so6120-balanced-pwm-increase";
     internal const string HalfCycleName = "validate-so6120-balanced-pwm-half-cycle";
+    internal const string StopName = "validate-so6120-balanced-pwm-stop";
     internal const string FirmwareHash = "8537E9FD55B7B35504D8D87B0191ACC4391B67365B3FE72F6E1029A424C9E707";
     internal const string HandleControlHash = "AF1A1648AA2FD19DB79352AA31DFAB50B93CD49DF84CE959A7C9AC3FBD01EFE9";
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
-    private static string FormatPlan(PerformancePreset profile, string name, string powerInstruction, bool halfCycle)
+    private static string FormatPlan(PerformancePreset profile, string name, string powerInstruction,
+        So6120TrialTargetPolicy targetPolicy)
     {
+        bool halfCycle = targetPolicy != So6120TrialTargetPolicy.PlusFour;
+        bool stop = targetPolicy == So6120TrialTargetPolicy.HalfCycleThenStop;
         string targetDescription = halfCycle ? """
             Only then open InpOut and read the A0 baseline, including the current PWM cycle count.
             This trial fixes both targets at half the captured cycle count, rounded down.
@@ -37,8 +41,16 @@ internal static class So6120SilentPwmCommand
             Before entry and before each entry write, compare fresh actual PWM to those fixed targets.
             Either target outside the live increase range stops entry. The read and write are separate operations.
             """;
+        string afterEntry = stop ? """
+            Fresh FE readback must show both half-cycle targets and both raw tach bytes above zero.
+            Then write B8=0 and B9=0 in order while FE is active; verify each write separately.
+            Observe actual PWM 0/0 and raw tach 0/0 in two consecutive complete samples.
+            Start no new coast sample after five seconds and take at most four additional samples.
+            Tach is a raw EC rotation indication. Zero tach cannot establish absolute impeller standstill.
+            Finish each started confirmation and hand back promptly from the last confirmed state.
+            """ : "After a one-second dwell, hand back from the last confirmed state.";
         return $"""
-        SO6120 supervised {profile} PWM increase: PREPARATION ONLY
+        SO6120 supervised {profile} PWM {(stop ? "stop trial" : "increase")}: PREPARATION ONLY
         Exact RZ09-0581 / 1532:02E0 / SKU RZ09-05819EN4 / BIOS 4.01 / reported EC 1.04.
         {powerInstruction}
         Keep the laptop awake, idle/light desktop, and peripherals unchanged.
@@ -49,21 +61,20 @@ internal static class So6120SilentPwmCommand
         It first obtains explicit acceptance of the scoped contention/abort limits.
         {targetDescription}
         Stage B8/B9; set owned F0.6 permission; publish FE last; verify each write.
-        After a one-second dwell, restore the captured normal selector to Auto,
-        confirm Manual00, then restore the original owned F0/staging bytes.
+        {afterEntry}
+        Restore the captured normal selector to Auto, confirm Manual00, then restore the original owned F0/staging bytes.
         Raw tach bytes are recorded; their RPM scale is not established here.
         CPU thermal-zone 10..55 C and confirmed inactive GPU admit entry only.
         High/unknown thermal readings stop entry; they do not block sound Auto cleanup.
         Ctrl+C requests stop at a resolved boundary and the approved Auto handback.
         Ambiguous commands/readback/storage fence ALL mailbox commands, including A0.
         No retry, alternate writer, automatic kill, forced reboot or GUI Auto fallback.
-        Stop new entry A1/dwell after 45s or 30s since possible F0; finish confirmation first.
+        Stop new entry or experiment work after 45s or 30s since possible F0; finish confirmation first.
         Auto has its own 60s phase. Each logical transaction retains its full 2s budget.
         These are publication/work cutoffs, not a hard physical exposure guarantee.
         Synchronous native calls can stall beyond those bounds; no hard watchdog is claimed.
         If stalled/unresolved, keep the console/process alive, leave OpenBlade stopped,
         stop workload and seek supervised reconciliation. Physical recovery is unverified.
-        This is an attended PWM increase experiment with a fixed target and bounded dwell.
         Usage: OpenBlade.Capture {name} --run-root <new absolute directory>
         """;
     }
@@ -95,15 +106,23 @@ internal static class So6120SilentPwmCommand
         Func<string, TextReader, TextWriter, Task<int>>? live = null) =>
         RunAsync(PerformancePreset.Balanced, So6120TrialTargetPolicy.HalfCycle, args, input, output, live);
 
+    internal static Task<int> RunBalancedStopAsync(IReadOnlyList<string> args, TextReader input, TextWriter output,
+        Func<string, TextReader, TextWriter, Task<int>>? live = null) =>
+        RunAsync(PerformancePreset.Balanced, So6120TrialTargetPolicy.HalfCycleThenStop, args, input, output, live);
+
     private static async Task<int> RunAsync(PerformancePreset profile, So6120TrialTargetPolicy targetPolicy, IReadOnlyList<string> args,
         TextReader input, TextWriter output, Func<string, TextReader, TextWriter, Task<int>>? live)
     {
         bool balanced = profile == PerformancePreset.Balanced;
-        bool halfCycle = targetPolicy == So6120TrialTargetPolicy.HalfCycle;
+        string name = targetPolicy switch
+        {
+            So6120TrialTargetPolicy.HalfCycleThenStop => StopName,
+            So6120TrialTargetPolicy.HalfCycle => HalfCycleName,
+            _ => balanced ? BalancedName : Name,
+        };
         string planText = balanced
-            ? FormatPlan(profile, halfCycle ? HalfCycleName : BalancedName,
-                "Keep the operator-reported USB-C power connected. Windows checks external power only.", halfCycle)
-            : FormatPlan(profile, Name, "Keep AC connected.", halfCycle: false);
+            ? FormatPlan(profile, name, "Keep the operator-reported USB-C power connected. Windows checks external power only.", targetPolicy)
+            : FormatPlan(profile, name, "Keep AC connected.", targetPolicy);
         if (!TryParse(args, out string? root))
         { await output.WriteLineAsync(planText); return 1; }
         if (root is null) { await output.WriteLineAsync(planText); return 0; }
@@ -155,7 +174,8 @@ internal static class So6120SilentPwmCommand
         var clock = TimeProvider.System;
         var run = Guid.NewGuid();
         string capturedProfile = profile.ToString();
-        bool halfCycle = targetPolicy == So6120TrialTargetPolicy.HalfCycle;
+        bool halfCycle = targetPolicy != So6120TrialTargetPolicy.PlusFour;
+        bool stop = targetPolicy == So6120TrialTargetPolicy.HalfCycleThenStop;
         string? requestedPowerSource = profile == PerformancePreset.Balanced ? "USB-C" : null;
         So6120WindowsDutyAcquisition? acquisition = null;
         So6120DirectDutySession? session = null;
@@ -200,9 +220,12 @@ internal static class So6120SilentPwmCommand
                 physicalStimulusWindowsPerformed = false,
                 universalExclusionEstablished = false,
                 physicalRecoveryEstablished = false,
-                rule = halfCycle
-                    ? "One fixed half-cycle trial with Balanced/Auto handback. Stop all commands after ambiguity."
-                    : "One fixed +4-count trial with captured-profile Auto handback. Stop all commands after ambiguity.",
+                rule = targetPolicy switch
+                {
+                    So6120TrialTargetPolicy.HalfCycleThenStop => "One fixed half-cycle then zero trial with exact Balanced/Auto handback. Stop all commands after ambiguity.",
+                    So6120TrialTargetPolicy.HalfCycle => "One fixed half-cycle trial with Balanced/Auto handback. Stop all commands after ambiguity.",
+                    _ => "One fixed +4-count trial with captured-profile Auto handback. Stop all commands after ambiguity.",
+                },
             };
             Record(decision);
             await output.WriteLineAsync(JsonSerializer.Serialize(decision, Json));
@@ -254,11 +277,13 @@ internal static class So6120SilentPwmCommand
                 if (progressBuffer.Count == 16) { throw new InvalidOperationException("Trial progress bound exceeded."); }
                 progressBuffer.Add(progress);
             });
-            var plan = halfCycle
-                ? session.PrepareBalancedHalfCycle(hooks, cancellation.Token)
-                : profile == PerformancePreset.Balanced
-                    ? session.PrepareBalancedIncrease(hooks, cancellation.Token)
-                    : session.PrepareSilentIncrease(hooks, cancellation.Token);
+            var plan = targetPolicy switch
+            {
+                So6120TrialTargetPolicy.HalfCycleThenStop => session.PrepareBalancedStop(hooks, cancellation.Token),
+                So6120TrialTargetPolicy.HalfCycle => session.PrepareBalancedHalfCycle(hooks, cancellation.Token),
+                _ when profile == PerformancePreset.Balanced => session.PrepareBalancedIncrease(hooks, cancellation.Token),
+                _ => session.PrepareSilentIncrease(hooks, cancellation.Token),
+            };
             var derivedPlan = new { phase = "derivedPlan", capturedProfile, operatorReportedPowerSource, plan };
             Record(derivedPlan);
             await output.WriteLineAsync(JsonSerializer.Serialize(derivedPlan, new JsonSerializerOptions { WriteIndented = true }));
@@ -268,6 +293,10 @@ internal static class So6120SilentPwmCommand
                 string fraction = FormattableString.Invariant($"{plan.RequestedDuty1}/{cycle} per fan, about {100.0 * plan.RequestedDuty1 / cycle:F1}% of the captured cycle count");
                 await output.WriteLineAsync($"Approve the fixed raw targets of {fraction}, and exact Balanced/Auto restoration. This can be a larger increase than +4 counts. The cycle fraction has no calibrated electrical duty or RPM interpretation.");
                 await output.WriteLineAsync("Either fan at or above its approved target stops entry before a write. The runner keeps the approved targets. Reads and writes are separate operations.");
+                if (stop)
+                {
+                    await output.WriteLineAsync("This approval also covers B8=0 followed by B9=0 under FE after both fans read back half-cycle PWM and nonzero tach. Both fans may stop until the approved Auto handback. Coast and handback add time beyond the zero writes.");
+                }
             }
             else
             {
