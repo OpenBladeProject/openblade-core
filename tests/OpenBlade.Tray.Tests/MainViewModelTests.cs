@@ -10097,11 +10097,13 @@ public sealed partial class MainViewModelTests
                 HyperBoostRestoredPerformance = PerformancePreset.Performance,
             },
         };
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         ServiceStatusSnapshot inactive = CreatePadlessHyperBoostStatus(baseline) with
         {
+            Message = "Coalesced entry: inactive baseline",
             DesiredState = baseline.DesiredState with
             {
                 Performance = new ResolvedSetting<PerformancePreset>(
@@ -10114,10 +10116,11 @@ public sealed partial class MainViewModelTests
                 HyperBoostActive = false,
             },
         };
-        client.Publish(inactive);
-        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Silent);
-        client.Publish(inactive with
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, inactive);
+        Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, inactive with
         {
+            Message = "Coalesced entry: active snapshot",
             Revision = inactive.Revision + 2,
             DesiredState = inactive.DesiredState with
             {
@@ -10131,7 +10134,7 @@ public sealed partial class MainViewModelTests
                 HyperBoostActive = true,
             },
         });
-        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+        Assert.True(viewModel.HyperBoostActive);
         LaptopPerformanceOption silent = viewModel.AvailableLaptopPerformanceOptions
             .Single(option => option.Value == PerformancePreset.Silent);
 
