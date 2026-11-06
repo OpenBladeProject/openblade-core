@@ -1565,9 +1565,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && CanControlLighting
         && !UseWindowsDynamicLighting;
 
-    public string LightingRefreshRateAvailabilityText => SupportsSixtyHzLighting
-        ? TrayText.Get("Render supported animated effects at 60 Hz. Uses more CPU and power.")
-        : TrayText.Get("60 Hz lighting is not available for this keyboard.");
+    public string LightingRefreshRateAvailabilityText
+    {
+        get
+        {
+            if (IsReadinessChecking)
+            {
+                return TrayText.Get("Checking keyboard support…");
+            }
+
+            if (!IsConnected || latestStatus?.DeviceVerified != true || !HasLightingCapability)
+            {
+                return TrayText.Get("60 Hz lighting support couldn’t be checked.");
+            }
+
+            return SupportsSixtyHzLighting
+                ? TrayText.Get("Render supported animated effects at 60 Hz. Uses more CPU and power.")
+                : TrayText.Get("60 Hz lighting is not available for this keyboard.");
+        }
+    }
 
     public bool AllowUntestedFirmware
     {
@@ -3107,7 +3123,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CanControlLighting));
             Notify(nameof(SupportsSixtyHzLighting));
             Notify(nameof(CanSetLightingRefreshRate));
-            Notify(nameof(LightingRefreshRateAvailabilityText));
             NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();
         }
@@ -9221,6 +9236,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(HasLightingCapability), HasLightingCapability);
         NotifyComputed(nameof(CanControlLighting), CanControlLighting);
         NotifyComputed(nameof(CanSetLightingRefreshRate), CanSetLightingRefreshRate);
+        NotifyComputed(nameof(LightingRefreshRateAvailabilityText), LightingRefreshRateAvailabilityText);
         NotifyComputed(nameof(IsLightingControlUnavailable), IsLightingControlUnavailable);
         NotifyComputed(nameof(IsLightingControlUnavailableNoticeVisible), IsLightingControlUnavailableNoticeVisible);
         NotifyComputed(nameof(LightingControlUnavailableMessage), LightingControlUnavailableMessage);

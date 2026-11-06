@@ -722,6 +722,7 @@ public partial class App
                 or "telemetry-expired" or "telemetry-retention"
                 or "telemetry-recording" or "telemetry-replay";
             bool captureBatteryReport = requestedPage?.StartsWith("telemetry-battery-report", StringComparison.Ordinal) == true;
+            bool captureLabsTarget = requestedPage is "labs-import-target" or "labs-60hz-target";
             bool captureFeatureSnapshot = captureBatteryReport || captureTelemetryVariant || requestedPage is
                 "profiles-applications" or "profiles-applications-empty"
                 or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
@@ -764,6 +765,7 @@ public partial class App
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
                 && !captureProfilesVariant
                 && !captureFeatureSnapshot
+                && !captureLabsTarget
                 && !captureSnapTap
                 && !captureDischargeSettings
                 && !string.Equals(
@@ -775,7 +777,7 @@ public partial class App
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
             IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
-                || captureDischargeSettings
+                || captureDischargeSettings || captureLabsTarget
                 ? [requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
@@ -854,6 +856,7 @@ public partial class App
                     string navigationDestination = destination switch
                     {
                         "settings-appearance" or "settings-notifications" => "settings",
+                        "labs-import-target" or "labs-60hz-target" => "labs",
                         "profiles-applications" or "profiles-applications-empty"
                             or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                             or "profiles-application-discovery-empty" => "profiles",
@@ -868,6 +871,13 @@ public partial class App
                     };
                     snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination);
                     await WaitForSnapshotLayoutAsync();
+                    if (captureLabsTarget)
+                    {
+                        bool showRefreshRate = destination == "labs-60hz-target";
+                        snapshotMainWindow.InvokeLabsGuideSnapshot(showRefreshRate);
+                        await WaitForSnapshotLayoutAsync();
+                        snapshotMainWindow.VerifyLabsGuideSnapshot(showRefreshRate);
+                    }
                     if (string.Equals(
                         destination,
                         "settings-appearance",

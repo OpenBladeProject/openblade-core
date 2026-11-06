@@ -156,6 +156,9 @@
   <data name="60 Hz lighting is not available for this keyboard." xml:space="preserve">
     <value>此键盘不支持 60 Hz 灯光。</value>
   </data>
+  <data name="60 Hz lighting support couldn’t be checked." xml:space="preserve">
+    <value>无法确认键盘是否支持 60 Hz 灯光。</value>
+  </data>
   <data name="A shortcut must include a non-modifier key." xml:space="preserve">
     <value>快捷键必须包含一个非修饰键。</value>
   </data>
@@ -314,6 +317,9 @@
   </data>
   <data name="Check status" xml:space="preserve">
     <value>检查状态</value>
+  </data>
+  <data name="Checking keyboard support…" xml:space="preserve">
+    <value>正在检查键盘是否支持此功能…</value>
   </data>
   <data name="Checking" xml:space="preserve">
     <value>正在检查</value>

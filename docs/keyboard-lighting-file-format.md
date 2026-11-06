@@ -6,9 +6,9 @@ OpenBlade keyboard lighting files are UTF-8 JSON documents with the `.oblight`
 extension. Version 1 stores one portable keyboard effect preset for effects
 supported by the connected Blade and its firmware.
 
-To try experimental keyboard lighting import, open **Labs** in the sidebar and
-select **Import preset**. To save an imported effect to your power profile, go
-to **Lighting**.
+In the sidebar, open **Labs** and select **Import a lighting preset** to jump
+to **Lighting → Keyboard**. Use **Import preset** to review and apply the file,
+then save the effect to your active power profile from the Lighting page.
 
 The media type is `application/vnd.openblade.keyboard-lighting+json`.
 

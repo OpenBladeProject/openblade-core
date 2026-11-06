@@ -765,6 +765,41 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 }));
     }
 
+    private void OnOpenLabsLightingControl(object sender, RoutedEventArgs args)
+    {
+        if (sender is not Microsoft.UI.Xaml.Controls.Button { Tag: string targetName } || !ViewModel.IsLightingVisible)
+        {
+            return;
+        }
+
+        MainNavigation.SelectedItem = LightingNavigationItem;
+        dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+        {
+            if (Volatile.Read(ref disposed) != 0 || LightingPage.Visibility != Visibility.Visible)
+            {
+                return;
+            }
+
+            LightingPage.UpdateLayout();
+            if (FindDescendant<Microsoft.UI.Xaml.Controls.Control>(LightingCard, targetName) is not { } target)
+            {
+                return;
+            }
+
+            if (target.IsEnabled)
+            {
+                target.Focus(FocusState.Programmatic);
+            }
+
+            target.StartBringIntoView(
+                new BringIntoViewOptions
+                {
+                    AnimationDesired = false,
+                    VerticalAlignmentRatio = 0.5,
+                });
+        });
+    }
+
     public void NavigateToNotificationDestination(
         TrayNotificationDestination destination)
     {

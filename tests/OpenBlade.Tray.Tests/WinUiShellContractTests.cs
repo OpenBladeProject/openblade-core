@@ -1413,7 +1413,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void LabsIsAlwaysInTheSidebarAndOwnsCapabilityGatedLightingControls()
+    public void LabsGuidesLinkToCapabilityGatedControlsInTheirOriginalSection()
     {
         XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement navigation = NamedElement(document, "NavigationViewItem", "LabsNavigationItem");
@@ -1424,7 +1424,7 @@ public sealed class WinUiShellContractTests
         Assert.Null(Attribute(navigation, "IsEnabled"));
 
         XElement page = NamedElement(document, "ScrollViewer", "LabsPage");
-        Assert.Equal("Try experimental OpenBlade features.",
+        Assert.Equal("Explore experimental OpenBlade features.",
             Attribute(LocalizedElement(document, "TextBlock", "MainWindow_LabsDescription"), "Text"));
         XElement importCard = NamedElement(document, "Border", "ImportKeyboardLightingPresetCard");
         XElement rateCard = NamedElement(document, "Border", "LightingRefreshRateCard");
@@ -1434,19 +1434,28 @@ public sealed class WinUiShellContractTests
         XElement heading = keyboard.Elements().First();
         Assert.Equal(Attribute(original.Elements().First(), "Text"), Attribute(heading, "Text"));
         Assert.Equal("{StaticResource SectionHeaderStyle}", Attribute(heading, "Style"));
-        Assert.Equal(keyboard, importCard.Parent);
-        Assert.Equal(keyboard, rateCard.Parent);
+        Assert.Equal(original, importCard.Parent);
+        Assert.Equal(original, rateCard.Parent);
+        XElement importGuide = NamedElement(document, "Button", "LabsImportGuideButton");
+        XElement rateGuide = NamedElement(document, "Button", "LabsLightingRateGuideButton");
+        Assert.Contains(keyboard, importGuide.Ancestors());
+        Assert.Contains(keyboard, rateGuide.Ancestors());
+        Assert.Equal("OnOpenLabsLightingControl", Attribute(importGuide, "Click"));
+        Assert.Equal("OnOpenLabsLightingControl", Attribute(rateGuide, "Click"));
+        Assert.DoesNotContain(page.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
         Assert.Null(Attribute(importCard, "Visibility"));
         Assert.Null(Attribute(rateCard, "Visibility"));
 
         XElement import = Assert.Single(importCard.Descendants(), element => element.Name.LocalName == "Button");
         Assert.Equal("Import keyboard lighting preset", Attribute(import, "AutomationProperties.Name"));
-        Assert.Equal("{x:Bind ViewModel.CanControlLighting, Mode=OneWay}", Attribute(import, "IsEnabled"));
+        Assert.Equal("{x:Bind CanControlLighting, Mode=OneWay}", Attribute(import, "IsEnabled"));
         Assert.Equal("OnImportKeyboardLighting", Attribute(import, "Click"));
+        Assert.Equal(Attribute(import, "Name"), Attribute(importGuide, "Tag"));
         XElement rate = Assert.Single(rateCard.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
-        Assert.Equal("{x:Bind ViewModel.IsSixtyHzLightingEnabled, Mode=OneWay}", Attribute(rate, "IsOn"));
-        Assert.Equal("{x:Bind ViewModel.CanSetLightingRefreshRate, Mode=OneWay}", Attribute(rate, "IsEnabled"));
+        Assert.Equal("{x:Bind IsSixtyHzLightingEnabled, Mode=OneWay}", Attribute(rate, "IsOn"));
+        Assert.Equal("{x:Bind CanSetLightingRefreshRate, Mode=OneWay}", Attribute(rate, "IsEnabled"));
         Assert.Equal("OnLightingRefreshRateToggled", Attribute(rate, "Toggled"));
+        Assert.Equal(Attribute(rate, "Name"), Attribute(rateGuide, "Tag"));
 
         string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
         Assert.DoesNotContain("LabFeaturesToggle", xaml, StringComparison.Ordinal);

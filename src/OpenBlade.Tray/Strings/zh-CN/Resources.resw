@@ -1241,11 +1241,23 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
     <value>键盘灯光</value>
   </data>
+  <data name="MainWindow_LabsNavigationItem.Content" xml:space="preserve">
+    <value>实验室</value>
+  </data>
   <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
     <value>实验室</value>
   </data>
   <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
-    <value>试用 OpenBlade 的实验性功能。</value>
+    <value>探索 OpenBlade 的实验性功能。</value>
+  </data>
+  <data name="MainWindow_LabsImportTitle.Text" xml:space="preserve">
+    <value>导入灯光预设</value>
+  </data>
+  <data name="MainWindow_LabsImportDescription.Text" xml:space="preserve">
+    <value>加载 OpenBlade 或 Razer Chroma 文件，在应用前查看灯效，并将其保存到当前电源配置。</value>
+  </data>
+  <data name="MainWindow_LabsLightingRateDescription.Text" xml:space="preserve">
+    <value>让支持的键盘灯光动画更流畅，同时增加 CPU 占用和耗电量。</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>笔记本电脑</value>

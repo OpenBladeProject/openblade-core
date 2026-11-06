@@ -75,6 +75,7 @@ $previousPseudo = $env:OPENBLADE_PSEUDO_LOCALIZATION
 $previousLanguage = $env:OPENBLADE_LOCALIZATION_LANGUAGE
 $previousSnapshotState = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE
 $previousSnapshotPage = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE
+$previousControlAvailability = $env:OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE
 $previousFailureEvidenceDirectory = $env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR
 $previousCompatibilityLayer = $env:__COMPAT_LAYER
 try {
@@ -149,6 +150,8 @@ try {
             'thx-audio-applications',
             'lighting',
             'labs',
+            'labs-import-target',
+            'labs-60hz-target',
             'display',
             'display-brightness-known',
             'display-brightness-unavailable',
@@ -158,6 +161,11 @@ try {
             'whats-new',
             'tray-dashboard')) {
         $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $trayPage
+        $env:OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE = if ($trayPage -in 'labs-import-target', 'labs-60hz-target') {
+            'labs-lighting'
+        } else {
+            $previousControlAvailability
+        }
         $startInfo = New-Object System.Diagnostics.ProcessStartInfo
         $startInfo.FileName = $trayExecutable
         $startInfo.WorkingDirectory = [IO.Path]::GetDirectoryName($trayExecutable)
@@ -199,6 +207,7 @@ finally {
     $env:OPENBLADE_LOCALIZATION_LANGUAGE = $previousLanguage
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE = $previousSnapshotState
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $previousSnapshotPage
+    $env:OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE = $previousControlAvailability
     $env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR = $previousFailureEvidenceDirectory
     $env:__COMPAT_LAYER = $previousCompatibilityLayer
     $desktop.Dispose()

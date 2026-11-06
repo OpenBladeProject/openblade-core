@@ -1258,11 +1258,23 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
     <value>Подсветка клавиатуры</value>
   </data>
+  <data name="MainWindow_LabsNavigationItem.Content" xml:space="preserve">
+    <value>Лаборатория</value>
+  </data>
   <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
     <value>Лаборатория</value>
   </data>
   <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
-    <value>Попробуйте экспериментальные функции OpenBlade.</value>
+    <value>Знакомьтесь с экспериментальными функциями OpenBlade.</value>
+  </data>
+  <data name="MainWindow_LabsImportTitle.Text" xml:space="preserve">
+    <value>Импорт пресета подсветки</value>
+  </data>
+  <data name="MainWindow_LabsImportDescription.Text" xml:space="preserve">
+    <value>Загрузите файл OpenBlade или Razer Chroma, проверьте эффект перед применением и сохраните его в активном профиле питания.</value>
+  </data>
+  <data name="MainWindow_LabsLightingRateDescription.Text" xml:space="preserve">
+    <value>Поддерживаемые анимации подсветки клавиатуры становятся плавнее. Это повышает нагрузку на процессор и расход энергии.</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>Ноутбук</value>

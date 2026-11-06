@@ -1255,11 +1255,23 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
     <value>[!! Kéýbóárd líghtíng ~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_LabsNavigationItem.Content" xml:space="preserve">
+    <value>[!! Lábs ~~ !!]</value>
+  </data>
   <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
-    <value>[Ľàƀš]</value>
+    <value>[!! Lábs ~~ !!]</value>
   </data>
   <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
-    <value>[!! Trý éxpéríméntál ÓpénBládé féátúrés. ~~~~~~~~~~ !!]</value>
+    <value>[!! Éxplóré éxpéríméntál ÓpénBládé féátúrés. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LabsImportTitle.Text" xml:space="preserve">
+    <value>[!! Ímpórt á líghtíng prését ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LabsImportDescription.Text" xml:space="preserve">
+    <value>[!! Lóád án ÓpénBládé ór Rázér Chrómá fílé, révíéw thé éfféct béfóré ápplýíng ít, ánd sávé ít tó ýóúr áctívé pówér prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LabsLightingRateDescription.Text" xml:space="preserve">
+    <value>[!! Máké súppórtéd kéýbóárd ánímátíóns smóóthér át thé cóst óf móré CPU ánd pówér. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>[!! Láptóp ~~~ !!]</value>

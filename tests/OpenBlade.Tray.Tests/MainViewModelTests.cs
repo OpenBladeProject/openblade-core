@@ -6357,6 +6357,34 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task LightingRefreshRate_DistinguishesUnknownAndUnsupported()
+    {
+        using var culture = new CultureScope("en-US");
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        Assert.Equal("60 Hz lighting support couldn’t be checked.", viewModel.LightingRefreshRateAvailabilityText);
+
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: false,
+            blocked: true,
+            capabilities: DeviceCapabilities.Unavailable()) with
+        {
+            ObservationReason = DeviceObservationReason.CheckingConnection,
+        });
+        await WaitUntilAsync(() => viewModel.LightingRefreshRateAvailabilityText == "Checking keyboard support…");
+        Assert.False(viewModel.CanSetLightingRefreshRate);
+
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults()));
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        Assert.Equal("60 Hz lighting is not available for this keyboard.", viewModel.LightingRefreshRateAvailabilityText);
+        Assert.False(viewModel.CanSetLightingRefreshRate);
+    }
+
+    [Fact]
     public async Task LightingRefreshRate_RequiresAdvertisedCapability()
     {
         var client = new FakeServiceClient();
