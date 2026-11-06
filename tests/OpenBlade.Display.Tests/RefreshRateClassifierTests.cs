@@ -38,11 +38,11 @@ public sealed class RefreshRateClassifierTests
     }
 
     [Fact]
-    public void Classify_UsesVirtualRateForFixedMode()
+    public void Classify_RejectsFixedModeWhenSignalRateDiffers()
     {
         string? key = RefreshRateClassifier.Classify(0, 60, 240, Options);
 
-        Assert.Equal(DisplayRefreshKeys.Fixed(60), key);
+        Assert.Null(key);
     }
 
     [Fact]

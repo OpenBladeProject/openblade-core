@@ -11,7 +11,7 @@ public sealed class EdidDetailedTimingParserTests
 
         IReadOnlyList<EdidDetailedTiming> timings = EdidDetailedTimingParser.Parse(edid);
 
-        Assert.Equal([new EdidDetailedTiming(2560, 1600, 240)], timings);
+        Assert.Equal(new EdidDetailedTiming(2560, 1600, 240, 1_140_481_000, 2640, 1800), Assert.Single(timings));
     }
 
     [Fact]

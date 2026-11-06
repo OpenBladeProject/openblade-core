@@ -180,8 +180,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         return PrepareRefreshAfterSnapshot(before, () =>
         {
             DisplayTopology requestedTopology = original.Copy();
-            DisplayTarget requestedTarget = GetSingleInternalTarget(requestedTopology);
-            PrepareBoostState(requestedTopology, requestedTarget, requested.IsDynamic, requested.DesktopHertz);
+            PrepareRefreshTopology(requestedTopology, target, requested);
             return new(() => ExecuteRefreshMutation(key, () => ApplyTopology(requestedTopology),
                 () => QueryCore(CancellationToken.None)));
         });
@@ -402,13 +401,14 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
     {
         cancellationToken.ThrowIfCancellationRequested();
         DevMode currentMode = GetCurrentMode(target.SourceName);
-        double physicalHertz = GetPhysicalRefresh(topology, target);
+        DisplayConfigTargetMode activeMode = topology.Modes[GetActiveTargetModeIndex(topology, target)].Mode.TargetMode;
+        double physicalHertz = activeMode.TargetVideoSignalInfo.VSyncFreq.Hertz;
         IReadOnlyList<DisplayRefreshOption> refreshOptions = BuildRefreshOptions(
             target,
             checked((int)currentMode.PelsWidth),
             checked((int)currentMode.PelsHeight),
             checked((int)currentMode.DisplayFrequency),
-            physicalHertz);
+            activeMode);
         double virtualHertz = target.Path.TargetInfo.RefreshRate.Hertz;
         string? currentRefreshKey = RefreshRateClassifier.Classify(
             target.Path.Flags,
@@ -804,9 +804,9 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         int width,
         int height,
         int currentHertz,
-        double physicalHertz)
+        DisplayConfigTargetMode activeMode)
     {
-        int physical = RefreshRateClassifier.Normalize(physicalHertz);
+        int physical = RefreshRateClassifier.Normalize(activeMode.TargetVideoSignalInfo.VSyncFreq.Hertz);
         int[] driverRates = EnumerateFixedRefreshRates(target.SourceName, width, height);
         byte[] edid = [];
         int[] advertisedRates = [];
@@ -820,9 +820,11 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
                 .ToArray();
         }
 
+        DisplayConfigTargetMode dynamicMode = GetDynamicTargetMode(target.Path, activeMode);
+        int dynamicMaximum = RefreshRateClassifier.Normalize(dynamicMode.TargetVideoSignalInfo.VSyncFreq.Hertz);
         int[] fixedRates = RefreshRateVisibilityFilter.SelectFixedRates(
             driverRates,
-            advertisedRates,
+            advertisedRates.Append(dynamicMaximum),
             RefreshRateClassifier.Normalize(currentHertz),
             physical);
         List<DisplayRefreshOption> options = fixedRates
@@ -837,15 +839,15 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
 
         bool supportsVirtualMode =
             (target.Path.Flags & WindowsDisplayNative.DisplayConfigPathSupportVirtualMode) != 0;
-        int desktopHertz = fixedRates.FirstOrDefault(hertz => hertz >= 60 && hertz < physical);
-        if (supportsVirtualMode && desktopHertz > 0 && physical >= 120)
+        int desktopHertz = fixedRates.FirstOrDefault(hertz => hertz >= 60 && hertz < dynamicMaximum);
+        if (supportsVirtualMode && desktopHertz > 0 && dynamicMaximum >= 120)
         {
-            EdidVerticalRange range = new(desktopHertz, physical);
+            EdidVerticalRange range = new(desktopHertz, dynamicMaximum);
             if (edid.Length > 0 &&
                 EdidVerticalRangeParser.TryParse(edid, out EdidVerticalRange reported) &&
-                reported.MaximumHertz >= physical)
+                reported.MaximumHertz >= dynamicMaximum)
             {
-                range = reported with { MaximumHertz = physical };
+                range = reported with { MaximumHertz = dynamicMaximum };
             }
 
             options.Add(new DisplayRefreshOption(
@@ -898,7 +900,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         return mode;
     }
 
-    private static double GetPhysicalRefresh(DisplayTopology topology, DisplayTarget target)
+    private static uint GetActiveTargetModeIndex(DisplayTopology topology, DisplayTarget target)
     {
         uint modeIndex = GetTargetModeIndex(target.Path);
         if (modeIndex >= topology.Modes.Length)
@@ -914,16 +916,17 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             throw new InvalidOperationException("Windows returned a mismatched physical refresh-rate mode.");
         }
 
-        return mode.Mode.TargetMode.TargetVideoSignalInfo.VSyncFreq.Hertz;
+        return modeIndex;
     }
 
     private static uint GetTargetModeIndex(DisplayConfigPathInfo path)
     {
-        const uint invalid16 = 0xFFFF;
-        const uint invalid32 = 0xFFFFFFFF;
-        bool virtualMode = (path.Flags & 0x00000008) != 0;
-        uint index = virtualMode ? (path.TargetInfo.ModeInfoIdx >> 16) & invalid16 : path.TargetInfo.ModeInfoIdx;
-        if (index == invalid16 || index == invalid32)
+        bool virtualMode = (path.Flags & WindowsDisplayNative.DisplayConfigPathSupportVirtualMode) != 0;
+        uint index = virtualMode ? path.TargetInfo.ModeInfoIdx >> 16 : path.TargetInfo.ModeInfoIdx;
+        uint invalid = virtualMode
+            ? WindowsDisplayNative.DisplayConfigPathTargetModeIdxInvalid
+            : WindowsDisplayNative.DisplayConfigPathModeIdxInvalid;
+        if (index == invalid)
         {
             throw new InvalidOperationException("The internal display does not have an active physical mode.");
         }
@@ -931,11 +934,86 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         return index;
     }
 
-    private static void PrepareBoostState(
+    private static DisplayConfigTargetMode GetDynamicTargetMode(
+        DisplayConfigPathInfo path,
+        DisplayConfigTargetMode activeMode)
+    {
+        uint flags = path.Flags & (WindowsDisplayNative.DisplayConfigPathSupportVirtualMode |
+            WindowsDisplayNative.DisplayConfigPathBoostRefreshRate);
+        if (flags != WindowsDisplayNative.DisplayConfigPathSupportVirtualMode)
+        {
+            return activeMode;
+        }
+
+        // A fixed low signal rate should not hide Dynamic when Windows supplies
+        // a higher timing for the same panel geometry.
+        DisplayConfigTargetMode? preferred = GetPreferredTargetMode(path, activeMode);
+        return preferred is { } mode &&
+            mode.TargetVideoSignalInfo.VSyncFreq.Hertz > activeMode.TargetVideoSignalInfo.VSyncFreq.Hertz
+            ? mode
+            : activeMode;
+    }
+
+    private static DisplayConfigTargetMode? GetPreferredTargetMode(
+        DisplayConfigPathInfo path,
+        DisplayConfigTargetMode activeMode)
+    {
+        DisplayConfigTargetPreferredMode preferred = new()
+        {
+            Header = CreateHeader(WindowsDisplayNative.DisplayConfigDeviceInfoGetTargetPreferredMode,
+                path.TargetInfo.AdapterId, path.TargetInfo.Id, Marshal.SizeOf<DisplayConfigTargetPreferredMode>()),
+        };
+        if (WindowsDisplayNative.DisplayConfigGetTargetPreferredMode(ref preferred) != WindowsDisplayNative.ErrorSuccess)
+        {
+            return null;
+        }
+
+        DisplayConfigVideoSignalInfo active = activeMode.TargetVideoSignalInfo;
+        DisplayConfigVideoSignalInfo candidate = preferred.TargetMode.TargetVideoSignalInfo;
+        return candidate.ActiveSize.Width == active.ActiveSize.Width &&
+            candidate.ActiveSize.Height == active.ActiveSize.Height && candidate.VSyncFreq.Hertz > 0
+            ? preferred.TargetMode
+            : null;
+    }
+
+    private static DisplayConfigTargetMode? FindFixedTargetMode(
+        DisplayTarget target,
+        DisplayConfigTargetMode activeMode,
+        int hertz)
+    {
+        DisplayConfigTargetMode? preferred = GetPreferredTargetMode(target.Path, activeMode);
+        if (preferred is { } mode && RefreshRateClassifier.Normalize(mode.TargetVideoSignalInfo.VSyncFreq.Hertz) == hertz)
+        {
+            return mode;
+        }
+
+        DisplayConfigVideoSignalInfo active = activeMode.TargetVideoSignalInfo;
+        if (target.MonitorDevicePath is null || !MonitorEdidReader.TryRead(target.MonitorDevicePath, out byte[] edid))
+        {
+            return null;
+        }
+
+        foreach (EdidDetailedTiming timing in EdidDetailedTimingParser.Parse(edid))
+        {
+            if (timing.Width == active.ActiveSize.Width && timing.Height == active.ActiveSize.Height && timing.Hertz == hertz &&
+                DisplayConfigRational.FromRatio(timing.PixelRate, timing.TotalWidth) is { } horizontal &&
+                DisplayConfigRational.FromRatio(timing.PixelRate, (ulong)timing.TotalWidth * timing.TotalHeight) is { } vertical)
+            {
+                active.PixelRate = timing.PixelRate;
+                active.HSyncFreq = horizontal;
+                active.VSyncFreq = vertical;
+                active.TotalSize = new() { Width = timing.TotalWidth, Height = timing.TotalHeight };
+                return new() { TargetVideoSignalInfo = active };
+            }
+        }
+
+        return null;
+    }
+
+    private static void PrepareRefreshTopology(
         DisplayTopology topology,
         DisplayTarget target,
-        bool enabled,
-        int virtualHertz)
+        DisplayRefreshOption requested)
     {
         int pathIndex = Array.FindIndex(
             topology.Paths,
@@ -948,19 +1026,56 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             throw new InvalidOperationException("The internal display path changed before the refresh-rate setting could be applied.");
         }
 
-        DisplayConfigPathInfo path = topology.Paths[pathIndex];
-        path.TargetInfo.RefreshRate = DisplayConfigRational.FromHertz(checked((uint)virtualHertz));
-        if (enabled)
+        uint modeIndex = GetActiveTargetModeIndex(topology, target);
+        ref DisplayConfigPathInfo path = ref topology.Paths[pathIndex];
+        ref DisplayConfigTargetMode mode = ref topology.Modes[modeIndex].Mode.TargetMode;
+        DisplayConfigTargetMode? requestedMode = requested.IsDynamic
+            ? GetDynamicTargetMode(path, mode)
+            : RefreshRateClassifier.Normalize(mode.TargetVideoSignalInfo.VSyncFreq.Hertz) == requested.MaximumHertz
+                ? mode
+                : FindFixedTargetMode(target, mode, requested.MaximumHertz);
+        PrepareRefreshPath(ref path, ref mode, requested, requestedMode);
+        ValidateTopology(topology);
+    }
+
+    internal static void PrepareRefreshPath(
+        ref DisplayConfigPathInfo path,
+        ref DisplayConfigTargetMode mode,
+        DisplayRefreshOption requested,
+        DisplayConfigTargetMode? requestedMode)
+    {
+        if (requested.IsDynamic)
         {
+            if (requestedMode is not { } dynamicMode ||
+                RefreshRateClassifier.Normalize(dynamicMode.TargetVideoSignalInfo.VSyncFreq.Hertz) != requested.MaximumHertz)
+            {
+                throw new InvalidOperationException("Windows no longer reports the requested Dynamic refresh-rate timing.");
+            }
+
             path.Flags |= WindowsDisplayNative.DisplayConfigPathBoostRefreshRate;
+            path.TargetInfo.RefreshRate = DisplayConfigRational.FromHertz(checked((uint)requested.DesktopHertz));
+            mode = dynamicMode;
         }
         else
         {
             path.Flags &= ~WindowsDisplayNative.DisplayConfigPathBoostRefreshRate;
+            if (requestedMode is { } fixedMode)
+            {
+                mode = fixedMode;
+                path.TargetInfo.RefreshRate = fixedMode.TargetVideoSignalInfo.VSyncFreq;
+            }
+            else
+            {
+                // Supplying the old timing pins the signal even when the path
+                // refresh changes. Let Windows select the timing for this rate.
+                path.TargetInfo.RefreshRate = DisplayConfigRational.FromHertz(checked((uint)requested.DesktopHertz));
+                path.TargetInfo.ModeInfoIdx =
+                    (path.Flags & WindowsDisplayNative.DisplayConfigPathSupportVirtualMode) != 0
+                    ? (WindowsDisplayNative.DisplayConfigPathTargetModeIdxInvalid << 16) |
+                        (path.TargetInfo.ModeInfoIdx & 0xFFFF)
+                    : WindowsDisplayNative.DisplayConfigPathModeIdxInvalid;
+            }
         }
-
-        topology.Paths[pathIndex] = path;
-        ValidateTopology(topology);
     }
 
     private static void ValidateTopology(DisplayTopology topology)

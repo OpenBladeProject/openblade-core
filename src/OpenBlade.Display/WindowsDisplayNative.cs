@@ -22,6 +22,8 @@ internal static class WindowsDisplayNative
     internal const uint DisplayConfigPathActive = 0x00000001;
     internal const uint DisplayConfigPathSupportVirtualMode = 0x00000008;
     internal const uint DisplayConfigPathBoostRefreshRate = 0x00000010;
+    internal const uint DisplayConfigPathTargetModeIdxInvalid = 0xFFFF;
+    internal const uint DisplayConfigPathModeIdxInvalid = 0xFFFFFFFF;
     internal const uint DisplayConfigOutputTechnologyLvds = 6;
     internal const uint DisplayConfigOutputTechnologyDisplayPortEmbedded = 11;
     internal const uint DisplayConfigOutputTechnologyUdiEmbedded = 13;
@@ -29,6 +31,7 @@ internal static class WindowsDisplayNative
 
     internal const uint DisplayConfigDeviceInfoGetSourceName = 1;
     internal const uint DisplayConfigDeviceInfoGetTargetName = 2;
+    internal const uint DisplayConfigDeviceInfoGetTargetPreferredMode = 3;
     internal const uint DisplayConfigDeviceInfoGetAdvancedColorInfo2 = 15;
     internal const uint DisplayConfigDeviceInfoSetHdrState = 16;
 
@@ -73,6 +76,9 @@ internal static class WindowsDisplayNative
 
     [DllImport("user32.dll", EntryPoint = "DisplayConfigGetDeviceInfo")]
     internal static extern int DisplayConfigGetTargetName(ref DisplayConfigTargetDeviceName requestPacket);
+
+    [DllImport("user32.dll", EntryPoint = "DisplayConfigGetDeviceInfo")]
+    internal static extern int DisplayConfigGetTargetPreferredMode(ref DisplayConfigTargetPreferredMode requestPacket);
 
     [DllImport("user32.dll", EntryPoint = "DisplayConfigGetDeviceInfo")]
     internal static extern int DisplayConfigGetAdvancedColorInfo2(ref DisplayConfigGetAdvancedColorInfo2 requestPacket);
@@ -207,6 +213,26 @@ internal struct DisplayConfigRational
     internal readonly double Hertz => Denominator == 0 ? 0 : (double)Numerator / Denominator;
 
     internal static DisplayConfigRational FromHertz(uint hertz) => new() { Numerator = hertz, Denominator = 1 };
+
+    internal static DisplayConfigRational? FromRatio(ulong numerator, ulong denominator)
+    {
+        if (numerator > uint.MaxValue || denominator > uint.MaxValue)
+        {
+            ulong divisor = numerator;
+            ulong remainder = denominator;
+            while (remainder != 0)
+            {
+                (divisor, remainder) = (remainder, divisor % remainder);
+            }
+
+            numerator /= divisor;
+            denominator /= divisor;
+        }
+
+        return numerator <= uint.MaxValue && denominator <= uint.MaxValue
+            ? new() { Numerator = (uint)numerator, Denominator = (uint)denominator }
+            : null;
+    }
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
@@ -331,6 +357,14 @@ internal struct DisplayConfigTargetDeviceName
 
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
     internal string MonitorDevicePath;
+}
+
+// The native packet aligns the target mode's UINT64 pixel rate to eight bytes.
+[StructLayout(LayoutKind.Explicit, Size = 80)]
+internal struct DisplayConfigTargetPreferredMode
+{
+    [FieldOffset(0)] internal DisplayConfigDeviceInfoHeader Header;
+    [FieldOffset(32)] internal DisplayConfigTargetMode TargetMode;
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
