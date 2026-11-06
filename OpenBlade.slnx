@@ -29,6 +29,7 @@
     <Project Path="tests/OpenBlade.DevelopmentDeployment.Setup.Tests/OpenBlade.DevelopmentDeployment.Setup.Tests.csproj" />
     <Project Path="tests/OpenBlade.Display.Tests/OpenBlade.Display.Tests.csproj" />
     <Project Path="tests/OpenBlade.FirmwareSmoke.Tests/OpenBlade.FirmwareSmoke.Tests.csproj" />
+    <Project Path="tests/OpenBlade.Guardian.TestHost/OpenBlade.Guardian.TestHost.csproj" />
     <Project Path="tests/OpenBlade.LocalDevDeployment.Tool.Tests/OpenBlade.LocalDevDeployment.Tool.Tests.csproj" />
     <Project Path="tests/OpenBlade.Platform.Tests/OpenBlade.Platform.Tests.csproj" />
     <Project Path="tests/OpenBlade.Capture.Tests/OpenBlade.Capture.Tests.csproj" />

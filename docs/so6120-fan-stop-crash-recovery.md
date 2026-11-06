@@ -174,6 +174,42 @@ The present inspector/format supplies no such resume capability. Even a
 correct future clean-boundary takeover would cover only a subset of process
 crashes and would not close the OS/native-hang boundary.
 
+## Offline guardian prototype
+
+`So6120TrialGuardian` in Capture now owns preparation, one approved trial and
+session disposal on a single worker. Explicit Auto, caller disconnect, a missed
+heartbeat or the fixed operation cutoff requests the existing trial runner's
+Auto path. The first observed stop cause stays latched. Heartbeats use one
+monotonic timestamp for both expiry checking and renewal; a late heartbeat
+cannot revive an expired lease or extend the fixed operation cutoff.
+
+The wrapper adds no firmware sequence. A pending command finishes its mandatory
+confirmation and checkpoint before cleanup; an ambiguous result fences all
+commands. Disposal happens only after the runner returns. Status uses a
+single-slot channel that replaces stale reports, so an absent consumer cannot
+block Auto. Reported phases are the runner's coarse milestones, not a native
+I/O activity monitor. The 50 ms watchdog is cooperative: scheduling delay can
+delay observation of expiry, and neither deadline bounds a native call or Auto.
+
+The receipt separates Auto readback, ancillary restoration, journal completion
+and successful session disposal. Cancellation can coexist with confirmed
+cleanup; it still makes the underlying trial unsuccessful. A disposal failure
+leaves the receipt unresolved even when the journal is complete. Successful
+disposal in this fake-only prototype does not establish native release on a
+future live adapter.
+
+Only tests compose the guardian. The separate `OpenBlade.Guardian.TestHost`
+executable uses synthetic admission and an in-memory port. It cannot acquire a
+native port and is excluded from installed payloads. Its process tests launch
+the fake caller and fake owner as independent children of the test fixture.
+They check caller loss during a pending fake FE command and after the committed
+zero-duty checkpoint. The same owner completes one handback, after mandatory
+confirmation when a command is pending.
+They do not validate a future service launcher's parent/job inheritance. Killing
+the fake owner leaves an incomplete journal and no receipt; the existing
+one-shot journal refuses reuse without issuing commands. There is no restart
+takeover or production backend integration.
+
 ## Bounded offline verification
 
 Use injected memory ports, fake clock/evidence, temporary journals and a fake

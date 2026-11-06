@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenBlade.Capture\OpenBlade.Capture.csproj" />
+    <ProjectReference Include="..\OpenBlade.Guardian.TestHost\OpenBlade.Guardian.TestHost.csproj" />
   </ItemGroup>
 
 </Project>
