@@ -44,7 +44,7 @@ internal sealed record So6120DutyResult(So6120DutyFailure Failure,
     public bool PermissionExposureMayRemain => PermissionPublicationPossible && !PermissionRestoredConfirmed;
 }
 
-// The injected-only session composes this boundary. A live outer owner still needs durable claims,
+// The session composes this boundary. Its live outer owner supplies durable claims,
 // journal generations, exact-device/power/session/caller admission and the
 // reviewed treatment of residual contention. These methods do not promise
 // exclusion of firmware writers or atomic snapshot-to-publication stability.
@@ -142,7 +142,7 @@ internal sealed class So6120DirectDutyOperation(DirectDutyOwner owner, ISo6120Di
     }
 }
 
-// Offline typed sequencing only. No native construction, CLI or live binding.
+// Typed sequencing only. Native construction belongs to the fixed outer platform.
 // EC2394 schedules event14 for writable A1; CD6C->9008 returns on idle0A at
 // 9010->907E. Idle is checked before writes and finally, not proof of drained
 // callbacks. Same-profile reload can restore saved Manual at165EE..165F2;
@@ -158,7 +158,14 @@ internal sealed class So6120DirectDutyCoordinator(So6120DirectDutyOperation oper
     private readonly So6120DirectDutyOperation operation = operation ?? throw new ArgumentNullException(nameof(operation));
 
     public So6120DutyResult Enter(PerformancePreset capturedProfile, byte requested1, byte requested2,
-        int maxPwmObservations = 8, CancellationToken cancellationToken = default)
+        int maxPwmObservations = 8, CancellationToken cancellationToken = default) =>
+        EnterCore(capturedProfile, requested1, requested2, maxPwmObservations, cancellationToken, null);
+
+    internal So6120DutyResult EnterPrepared(So6120DutyObservation approvedBaseline, byte requested1, byte requested2) =>
+        EnterCore(PerformancePreset.Silent, requested1, requested2, 2, CancellationToken.None, approvedBaseline);
+
+    private So6120DutyResult EnterCore(PerformancePreset capturedProfile, byte requested1, byte requested2,
+        int maxPwmObservations, CancellationToken cancellationToken, So6120DutyObservation? approvedBaseline)
     {
         var flow = new So6120DutyWorkflow(operation, cancellationToken);
         if (!operation.BeginEntry()) { return flow.Result(So6120DutyFailure.AlreadyUsed); }
@@ -176,6 +183,14 @@ internal sealed class So6120DirectDutyCoordinator(So6120DirectDutyOperation oper
             }
             So6120DutyObservation baseline = flow.Observe();
             So6120DutyControls controls = baseline.Snapshot.Controls;
+            // A derived trial retains its approved starting snapshot. Reobserve
+            // for freshness but reject drift; never silently derive a new target
+            // or restore a different baseline after the user approved this one.
+            if (approvedBaseline is not null && (approvedBaseline.Owner != operation.Owner
+                || controls != approvedBaseline.Snapshot.Controls
+                || baseline.Snapshot.Actual1 != approvedBaseline.Snapshot.Actual1
+                || baseline.Snapshot.Actual2 != approvedBaseline.Snapshot.Actual2))
+            { return flow.Result(So6120DutyFailure.BaselineRejected); }
             // Auto is this experiment's scope, not a firmware prerequisite.
             // 0A must be idle: mapped A1 schedules the separate event14 handler.
             // Reject an existing bit6 owner and sensor-suppressing bit5.

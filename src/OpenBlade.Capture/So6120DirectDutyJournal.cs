@@ -8,7 +8,7 @@ using OpenBlade.Contracts;
 namespace OpenBlade.Capture;
 
 internal sealed record So6120JournalIdentity(DirectDutyOwner Owner, PerformancePreset CapturedProfile,
-    byte RequestedDuty1, byte RequestedDuty2, string DeviceEvidenceSha256, string FirmwareEvidenceSha256,
+    byte? RequestedDuty1, byte? RequestedDuty2, string DeviceEvidenceSha256, string FirmwareEvidenceSha256,
     Guid ConsentId, string ConsentSha256, string BootIdentity);
 
 internal sealed record So6120JournalTransfer(Guid Id, So6120MailboxRegister Register, byte? WriteValue);
@@ -20,6 +20,7 @@ internal sealed record So6120JournalInspection(bool Complete, bool Corrupt, bool
 {
     // Inspection is diagnostic data, never a restart/recovery capability.
     public bool CanResume => false;
+    public int FormatVersion { get; init; }
 }
 
 internal enum So6120JournalWriteStage { BeforeWrite, BeforeFlush, AfterFlush }
@@ -37,6 +38,7 @@ internal sealed class So6120DirectDutyJournal : IDisposable
     internal const int MaximumRecordBytes = 256 * 1024;
     internal const int MaximumRecords = 4096;
     private static readonly byte[] Magic = "OBSO6120J1\n"u8.ToArray();
+    private static readonly byte[] PlanningMagic = "OBSO6120J2\n"u8.ToArray();
     private static readonly JsonSerializerOptions Options = new()
     {
         MaxDepth = 32,
@@ -78,7 +80,8 @@ internal sealed class So6120DirectDutyJournal : IDisposable
             // Recheck after opening. This is not protection from a malicious
             // administrator replacing ancestor directories; no such claim is made.
             _ = ResolvePath(runRoot, createRoot: false);
-            file.Write(Magic);
+            journal.state.FormatVersion = identity.RequestedDuty1.HasValue ? 1 : 2;
+            file.Write(journal.state.FormatVersion == 1 ? Magic : PlanningMagic);
             file.Flush(flushToDisk: true);
             journal.Append(Kind.Binding, identity);
             return journal;
@@ -92,6 +95,9 @@ internal sealed class So6120DirectDutyJournal : IDisposable
         }
     }
 
+    public void ClaimPreparation(DirectDutyOwner owner) => Append(Kind.PreparationClaim, owner);
+    public void ApprovePlan(So6120SilentTrialPlan plan, So6120SilentTrialApproval approval) =>
+        Append(Kind.ApprovedPlan, new ApprovedPlan(plan, approval));
     public void ClaimEntry(DirectDutyOwner owner, PerformancePreset profile) => Append(Kind.EntryClaim, new Claim(owner, profile));
     public void ClaimExit(So6120DutyCheckpoint checkpoint) => Append(Kind.ExitClaim, checkpoint);
     public void RecordObservation(So6120DutyObservation observation) => Append(Kind.Observation, observation);
@@ -168,7 +174,8 @@ internal sealed class So6120DirectDutyJournal : IDisposable
             if (file.Length < Magic.Length || file.Length > MaximumFileBytes) { throw new InvalidDataException(); }
             byte[] header = new byte[Magic.Length];
             file.ReadExactly(header);
-            Require(header.AsSpan().SequenceEqual(Magic));
+            Require(header.AsSpan().SequenceEqual(Magic) || header.AsSpan().SequenceEqual(PlanningMagic));
+            recovered.FormatVersion = header.AsSpan().SequenceEqual(Magic) ? 1 : 2;
             Span<byte> length = stackalloc byte[4];
             while (file.Position < file.Length)
             {
@@ -195,7 +202,8 @@ internal sealed class So6120DirectDutyJournal : IDisposable
         return new(recovered.Phase == Phase.Complete && !corrupt, corrupt, recovered.Fenced,
             corrupt || recovered.Phase != Phase.Complete, recovered.PermissionPossible || corrupt,
             recovered.PermissionRestored && !corrupt, recovered.Sequence, recovered.Checkpoint?.Generation,
-            recovered.Checkpoint?.Expected, recovered.Identity);
+            recovered.Checkpoint?.Expected, recovered.Identity)
+        { FormatVersion = recovered.FormatVersion };
     }
 
     public void Dispose()
@@ -220,6 +228,7 @@ internal sealed class So6120DirectDutyJournal : IDisposable
             Require(original.Sequence == 0);
             next.Identity = Payload<So6120JournalIdentity>(record);
             ValidateIdentity(next.Identity);
+            Require(next.FormatVersion == (next.Identity.RequestedDuty1.HasValue ? 1 : 2));
             next.Phase = Phase.Bound;
             return next;
         }
@@ -227,9 +236,23 @@ internal sealed class So6120DirectDutyJournal : IDisposable
         DirectDutyOwner owner = next.Identity!.Owner;
         switch (record.Kind)
         {
+            case Kind.PreparationClaim:
+                Require(next.FormatVersion == 2 && next.Phase == Phase.Bound && Payload<DirectDutyOwner>(record) == owner);
+                next.Phase = Phase.Preparing;
+                break;
+            case Kind.ApprovedPlan:
+                ApprovedPlan approved = Payload<ApprovedPlan>(record);
+                Require(next.FormatVersion == 2 && next.Phase == Phase.Preparing && next.Plan is null && next.Transfer is null
+                    && approved.Plan is not null && approved.Approval is not null && approved.Plan.Valid()
+                    && approved.Plan.Baseline == next.Observation && approved.Plan.Baseline.Owner == owner
+                    && approved.Approval.Matches(approved.Plan));
+                next.Plan = approved.Plan;
+                next.Phase = Phase.PlanApproved;
+                break;
             case Kind.EntryClaim:
                 Claim claim = Payload<Claim>(record);
-                Require(next.Phase == Phase.Bound && claim.Owner == owner && claim.Profile == next.Identity.CapturedProfile);
+                Require(next.Phase == (next.FormatVersion == 1 ? Phase.Bound : Phase.PlanApproved)
+                    && claim.Owner == owner && claim.Profile == next.Identity.CapturedProfile);
                 next.Phase = Phase.Entry;
                 break;
             case Kind.ExitClaim:
@@ -370,8 +393,11 @@ internal sealed class So6120DirectDutyJournal : IDisposable
                         && checkpoint.Baseline == checkpoint.Expected && checkpoint.Owned == So6120DutyOwnedFields.None
                         && So6120DutyWorkflow.TrySelector(checkpoint.Profile, out byte selector)
                         && checkpoint.Baseline.Selector == selector && (checkpoint.Baseline.Override & 0x60) == 0
-                        && checkpoint.Baseline.Cycle != 0 && next.Identity.RequestedDuty1 <= checkpoint.Baseline.Cycle
-                        && next.Identity.RequestedDuty2 <= checkpoint.Baseline.Cycle);
+                        && checkpoint.Baseline.Cycle != 0 && RequestedDuty(next, true) <= checkpoint.Baseline.Cycle
+                        && RequestedDuty(next, false) <= checkpoint.Baseline.Cycle
+                        && (next.Plan is null || checkpoint.Baseline == next.Plan.Baseline.Snapshot.Controls
+                            && checkpoint.Observation.Snapshot.Actual1 == next.Plan.Baseline.Snapshot.Actual1
+                            && checkpoint.Observation.Snapshot.Actual2 == next.Plan.Baseline.Snapshot.Actual2));
                 }
                 else
                 {
@@ -414,8 +440,8 @@ internal sealed class So6120DirectDutyJournal : IDisposable
         So6120DutyControls target = state.Phase == Phase.Exit ? current.Baseline
             : current.Baseline with
             {
-                Staged1 = state.Identity!.RequestedDuty1,
-                Staged2 = state.Identity.RequestedDuty2,
+                Staged1 = RequestedDuty(state, true),
+                Staged2 = RequestedDuty(state, false),
                 Override = (byte)(current.Baseline.Override | 0x40),
                 Selector = 0xFE,
             };
@@ -433,6 +459,11 @@ internal sealed class So6120DirectDutyJournal : IDisposable
         }
         return null;
     }
+
+    private static byte RequestedDuty(State state, bool first) => state.Plan is { } plan
+        ? first ? plan.RequestedDuty1 : plan.RequestedDuty2
+        : (first ? state.Identity!.RequestedDuty1 : state.Identity!.RequestedDuty2)
+            ?? throw new InvalidDataException("Unplanned operation has no writable target.");
 
     private static void ValidateObservation(So6120DutyObservation observation, State state, bool allowSame)
     {
@@ -463,12 +494,14 @@ internal sealed class So6120DirectDutyJournal : IDisposable
         Require(identity is not null && identity.Owner is not null && So6120DutyWorkflow.ValidOwner(identity.Owner)
             && identity.Owner.DeviceIdentity.Length <= 256 && identity.Owner.FirmwareEvidence.Length <= 256
             && So6120DutyWorkflow.TrySelector(identity.CapturedProfile, out _) && identity.ConsentId != Guid.Empty
+            && identity.RequestedDuty1.HasValue == identity.RequestedDuty2.HasValue
+            && (identity.RequestedDuty1.HasValue || identity.CapturedProfile == PerformancePreset.Silent)
             && !string.IsNullOrWhiteSpace(identity.BootIdentity) && identity.BootIdentity.Length <= 256
             && IsDigest(identity.DeviceEvidenceSha256) && IsDigest(identity.FirmwareEvidenceSha256) && IsDigest(identity.ConsentSha256));
     }
     private static bool IsDigest(string? value) => value is { Length: 64 } && value.All(Uri.IsHexDigit);
     private static bool Readable(So6120MailboxRegister register) => Enum.IsDefined(register);
-    private static void RequireActive(State state) => Require(state.Phase is Phase.Entry or Phase.Exit or Phase.EntryStopped or Phase.ExitStopped);
+    private static void RequireActive(State state) => Require(state.Phase is Phase.Entry or Phase.Exit or Phase.EntryStopped or Phase.ExitStopped or Phase.Preparing or Phase.PlanApproved);
     private static void Require([DoesNotReturnIf(false)] bool condition)
     {
         if (!condition) { throw new InvalidDataException("Invalid or out-of-order SO6120 journal evidence."); }
@@ -485,6 +518,20 @@ internal sealed class So6120DirectDutyJournal : IDisposable
 
     private static string ResolvePath(string runRoot, bool createRoot)
     {
+        string full = ValidateRunRoot(runRoot);
+        if (createRoot) { Directory.CreateDirectory(full); }
+        CheckDirectories(full);
+        string path = System.IO.Path.Combine(full, FileName);
+        try { Require((File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0); }
+        catch (FileNotFoundException) { }
+        catch (DirectoryNotFoundException) when (createRoot) { }
+        return path;
+    }
+
+    // The CLI calls the same canonical local-root admission before any native
+    // acquisition. It checks only paths; creation remains owned by the caller.
+    internal static string ValidateRunRoot(string runRoot)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(runRoot);
         string full = System.IO.Path.GetFullPath(runRoot);
         Require(System.IO.Path.IsPathFullyQualified(runRoot) && !runRoot.StartsWith("\\\\", StringComparison.Ordinal)
@@ -494,13 +541,7 @@ internal sealed class So6120DirectDutyJournal : IDisposable
         foreach (string part in full[3..].Split(['\\', '/']))
         { Require(part.Length > 0 && !part.EndsWith('.') && !part.EndsWith(' ')); }
         CheckDirectories(full);
-        if (createRoot) { Directory.CreateDirectory(full); }
-        CheckDirectories(full);
-        string path = System.IO.Path.Combine(full, FileName);
-        try { Require((File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0); }
-        catch (FileNotFoundException) { }
-        catch (DirectoryNotFoundException) when (createRoot) { }
-        return path;
+        return full;
     }
     private static void CheckDirectories(string full)
     {
@@ -539,10 +580,11 @@ internal sealed class So6120DirectDutyJournal : IDisposable
     private enum Kind
     {
         Binding, EntryClaim, ExitClaim, Observation, Intent, TransferBegin, RequestPrepared, Publication,
-        TransferResult, TransferNotSubmitted, IntentNotSubmitted, Checkpoint, Fence, Complete,
+        TransferResult, TransferNotSubmitted, IntentNotSubmitted, Checkpoint, Fence, Complete, PreparationClaim, ApprovedPlan,
     }
-    private enum Phase { Empty, Bound, Entry, EntryStopped, Exit, ExitStopped, Complete }
+    private enum Phase { Empty, Bound, Entry, EntryStopped, Exit, ExitStopped, Complete, Preparing, PlanApproved }
     private sealed record Record(long Sequence, Kind Kind, JsonElement Data);
+    private sealed record ApprovedPlan(So6120SilentTrialPlan Plan, So6120SilentTrialApproval Approval);
     private sealed record Claim(DirectDutyOwner Owner, PerformancePreset Profile);
     private sealed record Intent(DirectDutyOwner Owner, So6120DutyMutation Mutation, So6120DutyObservation Observation);
     private sealed record Resolution(DirectDutyOwner Owner, So6120DutyMutation Mutation, So6120DutyFailure Reason);
@@ -550,6 +592,8 @@ internal sealed class So6120DirectDutyJournal : IDisposable
     private sealed record Completion(DirectDutyOwner Owner, long Generation, long ObservationSequence);
     private sealed class State
     {
+        public int FormatVersion;
+        public So6120SilentTrialPlan? Plan;
         public long Sequence;
         public Phase Phase;
         public So6120JournalIdentity? Identity;
@@ -564,6 +608,7 @@ internal sealed class So6120DirectDutyJournal : IDisposable
         public State() { }
         public State(State other)
         {
+            FormatVersion = other.FormatVersion; Plan = other.Plan;
             Sequence = other.Sequence; Phase = other.Phase; Identity = other.Identity;
             Observation = other.Observation; Checkpoint = other.Checkpoint; Intent = other.Intent; Transfer = other.Transfer;
             Fenced = other.Fenced; WriteAttempted = other.WriteAttempted; WriteConfirmed = other.WriteConfirmed;

@@ -7,9 +7,11 @@ ordering, but neither the command nor status identifies the request or its
 owner. The updater does not supply the exclusion needed to rely on that rule
 when another actor can change the mailbox.
 
-This is exact SO6120 evidence. It does not establish an admitted live transport,
-physical fan behavior, or another model's command contract. The generic Auto
-exit coordinator remains unbound to hardware.
+This is exact SO6120 evidence. It does not establish physical fan behavior or
+another model's command contract. A separate, developer-only
+[supervised Silent increase runner](so6120-supervised-pwm-trial.md) now binds
+the transport and generic Auto coordinator for an explicitly approved test.
+That implementation is not evidence that the physical test has run.
 
 The developer [one-byte transaction core](../src/OpenBlade.Capture/So6120HostMailboxTransaction.cs)
 implements the mapped request sequence over an injected fixed-port boundary.
@@ -23,9 +25,10 @@ a retry or cleanup command.
 The [fixed-port adapter](../src/OpenBlade.Capture/So6120InpOutBytePort.cs)
 encodes the reviewed byte IOCTLs for ports `300`/`301` and preserves native
 Boolean/count/error results. Its handle-lifetime lock is not mailbox exclusion.
-Live acquisition explicitly refuses, and no CLI route uses it. The offline
+The fixed Windows platform can attach one reviewed, already-running driver
+handle after attended admission. Unscoped acquisition still refuses. The
 session composes durable intent and admission through injected sources; the
-trusted live owner must still supply verified inputs and the accepted
+live owner supplies verified inputs and explicitly accepted residual
 transport/field ownership conditions. A matching read does
 not prove a transition or establish ownership if the byte was already present.
 Policy-command/status registers are read-only in this interface; writing full
@@ -33,12 +36,12 @@ override bytes still requires reviewed bit preservation outside the byte
 protocol. Focused fake-port/native tests cover these boundaries without
 accessing hardware.
 
-## Offline entry and Auto handback
+## Typed entry and Auto handback
 
 The developer [entry and Auto-exit coordinators](../src/OpenBlade.Capture/So6120DirectDutyCoordinator.cs)
 sequence the host-mailbox path independently of the MCU gate/bank backend.
-Their session boundary remains disconnected from live acquisition. The first experiment may
-be restricted to Silent by its outer admission; the generic exit restores
+The first prepared experiment is restricted to Silent by its outer admission;
+the generic exit restores
 the captured, separately admitted Balanced, Performance, Battery Saver,
 Silent or Battery Balanced profile. It does not switch through Balanced or
 offer an arbitrary new destination. Custom requires a retained-settings
@@ -77,9 +80,10 @@ handback and owned-byte cleanup, not complete internal-policy restoration.
 
 Snapshots are ordered reads, not atomic exclusion. Expected mapped controls
 are checked before staging `A1`; its publication callback must not issue nested
-`A0` requests over the staged command. The offline session connects these
-components under one owner. Live use still needs native acquisition, verified
-caller conditions and a reviewed attended recovery procedure.
+`A0` requests over the staged command. The session connects these components
+under one owner. The separate live runner adds native acquisition and verified
+caller conditions; its attended procedure explicitly retains unproven physical
+recovery from a stalled or ambiguous command.
 
 ## Durable records and admission
 
@@ -90,6 +94,8 @@ returns. A failed write or flush poisons the in-process journal; it cannot
 record a fictitious successful fence afterward. Its held file excludes other
 file access, not mailbox writers. The trusted outer owner must select the one
 agreed run root; a different directory is not excluded by this mechanism.
+The live platform separately holds a named runner guard and a fixed,
+create-once machine attempt latch to prevent bypass with another run root.
 
 Existing journals are never reopened for writing. Post-release inspection
 checks framing, hashes, required fields, duplicates and state transitions.
@@ -110,10 +116,11 @@ unchanged source or caller-challenge evidence solely because it is older.
 An already stopped OpenBlade baseline needs no invented exit record. If this
 run stopped it, the supplied handoff must identify the original process and
 observed exit; either path still requires a fresh stopped-service/no-writer
-observation. This component does not perform that handoff. The native adapter's
-live acquisition remains unbound.
+observation. This component does not perform that handoff. The prepared live
+runner requires the already-stopped path after normal attended UI shutdown;
+it also verifies absence of the tray and Session Agent.
 
-## Offline session composition
+## Session composition
 
 The [session](../src/OpenBlade.Capture/So6120DirectDutySession.cs) connects the
 coordinators, byte transaction core, journal and admission policy through
@@ -139,11 +146,15 @@ the session also pins challenge evidence in memory. A live runner must retain
 the reviewed caller evidence alongside the run instead of inferring it from
 the command journal.
 Tests exercise the real composition with memory ports and temporary journals.
-There is no native acquisition, CLI command or service handoff in this layer.
+The separate Windows platform and fixed CLI supply live construction without
+adding installed-service handoff or product controls to this layer. An
+explicit unplanned journal phase permits only baseline reads, then binds one
+immutable derived plan and its separate write approval before any A1.
 
-A live runner still needs the fixed reviewed test and consent, accepted caller
-evidence, an observed OpenBlade writer handoff, the pinned native handle, and
-an attended response to a stalled command or failed handback. Software
+The [live procedure](so6120-supervised-pwm-trial.md) binds the fixed test and
+consent, finite caller-risk acceptance, observed stopped OpenBlade state,
+pinned native handle and attended response to a stalled command or failed
+handback. Execution still requires separate attended approval. Software
 deadlines cannot interrupt synchronous kernel I/O or guarantee thermal recovery.
 The snapshot time bound is checked between transfers and before accepting an
 observation; an in-flight transaction can overrun it, even without a native stall.

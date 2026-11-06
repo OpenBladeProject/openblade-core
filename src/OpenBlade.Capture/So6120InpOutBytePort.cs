@@ -4,8 +4,8 @@ namespace OpenBlade.Capture;
 
 internal sealed record So6120InpOutNativeResult(bool Succeeded, uint BytesReturned, int NativeError);
 
-// Injection seam only, not an application raw-port API. The real implementation
-// is private, and this slice exposes no way to acquire a live device handle.
+// Injection seam only, not an application raw-port API. The native implementation
+// is private; the fixed attended Windows platform owns live handle acquisition.
 internal interface ISo6120InpOutNative
 {
     So6120InpOutNativeResult Invoke(SafeHandle handle, uint controlCode, byte[] input, byte[]? output);
@@ -43,12 +43,14 @@ internal sealed class So6120InpOutBytePort : ISo6120MailboxBytePort, IDisposable
         this.native = native;
     }
 
-    // Intentionally unavailable. Exact host/driver admission, supported access,
-    // competing actors, durable journal, restoration and acquisition ownership
-    // must be reviewed before any factory can open a device and use NativeCalls.
-    // No CreateFile, driver/service operation, vendor DLL load or CLI is present.
+    // The parameterless route has no attended consent or driver binding.
     public static So6120InpOutBytePort Acquire() =>
-        throw new NotSupportedException("Live SO6120 mailbox acquisition is not implemented or admitted.");
+        throw new NotSupportedException("Use the attended SO6120 platform acquisition.");
+
+    // Only the fixed attended platform passes its owned device handle here.
+    // The platform retains the driver-file pin and runner ownership.
+    internal static So6120InpOutBytePort AttachWindowsHandle(So6120OwnedInpOutHandle ownedHandle) =>
+        new(ownedHandle, new NativeCalls());
 
     public So6120PortResult SelectIndex(byte index)
     {
@@ -113,9 +115,8 @@ internal sealed class So6120InpOutBytePort : ISo6120MailboxBytePort, IDisposable
         }
     }
 
-    // Compiled declaration only: no live construction route exists. Synchronous
-    // calls cannot be interrupted by the transaction's host deadline. The
-    // supplied-handle factory must account for late or stalled native calls.
+    // The transaction's host deadline cannot interrupt a synchronous native
+    // call. The attended supervisor accounts for late or stalled calls.
     private sealed class NativeCalls : ISo6120InpOutNative
     {
         public So6120InpOutNativeResult Invoke(SafeHandle handle, uint controlCode, byte[] input, byte[]? output)

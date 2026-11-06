@@ -17,8 +17,8 @@ internal interface ISo6120SessionEvidenceSource
 }
 internal sealed record So6120SessionOptions(TimeSpan TransactionTimeout, TimeSpan SnapshotTimeout, int MaxPolls = 128)
 {
-    // Offline protocol/observation bounds only. A live runner still needs an
-    // independently reviewed whole-operation/permission-exposure deadline.
+    // Layer-local protocol/observation bounds. The fixed trial separately
+    // supplies resolved entry-work and Auto-phase cutoffs, not thermal guarantees.
     // SnapshotTimeout is checked between/after transfers, so one in-flight
     // transaction may overrun it. A native stall has no software time bound.
     public static So6120SessionOptions Default { get; } = new(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(30));
@@ -26,9 +26,9 @@ internal sealed record So6120SessionOptions(TimeSpan TransactionTimeout, TimeSpa
 
 // One serialized, one-shot, injected developer session. Ownership here covers
 // these objects and the agreed journal path, not other processes or firmware.
-// No live constructor/CLI exists. A blocked native call holds serialization;
+// The fixed attended CLI supplies the live platform. A blocked native call holds serialization;
 // software deadlines cannot interrupt it or promise physical thermal recovery.
-internal sealed class So6120DirectDutySession : IDisposable
+internal sealed partial class So6120DirectDutySession : IDisposable
 {
     private readonly object sync = new();
     private readonly So6120SessionBinding binding;
@@ -48,7 +48,7 @@ internal sealed class So6120DirectDutySession : IDisposable
     private So6120DutyResult? entry;
 
     public static So6120DirectDutySession Acquire() => throw new NotSupportedException(
-        "Live admission, exclusive native acquisition and supervised execution are not implemented.");
+        "Unscoped acquisition is not admitted; use the fixed attended Windows trial.");
 
     // On successful argument validation ownership of the disposable port passes
     // here, including journal-creation failure. Caller must not retain another
@@ -95,10 +95,11 @@ internal sealed class So6120DirectDutySession : IDisposable
             BeginInvocation();
             try
             {
-                if (entered) { throw new InvalidOperationException("Entry is one-shot."); }
+                if (entered || !binding.Identity.RequestedDuty1.HasValue || !binding.Identity.RequestedDuty2.HasValue)
+                { throw new InvalidOperationException("Fixed entry requires an unused fixed-target identity."); }
                 entered = true;
                 entry = new So6120DirectDutyCoordinator(operation).Enter(binding.Identity.CapturedProfile,
-                    binding.Identity.RequestedDuty1, binding.Identity.RequestedDuty2, cancellationToken: cancellationToken);
+                    binding.Identity.RequestedDuty1.Value, binding.Identity.RequestedDuty2.Value, cancellationToken: cancellationToken);
                 return entry;
             }
             finally { running = false; }
@@ -112,28 +113,33 @@ internal sealed class So6120DirectDutySession : IDisposable
             BeginInvocation();
             try
             {
-                if (restored || entry?.CleanupCheckpoint is not { } checkpoint)
-                { throw new InvalidOperationException("No unused in-memory cleanup checkpoint."); }
-                restored = true;
-                var result = new So6120DirectDutyAutoExit(operation).Restore(checkpoint, cancellationToken);
-                if (result.Success)
-                {
-                    try { Store(() => journal.Complete(binding.Identity.Owner, operation.Latest!.Generation, latestObservation!.Sequence)); }
-                    catch
-                    {
-                        result = result with
-                        {
-                            Failure = So6120DutyFailure.JournalUnresolved,
-                            CleanupCheckpoint = null,
-                            CommandsFenced = true,
-                            DurableFenceConfirmed = operation.DurableFenceConfirmed,
-                        };
-                    }
-                }
-                return result;
+                return RestoreWorkflow(cancellationToken);
             }
             finally { running = false; }
         }
+    }
+
+    private So6120DutyResult RestoreWorkflow(CancellationToken cancellationToken)
+    {
+        if (restored || entry?.CleanupCheckpoint is not { } checkpoint)
+        { throw new InvalidOperationException("No unused in-memory cleanup checkpoint."); }
+        restored = true;
+        var result = new So6120DirectDutyAutoExit(operation).Restore(checkpoint, cancellationToken);
+        if (result.Success)
+        {
+            try { Store(() => journal.Complete(binding.Identity.Owner, operation.Latest!.Generation, latestObservation!.Sequence)); }
+            catch
+            {
+                result = result with
+                {
+                    Failure = So6120DutyFailure.JournalUnresolved,
+                    CleanupCheckpoint = null,
+                    CommandsFenced = true,
+                    DurableFenceConfirmed = operation.DurableFenceConfirmed,
+                };
+            }
+        }
+        return result;
     }
 
     private void BeginInvocation()
@@ -209,16 +215,25 @@ internal sealed class So6120DirectDutySession : IDisposable
     private So6120MailboxResult Transfer(So6120MailboxRegister register, byte? value, CancellationToken cancellationToken)
     {
         EnsureCommands();
+        if (!AutoTransactionAllowed())
+        { return new(So6120MailboxFailure.Deadline, null, 0, 0, false, []); }
         Store(() => journal.BeginTransfer(new(Guid.NewGuid(), register, value)));
+        long? priorPermissionStarted = permissionStarted;
+        TimeSpan transferTimeout = options.TransactionTimeout;
+        if (trialExecuting) { cancellationToken = CancellationToken.None; }
+        softPublicationRefused = false;
         transferActive = true;
         try
         {
             var result = value is byte written
-                ? new So6120HostMailboxTransaction(port, boundary, clock, options.TransactionTimeout, options.MaxPolls)
+                ? new So6120HostMailboxTransaction(port, boundary, clock, transferTimeout, options.MaxPolls)
                     .WriteAndConfirm(register, written, cancellationToken)
-                : new So6120HostMailboxTransaction(port, boundary, clock, options.TransactionTimeout, options.MaxPolls)
+                : new So6120HostMailboxTransaction(port, boundary, clock, transferTimeout, options.MaxPolls)
                     .Read(register, cancellationToken);
-            bool clean = !blocked && !result.Success && KnownUnsubmitted(result);
+            bool clean = !blocked && !result.Success && (KnownUnsubmitted(result)
+                || softPublicationRefused && result.Failure == So6120MailboxFailure.AdmissionRefused
+                    && result.CommandsPossiblySubmitted == 0 && result.CommandsCompleted == 0 && !result.WriteHandlerCompleted);
+            if (clean) { permissionStarted = priorPermissionStarted; }
             if (!journal.Faulted)
             {
                 try
@@ -249,19 +264,23 @@ internal sealed class So6120DirectDutySession : IDisposable
     private So6120DutyReadResult ReadSnapshot(CancellationToken cancellationToken)
     {
         EnsureCommands();
+        // An aggregate timeout after resolved A0s supplies no snapshot, but
+        // does not make those reads ambiguous. The coordinator still fences a
+        // missing mandatory post-A1 observation; pre-mutation/dwell can stop
+        // and attempt separately admitted Auto from the confirmed checkpoint.
         long started = clock.GetTimestamp();
         var values = new byte[SnapshotOrder.Length];
         for (int i = 0; i < SnapshotOrder.Length; i++)
         {
             if (clock.GetElapsedTime(started) >= options.SnapshotTimeout)
-            { Fence(So6120DutyFailure.CommandUnresolved); return new(So6120DutyIoDisposition.Unresolved, null); }
+            { return new(So6120DutyIoDisposition.DefinitelyUnsubmitted, null); }
             var result = Transfer(SnapshotOrder[i], null, cancellationToken);
             if (blocked || !result.Success)
             { return new(blocked ? So6120DutyIoDisposition.Unresolved : So6120DutyIoDisposition.DefinitelyUnsubmitted, null); }
             values[i] = result.Value!.Value;
         }
         if (clock.GetElapsedTime(started) >= options.SnapshotTimeout)
-        { Fence(So6120DutyFailure.CommandUnresolved); return new(So6120DutyIoDisposition.Unresolved, null); }
+        { return new(So6120DutyIoDisposition.DefinitelyUnsubmitted, null); }
         // Fixed sequential A0 order, one clock interval. No atomic snapshot or
         // field-stability/exclusion claim, even when every read is confirmed.
         var controls = new So6120DutyControls(values[0], values[1], values[2], values[3], values[4], values[5], values[6]);
@@ -317,6 +336,7 @@ internal sealed class So6120DirectDutySession : IDisposable
         }
         public bool AdmitWrite(DirectDutyOwner owner, So6120DutyMutation mutation)
         {
+            if (!session.EntryAllowed(refresh: false, checkThermal: false)) { return false; }
             session.FreshAdmission();
             return owner == session.binding.Identity.Owner && mutation.Expected == session.latestObservation?.Snapshot.Controls;
         }
@@ -326,6 +346,21 @@ internal sealed class So6120DirectDutySession : IDisposable
             session.EnsureCommands();
             if (!ReferenceEquals(before, session.latestObservation) || before.Snapshot.Controls != mutation.Expected)
             { session.Fence(So6120DutyFailure.StateChanged); return new(So6120DutyIoDisposition.Unresolved, null); }
+            if (session.trialExecuting && !session.trialRestoring)
+            {
+                if (before.Snapshot.Actual1 != session.preparedPlan!.Baseline.Snapshot.Actual1
+                    || before.Snapshot.Actual2 != session.preparedPlan.Baseline.Snapshot.Actual2)
+                {
+                    // Ordinary Auto PWM drift changes the approved increase,
+                    // not the already-confirmed mapped-control ownership. Stop
+                    // before A1 and retain the explicit known-prefix handback.
+                    session.trialStop = So6120SilentTrialStop.PwmNotObserved;
+                    return new(So6120DutyIoDisposition.DefinitelyUnsubmitted,
+                        new(So6120MailboxFailure.AdmissionRefused, null, 0, 0, false, []));
+                }
+                if (!session.EntryAllowed(refresh: true))
+                { return new(So6120DutyIoDisposition.DefinitelyUnsubmitted, new(So6120MailboxFailure.AdmissionRefused, null, 0, 0, false, [])); }
+            }
             var result = session.Transfer(mutation.Register, mutation.Value, cancellationToken);
             return new(session.blocked ? So6120DutyIoDisposition.Unresolved
                 : result.Success ? So6120DutyIoDisposition.Confirmed : So6120DutyIoDisposition.DefinitelyUnsubmitted, result);
@@ -340,6 +375,9 @@ internal sealed class So6120DirectDutySession : IDisposable
         {
             session.EnsureCommands();
             session.Store(() => session.journal.RecordCheckpoint(checkpoint));
+            if (session.trialRestoring && session.permissionStarted.HasValue && session.permissionRestored is null
+                && checkpoint.Expected.Override == checkpoint.Baseline.Override)
+            { session.permissionRestored = session.clock.GetTimestamp(); }
             return true;
         }
         public bool RecordFence(DirectDutyOwner owner, So6120DutyFailure reason)
@@ -350,6 +388,8 @@ internal sealed class So6120DirectDutySession : IDisposable
         }
         public bool Prepare(So6120MailboxRequest request)
         {
+            if (request.WriteValue.HasValue && !session.EntryAllowed(refresh: false))
+            { session.softPublicationRefused = true; return false; }
             var evidence = session.FreshAdmission();
             session.Store(() => session.journal.PrepareRequest(request));
             session.Reassess(evidence);
@@ -357,9 +397,16 @@ internal sealed class So6120DirectDutySession : IDisposable
         }
         public bool AdmitPublication(So6120MailboxRequest request)
         {
+            if (request.WriteValue.HasValue && !session.EntryAllowed(refresh: false))
+            { session.softPublicationRefused = true; return false; }
             var evidence = session.FreshAdmission();
             session.Store(() => session.journal.RecordPublication(request.Id));
             session.Reassess(evidence);
+            if (request.WriteValue.HasValue && !session.EntryAllowed(refresh: false))
+            { session.softPublicationRefused = true; return false; }
+            if (session.trialExecuting && !session.trialRestoring && request.Register == So6120MailboxRegister.Override
+                && request.WriteValue is byte flags && (flags & 0x40) != 0 && session.permissionStarted is null)
+            { session.permissionStarted = session.clock.GetTimestamp(); }
             return true;
         }
     }

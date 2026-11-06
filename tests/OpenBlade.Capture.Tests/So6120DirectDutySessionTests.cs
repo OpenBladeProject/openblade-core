@@ -234,7 +234,8 @@ public sealed class So6120DirectDutySessionTests
         f.Port.AfterPublication = () => f.Clock.Advance(TimeSpan.FromMilliseconds(40));
         using var session = f.Create(options: new(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(250)));
         var result = session.Enter();
-        Assert.True(result.CommandsFenced);
+        Assert.False(result.CommandsFenced);
+        Assert.Equal(So6120DutyFailure.NotSubmitted, result.Failure);
         Assert.Empty(result.Observations);
         Assert.InRange(f.Port.Publications.Count, 1, 12);
         Assert.Empty(f.Port.Writes);
@@ -325,14 +326,14 @@ public sealed class So6120DirectDutySessionTests
         Assert.False(So6120DirectDutyJournal.Inspect(f.Root).Complete);
     }
 
-    private sealed class Clock : TimeProvider
+    internal sealed class Clock : TimeProvider
     {
         private long ticks = TimeSpan.FromHours(1).Ticks;
         public override long TimestampFrequency => TimeSpan.TicksPerSecond;
         public override long GetTimestamp() => ticks;
         public void Advance(TimeSpan duration) => ticks += duration.Ticks;
     }
-    private sealed class EvidenceSource(So6120SessionBinding binding, Clock clock) : ISo6120SessionEvidenceSource
+    internal sealed class EvidenceSource(So6120SessionBinding binding, Clock clock) : ISo6120SessionEvidenceSource
     {
         public int Calls { get; private set; }
         public bool Deny { get; set; }
@@ -355,7 +356,7 @@ public sealed class So6120DirectDutySessionTests
             return Modify?.Invoke(evidence) ?? evidence;
         }
     }
-    private sealed class MemoryPort : ISo6120MailboxBytePort, IDisposable
+    internal sealed class MemoryPort : ISo6120MailboxBytePort, IDisposable
     {
         public byte[] Mapped { get; } = new byte[256];
         private readonly byte[] mailbox = new byte[256];
@@ -365,6 +366,7 @@ public sealed class So6120DirectDutySessionTests
         public bool AmbiguousFirstWrite { get; set; }
         public bool UnperformedSecondWrite { get; set; }
         public bool UpdatePwm { get; set; } = true;
+        public bool FailNextReadUnperformed { get; set; }
         public Action<byte, byte>? AfterWrite { get; set; }
         public Action? BeforeFirstWritePublication { get; set; }
         public Action? AfterPublication { get; set; }
@@ -372,7 +374,12 @@ public sealed class So6120DirectDutySessionTests
         public List<(byte Register, byte Value)> Writes { get; } = [];
         public List<(byte Command, byte Register, int Capture, int DurableCapture)> Publications { get; } = [];
         public So6120PortResult SelectIndex(byte index) { Calls++; selected = index; return Done(); }
-        public So6120PortResult ReadData() { Calls++; return new(true, 1, mailbox[selected], 0, So6120PortEffect.Performed); }
+        public So6120PortResult ReadData()
+        {
+            Calls++;
+            if (FailNextReadUnperformed) { FailNextReadUnperformed = false; return new(false, 0, 0, 5, So6120PortEffect.NotPerformed); }
+            return new(true, 1, mailbox[selected], 0, So6120PortEffect.Performed);
+        }
         public So6120PortResult WriteData(byte value)
         {
             Calls++;
@@ -404,7 +411,7 @@ public sealed class So6120DirectDutySessionTests
         private static So6120PortResult Done() => new(true, 10, 0, 0, So6120PortEffect.Performed);
         public void Dispose() => Disposed = true;
     }
-    private sealed class Fixture : IDisposable
+    internal sealed class Fixture : IDisposable
     {
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "ob-session-" + Guid.NewGuid().ToString("N"));
         public Clock Clock { get; } = new();
@@ -413,10 +420,10 @@ public sealed class So6120DirectDutySessionTests
         public So6120SessionBinding Binding { get; }
         public EvidenceSource Source { get; }
         private int durableCapture;
-        public Fixture(PerformancePreset profile = PerformancePreset.Silent, byte selector = 5)
+        public Fixture(PerformancePreset profile = PerformancePreset.Silent, byte selector = 5, bool preparing = false)
         {
             Identity = new(new(Guid.NewGuid(), "synthetic SO6120", "synthetic EC1.04", Guid.NewGuid()), profile,
-                30, 40, new('A', 64), new('B', 64), Guid.NewGuid(), new('D', 64), "synthetic-boot");
+                preparing ? null : (byte)30, preparing ? null : (byte)40, new('A', 64), new('B', 64), Guid.NewGuid(), new('D', 64), "synthetic-boot");
             var stamp = new So6120AdmissionStamp(Identity.Owner.OperationId, 1, Clock, Clock.GetTimestamp());
             var scope = new So6120ChallengeScope(@"\\?\hid#vid_1532&pid_02e0&mi_03&col01#synthetic", "4.01", new(1, 4),
                 So6120SupervisedAdmission.DriverHash, new('E', 64), new('F', 64));
