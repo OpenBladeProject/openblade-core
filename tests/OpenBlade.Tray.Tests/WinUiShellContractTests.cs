@@ -1434,8 +1434,8 @@ public sealed class WinUiShellContractTests
         XElement heading = keyboard.Elements().First();
         Assert.Equal(Attribute(original.Elements().First(), "Text"), Attribute(heading, "Text"));
         Assert.Equal("{StaticResource SectionHeaderStyle}", Attribute(heading, "Style"));
-        Assert.Equal(original, importCard.Parent);
-        Assert.Equal(original, rateCard.Parent);
+        Assert.Contains(original, importCard.Ancestors());
+        Assert.Contains(original, rateCard.Ancestors());
         XElement importGuide = NamedElement(document, "Button", "LabsImportGuideButton");
         XElement rateGuide = NamedElement(document, "Button", "LabsLightingRateGuideButton");
         Assert.Contains(keyboard, importGuide.Ancestors());

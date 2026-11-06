@@ -1444,10 +1444,10 @@
                                 </Grid>
                             </Border>
                         </Border>
-                        <StackPanel Visibility="{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}">
                         <ContentControl IsEnabled="{x:Bind CanRequestHardwareControl, Mode=OneWay}" HorizontalContentAlignment="Stretch">
                         <StackPanel>
-                        <Border Style="{StaticResource SettingsGroupStyle}">
+                        <Border Style="{StaticResource SettingsGroupStyle}"
+                                Visibility="{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}">
                             <StackPanel local:CardReorder.GroupId="LightingEffectPickerRows">
                                 <Border local:CardReorder.CardId="LightingEffectPicker" Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
@@ -1858,9 +1858,7 @@
 
                             </StackPanel>
                         </Border>
-                        </StackPanel>
-                        </ContentControl>
-                        </StackPanel>
+                        <!-- Keep Labs link targets visible while their controls are unavailable. -->
                         <Border x:Name="ImportKeyboardLightingPresetCard"
                                 Style="{StaticResource SettingsGroupStyle}"
                                 Margin="0,10,0,0">
@@ -1920,7 +1918,8 @@
                                 </Grid>
                             </Border>
                         </Border>
-
+                        </StackPanel>
+                        </ContentControl>
                         </StackPanel>
 
                         <StackPanel x:Name="LightingLogoSection"

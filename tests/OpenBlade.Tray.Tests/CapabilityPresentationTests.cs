@@ -3377,7 +3377,13 @@ public sealed class CapabilityPresentationTests
             Assert.Contains(input.Ancestors(), ancestor =>
                 ancestor.Name.LocalName == "ContentControl"
                 && Attribute(ancestor, "IsEnabled") == "{x:Bind CanRequestHardwareControl, Mode=OneWay}");
-            if (input.Ancestors().Contains(keyboardSection)
+            if (Attribute(input, "Name") is "ImportKeyboardLightingPresetButton" or "LightingRefreshRateToggle")
+            {
+                // Keep guide destinations visible while the individual capability gates disable them.
+                Assert.DoesNotContain(input.Ancestors(), ancestor =>
+                    Attribute(ancestor, "Visibility") == "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}");
+            }
+            else if (input.Ancestors().Contains(keyboardSection)
                 || input.Ancestors().Contains(powerSavingSection))
             {
                 Assert.Contains(input.Ancestors(), ancestor =>
