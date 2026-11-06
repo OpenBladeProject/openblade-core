@@ -126,7 +126,37 @@ with the original controls intact. Both setting writes and all mapped reads
 completed successfully. Native close was confirmed without errors, and the
 parent observed child exit code 0.
 
-Staging restoration is now physically verified for this attempt. The old
-attempt marker remains intact pending explicit archival; direct PWM and fan
-stop remain unverified. Another trial needs a new approved run with a fresh
-baseline and its own immutable +4 plan.
+Staging restoration is now physically verified for this attempt. Recovery
+preserved the old attempt marker. Direct PWM and fan stop remain unverified;
+another trial requires a new approved run with a fresh baseline and its own
+immutable +4 plan.
+
+## Paced trial stopped on natural Auto drift
+
+After separate approval, the recovered original marker was archived without
+changing its bytes, and a new trial used the same tested candidate. The fresh
+baseline showed actual PWM `44/41` and raw tach `20/19`; the approved targets
+were `48/45`. Before the first setting write, a new snapshot showed actual PWM
+and raw tach both `0/0`, with the original Balanced/Automatic controls intact.
+Entry rejected the changed baseline. The 110-record journal verified through
+EOF and contained 26 successful A0 publications and no A1 or setting intent.
+Native close was confirmed without errors. No setting restoration was needed.
+
+The wrapper observed Capture's exit but recorded a null exit code. Its parent
+rejected that receipt instead of treating it as success. The exact numeric
+exit code is unavailable; subsequent process inspection found both processes
+absent. The frozen launcher and receipts are retained unchanged. This is a
+process-reporting issue, separate from the verified no-setting-write result.
+
+Harmless child processes reproduced the reporting issue in Windows PowerShell
+5.1: `Start-Process -NoNewWindow -PassThru` followed by `WaitForExit` returned
+null exit codes for actual exits 0, 2 and 3. Starting the child directly through
+`Process.Start` with `UseShellExecute=false` retained its creation handle and
+reported all three codes correctly. The reviewed wrapper correction preserves
+the attended console and fixed command, captures the child PID immediately,
+and rejects a missing numeric exit code. It does not invent the old result.
+
+The next trial must derive and approve a new +4 plan. Keeping the old targets
+after PWM fell to zero would instead request a much larger increase. Natural
+Automatic zero readings do not establish that the direct PWM path controls
+fan stop.
