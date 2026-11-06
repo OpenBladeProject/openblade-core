@@ -69,3 +69,49 @@ additionally pins those exact three artifacts through child exit; direct CLI use
 does not independently enforce those local pins. A failed native close is reported
 without retry; the driver pin and run reservation last through reporting, with
 retention ending at process exit. Neither result resumes the old attempt.
+
+## Completed envelope observation
+
+The separately approved observation ran with candidate
+`d5dfe76601c29f2f575d36789150b744361a75f4`. Both scans matched:
+
+| Host mailbox field | Observed value |
+|---|---|
+| Bank / index / count | `00 / B9 / 01` |
+| Command / status | `00 / 80` (idle / success) |
+| Payload | `49` decimal (`31` hex) |
+
+Each scan began and ended with command `00`. The operation made fourteen
+fixed index selections and fourteen data reads, without publishing an EC
+command. Native close was confirmed without errors, and the parent observed
+child exit code 0. The prior failed attempt and its marker were preserved.
+
+This is consistent with the pending confirmation completing after polling
+stopped. The mailbox has no request identity, and its payload was already
+staged before that confirmation. These observations therefore do not establish
+the current mapped B8/B9 values or successful restoration. Direct PWM remains
+unverified. The next operation must independently read the current mapped
+controls before restoring any inactive staging.
+
+## Fixed staging recovery
+
+`restore-so6120-staging --plan` describes a separate developer operation pinned
+to this failed trial and the completed observation. Its attended form takes
+`--prior-run-root`, `--observation-root` and a new `--run-root`. Approval binds
+both locked evidence sets and the current exact device/controller scope.
+A separate machine claim is consumed before the first mapped A0 read.
+
+Recovery reads only the eight required fields: selector, manual, override,
+B8, B9, cycle, policy command and active state. It requires the original
+Balanced/Automatic controls, override and policy command zero, cycle 183 and
+active state. B8 must be zero or 54; B9 must be zero or 49. Changed staging
+bytes are restored to their original zero values with separate A0 confirmation
+and complete control checkpoints. Already-zero bytes cause no setting write.
+Snapshot age is checked after its durable record is flushed.
+
+Only B8/B9 zero writes are admitted. Unexpected state, expired observation,
+uncertain I/O or storage failure stops all further commands. Final mapped
+readback, durable recording, confirmed native close and child exit must all
+succeed before claiming restoration. The original journal and attempt marker
+remain unchanged; recovery neither rearms the trial nor enables direct PWM.
+This command is prepared, not yet physically exercised.

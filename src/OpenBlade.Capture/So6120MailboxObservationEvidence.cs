@@ -63,6 +63,14 @@ internal sealed class So6120MailboxObservationEvidence : IDisposable
         { throw new InvalidDataException("The machine attempt marker does not name this prior run."); }
     }
 
+    internal string LockPinnedEvidence(string path, long maximumBytes, string expectedSha256)
+    {
+        string hash = Hash(Lock(path, maximumBytes));
+        if (hash != expectedSha256)
+        { throw new InvalidDataException($"The reviewed evidence hash differs for {Path.GetFileName(path)}."); }
+        return hash;
+    }
+
     private static void VerifyAttendedLog(FileStream log, So6120JournalIdentity identity)
     {
         using var reader = new StreamReader(log, new UTF8Encoding(false, throwOnInvalidBytes: true),

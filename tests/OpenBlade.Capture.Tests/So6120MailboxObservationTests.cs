@@ -54,7 +54,7 @@ public sealed class So6120MailboxObservationTests
         else { native.ReadBytes[12]++; }
         var result = Observe(native);
         Assert.False(result.Success);
-        Assert.False(result.ScansMatched);
+        Assert.False(result.Completed);
         Assert.Equal(expectedReads, native.Reads);
         Assert.Equal(So6120NativeCloseState.Closed, result.CloseEvidence?.State);
     }
@@ -65,7 +65,7 @@ public sealed class So6120MailboxObservationTests
         var native = new Native { CloseSucceeded = false };
         var result = Observe(native);
         Assert.False(result.Success);
-        Assert.True(result.ScansMatched);
+        Assert.True(result.Completed);
         Assert.Equal(So6120NativeCloseState.Failed, result.CloseEvidence?.State);
         Assert.Equal(5, result.CloseEvidence?.NativeError);
         Assert.NotNull(result.RetainedPin);
@@ -101,12 +101,15 @@ public sealed class So6120MailboxObservationTests
             Assert.Equal(64, evidence.JournalSha256.Length);
             Assert.Equal(64, evidence.AttendedLogSha256.Length);
             Assert.Equal(64, evidence.ParentReceiptSha256.Length);
+            Assert.Throws<InvalidDataException>(() => So6120StagingRecoveryCommand.RequirePinnedPrior(evidence));
+            Assert.Throws<InvalidDataException>(() => evidence.LockPinnedEvidence(
+                Path.Combine(directory.Attempt, "attended-run.jsonl"), 16 * 1024, new('0', 64)));
             return;
         }
         Assert.Throws<InvalidDataException>(() => So6120MailboxObservationEvidence.Open(directory.Attempt));
     }
 
-    private static So6120MailboxObservationResult Observe(Native native) =>
+    private static So6120MailboxPortRunResult Observe(Native native) =>
         So6120MailboxObservation.Observe(native, TimeProvider.System, native.Admit, handle => new(handle, native),
             _ => { }, CancellationToken.None);
 

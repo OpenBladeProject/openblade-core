@@ -59,7 +59,7 @@ internal static class So6120MailboxObservationCommand
         using var registration = ConsoleCancellation.Register(() => ConsoleCancellation.Cancel(cancellation));
         var clock = TimeProvider.System;
         var run = Guid.NewGuid();
-        So6120MailboxObservationResult? result = null;
+        So6120MailboxPortRunResult? result = null;
         string? failure = null;
         bool declined = false;
         try
@@ -149,7 +149,7 @@ internal static class So6120MailboxObservationCommand
                 openAttempted = result?.OpenAttempted ?? false,
                 close = result?.CloseEvidence,
                 releaseFailures = result?.ReleaseFailures,
-                scansMatched = result?.ScansMatched,
+                scansMatched = result?.Completed,
             });
         }
         catch (Exception error) { failure = Describe(error); }

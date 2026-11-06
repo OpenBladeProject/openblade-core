@@ -1686,6 +1686,11 @@ if (args.Length > 0 && args[0] == So6120MailboxObservationCommand.Name)
     return await So6120MailboxObservationCommand.RunAsync(args[1..], Console.In, Console.Out);
 }
 
+if (args.Length > 0 && args[0] == So6120StagingRecoveryCommand.Name)
+{
+    return await So6120StagingRecoveryCommand.RunAsync(args[1..], Console.In, Console.Out);
+}
+
 if (args.Length > 0 && args[0] is SilentLowFanValidationCommand.StopName
     or SilentLowFanValidationCommand.LowestName or SilentLowFanValidationCommand.ZeroName)
 {
