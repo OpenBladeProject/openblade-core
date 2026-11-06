@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Search OpenBlade pages and settings from the title bar. Press Ctrl+K to open search and jump to a result.
+- Search OpenBlade pages and settings from the title bar. Press Ctrl+K to open search and jump to a result. ([#883](https://github.com/OpenBladeProject/openblade-core/pull/883))
 
 ## [0.51.0-nightly.107] - 2026-11-05
 
