@@ -75,7 +75,7 @@ public sealed partial class MainWindow
         Row(keyboardLighting, "MainWindow_TextBlockEffect.Text", "LightingEffectPicker",
             exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls);
         Row(keyboardLighting, "MainWindow_TextBlockBrightness.Text", "DashboardLightingBrightnessSlider",
-            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls);
+            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls && ViewModel.LightingShowsBrightness);
         Row(keyboardLighting, "MainWindow_TextBlockImportPreset.Text", "ImportKeyboardLightingPresetCard",
             exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls && ViewModel.LabFeaturesEnabled);
         Row(keyboardLighting, "MainWindow_TextBlockSixtyHzLighting.Text", "LightingRefreshRateCard",
@@ -94,8 +94,10 @@ public sealed partial class MainWindow
         Row(audio, "MainWindow_ThxAudioEqualizerTitle.Text", anchor: ThxAudioEqualizerRow);
         Row(audio, "MainWindow_ThxAudioPresetTitle.Text", anchor: ThxAudioPresetRow);
         GlobalSearchResult enhancements = Section(audio, ThxAudioEnhancements, "MainWindow_ThxAudioEnhancementsTitle.Text");
-        Row(enhancements, "MainWindow_ThxAudioNormalizationTitle.Text", anchor: ThxNormalizationCell);
-        Row(enhancements, "MainWindow_ThxAudioVoiceClarityTitle.Text", anchor: ThxVoiceClarityCell);
+        Row(enhancements, "MainWindow_ThxAudioNormalizationTitle.Text", nameof(ThxNormalizationCell),
+            exposed: () => ThxViewModel.HasSoundNormalization);
+        Row(enhancements, "MainWindow_ThxAudioVoiceClarityTitle.Text", nameof(ThxVoiceClarityCell),
+            exposed: () => ThxViewModel.HasVoiceClarity);
         Section(audio, ThxAudioApplications, "MainWindow_ThxAudioApplicationsTitle.Text");
 
         Row(telemetry, "Telemetry_Enable.Text", anchor: TelemetryEnabledToggle);

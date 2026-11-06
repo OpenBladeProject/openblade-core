@@ -278,6 +278,13 @@ public sealed partial class MainWindow
             return false;
         }
 
+        if (result.RowId is not null && anchor is Expander { IsExpanded: false } expander)
+        {
+            // A collapsed expander may not realize its rows. Only offer a
+            // nested result with an explicit, satisfied availability predicate.
+            return expander.IsEnabled && result.IsExposed is not null;
+        }
+
         // Canonical template rows may not be realized until the page opens.
         // Live visibility is authoritative as soon as the row exists.
         return result.RowId is not { } rowId
@@ -287,8 +294,7 @@ public sealed partial class MainWindow
 
     private static bool HasVisibleSearchPath(FrameworkElement element, object? ancestor)
     {
-        for (DependencyObject? current = element; current is not null;
-            current = (current as FrameworkElement)?.Parent ?? VisualTreeHelper.GetParent(current))
+        for (DependencyObject? current = element; current is not null; current = GetGlobalSearchParent(current))
         {
             if (current is UIElement { Visibility: Visibility.Collapsed })
             {
@@ -301,6 +307,9 @@ public sealed partial class MainWindow
         }
         return false;
     }
+
+    private static DependencyObject? GetGlobalSearchParent(DependencyObject element) =>
+        (element as FrameworkElement)?.Parent ?? VisualTreeHelper.GetParent(element);
 
     private static FrameworkElement? FindGlobalSearchRow(DependencyObject root, string id)
     {
@@ -383,6 +392,10 @@ public sealed partial class MainWindow
                 return;
             }
 
+            if (anchor is Expander { IsEnabled: true, IsExpanded: false } collapsedAnchor)
+            {
+                collapsedAnchor.IsExpanded = true;
+            }
             anchor.UpdateLayout();
             FrameworkElement? target = result.RowId is { } rowId
                 ? FindGlobalSearchRow(anchor, rowId) : anchor;
@@ -391,13 +404,19 @@ public sealed partial class MainWindow
                 return;
             }
 
+            bool expanded = false;
             for (DependencyObject? current = target; current is not null && !ReferenceEquals(current, page);
-                current = VisualTreeHelper.GetParent(current))
+                current = GetGlobalSearchParent(current))
             {
-                if (current is Expander expander)
+                if (current is Expander { IsEnabled: true, IsExpanded: false } expander)
                 {
                     expander.IsExpanded = true;
+                    expanded = true;
                 }
+            }
+            if (expanded)
+            {
+                target.UpdateLayout();
             }
 
             XamlControl? focusTarget = target as XamlControl
@@ -482,6 +501,7 @@ public sealed partial class MainWindow
         GlobalSearchFlyout.Hide();
         GlobalSearchBox.IsSuggestionListOpen = false;
         GlobalSearchBox.ItemsSource = null;
+        globalSearchInlineResultsQuery = null;
         CompactGlobalSearchBox.IsSuggestionListOpen = false;
         CompactGlobalSearchBox.ItemsSource = null;
         ClearGlobalSearchArrival();
@@ -575,6 +595,100 @@ public sealed partial class MainWindow
             || SettingsPage.VerticalOffset <= 0)
         {
             throw new InvalidOperationException("Search did not reveal the Update channel row.");
+        }
+
+        if (!compact)
+        {
+            VerifyGlobalSearchSuggestionsAfterDetach();
+            VerifyGlobalSearchHiddenLightingBrightness();
+            // The production page discovers audio capabilities on its first
+            // visit. Realize that page before testing search from elsewhere.
+            SelectLocalizationSnapshotPage("thx-audio");
+            await ShowLocalizationSnapshotThxAudioAsync("thx-audio");
+            await Task.Delay(300);
+            SelectLocalizationSnapshotPage("settings");
+            if (ThxViewModel.SupportsSavedAudio)
+            {
+                await VerifyGlobalSearchVoiceClarityAsync();
+            }
+            else
+            {
+                await VerifyGlobalSearchDisabledThxApplicationsAsync();
+            }
+        }
+    }
+
+    private void VerifyGlobalSearchSuggestionsAfterDetach()
+    {
+        GlobalSearchBox.Text = "nightly";
+        UpdateGlobalSearchSuggestions(GlobalSearchBox);
+        CloseGlobalSearch();
+        OnGlobalSearchGotFocus(GlobalSearchBox, new RoutedEventArgs());
+        if (GlobalSearchBox.ItemsSource is not GlobalSearchResult[] results
+            || results.FirstOrDefault()?.RowId != "MainWindow_TextBlockUpdateChannel")
+        {
+            throw new InvalidOperationException("Search did not restore suggestions for the retained query.");
+        }
+    }
+
+    private void VerifyGlobalSearchHiddenLightingBrightness()
+    {
+        ViewModel.LightingEffectEditor = OpenBlade.Contracts.LightingEffect.Off;
+        GlobalSearchResult brightness = globalSearchCatalog!.Single(
+            result => result.RowId == "DashboardLightingBrightnessSlider");
+        if (!ViewModel.ShowOpenBladeKeyboardLightingControls || brightness.IsExposed?.Invoke() != false)
+        {
+            throw new InvalidOperationException("Search exposed lighting brightness when the keyboard effect was Off.");
+        }
+    }
+
+    private async Task VerifyGlobalSearchVoiceClarityAsync()
+    {
+        if (!ThxViewModel.HasVoiceClarity || ThxAudioEnhancements.IsExpanded)
+        {
+            throw new InvalidOperationException("The Voice clarity fixture requires collapsed THX Enhancements.");
+        }
+
+        string query = LocalizedXamlResourceLoader.GetText("MainWindow_ThxAudioVoiceClarityTitle.Text");
+        GlobalSearchResult result = FindGlobalSearchResults(query)
+            .SingleOrDefault(candidate => candidate.RowId == nameof(ThxVoiceClarityCell))
+            ?? throw new InvalidOperationException(
+                $"Search did not offer Voice clarity. Navigation={ThxAudioNavigationItem.Visibility}, "
+                + $"Enhancements={ThxAudioEnhancements.Visibility}, enabled={ThxAudioEnhancements.IsEnabled}, "
+                + $"visible path={HasVisibleSearchPath(ThxAudioEnhancements, ThxAudioPage.Content)}.");
+        SubmitGlobalSearch(GlobalSearchBox, query, result);
+        await Task.Delay(300);
+        if (!ReferenceEquals(MainNavigation.SelectedItem, ThxAudioNavigationItem)
+            || !ThxAudioEnhancements.IsExpanded
+            || ThxVoiceClarityCell.ActualHeight <= 0)
+        {
+            throw new InvalidOperationException("Search did not expand THX Enhancements and lay out Voice clarity.");
+        }
+
+        Rect bounds = ThxVoiceClarityCell.TransformToVisual(ThxAudioPage)
+            .TransformBounds(new Rect(0, 0, ThxVoiceClarityCell.ActualWidth, ThxVoiceClarityCell.ActualHeight));
+        if (bounds.Top < -1 || bounds.Bottom > ThxAudioPage.ActualHeight + 1)
+        {
+            throw new InvalidOperationException("Search left Voice clarity outside the visible THX page.");
+        }
+    }
+
+    private async Task VerifyGlobalSearchDisabledThxApplicationsAsync()
+    {
+        if (ThxAudioApplications.IsEnabled || ThxAudioApplications.IsExpanded)
+        {
+            throw new InvalidOperationException("The THX Applications fixture requires a disabled, collapsed expander.");
+        }
+
+        string query = LocalizedXamlResourceLoader.GetText("MainWindow_ThxAudioApplicationsTitle.Text");
+        GlobalSearchResult result = FindGlobalSearchResults(query)
+            .Single(candidate => ReferenceEquals(candidate.Anchor, ThxAudioApplications));
+        SubmitGlobalSearch(GlobalSearchBox, query, result);
+        await Task.Delay(300);
+        if (!ReferenceEquals(MainNavigation.SelectedItem, ThxAudioNavigationItem)
+            || ThxAudioApplications.IsExpanded)
+        {
+            throw new InvalidOperationException("Search did not preserve the disabled THX Applications section.");
         }
     }
 
