@@ -1,9 +1,60 @@
 # Supervised SO6120 direct PWM stop trial
 
 The successful Balanced half-cycle trial established direct PWM readback at
-91/91 and verified Auto handback on the exact RZ09-0581. The next fixed
-experiment tests whether that same path can report zero rotation after a
-confirmed spinning baseline. It does not enable a production fan-stop switch.
+91/91 and verified Auto handback on the exact RZ09-0581. The fixed stop
+experiment subsequently confirmed zero PWM and consecutive zero-tach readings
+after a confirmed spinning baseline. It does not enable a production fan-stop
+switch.
+
+## Attended result on 2026-11-06
+
+Run `8b5cc38d-0864-4f0a-9ad7-1eb68b1254c7` used the reviewed candidate
+`ae26bd6c9501448861672908297f8443534e8089` in USB-C Balanced. The captured
+cycle was 183. Complete observations showed the following progression:
+
+| Stage | Actual PWM | Raw tach |
+|---|---|---|
+| Captured Auto baseline | 51/43 | 22/19 |
+| Confirmed half-cycle spin | 91/91 | 36/36 |
+| First fan zeroed | 0/91 | 13/36, then 0/36 |
+| Both zeroed | 0/0 | 0/12 |
+| Two consecutive stop observations | 0/0 | 0/0 |
+| Restored-controls checkpoint | 43/37 | 19/17 |
+| Final Auto observation | 40/0 | 18/0 |
+
+The zero observations retained FE, F0.6 and staging 0/0. Every A1 had an
+independent A0 confirmation. All 1,821 chained journal records verified,
+covering 437 A0 reads and eight A1 writes. Auto restored selector 00,
+Manual00, F0=00 and saved staging 0/0; no redundant staging restoration was
+needed. Native close and both process exits succeeded. Ten thermal samples
+reported CPU thermal-zone 45 C and an inactive GPU.
+
+The operator initially reported a stop, then withdrew that confirmation and
+clarified that the zero-duty and Auto stages were difficult to distinguish.
+Physical stop was therefore unconfirmed for this first run; its EC evidence
+is retained separately. Auto may restart the fans before the console closes.
+
+Execution lasted about 72.3 seconds, including 18.1 seconds in the stop stage
+and 31.5 seconds for Auto handback. The two additional coast reads started
+within the five-second window; the second completed after it. Possible F0
+publication to confirmed restoration was about 54.2 seconds. These are host
+measurement intervals, not exact physical stop or permission durations.
+
+The operator explicitly requested one repeat of the same frozen candidate.
+Run `a36a5107-4b0d-45d2-87c8-39f976118fd7` began at Auto PWM 47/42 with raw
+tach 21/19. It again confirmed FE at 91/91 with raw tach 36/36, then actual
+PWM 0/91 after B8=0 and 0/0 after B9=0. Two consecutive observations showed
+actual PWM and raw tach 0/0 under FE. Auto independently restored every saved
+control; the final Auto reading was 47/42 with raw tach 21/19. Native close
+and both process exits succeeded. Execution lasted about 49.6 seconds,
+including 14.4 seconds in the stop stage and 13.2 seconds for Auto.
+
+After the repeat, the operator specifically confirmed: **Both fans briefly
+stopped.** This observation supports physical stop on this exact laptop in
+USB-C Balanced alongside the two runs' EC evidence. It does not establish a
+calibrated RPM scale, exact stop duration, Silent behavior, another model's
+support or unattended recovery. The repeat changed no runner code, commands
+or limits, and no production fan-stop control has been enabled.
 
 ## Fixed sequence
 

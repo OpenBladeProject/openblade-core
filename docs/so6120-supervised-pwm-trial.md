@@ -6,7 +6,10 @@ physical PWM control, fan stop, mailbox exclusion or physical recovery. No
 live mailbox trial is included in preparing or reviewing this runner. The
 [attended Balanced attempts](so6120-balanced-pwm-trial.md) include a successful
 half-cycle trial: selector FE, actual PWM `91/91` through the observation,
-and independently verified Auto restoration. Zero duty, commanded fan stop,
+and independently verified Auto restoration. The separate
+[stop trial](so6120-supervised-fan-stop-trial.md) also confirmed applied zero
+PWM and consecutive zero-tach readings before verified Auto restoration.
+On its attended repeat, the operator confirmed both fans briefly stopped.
 Silent direct duty and unattended recovery remain unverified.
 
 ## Fixed experiment
