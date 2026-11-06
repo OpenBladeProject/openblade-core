@@ -114,4 +114,19 @@ uncertain I/O or storage failure stops all further commands. Final mapped
 readback, durable recording, confirmed native close and child exit must all
 succeed before claiming restoration. The original journal and attempt marker
 remain unchanged; recovery neither rearms the trial nor enables direct PWM.
-This command is prepared, not yet physically exercised.
+The initial recovery preparation did not grant execution authority.
+
+The separately approved recovery subsequently completed on the same laptop
+using candidate `25740ef30e73dbcac26f14fb824689d0e2cb4967`. Its fresh initial
+snapshot confirmed B8/B9 at `54/49`, with Balanced/Automatic, override and policy
+command zero, cycle 183 and active state 161. It restored B8 to zero and
+independently confirmed it, then did the same for B9. Complete checkpoints
+showed `0/49`, then `0/0`, and a final independent snapshot again showed `0/0`
+with the original controls intact. Both setting writes and all mapped reads
+completed successfully. Native close was confirmed without errors, and the
+parent observed child exit code 0.
+
+Staging restoration is now physically verified for this attempt. The old
+attempt marker remains intact pending explicit archival; direct PWM and fan
+stop remain unverified. Another trial needs a new approved run with a fresh
+baseline and its own immutable +4 plan.
