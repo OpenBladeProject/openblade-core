@@ -202,7 +202,12 @@ public sealed class UiPreferenceStore
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
-        Converters = { new KeyboardInputBackendJsonConverter(), new JsonStringEnumConverter() },
+        Converters =
+        {
+            new KeyboardInputBackendJsonConverter(),
+            new PrimaryNavigationItemJsonConverter(),
+            new JsonStringEnumConverter(),
+        },
         WriteIndented = true,
     };
 
@@ -729,6 +734,22 @@ public sealed class UiPreferenceStore
         }
 
         return false;
+    }
+
+    private sealed class PrimaryNavigationItemJsonConverter : JsonConverter<PrimaryNavigationItemKind>
+    {
+        private static readonly JsonConverter<PrimaryNavigationItemKind> Reader =
+            (JsonConverter<PrimaryNavigationItemKind>)new JsonStringEnumConverter<PrimaryNavigationItemKind>()
+                .CreateConverter(typeof(PrimaryNavigationItemKind), JsonSerializerOptions.Default);
+
+        public override PrimaryNavigationItemKind Read(
+            ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            Reader.Read(ref reader, typeToConvert, options);
+
+        public override void Write(
+            Utf8JsonWriter writer, PrimaryNavigationItemKind value, JsonSerializerOptions options) =>
+            // Older builds can skip an unknown numeric ID after loading the preferences.
+            writer.WriteNumberValue((int)value);
     }
 
     private static void TryDeleteTemporary(string temporaryPath)

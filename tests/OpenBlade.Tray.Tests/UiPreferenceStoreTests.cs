@@ -35,13 +35,16 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.True((await store.LoadAsync()).ThxAudioIntegrationEnabled);
     }
 
-    [Fact]
-    public async Task LegacyNumericNavigationPreservesCustomOrderAndPersistsNewItems()
+    [Theory]
+    [InlineData("[4,3,1,0,2]")]
+    [InlineData("""["Settings","Display","Laptop","Profiles","Lighting"]""")]
+    [InlineData("""["Settings","Display","Laptop","Profiles","Lighting","ThxAudio","Telemetry","Labs"]""")]
+    public async Task NavigationPreservesCustomOrderAndWritesRollbackCompatibleIds(string navigation)
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "navigation-preferences.json");
         await File.WriteAllTextAsync(path,
-            "{\"theme\":\"FollowWindows\",\"primaryNavigationItems\":[4,3,1,0,2],\"labFeaturesEnabled\":false}");
+            $$"""{"theme":"Dark","primaryNavigationItems":{{navigation}},"labFeaturesEnabled":false}""");
         var store = new UiPreferenceStore(path);
         UiPreferences loaded = await store.LoadAsync();
         PrimaryNavigationItemKind[] expected =
@@ -57,7 +60,13 @@ public sealed class UiPreferenceStoreTests : IDisposable
         ];
         Assert.Equal(expected, loaded.EffectivePrimaryNavigationItems);
         await store.SaveAsync(loaded with { PrimaryNavigationItems = loaded.EffectivePrimaryNavigationItems });
+        using JsonDocument saved = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+        Assert.Equal(
+            [4, 3, 1, 0, 2, 5, 6, 7],
+            saved.RootElement.GetProperty("primaryNavigationItems").EnumerateArray().Select(item => item.GetInt32()));
+
         UiPreferences reloaded = await store.LoadAsync();
+        Assert.Equal(ThemePreference.Dark, reloaded.Theme);
         Assert.Equal(expected, reloaded.PrimaryNavigationItems);
         Assert.Equal(expected, reloaded.EffectivePrimaryNavigationItems);
     }
@@ -767,8 +776,8 @@ public sealed class UiPreferenceStoreTests : IDisposable
             document.RootElement.GetProperty("dashboardCards")[0]
                 .GetProperty("kind").GetString());
         Assert.Equal(
-            "Settings",
-            document.RootElement.GetProperty("primaryNavigationItems")[0].GetString());
+            (int)PrimaryNavigationItemKind.Settings,
+            document.RootElement.GetProperty("primaryNavigationItems")[0].GetInt32());
         Assert.Equal(
             "Custom",
             document.RootElement.GetProperty("accentColorMode").GetString());
