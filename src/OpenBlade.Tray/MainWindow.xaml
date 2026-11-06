@@ -4158,18 +4158,9 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
-                                            <Grid ColumnSpacing="6">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <FontIcon Style="{StaticResource LabsFeatureIconStyle}" />
-                                                <TextBlock x:Name="LabsImportGuideTitle"
-                                                           Grid.Column="1"
-                                                           Text="{CustomResource MainWindow_LabsImportTitle.Text}"
-                                                           Style="{StaticResource CardTitleStyle}"
-                                                           TextWrapping="Wrap" />
-                                            </Grid>
+                                            <TextBlock x:Name="LabsImportGuideTitle" Text="{CustomResource MainWindow_LabsImportTitle.Text}"
+                                                       Style="{StaticResource CardTitleStyle}"
+                                                       TextWrapping="Wrap" />
                                             <TextBlock x:Name="LabsImportGuideDescription" Text="{CustomResource MainWindow_LabsImportDescription.Text}"
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
@@ -4196,18 +4187,9 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
-                                            <Grid ColumnSpacing="6">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <FontIcon Style="{StaticResource LabsFeatureIconStyle}" />
-                                                <TextBlock x:Name="LabsLightingRateGuideTitle"
-                                                           Grid.Column="1"
-                                                           Text="{CustomResource MainWindow_TextBlockSixtyHzLighting.Text}"
-                                                           Style="{StaticResource CardTitleStyle}"
-                                                           TextWrapping="Wrap" />
-                                            </Grid>
+                                            <TextBlock x:Name="LabsLightingRateGuideTitle" Text="{CustomResource MainWindow_TextBlockSixtyHzLighting.Text}"
+                                                       Style="{StaticResource CardTitleStyle}"
+                                                       TextWrapping="Wrap" />
                                             <TextBlock x:Name="LabsLightingRateGuideDescription" Text="{CustomResource MainWindow_LabsLightingRateDescription.Text}"
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />

@@ -1450,7 +1450,10 @@ public sealed class WinUiShellContractTests
         XElement navigationIcon = Assert.Single(navigation.Descendants(), element => element.Name.LocalName == "FontIcon");
         Assert.Equal(Attribute(navigationIcon, "Glyph"), Attribute(glyph, "Value"));
 
-        XElement[] featureTitles = [importCard, rateCard, importGuide, rateGuide];
+        Assert.DoesNotContain(page.Descendants(), element =>
+            Attribute(element, "Style") == "{StaticResource LabsFeatureIconStyle}");
+
+        XElement[] featureTitles = [importCard, rateCard];
         foreach (XElement card in featureTitles)
         {
             XElement icon = Assert.Single(card.Descendants(), element =>
