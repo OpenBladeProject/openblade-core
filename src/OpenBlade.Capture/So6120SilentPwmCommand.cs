@@ -59,7 +59,7 @@ internal static class So6120SilentPwmCommand
             runRoot = So6120DirectDutyJournal.ValidateRunRoot(args[1]);
             return true;
         }
-        catch (Exception error) when (error is ArgumentException or NotSupportedException or IOException or UnauthorizedAccessException)
+        catch (Exception error) when (error is ArgumentException or NotSupportedException or IOException or InvalidDataException or UnauthorizedAccessException)
         { return false; }
     }
 
