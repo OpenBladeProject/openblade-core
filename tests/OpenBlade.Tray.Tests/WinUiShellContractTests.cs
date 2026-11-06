@@ -1561,8 +1561,9 @@ public sealed class WinUiShellContractTests
             element.Name.LocalName == "Border"
             && Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}");
         Assert.Contains(keyboardSection, row.Ancestors());
-        XElement heading = LocalizedElement(document, "TextBlock", "MainWindow_TextBlockKeyboard2");
-        Assert.Contains(keyboardSection, heading.Ancestors());
+        XElement heading = Assert.Single(keyboardSection.Elements(), element =>
+            element.Name.LocalName == "TextBlock"
+            && CanonicalLocalizedXaml.Identity(element) == "MainWindow_TextBlockKeyboard2");
         Assert.Equal("True", Attribute(heading, "CardReorder.IsHeader"));
         Assert.DoesNotContain(toggle.Ancestors(), ancestor =>
             Attribute(ancestor, "IsEnabled") == "{x:Bind CanRequestHardwareControl, Mode=OneWay}"
