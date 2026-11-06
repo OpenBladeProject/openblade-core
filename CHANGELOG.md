@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Apply and verify the internal display's active signal rate when selecting a fixed refresh rate.
+- Apply and verify the internal display's active signal rate when selecting a fixed refresh rate. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
 
 ## [0.51.0-nightly.107] - 2026-11-05
 
