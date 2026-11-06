@@ -4,9 +4,9 @@ This developer-only runner prepares one small, attended direct-duty increase
 on the exact RZ09-0581. Its implementation and simulated tests do not establish
 physical PWM control, fan stop, mailbox exclusion or physical recovery. No
 live mailbox trial is included in preparing or reviewing this runner. The
-[first attended Balanced attempt](so6120-balanced-pwm-trial.md) separately
-reached staging writes but stopped before direct PWM entry; restoration
-remains unresolved for that attempt.
+[attended Balanced attempts](so6120-balanced-pwm-trial.md) separately
+confirmed staging and permission writes with verified restoration. The direct
+selector has not yet been published, so direct PWM control remains unverified.
 
 ## Fixed experiment
 
@@ -37,8 +37,18 @@ not an atomic snapshot. Derive **actual PWM + 4 raw counts on each fan**;
 both need at least four counts of headroom. Do not clamp or silently
 recalculate the targets. Display the complete baseline and derived plan,
 then require approval of that exact in-memory plan and captured profile. The
-fixed command, journal identity and baseline selector must agree. Fresh entry observations
-must still match its controls and actual PWM. A change refuses the plan.
+fixed command, journal identity and baseline selector must agree.
+
+New plans allow normal Automatic PWM drift: at each existing entry-write
+check, each fixed target must be **1–8 raw counts above fresh actual PWM**.
+For example, a target of 54 remains admitted while actual PWM is 46–53.
+This replaces exact telemetry equality; mapped controls and ownership must
+still match. The rule is included in the approved plan hash and checked by
+journal replay. Legacy plans retain their strict equality rule and original
+hash. Targets are never recalculated, and a zero, negative or larger live
+increase refuses the next write. Exact target readback after FE and during
+the dwell is still required. These sequential reads cannot eliminate the
+read-to-publication race.
 
 There is no preparatory RPM command, zero target or decrease. A natural
 zero baseline is allowed; a request of four counts might not start the fan.

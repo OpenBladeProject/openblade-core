@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using OpenBlade.Capture;
 using OpenBlade.Contracts;
@@ -9,6 +10,144 @@ namespace OpenBlade.Capture.Tests;
 
 public sealed class So6120DirectDutyJournalTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LegacyPlanKeepsOriginalDigestAndRequiresExactInitialPwm(bool drift)
+    {
+        using var fixture = new Fixture();
+        var identity = fixture.Identity with { RequestedDuty1 = null, RequestedDuty2 = null };
+        using (var journal = So6120DirectDutyJournal.Create(fixture.Root, identity))
+        {
+            var plan = PreparePlannedEntry(fixture, journal, boundedDrift: false);
+            var originalJson = JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                plan.PlanId,
+                plan.Baseline,
+                plan.RequestedDuty1,
+                plan.RequestedDuty2,
+                plan.PreparedTimestamp,
+            });
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(originalJson)), plan.PlanSha256);
+            Assert.NotEqual(plan.PlanSha256, (plan with { AllowBoundedPwmDrift = true }).PlanSha256);
+
+            var observation = new So6120DutyObservation(identity.Owner, 2, 20, 21,
+                plan.Baseline.Snapshot with { Actual1 = drift ? (byte)51 : (byte)50 });
+            journal.RecordObservation(observation);
+            var checkpoint = new So6120DutyCheckpoint(identity.Owner, 1, identity.CapturedProfile,
+                fixture.Baseline, fixture.Baseline, So6120DutyOwnedFields.None, observation);
+            if (drift) { Assert.Throws<InvalidDataException>(() => journal.RecordCheckpoint(checkpoint)); }
+            else
+            {
+                journal.RecordCheckpoint(checkpoint);
+                journal.RecordIntent(identity.Owner,
+                    new(So6120MailboxRegister.StagedDuty1, plan.RequestedDuty1, fixture.Baseline), observation);
+                journal.BeginTransfer(new(Guid.NewGuid(), So6120MailboxRegister.StagedDuty1, plan.RequestedDuty1));
+            }
+        }
+        var inspected = So6120DirectDutyJournal.Inspect(fixture.Root);
+        Assert.Equal(2, inspected.FormatVersion);
+        Assert.False(inspected.Corrupt);
+        Assert.Equal(drift ? null : (long?)1, inspected.CheckpointGeneration);
+    }
+
+    [Fact]
+    public void PlannedWriteUsesTheLatestDurableObservationAfterIntent()
+    {
+        using var fixture = new Fixture();
+        var identity = fixture.Identity with { RequestedDuty1 = null, RequestedDuty2 = null };
+        using var journal = So6120DirectDutyJournal.Create(fixture.Root, identity);
+        var plan = PreparePlannedEntry(fixture, journal, boundedDrift: true);
+        var baseline = plan.Baseline;
+        journal.RecordCheckpoint(new(identity.Owner, 1, identity.CapturedProfile,
+            fixture.Baseline, fixture.Baseline, So6120DutyOwnedFields.None, baseline));
+        var mutation = new So6120DutyMutation(So6120MailboxRegister.StagedDuty1, plan.RequestedDuty1, fixture.Baseline);
+        journal.RecordIntent(identity.Owner, mutation, baseline);
+        journal.RecordObservation(new(identity.Owner, 2, 20, 21, baseline.Snapshot with { Actual1 = plan.RequestedDuty1 }));
+        Assert.Throws<InvalidDataException>(() => journal.BeginTransfer(new(Guid.NewGuid(), mutation.Register, mutation.Value)));
+    }
+
+    [Theory]
+    [InlineData("controls")]
+    [InlineData("inactive")]
+    [InlineData("missing")]
+    public void BoundedWriteReplayRejectsAnInvalidPostIntentObservation(string damage)
+    {
+        using var fixture = new Fixture();
+        var identity = fixture.Identity with { RequestedDuty1 = null, RequestedDuty2 = null };
+        using (var journal = So6120DirectDutyJournal.Create(fixture.Root, identity))
+        {
+            var plan = PreparePlannedEntry(fixture, journal, boundedDrift: true);
+            var baseline = plan.Baseline;
+            journal.RecordCheckpoint(new(identity.Owner, 1, identity.CapturedProfile,
+                fixture.Baseline, fixture.Baseline, So6120DutyOwnedFields.None, baseline));
+            journal.RecordIntent(identity.Owner,
+                new(So6120MailboxRegister.StagedDuty1, plan.RequestedDuty1, fixture.Baseline), baseline);
+            journal.RecordObservation(new(identity.Owner, 2, 20, 21, baseline.Snapshot));
+            journal.BeginTransfer(new(Guid.NewGuid(), So6120MailboxRegister.StagedDuty1, plan.RequestedDuty1));
+        }
+        Assert.False(So6120DirectDutyJournal.Inspect(fixture.Root).Corrupt);
+
+        // Rewrite the last two frames with a valid hash chain. The PWM bytes
+        // stay in range in every case, so replay must reject at TransferBegin.
+        byte[] original = File.ReadAllBytes(fixture.Path);
+        int observationOffset = 0, transferOffset = 0;
+        for (int offset = 11; offset < original.Length; offset += 36 + BodyLength(offset))
+        {
+            observationOffset = transferOffset;
+            transferOffset = offset;
+        }
+        var observation = ReadFrame(observationOffset);
+        var transfer = ReadFrame(transferOffset);
+        long transferSequence = transfer["Sequence"]!.GetValue<long>();
+        using (var file = new FileStream(fixture.Path, FileMode.Create, FileAccess.Write))
+        {
+            file.Write(original.AsSpan(0, observationOffset));
+            byte[] previous = original.AsSpan(observationOffset - 32, 32).ToArray();
+            if (damage == "missing") { transfer["Sequence"] = --transferSequence; }
+            else
+            {
+                var snapshot = observation["Data"]!["Snapshot"]!;
+                if (damage == "controls") { snapshot["Controls"]!["Staged2"] = 21; }
+                else { snapshot["ActiveState"] = 0; }
+                previous = WriteFrame(file, observation, previous);
+            }
+            _ = WriteFrame(file, transfer, previous);
+        }
+        var inspected = So6120DirectDutyJournal.Inspect(fixture.Root);
+        Assert.True(inspected.Corrupt);
+        Assert.Equal(transferSequence - 1, inspected.Records);
+        Assert.False(inspected.CanResume);
+
+        int BodyLength(int offset) => BinaryPrimitives.ReadInt32LittleEndian(original.AsSpan(offset, 4));
+        JsonNode ReadFrame(int offset) => JsonNode.Parse(original.AsSpan(offset + 4, BodyLength(offset)))!;
+
+        static byte[] WriteFrame(FileStream file, JsonNode record, byte[] previous)
+        {
+            byte[] body = Encoding.UTF8.GetBytes(record.ToJsonString());
+            byte[] hash = SHA256.HashData([.. previous, .. body]);
+            Span<byte> size = stackalloc byte[4];
+            BinaryPrimitives.WriteInt32LittleEndian(size, body.Length);
+            file.Write(size);
+            file.Write(body);
+            file.Write(hash);
+            return hash;
+        }
+    }
+
+    private static So6120SilentTrialPlan PreparePlannedEntry(Fixture fixture, So6120DirectDutyJournal journal, bool boundedDrift)
+    {
+        var identity = fixture.Identity;
+        journal.ClaimPreparation(identity.Owner);
+        fixture.Observe(journal);
+        var baseline = fixture.Latest!;
+        var plan = new So6120SilentTrialPlan(Guid.NewGuid(), baseline, 54, 64, baseline.CompletedTimestamp)
+        { AllowBoundedPwmDrift = boundedDrift };
+        journal.ApprovePlan(plan, new(plan.PlanId, plan.PlanSha256, Guid.NewGuid(), new('A', 64)));
+        journal.ClaimEntry(identity.Owner, identity.CapturedProfile);
+        return plan;
+    }
+
     [Fact]
     public void ConfirmedRoundTripRetainsBindingAndNeverGrantsRestart()
     {

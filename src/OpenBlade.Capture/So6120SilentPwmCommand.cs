@@ -27,10 +27,12 @@ internal static class So6120SilentPwmCommand
         Live run requires an elevated interactive console and a new absolute run directory.
         Metadata inspection opens HID descriptor handles without sending feature reports.
         It first obtains explicit acceptance of the scoped contention/abort limits.
-        Only then open InpOut and read the A0 baseline to derive PWM +4 raw counts per fan.
+        Only then open InpOut and read the A0 baseline to derive fixed targets at +4 raw counts per fan.
         Both fans need >=4 counts of headroom. No zero/decrease target or preparatory RPM command.
         A +4 request from a natural zero baseline may or may not start a fan.
-        A second explicit approval binds those exact observed/derived values.
+        A second explicit approval binds the baseline, exact targets, and live +1 to +8 range per fan.
+        Before entry and before each entry write, compare fresh actual PWM to those fixed targets.
+        Either target outside the live increase range stops entry. The read and write are separate operations.
         Stage B8/B9; set owned F0.6 permission; publish FE last; verify each write.
         After a one-second dwell, restore the captured normal selector to Auto,
         confirm Manual00, then restore the original owned F0/staging bytes.
@@ -234,7 +236,8 @@ internal static class So6120SilentPwmCommand
             var derivedPlan = new { phase = "derivedPlan", capturedProfile, operatorReportedPowerSource, plan };
             Record(derivedPlan);
             await output.WriteLineAsync(JsonSerializer.Serialize(derivedPlan, new JsonSerializerOptions { WriteIndented = true }));
-            await output.WriteLineAsync($"Approve these captured raw PWM targets and the exact {capturedProfile}/Auto restoration once. Any changed baseline refuses entry; the runner will not derive new targets.");
+            await output.WriteLineAsync($"Approve the fixed PWM targets and the exact {capturedProfile}/Auto restoration once. The targets are +4 from the captured baseline. Each must be +1 to +8 above its fresh actual PWM reading before entry and each entry write.");
+            await output.WriteLineAsync("The runner keeps the approved targets. Changed controls or either increase outside the range stops entry. Reads and writes are separate operations.");
             string writeToken = $"APPLY {plan.PlanId:N} {plan.PlanSha256}";
             if (!await ConfirmAsync(input, output, writeToken, cancellation.Token))
             { Record(new { phase = "declinedAfterBaseline", plan.PlanId }); declinedAfterConfirmedBaseline = true; throw new TrialDeclinedException(); }

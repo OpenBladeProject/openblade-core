@@ -160,3 +160,73 @@ The next trial must derive and approve a new +4 plan. Keeping the old targets
 after PWM fell to zero would instead request a much larger increase. Natural
 Automatic zero readings do not establish that the direct PWM path controls
 fan stop.
+
+## Permission-prefix trial restored after PWM changed
+
+The next prepared wrapper exited before Capture started. Its historical error
+was not captured, so its cause is unknown. A reviewed continuation preserved
+that failed wrapper's evidence, reconciled the fixed old marker path, and used
+the still-unused hardware-trial approval. The old marker was found at its
+original path and archived with its bytes verified. The frozen Capture candidate
+remained `25740ef30e73dbcac26f14fb824689d0e2cb4967`.
+
+The resulting attended run `1092b8f0-cbc5-4a97-aacf-38e34c85396c` began in
+operator-reported USB-C Balanced/Automatic with actual PWM and raw tach `0/0`,
+override and staging zero, cycle `183`, policy command zero, and active state
+`161`. The approved
++4 targets were therefore `4/4`. B8=`04`, B9=`04`, and F0=`40` each completed
+with a separate successful A0 confirmation.
+
+The first complete snapshot after F0 showed actual PWM `37/37` and raw tach
+`17/17`; subsequent snapshots reached PWM `39/39`, then `40/40`. The selector
+remained Balanced `00`, manual remained `00`, and staging remained `4/4`.
+CPU temperature observations were `45 C`, with the GPU reported inactive.
+The timing associates the rise with permission publication but does not prove
+that publication caused it.
+
+The selector `1A=FE` was **never submitted**. Its durable intent was followed
+by an explicit not-submitted record, with zero possible publications, zero
+completed commands and no native operations in that transfer. The fresh
+actual-PWM comparison stopped entry with `PwmNotObserved` because the approved
+baseline had changed. A `4/4` target would have requested a decrease from the
+observed `40/40`.
+This was a local admission refusal, not firmware rejection or overwrite of FE.
+
+The confirmed-prefix handback restored only the owned fields: F0=`00`, B8=`00`,
+and B9=`00`, each with a separate A0 confirmation. No selector write was needed
+because FE had not been published. Final independent snapshot 25 confirmed the
+original controls, staging and cycle; actual PWM was `59/51`, under Automatic.
+The journal recorded completion at generation 7 without a fence or remaining
+permission exposure. Native close succeeded without errors or release failures.
+The wrapper observed Capture exit `2`; the parent recorded both Capture and
+wrapper exit `2` and observed the actual processes exit. That code reports the
+unsuccessful direct-duty trial; it does not negate the independently verified restoration.
+
+All 1,382 journal records passed sequence and hash-chain verification through
+EOF. The 337 native command publications comprised 331 A0 reads and exactly six
+A1 writes: three entry-prefix writes and their three restorations. The attempt
+marker and executed artifacts are retained. Direct PWM and commanded fan stop
+remain unverified. Another trial requires a separately approved plan that stays
+an increase at the point of direct-mode entry; it must not bypass this drift
+refusal or reuse the consumed run.
+
+Offline inspection of the pinned EC image is consistent with ordinary Auto
+startup. Selector `00` follows the normal fan path at `15E66–15E80`; the
+F0.6 fan-dispatch checks are in the `FF` and `FE` branches. Factory floor
+records `29CC4/29CCC` specify 20%, converted by `14422–14442` and `166A6`
+to 36 counts for cycle 183. The normal large-deficit feedback branches at
+`155EA–15606` and `15796–157B2` apply that floor and increment it, producing
+37. This explains the shape of the observed ramp without establishing its
+trigger. F0.6 also affects a separate policy contributor; an indirect effect
+has not been ruled out.
+
+## Tolerating ordinary Automatic drift
+
+New prepared plans retain fixed targets of captured PWM +4, but admit a live
+increase of 1–8 counts per fan at each existing entry gate. Exact target
+readback and Auto restoration remain required. The rule is included in the
+plan hash, while old plans keep their strict equality semantics. This avoids
+rejecting a small natural variation solely because it differs from the
+captured sample. It does not admit a target below the fresh reading: the
+observed `4` target against `40` would still refuse direct entry. No targets
+are silently rebased and no extra writes or retries are introduced.

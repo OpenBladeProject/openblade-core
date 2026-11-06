@@ -16,6 +16,7 @@ public sealed class So6120SilentTrialTests
         using (var session = f.Create())
         {
             var plan = session.PrepareSilentIncrease(Hooks());
+            Assert.True(plan.AllowBoundedPwmDrift);
             Assert.Equal((byte)54, plan.RequestedDuty1);
             Assert.Equal((byte)64, plan.RequestedDuty2);
             Assert.Equal(13, f.Port.Publications.Count);
@@ -118,15 +119,13 @@ public sealed class So6120SilentTrialTests
         Assert.Empty(f.Port.Writes);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ChangedBaselineRefusesWritesAndNeverRecalculates(bool control)
+    [Fact]
+    public void ChangedBaselineControlsRefuseWritesAndNeverRecalculate()
     {
         using var f = new Fixture(preparing: true);
         using var session = f.Create();
         var plan = session.PrepareSilentIncrease(Hooks());
-        f.Port.Mapped[control ? 0xB8 : 0xB0]++;
+        f.Port.Mapped[0xB8]++;
         var result = session.ExecuteApproved(plan, Approve(plan));
         Assert.Equal(So6120DutyFailure.BaselineRejected, result.Entry!.Failure);
         Assert.False(result.Success);
@@ -134,6 +133,60 @@ public sealed class So6120SilentTrialTests
         Assert.Empty(f.Port.Writes);
         Assert.Equal((byte)54, plan.RequestedDuty1);
         Assert.True(result.NoSettingWritePublished);
+    }
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(false, -1)]
+    [InlineData(false, 9)]
+    [InlineData(true, 0)]
+    [InlineData(true, -1)]
+    [InlineData(true, 9)]
+    public void EitherFanOutsideTheIncreaseRangeRefusesInitialEntry(bool secondFan, int liveDelta)
+    {
+        using var f = new Fixture(PerformancePreset.Balanced, 0, preparing: true);
+        using var session = f.Create();
+        var plan = session.PrepareBalancedIncrease(Hooks());
+        if (secondFan) { f.Port.Mapped[0xB1] = (byte)(plan.RequestedDuty2 - liveDelta); }
+        else { f.Port.Mapped[0xB0] = (byte)(plan.RequestedDuty1 - liveDelta); }
+        var result = session.ExecuteApproved(plan, Approve(plan));
+        Assert.Equal(So6120DutyFailure.BaselineRejected, result.Entry!.Failure);
+        Assert.True(result.NoSettingWritePublished);
+        Assert.Null(result.Restoration);
+        Assert.All(f.Port.Publications, publication => Assert.Equal(0xA0, publication.Command));
+    }
+
+    [Fact]
+    public void BoundedDriftAtEntryAndAfterPermissionUsesTheSameApprovedTargets()
+    {
+        using var f = new Fixture(PerformancePreset.Balanced, 0, preparing: true);
+        using (var session = f.Create())
+        {
+            var plan = session.PrepareBalancedIncrease(Hooks());
+            f.Port.Mapped[0xB0] = (byte)(plan.RequestedDuty1 - 1);
+            f.Port.Mapped[0xB1] = (byte)(plan.RequestedDuty2 - 8);
+            f.Port.AfterWrite = (register, value) =>
+            {
+                if (register != 0xF0 || value != 0x51) { return; }
+                f.Port.Mapped[0xB0] = (byte)(plan.RequestedDuty1 - 8);
+                f.Port.Mapped[0xB1] = (byte)(plan.RequestedDuty2 - 1);
+            };
+
+            var result = session.ExecuteApproved(plan, Approve(plan));
+            Assert.True(result.Success);
+            Assert.Equal(plan.RequestedDuty1, result.ObservationAfterDwell!.Snapshot.Actual1);
+            Assert.Equal(plan.RequestedDuty2, result.ObservationAfterDwell.Snapshot.Actual2);
+            Assert.Equal(new (byte Register, byte Value)[]
+            {
+                (0xB8, 54), (0xB9, 64), (0xF0, 0x51), (0x1A, 0xFE),
+                (0x1A, 0), (0xF0, 0x11), (0xB8, 10), (0xB9, 20),
+            }, f.Port.Writes);
+            Assert.True(result.Restoration!.CleanupConfirmed);
+        }
+        var inspected = So6120DirectDutyJournal.Inspect(f.Root);
+        Assert.True(inspected.Complete);
+        Assert.False(inspected.Corrupt);
+        Assert.Equal(2, inspected.FormatVersion);
     }
 
     [Fact]
@@ -279,19 +332,27 @@ public sealed class So6120SilentTrialTests
         Assert.Null(result.Restoration);
     }
 
-    [Fact]
-    public void OrdinaryPwmDriftAfterPermissionSoftStopsAndRestoresConfirmedPrefix()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(9)]
+    public void PwmOutsideTheRangeAfterPermissionSoftStopsAndRestoresConfirmedPrefix(int liveDelta)
     {
         using var f = new Fixture(preparing: true);
-        f.Port.AfterWrite = (register, value) => { if (register == 0xF0 && value == 0x51) { f.Port.Mapped[0xB0]++; } };
         using var session = f.Create();
         var plan = session.PrepareSilentIncrease(Hooks());
+        f.Port.AfterWrite = (register, value) =>
+        {
+            if (register == 0xF0 && value == 0x51) { f.Port.Mapped[0xB1] = (byte)(plan.RequestedDuty2 - liveDelta); }
+        };
         var result = session.ExecuteApproved(plan, Approve(plan));
         Assert.Equal(So6120SilentTrialStop.PwmNotObserved, result.StopReason);
         Assert.False(result.CommandsFenced);
         Assert.True(result.Restoration!.Success);
-        Assert.Equal((byte)0x11, f.Port.Mapped[0xF0]);
-        Assert.DoesNotContain(f.Port.Writes, w => w.Register == 0x1A);
+        Assert.Equal(new (byte Register, byte Value)[]
+        {
+            (0xB8, 54), (0xB9, 64), (0xF0, 0x51), (0xF0, 0x11), (0xB8, 10), (0xB9, 20),
+        }, f.Port.Writes);
     }
 
     [Fact]

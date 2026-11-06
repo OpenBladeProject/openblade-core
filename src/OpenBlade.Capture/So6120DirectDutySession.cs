@@ -348,11 +348,10 @@ internal sealed partial class So6120DirectDutySession : IDisposable
             { session.Fence(So6120DutyFailure.StateChanged); return new(So6120DutyIoDisposition.Unresolved, null); }
             if (session.trialExecuting && !session.trialRestoring)
             {
-                if (before.Snapshot.Actual1 != session.preparedPlan!.Baseline.Snapshot.Actual1
-                    || before.Snapshot.Actual2 != session.preparedPlan.Baseline.Snapshot.Actual2)
+                if (!session.preparedPlan!.AdmitsLivePwm(before.Snapshot))
                 {
-                    // Ordinary Auto PWM drift changes the approved increase,
-                    // not the already-confirmed mapped-control ownership. Stop
+                    // PWM can leave the approved increase range without
+                    // invalidating confirmed mapped-control ownership. Stop
                     // before A1 and retain the explicit known-prefix handback.
                     session.trialStop = So6120SilentTrialStop.PwmNotObserved;
                     return new(So6120DutyIoDisposition.DefinitelyUnsubmitted,

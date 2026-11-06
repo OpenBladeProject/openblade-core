@@ -288,6 +288,16 @@ internal sealed class So6120DirectDutyJournal : IDisposable
                 {
                     Require(next.Phase is Phase.Entry or Phase.Exit && next.Intent is not null && !next.WriteAttempted);
                     Require(transfer.Register == next.Intent!.Mutation.Register && value == next.Intent.Mutation.Value);
+                    if (next.Phase == Phase.Entry && next.Plan is { } plan)
+                    {
+                        // The session records its fresh pre-write snapshot
+                        // after the intent and before beginning the transfer.
+                        Require(next.Observation is { } live
+                            && live.Snapshot.Controls == next.Intent.Mutation.Expected
+                            && (live.Snapshot.ActiveState & 1) != 0
+                            && (!plan.AllowBoundedPwmDrift || live.Sequence > next.Intent.Observation.Sequence)
+                            && plan.AdmitsLivePwm(live.Snapshot));
+                    }
                     next.WriteAttempted = true;
                 }
                 next.Transfer = transfer;
@@ -396,8 +406,7 @@ internal sealed class So6120DirectDutyJournal : IDisposable
                         && checkpoint.Baseline.Cycle != 0 && RequestedDuty(next, true) <= checkpoint.Baseline.Cycle
                         && RequestedDuty(next, false) <= checkpoint.Baseline.Cycle
                         && (next.Plan is null || checkpoint.Baseline == next.Plan.Baseline.Snapshot.Controls
-                            && checkpoint.Observation.Snapshot.Actual1 == next.Plan.Baseline.Snapshot.Actual1
-                            && checkpoint.Observation.Snapshot.Actual2 == next.Plan.Baseline.Snapshot.Actual2));
+                            && next.Plan.AdmitsLivePwm(checkpoint.Observation.Snapshot)));
                 }
                 else
                 {

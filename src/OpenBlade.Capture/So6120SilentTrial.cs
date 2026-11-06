@@ -8,8 +8,17 @@ namespace OpenBlade.Capture;
 internal sealed record So6120SilentTrialPlan(Guid PlanId, So6120DutyObservation Baseline,
     byte RequestedDuty1, byte RequestedDuty2, long PreparedTimestamp)
 {
+    // Omit the legacy default from JSON so existing v2 approvals keep their hash
+    // and retain the original requirement for exact live baseline PWM.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AllowBoundedPwmDrift { get; init; }
+
     [JsonIgnore]
     public string PlanSha256 => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(this)));
+
+    internal bool AdmitsLivePwm(So6120DutySnapshot snapshot) => AllowBoundedPwmDrift
+        ? RequestedDuty1 - snapshot.Actual1 is >= 1 and <= 8 && RequestedDuty2 - snapshot.Actual2 is >= 1 and <= 8
+        : snapshot.Actual1 == Baseline.Snapshot.Actual1 && snapshot.Actual2 == Baseline.Snapshot.Actual2;
 
     internal static bool SupportsProfile(PerformancePreset profile) =>
         profile is PerformancePreset.Silent or PerformancePreset.Balanced;
@@ -105,7 +114,8 @@ internal sealed partial class So6120DirectDutySession
                 if (snapshot.Actual1 + 4 > byte.MaxValue || snapshot.Actual2 + 4 > byte.MaxValue)
                 { throw new InvalidOperationException("No fixed-increase headroom."); }
                 var plan = new So6120SilentTrialPlan(Guid.NewGuid(), baseline,
-                    (byte)(snapshot.Actual1 + 4), (byte)(snapshot.Actual2 + 4), baseline.CompletedTimestamp);
+                    (byte)(snapshot.Actual1 + 4), (byte)(snapshot.Actual2 + 4), baseline.CompletedTimestamp)
+                { AllowBoundedPwmDrift = true };
                 if (!plan.Valid(expectedProfile))
                 { throw new InvalidOperationException($"{expectedProfile}/Auto baseline or fixed four-count headroom refused."); }
                 preparedPlan = plan;
@@ -141,10 +151,9 @@ internal sealed partial class So6120DirectDutySession
                 ReportTrial("Entering", latestObservation);
                 if (EntryAllowed(refresh: true))
                 {
-                    // The coordinator reobserves and compares against this exact
-                    // approved baseline; it cannot silently recalculate targets.
-                    entry = new So6120DirectDutyCoordinator(operation).EnterPrepared(binding.Identity.CapturedProfile, plan.Baseline,
-                        plan.RequestedDuty1, plan.RequestedDuty2);
+                    // The coordinator reobserves the approved controls and checks
+                    // the live increase against the same fixed approved targets.
+                    entry = new So6120DirectDutyCoordinator(operation).EnterPrepared(binding.Identity.CapturedProfile, plan);
                     entryCompleted = clock.GetTimestamp();
                     ReportTrial("EntryFinished", latestObservation);
                     if (entry.Success && EntryAllowed(refresh: false, checkThermal: false))
