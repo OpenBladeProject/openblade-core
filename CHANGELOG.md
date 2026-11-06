@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Move keyboard lighting preset import and 60 Hz lighting to Labs in the sidebar and remove the Labs switch from Settings.
+- Move keyboard lighting preset import and 60 Hz lighting to Labs in the sidebar and remove the Labs switch from Settings. ([#885](https://github.com/OpenBladeProject/openblade-core/pull/885))
 
 ## [0.51.0-nightly.107] - 2026-11-05
 

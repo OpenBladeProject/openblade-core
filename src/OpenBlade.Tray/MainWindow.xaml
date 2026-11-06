@@ -4050,7 +4050,7 @@
                         <TextBlock Text="{CustomResource MainWindow_LabsTitle.Text}"
                                    Style="{StaticResource PageHeaderTitleStyle}"
                                    Margin="0,0,0,8" />
-                        <TextBlock Text="{CustomResource MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text}"
+                        <TextBlock Text="{CustomResource MainWindow_LabsDescription.Text}"
                                    Style="{StaticResource SecondaryTextStyle}"
                                    TextWrapping="Wrap"
                                    Margin="0,0,0,20" />

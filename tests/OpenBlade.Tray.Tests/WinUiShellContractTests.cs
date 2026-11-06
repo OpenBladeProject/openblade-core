@@ -1424,6 +1424,8 @@ public sealed class WinUiShellContractTests
         Assert.Null(Attribute(navigation, "IsEnabled"));
 
         XElement page = NamedElement(document, "ScrollViewer", "LabsPage");
+        Assert.Equal("Try experimental OpenBlade features.",
+            Attribute(LocalizedElement(document, "TextBlock", "MainWindow_LabsDescription"), "Text"));
         XElement importCard = NamedElement(document, "Border", "ImportKeyboardLightingPresetCard");
         XElement rateCard = NamedElement(document, "Border", "LightingRefreshRateCard");
         XElement keyboard = NamedElement(document, "StackPanel", "LabsKeyboardSection");

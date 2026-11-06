@@ -1244,8 +1244,8 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
     <value>实验室</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
-    <value>实验功能可能会变更或移除。</value>
+  <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
+    <value>试用 OpenBlade 的实验性功能。</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>笔记本电脑</value>

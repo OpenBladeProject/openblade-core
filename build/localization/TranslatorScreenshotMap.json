@@ -123,7 +123,7 @@
     {
       "surface": "tray",
       "match": "key",
-      "pattern": "^MainWindow_(?:LabsTitle|TextBlockLabFeaturesMayChange|ButtonImportKeyboardLightingPreset|TextBlockImportPreset|TextBlockLoadAnOpenBlade|LightingImport_|TextBlockSixtyHzLighting|LightingRefreshRateToggleText)",
+      "pattern": "^MainWindow_(?:LabsTitle|LabsDescription|ButtonImportKeyboardLightingPreset|TextBlockImportPreset|TextBlockLoadAnOpenBlade|LightingImport_|TextBlockSixtyHzLighting|LightingRefreshRateToggleText)",
       "context": "Labs page title or experimental keyboard lighting control.",
       "screenshots": ["tray/main-labs.png"]
     },

@@ -1258,8 +1258,8 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
     <value>[Ľàƀš]</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
-    <value>[!! Láb féátúrés máý chángé ór bé rémóvéd. ~~~~~~~~~~~ !!]</value>
+  <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
+    <value>[!! Trý éxpéríméntál ÓpénBládé féátúrés. ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>[!! Láptóp ~~~ !!]</value>

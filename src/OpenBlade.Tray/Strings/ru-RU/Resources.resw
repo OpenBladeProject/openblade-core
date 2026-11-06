@@ -1261,8 +1261,8 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
     <value>Лаборатория</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
-    <value>Функции Lab могут быть изменены или удалены.</value>
+  <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
+    <value>Попробуйте экспериментальные функции OpenBlade.</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>Ноутбук</value>
