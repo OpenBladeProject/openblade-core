@@ -167,7 +167,8 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
     {
         DisplayTopology original = QueryTopology();
         DisplayTarget target = GetSingleInternalTarget(original);
-        DisplaySettingsSnapshot before = BuildSnapshot(original, target, cancellationToken);
+        DisplaySettingsSnapshot before = BuildSnapshot(
+            original, target, cancellationToken, key, out DisplayConfigTargetMode? dynamicMode);
         DisplayRefreshOption? requested = before.RefreshOptions.FirstOrDefault(option => option.Key == key);
         if (requested is null)
         {
@@ -180,7 +181,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         return PrepareRefreshAfterSnapshot(before, () =>
         {
             DisplayTopology requestedTopology = original.Copy();
-            PrepareRefreshTopology(requestedTopology, target, requested);
+            PrepareRefreshTopology(requestedTopology, target, requested, dynamicMode);
             return new(() => ExecuteRefreshMutation(key, () => ApplyTopology(requestedTopology),
                 () => QueryCore(CancellationToken.None)));
         });
@@ -397,7 +398,15 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
     private static DisplaySettingsSnapshot BuildSnapshot(
         DisplayTopology topology,
         DisplayTarget target,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        BuildSnapshot(topology, target, cancellationToken, null, out _);
+
+    private static DisplaySettingsSnapshot BuildSnapshot(
+        DisplayTopology topology,
+        DisplayTarget target,
+        CancellationToken cancellationToken,
+        string? requestedRefreshKey,
+        out DisplayConfigTargetMode? requestedDynamicMode)
     {
         cancellationToken.ThrowIfCancellationRequested();
         DevMode currentMode = GetCurrentMode(target.SourceName);
@@ -408,7 +417,9 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             checked((int)currentMode.PelsWidth),
             checked((int)currentMode.PelsHeight),
             checked((int)currentMode.DisplayFrequency),
-            activeMode);
+            activeMode,
+            requestedRefreshKey,
+            out requestedDynamicMode);
         double virtualHertz = target.Path.TargetInfo.RefreshRate.Hertz;
         string? currentRefreshKey = RefreshRateClassifier.Classify(
             target.Path.Flags,
@@ -804,27 +815,34 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         int width,
         int height,
         int currentHertz,
-        DisplayConfigTargetMode activeMode)
+        DisplayConfigTargetMode activeMode,
+        string? requestedRefreshKey,
+        out DisplayConfigTargetMode? requestedDynamicMode)
     {
+        requestedDynamicMode = null;
         int physical = RefreshRateClassifier.Normalize(activeMode.TargetVideoSignalInfo.VSyncFreq.Hertz);
         int[] driverRates = EnumerateFixedRefreshRates(target.SourceName, width, height);
         byte[] edid = [];
-        int[] advertisedRates = [];
+        IReadOnlyList<EdidDetailedTiming> timings = [];
         if (target.MonitorDevicePath is not null && MonitorEdidReader.TryRead(target.MonitorDevicePath, out edid))
         {
-            advertisedRates = EdidDetailedTimingParser.Parse(edid)
-                .Where(timing => timing.Width == width && timing.Height == height)
-                .Select(timing => timing.Hertz)
-                .Distinct()
-                .Order()
-                .ToArray();
+            timings = EdidDetailedTimingParser.Parse(edid);
         }
 
-        DisplayConfigTargetMode dynamicMode = GetDynamicTargetMode(target.Path, activeMode);
-        int dynamicMaximum = RefreshRateClassifier.Normalize(dynamicMode.TargetVideoSignalInfo.VSyncFreq.Hertz);
+        bool supportsVirtualMode =
+            (target.Path.Flags & WindowsDisplayNative.DisplayConfigPathSupportVirtualMode) != 0;
+        DisplayConfigTargetMode? preferred = supportsVirtualMode ? GetPreferredTargetMode(target.Path, activeMode) : null;
+        IEnumerable<int> advertisedRates = timings
+            .Where(timing => timing.Width == width && timing.Height == height)
+            .Select(timing => timing.Hertz);
+        if (preferred is { } preferredMode)
+        {
+            advertisedRates = advertisedRates.Append(RefreshRateClassifier.Normalize(preferredMode.TargetVideoSignalInfo.VSyncFreq.Hertz));
+        }
+
         int[] fixedRates = RefreshRateVisibilityFilter.SelectFixedRates(
             driverRates,
-            advertisedRates.Append(dynamicMaximum),
+            advertisedRates,
             RefreshRateClassifier.Normalize(currentHertz),
             physical);
         List<DisplayRefreshOption> options = fixedRates
@@ -837,26 +855,14 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
                 false))
             .ToList();
 
-        bool supportsVirtualMode =
-            (target.Path.Flags & WindowsDisplayNative.DisplayConfigPathSupportVirtualMode) != 0;
-        int desktopHertz = fixedRates.FirstOrDefault(hertz => hertz >= 60 && hertz < dynamicMaximum);
-        if (supportsVirtualMode && desktopHertz > 0 && dynamicMaximum >= 120)
+        if (supportsVirtualMode)
         {
-            EdidVerticalRange range = new(desktopHertz, dynamicMaximum);
-            if (edid.Length > 0 &&
-                EdidVerticalRangeParser.TryParse(edid, out EdidVerticalRange reported) &&
-                reported.MaximumHertz >= dynamicMaximum)
-            {
-                range = reported with { MaximumHertz = dynamicMaximum };
-            }
-
-            options.Add(new DisplayRefreshOption(
-                DisplayRefreshKeys.Dynamic(range.MinimumHertz, range.MaximumHertz),
-                $"Dynamic ({range.MinimumHertz}-{range.MaximumHertz} Hz)",
-                range.MinimumHertz,
-                range.MaximumHertz,
-                desktopHertz,
-                true));
+            EdidVerticalRange? range = EdidVerticalRangeParser.TryParse(edid, out EdidVerticalRange reported)
+                ? reported : null;
+            bool boostEnabled = (target.Path.Flags & WindowsDisplayNative.DisplayConfigPathBoostRefreshRate) != 0;
+            requestedDynamicMode = AddDynamicRefreshOptions(
+                options, fixedRates, SelectDynamicTargetModes(activeMode, preferred, timings, driverRates),
+                boostEnabled ? physical : null, range, requestedRefreshKey);
         }
 
         return options;
@@ -934,24 +940,83 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         return index;
     }
 
-    private static DisplayConfigTargetMode GetDynamicTargetMode(
-        DisplayConfigPathInfo path,
-        DisplayConfigTargetMode activeMode)
+    internal static DisplayConfigTargetMode? AddDynamicRefreshOptions(
+        List<DisplayRefreshOption> options,
+        int[] fixedRates,
+        Dictionary<int, DisplayConfigTargetMode> targetModes,
+        int? currentMaximum,
+        EdidVerticalRange? advertisedRange,
+        string? requestedKey)
     {
-        uint flags = path.Flags & (WindowsDisplayNative.DisplayConfigPathSupportVirtualMode |
-            WindowsDisplayNative.DisplayConfigPathBoostRefreshRate);
-        if (flags != WindowsDisplayNative.DisplayConfigPathSupportVirtualMode)
+        bool addedDefault = false;
+        foreach ((int maximum, DisplayConfigTargetMode mode) in targetModes
+            .OrderByDescending(entry => entry.Key == currentMaximum)
+            .ThenByDescending(entry => entry.Key))
         {
-            return activeMode;
+            int desktop = fixedRates.FirstOrDefault(hertz => hertz >= 60 && hertz < maximum);
+            if (desktop == 0)
+            {
+                continue;
+            }
+
+            int minimum = advertisedRange is { } range && range.MaximumHertz >= maximum
+                ? range.MinimumHertz : desktop;
+            string key = DisplayRefreshKeys.Dynamic(minimum, maximum);
+            bool requested = string.Equals(key, requestedKey, StringComparison.Ordinal);
+            // Keep one Dynamic choice in ordinary reads. An exact saved choice
+            // can also be applied while its timing is still supported.
+            if (!addedDefault || requested)
+            {
+                options.Add(new(key, $"Dynamic ({minimum}-{maximum} Hz)", minimum, maximum, desktop, true));
+                addedDefault = true;
+            }
+
+            if (requested)
+            {
+                return mode;
+            }
+
+            if (requestedKey is null)
+            {
+                break;
+            }
         }
 
-        // A fixed low signal rate should not hide Dynamic when Windows supplies
-        // a higher timing for the same panel geometry.
-        DisplayConfigTargetMode? preferred = GetPreferredTargetMode(path, activeMode);
-        return preferred is { } mode &&
-            mode.TargetVideoSignalInfo.VSyncFreq.Hertz > activeMode.TargetVideoSignalInfo.VSyncFreq.Hertz
-            ? mode
-            : activeMode;
+        return null;
+    }
+
+    internal static Dictionary<int, DisplayConfigTargetMode> SelectDynamicTargetModes(
+        DisplayConfigTargetMode activeMode,
+        DisplayConfigTargetMode? preferred,
+        IReadOnlyList<EdidDetailedTiming> timings,
+        int[] driverRates)
+    {
+        Dictionary<int, DisplayConfigTargetMode> modes = [];
+        Add(activeMode);
+        if (preferred is { } preferredMode)
+        {
+            Add(preferredMode);
+        }
+
+        foreach (EdidDetailedTiming timing in timings)
+        {
+            if (timing.Hertz >= 120 && !modes.ContainsKey(timing.Hertz) && driverRates.Contains(timing.Hertz) &&
+                CreateTargetMode(activeMode.TargetVideoSignalInfo, timing) is { } mode)
+            {
+                modes.Add(timing.Hertz, mode);
+            }
+        }
+
+        return modes;
+
+        void Add(DisplayConfigTargetMode mode)
+        {
+            int rate = RefreshRateClassifier.Normalize(mode.TargetVideoSignalInfo.VSyncFreq.Hertz);
+            if (rate >= 120 && mode.TargetVideoSignalInfo.ScanLineOrdering is 0 or 1)
+            {
+                modes.TryAdd(rate, mode);
+            }
+        }
     }
 
     private static DisplayConfigTargetMode? GetPreferredTargetMode(
@@ -971,7 +1036,8 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         DisplayConfigVideoSignalInfo active = activeMode.TargetVideoSignalInfo;
         DisplayConfigVideoSignalInfo candidate = preferred.TargetMode.TargetVideoSignalInfo;
         return candidate.ActiveSize.Width == active.ActiveSize.Width &&
-            candidate.ActiveSize.Height == active.ActiveSize.Height && candidate.VSyncFreq.Hertz > 0
+            candidate.ActiveSize.Height == active.ActiveSize.Height && candidate.VSyncFreq.Hertz > 0 &&
+            candidate.ScanLineOrdering is 0 or 1
             ? preferred.TargetMode
             : null;
     }
@@ -995,25 +1061,37 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
 
         foreach (EdidDetailedTiming timing in EdidDetailedTimingParser.Parse(edid))
         {
-            if (timing.Width == active.ActiveSize.Width && timing.Height == active.ActiveSize.Height && timing.Hertz == hertz &&
-                DisplayConfigRational.FromRatio(timing.PixelRate, timing.TotalWidth) is { } horizontal &&
-                DisplayConfigRational.FromRatio(timing.PixelRate, (ulong)timing.TotalWidth * timing.TotalHeight) is { } vertical)
+            if (timing.Hertz == hertz && CreateTargetMode(active, timing) is { } targetMode)
             {
-                active.PixelRate = timing.PixelRate;
-                active.HSyncFreq = horizontal;
-                active.VSyncFreq = vertical;
-                active.TotalSize = new() { Width = timing.TotalWidth, Height = timing.TotalHeight };
-                return new() { TargetVideoSignalInfo = active };
+                return targetMode;
             }
         }
 
         return null;
     }
 
+    private static DisplayConfigTargetMode? CreateTargetMode(DisplayConfigVideoSignalInfo active, EdidDetailedTiming timing)
+    {
+        if (active.ScanLineOrdering is not (0 or 1) ||
+            timing.Width != active.ActiveSize.Width || timing.Height != active.ActiveSize.Height ||
+            DisplayConfigRational.FromRatio(timing.PixelRate, timing.TotalWidth) is not { } horizontal ||
+            DisplayConfigRational.FromRatio(timing.PixelRate, (ulong)timing.TotalWidth * timing.TotalHeight) is not { } vertical)
+        {
+            return null;
+        }
+
+        active.PixelRate = timing.PixelRate;
+        active.HSyncFreq = horizontal;
+        active.VSyncFreq = vertical;
+        active.TotalSize = new() { Width = timing.TotalWidth, Height = timing.TotalHeight };
+        return new() { TargetVideoSignalInfo = active };
+    }
+
     private static void PrepareRefreshTopology(
         DisplayTopology topology,
         DisplayTarget target,
-        DisplayRefreshOption requested)
+        DisplayRefreshOption requested,
+        DisplayConfigTargetMode? dynamicMode)
     {
         int pathIndex = Array.FindIndex(
             topology.Paths,
@@ -1030,7 +1108,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         ref DisplayConfigPathInfo path = ref topology.Paths[pathIndex];
         ref DisplayConfigTargetMode mode = ref topology.Modes[modeIndex].Mode.TargetMode;
         DisplayConfigTargetMode? requestedMode = requested.IsDynamic
-            ? GetDynamicTargetMode(path, mode)
+            ? dynamicMode
             : RefreshRateClassifier.Normalize(mode.TargetVideoSignalInfo.VSyncFreq.Hertz) == requested.MaximumHertz
                 ? mode
                 : FindFixedTargetMode(target, mode, requested.MaximumHertz);

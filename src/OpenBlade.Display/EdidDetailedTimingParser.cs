@@ -6,6 +6,7 @@ internal static class EdidDetailedTimingParser
     private const byte DisplayIdExtensionTag = 0x70;
     private const byte Type7DetailedTimingBlockTag = 0x22;
     private const int Type7TimingLength = 20;
+    private const byte InterlacedTiming = 0x10;
 
     internal static IReadOnlyList<EdidDetailedTiming> Parse(ReadOnlySpan<byte> edid)
     {
@@ -59,6 +60,11 @@ internal static class EdidDetailedTimingParser
         for (int offset = 0; offset + Type7TimingLength <= data.Length; offset += Type7TimingLength)
         {
             ReadOnlySpan<byte> timing = data.Slice(offset, Type7TimingLength);
+            if ((timing[3] & InterlacedTiming) != 0)
+            {
+                continue;
+            }
+
             ulong pixelRate = (ReadUInt24(timing) + 1) * 1000UL;
             int width = ReadUInt16(timing[4..]) + 1;
             uint totalWidth = (uint)(width + ReadUInt16(timing[6..]) + 1);

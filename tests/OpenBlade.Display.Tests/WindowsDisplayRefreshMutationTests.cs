@@ -65,6 +65,46 @@ public sealed class WindowsDisplayRefreshMutationTests
     }
 
     [Fact]
+    public void Refresh_DynamicUsesHighestUsablePanelTimingWhenPreferredRateIsLow()
+    {
+        DisplayConfigTargetMode active = TargetMode(60);
+        active.TargetVideoSignalInfo.ActiveSize = new() { Width = 2560, Height = 1600 };
+        Dictionary<int, DisplayConfigTargetMode> modes = WindowsDisplaySettingsController.SelectDynamicTargetModes(
+            active, active,
+            [
+                new(2560, 1600, 240, 1_140_480_000, 2640, 1800),
+                new(1920, 1200, 300, 756_000_000, 2000, 1260),
+                new(2560, 1600, 360, 1_710_720_000, 2640, 1800),
+            ],
+            [60, 240, 300]);
+        List<DisplayRefreshOption> options = [];
+
+        DisplayConfigTargetMode? selected = WindowsDisplaySettingsController.AddDynamicRefreshOptions(
+            options, [60, 240], modes, null, new(48, 240), "dynamic-48-240");
+
+        Assert.Equal("dynamic-48-240", Assert.Single(options).Key);
+        Assert.Equal(240, selected!.Value.TargetVideoSignalInfo.VSyncFreq.Hertz);
+        Assert.Equal(1_140_480_000UL, selected.Value.TargetVideoSignalInfo.PixelRate);
+    }
+
+    [Fact]
+    public void Refresh_DynamicResolvesSavedLowerMaximumWithoutReplacingDefault()
+    {
+        List<DisplayRefreshOption> options = [];
+        Dictionary<int, DisplayConfigTargetMode> modes = new()
+        {
+            [120] = TargetMode(120),
+            [240] = TargetMode(240),
+        };
+
+        DisplayConfigTargetMode? selected = WindowsDisplaySettingsController.AddDynamicRefreshOptions(
+            options, [60, 120, 240], modes, null, new(48, 240), "dynamic-48-120");
+
+        Assert.Equal(["dynamic-48-240", "dynamic-48-120"], options.Select(option => option.Key));
+        Assert.Equal(120, selected!.Value.TargetVideoSignalInfo.VSyncFreq.Hertz);
+    }
+
+    [Fact]
     public void Refresh_RequiresIndependentConfirmationOfRequestedMode()
     {
         List<string> calls = [];

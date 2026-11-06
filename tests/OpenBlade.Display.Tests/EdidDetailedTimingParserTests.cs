@@ -23,6 +23,17 @@ public sealed class EdidDetailedTimingParserTests
         Assert.Empty(EdidDetailedTimingParser.Parse(edid));
     }
 
+    [Fact]
+    public void Parse_ExcludesInterlacedType7Timing()
+    {
+        byte[] edid = CreateEdidWithType7Timing();
+        Span<byte> extension = edid.AsSpan(128, 128);
+        extension[11] |= 0x10;
+        SetChecksum(extension);
+
+        Assert.Empty(EdidDetailedTimingParser.Parse(edid));
+    }
+
     private static byte[] CreateEdidWithType7Timing()
     {
         byte[] edid = new byte[256];
