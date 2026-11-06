@@ -256,3 +256,44 @@ and requires each target to stay above its fresh reading. At cycle 183, the
 fixed targets are `91/91`; `38/38` would satisfy the PWM comparison. This
 larger absolute target needs its own attended approval. It is a raw count
 relative to the cycle, not a calibrated electrical-duty or RPM claim.
+
+## Half-cycle trial confirmed direct PWM and Auto restoration
+
+The separately approved half-cycle trial used candidate
+`b01b548c3dde536c389caa7c8ef72f439feb37bc` on the same exact laptop in
+operator-reported USB-C Balanced. Run
+`49ca8789-76b3-47a7-9fc9-50565a3ac293` captured cycle 183, Automatic controls,
+zero permission and staging, and actual PWM/tach `0/0`. The operator approved
+fixed targets `91/91` under the half-cycle policy.
+
+The last complete pre-FE snapshot read actual PWM `46/41`. The runner
+independently confirmed B8=`91`, B9=`91`, F0=`40` and selector `FE`. A complete direct-mode observation read actual PWM `91/91`, with raw
+tach `38/38`. After the requested dwell, another complete observation still
+read selector `FE`, permission `40`, staging and actual PWM `91/91`; raw tach
+was `37/38`. Both channels matched the approved targets at all three complete
+direct-mode observations, with nonzero raw tach readings on both fans. These raw tach bytes are not asserted to be calibrated RPM.
+
+Auto handback directly restored selector `00`, confirmed Manual `00`, and
+independently restored F0 and both staging bytes to their saved zero values.
+The final complete snapshot retained cycle 183, idle policy command and active
+state 161, with Automatic PWM `75/75` and raw tach `32/33`. Actual PWM was not
+forced back to the zero baseline; it was again controlled by Automatic.
+The trial reported success, confirmed permission restoration with no remaining
+exposure, and no command fence. Native close succeeded without errors or
+release failures. The wrapper observed Capture exit 0. The parent observed
+wrapper exit 0, verified the Capture receipt, and returned 0.
+
+All 1,714 journal records passed sequence and hash-chain verification. The
+419 native publications comprised 411 A0 reads and eight A1 writes, each
+with distinct one-byte A0 confirmation. The journal completed at generation 9,
+referencing final observation 31. Recorded execution took about 44.9 seconds;
+the interval from possible F0 publication to confirmed permission restoration
+was about 21.3 seconds. The requested one-second dwell is separate from
+entry, observation and handback overhead; it is not a one-second physical
+exposure guarantee.
+
+This confirms the reviewed SO6120 direct PWM entry and Auto restoration for
+this one Balanced half-cycle trial. It does not establish direct zero duty,
+commanded fan stop, lower steady RPM, Silent direct duty, unattended recovery,
+or applicability to another Blade model. The raw evidence and completed
+attempt marker remain retained. No production fan-stop capability is enabled.

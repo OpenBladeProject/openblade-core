@@ -1,12 +1,13 @@
 # Supervised SO6120 PWM increase
 
-This developer-only runner prepares one small, attended direct-duty increase
+This developer-only runner prepares one attended direct-duty increase
 on the exact RZ09-0581. Its implementation and simulated tests do not establish
 physical PWM control, fan stop, mailbox exclusion or physical recovery. No
 live mailbox trial is included in preparing or reviewing this runner. The
-[attended Balanced attempts](so6120-balanced-pwm-trial.md) separately
-confirmed staging and permission writes with verified restoration. The direct
-selector has not yet been published, so direct PWM control remains unverified.
+[attended Balanced attempts](so6120-balanced-pwm-trial.md) include a successful
+half-cycle trial: selector FE, actual PWM `91/91` through the observation,
+and independently verified Auto restoration. Zero duty, commanded fan stop,
+Silent direct duty and unattended recovery remain unverified.
 
 ## Fixed experiment
 
