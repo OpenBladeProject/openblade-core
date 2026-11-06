@@ -5,6 +5,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Apply and verify the internal display's active signal rate when selecting a fixed refresh rate. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
+- Keep Dynamic Refresh Rate available after choosing a low fixed rate when the panel and driver support a higher timing. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
+- Apply an app profile's refresh rate only when OpenBlade can restore the previous rate. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
+
 ## [0.51.0-nightly.107] - 2026-11-05
 
 ### Added
