@@ -1,6 +1,8 @@
 #if OPENBLADE_DEVELOPER_HARNESS
 using System.Reflection;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using OpenBlade.Contracts;
 using OpenBlade.Session;
@@ -16,6 +18,36 @@ public sealed partial class MainWindow
 {
     private static readonly DateTimeOffset FeatureSnapshotTime =
         new(2026, 10, 21, 12, 0, 0, TimeSpan.Zero);
+
+    internal void InvokeLabsGuideSnapshot(bool showRefreshRate)
+    {
+        Button guide = showRefreshRate ? LabsLightingRateGuideButton : LabsImportGuideButton;
+        var peer = new ButtonAutomationPeer(guide);
+        if (string.IsNullOrWhiteSpace(peer.GetName()) || peer.GetPattern(PatternInterface.Invoke) is not IInvokeProvider invoke)
+        {
+            throw new InvalidOperationException("The Labs guide requires an accessible navigation action.");
+        }
+
+        invoke.Invoke();
+    }
+
+    internal void VerifyLabsGuideSnapshot(bool showRefreshRate)
+    {
+        Button guide = showRefreshRate ? LabsLightingRateGuideButton : LabsImportGuideButton;
+        if (!ReferenceEquals(MainNavigation.SelectedItem, LightingNavigationItem)
+            || guide.Tag is not string targetName
+            || FindDescendant<Microsoft.UI.Xaml.Controls.Control>(LightingCard, targetName) is not { } target)
+        {
+            throw new InvalidOperationException("The Labs guide did not open its Lighting control.");
+        }
+
+        Windows.Foundation.Rect bounds = target.TransformToVisual(LightingPage).TransformBounds(
+            new Windows.Foundation.Rect(0, 0, target.ActualWidth, target.ActualHeight));
+        if (bounds.Height <= 0 || bounds.Top < -1 || bounds.Bottom > LightingPage.ViewportHeight + 1)
+        {
+            throw new InvalidOperationException($"The Labs guide target is outside the Lighting viewport: {bounds}.");
+        }
+    }
 
     internal void ShowLocalizationSnapshotFeature(string destination)
     {

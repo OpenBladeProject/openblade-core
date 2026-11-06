@@ -156,6 +156,9 @@
   <data name="60 Hz lighting is not available for this keyboard." xml:space="preserve">
     <value>Подсветка с частотой 60 Гц недоступна для этой клавиатуры.</value>
   </data>
+  <data name="60 Hz lighting support couldn’t be checked." xml:space="preserve">
+    <value>Не удалось проверить поддержку подсветки с частотой 60 Гц.</value>
+  </data>
   <data name="A shortcut must include a non-modifier key." xml:space="preserve">
     <value>Сочетание клавиш должно включать клавишу, не являющуюся модификатором.</value>
   </data>
@@ -314,6 +317,9 @@
   </data>
   <data name="Check status" xml:space="preserve">
     <value>Проверить состояние</value>
+  </data>
+  <data name="Checking keyboard support…" xml:space="preserve">
+    <value>Проверяем возможности клавиатуры…</value>
   </data>
   <data name="Checking" xml:space="preserve">
     <value>Проверка</value>

@@ -35,13 +35,16 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.True((await store.LoadAsync()).ThxAudioIntegrationEnabled);
     }
 
-    [Fact]
-    public async Task LegacyNumericNavigationPreservesCustomOrderAndPersistsNewItems()
+    [Theory]
+    [InlineData("[4,3,1,0,2]")]
+    [InlineData("""["Settings","Display","Laptop","Profiles","Lighting"]""")]
+    [InlineData("""["Settings","Display","Laptop","Profiles","Lighting","ThxAudio","Telemetry","Labs"]""")]
+    public async Task NavigationPreservesCustomOrderAndWritesRollbackCompatibleIds(string navigation)
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "navigation-preferences.json");
         await File.WriteAllTextAsync(path,
-            "{\"theme\":\"FollowWindows\",\"primaryNavigationItems\":[4,3,1,0,2]}");
+            $$"""{"theme":"Dark","primaryNavigationItems":{{navigation}},"labFeaturesEnabled":false}""");
         var store = new UiPreferenceStore(path);
         UiPreferences loaded = await store.LoadAsync();
         PrimaryNavigationItemKind[] expected =
@@ -53,10 +56,17 @@ public sealed class UiPreferenceStoreTests : IDisposable
             PrimaryNavigationItemKind.Lighting,
             PrimaryNavigationItemKind.ThxAudio,
             PrimaryNavigationItemKind.Telemetry,
+            PrimaryNavigationItemKind.Labs,
         ];
         Assert.Equal(expected, loaded.EffectivePrimaryNavigationItems);
         await store.SaveAsync(loaded with { PrimaryNavigationItems = loaded.EffectivePrimaryNavigationItems });
+        using JsonDocument saved = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+        Assert.Equal(
+            [4, 3, 1, 0, 2, 5, 6, 7],
+            saved.RootElement.GetProperty("primaryNavigationItems").EnumerateArray().Select(item => item.GetInt32()));
+
         UiPreferences reloaded = await store.LoadAsync();
+        Assert.Equal(ThemePreference.Dark, reloaded.Theme);
         Assert.Equal(expected, reloaded.PrimaryNavigationItems);
         Assert.Equal(expected, reloaded.EffectivePrimaryNavigationItems);
     }
@@ -170,7 +180,6 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(UiLanguagePreference.Russian, loaded.EffectiveLanguage);
         Assert.Equal(UiLanguagePreference.Russian, store.LoadLanguagePreference());
         Assert.True(loaded.StartMinimized);
-        Assert.False(loaded.LabFeaturesEnabled);
         Assert.Equal(
             TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1,
             loaded.TrayDashboard?.SchemaVersion);
@@ -375,7 +384,6 @@ public sealed class UiPreferenceStoreTests : IDisposable
             TrayHoverLabelMode.ProfileAndPowerFlow,
             preferences.TrayHoverLabelMode);
         Assert.False(preferences.StartMinimized);
-        Assert.False(preferences.LabFeaturesEnabled);
         Assert.False(preferences.TelemetryEnabled);
         Assert.Equal(UpdateChannel.Stable, preferences.EffectiveUpdateChannel);
         Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
@@ -614,8 +622,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
                     new(TrayDashboardSliderKind.GpuMemoryClock, true),
                     new(TrayDashboardSliderKind.ChargeLimit, true),
                 ],
-                SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion),
-            LabFeaturesEnabled: true));
+                SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion)));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -624,7 +631,6 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(LiveReadingsCadence.Off, reloaded.EffectiveLiveReadingsCadence);
         Assert.Equal(TrayHoverLabelMode.BatteryPowerFlow, reloaded.TrayHoverLabelMode);
         Assert.True(reloaded.StartMinimized);
-        Assert.True(reloaded.LabFeaturesEnabled);
         Assert.Equal(
             [LiveReadingItemKind.BatteryPower, LiveReadingItemKind.GpuTemperature],
             reloaded.EffectiveDashboardTelemetryItems);
@@ -658,6 +664,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 PrimaryNavigationItemKind.ThxAudio,
                 PrimaryNavigationItemKind.Lighting,
                 PrimaryNavigationItemKind.Telemetry,
+                PrimaryNavigationItemKind.Labs,
             ],
             reloaded.EffectivePrimaryNavigationItems);
         Assert.Equal(AppAccentColorMode.Custom, reloaded.EffectiveAccentColorMode);
@@ -749,7 +756,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             "EveryTenSeconds",
             document.RootElement.GetProperty("liveReadingsRefreshCadence").GetString());
         Assert.True(document.RootElement.GetProperty("startMinimized").GetBoolean());
-        Assert.True(document.RootElement.GetProperty("labFeaturesEnabled").GetBoolean());
+        Assert.False(document.RootElement.TryGetProperty("labFeaturesEnabled", out _));
         Assert.Equal(
             "GpuMemoryClock",
             document.RootElement
@@ -769,8 +776,8 @@ public sealed class UiPreferenceStoreTests : IDisposable
             document.RootElement.GetProperty("dashboardCards")[0]
                 .GetProperty("kind").GetString());
         Assert.Equal(
-            "Settings",
-            document.RootElement.GetProperty("primaryNavigationItems")[0].GetString());
+            (int)PrimaryNavigationItemKind.Settings,
+            document.RootElement.GetProperty("primaryNavigationItems")[0].GetInt32());
         Assert.Equal(
             "Custom",
             document.RootElement.GetProperty("accentColorMode").GetString());

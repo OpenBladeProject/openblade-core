@@ -700,7 +700,7 @@ public partial class App
                 "display",
                 "settings",
                 "settings-appearance",
-                "settings-experimental",
+                "labs",
                 "about",
                 "whats-new",
             };
@@ -722,6 +722,7 @@ public partial class App
                 or "telemetry-expired" or "telemetry-retention"
                 or "telemetry-recording" or "telemetry-replay";
             bool captureBatteryReport = requestedPage?.StartsWith("telemetry-battery-report", StringComparison.Ordinal) == true;
+            bool captureLabsTarget = requestedPage is "labs-import-target" or "labs-60hz-target";
             bool captureFeatureSnapshot = captureBatteryReport || captureTelemetryVariant || requestedPage is
                 "profiles-applications" or "profiles-applications-empty"
                 or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
@@ -764,6 +765,7 @@ public partial class App
                 && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
                 && !captureProfilesVariant
                 && !captureFeatureSnapshot
+                && !captureLabsTarget
                 && !captureSnapTap
                 && !captureDischargeSettings
                 && !string.Equals(
@@ -775,7 +777,7 @@ public partial class App
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
             IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
-                || captureDischargeSettings
+                || captureDischargeSettings || captureLabsTarget
                 ? [requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
@@ -853,7 +855,8 @@ public partial class App
                     await WaitForSnapshotLayoutAsync();
                     string navigationDestination = destination switch
                     {
-                        "settings-appearance" or "settings-experimental" or "settings-notifications" => "settings",
+                        "settings-appearance" or "settings-notifications" => "settings",
+                        "labs-import-target" or "labs-60hz-target" => "labs",
                         "profiles-applications" or "profiles-applications-empty"
                             or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                             or "profiles-application-discovery-empty" => "profiles",
@@ -868,6 +871,13 @@ public partial class App
                     };
                     snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination);
                     await WaitForSnapshotLayoutAsync();
+                    if (captureLabsTarget)
+                    {
+                        bool showRefreshRate = destination == "labs-60hz-target";
+                        snapshotMainWindow.InvokeLabsGuideSnapshot(showRefreshRate);
+                        await WaitForSnapshotLayoutAsync();
+                        snapshotMainWindow.VerifyLabsGuideSnapshot(showRefreshRate);
+                    }
                     if (string.Equals(
                         destination,
                         "settings-appearance",
@@ -888,11 +898,6 @@ public partial class App
                         || controlSnapshot == "blade18-function-row"))
                     {
                         snapshotMainWindow.ShowLocalizationSnapshotOneShotControls();
-                        await WaitForSnapshotLayoutAsync();
-                    }
-                    if (destination == "settings-experimental")
-                    {
-                        snapshotMainWindow.ShowLocalizationSnapshotExperimentalControls();
                         await WaitForSnapshotLayoutAsync();
                     }
                     if (captureSnapTap)
@@ -1698,7 +1703,7 @@ public partial class App
             return;
         }
         if (state is not ("read-failure" or "battery" or "unsupported"
-            or "direct-manual" or "battery-drift" or "keyboard"
+            or "direct-manual" or "battery-drift" or "keyboard" or "labs-lighting"
             or "one-shot-unavailable" or "one-shot-checking" or "one-shot-confirmed" or "blade18-function-row"))
         {
             throw new InvalidOperationException("Unknown control availability snapshot state.");
@@ -1748,6 +1753,9 @@ public partial class App
                             : new HashSet<OneShotLaptopControl>(),
                     HostManagedLaptopControls = hostFunctionRow
                         ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.FunctionKeyPrimary } : [],
+                    SupportedLightingRefreshRates = state == "labs-lighting"
+                        ? new HashSet<LightingRefreshRate> { LightingRefreshRate.ThirtyHz, LightingRefreshRate.SixtyHz }
+                        : new HashSet<LightingRefreshRate>(),
                     SupportsDirectManualFanTransitions = directManual,
                     ChargeLimits = driftedBattery
                         ? new HashSet<int> { 70, 80 }

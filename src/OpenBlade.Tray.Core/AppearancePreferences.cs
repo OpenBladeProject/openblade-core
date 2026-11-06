@@ -53,6 +53,7 @@ public enum PrimaryNavigationItemKind
     Settings = 4,
     ThxAudio = 5,
     Telemetry = 6,
+    Labs = 7,
 }
 
 public sealed class PrimaryNavigationItemOption
@@ -97,6 +98,7 @@ public static class PrimaryNavigationPreferenceDefaults
         PrimaryNavigationItemKind.Lighting,
         PrimaryNavigationItemKind.Telemetry,
         PrimaryNavigationItemKind.Settings,
+        PrimaryNavigationItemKind.Labs,
     ];
 
     private static IReadOnlyList<PrimaryNavigationItemKind> PreviousAudioItems { get; } =
