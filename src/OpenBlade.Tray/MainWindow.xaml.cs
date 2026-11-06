@@ -875,6 +875,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
 
     private async ValueTask DisposeOwnedResourcesAsync()
     {
+        DisposeComponentSafely("global search retirement", ReleaseGlobalSearch);
         WindowXamlBindingLifetime.Release(this, Bindings, Bindings.StopTracking);
 
         DisposeComponentSafely("GPU app cleanup cancellation", gpuAppCleanupCoordinator.Cancel);

@@ -142,18 +142,18 @@ public sealed partial class MainWindow
         return false;
     }
 
-    private void OnGlobalSearchFlyoutOpening(object sender, object args)
+    private void OnGlobalSearchFlyoutOpening(object? sender, object args)
     {
         CompactGlobalSearchHost.Width = Math.Clamp(ActualWidth - 56, 280, 720);
     }
 
-    private void OnGlobalSearchFlyoutOpened(object sender, object args)
+    private void OnGlobalSearchFlyoutOpened(object? sender, object args)
     {
         FocusGlobalSearchBox(CompactGlobalSearchBox);
         UpdateGlobalSearchSuggestions(CompactGlobalSearchBox);
     }
 
-    private void OnGlobalSearchFlyoutClosed(object sender, object args)
+    private void OnGlobalSearchFlyoutClosed(object? sender, object args)
     {
         CompactGlobalSearchBox.IsSuggestionListOpen = false;
         CompactGlobalSearchBox.Text = string.Empty;
@@ -492,6 +492,34 @@ public sealed partial class MainWindow
         }
     }
 
+
+    private void ReleaseGlobalSearch()
+    {
+        // A language change keeps the native window alive. Retire the
+        // accelerator and the title bar's search controls with this view.
+        Root.KeyboardAccelerators.Remove(GlobalSearchAccelerator);
+        GlobalSearchAccelerator.Invoked -= OnGlobalSearchShortcut;
+        Root.SizeChanged -= OnGlobalSearchShellSizeChanged;
+        GlobalSearchTitleSlot.SizeChanged -= OnGlobalSearchTitleSlotSizeChanged;
+        GlobalSearchBox.GettingFocus -= OnGlobalSearchGettingFocus;
+        GlobalSearchBox.GotFocus -= OnGlobalSearchGotFocus;
+        GlobalSearchBox.TextChanged -= OnGlobalSearchTextChanged;
+        GlobalSearchBox.QuerySubmitted -= OnGlobalSearchSubmitted;
+        GlobalSearchBox.PreviewKeyDown -= OnGlobalSearchPreviewKeyDown;
+        CompactGlobalSearchBox.TextChanged -= OnGlobalSearchTextChanged;
+        CompactGlobalSearchBox.QuerySubmitted -= OnGlobalSearchSubmitted;
+        CompactGlobalSearchBox.PreviewKeyDown -= OnGlobalSearchPreviewKeyDown;
+        GlobalSearchFlyout.Opening -= OnGlobalSearchFlyoutOpening;
+        GlobalSearchFlyout.Opened -= OnGlobalSearchFlyoutOpened;
+        GlobalSearchFlyout.Closed -= OnGlobalSearchFlyoutClosed;
+        CloseGlobalSearch();
+        GlobalSearchButton.Flyout = null;
+        GlobalSearchFlyout.Content = null;
+        AppTitleBar.Content = null;
+        AppTitleBar.RightHeader = null;
+        globalSearchCatalog = null;
+        globalSearchPreviousFocus = null;
+    }
 
     private void ClearGlobalSearchArrival()
     {

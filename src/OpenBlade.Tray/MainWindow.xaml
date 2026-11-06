@@ -5,7 +5,7 @@
     xmlns:local="using:OpenBlade.Tray">
     <Grid x:Name="Root" Background="Transparent" SizeChanged="OnGlobalSearchShellSizeChanged">
         <Grid.KeyboardAccelerators>
-            <KeyboardAccelerator Key="K" Modifiers="Control" Invoked="OnGlobalSearchShortcut" />
+            <KeyboardAccelerator x:Name="GlobalSearchAccelerator" Key="K" Modifiers="Control" Invoked="OnGlobalSearchShortcut" />
         </Grid.KeyboardAccelerators>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
