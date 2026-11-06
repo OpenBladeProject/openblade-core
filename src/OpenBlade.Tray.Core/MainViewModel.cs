@@ -354,7 +354,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private BatteryPolicy? pendingBatteryPolicy;
     private ThemePreference theme = ThemePreference.FollowWindows;
     private UiLanguagePreference languagePreference = UiLanguagePreference.FollowSystem;
-    private bool labFeaturesEnabled;
     private LiveReadingsCadence liveReadingsRefreshCadence =
         LiveReadingsCadence.EveryTwoSeconds;
     private TrayHoverLabelMode trayHoverLabelMode =
@@ -1744,8 +1743,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingRefreshRate refreshRate,
         CancellationToken cancellationToken)
     {
-        if (!LabFeaturesEnabled
-            || !Capabilities.SupportedLightingRefreshRates.Contains(refreshRate)
+        if (!Capabilities.SupportedLightingRefreshRates.Contains(refreshRate)
             || !CanControlLighting
             || UseWindowsDynamicLighting)
         {
@@ -4479,12 +4477,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public bool LabFeaturesEnabled
-    {
-        get => labFeaturesEnabled;
-        set => SetField(ref labFeaturesEnabled, value);
-    }
-
     public IReadOnlyList<ThemePreference> ThemeOptions { get; } =
         Enum.GetValues<ThemePreference>();
 
@@ -6115,8 +6107,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanImportKeyboardLighting(KeyboardLightingPreset preset)
     {
         ArgumentNullException.ThrowIfNull(preset);
-        return LabFeaturesEnabled
-            && CanControlLighting
+        return CanControlLighting
             && LightingSettingsValidation.IsWellFormed(preset.Lighting)
             && preset.Lighting.LogoMode is null
             && Capabilities.LightingEffects.Contains(preset.Lighting.Effect)

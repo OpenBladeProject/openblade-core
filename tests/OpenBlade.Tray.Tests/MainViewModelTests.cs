@@ -5849,7 +5849,6 @@ public sealed partial class MainViewModelTests
         using var culture = new CultureScope("en-US");
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
-        viewModel.LabFeaturesEnabled = true;
         await viewModel.StartAsync();
         client.Publish(CreateStatus(
             verified: true,
@@ -5958,7 +5957,6 @@ public sealed partial class MainViewModelTests
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
-        viewModel.LabFeaturesEnabled = true;
         await viewModel.StartAsync();
         DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
@@ -5996,7 +5994,7 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task ImportKeyboardLighting_RejectsNewPresetsWhileLabFeaturesAreDisabled()
+    public async Task ImportKeyboardLighting_RejectsNewPresetsWhileHardwareControlIsBlocked()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -6011,9 +6009,9 @@ public sealed partial class MainViewModelTests
         };
         client.Publish(CreateStatus(
             verified: true,
-            blocked: false,
+            blocked: true,
             capabilities: capabilities));
-        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        await WaitUntilAsync(() => viewModel.IsConnected);
         var preset = new KeyboardLightingPreset(
             "Imported green",
             "User",
@@ -6021,7 +6019,7 @@ public sealed partial class MainViewModelTests
             1,
             LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 73));
 
-        Assert.False(viewModel.LabFeaturesEnabled);
+        Assert.False(viewModel.CanControlLighting);
         Assert.False(viewModel.CanImportKeyboardLighting(preset));
         Assert.False(viewModel.TryImportKeyboardLighting(preset));
         Assert.False(viewModel.IsLightingApplyPending);
@@ -6032,7 +6030,6 @@ public sealed partial class MainViewModelTests
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
-        viewModel.LabFeaturesEnabled = true;
         await viewModel.StartAsync();
         DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
@@ -6360,11 +6357,24 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task LightingRefreshRate_RequiresLabsAndAdvertisedCapability()
+    public async Task LightingRefreshRate_RequiresAdvertisedCapability()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                SupportedLightingRefreshRates = new HashSet<LightingRefreshRate> { LightingRefreshRate.ThirtyHz },
+            }));
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        Assert.False(viewModel.CanSetLightingRefreshRate);
+        Assert.False(await viewModel.SetLightingRefreshRateAsync(
+            LightingRefreshRate.SixtyHz,
+            CancellationToken.None));
+
         DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
@@ -6378,11 +6388,6 @@ public sealed partial class MainViewModelTests
             blocked: false,
             capabilities: capabilities));
         await WaitUntilAsync(() => viewModel.SupportsSixtyHzLighting);
-
-        Assert.False(await viewModel.SetLightingRefreshRateAsync(
-            LightingRefreshRate.SixtyHz,
-            CancellationToken.None));
-        viewModel.LabFeaturesEnabled = true;
 
         Assert.True(await viewModel.SetLightingRefreshRateAsync(
             LightingRefreshRate.SixtyHz,
@@ -6508,14 +6513,11 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task ExperimentalSupport_IsAutomaticAndIndependentOfLabPreference()
+    public async Task ExperimentalSupport_IsAutomatic()
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
-        await using var viewModel = new MainViewModel(client, dispatcher)
-        {
-            LabFeaturesEnabled = true,
-        };
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         await PublishStatusAndWaitAsync(
             client,

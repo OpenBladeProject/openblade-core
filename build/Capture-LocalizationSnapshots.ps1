@@ -148,6 +148,7 @@ try {
             'thx-audio-enhancements',
             'thx-audio-applications',
             'lighting',
+            'labs',
             'display',
             'display-brightness-known',
             'display-brightness-unavailable',

@@ -700,7 +700,7 @@ public partial class App
                 "display",
                 "settings",
                 "settings-appearance",
-                "settings-experimental",
+                "labs",
                 "about",
                 "whats-new",
             };
@@ -853,7 +853,7 @@ public partial class App
                     await WaitForSnapshotLayoutAsync();
                     string navigationDestination = destination switch
                     {
-                        "settings-appearance" or "settings-experimental" or "settings-notifications" => "settings",
+                        "settings-appearance" or "settings-notifications" => "settings",
                         "profiles-applications" or "profiles-applications-empty"
                             or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                             or "profiles-application-discovery-empty" => "profiles",
@@ -888,11 +888,6 @@ public partial class App
                         || controlSnapshot == "blade18-function-row"))
                     {
                         snapshotMainWindow.ShowLocalizationSnapshotOneShotControls();
-                        await WaitForSnapshotLayoutAsync();
-                    }
-                    if (destination == "settings-experimental")
-                    {
-                        snapshotMainWindow.ShowLocalizationSnapshotExperimentalControls();
                         await WaitForSnapshotLayoutAsync();
                     }
                     if (captureSnapTap)
@@ -1698,7 +1693,7 @@ public partial class App
             return;
         }
         if (state is not ("read-failure" or "battery" or "unsupported"
-            or "direct-manual" or "battery-drift" or "keyboard"
+            or "direct-manual" or "battery-drift" or "keyboard" or "labs-lighting"
             or "one-shot-unavailable" or "one-shot-checking" or "one-shot-confirmed" or "blade18-function-row"))
         {
             throw new InvalidOperationException("Unknown control availability snapshot state.");
@@ -1748,6 +1743,9 @@ public partial class App
                             : new HashSet<OneShotLaptopControl>(),
                     HostManagedLaptopControls = hostFunctionRow
                         ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.FunctionKeyPrimary } : [],
+                    SupportedLightingRefreshRates = state == "labs-lighting"
+                        ? new HashSet<LightingRefreshRate> { LightingRefreshRate.ThirtyHz, LightingRefreshRate.SixtyHz }
+                        : new HashSet<LightingRefreshRate>(),
                     SupportsDirectManualFanTransitions = directManual,
                     ChargeLimits = driftedBattery
                         ? new HashSet<int> { 70, 80 }

@@ -41,7 +41,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "navigation-preferences.json");
         await File.WriteAllTextAsync(path,
-            "{\"theme\":\"FollowWindows\",\"primaryNavigationItems\":[4,3,1,0,2]}");
+            "{\"theme\":\"FollowWindows\",\"primaryNavigationItems\":[4,3,1,0,2],\"labFeaturesEnabled\":false}");
         var store = new UiPreferenceStore(path);
         UiPreferences loaded = await store.LoadAsync();
         PrimaryNavigationItemKind[] expected =
@@ -53,6 +53,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             PrimaryNavigationItemKind.Lighting,
             PrimaryNavigationItemKind.ThxAudio,
             PrimaryNavigationItemKind.Telemetry,
+            PrimaryNavigationItemKind.Labs,
         ];
         Assert.Equal(expected, loaded.EffectivePrimaryNavigationItems);
         await store.SaveAsync(loaded with { PrimaryNavigationItems = loaded.EffectivePrimaryNavigationItems });
@@ -170,7 +171,6 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(UiLanguagePreference.Russian, loaded.EffectiveLanguage);
         Assert.Equal(UiLanguagePreference.Russian, store.LoadLanguagePreference());
         Assert.True(loaded.StartMinimized);
-        Assert.False(loaded.LabFeaturesEnabled);
         Assert.Equal(
             TrayDashboardPreferenceDefaults.CurrentSchemaVersion + 1,
             loaded.TrayDashboard?.SchemaVersion);
@@ -375,7 +375,6 @@ public sealed class UiPreferenceStoreTests : IDisposable
             TrayHoverLabelMode.ProfileAndPowerFlow,
             preferences.TrayHoverLabelMode);
         Assert.False(preferences.StartMinimized);
-        Assert.False(preferences.LabFeaturesEnabled);
         Assert.False(preferences.TelemetryEnabled);
         Assert.Equal(UpdateChannel.Stable, preferences.EffectiveUpdateChannel);
         Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
@@ -614,8 +613,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
                     new(TrayDashboardSliderKind.GpuMemoryClock, true),
                     new(TrayDashboardSliderKind.ChargeLimit, true),
                 ],
-                SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion),
-            LabFeaturesEnabled: true));
+                SchemaVersion: TrayDashboardPreferenceDefaults.CurrentSchemaVersion)));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -624,7 +622,6 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(LiveReadingsCadence.Off, reloaded.EffectiveLiveReadingsCadence);
         Assert.Equal(TrayHoverLabelMode.BatteryPowerFlow, reloaded.TrayHoverLabelMode);
         Assert.True(reloaded.StartMinimized);
-        Assert.True(reloaded.LabFeaturesEnabled);
         Assert.Equal(
             [LiveReadingItemKind.BatteryPower, LiveReadingItemKind.GpuTemperature],
             reloaded.EffectiveDashboardTelemetryItems);
@@ -658,6 +655,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 PrimaryNavigationItemKind.ThxAudio,
                 PrimaryNavigationItemKind.Lighting,
                 PrimaryNavigationItemKind.Telemetry,
+                PrimaryNavigationItemKind.Labs,
             ],
             reloaded.EffectivePrimaryNavigationItems);
         Assert.Equal(AppAccentColorMode.Custom, reloaded.EffectiveAccentColorMode);
@@ -749,7 +747,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             "EveryTenSeconds",
             document.RootElement.GetProperty("liveReadingsRefreshCadence").GetString());
         Assert.True(document.RootElement.GetProperty("startMinimized").GetBoolean());
-        Assert.True(document.RootElement.GetProperty("labFeaturesEnabled").GetBoolean());
+        Assert.False(document.RootElement.TryGetProperty("labFeaturesEnabled", out _));
         Assert.Equal(
             "GpuMemoryClock",
             document.RootElement

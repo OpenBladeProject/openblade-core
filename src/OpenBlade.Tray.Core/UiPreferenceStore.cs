@@ -61,7 +61,6 @@ public sealed record UiPreferences(
     string? LastNotifiedReleaseTag = null,
     string? LastNotifiedFirmwareSignature = null,
     TrayDashboardPreference? TrayDashboard = null,
-    bool LabFeaturesEnabled = false,
     UiLanguagePreference Language = UiLanguagePreference.FollowSystem,
     bool ThxAudioIntegrationEnabled = false,
     bool SnapTapEnabled = false,
@@ -120,7 +119,6 @@ public sealed record UiPreferences(
         LastNotifiedReleaseTag: null,
         LastNotifiedFirmwareSignature: null,
         TrayDashboard: TrayDashboardPreferenceDefaults.Preference,
-        LabFeaturesEnabled: false,
         Language: UiLanguagePreference.FollowSystem,
         TelemetryEnabled: false);
 

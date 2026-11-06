@@ -22,6 +22,7 @@ public sealed class AppearancePreferenceTests
                 PrimaryNavigationItemKind.ThxAudio,
                 PrimaryNavigationItemKind.Lighting,
                 PrimaryNavigationItemKind.Telemetry,
+                PrimaryNavigationItemKind.Labs,
             ],
             result);
     }
@@ -71,6 +72,7 @@ public sealed class AppearancePreferenceTests
                 PrimaryNavigationItemKind.Lighting,
                 PrimaryNavigationItemKind.Telemetry,
                 PrimaryNavigationItemKind.Settings,
+                PrimaryNavigationItemKind.Labs,
             ],
             PrimaryNavigationPreferenceDefaults.Items);
         Assert.Equal(PrimaryNavigationPreferenceDefaults.Items,
@@ -101,7 +103,7 @@ public sealed class AppearancePreferenceTests
             PrimaryNavigationPreferenceDefaults.Normalize(customized);
         Assert.Equal(customized, migrated.Take(customized.Length));
         Assert.Equal(
-            [PrimaryNavigationItemKind.ThxAudio, PrimaryNavigationItemKind.Telemetry],
+            [PrimaryNavigationItemKind.ThxAudio, PrimaryNavigationItemKind.Telemetry, PrimaryNavigationItemKind.Labs],
             migrated.Skip(customized.Length));
         Assert.Equal(migrated, PrimaryNavigationPreferenceDefaults.Normalize(migrated));
     }

@@ -25,6 +25,7 @@
     "tray/main-laptop-snap-tap-info.png",
     "tray/snap-tap-information.png",
     "tray/main-lighting.png",
+    "tray/main-labs.png",
     "tray/main-profiles.png",
     "tray/main-profiles-applications.png",
     "tray/main-profiles-applications-empty.png",
@@ -118,6 +119,13 @@
       "pattern": "^(?:TrayDashboard|TrayIconMenu)",
       "context": "Tray dashboard or notification-area menu.",
       "screenshots": ["tray/tray-dashboard.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "^MainWindow_(?:LabsTitle|TextBlockLabFeaturesMayChange|ButtonImportKeyboardLightingPreset|TextBlockImportPreset|TextBlockLoadAnOpenBlade|LightingImport_|TextBlockSixtyHzLighting|LightingRefreshRateToggleText)",
+      "context": "Labs page title or experimental keyboard lighting control.",
+      "screenshots": ["tray/main-labs.png"]
     },
     {
       "surface": "tray",
