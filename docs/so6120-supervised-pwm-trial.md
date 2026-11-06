@@ -33,7 +33,7 @@ HID command and makes no claim of independent connector verification.
 
 Capture actual PWM, cycle, selector, manual flag, override, staging, policy
 and active-state bytes through ordered bank-zero A0 reads. The readings are
-not an atomic snapshot. Derive **actual PWM + 4 raw counts on each fan**;
+not an atomic snapshot. The +4 commands derive **actual PWM + 4 raw counts on each fan**;
 both need at least four counts of headroom. Do not clamp or silently
 recalculate the targets. Display the complete baseline and derived plan,
 then require approval of that exact in-memory plan and captured profile. The
@@ -49,6 +49,17 @@ hash. Targets are never recalculated, and a zero, negative or larger live
 increase refuses the next write. Exact target readback after FE and during
 the dwell is still required. These sequential reads cannot eliminate the
 read-to-publication race.
+
+A separate fixed Balanced command, `validate-so6120-balanced-pwm-half-cycle`,
+derives both targets as `floor(captured cycle / 2)`. At the observed cycle 183,
+that is `91/91`. Its hash-bound policy requires each fixed target to be strictly
+above the fresh actual reading at every existing entry gate. It has no raw-value
+option, target rebasing or extra setting write. It is intended to tolerate an
+Auto startup transition such as `0/0` to `38/38`; it refuses equality or a higher
+reading on either fan. This permits a larger increase than the +4 trial,
+and the console explicitly requires approval of its own targets and policy.
+Half-cycle is a ratio of the raw counter, not a calibrated electrical-duty
+percentage or fan RPM. Legacy +4 plans retain their original behavior and hash.
 
 There is no preparatory RPM command, zero target or decrease. A natural
 zero baseline is allowed; a request of four counts might not start the fan.
@@ -156,6 +167,7 @@ hardware:
 ```powershell
 OpenBlade.Capture.exe validate-so6120-silent-pwm-increase --plan
 OpenBlade.Capture.exe validate-so6120-balanced-pwm-increase --plan
+OpenBlade.Capture.exe validate-so6120-balanced-pwm-half-cycle --plan
 ```
 
 Only after separate attended execution approval, run the reviewed binary
@@ -167,7 +179,8 @@ OpenBlade.Capture.exe validate-so6120-balanced-pwm-increase --run-root C:\path\t
 
 There is no `--yes`, raw-register, raw-value, zero-duty or resume switch.
 The Silent command remains available for a separately approved Silent trial;
-neither command accepts a replacement profile or recalculates a changed plan.
+the half-cycle command is fixed to this Balanced experiment. None accepts a
+replacement profile or recalculates a changed plan.
 The separately prepared local test bundle records complete payload hashes;
 its launcher pins that manifest, refuses a changed payload and observes the
 actual child exit. That local artifact is not part of the repository or an

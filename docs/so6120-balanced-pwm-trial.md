@@ -230,3 +230,29 @@ rejecting a small natural variation solely because it differs from the
 captured sample. It does not admit a target below the fresh reading: the
 observed `4` target against `40` would still refuse direct entry. No targets
 are silently rebased and no extra writes or retries are introduced.
+
+## Bounded trial encountered an Auto startup transition
+
+The separately approved trial of `ba5f161a6a4cfe1b2d68f527c0166dd905e46260`,
+run `854d11c2-3e03-4a83-8aa6-cbe63db6600e`, approved the new bounded rule and
+fixed targets `4/4` from another `0/0` baseline. B8=`04`, B9=`04` and F0=`40`
+were independently confirmed. The first two complete snapshots after F0 still
+showed PWM and tach `0/0`; the next showed PWM `38/38`, with raw tach `17/18`.
+The `4/4` target was below the fresh reading, so FE was definitely unsubmitted.
+
+The runner independently restored F0, B8 and B9 to zero. Final snapshot 25
+confirmed the original Balanced/Automatic controls, cycle 183, idle policy
+command and active state 161; Automatic PWM was `48/41`. The journal completed
+without a fence. All 1,382 records verified, matching 331 A0 publications and
+six A1 writes. Native close succeeded with no release failures. Capture and
+the wrapper both recorded exit 2; the outer PowerShell invocation's exit 1 is
+a separate observation. The prior run's marker was archived with its bytes
+preserved, and this attempt's marker remains retained. Direct PWM is still
+unverified.
+
+This was an Auto startup transition, beyond the range of a tiny-increment
+plan. The next fixed experiment derives half the captured cycle, rounded down,
+and requires each target to stay above its fresh reading. At cycle 183, the
+fixed targets are `91/91`; `38/38` would satisfy the PWM comparison. This
+larger absolute target needs its own attended approval. It is a raw count
+relative to the cycle, not a calibrated electrical-duty or RPM claim.

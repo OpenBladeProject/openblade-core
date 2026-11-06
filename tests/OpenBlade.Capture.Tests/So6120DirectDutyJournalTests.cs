@@ -11,44 +11,101 @@ namespace OpenBlade.Capture.Tests;
 public sealed class So6120DirectDutyJournalTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void LegacyPlanKeepsOriginalDigestAndRequiresExactInitialPwm(bool drift)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void ExistingPlusFourPlansKeepTheirDigestAndReplayPolicy(bool drift, bool boundedDrift)
     {
         using var fixture = new Fixture();
         var identity = fixture.Identity with { RequestedDuty1 = null, RequestedDuty2 = null };
         using (var journal = So6120DirectDutyJournal.Create(fixture.Root, identity))
         {
-            var plan = PreparePlannedEntry(fixture, journal, boundedDrift: false);
-            var originalJson = JsonSerializer.SerializeToUtf8Bytes(new
+            var plan = PreparePlannedEntry(fixture, journal, boundedDrift);
+            var originalJson = JsonSerializer.SerializeToNode(new
             {
                 plan.PlanId,
                 plan.Baseline,
                 plan.RequestedDuty1,
                 plan.RequestedDuty2,
                 plan.PreparedTimestamp,
-            });
-            Assert.Equal(Convert.ToHexString(SHA256.HashData(originalJson)), plan.PlanSha256);
-            Assert.NotEqual(plan.PlanSha256, (plan with { AllowBoundedPwmDrift = true }).PlanSha256);
+            })!.AsObject();
+            if (boundedDrift) { originalJson["AllowBoundedPwmDrift"] = true; }
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(originalJson))), plan.PlanSha256);
+            Assert.NotEqual(plan.PlanSha256, (plan with { TargetPolicy = So6120TrialTargetPolicy.HalfCycle }).PlanSha256);
 
             var observation = new So6120DutyObservation(identity.Owner, 2, 20, 21,
                 plan.Baseline.Snapshot with { Actual1 = drift ? (byte)51 : (byte)50 });
             journal.RecordObservation(observation);
             var checkpoint = new So6120DutyCheckpoint(identity.Owner, 1, identity.CapturedProfile,
                 fixture.Baseline, fixture.Baseline, So6120DutyOwnedFields.None, observation);
-            if (drift) { Assert.Throws<InvalidDataException>(() => journal.RecordCheckpoint(checkpoint)); }
+            if (drift && !boundedDrift) { Assert.Throws<InvalidDataException>(() => journal.RecordCheckpoint(checkpoint)); }
             else
             {
                 journal.RecordCheckpoint(checkpoint);
                 journal.RecordIntent(identity.Owner,
                     new(So6120MailboxRegister.StagedDuty1, plan.RequestedDuty1, fixture.Baseline), observation);
+                if (boundedDrift)
+                { journal.RecordObservation(observation with { Sequence = 3, StartedTimestamp = 30, CompletedTimestamp = 31 }); }
                 journal.BeginTransfer(new(Guid.NewGuid(), So6120MailboxRegister.StagedDuty1, plan.RequestedDuty1));
             }
         }
         var inspected = So6120DirectDutyJournal.Inspect(fixture.Root);
         Assert.Equal(2, inspected.FormatVersion);
         Assert.False(inspected.Corrupt);
-        Assert.Equal(drift ? null : (long?)1, inspected.CheckpointGeneration);
+        Assert.Equal(drift && !boundedDrift ? null : (long?)1, inspected.CheckpointGeneration);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void HashValidHalfCycleReplayRejectsAnInvalidPolicyOrTarget(int damage)
+    {
+        using var fixture = new Fixture();
+        var identity = fixture.Identity with
+        {
+            CapturedProfile = damage == 3 ? PerformancePreset.Silent : PerformancePreset.Balanced,
+            RequestedDuty1 = null,
+            RequestedDuty2 = null,
+        };
+        So6120SilentTrialPlan plan;
+        using (var journal = So6120DirectDutyJournal.Create(fixture.Root, identity))
+        {
+            journal.ClaimPreparation(identity.Owner);
+            var controls = fixture.Baseline with { Selector = damage == 3 ? (byte)5 : (byte)0 };
+            var baseline = new So6120DutyObservation(identity.Owner, 1, 10, 11, new(controls, 50, 60, 0, 0, 0, 1));
+            journal.RecordObservation(baseline);
+            plan = damage == 3 ? new(Guid.NewGuid(), baseline, 54, 64, 11)
+                : new(Guid.NewGuid(), baseline, 91, 91, 11) { TargetPolicy = So6120TrialTargetPolicy.HalfCycle };
+            journal.ApprovePlan(plan, new(plan.PlanId, plan.PlanSha256, Guid.NewGuid(), new('A', 64)));
+        }
+        Assert.False(So6120DirectDutyJournal.Inspect(fixture.Root).Corrupt);
+
+        var invalid = damage switch
+        {
+            0 => plan with { TargetPolicy = (So6120TrialTargetPolicy)255 },
+            1 => plan with { AllowBoundedPwmDrift = true },
+            2 => plan with { RequestedDuty1 = 90 },
+            _ => plan with { TargetPolicy = So6120TrialTargetPolicy.HalfCycle, RequestedDuty1 = 91, RequestedDuty2 = 91 },
+        };
+        byte[] original = File.ReadAllBytes(fixture.Path);
+        int lastOffset = 0;
+        for (int offset = 11; offset < original.Length; offset += 36 + BinaryPrimitives.ReadInt32LittleEndian(original.AsSpan(offset, 4)))
+        { lastOffset = offset; }
+        int bodyLength = BinaryPrimitives.ReadInt32LittleEndian(original.AsSpan(lastOffset, 4));
+        var record = JsonNode.Parse(original.AsSpan(lastOffset + 4, bodyLength))!;
+        record["Data"]!["Plan"] = JsonSerializer.SerializeToNode(invalid);
+        record["Data"]!["Approval"]!["PlanSha256"] = invalid.PlanSha256;
+        using (var file = new FileStream(fixture.Path, FileMode.Create, FileAccess.Write))
+        {
+            file.Write(original.AsSpan(0, lastOffset));
+            _ = WriteFrame(file, record, original.AsSpan(lastOffset - 32, 32).ToArray());
+        }
+        var inspected = So6120DirectDutyJournal.Inspect(fixture.Root);
+        Assert.True(inspected.Corrupt);
+        Assert.Equal(record["Sequence"]!.GetValue<long>() - 1, inspected.Records);
+        Assert.False(inspected.CanResume);
     }
 
     [Fact]
@@ -122,17 +179,18 @@ public sealed class So6120DirectDutyJournalTests
         int BodyLength(int offset) => BinaryPrimitives.ReadInt32LittleEndian(original.AsSpan(offset, 4));
         JsonNode ReadFrame(int offset) => JsonNode.Parse(original.AsSpan(offset + 4, BodyLength(offset)))!;
 
-        static byte[] WriteFrame(FileStream file, JsonNode record, byte[] previous)
-        {
-            byte[] body = Encoding.UTF8.GetBytes(record.ToJsonString());
-            byte[] hash = SHA256.HashData([.. previous, .. body]);
-            Span<byte> size = stackalloc byte[4];
-            BinaryPrimitives.WriteInt32LittleEndian(size, body.Length);
-            file.Write(size);
-            file.Write(body);
-            file.Write(hash);
-            return hash;
-        }
+    }
+
+    private static byte[] WriteFrame(FileStream file, JsonNode record, byte[] previous)
+    {
+        byte[] body = Encoding.UTF8.GetBytes(record.ToJsonString());
+        byte[] hash = SHA256.HashData([.. previous, .. body]);
+        Span<byte> size = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(size, body.Length);
+        file.Write(size);
+        file.Write(body);
+        file.Write(hash);
+        return hash;
     }
 
     private static So6120SilentTrialPlan PreparePlannedEntry(Fixture fixture, So6120DirectDutyJournal journal, bool boundedDrift)

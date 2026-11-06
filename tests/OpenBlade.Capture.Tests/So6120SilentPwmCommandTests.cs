@@ -33,9 +33,25 @@ public sealed class So6120SilentPwmCommandTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HalfCyclePlanIsOfflineAndStatesTheSeparateTargetRule(bool explicitPlan)
+    {
+        using var output = new StringWriter();
+        int result = await So6120SilentPwmCommand.RunBalancedHalfCycleAsync(explicitPlan ? ["--plan"] : [],
+            new StringReader(""), output, (_, _, _) => throw new InvalidOperationException("Live path invoked"));
+        Assert.Equal(0, result);
+        Assert.Contains(So6120SilentPwmCommand.HalfCycleName, output.ToString());
+        Assert.Contains("raw 91/183 per fan, about 49.7% of the cycle count", output.ToString());
+        Assert.Contains("Either fan at or above its target stops entry", output.ToString());
+        Assert.Contains("a larger increase than the separate +4-count trial", output.ToString());
+    }
+
+    [Theory]
     [InlineData("--rpm", "1500")]
     [InlineData("--register", "B8")]
     [InlineData("--profile", "Silent")]
+    [InlineData("--duty", "91")]
     [InlineData("--run-root", "relative")]
     [InlineData("--yes", "true")]
     [InlineData("--run-root", @"\\server\share\attempt")]
@@ -48,6 +64,8 @@ public sealed class So6120SilentPwmCommandTests
         Assert.Equal(1, await So6120SilentPwmCommand.RunAsync([option, value], new StringReader(""),
             new StringWriter(), (_, _, _) => { called = true; return Task.FromResult(9); }));
         Assert.Equal(1, await So6120SilentPwmCommand.RunBalancedAsync([option, value], new StringReader(""),
+            new StringWriter(), (_, _, _) => { called = true; return Task.FromResult(9); }));
+        Assert.Equal(1, await So6120SilentPwmCommand.RunBalancedHalfCycleAsync([option, value], new StringReader(""),
             new StringWriter(), (_, _, _) => { called = true; return Task.FromResult(9); }));
         Assert.False(called);
     }

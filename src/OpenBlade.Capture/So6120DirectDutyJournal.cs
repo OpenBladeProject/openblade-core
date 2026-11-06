@@ -295,7 +295,7 @@ internal sealed class So6120DirectDutyJournal : IDisposable
                         Require(next.Observation is { } live
                             && live.Snapshot.Controls == next.Intent.Mutation.Expected
                             && (live.Snapshot.ActiveState & 1) != 0
-                            && (!plan.AllowBoundedPwmDrift || live.Sequence > next.Intent.Observation.Sequence)
+                            && (!plan.RequiresPostIntentObservation || live.Sequence > next.Intent.Observation.Sequence)
                             && plan.AdmitsLivePwm(live.Snapshot));
                     }
                     next.WriteAttempted = true;

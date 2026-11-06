@@ -189,6 +189,102 @@ public sealed class So6120SilentTrialTests
         Assert.Equal(2, inspected.FormatVersion);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void HalfCycleKeepsFixedOddCycleTargetsAsAutoPwmRises(bool driftBeforeEntry)
+    {
+        using var f = new Fixture(PerformancePreset.Balanced, 0, preparing: true);
+        f.Port.Mapped[0xB0] = 0;
+        f.Port.Mapped[0xB1] = 0;
+        using (var session = f.Create())
+        {
+            var plan = session.PrepareBalancedHalfCycle(Hooks());
+            Assert.Equal(So6120TrialTargetPolicy.HalfCycle, plan.TargetPolicy);
+            Assert.False(plan.AllowBoundedPwmDrift);
+            Assert.True(plan.RequiresPostIntentObservation);
+            Assert.Equal((byte)91, plan.RequestedDuty1);
+            Assert.Equal((byte)91, plan.RequestedDuty2);
+            Assert.Empty(f.Port.Writes);
+
+            if (driftBeforeEntry) { f.Port.Mapped[0xB0] = f.Port.Mapped[0xB1] = 38; }
+            f.Port.AfterWrite = (register, value) =>
+            {
+                if (register == 0xF0 && value == 0x51) { f.Port.Mapped[0xB0] = f.Port.Mapped[0xB1] = 38; }
+            };
+
+            var result = session.ExecuteApproved(plan, Approve(plan));
+            Assert.True(result.Success);
+            Assert.Equal((byte)91, result.ObservationAfterDwell!.Snapshot.Actual1);
+            Assert.Equal((byte)91, result.ObservationAfterDwell.Snapshot.Actual2);
+            Assert.True(result.Restoration!.CleanupConfirmed);
+            Assert.Equal(new (byte Register, byte Value)[]
+            {
+                (0xB8, 91), (0xB9, 91), (0xF0, 0x51), (0x1A, 0xFE),
+                (0x1A, 0), (0xF0, 0x11), (0xB8, 10), (0xB9, 20),
+            }, f.Port.Writes);
+        }
+        var inspected = So6120DirectDutyJournal.Inspect(f.Root);
+        Assert.True(inspected.Complete);
+        Assert.False(inspected.Corrupt);
+        Assert.Equal(2, inspected.FormatVersion);
+    }
+
+    [Theory]
+    [InlineData(false, 91)]
+    [InlineData(false, 92)]
+    [InlineData(true, 91)]
+    [InlineData(true, 92)]
+    public void HalfCycleRefusesEitherFanAtOrAboveTargetAfterPermission(bool secondFan, byte actual)
+    {
+        using var f = new Fixture(PerformancePreset.Balanced, 0, preparing: true);
+        using var session = f.Create();
+        var plan = session.PrepareBalancedHalfCycle(Hooks());
+        f.Port.AfterWrite = (register, value) =>
+        {
+            if (register == 0xF0 && value == 0x51) { f.Port.Mapped[secondFan ? 0xB1 : 0xB0] = actual; }
+        };
+        var result = session.ExecuteApproved(plan, Approve(plan));
+        Assert.Equal(So6120SilentTrialStop.PwmNotObserved, result.StopReason);
+        Assert.False(result.CommandsFenced);
+        Assert.True(result.Restoration!.CleanupConfirmed);
+        Assert.Equal(new (byte Register, byte Value)[]
+        {
+            (0xB8, 91), (0xB9, 91), (0xF0, 0x51), (0xF0, 0x11), (0xB8, 10), (0xB9, 20),
+        }, f.Port.Writes);
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(183, 91)]
+    [InlineData(183, 92)]
+    public void HalfCycleNeedsPositiveHeadroomAtPreparation(byte cycle, byte actual)
+    {
+        using var f = new Fixture(PerformancePreset.Balanced, 0, preparing: true);
+        f.Port.Mapped[0xB2] = cycle;
+        f.Port.Mapped[0xB0] = actual;
+        f.Port.Mapped[0xB1] = 0;
+        using var session = f.Create();
+        Assert.Throws<InvalidOperationException>(() => session.PrepareBalancedHalfCycle(Hooks()));
+        Assert.Empty(f.Port.Writes);
+    }
+
+    [Theory]
+    [InlineData(0xB0, 91)]
+    [InlineData(0xB1, 92)]
+    [InlineData(0xB2, 182)]
+    public void HalfCycleRefusesInitialTargetOrCycleDrift(byte register, byte value)
+    {
+        using var f = new Fixture(PerformancePreset.Balanced, 0, preparing: true);
+        using var session = f.Create();
+        var plan = session.PrepareBalancedHalfCycle(Hooks());
+        f.Port.Mapped[register] = value;
+        var result = session.ExecuteApproved(plan, Approve(plan));
+        Assert.Equal(So6120DutyFailure.BaselineRejected, result.Entry!.Failure);
+        Assert.True(result.NoSettingWritePublished);
+        Assert.Empty(f.Port.Writes);
+    }
+
     [Fact]
     public void ForgedReconstructedOrExpiredPlanCannotExecute()
     {

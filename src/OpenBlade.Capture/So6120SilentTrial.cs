@@ -5,6 +5,8 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Capture;
 
+internal enum So6120TrialTargetPolicy { PlusFour, HalfCycle }
+
 internal sealed record So6120SilentTrialPlan(Guid PlanId, So6120DutyObservation Baseline,
     byte RequestedDuty1, byte RequestedDuty2, long PreparedTimestamp)
 {
@@ -13,12 +15,31 @@ internal sealed record So6120SilentTrialPlan(Guid PlanId, So6120DutyObservation 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool AllowBoundedPwmDrift { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public So6120TrialTargetPolicy TargetPolicy { get; init; }
+
     [JsonIgnore]
     public string PlanSha256 => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(this)));
 
-    internal bool AdmitsLivePwm(So6120DutySnapshot snapshot) => AllowBoundedPwmDrift
-        ? RequestedDuty1 - snapshot.Actual1 is >= 1 and <= 8 && RequestedDuty2 - snapshot.Actual2 is >= 1 and <= 8
-        : snapshot.Actual1 == Baseline.Snapshot.Actual1 && snapshot.Actual2 == Baseline.Snapshot.Actual2;
+    internal bool RequiresPostIntentObservation => AllowBoundedPwmDrift || TargetPolicy == So6120TrialTargetPolicy.HalfCycle;
+
+    internal bool AdmitsLivePwm(So6120DutySnapshot snapshot) => TargetPolicy switch
+    {
+        So6120TrialTargetPolicy.PlusFour when AllowBoundedPwmDrift =>
+            RequestedDuty1 - snapshot.Actual1 is >= 1 and <= 8 && RequestedDuty2 - snapshot.Actual2 is >= 1 and <= 8,
+        So6120TrialTargetPolicy.PlusFour =>
+            snapshot.Actual1 == Baseline.Snapshot.Actual1 && snapshot.Actual2 == Baseline.Snapshot.Actual2,
+        So6120TrialTargetPolicy.HalfCycle when !AllowBoundedPwmDrift =>
+            RequestedDuty1 > snapshot.Actual1 && RequestedDuty2 > snapshot.Actual2,
+        _ => false,
+    };
+
+    internal static (int First, int Second) DeriveTargets(So6120DutySnapshot snapshot, So6120TrialTargetPolicy policy) => policy switch
+    {
+        So6120TrialTargetPolicy.PlusFour => (snapshot.Actual1 + 4, snapshot.Actual2 + 4),
+        So6120TrialTargetPolicy.HalfCycle => (snapshot.Controls.Cycle / 2, snapshot.Controls.Cycle / 2),
+        _ => throw new ArgumentOutOfRangeException(nameof(policy)),
+    };
 
     internal static bool SupportsProfile(PerformancePreset profile) =>
         profile is PerformancePreset.Silent or PerformancePreset.Balanced;
@@ -30,8 +51,11 @@ internal sealed record So6120SilentTrialPlan(Guid PlanId, So6120DutyObservation 
         && PlanId != Guid.Empty && Baseline is not null && Baseline.Snapshot is { } snapshot
         && snapshot.Controls is { Manual: 0, PolicyCommand: 0, Cycle: > 0 } controls && controls.Selector == selector
         && (controls.Override & 0x60) == 0 && (snapshot.ActiveState & 1) != 0
-        && snapshot.Actual1 + 4 <= controls.Cycle && snapshot.Actual2 + 4 <= controls.Cycle
-        && RequestedDuty1 == snapshot.Actual1 + 4 && RequestedDuty2 == snapshot.Actual2 + 4
+        && RequestedDuty1 <= controls.Cycle && RequestedDuty2 <= controls.Cycle
+        && (TargetPolicy == So6120TrialTargetPolicy.PlusFour
+            || TargetPolicy == So6120TrialTargetPolicy.HalfCycle && profile == PerformancePreset.Balanced && !AllowBoundedPwmDrift)
+        && DeriveTargets(snapshot, TargetPolicy) == (RequestedDuty1, RequestedDuty2)
+        && AdmitsLivePwm(snapshot)
         && PreparedTimestamp == Baseline.CompletedTimestamp;
 }
 internal sealed record So6120SilentTrialApproval(Guid PlanId, string PlanSha256, Guid ConsentId, string ConsentSha256)
@@ -82,12 +106,16 @@ internal sealed partial class So6120DirectDutySession
     private static readonly TimeSpan TrialDwell = TimeSpan.FromSeconds(1);
 
     public So6120SilentTrialPlan PrepareSilentIncrease(So6120SilentTrialHooks hooks, CancellationToken cancellationToken = default) =>
-        PrepareIncrease(PerformancePreset.Silent, hooks, cancellationToken);
+        PrepareIncrease(PerformancePreset.Silent, So6120TrialTargetPolicy.PlusFour, hooks, cancellationToken);
 
     public So6120SilentTrialPlan PrepareBalancedIncrease(So6120SilentTrialHooks hooks, CancellationToken cancellationToken = default) =>
-        PrepareIncrease(PerformancePreset.Balanced, hooks, cancellationToken);
+        PrepareIncrease(PerformancePreset.Balanced, So6120TrialTargetPolicy.PlusFour, hooks, cancellationToken);
 
-    private So6120SilentTrialPlan PrepareIncrease(PerformancePreset expectedProfile, So6120SilentTrialHooks hooks,
+    public So6120SilentTrialPlan PrepareBalancedHalfCycle(So6120SilentTrialHooks hooks, CancellationToken cancellationToken = default) =>
+        PrepareIncrease(PerformancePreset.Balanced, So6120TrialTargetPolicy.HalfCycle, hooks, cancellationToken);
+
+    private So6120SilentTrialPlan PrepareIncrease(PerformancePreset expectedProfile,
+        So6120TrialTargetPolicy targetPolicy, So6120SilentTrialHooks hooks,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(hooks);
@@ -110,14 +138,17 @@ internal sealed partial class So6120DirectDutySession
                 var read = ReadSnapshot(cancellationToken);
                 if (read.Disposition != So6120DutyIoDisposition.Confirmed || read.Observation is not { } baseline)
                 { throw new InvalidOperationException("Baseline observation unavailable."); }
-                var snapshot = baseline.Snapshot;
-                if (snapshot.Actual1 + 4 > byte.MaxValue || snapshot.Actual2 + 4 > byte.MaxValue)
+                var (first, second) = So6120SilentTrialPlan.DeriveTargets(baseline.Snapshot, targetPolicy);
+                if (first > byte.MaxValue || second > byte.MaxValue)
                 { throw new InvalidOperationException("No fixed-increase headroom."); }
                 var plan = new So6120SilentTrialPlan(Guid.NewGuid(), baseline,
-                    (byte)(snapshot.Actual1 + 4), (byte)(snapshot.Actual2 + 4), baseline.CompletedTimestamp)
-                { AllowBoundedPwmDrift = true };
+                    (byte)first, (byte)second, baseline.CompletedTimestamp)
+                {
+                    AllowBoundedPwmDrift = targetPolicy == So6120TrialTargetPolicy.PlusFour,
+                    TargetPolicy = targetPolicy,
+                };
                 if (!plan.Valid(expectedProfile))
-                { throw new InvalidOperationException($"{expectedProfile}/Auto baseline or fixed four-count headroom refused."); }
+                { throw new InvalidOperationException($"{expectedProfile}/Auto baseline or fixed target headroom refused ({targetPolicy})."); }
                 preparedPlan = plan;
                 ReportTrial("Prepared", baseline);
                 if (trialStop != So6120SilentTrialStop.None) { throw new InvalidOperationException("Preparation reporting failed."); }

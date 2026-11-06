@@ -14,10 +14,30 @@ internal static class So6120SilentPwmCommand
 {
     internal const string Name = "validate-so6120-silent-pwm-increase";
     internal const string BalancedName = "validate-so6120-balanced-pwm-increase";
+    internal const string HalfCycleName = "validate-so6120-balanced-pwm-half-cycle";
     internal const string FirmwareHash = "8537E9FD55B7B35504D8D87B0191ACC4391B67365B3FE72F6E1029A424C9E707";
     internal const string HandleControlHash = "AF1A1648AA2FD19DB79352AA31DFAB50B93CD49DF84CE959A7C9AC3FBD01EFE9";
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
-    private static string FormatPlan(PerformancePreset profile, string name, string powerInstruction) => $"""
+    private static string FormatPlan(PerformancePreset profile, string name, string powerInstruction, bool halfCycle)
+    {
+        string targetDescription = halfCycle ? """
+            Only then open InpOut and read the A0 baseline, including the current PWM cycle count.
+            This trial fixes both targets at half the captured cycle count, rounded down.
+            Cycle 183 gives raw 91/183 per fan, about 49.7% of the cycle count.
+            The cycle fraction has no calibrated electrical duty or RPM interpretation.
+            This permits a larger increase than the separate +4-count trial.
+            A second explicit approval binds the baseline and exact raw targets.
+            Each fixed target must exceed its fan's fresh actual PWM before entry and each entry write.
+            Reads and writes are separate operations. Either fan at or above its target stops entry.
+            """ : """
+            Only then open InpOut and read the A0 baseline to derive fixed targets at +4 raw counts per fan.
+            Both fans need >=4 counts of headroom. No zero/decrease target or preparatory RPM command.
+            A +4 request from a natural zero baseline may or may not start a fan.
+            A second explicit approval binds the baseline, exact targets, and live +1 to +8 range per fan.
+            Before entry and before each entry write, compare fresh actual PWM to those fixed targets.
+            Either target outside the live increase range stops entry. The read and write are separate operations.
+            """;
+        return $"""
         SO6120 supervised {profile} PWM increase: PREPARATION ONLY
         Exact RZ09-0581 / 1532:02E0 / SKU RZ09-05819EN4 / BIOS 4.01 / reported EC 1.04.
         {powerInstruction}
@@ -27,12 +47,7 @@ internal static class So6120SilentPwmCommand
         Live run requires an elevated interactive console and a new absolute run directory.
         Metadata inspection opens HID descriptor handles without sending feature reports.
         It first obtains explicit acceptance of the scoped contention/abort limits.
-        Only then open InpOut and read the A0 baseline to derive fixed targets at +4 raw counts per fan.
-        Both fans need >=4 counts of headroom. No zero/decrease target or preparatory RPM command.
-        A +4 request from a natural zero baseline may or may not start a fan.
-        A second explicit approval binds the baseline, exact targets, and live +1 to +8 range per fan.
-        Before entry and before each entry write, compare fresh actual PWM to those fixed targets.
-        Either target outside the live increase range stops entry. The read and write are separate operations.
+        {targetDescription}
         Stage B8/B9; set owned F0.6 permission; publish FE last; verify each write.
         After a one-second dwell, restore the captured normal selector to Auto,
         confirm Manual00, then restore the original owned F0/staging bytes.
@@ -48,9 +63,10 @@ internal static class So6120SilentPwmCommand
         Synchronous native calls can stall beyond those bounds; no hard watchdog is claimed.
         If stalled/unresolved, keep the console/process alive, leave OpenBlade stopped,
         stop workload and seek supervised reconciliation. Physical recovery is unverified.
-        This is a small-increase experiment, not fan stop or proof of universal ownership.
+        This is an attended PWM increase experiment with a fixed target and bounded dwell.
         Usage: OpenBlade.Capture {name} --run-root <new absolute directory>
         """;
+    }
 
     internal static bool TryParse(IReadOnlyList<string> args, out string? runRoot)
     {
@@ -69,25 +85,30 @@ internal static class So6120SilentPwmCommand
 
     internal static Task<int> RunAsync(IReadOnlyList<string> args, TextReader input, TextWriter output,
         Func<string, TextReader, TextWriter, Task<int>>? live = null) =>
-        RunAsync(PerformancePreset.Silent, args, input, output, live);
+        RunAsync(PerformancePreset.Silent, So6120TrialTargetPolicy.PlusFour, args, input, output, live);
 
     internal static Task<int> RunBalancedAsync(IReadOnlyList<string> args, TextReader input, TextWriter output,
         Func<string, TextReader, TextWriter, Task<int>>? live = null) =>
-        RunAsync(PerformancePreset.Balanced, args, input, output, live);
+        RunAsync(PerformancePreset.Balanced, So6120TrialTargetPolicy.PlusFour, args, input, output, live);
 
-    private static async Task<int> RunAsync(PerformancePreset profile, IReadOnlyList<string> args,
+    internal static Task<int> RunBalancedHalfCycleAsync(IReadOnlyList<string> args, TextReader input, TextWriter output,
+        Func<string, TextReader, TextWriter, Task<int>>? live = null) =>
+        RunAsync(PerformancePreset.Balanced, So6120TrialTargetPolicy.HalfCycle, args, input, output, live);
+
+    private static async Task<int> RunAsync(PerformancePreset profile, So6120TrialTargetPolicy targetPolicy, IReadOnlyList<string> args,
         TextReader input, TextWriter output, Func<string, TextReader, TextWriter, Task<int>>? live)
     {
         bool balanced = profile == PerformancePreset.Balanced;
+        bool halfCycle = targetPolicy == So6120TrialTargetPolicy.HalfCycle;
         string planText = balanced
-            ? FormatPlan(profile, BalancedName,
-                "Keep the operator-reported USB-C power connected. Windows checks external power only.")
-            : FormatPlan(profile, Name, "Keep AC connected.");
+            ? FormatPlan(profile, halfCycle ? HalfCycleName : BalancedName,
+                "Keep the operator-reported USB-C power connected. Windows checks external power only.", halfCycle)
+            : FormatPlan(profile, Name, "Keep AC connected.", halfCycle: false);
         if (!TryParse(args, out string? root))
         { await output.WriteLineAsync(planText); return 1; }
         if (root is null) { await output.WriteLineAsync(planText); return 0; }
         return live is not null ? await live(root, input, output)
-            : await RunWindowsAsync(profile, planText, root, input, output);
+            : await RunWindowsAsync(profile, targetPolicy, planText, root, input, output);
     }
 
     internal static async Task<bool> ConfirmAsync(TextReader input, TextWriter output,
@@ -107,7 +128,7 @@ internal static class So6120SilentPwmCommand
         catch (OperationCanceledException) { return false; }
     }
 
-    private static async Task<int> RunWindowsAsync(PerformancePreset profile, string planText,
+    private static async Task<int> RunWindowsAsync(PerformancePreset profile, So6120TrialTargetPolicy targetPolicy, string planText,
         string root, TextReader input, TextWriter output)
     {
         if (!OperatingSystem.IsWindows() || Console.IsInputRedirected || Console.IsOutputRedirected
@@ -134,6 +155,7 @@ internal static class So6120SilentPwmCommand
         var clock = TimeProvider.System;
         var run = Guid.NewGuid();
         string capturedProfile = profile.ToString();
+        bool halfCycle = targetPolicy == So6120TrialTargetPolicy.HalfCycle;
         string? requestedPowerSource = profile == PerformancePreset.Balanced ? "USB-C" : null;
         So6120WindowsDutyAcquisition? acquisition = null;
         So6120DirectDutySession? session = null;
@@ -178,7 +200,9 @@ internal static class So6120SilentPwmCommand
                 physicalStimulusWindowsPerformed = false,
                 universalExclusionEstablished = false,
                 physicalRecoveryEstablished = false,
-                rule = "One fixed +4-count trial; generic captured-profile Auto handback; stop all commands after ambiguity.",
+                rule = halfCycle
+                    ? "One fixed half-cycle trial with Balanced/Auto handback. Stop all commands after ambiguity."
+                    : "One fixed +4-count trial with captured-profile Auto handback. Stop all commands after ambiguity.",
             };
             Record(decision);
             await output.WriteLineAsync(JsonSerializer.Serialize(decision, Json));
@@ -230,14 +254,26 @@ internal static class So6120SilentPwmCommand
                 if (progressBuffer.Count == 16) { throw new InvalidOperationException("Trial progress bound exceeded."); }
                 progressBuffer.Add(progress);
             });
-            var plan = profile == PerformancePreset.Balanced
-                ? session.PrepareBalancedIncrease(hooks, cancellation.Token)
-                : session.PrepareSilentIncrease(hooks, cancellation.Token);
+            var plan = halfCycle
+                ? session.PrepareBalancedHalfCycle(hooks, cancellation.Token)
+                : profile == PerformancePreset.Balanced
+                    ? session.PrepareBalancedIncrease(hooks, cancellation.Token)
+                    : session.PrepareSilentIncrease(hooks, cancellation.Token);
             var derivedPlan = new { phase = "derivedPlan", capturedProfile, operatorReportedPowerSource, plan };
             Record(derivedPlan);
             await output.WriteLineAsync(JsonSerializer.Serialize(derivedPlan, new JsonSerializerOptions { WriteIndented = true }));
-            await output.WriteLineAsync($"Approve the fixed PWM targets and the exact {capturedProfile}/Auto restoration once. The targets are +4 from the captured baseline. Each must be +1 to +8 above its fresh actual PWM reading before entry and each entry write.");
-            await output.WriteLineAsync("The runner keeps the approved targets. Changed controls or either increase outside the range stops entry. Reads and writes are separate operations.");
+            if (halfCycle)
+            {
+                byte cycle = plan.Baseline.Snapshot.Controls.Cycle;
+                string fraction = FormattableString.Invariant($"{plan.RequestedDuty1}/{cycle} per fan, about {100.0 * plan.RequestedDuty1 / cycle:F1}% of the captured cycle count");
+                await output.WriteLineAsync($"Approve the fixed raw targets of {fraction}, and exact Balanced/Auto restoration. This can be a larger increase than +4 counts. The cycle fraction has no calibrated electrical duty or RPM interpretation.");
+                await output.WriteLineAsync("Either fan at or above its approved target stops entry before a write. The runner keeps the approved targets. Reads and writes are separate operations.");
+            }
+            else
+            {
+                await output.WriteLineAsync($"Approve the fixed PWM targets and the exact {capturedProfile}/Auto restoration once. The targets are +4 from the captured baseline. Each must be +1 to +8 above its fresh actual PWM reading before entry and each entry write.");
+                await output.WriteLineAsync("The runner keeps the approved targets. Changed controls or either increase outside the range stops entry. Reads and writes are separate operations.");
+            }
             string writeToken = $"APPLY {plan.PlanId:N} {plan.PlanSha256}";
             if (!await ConfirmAsync(input, output, writeToken, cancellation.Token))
             { Record(new { phase = "declinedAfterBaseline", plan.PlanId }); declinedAfterConfirmedBaseline = true; throw new TrialDeclinedException(); }
