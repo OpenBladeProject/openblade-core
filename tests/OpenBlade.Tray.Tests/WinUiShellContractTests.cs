@@ -2184,7 +2184,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
-        Assert.Equal(13, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(14, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
@@ -4096,6 +4096,32 @@ public sealed class WinUiShellContractTests
         Assert.Null(row.Attribute("Height"));
         XElement toggle = Assert.Single(row.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
         Assert.Equal("{x:Bind ExternalPowerDischargeNotificationsEnabled, Mode=TwoWay}", (string?)toggle.Attribute("IsOn"));
+    }
+
+    [Fact]
+    public void FanStopRowUsesSharedSettingsPresentationAndAuthoritativeToggle()
+    {
+        XDocument xaml = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        XElement row = Assert.Single(xaml.Descendants(), element => (string?)element.Attribute(x + "Name") == "FanStopCell");
+        XElement reference = Assert.Single(xaml.Descendants(), element =>
+            CanonicalLocalizedXaml.Identity(element) == "MainWindow_TextBlockGPUCoreClockOffset");
+        XElement referenceRow = reference.Ancestors().First(element => element.Name.LocalName == "Border");
+        Assert.Equal((string?)referenceRow.Attribute("Style"), (string?)row.Attribute("Style"));
+        Assert.Equal((string?)referenceRow.Attribute("Padding"), (string?)row.Attribute("Padding"));
+        XElement layout = Assert.Single(row.Elements());
+        Assert.Equal("{StaticResource DashboardSingleLineRowContentMinHeight}", (string?)layout.Attribute("MinHeight"));
+        Assert.Equal("20", (string?)layout.Attribute("ColumnSpacing"));
+        Assert.Null(row.Attribute("Background"));
+        Assert.Null(row.Attribute("Height"));
+        XElement toggle = Assert.Single(row.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
+        Assert.Equal("{x:Bind FanStopRequested, Mode=OneWay}", (string?)toggle.Attribute("IsOn"));
+        Assert.Equal("{x:Bind CanToggleFanStop, Mode=OneWay}", (string?)toggle.Attribute("IsEnabled"));
+        Assert.Contains(toggle.Attributes(), attribute => attribute.Name.LocalName == "AutomationProperties.Name" && !string.IsNullOrWhiteSpace(attribute.Value));
+        XElement label = Assert.Single(row.Descendants(), element => CanonicalLocalizedXaml.Identity(element) == "MainWindow_FanStop");
+        Assert.Equal((string?)reference.Attribute("Style"), (string?)label.Attribute("Style"));
+        Assert.Equal("Wrap", (string?)label.Attribute("TextWrapping"));
+        Assert.Equal("OnDashboardTextStackSizeChanged", (string?)label.Parent?.Attribute("SizeChanged"));
     }
 
     [Fact]

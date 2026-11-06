@@ -2881,4 +2881,10 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_BatterySaverFanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Stóp fáns ~~~ !!]</value>
   </data>
+  <data name="MainWindow_FanStop.Text" xml:space="preserve">
+    <value>[!! Stóp fáns ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_FanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Stóp fáns ~~~ !!]</value>
+  </data>
 </root>

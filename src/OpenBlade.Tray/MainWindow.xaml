@@ -916,6 +916,30 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
+                            <Border x:Name="FanStopCell" local:CardReorder.CardId="FanStop" Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsFanStopVisible}">
+                                <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center"
+                                                SizeChanged="OnDashboardTextStackSizeChanged">
+                                        <TextBlock Text="{CustomResource MainWindow_FanStop.Text}"
+                                                   Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{x:Bind FanStopDescription, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="FanStopToggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                  IsOn="{x:Bind FanStopRequested, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind CanToggleFanStop, Mode=OneWay}"
+                                                  AutomationProperties.Name="{CustomResource MainWindow_FanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                  AutomationProperties.HelpText="{x:Bind FanStopDescription, Mode=OneWay}"
+                                                  Toggled="OnFanStopToggled" />
+                                </Grid>
+                            </Border>
                             <Border local:CardReorder.CardId="BatterySaverFanStop" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Padding="{StaticResource DashboardSingleLineRowPadding}"
                                     Visibility="Collapsed"

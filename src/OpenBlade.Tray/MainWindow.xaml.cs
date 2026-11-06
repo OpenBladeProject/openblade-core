@@ -3074,6 +3074,33 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
 
     private bool changingBatterySaverFanStop;
 
+    private bool changingFanStop;
+
+    private async void OnFanStopToggled(object sender, RoutedEventArgs args)
+    {
+        if (changingFanStop || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle || toggle.IsOn == ViewModel.FanStopRequested)
+        {
+            return;
+        }
+        changingFanStop = true;
+        bool requested = toggle.IsOn;
+        toggle.IsOn = ViewModel.FanStopRequested;
+        try
+        {
+            await ViewModel.SetFanStopAsync(requested, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.Tray.MainWindow", "SetFanStop", exception);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.FanStopRequested;
+            changingFanStop = false;
+        }
+    }
+
     private async void OnBatterySaverFanStopToggled(object sender, RoutedEventArgs args)
     {
         if (changingBatterySaverFanStop || Volatile.Read(ref disposed) != 0

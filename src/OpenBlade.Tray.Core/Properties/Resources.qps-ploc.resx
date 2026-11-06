@@ -1801,4 +1801,25 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Fan-stop control paused. Turn it off to restore normal cooling." xml:space="preserve">
     <value>[!! Fán-stóp cóntról páúséd. Túrn ít óff tó réstóré nórmál cóólíng. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Fan control needs recovery. Automatic cooling is not confirmed." xml:space="preserve">
+    <value>[!! Fán cóntról nééds récóvérý. Áútómátíc cóólíng ís nót cónfírméd. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fans are stopped. Turn off to return to Auto." xml:space="preserve">
+    <value>[!! Fáns áré stóppéd. Túrn óff tó rétúrn tó Áútó. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan stop is not available in this build." xml:space="preserve">
+    <value>[!! Fán stóp ís nót áváíláblé ín thís búíld. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Turn on to stop the fans. Turn off to return to Auto." xml:space="preserve">
+    <value>[!! Túrn ón tó stóp thé fáns. Túrn óff tó rétúrn tó Áútó. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan stop is unavailable right now." xml:space="preserve">
+    <value>[!! Fán stóp ís únáváíláblé ríght nów. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fans are stopped" xml:space="preserve">
+    <value>[!! Fáns áré stóppéd ~~~~~ !!]</value>
+  </data>
+  <data name="Fan control needs recovery" xml:space="preserve">
+    <value>[!! Fán cóntról nééds récóvérý ~~~~~~~~~ !!]</value>
+  </data>
 </root>

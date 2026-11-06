@@ -33,6 +33,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
 [JsonDerivedType(typeof(SetBatterySaverFanStopRequest), "setBatterySaverFanStop")]
+[JsonDerivedType(typeof(SetFanStopModeRequest), "setFanStopMode")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
 [JsonDerivedType(typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness")]
 [JsonDerivedType(typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage")]
@@ -475,6 +476,8 @@ public sealed record ServiceStatusSnapshot(
     public FanControlSettings? FanControlOverride { get; init; }
 
     public BatterySaverFanStopStatus? BatterySaverFanStopStatus { get; init; }
+
+    public FanStopStatus FanStopStatus { get; init; } = new();
 
     public PerformanceShortcutPreview? PerformanceShortcutPreview { get; init; }
 

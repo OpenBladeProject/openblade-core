@@ -1110,7 +1110,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         : UnavailableLabel;
 
     public string ActiveFanModeLabel => IsConnected
-        ? TrayText.Format("{0} fans", FanModePresentation.Label(SelectedFanMode))
+        ? CurrentFanStopStatus.State switch
+        {
+            FanStopState.Stopped => TrayText.Get("Fans are stopped"),
+            FanStopState.RecoveryRequired => TrayText.Get("Fan control needs recovery"),
+            FanStopState.Automatic => TrayText.Format("{0} fans", FanModePresentation.Label(FanMode.Automatic)),
+            _ => TrayText.Format("{0} fans", FanModePresentation.Label(SelectedFanMode)),
+        }
         : UnavailableLabel;
 
     public string ProfileStateLabel => !IsConnected
@@ -2418,6 +2424,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SelectedWindowsPowerModeDescription));
             Notify(nameof(IsBatterySaverFanStopVisible));
             Notify(nameof(CanToggleBatterySaverFanStop));
+            NotifyFanStopPresentation();
             Notify(nameof(IsBatterySaverFanStopSuspended));
             Notify(nameof(IsSilentSelected));
             Notify(nameof(IsBalancedSelected));
@@ -2723,6 +2730,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref isFanControlOperationInProgress, value);
+            NotifyFanStopPresentation();
             NotifyCommands();
             Notify(nameof(CanEditFanControl));
             Notify(nameof(CanChangeFanMode));
@@ -2769,6 +2777,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
     public bool CanEditFanControl =>
+        !FanStopOwnsControl &&
         !(IsBatterySaverFanStopVisible && BatterySaverFanStopRequested) &&
         CanRequestHardwareControl
         && !IsFanControlOperationInProgress
@@ -2788,6 +2797,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         HasHardwareControlUnavailableMessage
         || IsUnsupportedLaptop
         || IsFanControlOperationInProgress
+        || FanStopOwnsControl
         || (IsBatterySaverFanStopVisible && BatterySaverFanStopRequested)
             ? string.Empty
             : IsThermalStateUnknown
@@ -4947,6 +4957,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (parameter is not FanMode value
             || !Enum.IsDefined(value)
             || IsFanControlOperationInProgress
+            || FanStopOwnsControl
             || (IsBatterySaverFanStopVisible && BatterySaverFanStopRequested)
             || HyperBoostActive
             || !CanMutate
@@ -5529,7 +5540,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? ResolvePresentedPerformance(status, confirmed, capabilities);
         FanControlSettings? normalFanControl = status.BatterySaverFanStopStatus is { Requested: true }
             ? status.BatterySaverFanStopStatus.NormalFanControl : null;
+        if (status.FanStopStatus is { State: FanStopState.Stopped or FanStopState.RecoveryRequired } fanStop)
+        {
+            normalFanControl = fanStop.NormalFanControl ?? normalFanControl;
+        }
         SelectedFanMode = pendingFanControl?.Requested.Mode
+            ?? (status.FanStopStatus.State == FanStopState.Automatic ? FanMode.Automatic : (FanMode?)null)
             ?? normalFanControl?.Mode
             ?? ResolvePresentedFanMode(status, confirmed, capabilities);
         LoadFanControlEditor(
@@ -9227,6 +9243,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(BatterySaverFanStopRequested), BatterySaverFanStopRequested);
         NotifyComputed(nameof(IsBatterySaverFanStopSuspended), IsBatterySaverFanStopSuspended);
         NotifyComputed(nameof(CanToggleBatterySaverFanStop), CanToggleBatterySaverFanStop);
+        NotifyFanStopPresentation();
         NotifyComputed(nameof(CanEditFanControl), CanEditFanControl);
         NotifyComputed(nameof(CanChangeFanMode), CanChangeFanMode);
         NotifyFanControlAvailability();

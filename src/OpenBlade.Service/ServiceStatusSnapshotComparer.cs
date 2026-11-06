@@ -45,6 +45,7 @@ internal static class ServiceStatusSnapshotComparer
         && left.FanOverride == right.FanOverride
         && left.FanControlOverride == right.FanControlOverride
         && left.BatterySaverFanStopStatus == right.BatterySaverFanStopStatus
+        && left.FanStopStatus == right.FanStopStatus
         && left.LightingOverride == right.LightingOverride
         && left.BatteryPolicyOverride == right.BatteryPolicyOverride
         && left.BatteryProtectionOverride == right.BatteryProtectionOverride
@@ -119,6 +120,8 @@ internal static class ServiceStatusSnapshotComparer
                     out FanSpeedRange? rightRange)
                 && entry.Value == rightRange)
             && left.SupportsBatterySaverFanStop == right.SupportsBatterySaverFanStop
+            && left.HasFanStopTrialEvidence == right.HasFanStopTrialEvidence
+            && left.SupportsFanStop == right.SupportsFanStop
             && left.ReportsPerformanceWithManualFans == right.ReportsPerformanceWithManualFans
             && left.SupportsManualFansOnLimitedPower == right.SupportsManualFansOnLimitedPower
             && left.LightingEffects.SetEquals(right.LightingEffects)

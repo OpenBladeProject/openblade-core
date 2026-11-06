@@ -528,7 +528,9 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(29, animated.Length);
+        Assert.Equal(30, animated.Length);
+        Assert.Contains(animated, element => Attribute(element, "Name") == "FanStopCell"
+            && Attribute(element, "AnimatedVisibility.IsVisible") == "{Binding IsFanStopVisible}");
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -699,7 +701,7 @@ public sealed class CapabilityPresentationTests
                 && element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate"))
             .ToArray();
 
-        Assert.Equal(15, compactRows.Length);
+        Assert.Equal(16, compactRows.Length);
         Assert.All(compactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -723,7 +725,7 @@ public sealed class CapabilityPresentationTests
                 element.Name.LocalName == "TextBlock"
                 && Attribute(element, "Style") == "{StaticResource CardTitleStyle}");
             if (CanonicalLocalizedXaml.Identity(title) is "MainWindow_TextBlockLaptopPerformance"
-                or "MainWindow_BatterySaverFanStop")
+                or "MainWindow_BatterySaverFanStop" or "MainWindow_FanStop")
             {
                 Assert.NotNull(title.Parent);
                 Assert.Equal(
@@ -746,6 +748,7 @@ public sealed class CapabilityPresentationTests
                 "GPU",
                 "Maximum fans",
                 "Fans",
+                "Stop fans",
                 "Stop fans",
                 "Fan speed",
                 "Battery protection",
@@ -776,7 +779,7 @@ public sealed class CapabilityPresentationTests
         XElement[] animatedCompactRows = compactRows
             .Where(row => Attribute(row, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
-        Assert.Equal(11, animatedCompactRows.Length);
+        Assert.Equal(12, animatedCompactRows.Length);
         Assert.All(animatedCompactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));

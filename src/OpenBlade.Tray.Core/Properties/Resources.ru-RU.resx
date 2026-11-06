@@ -1709,4 +1709,25 @@
     <value>Источник питания изменился. Проверьте текущий профиль и повторите попытку.</value>
   </data>
   <data name="Fan-stop control paused. Turn it off to restore normal cooling." xml:space="preserve"><value>Управление остановкой вентиляторов приостановлено. Выключите эту функцию, чтобы восстановить обычное охлаждение.</value></data>
+  <data name="Fan control needs recovery. Automatic cooling is not confirmed." xml:space="preserve">
+    <value>Требуется восстановить управление вентиляторами. Автоматическое охлаждение не подтверждено.</value>
+  </data>
+  <data name="Fans are stopped. Turn off to return to Auto." xml:space="preserve">
+    <value>Вентиляторы остановлены. Выключите этот параметр, чтобы вернуться в режим Авто.</value>
+  </data>
+  <data name="Fan stop is not available in this build." xml:space="preserve">
+    <value>Остановка вентиляторов недоступна в этой сборке.</value>
+  </data>
+  <data name="Turn on to stop the fans. Turn off to return to Auto." xml:space="preserve">
+    <value>Включите, чтобы остановить вентиляторы. Выключите, чтобы вернуться в режим Авто.</value>
+  </data>
+  <data name="Fan stop is unavailable right now." xml:space="preserve">
+    <value>Сейчас остановка вентиляторов недоступна.</value>
+  </data>
+  <data name="Fans are stopped" xml:space="preserve">
+    <value>Вентиляторы остановлены</value>
+  </data>
+  <data name="Fan control needs recovery" xml:space="preserve">
+    <value>Требуется восстановить управление вентиляторами</value>
+  </data>
 </root>

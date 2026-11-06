@@ -680,7 +680,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await using (port.ConfigureAwait(false))
             {
                 return opened.Failure is null
-                    ? port.Capabilities
+                    ? port.Capabilities with
+                    {
+                        HasFanStopTrialEvidence = batteryFactory.Capabilities.HasFanStopTrialEvidence,
+                    }
                     : DeviceCapabilities.Unavailable();
             }
         }

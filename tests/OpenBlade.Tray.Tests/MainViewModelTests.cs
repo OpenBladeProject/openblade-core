@@ -11384,6 +11384,12 @@ public sealed partial class MainViewModelTests
             MutationOperations.Add($"batterySaverFanStop:{enabled}");
             return MutateAsync(token);
         }
+
+        public Task<ControlOperationResult> SetFanStopModeAsync(FanStopMode mode, CancellationToken token)
+        {
+            MutationOperations.Add($"fanStop:{mode}");
+            return MutateAsync(token);
+        }
         public override Task<ControlOperationResult> SetLightingOverrideAsync(
             ManualOverride<LightingSettings>? value,
             CancellationToken token)

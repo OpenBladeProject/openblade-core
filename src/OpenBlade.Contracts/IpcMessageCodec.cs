@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 73;
+    public const int ProtocolVersion = 74;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -257,6 +257,7 @@ public static class IpcMessageCodec
                 || set.Value.IsWellFormed(),
             SetHyperBoostRequest => true,
             SetBatterySaverFanStopRequest => true,
+            SetFanStopModeRequest set => Enum.IsDefined(set.Mode),
             SetGpuClockTuningRequest set =>
                 GpuClockTuningSettings.IsWellFormed(set.Value)
                 && Enum.IsDefined(set.Lifetime),
@@ -406,6 +407,17 @@ public static class IpcMessageCodec
         if (!Enum.IsDefined(status.ObservationReason))
         {
             throw InvalidStatus("observation reason is invalid");
+        }
+
+        if (status.FanStopStatus is not { } fanStop
+            || !Enum.IsDefined(fanStop.RequestedMode)
+            || !Enum.IsDefined(fanStop.State)
+            || !Enum.IsDefined(fanStop.UnavailableReason)
+            || fanStop.State is FanStopState.Unavailable or FanStopState.RecoveryRequired
+                && (fanStop.CanStop || fanStop.CanReturnToAutomatic)
+            || fanStop.CanReturnToAutomatic && fanStop.State != FanStopState.Stopped)
+        {
+            throw InvalidStatus("fan-stop status is invalid");
         }
 
         if (status.Revision < 0)
@@ -1114,6 +1126,9 @@ public static class IpcMessageCodec
                 foreach (JsonPropertyInfo property in typeInfo.Properties.Where(property =>
                     property.Name.Equals("stopFansInBatterySaver", StringComparison.OrdinalIgnoreCase)
                     || property.Name.Equals("supportsBatterySaverFanStop", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("hasFanStopTrialEvidence", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("supportsFanStop", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("fanStopStatus", StringComparison.OrdinalIgnoreCase)
                     || property.Name.Equals("batterySaverFanStopStatus", StringComparison.OrdinalIgnoreCase)))
                 {
                     property.ShouldSerialize = static (_, _) => false;

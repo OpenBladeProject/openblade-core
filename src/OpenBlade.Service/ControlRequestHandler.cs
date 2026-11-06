@@ -269,6 +269,9 @@ public sealed class ControlRequestHandler
                 request.RequestId,
                 await runtime.SetBatterySaverFanStopAsync(
                     set.Enabled, stillControlsSession, cancellationToken)),
+            SetFanStopModeRequest set => Result(
+                request.RequestId,
+                await runtime.SetFanStopModeAsync(set.Mode, stillControlsSession, cancellationToken)),
             ReportApplicationContextRequest report => Result(
                 request.RequestId,
                 await runtime.ReportApplicationContextAsync(

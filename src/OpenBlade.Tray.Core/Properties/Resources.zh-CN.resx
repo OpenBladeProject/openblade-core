@@ -1709,4 +1709,25 @@
     <value>电源来源已更改。请检查当前配置方案后重试。</value>
   </data>
   <data name="Fan-stop control paused. Turn it off to restore normal cooling." xml:space="preserve"><value>风扇停止控制已暂停。关闭此功能可恢复正常散热。</value></data>
+  <data name="Fan control needs recovery. Automatic cooling is not confirmed." xml:space="preserve">
+    <value>风扇控制需要恢复。尚未确认自动散热已恢复。</value>
+  </data>
+  <data name="Fans are stopped. Turn off to return to Auto." xml:space="preserve">
+    <value>风扇已停止。关闭此开关以恢复自动控制。</value>
+  </data>
+  <data name="Fan stop is not available in this build." xml:space="preserve">
+    <value>此版本暂不支持停止风扇。</value>
+  </data>
+  <data name="Turn on to stop the fans. Turn off to return to Auto." xml:space="preserve">
+    <value>开启以停止风扇，关闭以恢复自动控制。</value>
+  </data>
+  <data name="Fan stop is unavailable right now." xml:space="preserve">
+    <value>当前无法停止风扇。</value>
+  </data>
+  <data name="Fans are stopped" xml:space="preserve">
+    <value>风扇已停止</value>
+  </data>
+  <data name="Fan control needs recovery" xml:space="preserve">
+    <value>风扇控制需要恢复</value>
+  </data>
 </root>

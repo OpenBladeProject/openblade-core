@@ -31045,7 +31045,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
         Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
-        Func<PowerSource>? batterySaverFanStopPowerReader = null)
+        Func<PowerSource>? batterySaverFanStopPowerReader = null,
+        IFanStopBackend? fanStopBackend = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -31145,7 +31146,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
             hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary,
             laptopControlPendingStore: new LaptopControlPendingStore(Path.Combine(directory, "laptop-control-pending.json")),
-            batterySaverFanStopPowerReader: batterySaverFanStopPowerReader ?? (() => telemetry.Current.PowerSource));
+            batterySaverFanStopPowerReader: batterySaverFanStopPowerReader ?? (() => telemetry.Current.PowerSource),
+            fanStopBackend: fanStopBackend);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -31724,10 +31726,13 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     {
         private readonly object publishGate = new();
 
+        public Action? BeforePublish { get; set; }
+
         public List<ServiceStatusSnapshot> Published { get; } = [];
 
         public void Publish(ServiceStatusSnapshot snapshot)
         {
+            BeforePublish?.Invoke();
             lock (publishGate)
             {
                 Published.Add(snapshot);

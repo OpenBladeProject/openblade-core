@@ -1680,6 +1680,12 @@ public partial class App
             ApplyBatterySaverFanStopSnapshotState(window, state);
             return;
         }
+        if (state is "direct-fan-stop-off" or "direct-fan-stop-on" or "direct-fan-stop-gated"
+            or "direct-fan-stop-recovery" or "direct-fan-stop-unsupported")
+        {
+            ApplyDirectFanStopSnapshotState(window, state);
+            return;
+        }
         if (state == "experimental-custom")
         {
             ApplyExperimentalCustomSnapshotState(window);
@@ -1881,6 +1887,40 @@ public partial class App
         typeof(MainWindow).GetMethod(
             "RefreshDashboardCards", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .Invoke(window, null);
+    }
+
+    private static void ApplyDirectFanStopSnapshotState(MainWindow window, string state)
+    {
+        // Disconnected synthetic status only; this never acquires a hardware backend.
+        bool owned = state is "direct-fan-stop-on" or "direct-fan-stop-recovery";
+        bool gated = state is "direct-fan-stop-gated" or "direct-fan-stop-unsupported";
+        bool recovery = state == "direct-fan-stop-recovery";
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var normal = new FanControlSettings(FanMode.Fixed, 3000, ManualFanCurve.Default);
+        var status = new ServiceStatusSnapshot(
+            1, true, recovery, [], null, [], "Fan stop preview",
+            DeviceCapabilities.SafeTargetDefaults() with
+            {
+                HasFanStopTrialEvidence = state != "direct-fan-stop-unsupported",
+                SupportsFanStop = !gated,
+            },
+            new ConfirmedDeviceState(PerformancePreset.Balanced, owned ? FanMode.Stop : FanMode.Fixed, null, null),
+            profiles,
+            new DesiredDeviceState(new(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new(FanMode.Fixed, SettingValueSource.PowerProfile),
+                new(profiles.Battery.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, false, false)),
+            PowerSource.UsbC, null, null, null, null, false)
+        {
+            FanStopStatus = new(owned ? FanStopMode.Stop : FanStopMode.Automatic,
+                recovery ? FanStopState.RecoveryRequired : owned ? FanStopState.Stopped : gated ? FanStopState.Unavailable : FanStopState.Inactive,
+                state == "direct-fan-stop-unsupported" ? FanStopUnavailableReason.UnsupportedDevice
+                    : gated ? FanStopUnavailableReason.RecoveryNotValidated : FanStopUnavailableReason.None,
+                CanStop: !gated && !owned, CanReturnToAutomatic: owned && !recovery,
+                NormalFanControl: owned ? normal : null),
+        };
+        typeof(MainViewModel).GetMethod("ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(window.ViewModel, [status, false]);
     }
 
     private static void ApplyBatterySaverFanStopSnapshotState(MainWindow window, string state)

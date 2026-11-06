@@ -2877,4 +2877,10 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_BatterySaverFanStop.Text" xml:space="preserve"><value>Остановить вентиляторы</value></data>
   <data name="MainWindow_BatterySaverFanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Остановить вентиляторы</value></data>
+  <data name="MainWindow_FanStop.Text" xml:space="preserve">
+    <value>Остановить вентиляторы</value>
+  </data>
+  <data name="MainWindow_FanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Остановить вентиляторы</value>
+  </data>
 </root>

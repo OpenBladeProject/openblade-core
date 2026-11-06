@@ -220,6 +220,12 @@ public sealed record DeviceCapabilities(
 
     public bool SupportsBatterySaverFanStop { get; init; }
 
+    /// <summary>Attended exact-model evidence exists. This is display metadata,
+    /// not runtime command admission or crash-recovery evidence.</summary>
+    public bool HasFanStopTrialEvidence { get; init; }
+
+    public bool SupportsFanStop { get; init; }
+
     /// <summary>Exact backend reports the real performance mode and Custom levels
     /// while manual fans are active, rather than a shared manual selector.</summary>
     public bool ReportsPerformanceWithManualFans { get; init; }

@@ -29,6 +29,8 @@ public sealed class IpcWireShapeManifestTests
         Assert.Contains("property blade18KeyboardLayoutId:System.Byte? member", manifest, StringComparison.Ordinal);
         Assert.Contains("property hostManagedLaptopControls:System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> member", manifest, StringComparison.Ordinal);
         Assert.Contains("property fanSpeedRangesByPerformancePreset:System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset,OpenBlade.Contracts.FanSpeedRange> member", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived setFanStopMode=OpenBlade.Contracts.SetFanStopModeRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("property fanStopStatus:OpenBlade.Contracts.FanStopStatus member", manifest, StringComparison.Ordinal);
         string? expectedHash = OpenBladeIpc.ProtocolVersion switch
         {
             47 => "182C004C3E7FBAFF946EAE2C1CFD6AE86D219A094E9DBC3BEF5A0F800D41F3D1",
@@ -58,6 +60,7 @@ public sealed class IpcWireShapeManifestTests
             71 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
             // Protocol 72 changes only the diagnostic-response transport bound; the JSON shape is unchanged.
             73 => "5B4568285F1ED8B41EF30E4C75AAC002B4C70CB96272F543ABFC46533191D094",
+            74 => "3A7F0F0E543BA35C9702F1F28081547A9FA2A1F166D3E6EC4AE7116A394B9113",
             72 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
             _ => null,
         };
