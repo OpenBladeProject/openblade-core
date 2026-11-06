@@ -11,8 +11,15 @@ internal sealed record So6120SilentTrialPlan(Guid PlanId, So6120DutyObservation 
     [JsonIgnore]
     public string PlanSha256 => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(this)));
 
-    internal bool Valid() => PlanId != Guid.Empty && Baseline is not null && Baseline.Snapshot is { } snapshot
-        && snapshot.Controls is { Selector: 5, Manual: 0, PolicyCommand: 0, Cycle: > 0 } controls
+    internal static bool SupportsProfile(PerformancePreset profile) =>
+        profile is PerformancePreset.Silent or PerformancePreset.Balanced;
+
+    // The approved baseline already encodes the captured profile in its selector.
+    // Keep that as the hashed value so existing Silent journals remain readable.
+    internal bool Valid(PerformancePreset profile) => SupportsProfile(profile)
+        && So6120DutyWorkflow.TrySelector(profile, out byte selector)
+        && PlanId != Guid.Empty && Baseline is not null && Baseline.Snapshot is { } snapshot
+        && snapshot.Controls is { Manual: 0, PolicyCommand: 0, Cycle: > 0 } controls && controls.Selector == selector
         && (controls.Override & 0x60) == 0 && (snapshot.ActiveState & 1) != 0
         && snapshot.Actual1 + 4 <= controls.Cycle && snapshot.Actual2 + 4 <= controls.Cycle
         && RequestedDuty1 == snapshot.Actual1 + 4 && RequestedDuty2 == snapshot.Actual2 + 4
@@ -65,7 +72,14 @@ internal sealed partial class So6120DirectDutySession
     private static readonly TimeSpan ApprovalAge = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan TrialDwell = TimeSpan.FromSeconds(1);
 
-    public So6120SilentTrialPlan PrepareSilentIncrease(So6120SilentTrialHooks hooks, CancellationToken cancellationToken = default)
+    public So6120SilentTrialPlan PrepareSilentIncrease(So6120SilentTrialHooks hooks, CancellationToken cancellationToken = default) =>
+        PrepareIncrease(PerformancePreset.Silent, hooks, cancellationToken);
+
+    public So6120SilentTrialPlan PrepareBalancedIncrease(So6120SilentTrialHooks hooks, CancellationToken cancellationToken = default) =>
+        PrepareIncrease(PerformancePreset.Balanced, hooks, cancellationToken);
+
+    private So6120SilentTrialPlan PrepareIncrease(PerformancePreset expectedProfile, So6120SilentTrialHooks hooks,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(hooks);
         ArgumentNullException.ThrowIfNull(hooks.RefreshEntryAdmission);
@@ -76,8 +90,8 @@ internal sealed partial class So6120DirectDutySession
             try
             {
                 if (preparing || entered || binding.Identity.RequestedDuty1.HasValue || binding.Identity.RequestedDuty2.HasValue
-                    || binding.Identity.CapturedProfile != PerformancePreset.Silent)
-                { throw new InvalidOperationException("Preparation requires an unused unplanned Silent identity."); }
+                    || binding.Identity.CapturedProfile != expectedProfile)
+                { throw new InvalidOperationException($"Preparation requires an unused unplanned {expectedProfile} identity."); }
                 preparing = true;
                 trialHooks = hooks;
                 cancellationToken.ThrowIfCancellationRequested();
@@ -92,7 +106,8 @@ internal sealed partial class So6120DirectDutySession
                 { throw new InvalidOperationException("No fixed-increase headroom."); }
                 var plan = new So6120SilentTrialPlan(Guid.NewGuid(), baseline,
                     (byte)(snapshot.Actual1 + 4), (byte)(snapshot.Actual2 + 4), baseline.CompletedTimestamp);
-                if (!plan.Valid()) { throw new InvalidOperationException("Silent/Auto baseline or fixed four-count headroom refused."); }
+                if (!plan.Valid(expectedProfile))
+                { throw new InvalidOperationException($"{expectedProfile}/Auto baseline or fixed four-count headroom refused."); }
                 preparedPlan = plan;
                 ReportTrial("Prepared", baseline);
                 if (trialStop != So6120SilentTrialStop.None) { throw new InvalidOperationException("Preparation reporting failed."); }
@@ -128,7 +143,7 @@ internal sealed partial class So6120DirectDutySession
                 {
                     // The coordinator reobserves and compares against this exact
                     // approved baseline; it cannot silently recalculate targets.
-                    entry = new So6120DirectDutyCoordinator(operation).EnterPrepared(plan.Baseline,
+                    entry = new So6120DirectDutyCoordinator(operation).EnterPrepared(binding.Identity.CapturedProfile, plan.Baseline,
                         plan.RequestedDuty1, plan.RequestedDuty2);
                     entryCompleted = clock.GetTimestamp();
                     ReportTrial("EntryFinished", latestObservation);

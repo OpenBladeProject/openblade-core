@@ -9,7 +9,7 @@ when another actor can change the mailbox.
 
 This is exact SO6120 evidence. It does not establish physical fan behavior or
 another model's command contract. A separate, developer-only
-[supervised Silent increase runner](so6120-supervised-pwm-trial.md) now binds
+[supervised PWM increase runner](so6120-supervised-pwm-trial.md) now binds
 the transport and generic Auto coordinator for an explicitly approved test.
 That implementation is not evidence that the physical test has run.
 
@@ -40,8 +40,8 @@ accessing hardware.
 
 The developer [entry and Auto-exit coordinators](../src/OpenBlade.Capture/So6120DirectDutyCoordinator.cs)
 sequence the host-mailbox path independently of the MCU gate/bank backend.
-The first prepared experiment is restricted to Silent by its outer admission;
-the generic exit restores
+The fixed prepared experiments admit Balanced or Silent through their outer
+admission, preserving the selected profile; the generic exit restores
 the captured, separately admitted Balanced, Performance, Battery Saver,
 Silent or Battery Balanced profile. It does not switch through Balanced or
 offer an arbitrary new destination. Custom requires a retained-settings

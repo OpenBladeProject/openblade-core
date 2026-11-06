@@ -13,14 +13,16 @@ namespace OpenBlade.Capture;
 internal static class So6120SilentPwmCommand
 {
     internal const string Name = "validate-so6120-silent-pwm-increase";
+    internal const string BalancedName = "validate-so6120-balanced-pwm-increase";
     internal const string FirmwareHash = "8537E9FD55B7B35504D8D87B0191ACC4391B67365B3FE72F6E1029A424C9E707";
     internal const string HandleControlHash = "AF1A1648AA2FD19DB79352AA31DFAB50B93CD49DF84CE959A7C9AC3FBD01EFE9";
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
-    internal const string PlanText = """
-        SO6120 supervised Silent PWM increase: PREPARATION ONLY
+    private static string FormatPlan(PerformancePreset profile, string name, string powerInstruction) => $"""
+        SO6120 supervised {profile} PWM increase: PREPARATION ONLY
         Exact RZ09-0581 / 1532:02E0 / SKU RZ09-05819EN4 / BIOS 4.01 / reported EC 1.04.
-        Keep AC connected, awake, idle/light desktop, and peripherals unchanged.
-        Select Silent + Automatic, then use OpenBlade's normal Shut down command.
+        {powerInstruction}
+        Keep the laptop awake, idle/light desktop, and peripherals unchanged.
+        Select {profile} + Automatic, then use OpenBlade's normal Shut down command.
         Service, Tray and Session Agent must all be stopped before acquisition.
         Live run requires an elevated interactive console and a new absolute run directory.
         Metadata inspection opens HID descriptor handles without sending feature reports.
@@ -45,7 +47,7 @@ internal static class So6120SilentPwmCommand
         If stalled/unresolved, keep the console/process alive, leave OpenBlade stopped,
         stop workload and seek supervised reconciliation. Physical recovery is unverified.
         This is a small-increase experiment, not fan stop or proof of universal ownership.
-        Usage: OpenBlade.Capture validate-so6120-silent-pwm-increase --run-root <new absolute directory>
+        Usage: OpenBlade.Capture {name} --run-root <new absolute directory>
         """;
 
     internal static bool TryParse(IReadOnlyList<string> args, out string? runRoot)
@@ -63,13 +65,27 @@ internal static class So6120SilentPwmCommand
         { return false; }
     }
 
-    internal static async Task<int> RunAsync(IReadOnlyList<string> args, TextReader input, TextWriter output,
-        Func<string, TextReader, TextWriter, Task<int>>? live = null)
+    internal static Task<int> RunAsync(IReadOnlyList<string> args, TextReader input, TextWriter output,
+        Func<string, TextReader, TextWriter, Task<int>>? live = null) =>
+        RunAsync(PerformancePreset.Silent, args, input, output, live);
+
+    internal static Task<int> RunBalancedAsync(IReadOnlyList<string> args, TextReader input, TextWriter output,
+        Func<string, TextReader, TextWriter, Task<int>>? live = null) =>
+        RunAsync(PerformancePreset.Balanced, args, input, output, live);
+
+    private static async Task<int> RunAsync(PerformancePreset profile, IReadOnlyList<string> args,
+        TextReader input, TextWriter output, Func<string, TextReader, TextWriter, Task<int>>? live)
     {
+        bool balanced = profile == PerformancePreset.Balanced;
+        string planText = balanced
+            ? FormatPlan(profile, BalancedName,
+                "Keep the operator-reported USB-C power connected. Windows checks external power only.")
+            : FormatPlan(profile, Name, "Keep AC connected.");
         if (!TryParse(args, out string? root))
-        { await output.WriteLineAsync(PlanText); return 1; }
-        if (root is null) { await output.WriteLineAsync(PlanText); return 0; }
-        return await (live ?? RunWindowsAsync)(root, input, output);
+        { await output.WriteLineAsync(planText); return 1; }
+        if (root is null) { await output.WriteLineAsync(planText); return 0; }
+        return live is not null ? await live(root, input, output)
+            : await RunWindowsAsync(profile, planText, root, input, output);
     }
 
     internal static async Task<bool> ConfirmAsync(TextReader input, TextWriter output,
@@ -89,7 +105,8 @@ internal static class So6120SilentPwmCommand
         catch (OperationCanceledException) { return false; }
     }
 
-    private static async Task<int> RunWindowsAsync(string root, TextReader input, TextWriter output)
+    private static async Task<int> RunWindowsAsync(PerformancePreset profile, string planText,
+        string root, TextReader input, TextWriter output)
     {
         if (!OperatingSystem.IsWindows() || Console.IsInputRedirected || Console.IsOutputRedirected
             || !Environment.UserInteractive)
@@ -97,7 +114,7 @@ internal static class So6120SilentPwmCommand
         using var windowsIdentity = WindowsIdentity.GetCurrent();
         if (!new WindowsPrincipal(windowsIdentity).IsInRole(WindowsBuiltInRole.Administrator))
         { await output.WriteLineAsync("Start the reviewed runner in an elevated console; it never requests UAC itself."); return 2; }
-        await output.WriteLineAsync(PlanText);
+        await output.WriteLineAsync(planText);
         if (Directory.Exists(root) || File.Exists(root))
         { await output.WriteLineAsync("Run root already exists; never reuse an attempt directory."); return 2; }
         _ = So6120DirectDutyJournal.ValidateRunRoot(root);
@@ -114,6 +131,8 @@ internal static class So6120SilentPwmCommand
         using var registration = ConsoleCancellation.Register(() => ConsoleCancellation.Cancel(cancellation));
         var clock = TimeProvider.System;
         var run = Guid.NewGuid();
+        string capturedProfile = profile.ToString();
+        string? requestedPowerSource = profile == PerformancePreset.Balanced ? "USB-C" : null;
         So6120WindowsDutyAcquisition? acquisition = null;
         So6120DirectDutySession? session = null;
         So6120NativeAcquisitionException? acquisitionFailure = null;
@@ -130,6 +149,8 @@ internal static class So6120SilentPwmCommand
             {
                 phase = "created",
                 run,
+                capturedProfile,
+                requestedPowerSource,
                 utc = DateTimeOffset.UtcNow,
                 runnerSha256 = HashFile(Assembly.GetExecutingAssembly().Location),
                 FirmwareHash,
@@ -146,6 +167,9 @@ internal static class So6120SilentPwmCommand
             {
                 phase = "scopeAndLimits",
                 run,
+                capturedProfile,
+                requestedPowerSource,
+                windowsAcLineStatus = metadata.Session.AcLineStatus,
                 scope,
                 proposedResidualAcceptance = residuals.ToString(),
                 handleControlOnly = HandleControlHash,
@@ -157,16 +181,29 @@ internal static class So6120SilentPwmCommand
             Record(decision);
             await output.WriteLineAsync(JsonSerializer.Serialize(decision, Json));
             await output.WriteLineAsync("The prior handle test qualified visibility only. No action-trigger challenge or hardware lock is claimed. Accept the unobserved-writer risk and the unresolved-stall procedure for this one attempt.");
+            if (profile == PerformancePreset.Balanced)
+            { await output.WriteLineAsync("Your BASELINE approval also confirms that USB-C power is connected and will remain unchanged during this attempt."); }
             string baselineToken = $"BASELINE {run:N}";
             if (!await ConfirmAsync(input, output, baselineToken, cancellation.Token))
             { Record(new { phase = "declinedBeforeAcquisition" }); throw new TrialDeclinedException(); }
             cancellation.Token.ThrowIfCancellationRequested();
+            string? operatorReportedPowerSource = requestedPowerSource;
             long stamp = clock.GetTimestamp();
             var challenge = new So6120CallerChallengeContext(new(run, metadata.Stamp.ConsoleSession, clock, stamp),
                 Guid.NewGuid(), Hash(decision), scope, scope, residuals, residuals);
-            var consent = new { run, baselineToken, stamp, scope, acceptedResiduals = residuals.ToString(), procedure = PlanText };
+            var consent = new
+            {
+                run,
+                baselineToken,
+                stamp,
+                scope,
+                capturedProfile,
+                operatorReportedPowerSource,
+                acceptedResiduals = residuals.ToString(),
+                procedure = planText,
+            };
             Record(new { phase = "baselineConsent", consent });
-            var identity = new So6120JournalIdentity(new(run, Hash(scope), FirmwareHash, Guid.NewGuid()), PerformancePreset.Silent, null, null,
+            var identity = new So6120JournalIdentity(new(run, Hash(scope), FirmwareHash, Guid.NewGuid()), profile, null, null,
                 Hash(scope), FirmwareHash, Guid.NewGuid(), Hash(consent),
                 $"run-start={DateTimeOffset.UtcNow:O};uptime-ms={Environment.TickCount64}");
             using var temperatures = new SafeWindowsFanTemperatureSource();
@@ -191,15 +228,18 @@ internal static class So6120SilentPwmCommand
                 if (progressBuffer.Count == 16) { throw new InvalidOperationException("Trial progress bound exceeded."); }
                 progressBuffer.Add(progress);
             });
-            var plan = session.PrepareSilentIncrease(hooks, cancellation.Token);
-            Record(new { phase = "derivedPlan", plan });
-            await output.WriteLineAsync(JsonSerializer.Serialize(plan, new JsonSerializerOptions { WriteIndented = true }));
-            await output.WriteLineAsync("Approve these captured raw PWM targets and the exact Auto restoration once. Any changed baseline refuses entry; the runner will not derive new targets.");
+            var plan = profile == PerformancePreset.Balanced
+                ? session.PrepareBalancedIncrease(hooks, cancellation.Token)
+                : session.PrepareSilentIncrease(hooks, cancellation.Token);
+            var derivedPlan = new { phase = "derivedPlan", capturedProfile, operatorReportedPowerSource, plan };
+            Record(derivedPlan);
+            await output.WriteLineAsync(JsonSerializer.Serialize(derivedPlan, new JsonSerializerOptions { WriteIndented = true }));
+            await output.WriteLineAsync($"Approve these captured raw PWM targets and the exact {capturedProfile}/Auto restoration once. Any changed baseline refuses entry; the runner will not derive new targets.");
             string writeToken = $"APPLY {plan.PlanId:N} {plan.PlanSha256}";
             if (!await ConfirmAsync(input, output, writeToken, cancellation.Token))
             { Record(new { phase = "declinedAfterBaseline", plan.PlanId }); declinedAfterConfirmedBaseline = true; throw new TrialDeclinedException(); }
             cancellation.Token.ThrowIfCancellationRequested();
-            var writeConsent = new { writeToken, run, plan.PlanId, plan.PlanSha256, stamp = clock.GetTimestamp() };
+            var writeConsent = new { writeToken, run, capturedProfile, plan.PlanId, plan.PlanSha256, stamp = clock.GetTimestamp() };
             Record(new { phase = "writeConsent", writeConsent });
             var result = session.ExecuteApproved(plan, new So6120SilentTrialApproval(plan.PlanId,
                 plan.PlanSha256, Guid.NewGuid(), Hash(writeConsent)), cancellation.Token);

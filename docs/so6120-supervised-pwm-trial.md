@@ -1,4 +1,4 @@
-# Supervised SO6120 Silent PWM increase
+# Supervised SO6120 PWM increase
 
 This developer-only runner prepares one small, attended direct-duty increase
 on the exact RZ09-0581. Its implementation and simulated tests do not establish
@@ -7,18 +7,34 @@ live mailbox trial is included in preparing or reviewing this runner.
 
 ## Fixed experiment
 
-The initial profile is **Silent with Automatic fans**, on AC, awake and idle
-or doing light desktop work. Admission pins the experimental host SKU,
+Two fixed entry commands admit **Balanced with Automatic fans** or **Silent
+with Automatic fans**, on external power, awake and idle or doing light
+desktop work. Use the Balanced command for the USB-C Balanced experiment;
+keep the current profile rather than switching to Silent. Admission pins the experimental host SKU,
 BIOS 4.01, reported EC 1.04, exact control HID collection and the already
 running reviewed InpOut driver. Reported EC version is not a measurement of
 the running image's hash. The offline EC image hash remains source provenance.
+
+Balanced is selector `00`; Battery Balanced is a different selector, `06`,
+and is not admitted by either fixed experiment. The recovered
+[FE writer](so6120-ec-pwm-writers.md#fixed-address-stores) checks active state
+and F0.6 without a Silent-only or connector predicate. This supports reusing
+the test sequence, not a claim that USB-C fan stop has been observed.
+Balanced's factory Automatic table also contains a zero-target stage.
+
+USB-C is operator-reported context. Fresh Windows AC-line status confirms
+external power; it does not distinguish USB-C from a full-power adapter or
+detect every swap between powered connectors. Keep the power connection
+unchanged throughout the attempt. The runner adds no power-classification
+HID command and makes no claim of independent connector verification.
 
 Capture actual PWM, cycle, selector, manual flag, override, staging, policy
 and active-state bytes through ordered bank-zero A0 reads. The readings are
 not an atomic snapshot. Derive **actual PWM + 4 raw counts on each fan**;
 both need at least four counts of headroom. Do not clamp or silently
 recalculate the targets. Display the complete baseline and derived plan,
-then require approval of that exact in-memory plan. Fresh entry observations
+then require approval of that exact in-memory plan and captured profile. The
+fixed command, journal identity and baseline selector must agree. Fresh entry observations
 must still match its controls and actual PWM. A change refuses the plan.
 
 There is no preparatory RPM command, zero target or decrease. A natural
@@ -33,8 +49,9 @@ again and explicitly return to Auto. Handback restores the captured normal
 selector directly, confirms Manual00, then restores only the changed owned
 override and original staging bytes. It does not restore sampled actual PWM
 over firmware Automatic, send a paired HID Auto command or detour through
-Balanced. The handback implementation remains generic for normal profiles;
-the first live experiment alone is restricted to Silent.
+another profile. Balanced restores `00/00` directly; Silent restores `05/00`.
+The handback implementation remains generic for normal profiles; these two
+fixed experiments do not admit the other normal selectors for live entry.
 
 F0.6 affects another gated policy contributor as well as permitting FE.
 Exposure therefore begins at possible F0.6 publication, before direct entry,
@@ -125,16 +142,19 @@ hardware:
 
 ```powershell
 OpenBlade.Capture.exe validate-so6120-silent-pwm-increase --plan
+OpenBlade.Capture.exe validate-so6120-balanced-pwm-increase --plan
 ```
 
 Only after separate attended execution approval, run the reviewed binary
 in an elevated interactive console with a new, absolute, local directory:
 
 ```powershell
-OpenBlade.Capture.exe validate-so6120-silent-pwm-increase --run-root C:\path\to\new-attempt
+OpenBlade.Capture.exe validate-so6120-balanced-pwm-increase --run-root C:\path\to\new-attempt
 ```
 
 There is no `--yes`, raw-register, raw-value, zero-duty or resume switch.
+The Silent command remains available for a separately approved Silent trial;
+neither command accepts a replacement profile or recalculates a changed plan.
 The separately prepared local test bundle records complete payload hashes;
 its launcher pins that manifest, refuses a changed payload and observes the
 actual child exit. That local artifact is not part of the repository or an
@@ -150,7 +170,7 @@ record and confirmed native handle release. A safely restored cancellation
 is reported separately from a successful trial.
 
 After verified restoration, close and actual process exit, manually reopen
-OpenBlade through its normal shortcut. Confirm Silent/Automatic and unchanged
+OpenBlade through its normal shortcut. Confirm the captured profile/Automatic and unchanged
 saved intent through normal status. If any completion, close or restoration
 result is unresolved, leave it stopped and review the retained evidence.
 Normal Auto may naturally report zero RPM; that alone does not invalidate

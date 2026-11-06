@@ -29,7 +29,7 @@ internal sealed class So6120AttendedBaselineConsent(So6120JournalIdentity identi
     internal void Consume()
     {
         if (Interlocked.Exchange(ref consumed, 1) != 0) { throw new InvalidOperationException("Baseline consent is already consumed."); }
-        if (!So6120DutyWorkflow.ValidOwner(Identity.Owner) || Identity.CapturedProfile != PerformancePreset.Silent
+        if (!So6120DutyWorkflow.ValidOwner(Identity.Owner) || !So6120SilentTrialPlan.SupportsProfile(Identity.CapturedProfile)
             || Identity.RequestedDuty1 is not null || Identity.RequestedDuty2 is not null
             || Identity.ConsentId == Guid.Empty || !IsDigest(Identity.ConsentSha256)
             || !IsDigest(Identity.DeviceEvidenceSha256) || !IsDigest(Identity.FirmwareEvidenceSha256)

@@ -9,14 +9,17 @@ namespace OpenBlade.Capture.Tests;
 
 public sealed class So6120WindowsDirectDutyPlatformTests
 {
-    [Fact]
-    public void OwnsOneHandleAndPinUntilAnExplicitClose()
+    [Theory]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Balanced)]
+    public void OwnsOneHandleAndPinUntilAnExplicitClose(PerformancePreset profile)
     {
-        var fixture = new Fixture();
+        var fixture = new Fixture(profile);
         using var acquired = So6120WindowsDirectDutyPlatform.Acquire(fixture.Consent, fixture.Native);
         Assert.Equal(new[] { "reserve", "owners", "metadata", "owners", "metadata", "pin", "latch", "owners", "metadata", "owners", "open" },
             fixture.Native.Calls);
         Assert.Equal(So6120HandoffOrigin.AlreadyStopped, acquired.Binding.Handoff.Origin);
+        Assert.Equal(profile, acquired.Binding.Identity.CapturedProfile);
         Assert.Null(acquired.Binding.Handoff.OriginalExit);
         Assert.Equal(So6120NativeCloseState.NotAttempted, acquired.CloseEvidence.State);
         Assert.Throws<InvalidOperationException>(() => So6120WindowsDirectDutyPlatform.Acquire(fixture.Consent, fixture.Native));
@@ -26,6 +29,14 @@ public sealed class So6120WindowsDirectDutyPlatformTests
         Assert.Equal(1, fixture.Native.Calls.Count(call => call == "close"));
         Assert.Equal(So6120NativeCloseState.Closed, acquired.CloseEvidence.State);
         Assert.Equal(0, acquired.CloseEvidence.NativeError);
+    }
+
+    [Fact]
+    public void UnsupportedProfileCannotAcquireAnAttendedBaseline()
+    {
+        var fixture = new Fixture(PerformancePreset.Performance);
+        Assert.Throws<InvalidOperationException>(() => So6120WindowsDirectDutyPlatform.Acquire(fixture.Consent, fixture.Native));
+        Assert.Empty(fixture.Native.Calls);
     }
 
     [Fact]
@@ -185,11 +196,11 @@ public sealed class So6120WindowsDirectDutyPlatformTests
         public FakeNative Native { get; }
         public So6120ChallengeScope CurrentScope { get; set; }
 
-        public Fixture()
+        public Fixture(PerformancePreset profile = PerformancePreset.Silent)
         {
             var clock = new FixedClock();
             var owner = new DirectDutyOwner(Guid.NewGuid(), "fixture device", "fixture firmware", Guid.NewGuid());
-            var identity = new So6120JournalIdentity(owner, PerformancePreset.Silent, null, null,
+            var identity = new So6120JournalIdentity(owner, profile, null, null,
                 new('A', 64), new('B', 64), Guid.NewGuid(), new('C', 64), "fixture boot");
             var stamp = new So6120AdmissionStamp(owner.OperationId, 1, clock, clock.GetTimestamp());
             const string path = @"\\?\hid#vid_1532&pid_02e0&mi_03&col01#fixture";

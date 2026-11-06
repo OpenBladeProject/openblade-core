@@ -1,4 +1,5 @@
 using OpenBlade.Capture;
+using OpenBlade.Contracts;
 using Fixture = OpenBlade.Capture.Tests.So6120DirectDutySessionTests.Fixture;
 
 namespace OpenBlade.Capture.Tests;
@@ -31,16 +32,20 @@ public sealed class So6120SilentTrialTests
     }
 
     [Theory]
-    [InlineData(0, 0)]
-    [InlineData(50, 60)]
-    public void ExactApprovedTrialIncreasesAndRestoresWithoutInferringRpm(int actual1, int actual2)
+    [InlineData(PerformancePreset.Silent, 5, 0, 0)]
+    [InlineData(PerformancePreset.Silent, 5, 50, 60)]
+    [InlineData(PerformancePreset.Balanced, 0, 50, 60)]
+    public void ExactApprovedTrialIncreasesAndRestoresWithoutInferringRpm(
+        PerformancePreset profile, byte selector, int actual1, int actual2)
     {
-        using var f = new Fixture(preparing: true);
+        using var f = new Fixture(profile, selector, preparing: true);
         f.Port.Mapped[0xB0] = (byte)actual1;
         f.Port.Mapped[0xB1] = (byte)actual2;
         using (var session = f.Create())
         {
-            var plan = session.PrepareSilentIncrease(Hooks());
+            var plan = profile == PerformancePreset.Balanced
+                ? session.PrepareBalancedIncrease(Hooks())
+                : session.PrepareSilentIncrease(Hooks());
             var result = session.ExecuteApproved(plan, Approve(plan));
             Assert.True(result.Success);
             Assert.False(result.NoSettingWritePublished);
@@ -49,7 +54,10 @@ public sealed class So6120SilentTrialTests
             Assert.Equal(actual2 + 4, result.ObservationAfterDwell.Snapshot.Actual2);
             Assert.Equal((byte)0, result.ObservationAfterDwell.Snapshot.Tach1);
             Assert.Equal((byte)0, result.ObservationAfterDwell.Snapshot.Tach2);
-            Assert.Equal((byte)5, f.Port.Mapped[0x1A]);
+            Assert.Equal(selector, f.Port.Mapped[0x1A]);
+            Assert.Equal((byte)0, f.Port.Mapped[0x36]);
+            Assert.Equal(new byte[] { 0xFE, selector }, f.Port.Writes.Where(w => w.Register == 0x1A).Select(w => w.Value));
+            Assert.DoesNotContain(f.Port.Writes, w => w.Register is 0x36 or 0x0A);
             Assert.Equal((byte)0x11, f.Port.Mapped[0xF0]);
             Assert.Equal((byte)10, f.Port.Mapped[0xB8]);
             Assert.Equal((byte)20, f.Port.Mapped[0xB9]);
@@ -58,9 +66,41 @@ public sealed class So6120SilentTrialTests
         }
         var inspected = So6120DirectDutyJournal.Inspect(f.Root);
         Assert.True(inspected.Complete);
+        Assert.False(inspected.Corrupt);
+        Assert.Equal(profile, inspected.Identity!.CapturedProfile);
         Assert.True(inspected.PermissionRestoredConfirmed);
         Assert.InRange(inspected.Records, 1, So6120DirectDutyJournal.MaximumRecords);
         Assert.InRange(new FileInfo(Path.Combine(f.Root, So6120DirectDutyJournal.FileName)).Length, 1, So6120DirectDutyJournal.MaximumFileBytes);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Balanced, 5)]
+    [InlineData(PerformancePreset.Balanced, 2)]
+    [InlineData(PerformancePreset.Silent, 0)]
+    public void DifferentProfileCannotProduceAPlan(PerformancePreset profile, byte observedSelector)
+    {
+        using var f = new Fixture(profile, observedSelector, preparing: true);
+        using var session = f.Create();
+        Assert.Throws<InvalidOperationException>(() => profile == PerformancePreset.Balanced
+            ? session.PrepareBalancedIncrease(Hooks())
+            : session.PrepareSilentIncrease(Hooks()));
+        Assert.All(f.Port.Publications, publication => Assert.Equal(0xA0, publication.Command));
+        Assert.Empty(f.Port.Writes);
+    }
+
+    [Fact]
+    public void BalancedProfileDriftAfterApprovalCannotPublishASettingWrite()
+    {
+        using var f = new Fixture(PerformancePreset.Balanced, 0, preparing: true);
+        using var session = f.Create();
+        var plan = session.PrepareBalancedIncrease(Hooks());
+        f.Port.Mapped[0x1A] = 5;
+        var result = session.ExecuteApproved(plan, Approve(plan));
+        Assert.Equal(So6120DutyFailure.BaselineRejected, result.Entry!.Failure);
+        Assert.True(result.NoSettingWritePublished);
+        Assert.Null(result.Restoration);
+        Assert.All(f.Port.Publications, publication => Assert.Equal(0xA0, publication.Command));
+        Assert.Empty(f.Port.Writes);
     }
 
     [Theory]

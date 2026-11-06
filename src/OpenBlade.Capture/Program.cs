@@ -1676,6 +1676,11 @@ if (args.Length > 0 && args[0] == So6120SilentPwmCommand.Name)
     return await So6120SilentPwmCommand.RunAsync(args[1..], Console.In, Console.Out);
 }
 
+if (args.Length > 0 && args[0] == So6120SilentPwmCommand.BalancedName)
+{
+    return await So6120SilentPwmCommand.RunBalancedAsync(args[1..], Console.In, Console.Out);
+}
+
 if (args.Length > 0 && args[0] is SilentLowFanValidationCommand.StopName
     or SilentLowFanValidationCommand.LowestName or SilentLowFanValidationCommand.ZeroName)
 {

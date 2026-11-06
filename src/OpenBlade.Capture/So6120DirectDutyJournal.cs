@@ -243,7 +243,7 @@ internal sealed class So6120DirectDutyJournal : IDisposable
             case Kind.ApprovedPlan:
                 ApprovedPlan approved = Payload<ApprovedPlan>(record);
                 Require(next.FormatVersion == 2 && next.Phase == Phase.Preparing && next.Plan is null && next.Transfer is null
-                    && approved.Plan is not null && approved.Approval is not null && approved.Plan.Valid()
+                    && approved.Plan is not null && approved.Approval is not null && approved.Plan.Valid(next.Identity.CapturedProfile)
                     && approved.Plan.Baseline == next.Observation && approved.Plan.Baseline.Owner == owner
                     && approved.Approval.Matches(approved.Plan));
                 next.Plan = approved.Plan;
@@ -495,7 +495,7 @@ internal sealed class So6120DirectDutyJournal : IDisposable
             && identity.Owner.DeviceIdentity.Length <= 256 && identity.Owner.FirmwareEvidence.Length <= 256
             && So6120DutyWorkflow.TrySelector(identity.CapturedProfile, out _) && identity.ConsentId != Guid.Empty
             && identity.RequestedDuty1.HasValue == identity.RequestedDuty2.HasValue
-            && (identity.RequestedDuty1.HasValue || identity.CapturedProfile == PerformancePreset.Silent)
+            && (identity.RequestedDuty1.HasValue || So6120SilentTrialPlan.SupportsProfile(identity.CapturedProfile))
             && !string.IsNullOrWhiteSpace(identity.BootIdentity) && identity.BootIdentity.Length <= 256
             && IsDigest(identity.DeviceEvidenceSha256) && IsDigest(identity.FirmwareEvidenceSha256) && IsDigest(identity.ConsentSha256));
     }

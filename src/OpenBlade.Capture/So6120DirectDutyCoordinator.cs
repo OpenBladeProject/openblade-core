@@ -161,8 +161,9 @@ internal sealed class So6120DirectDutyCoordinator(So6120DirectDutyOperation oper
         int maxPwmObservations = 8, CancellationToken cancellationToken = default) =>
         EnterCore(capturedProfile, requested1, requested2, maxPwmObservations, cancellationToken, null);
 
-    internal So6120DutyResult EnterPrepared(So6120DutyObservation approvedBaseline, byte requested1, byte requested2) =>
-        EnterCore(PerformancePreset.Silent, requested1, requested2, 2, CancellationToken.None, approvedBaseline);
+    internal So6120DutyResult EnterPrepared(PerformancePreset capturedProfile, So6120DutyObservation approvedBaseline,
+        byte requested1, byte requested2) =>
+        EnterCore(capturedProfile, requested1, requested2, 2, CancellationToken.None, approvedBaseline);
 
     private So6120DutyResult EnterCore(PerformancePreset capturedProfile, byte requested1, byte requested2,
         int maxPwmObservations, CancellationToken cancellationToken, So6120DutyObservation? approvedBaseline)

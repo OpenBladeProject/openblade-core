@@ -19,8 +19,23 @@ public sealed class So6120SilentPwmCommandTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BalancedDefaultAndPlanAreOfflineAndDescribePowerScope(bool explicitPlan)
+    {
+        using var output = new StringWriter();
+        int result = await So6120SilentPwmCommand.RunBalancedAsync(explicitPlan ? ["--plan"] : [],
+            new StringReader(""), output, (_, _, _) => throw new InvalidOperationException("Live path invoked"));
+        Assert.Equal(0, result);
+        Assert.Contains("Balanced + Automatic", output.ToString());
+        Assert.Contains("operator-reported USB-C", output.ToString());
+        Assert.Contains("Windows checks external power only", output.ToString());
+    }
+
+    [Theory]
     [InlineData("--rpm", "1500")]
     [InlineData("--register", "B8")]
+    [InlineData("--profile", "Silent")]
     [InlineData("--run-root", "relative")]
     [InlineData("--yes", "true")]
     [InlineData("--run-root", @"\\server\share\attempt")]
@@ -31,6 +46,8 @@ public sealed class So6120SilentPwmCommandTests
     {
         bool called = false;
         Assert.Equal(1, await So6120SilentPwmCommand.RunAsync([option, value], new StringReader(""),
+            new StringWriter(), (_, _, _) => { called = true; return Task.FromResult(9); }));
+        Assert.Equal(1, await So6120SilentPwmCommand.RunBalancedAsync([option, value], new StringReader(""),
             new StringWriter(), (_, _, _) => { called = true; return Task.FromResult(9); }));
         Assert.False(called);
     }
