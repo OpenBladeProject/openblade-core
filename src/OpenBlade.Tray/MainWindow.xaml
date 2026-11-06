@@ -346,6 +346,12 @@
                 <Setter Property="FontSize"
                         Value="{ThemeResource ExpanderChevronGlyphSize}" />
             </Style>
+            <Style x:Key="LabsFeatureIconStyle"
+                   TargetType="FontIcon"
+                   BasedOn="{StaticResource AppToolbarIconStyle}">
+                <Setter Property="Glyph" Value="&#xF196;" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
             <Style x:Key="DestructiveButtonStyle"
                    TargetType="Button"
                    BasedOn="{StaticResource DefaultButtonStyle}">
@@ -1877,8 +1883,16 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
-                                            <TextBlock Text="{CustomResource MainWindow_TextBlockImportPreset.Text}"
-                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <Grid ColumnSpacing="6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <FontIcon Style="{StaticResource LabsFeatureIconStyle}" />
+                                                <TextBlock Grid.Column="1" Text="{CustomResource MainWindow_TextBlockImportPreset.Text}"
+                                                           Style="{StaticResource CardTitleStyle}"
+                                                           TextWrapping="Wrap" />
+                                            </Grid>
                                             <TextBlock Text="{CustomResource MainWindow_TextBlockLoadAnOpenBladeOrRazerChromaKeyboard.Text}"
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
@@ -1902,8 +1916,16 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3"
                                                 VerticalAlignment="Center">
-                                        <TextBlock Text="{CustomResource MainWindow_TextBlockSixtyHzLighting.Text}"
-                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <Grid ColumnSpacing="6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <FontIcon Style="{StaticResource LabsFeatureIconStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{CustomResource MainWindow_TextBlockSixtyHzLighting.Text}"
+                                                       Style="{StaticResource CardTitleStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </Grid>
                                         <TextBlock Text="{x:Bind LightingRefreshRateAvailabilityText, Mode=OneWay}"
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    TextWrapping="Wrap" />
@@ -4136,9 +4158,18 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
-                                            <TextBlock x:Name="LabsImportGuideTitle" Text="{CustomResource MainWindow_LabsImportTitle.Text}"
-                                                       Style="{StaticResource CardTitleStyle}"
-                                                       TextWrapping="Wrap" />
+                                            <Grid ColumnSpacing="6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <FontIcon Style="{StaticResource LabsFeatureIconStyle}" />
+                                                <TextBlock x:Name="LabsImportGuideTitle"
+                                                           Grid.Column="1"
+                                                           Text="{CustomResource MainWindow_LabsImportTitle.Text}"
+                                                           Style="{StaticResource CardTitleStyle}"
+                                                           TextWrapping="Wrap" />
+                                            </Grid>
                                             <TextBlock x:Name="LabsImportGuideDescription" Text="{CustomResource MainWindow_LabsImportDescription.Text}"
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
@@ -4165,9 +4196,18 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
-                                            <TextBlock x:Name="LabsLightingRateGuideTitle" Text="{CustomResource MainWindow_TextBlockSixtyHzLighting.Text}"
-                                                       Style="{StaticResource CardTitleStyle}"
-                                                       TextWrapping="Wrap" />
+                                            <Grid ColumnSpacing="6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <FontIcon Style="{StaticResource LabsFeatureIconStyle}" />
+                                                <TextBlock x:Name="LabsLightingRateGuideTitle"
+                                                           Grid.Column="1"
+                                                           Text="{CustomResource MainWindow_TextBlockSixtyHzLighting.Text}"
+                                                           Style="{StaticResource CardTitleStyle}"
+                                                           TextWrapping="Wrap" />
+                                            </Grid>
                                             <TextBlock x:Name="LabsLightingRateGuideDescription" Text="{CustomResource MainWindow_LabsLightingRateDescription.Text}"
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />

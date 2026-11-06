@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Open Labs from the sidebar to learn about experimental features and jump to their controls. Import presets and adjust 60 Hz lighting on the Lighting page. ([#885](https://github.com/OpenBladeProject/openblade-core/pull/885))
+- Open Labs from the sidebar to learn about experimental features and jump to their controls. A beaker marks the feature names in Labs and on the Lighting page. ([#885](https://github.com/OpenBladeProject/openblade-core/pull/885))
 
 ## [0.51.0-nightly.107] - 2026-11-05
 

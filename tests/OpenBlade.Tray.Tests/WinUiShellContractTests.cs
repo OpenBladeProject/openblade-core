@@ -1443,6 +1443,25 @@ public sealed class WinUiShellContractTests
         Assert.Equal("OnOpenLabsLightingControl", Attribute(importGuide, "Click"));
         Assert.Equal("OnOpenLabsLightingControl", Attribute(rateGuide, "Click"));
         Assert.DoesNotContain(page.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
+
+        XElement iconStyle = KeyedElement(document, "Style", "LabsFeatureIconStyle");
+        Assert.Equal("{StaticResource AppToolbarIconStyle}", Attribute(iconStyle, "BasedOn"));
+        XElement glyph = Assert.Single(iconStyle.Elements(), element => Attribute(element, "Property") == "Glyph");
+        XElement navigationIcon = Assert.Single(navigation.Descendants(), element => element.Name.LocalName == "FontIcon");
+        Assert.Equal(Attribute(navigationIcon, "Glyph"), Attribute(glyph, "Value"));
+
+        XElement[] featureTitles = [importCard, rateCard, importGuide, rateGuide];
+        foreach (XElement card in featureTitles)
+        {
+            XElement icon = Assert.Single(card.Descendants(), element =>
+                element.Name.LocalName == "FontIcon"
+                && Attribute(element, "Style") == "{StaticResource LabsFeatureIconStyle}");
+            XElement title = Assert.Single(icon.Parent!.Elements(), element =>
+                element.Name.LocalName == "TextBlock");
+            Assert.Equal("{StaticResource CardTitleStyle}", Attribute(title, "Style"));
+            Assert.Equal("Wrap", Attribute(title, "TextWrapping"));
+            Assert.Equal("1", Attribute(title, "Grid.Column"));
+        }
         Assert.Null(Attribute(importCard, "Visibility"));
         Assert.Null(Attribute(rateCard, "Visibility"));
 
