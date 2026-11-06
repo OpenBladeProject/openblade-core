@@ -6,6 +6,40 @@ experiment subsequently confirmed zero PWM and consecutive zero-tach readings
 after a confirmed spinning baseline. It does not enable a production fan-stop
 switch.
 
+## Stop/Auto control implementation
+
+The tray now has a separate **Stop fans** control backed by a typed service
+request. Turning it off requests Auto. The service owns the state machine and
+serializes it with ordinary thermal operations. Saved profile fan settings are
+kept separate from temporary Stop ownership. The UI waits for authoritative
+service state and shows recovery uncertainty separately from those saved settings.
+
+The production backend remains unavailable. Exact RZ09-0581 trial evidence can
+show the disabled control, but it does not grant native access or enable
+`SupportsFanStop`. The old Battery Saver HID/RPM stop path remains separate and
+disabled. No Capture executable, InpOut driver, or developer attempt marker is
+loaded by this control. Service IPC version 74 adds the typed request; this
+requires a coordinated product update rather than a tray-only deployment.
+
+The shared controller has an injected backend contract for fresh identity,
+controller, power, session, ownership and transaction admission. Stop also
+requires the admitted entry scope and temperatures. Owned Auto cleanup is
+independent of the Stop entry profile and temperature limits, while retaining
+its own fresh safety admission. Ambiguity latches recovery and blocks further
+commands; an ordinary mapped A0 read is not an independent recovery mechanism.
+
+The injectable backend must supply a command-free startup ownership verdict
+before ordinary service controls can run. Unknown or unresolved ownership
+starts the controller in recovery. This is an interface requirement; a live
+durable inspection or guardian implementation is still missing. The permanently
+unavailable production backend has never admitted a direct operation.
+Later observation of direct Stop without owned entry also requires recovery;
+it neither establishes ownership nor authorizes an Auto command.
+
+The [crash-recovery investigation](so6120-fan-stop-crash-recovery.md) describes
+the surviving-owner design and the remaining backend/recovery admission.
+Simulated controller and UI tests do not establish that missing live boundary.
+
 ## Attended result on 2026-11-06
 
 Run `8b5cc38d-0864-4f0a-9ad7-1eb68b1254c7` used the reviewed candidate
