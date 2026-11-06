@@ -2878,4 +2878,31 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
     <value>[!! Úsé Razer drívér tó chángé F1–F12 béhávíór. Windows hóók kééps thé défáúlt Fn shórtcúts. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="GlobalSearchBox.PlaceholderText" xml:space="preserve">
+    <value>[!! Séárch págés ánd séttíngs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Séárch págés ánd séttíngs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Séárch págés ánd séttíngs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_NoResults" xml:space="preserve">
+    <value>[!! Nó mátchíng págés ór séttíngs ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_BatteryAliases" xml:space="preserve">
+    <value>[!! chárgé límít báttérý héálth ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_SnapTapAliases" xml:space="preserve">
+    <value>[!! Á/D SÓCD cóúntér-stráfé ~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_UpdateChannelAliases" xml:space="preserve">
+    <value>[!! níghtlý stáblé réléásés ~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_BrightnessAliases" xml:space="preserve">
+    <value>[!! scréén bácklíght ~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_FansAliases" xml:space="preserve">
+    <value>[!! cóólíng RPM ~~~~ !!]</value>
+  </data>
 </root>

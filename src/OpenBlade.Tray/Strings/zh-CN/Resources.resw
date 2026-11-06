@@ -2861,4 +2861,31 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
     <value>使用 Razer 驱动可更改 F1–F12 的默认行为。Windows 钩子保留默认 Fn 快捷键。</value>
   </data>
+  <data name="GlobalSearchBox.PlaceholderText" xml:space="preserve">
+    <value>搜索页面和设置</value>
+  </data>
+  <data name="GlobalSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>搜索页面和设置</value>
+  </data>
+  <data name="GlobalSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>搜索页面和设置</value>
+  </data>
+  <data name="GlobalSearch_NoResults" xml:space="preserve">
+    <value>未找到匹配的页面或设置</value>
+  </data>
+  <data name="GlobalSearch_BatteryAliases" xml:space="preserve">
+    <value>充电上限 电池健康度</value>
+  </data>
+  <data name="GlobalSearch_SnapTapAliases" xml:space="preserve">
+    <value>A/D SOCD 急停 反向急停</value>
+  </data>
+  <data name="GlobalSearch_UpdateChannelAliases" xml:space="preserve">
+    <value>Nightly 每夜构建 稳定版 发行版</value>
+  </data>
+  <data name="GlobalSearch_BrightnessAliases" xml:space="preserve">
+    <value>屏幕背光</value>
+  </data>
+  <data name="GlobalSearch_FansAliases" xml:space="preserve">
+    <value>散热 转速 RPM</value>
+  </data>
 </root>

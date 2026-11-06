@@ -2878,4 +2878,31 @@ OpenBlade did not retry any stop request.</value>
   <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
     <value>Use Razer driver to change F1–F12 behavior. Windows hook keeps the default Fn shortcuts.</value>
   </data>
+  <data name="GlobalSearchBox.PlaceholderText" xml:space="preserve">
+    <value>Search pages and settings</value>
+  </data>
+  <data name="GlobalSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Search pages and settings</value>
+  </data>
+  <data name="GlobalSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Search pages and settings</value>
+  </data>
+  <data name="GlobalSearch_NoResults" xml:space="preserve">
+    <value>No matching pages or settings</value>
+  </data>
+  <data name="GlobalSearch_BatteryAliases" xml:space="preserve">
+    <value>charge limit battery health</value>
+  </data>
+  <data name="GlobalSearch_SnapTapAliases" xml:space="preserve">
+    <value>A/D SOCD counter-strafe</value>
+  </data>
+  <data name="GlobalSearch_UpdateChannelAliases" xml:space="preserve">
+    <value>nightly stable releases</value>
+  </data>
+  <data name="GlobalSearch_BrightnessAliases" xml:space="preserve">
+    <value>screen backlight</value>
+  </data>
+  <data name="GlobalSearch_FansAliases" xml:space="preserve">
+    <value>cooling RPM</value>
+  </data>
 </root>
