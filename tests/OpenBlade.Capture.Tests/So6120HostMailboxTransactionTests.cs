@@ -251,10 +251,90 @@ public sealed class So6120HostMailboxTransactionTests
     }
 
     [Fact]
+    public void DelayedConfirmationCanCompleteWithinTheOriginalBudget()
+    {
+        var clock = new Clock();
+        var fake = new Fake();
+        fake.AfterPublish = () =>
+        {
+            if (fake.Commands[^1] == 0xA0) { fake.Mailbox[0x93] = 0xA0; }
+        };
+        // A rapid 128-poll burst exhausted in under 247 ms on the attended run.
+        // Model a separate confirmation taking longer, with no new publication.
+        var result = Core(fake, clock, timeout: TimeSpan.FromSeconds(2), afterWait: () =>
+        {
+            if (clock.GetElapsedTime(0) >= TimeSpan.FromMilliseconds(300)) { fake.Mailbox[0x93] = 0; }
+        }).WriteAndConfirm(So6120MailboxRegister.StagedDuty2, 64);
+        Assert.True(result.WriteConfirmed);
+        Assert.Equal((byte)64, result.Value);
+        Assert.Equal(2, result.CommandsCompleted);
+        Assert.Equal(new byte[] { 0xA1, 0xA0 }, fake.Commands);
+        Assert.InRange(clock.GetElapsedTime(0), TimeSpan.FromMilliseconds(300), TimeSpan.FromSeconds(2));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1917)]
+    public void PendingConfirmationStopsAtTheSharedDeadline(int writeElapsedMilliseconds)
+    {
+        var clock = new Clock();
+        var fake = new Fake();
+        fake.AfterPublish = () =>
+        {
+            if (fake.Commands[^1] == 0xA1) { clock.Ticks = TimeSpan.FromMilliseconds(writeElapsedMilliseconds).Ticks; }
+            else { fake.Mailbox[0x93] = 0xA0; }
+        };
+        var result = Core(fake, clock, timeout: TimeSpan.FromSeconds(2))
+            .WriteAndConfirm(So6120MailboxRegister.StagedDuty2, 64);
+        Assert.Equal(So6120MailboxFailure.Deadline, result.Failure);
+        Assert.Equal(TimeSpan.FromSeconds(2), clock.GetElapsedTime(0));
+        Assert.True(result.WriteHandlerCompleted);
+        Assert.Equal(1, result.CommandsCompleted);
+        Assert.False(result.WriteConfirmed);
+        Assert.Equal(new byte[] { 0xA1, 0xA0 }, fake.Commands);
+        Assert.Equal((byte)0xA0, fake.Mailbox[0x93]);
+        Assert.Equal("poll", result.Operations[^1].Phase);
+        Assert.InRange(result.Operations.Count(item => item.Phase == "poll"
+            && item.Operation == So6120PortOperation.ReadData), 2, 129);
+    }
+
+    [Theory]
+    [InlineData((int)So6120MailboxFailure.CommandChanged)]
+    [InlineData((int)So6120MailboxFailure.PortFailure)]
+    [InlineData((int)So6120MailboxFailure.Cancelled)]
+    public void PendingCommandStopsOnReplacementPortErrorOrCancellation(int failure)
+    {
+        var expected = (So6120MailboxFailure)failure;
+        using var cancellation = new CancellationTokenSource();
+        var clock = new Clock();
+        var fake = new Fake { LeaveCommandBusy = true };
+        int waits = 0;
+        var result = Core(fake, clock, afterWait: () =>
+        {
+            waits++;
+            switch (expected)
+            {
+                case So6120MailboxFailure.CommandChanged: fake.Mailbox[0x93] = 0xD0; break;
+                case So6120MailboxFailure.PortFailure: fake.FailAt = fake.Calls + 2; break;
+                case So6120MailboxFailure.Cancelled: cancellation.Cancel(); break;
+            }
+        }).WriteAndConfirm(So6120MailboxRegister.StagedDuty2, 64, cancellation.Token);
+        Assert.Equal(expected, result.Failure);
+        Assert.Equal(1, waits);
+        Assert.Equal(1, result.CommandsPossiblySubmitted);
+        Assert.Equal(0, result.CommandsCompleted);
+        Assert.Equal(new byte[] { 0xA1 }, fake.Commands);
+        Assert.Equal("poll", result.Operations[^1].Phase);
+    }
+
+    [Fact]
     public void PollLimitDoesNotClearCommandDespiteEarlySuccessStatus()
     {
         var fake = new Fake { LeaveCommandBusy = true };
-        var result = Core(fake, maxPolls: 3).Read(So6120MailboxRegister.Selector);
+        // Keep the clock still to exercise the hard count bound independently
+        // of elapsed time and ensure no recovery command is published.
+        var result = new So6120HostMailboxTransaction(fake, fake, new Clock(), maxPolls: 3,
+            waitForNextPoll: (_, _) => { }).Read(So6120MailboxRegister.Selector);
         Assert.Equal(So6120MailboxFailure.PollLimit, result.Failure);
         Assert.Equal(0, result.CommandsCompleted);
         Assert.Equal(3, result.Operations.Count(item => item.Phase == "poll" && item.Operation == So6120PortOperation.ReadData));
@@ -313,8 +393,16 @@ public sealed class So6120HostMailboxTransactionTests
         Assert.Single(fake.Commands);
     }
 
-    private static So6120HostMailboxTransaction Core(Fake fake, TimeProvider? time = null, int maxPolls = 128) =>
-        new(fake, fake, time, maxPolls: maxPolls);
+    private static So6120HostMailboxTransaction Core(Fake fake, Clock? clock = null, TimeSpan? timeout = null,
+        Action? afterWait = null)
+    {
+        clock ??= new Clock();
+        return new(fake, fake, clock, timeout, waitForNextPoll: (milliseconds, _) =>
+        {
+            clock.Ticks += TimeSpan.FromMilliseconds(milliseconds).Ticks;
+            afterWait?.Invoke();
+        });
+    }
 
     private sealed class Clock : TimeProvider
     {

@@ -141,7 +141,8 @@ internal static class So6120WindowsDirectDutyPlatform
         So6120OwnedInpOutHandle? handle = null;
         try
         {
-            So6120SupervisedMetadata stopped = ReadMetadata(consent, native, cancellationToken);
+            So6120SupervisedMetadata stopped = ReadMetadata(consent.Identity.Owner.OperationId, consent.ConsoleSession,
+                consent.Clock, native, cancellationToken);
             if (stopped.OpenBladeStatus != ServiceControllerStatus.Stopped || stopped.OpenBladeWriterPids.Count != 0)
             { throw new InvalidOperationException("OpenBlade must already have completed its attended shutdown."); }
             var handoff = new So6120OpenBladeHandoff(stopped.Stamp with { Timestamp = consent.Clock.GetTimestamp() },
@@ -210,18 +211,18 @@ internal static class So6120WindowsDirectDutyPlatform
         }
     }
 
-    private static So6120SupervisedMetadata ReadMetadata(So6120AttendedBaselineConsent consent, ISo6120WindowsDutyNative native,
-        CancellationToken cancellationToken)
+    internal static So6120SupervisedMetadata ReadMetadata(Guid runId, uint? consoleSession, TimeProvider clock,
+        ISo6120WindowsDutyNative native, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        long started = consent.Clock.GetTimestamp();
+        long started = clock.GetTimestamp();
         native.VerifyUserOwnersStopped();
         cancellationToken.ThrowIfCancellationRequested();
-        So6120MetadataRead read = native.Capture(consent.Identity.Owner.OperationId, consent.Clock);
+        So6120MetadataRead read = native.Capture(runId, clock);
         if (read.Metadata is not { } metadata)
         { throw new InvalidOperationException($"SO6120 metadata unavailable ({read.FailedStage}, {read.Error}, {read.HostFailure?.HostIdentityFailure?.Reason})."); }
-        if (metadata.Stamp.RunId != consent.Identity.Owner.OperationId || metadata.Stamp.ConsoleSession != consent.ConsoleSession
-            || !ReferenceEquals(metadata.Stamp.Clock, consent.Clock) || metadata.StartedTimestamp < started)
+        if (metadata.Stamp.RunId != runId || (consoleSession.HasValue && metadata.Stamp.ConsoleSession != consoleSession.Value)
+            || !ReferenceEquals(metadata.Stamp.Clock, clock) || metadata.StartedTimestamp < started)
         { throw new InvalidOperationException("SO6120 metadata does not bind to the current attended run."); }
         return metadata;
     }
@@ -233,7 +234,8 @@ internal static class So6120WindowsDirectDutyPlatform
 
         internal So6120SessionEvidence Capture(CancellationToken cancellationToken)
         {
-            So6120SupervisedMetadata metadata = ReadMetadata(consent, native, cancellationToken);
+            So6120SupervisedMetadata metadata = ReadMetadata(consent.Identity.Owner.OperationId, consent.ConsoleSession,
+                consent.Clock, native, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             var challenge = consent.Challenge with { ObservedScope = consent.ObserveCurrentScope(metadata) };
             cancellationToken.ThrowIfCancellationRequested();
@@ -244,7 +246,7 @@ internal static class So6120WindowsDirectDutyPlatform
         }
     }
 
-    private sealed class WindowsNative : ISo6120WindowsDutyNative
+    internal sealed class WindowsNative : ISo6120WindowsDutyNative
     {
         public IDisposable ReserveRun()
         {
@@ -259,9 +261,11 @@ internal static class So6120WindowsDirectDutyPlatform
             catch { semaphore.Dispose(); throw; }
         }
 
-        public IDisposable CreateAttemptLatch(Guid runId, DateTimeOffset startedUtc) => So6120WindowsDirectDutyPlatform.CreateAttemptLatch(
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "OpenBlade", "DeveloperValidation", "SO6120"), runId, startedUtc);
+        internal static string AttemptDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "OpenBlade", "DeveloperValidation", "SO6120");
+
+        public IDisposable CreateAttemptLatch(Guid runId, DateTimeOffset startedUtc) =>
+            So6120WindowsDirectDutyPlatform.CreateAttemptLatch(AttemptDirectory, runId, startedUtc);
 
         public So6120MetadataRead Capture(Guid runId, TimeProvider clock) => So6120WindowsSupervisedMetadata.Capture(runId, clock);
 

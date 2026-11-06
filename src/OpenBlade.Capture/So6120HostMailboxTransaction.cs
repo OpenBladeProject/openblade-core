@@ -84,11 +84,13 @@ internal sealed class So6120HostMailboxTransaction
     private readonly TimeProvider time;
     private readonly TimeSpan timeout;
     private readonly int maxPolls;
+    private readonly int pollIntervalMilliseconds;
+    private readonly Action<int, CancellationToken> waitForNextPoll;
     private int started;
 
     public So6120HostMailboxTransaction(ISo6120MailboxBytePort port,
         ISo6120MailboxPrerequisites prerequisites, TimeProvider? time = null,
-        TimeSpan? timeout = null, int maxPolls = 128)
+        TimeSpan? timeout = null, int maxPolls = 128, Action<int, CancellationToken>? waitForNextPoll = null)
     {
         this.port = port ?? throw new ArgumentNullException(nameof(port));
         this.prerequisites = prerequisites ?? throw new ArgumentNullException(nameof(prerequisites));
@@ -98,6 +100,8 @@ internal sealed class So6120HostMailboxTransaction
         { throw new ArgumentOutOfRangeException(nameof(timeout)); }
         if (maxPolls is < 1 or > 1000) { throw new ArgumentOutOfRangeException(nameof(maxPolls)); }
         this.maxPolls = maxPolls;
+        pollIntervalMilliseconds = (int)Math.Ceiling(this.timeout.TotalMilliseconds / maxPolls);
+        this.waitForNextPoll = waitForNextPoll ?? ((milliseconds, token) => token.WaitHandle.WaitOne(milliseconds));
     }
 
     public So6120MailboxResult Read(So6120MailboxRegister register, CancellationToken cancellationToken = default) =>
@@ -140,10 +144,12 @@ internal sealed class So6120HostMailboxTransaction
             new(failure, failure == So6120MailboxFailure.None ? observed : null,
                 possiblySubmitted, completed, writeCompleted, observations.AsReadOnly());
 
-        void Check()
+        TimeSpan Check()
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (time.GetElapsedTime(start) >= timeout) { throw new Stopped(So6120MailboxFailure.Deadline); }
+            TimeSpan remaining = timeout - time.GetElapsedTime(start);
+            if (remaining <= TimeSpan.Zero) { throw new Stopped(So6120MailboxFailure.Deadline); }
+            return remaining;
         }
 
         So6120PortResult Operation(So6120PortOperation operation, byte? argument, bool publishes = false)
@@ -239,6 +245,12 @@ internal sealed class So6120HostMailboxTransaction
                 byte command = ReadMailbox(0x93);
                 if (command == 0) { finished = true; break; }
                 if (command != request.Command) { throw new Stopped(So6120MailboxFailure.CommandChanged); }
+                // Budget the bounded poll ledger across the transaction deadline.
+                // A1 and its independent A0 share the same start time. Pace even
+                // the last pending poll so the cap cannot end a burst early.
+                int waitMilliseconds = (int)Math.Ceiling(Math.Min(pollIntervalMilliseconds, Check().TotalMilliseconds));
+                waitForNextPoll(waitMilliseconds, cancellationToken);
+                Check();
             }
             if (!finished) { throw new Stopped(So6120MailboxFailure.PollLimit); }
             phase = "completion";

@@ -3,7 +3,10 @@
 This developer-only runner prepares one small, attended direct-duty increase
 on the exact RZ09-0581. Its implementation and simulated tests do not establish
 physical PWM control, fan stop, mailbox exclusion or physical recovery. No
-live mailbox trial is included in preparing or reviewing this runner.
+live mailbox trial is included in preparing or reviewing this runner. The
+[first attended Balanced attempt](so6120-balanced-pwm-trial.md) separately
+reached staging writes but stopped before direct PWM entry; restoration
+remains unresolved for that attempt.
 
 ## Fixed experiment
 
