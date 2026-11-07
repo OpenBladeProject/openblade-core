@@ -73,13 +73,13 @@ public sealed partial class MainWindow
         Row(keyboardLighting, "MainWindow_TextBlockWindowsDynamicLighting.Text", "WindowsDynamicLightingToggle",
             exposed: () => ViewModel.IsWindowsDynamicLightingAvailable);
         Row(keyboardLighting, "MainWindow_TextBlockEffect.Text", "LightingEffectPicker",
-            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls);
+            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls && ViewModel.IsKeyboardEffectSelectionVisible);
         Row(keyboardLighting, "MainWindow_TextBlockBrightness.Text", "DashboardLightingBrightnessSlider",
             exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls && ViewModel.LightingShowsBrightness);
         Row(keyboardLighting, "MainWindow_TextBlockImportPreset.Text", "ImportKeyboardLightingPresetCard",
-            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls && ViewModel.LabFeaturesEnabled);
+            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls && ViewModel.ShowLightingEffectLabControls);
         Row(keyboardLighting, "MainWindow_TextBlockSixtyHzLighting.Text", "LightingRefreshRateCard",
-            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls && ViewModel.LabFeaturesEnabled);
+            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls && ViewModel.ShowLightingEffectLabControls);
         Section(lighting, LightingCard, "MainWindow_TextBlockLaptopLogo.Text", "LightingLogoSection",
             exposed: () => ViewModel.IsLogoLightingVisible && IsSearchLightingSectionShown(PageSectionKind.LightingLogo));
         GlobalSearchResult lightingPower = Section(lighting, LightingCard, "MainWindow_TextBlockSwitchOffLighting.Text",

@@ -5,6 +5,29 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class WinUiShellContractTests
 {
+    [Theory]
+    [InlineData("LightingEffectPicker", "IsKeyboardEffectSelectionVisible")]
+    [InlineData("ImportKeyboardLightingPresetCard", "ShowLightingEffectLabControls")]
+    [InlineData("LightingRefreshRateCard", "ShowLightingEffectLabControls")]
+    public void GlobalSearchLightingRowsShareTheirCanonicalVisibilityGate(string rowId, string predicate)
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement row = document.Descendants().Single(element => element.Name.LocalName == "Border"
+            && element.Attributes().Any(attribute => attribute.Name.LocalName is "Name" or "CardReorder.CardId"
+                && attribute.Value == rowId));
+        Assert.Equal("{x:Bind " + predicate + ", Mode=OneWay}", row.Attribute("Visibility")?.Value);
+
+        // Before a canonical template is realized, search cannot consult the
+        // live row. Its explicit predicate must enforce the same capability gate.
+        string catalog = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.GlobalSearchCatalog.cs");
+        int start = catalog.IndexOf("\"" + rowId + "\"", StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        int end = catalog.IndexOf(");", start, StringComparison.Ordinal);
+        Assert.True(end > start);
+        Assert.Contains("ViewModel.ShowOpenBladeKeyboardLightingControls && ViewModel." + predicate,
+            catalog[start..end], StringComparison.Ordinal);
+    }
+
     [Fact]
     public void WindowsBatteryReportLivesOutsideCollectionControlsAndKeepsDetailsOptional()
     {
