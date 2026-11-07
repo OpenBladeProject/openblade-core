@@ -52,18 +52,18 @@ the exact original vector and prior context. Returning to AC, restarting
 Service or pressing Refresh does not rebind that ownership or authorize
 restoration.
 
-Recovery currently has a narrower read-only post-boot path: an explicit
-observation may settle `PossibleSubmission` or an interrupted, partially
-verified restoration only after a changed trusted boot, a new Service instance,
-two exact-original curve readbacks, unchanged power peers, no power ownership
-journal, fresh admission and durable archive/compare-and-swap settlement.
-It does not admit ordinary `OwnedVerified` or `Blocked` journals. Supporting
-those states needs a separately reviewed read-only settlement contract and
-failure tests; this is an unresolved recovery limitation. Preserve their
-journals and diagnostics for that review rather than deleting ownership
-evidence. The [validation session's Status](cpu-voltage-session.md) retains
+An explicit read-only post-boot observation may settle a well-formed
+`PossibleSubmission`, `OwnedVerified` or `Blocked` journal only after a changed
+trusted boot, a new Service instance, two exact-original curve readbacks,
+unchanged power peers, no power ownership journal, fresh admission and durable
+archive/compare-and-swap settlement.
+Settlement preserves the original context and exact archived journal; it records
+only that the originals were observed after boot, not that an earlier restoration
+succeeded. Same-boot continuity changes, malformed journals, uncertain workers,
+drift or failed archival/CAS retain the block without reviving write authority.
+The [validation session's Status](cpu-voltage-session.md) retains
 available job evidence, but its `CleanupReadOnly` action only releases verified
-resources and refuses known pending CPU recovery; it cannot clear this state.
+resources and refuses known pending CPU recovery; it does not settle CPU journals.
 
 The validation profile permits only −1 and zero, at most twelve forward and
 twelve reverse setters and one nonrenewable 600-second budget. Normal builds

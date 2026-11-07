@@ -13,14 +13,19 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ExplicitPostBootObservationArchivesExactPendingBytesAndClosesOnlyVerifiedOriginal(bool interruptedRestoration)
+    [InlineData("pending")]
+    [InlineData("restoring")]
+    [InlineData("owned")]
+    [InlineData("restoring-start")]
+    [InlineData("blocked")]
+    [InlineData("blocked-pending")]
+    [InlineData("blocked-restoring")]
+    public async Task ExplicitPostBootObservationArchivesExactOwnershipBytesAndClosesOnlyVerifiedOriginal(string journalKind)
     {
-        var fixture = await RecoveryFixture.CreateAsync(JournalPath, interruptedRestoration: interruptedRestoration);
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath, journalKind: journalKind);
         byte[] previous = await File.ReadAllBytesAsync(JournalPath);
         string previousHash = (await fixture.Store.LoadAsync(default)).Sha256!;
-        if (!interruptedRestoration)
+        if (journalKind is "pending" or "blocked" or "blocked-pending" or "blocked-restoring")
         {
             Assert.Equal(ControlOperationStatus.Blocked, (await fixture.Controller.MutateLiveAsync(new(null, new(true, -2)), false, _ => true, default)).Status);
             Assert.Equal(ControlOperationStatus.Blocked, (await fixture.Controller.MutateLiveAsync(null, true, _ => true, default)).Status);
@@ -52,10 +57,13 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
         Assert.NotEqual(fixture.Prior.Context.RuntimeLifetime, receipt.Observation.Context.RuntimeLifetime);
     }
 
-    [Fact]
-    public async Task SameBootInterruptedRestorationKeepsOrdinaryOwnedObservation()
+    [Theory]
+    [InlineData("restoring")]
+    [InlineData("owned")]
+    [InlineData("restoring-start")]
+    public async Task SameBootVerifiedOwnershipKeepsOrdinaryOwnedObservation(string journalKind)
     {
-        var fixture = await RecoveryFixture.CreateAsync(JournalPath, interruptedRestoration: true);
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath, journalKind: journalKind);
         CpuLiveRuntimeLifetime? lifetime = null;
         await fixture.Controller.ObserveLiveAsync(_ =>
         { lifetime = fixture.Controller.CaptureLiveRuntimeLifetime(); return false; }, default);
@@ -77,15 +85,53 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
         Assert.Empty(Directory.GetDirectories(directory, "live-co.json.post-boot-*"));
     }
 
+    [Fact]
+    public async Task PersistedContinuityBlockSettlesOnlyAfterNewBootAndServiceWithExactOriginals()
+    {
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath, journalKind: "owned");
+        fixture.Boot = fixture.Prior.Context.BootSequence;
+        fixture.Curve.Context = fixture.Curve.Context with { BootSequence = fixture.Boot };
+        fixture.Power.Context = fixture.Power.Context with { BootSequence = fixture.Boot };
+
+        var rejected = await fixture.Controller.ObserveLiveAsync(_ => true, default);
+
+        Assert.True(rejected.RestorePending); Assert.Equal(CpuTuningRecoveryState.Blocked, rejected.LiveRecovery!.State);
+        var blocked = (await fixture.Store.LoadAsync(default)).Journal!;
+        Assert.Equal(CpuLiveCurveOwnershipState.Blocked, blocked.State);
+        Assert.Equal(fixture.Prior.Context, blocked.Context);
+        Assert.Equal(fixture.Prior.OriginalBaseline, blocked.OriginalBaseline);
+        Assert.Equal(1, fixture.Curve.Reads); Assert.Equal(0, fixture.Power.Reads);
+        byte[] blockedBytes = await File.ReadAllBytesAsync(JournalPath);
+        var stillBlocked = await fixture.Controller.ObserveLiveAsync(_ => true, default);
+        Assert.True(stillBlocked.RestorePending); Assert.Equal(CpuTuningRecoveryState.Blocked, stillBlocked.LiveRecovery!.State);
+        Assert.Equal(blockedBytes, await File.ReadAllBytesAsync(JournalPath));
+        Assert.Equal(1, fixture.Curve.Reads); Assert.Equal(0, fixture.Power.Reads);
+        Assert.Empty(Directory.GetDirectories(directory, "live-co.json.post-boot-*"));
+
+        fixture.Boot = new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 43);
+        fixture.Curve.Context = fixture.Curve.Context with { BootSequence = fixture.Boot };
+        fixture.Power.Context = fixture.Power.Context with { BootSequence = fixture.Boot };
+        fixture.RestartController();
+        var recovered = await fixture.Controller.ObserveLiveAsync(_ => true, default);
+
+        Assert.False(recovered.RestorePending); Assert.Equal(CpuTuningRecoveryState.None, recovered.LiveRecovery!.State);
+        Assert.False(recovered.Live.CanWrite);
+        Assert.Equal(3, fixture.Curve.Reads); Assert.Equal(2, fixture.Power.Reads);
+        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Curve.Admissions);
+        var settled = (await fixture.Store.LoadAsync(default)).Journal!;
+        Assert.Equal(CpuLiveCurveOwnershipState.Restored, settled.State);
+        Assert.Equal(blocked.Context, settled.Context);
+        Assert.Equal(blocked.OriginalBaseline, settled.OriginalBaseline);
+        string archive = Assert.Single(Directory.GetDirectories(directory, "live-co.json.post-boot-*"));
+        Assert.Equal(blockedBytes, await File.ReadAllBytesAsync(Path.Combine(archive, "original.json")));
+    }
+
     [Theory]
     [InlineData("Prepared", 0, false)]
-    [InlineData("OwnedVerified", 10, false)]
-    [InlineData("OwnedVerified", 12, true)]
-    [InlineData("Blocked", 10, true)]
     [InlineData("Restored", 0, true)]
     public async Task PostBootReceiptRejectsOtherOwnershipStates(string state, int completed, bool restoring)
     {
-        var fixture = await RecoveryFixture.CreateAsync(JournalPath, interruptedRestoration: true);
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath, journalKind: "restoring");
         var prior = fixture.Prior.Progress(Enum.Parse<CpuLiveCurveOwnershipState>(state), completed, restoring);
         Assert.True(prior.IsWellFormed); Assert.False(prior.IsPostBootReconciliationCandidate);
         var loaded = await fixture.Store.LoadAsync(default);
@@ -98,21 +144,32 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     }
 
     [Theory]
-    [InlineData("same-boot", false)]
-    [InlineData("unknown-boot", false)]
-    [InlineData("disabled", false)]
-    [InlineData("worker", false)]
-    [InlineData("admission", false)]
-    [InlineData("ppt-restored", false)]
-    [InlineData("ppt-invalid", false)]
-    [InlineData("malformed", false)]
-    [InlineData("unknown-boot", true)]
-    [InlineData("worker", true)]
-    [InlineData("admission", true)]
-    [InlineData("ppt-restored", true)]
-    public async Task PostBootReconciliationRejectsUnsafeEntryBeforeNativeReads(string fault, bool interruptedRestoration)
+    [InlineData("same-boot", "pending")]
+    [InlineData("unknown-boot", "pending")]
+    [InlineData("disabled", "pending")]
+    [InlineData("worker", "pending")]
+    [InlineData("admission", "pending")]
+    [InlineData("ppt-restored", "pending")]
+    [InlineData("ppt-invalid", "pending")]
+    [InlineData("malformed", "pending")]
+    [InlineData("unknown-boot", "restoring")]
+    [InlineData("worker", "restoring")]
+    [InlineData("admission", "restoring")]
+    [InlineData("ppt-restored", "restoring")]
+    [InlineData("unknown-boot", "owned")]
+    [InlineData("worker", "owned")]
+    [InlineData("ppt-restored", "owned")]
+    [InlineData("same-boot", "blocked")]
+    [InlineData("unknown-boot", "blocked")]
+    [InlineData("disabled", "blocked")]
+    [InlineData("worker", "blocked")]
+    [InlineData("admission", "blocked")]
+    [InlineData("ppt-restored", "blocked")]
+    [InlineData("ppt-invalid", "blocked")]
+    [InlineData("malformed", "blocked")]
+    public async Task PostBootReconciliationRejectsUnsafeEntryBeforeNativeReads(string fault, string journalKind)
     {
-        var fixture = await RecoveryFixture.CreateAsync(JournalPath, enabled: fault != "disabled", interruptedRestoration: interruptedRestoration);
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath, enabled: fault != "disabled", journalKind: journalKind);
         if (fault == "same-boot") { fixture.Boot = fixture.Prior.Context.BootSequence; }
         if (fault == "unknown-boot") { fixture.Boot = null; }
         if (fault == "worker") { fixture.Idle = false; }
@@ -129,21 +186,33 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     }
 
     [Theory]
-    [InlineData("curve-drift", false)]
-    [InlineData("curve-incomplete", false)]
-    [InlineData("curve-context", false)]
-    [InlineData("power-unavailable", false)]
-    [InlineData("peer-drift", false)]
-    [InlineData("boot-drift", false)]
-    [InlineData("runtime-drift", false)]
-    [InlineData("cancel", false)]
-    [InlineData("curve-drift", true)]
-    [InlineData("curve-context", true)]
-    [InlineData("peer-drift", true)]
-    [InlineData("boot-drift", true)]
-    public async Task PostBootReconciliationNeverSettlesUnprovenReadings(string fault, bool interruptedRestoration)
+    [InlineData("curve-drift", "pending")]
+    [InlineData("curve-incomplete", "pending")]
+    [InlineData("curve-context", "pending")]
+    [InlineData("power-unavailable", "pending")]
+    [InlineData("peer-drift", "pending")]
+    [InlineData("boot-drift", "pending")]
+    [InlineData("runtime-drift", "pending")]
+    [InlineData("cancel", "pending")]
+    [InlineData("curve-drift", "restoring")]
+    [InlineData("curve-context", "restoring")]
+    [InlineData("peer-drift", "restoring")]
+    [InlineData("boot-drift", "restoring")]
+    [InlineData("curve-drift", "owned")]
+    [InlineData("curve-incomplete", "owned")]
+    [InlineData("curve-context", "owned")]
+    [InlineData("peer-drift", "owned")]
+    [InlineData("curve-drift", "blocked")]
+    [InlineData("curve-incomplete", "blocked")]
+    [InlineData("curve-context", "blocked")]
+    [InlineData("power-unavailable", "blocked")]
+    [InlineData("peer-drift", "blocked")]
+    [InlineData("boot-drift", "blocked")]
+    [InlineData("runtime-drift", "blocked")]
+    [InlineData("cancel", "blocked")]
+    public async Task PostBootReconciliationNeverSettlesUnprovenReadings(string fault, string journalKind)
     {
-        var fixture = await RecoveryFixture.CreateAsync(JournalPath, interruptedRestoration: interruptedRestoration);
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath, journalKind: journalKind);
         using var cancellation = new CancellationTokenSource();
         if (fault == "curve-drift") { fixture.Curve.Values[0] = new(0, 0); }
         if (fault == "curve-incomplete") { fixture.Curve.Values = fixture.Curve.Values[..^1]; }
@@ -167,11 +236,13 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CurveDriftDuringPeerValidationCannotSettleEarlierOriginalObservation(bool interruptedRestoration)
+    [InlineData("pending")]
+    [InlineData("restoring")]
+    [InlineData("owned")]
+    [InlineData("blocked")]
+    public async Task CurveDriftDuringPeerValidationCannotSettleEarlierOriginalObservation(string journalKind)
     {
-        var fixture = await RecoveryFixture.CreateAsync(JournalPath, interruptedRestoration: interruptedRestoration);
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath, journalKind: journalKind);
         var beforePower = fixture.Power.OnObserve!;
         fixture.Power.OnObserve = () =>
         {
@@ -194,15 +265,21 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     }
 
     [Theory]
-    [InlineData("cas", false)]
-    [InlineData("admission", false)]
-    [InlineData("persistence", false)]
-    [InlineData("cas", true)]
-    [InlineData("admission", true)]
-    [InlineData("persistence", true)]
-    public async Task PostBootAuditAttemptCannotClaimSettlementAfterFinalFailure(string fault, bool interruptedRestoration)
+    [InlineData("cas", "pending")]
+    [InlineData("admission", "pending")]
+    [InlineData("persistence", "pending")]
+    [InlineData("cas", "restoring")]
+    [InlineData("admission", "restoring")]
+    [InlineData("persistence", "restoring")]
+    [InlineData("cas", "owned")]
+    [InlineData("admission", "owned")]
+    [InlineData("persistence", "owned")]
+    [InlineData("cas", "blocked")]
+    [InlineData("admission", "blocked")]
+    [InlineData("persistence", "blocked")]
+    public async Task PostBootAuditAttemptCannotClaimSettlementAfterFinalFailure(string fault, string journalKind)
     {
-        var fixture = await RecoveryFixture.CreateAsync(JournalPath, interruptedRestoration: interruptedRestoration);
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath, journalKind: journalKind);
         var loaded = await fixture.Store.LoadAsync(default);
         byte[] previous = await File.ReadAllBytesAsync(JournalPath);
         var evidence = fixture.Evidence();
@@ -231,33 +308,90 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
         Assert.NotEqual(receipt.ProposedSha256, (await fixture.Store.LoadAsync(default)).Sha256);
     }
 
+    [Theory]
+    [InlineData("same-service", "owned")]
+    [InlineData("missing-lifetime", "owned")]
+    [InlineData("empty-service", "owned")]
+    [InlineData("same-service", "blocked")]
+    [InlineData("missing-lifetime", "blocked")]
+    [InlineData("empty-service", "blocked")]
+    public async Task PostBootOwnershipCannotSettleWithoutADistinctKnownServiceLifetime(string fault, string journalKind)
+    {
+        var fixture = await RecoveryFixture.CreateAsync(JournalPath, journalKind: journalKind);
+        CpuLiveRuntimeLifetime? lifetime = null;
+        await fixture.Controller.ObserveLiveAsync(_ =>
+        { lifetime = fixture.Controller.CaptureLiveRuntimeLifetime(); return false; }, default);
+        Assert.NotNull(lifetime);
+        var prior = fixture.Prior;
+        var untrusted = new CpuLiveCurveOwnershipJournal(prior.SchemaVersion, prior.TransactionId,
+            prior.Context with
+            {
+                RuntimeLifetime = fault switch
+                {
+                    "same-service" => lifetime,
+                    "empty-service" => lifetime with { ServiceInstance = Guid.Empty },
+                    _ => null,
+                },
+            }, prior.OriginalBaseline, prior.OperationBaseline, prior.Steps, prior.Expected,
+            prior.State, prior.CompletedSteps, prior.Restoring, prior.UpdatedAtUtc);
+        string hash = (await fixture.Store.TryWriteAsync((await fixture.Store.LoadAsync(default)).Sha256, untrusted, default))!;
+        byte[] previous = await File.ReadAllBytesAsync(JournalPath);
+
+        var result = await fixture.Controller.ObserveLiveAsync(_ => true, default);
+
+        Assert.True(result.RestorePending); Assert.Equal(CpuTuningRecoveryState.Blocked, result.LiveRecovery!.State);
+        Assert.Equal(0, fixture.Curve.Reads); Assert.Equal(0, fixture.Power.Reads);
+        Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Curve.Admissions);
+        Assert.Equal(previous, await File.ReadAllBytesAsync(JournalPath));
+        var evidence = fixture.Evidence();
+        if (fault == "same-service")
+        {
+            evidence = evidence with
+            {
+                Context = evidence.Context with { RuntimeLifetime = lifetime },
+                PowerContext = evidence.PowerContext with { RuntimeLifetime = lifetime },
+            };
+        }
+        Assert.False(evidence.Matches(untrusted));
+        Assert.Null(await fixture.Store.TryReconcileAfterBootAsync(hash, evidence, () => Task.FromResult(true), default));
+        Assert.Equal(previous, await File.ReadAllBytesAsync(JournalPath));
+        Assert.Empty(Directory.GetDirectories(directory, "live-co.json.post-boot-*"));
+    }
+
     private sealed class RecoveryFixture
     {
         internal readonly CpuLiveCurveOwnershipJournalStore Store;
         internal readonly CpuPowerTestData.MemoryStore PowerStore = new();
         internal readonly CpuLiveCurveTuningTransactionTests.FakeBackend Curve = new(new());
         internal readonly CpuPowerTestData.FakeBackend Power = new();
-        internal readonly CpuTuningController Controller;
+        internal CpuTuningController Controller { get; private set; } = null!;
         internal readonly CpuLiveCurveOwnershipJournal Prior;
         internal CpuLiveCurveBootSequence? Boot = new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 43);
         internal bool Idle = true, Admitted = true;
         internal int BootReads;
-        private RecoveryFixture(string path, bool enabled, bool interruptedRestoration)
+        private RecoveryFixture(string path, bool enabled, string journalKind)
         {
             Store = new(path);
             Prior = Create(CpuLiveCurveTuningTransactionTests.ContextFixture() with
             { RuntimeLifetime = new(Guid.NewGuid(), 0, 1) }).Progress(CpuLiveCurveOwnershipState.PossibleSubmission, 0, false);
-            if (interruptedRestoration)
+            if (journalKind is "restoring" or "restoring-start" or "blocked-restoring")
             {
                 var originals = CpuLiveCurveTuningTransactionTests.ValuesFixture().Select(core => new CpuLiveCoreOffset(core.PhysicalCoreId, -1)).ToArray();
                 var plan = Rz090528CpuLiveCurvePlan.CreateAllCore(new(0xFF55, 0x005D000B, 0xD50, originals), new(false, -1), (_, _) => true).Plan!;
                 Prior = CpuLiveCurveOwnershipJournal.Prepare(Prior.Context, plan)
                     .Progress(CpuLiveCurveOwnershipState.OwnedVerified, 12, false).ArmRestoration()
-                    .Progress(CpuLiveCurveOwnershipState.OwnedVerified, 10, true);
+                    .Progress(CpuLiveCurveOwnershipState.OwnedVerified, journalKind == "restoring-start" ? 12 : 10, true);
             }
-            Controller = new(new UnusedSource(), curveBackend: Curve, curveStore: Store, powerBackend: Power, powerStore: PowerStore,
-                readRecoveryBoot: enabled ? ReadBoot : null,
-                recoveryWorkerIdle: enabled ? () => Idle : null);
+            Prior = journalKind switch
+            {
+                "pending" or "restoring" or "restoring-start" => Prior,
+                "owned" => Prior.Progress(CpuLiveCurveOwnershipState.OwnedVerified, Prior.Steps.Count, false),
+                "blocked" => Prior.Progress(CpuLiveCurveOwnershipState.Blocked, Prior.Steps.Count, false),
+                "blocked-pending" => Prior.Progress(CpuLiveCurveOwnershipState.Blocked, 0, false),
+                "blocked-restoring" => Prior.Progress(CpuLiveCurveOwnershipState.Blocked, Prior.CompletedSteps, true),
+                _ => throw new ArgumentOutOfRangeException(nameof(journalKind)),
+            };
+            RestartController(enabled);
             Curve.Context = Prior.Context with { BootSequence = Boot! };
             Curve.Values = Prior.OriginalBaseline.ToArray();
             Curve.OnObserve = _ =>
@@ -269,9 +403,13 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
             Power.OnObserve = () => Power.Context = Power.Context with { RuntimeLifetime = Controller.CaptureLiveRuntimeLifetime() };
         }
         private CpuLiveCurveBootSequence? ReadBoot(CancellationToken token) { BootReads++; return Boot; }
-        internal static async Task<RecoveryFixture> CreateAsync(string path, bool enabled = true, bool interruptedRestoration = false)
+        internal void RestartController(bool enabled = true) =>
+            Controller = new(new UnusedSource(), curveBackend: Curve, curveStore: Store, powerBackend: Power, powerStore: PowerStore,
+                readRecoveryBoot: enabled ? ReadBoot : null,
+                recoveryWorkerIdle: enabled ? () => Idle : null);
+        internal static async Task<RecoveryFixture> CreateAsync(string path, bool enabled = true, string journalKind = "pending")
         {
-            var result = new RecoveryFixture(path, enabled, interruptedRestoration);
+            var result = new RecoveryFixture(path, enabled, journalKind);
             Assert.NotNull(await result.Store.TryWriteAsync(null, result.Prior, default)); return result;
         }
         internal CpuLiveCurvePostBootObservation Evidence()

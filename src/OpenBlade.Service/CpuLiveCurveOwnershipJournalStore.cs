@@ -82,10 +82,12 @@ internal sealed class CpuLiveCurveOwnershipJournal
     public bool Restoring { get; }
     public DateTimeOffset UpdatedAtUtc { get; }
 
+    // Eligibility only: a new trusted boot and exact-original observations may
+    // settle uncertain, verified or blocked ownership, including continuity loss.
+    // This never renews the old runtime context or grants restoration authority.
     internal bool IsPostBootReconciliationCandidate => IsWellFormed
-        && (State == CpuLiveCurveOwnershipState.PossibleSubmission
-            || State == CpuLiveCurveOwnershipState.OwnedVerified && Restoring
-                && CompletedSteps > 0 && CompletedSteps < Steps.Count);
+        && State is CpuLiveCurveOwnershipState.PossibleSubmission
+            or CpuLiveCurveOwnershipState.OwnedVerified or CpuLiveCurveOwnershipState.Blocked;
 
     internal bool IsWellFormed
     {
