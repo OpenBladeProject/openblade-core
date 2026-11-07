@@ -293,11 +293,44 @@ guardian tests. Their role is to prove ordering and failure handling; no
 additional physical stop repetition is needed to re-prove the unchanged
 command sequence.
 
-## Next live question, after review and separate approval
+## Attended launch blocker (2026-11-07 UTC)
+
+The authorized caller-loss trial has not reached hardware. Both the elevated
+prepared launcher and a standalone launch from Windows Start returned the
+guardian's isolation-refusal code before metadata or acquisition. The earlier
+restored attempt marker was archived and verified; neither launch created a new
+hardware attempt. These results do not exercise zero duty or Auto restoration.
+
+A separate probe linking only the native process launcher and isolation check
+confirmed the job-membership refusal. The native child escaped an immediate
+breakaway-enabled kill-on-close job but remained in an outer job. A local WMI
+probe, including explicit breakaway creation flags, also retained job membership.
+The named-job WMI provider returned no instances, leaving ownership unresolved.
+No driver, hardware backend or Capture session was linked into these probes.
+
+Windows [nested-job breakaway](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs)
+can stop at an ancestor that forbids it. Windows
+[Desktop Activity Moderator](https://learn.microsoft.com/en-us/windows/compatibility/desktop-activity-moderator)
+can also assign desktop applications to system-managed jobs after creation;
+that is a possible explanation, not an identification of the observed job.
+[QueryInformationJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-queryinformationjobobject)
+with a null handle describes only the immediate job. No kill-on-close flag is
+not proof that an unknown job controller cannot terminate the guardian.
+
+Keep the current admission gate while resolving this distinction. Before another
+hardware attempt, review a launch/admission contract that establishes the
+required caller independence, verify it with fake hardware, and retain detailed
+startup refusal evidence outside the disappearing owner console. Repeated UAC
+or alternate shell launches do not resolve the unknown job ownership. Any
+narrower caller-only guarantee must be explicit; it cannot be presented as
+survival of every host job or OS failure.
+
+## Remaining live question
 
 The one useful next attended test is **caller loss with a surviving owner at a
-confirmed zero checkpoint**. Freeze and review the guardian candidate; obtain
-explicit approval for that new sequence. Reuse exact RZ09-0581, the reported
+confirmed zero checkpoint**. The current test is authorized but blocked before
+acquisition. Preserve that authorization within its scope; review any changed
+launch contract before proceeding. Reuse exact RZ09-0581, the reported
 BIOS/EC pins, USB-C Balanced, original bounded trial, saved baseline and fresh
 admission. After the already reviewed zero observation, deliberately disconnect
 or terminate only a client with no hardware handle. Keep the owner and its
