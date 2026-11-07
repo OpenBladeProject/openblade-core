@@ -17,7 +17,10 @@ public sealed class LaptopControlRecoveryIdentityTests
     [Fact]
     public void EveryExperimentalFactoryCarriesItsSelectedIdentityWithoutDiscovery()
     {
-        Assert.Equal(5, ExperimentalBladeModels.All.Count);
+        Assert.Equal(
+            RazerBladeModelCatalog.All.Where(model => model.SupportBasis == BladeSupportBasis.SourceReviewed)
+                .Select(model => model.ModelNumber).Order(StringComparer.Ordinal),
+            ExperimentalBladeModels.All.Select(model => model.ModelNumber).Order(StringComparer.Ordinal));
         foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All)
         {
             var factory = new ExperimentalBladeFactory(model,

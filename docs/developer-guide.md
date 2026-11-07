@@ -56,7 +56,7 @@ OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
 - The protocol layer encodes validated 90-byte Razer reports. Service IPC
   exposes typed operations only; there is no raw-command endpoint.
 - Physically validated writes retain their captured command and confirmation
-  contracts. Experimental setters use separately reviewed, pinned upstream
+  contracts. Source-reviewed setters use separately reviewed, pinned upstream
   definitions with decoded baselines and independent readback. Both retain fresh
   exact-device and controller checks.
 - Temporary pipe, enumeration, or read failures preserve the last confirmed UI
@@ -75,23 +75,24 @@ BIOS version are optional diagnostic metadata: configuration variants are not
 rejected by SKU, and a missing, unreadable, or disagreeing BIOS version does not
 block admission. Hardware-specific backends retain their own device and driver
 checks. BIOS and EC versions remain evidence provenance; an untested BIOS is
-admitted and reported as model-scoped. Experimental HyperBoost on RZ09-0482 and
+admitted and reported as model-scoped. HyperBoost on RZ09-0482 and
 RZ09-0483 additionally checks its reviewed minimum MCU version before entry;
-see [experimental support](experimental-blade-support.md). Only an identity
+see [source-reviewed support](experimental-blade-support.md). Only an identity
 that explicitly pins exact versions checks SKU and BIOS version. Capture tools
 are kept outside the installed product, may pin an exact BIOS version for
 reproducibility, and raw captures are never production
 admission artifacts.
 
-Experimental profiles are recognized automatically by `ExperimentalBladeFactory`
+Source-reviewed supported profiles are recognized automatically by `ExperimentalBladeFactory`
 and use `ExperimentalBladePort` with their own bounded capabilities and source
 provenance. They have no Settings consent switch or release-channel gate.
 Pre-releases are the testing route, not a new hardware-admission rule. The
-[experimental support guide](experimental-blade-support.md) lists the five exact
-models and remaining physical validation. Each profile admits its own thermal,
-battery, and lighting commands. The Blade 16 (2023) also admits typed uniform
+[source-reviewed support guide](experimental-blade-support.md) lists the nine exact
+models and remaining physical validation. Each profile admits only its own reviewed commands; the
+[four added 2024/2025 models](source-reviewed-blade-models.md) have narrower initial
+thermal and battery controls and no admitted lighting or driver integration. The Blade 16 (2023) also admits typed uniform
 host-rendered frames; it does not use another model's key map or brightness
-driver. Experimental evidence stays separate from capture-backed support.
+driver. Source review and physical validation remain separate evidence statuses.
 
 When an admitted laptop's exact Razer driver stack is already present,
 OpenBlade can use it for the native Windows brightness flyout. RZ09-0581 and
@@ -206,7 +207,7 @@ by this verification record. The USB IDs in `device.json` identify the catalog
 model and do not establish successful HID verification.
 
 When the latest probe read a BIOS manufacturer or product name that matches
-neither the physically validated nor experimental exact-model catalogs, the service status sets `UnsupportedLaptop`. Registry read
+neither the physically validated nor source-reviewed exact-model catalogs, the service status sets `UnsupportedLaptop`. Registry read
 failures, platform failures, firmware blocks, and failed checks on an admitted
 model leave it false. The tray then
 shows **This laptop isn't supported yet** with **Help add support**. That action
@@ -239,7 +240,7 @@ repeating thermal queries. Tray startup does not wait for the optional sign-in
 registration query; display, audio and other Session Agent observers keep their
 existing independent failure handling.
 `firmware-queries.json` retains results from supported firmware state queries
-on validated and experimental models. Each query and selector has its own
+on physically validated and source-reviewed models. Each query and selector has its own
 latest observation, first and last failure, and last failure with a reply.
 Successful recovery, port disposal and ordinary log rotation do not erase
 that failure evidence. The collection lasts for the current service run;
@@ -258,15 +259,15 @@ first. The reply contains both connected and recommended wattage; insufficient
 power does not identify a connector. Use retained diagnostics when vendor data
 is missing or a device's reply does not match it.
 
-Experimental devices also export `experimental-support.json` with source
+Source-reviewed devices also export `experimental-support.json` with source
 provenance, write-pause state, and the last 32 typed command-stage observations,
 alongside cached telemetry. Exports remain local until a user shares them.
-Collect diagnostics before choosing **Resume experimental controls**. Recovery
+Collect diagnostics before choosing **Resume laptop controls**. Recovery
 drains the old session, rechecks identity and authority, then reads and reconciles
 current state without sending a setter or replaying the uncertain request. A new
 lighting choice releases the old lighting hold; unrelated profile edits do not.
 See the [tester workflow](experimental-blade-support.md#send-a-useful-test-report)
-for baseline and follow-up reports. The [experimental implementation reference](experimental-blade-reference.md)
+for baseline and follow-up reports. The [source-reviewed implementation reference](experimental-blade-reference.md)
 records model identities, command limits, and pinned source provenance.
 
 ## Build and test
@@ -385,7 +386,7 @@ runs:
   the product names the other settings that are on. Developer validation reports
   the refusal as `EnableFailed` or `CancelFailed`. Captured full-charge writes
   remain limited to bare `00` and `04`.
-- Experimental Maximum Fans on `029F` and `02A0` uses upstream-backed `00` and
+- Source-reviewed Maximum Fans on `029F` and `02A0` uses upstream-backed `00` and
   `02` writes. Its fresh guard refuses CPU boost, temporary full charge, or
   local dimming bits, so replacing the byte cannot clear another enabled option.
   This does not admit combined writes or a local dimming control.
@@ -476,7 +477,7 @@ Users can write and share data-only `.oblight` presets for effects already
 supported by their laptop. The same importer accepts Razer `.chroma` version 1
 keyboard files. Uniform files convert losslessly; classic Keyboard per-key
 animations use a bounded, exact-model logical-key projection on the validated
-RZ09-0581/RZ09-0528 layouts and the experimental RZ09-0484 layout. Unsupported
+RZ09-0581/RZ09-0528 layouts and the source-reviewed RZ09-0484 layout. Unsupported
 colored cells are reported, and per-key KeyboardExtended files are rejected
 instead of cropped. Enable **Lab
 features** in Settings to show the importer. The versioned format, schema,

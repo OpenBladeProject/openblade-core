@@ -130,6 +130,7 @@ public sealed class CpuTuningIpcTests
     [Theory]
     [InlineData(58)]
     [InlineData(59)]
+    [InlineData(73)]
     public async Task ClosedVersionRejectsFormerPeersRatherThanTreatingCpuOperationsAsCompatible(int version)
     {
         using MemoryStream stream = Frame($$"""

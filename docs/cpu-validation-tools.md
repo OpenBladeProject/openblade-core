@@ -48,7 +48,7 @@ Stable and Nightly publication reject opt-in, and normal publication explicitly
 disables it. The runner accepts this exact marker with an 8- or 40-digit hex
 revision, and still requires an exact match to the installed Service version.
 These profile builds do not establish physical validation or broader production
-admission; the CPU/cooling replacement must retain the coordinated IPC 73 sources.
+admission; the CPU/cooling replacement must retain the coordinated IPC 74 sources.
 
 
 ### Attended temporary-driver owner
@@ -74,7 +74,7 @@ file/power/session/ownership evidence parks the owner and retains resources.
 It does not kill a child, guess restoration, retry shutdown or delete the driver
 on uncertainty. Retained failures require reconciliation.
 
-Use one committed coordinated IPC 73 package and independently reviewed protected
+Use one committed coordinated IPC 74 package and independently reviewed protected
 payload. Strict manifest version 1 binds full source and `name`, `length`,
 `sha256` for the complete Capture root, `firmware-smoke/` and `service/` trees.
 Cycle assemblies share the full source; Service has matching

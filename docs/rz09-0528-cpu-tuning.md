@@ -132,7 +132,7 @@ hardware operation requires a concrete remaining gap and applicable authority.
 This source work ran on an RZ09-0581 and performed no CPU getter, setter,
 recovery, installation, reboot or sleep test.
 
-Coordinated source uses service IPC 73 with read-only compatibility 51. Shared
+Coordinated source uses service IPC 74 with read-only compatibility 51. Shared
 contract changes require a coordinated Service/Session Agent/Tray installation.
 The [developer tools](cpu-validation-tools.md) and
 [enrolled broker](unattended-deployment-broker.md) keep explicit job authority

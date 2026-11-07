@@ -13,7 +13,7 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 22;
+    internal const int CurrentSchemaVersion = 23;
     internal const int AutomaticExperimentalSupportSchemaVersion = 19;
     internal const int ExperimentalFeaturesConsentSchemaVersion = 17;
     internal const int ExperimentalFeaturesConsentPredecessorSchemaVersion = 16;
@@ -235,7 +235,7 @@ public sealed class ProfileStore
                 migrated |= normalized != profiles;
                 profiles = normalized;
             }
-            if (schemaVersion < CurrentSchemaVersion)
+            if (schemaVersion < 22)
             {
                 profiles = ClearSchema22Settings(profiles);
             }
@@ -417,7 +417,18 @@ public sealed class ProfileStore
             profiles.Battery,
             profiles.UsbC,
         ];
-        foreach (PerformancePreset performance in Enum.GetValues<PerformancePreset>())
+        // These legacy schemas stored only the original six association roles.
+        // Keep that migration contract fixed as new per-preset roles are added.
+        PerformancePreset[] legacyAssociationRoles =
+        [
+            PerformancePreset.Silent,
+            PerformancePreset.Balanced,
+            PerformancePreset.Performance,
+            PerformancePreset.BatterySaver,
+            PerformancePreset.BatteryBalanced,
+            PerformancePreset.Custom,
+        ];
+        foreach (PerformancePreset performance in legacyAssociationRoles)
         {
             PowerProfile[] matching = legacyProfiles
                 .Where(profile => profile.Performance == performance)

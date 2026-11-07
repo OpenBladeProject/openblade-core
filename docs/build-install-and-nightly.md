@@ -157,7 +157,7 @@ release steps.
 
 Nightlies are test builds. Verify `OpenBlade-Setup.exe` against the included
 SHA-256 file before installation. To help test your laptop, follow the
-[experimental Blade support guide](experimental-blade-support.md) for available
+[source-reviewed Blade support guide](experimental-blade-support.md) for available
 controls and test reports. Controls enable automatically on recognized models in
 every update channel.
 

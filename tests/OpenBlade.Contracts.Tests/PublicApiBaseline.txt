@@ -270,6 +270,11 @@ type static class OpenBlade.Contracts.Blade18KeyboardLightingLayout
   method static System.Boolean TryGetKeyPosition(System.Nullable<System.Byte> layoutId, System.Int32 slot, out System.Double x, out System.Double y)
   method static System.Boolean TryMapScanCode(System.Nullable<System.Byte> layoutId, System.UInt16 scanCode, System.Boolean extended, out System.Byte slot)
   method static System.Boolean TryMapScanCode(System.UInt16 scanCode, System.Boolean extended, out System.Byte slot)
+type enum OpenBlade.Contracts.BladeSupportBasis
+  field System.Int32 value__
+  field const OpenBlade.Contracts.BladeSupportBasis NotEstablished = 0
+  field const OpenBlade.Contracts.BladeSupportBasis PhysicallyValidated = 2
+  field const OpenBlade.Contracts.BladeSupportBasis SourceReviewed = 1
 type enum OpenBlade.Contracts.BreathingColorMode
   field System.Int32 value__
   field const OpenBlade.Contracts.BreathingColorMode Dual = 1
@@ -1031,6 +1036,7 @@ type sealed class OpenBlade.Contracts.DiagnosticExperimentalSupport
   interface System.IEquatable<OpenBlade.Contracts.DiagnosticExperimentalSupport>
   ctor (System.String ModelNumber, System.String EvidenceSource, System.Boolean Detected, System.Boolean WritesPaused, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ExperimentalControlObservation> Observations)
   field const System.Int32 MaxObservations = 32
+  method OpenBlade.Contracts.BladeSupportBasis get_SupportBasis()
   method OpenBlade.Contracts.DiagnosticExperimentalSupport <Clone>$()
   method System.Boolean get_Detected()
   method System.Boolean get_WritesPaused()
@@ -1039,6 +1045,8 @@ type sealed class OpenBlade.Contracts.DiagnosticExperimentalSupport
   method System.String get_EvidenceLevel()
   method System.String get_EvidenceSource()
   method System.String get_ModelNumber()
+  method System.String get_PhysicalValidation()
+  method System.String get_SupportStatus()
   method System.Void Deconstruct(out System.String ModelNumber, out System.String EvidenceSource, out System.Boolean Detected, out System.Boolean WritesPaused, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.ExperimentalControlObservation> Observations)
   method System.Void set_Detected(System.Boolean value)
   method System.Void set_EvidenceLevel(System.String value)
@@ -1054,6 +1062,7 @@ type sealed class OpenBlade.Contracts.DiagnosticExperimentalSupport
   method static System.Boolean op_Equality(OpenBlade.Contracts.DiagnosticExperimentalSupport left, OpenBlade.Contracts.DiagnosticExperimentalSupport right)
   method static System.Boolean op_Inequality(OpenBlade.Contracts.DiagnosticExperimentalSupport left, OpenBlade.Contracts.DiagnosticExperimentalSupport right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.DiagnosticExperimentalSupport other)
+  property OpenBlade.Contracts.BladeSupportBasis SupportBasis { get; }
   property OpenBlade.Contracts.DiagnosticExperimentalSupport NotDetected { get; }
   property System.Boolean Detected { get; init; }
   property System.Boolean WritesPaused { get; init; }
@@ -1062,6 +1071,8 @@ type sealed class OpenBlade.Contracts.DiagnosticExperimentalSupport
   property System.String EvidenceLevel { get; init; }
   property System.String EvidenceSource { get; init; }
   property System.String ModelNumber { get; init; }
+  property System.String PhysicalValidation { get; }
+  property System.String SupportStatus { get; }
 type sealed class OpenBlade.Contracts.DiagnosticFailure
   interface System.IEquatable<OpenBlade.Contracts.DiagnosticFailure>
   ctor (System.String Component, System.String Operation, System.String Stage, System.String Reason, System.Boolean MayHaveSubmitted = false, System.String ExceptionType = null, System.Nullable<System.Int32> HResult = null, System.Nullable<System.Int32> NativeErrorCode = null, OpenBlade.Contracts.DiagnosticFailure Cause = null, System.Nullable<System.Int32> ProcessExitCode = null)
@@ -1916,7 +1927,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 73
+  field const System.Int32 ProtocolVersion = 74
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -1966,9 +1977,13 @@ type enum OpenBlade.Contracts.PerformancePreset
   field const OpenBlade.Contracts.PerformancePreset Balanced = 1
   field const OpenBlade.Contracts.PerformancePreset BatteryBalanced = 4
   field const OpenBlade.Contracts.PerformancePreset BatterySaver = 3
+  field const OpenBlade.Contracts.PerformancePreset Creator = 9
   field const OpenBlade.Contracts.PerformancePreset Custom = 5
+  field const OpenBlade.Contracts.PerformancePreset Gaming = 8
+  field const OpenBlade.Contracts.PerformancePreset MaximumPower = 7
   field const OpenBlade.Contracts.PerformancePreset Performance = 2
   field const OpenBlade.Contracts.PerformancePreset Silent = 0
+  field const OpenBlade.Contracts.PerformancePreset Turbo = 6
 type sealed class OpenBlade.Contracts.PerformanceShortcutPreview
   interface System.IEquatable<OpenBlade.Contracts.PerformanceShortcutPreview>
   ctor (System.Guid SessionId, System.Int64 Generation, OpenBlade.Contracts.PerformancePreset Preset)
@@ -2185,7 +2200,10 @@ type static class OpenBlade.Contracts.RazerBladeModelCatalog
 type sealed class OpenBlade.Contracts.RazerBladeModelInfo
   interface System.IEquatable<OpenBlade.Contracts.RazerBladeModelInfo>
   ctor (System.String ModelNumber, System.String ProductName, System.Int32 ModelYear)
+  method OpenBlade.Contracts.BladeSupportBasis get_SupportBasis()
   method OpenBlade.Contracts.RazerBladeModelInfo <Clone>$()
+  method System.Boolean get_HasPhysicalValidation()
+  method System.Boolean get_IsOfficiallySupported()
   method System.Int32 get_ModelYear()
   method System.String get_DisplayName()
   method System.String get_ModelNumber()
@@ -2196,6 +2214,7 @@ type sealed class OpenBlade.Contracts.RazerBladeModelInfo
   method System.Void set_ModelNumber(System.String value)
   method System.Void set_ModelYear(System.Int32 value)
   method System.Void set_ProductName(System.String value)
+  method System.Void set_SupportBasis(OpenBlade.Contracts.BladeSupportBasis value)
   method System.Void set_UsbProductId(System.String value)
   method System.Void set_UsbVendorId(System.String value)
   method override System.Boolean Equals(System.Object obj)
@@ -2204,6 +2223,9 @@ type sealed class OpenBlade.Contracts.RazerBladeModelInfo
   method static System.Boolean op_Equality(OpenBlade.Contracts.RazerBladeModelInfo left, OpenBlade.Contracts.RazerBladeModelInfo right)
   method static System.Boolean op_Inequality(OpenBlade.Contracts.RazerBladeModelInfo left, OpenBlade.Contracts.RazerBladeModelInfo right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.RazerBladeModelInfo other)
+  property OpenBlade.Contracts.BladeSupportBasis SupportBasis { get; init; }
+  property System.Boolean HasPhysicalValidation { get; }
+  property System.Boolean IsOfficiallySupported { get; }
   property System.Int32 ModelYear { get; init; }
   property System.String DisplayName { get; }
   property System.String ModelNumber { get; init; }
@@ -3569,16 +3591,24 @@ type sealed class OpenBlade.Contracts.WindowsPowerModeAssociations
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Balanced()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_BatteryBalanced()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_BatterySaver()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Creator()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Custom()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Gaming()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_MaximumPower()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Performance()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Silent()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Turbo()
   method System.Void Deconstruct(out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Silent, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Balanced, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Performance, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatterySaver, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatteryBalanced, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Custom)
   method System.Void set_Balanced(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_BatteryBalanced(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_BatterySaver(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_Creator(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_Custom(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_Gaming(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_MaximumPower(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_Performance(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_Silent(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_Turbo(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
@@ -3590,6 +3620,10 @@ type sealed class OpenBlade.Contracts.WindowsPowerModeAssociations
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Balanced { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatteryBalanced { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatterySaver { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Creator { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Custom { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Gaming { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> MaximumPower { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Performance { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Silent { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Turbo { get; init; }

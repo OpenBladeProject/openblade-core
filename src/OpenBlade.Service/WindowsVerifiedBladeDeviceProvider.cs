@@ -950,10 +950,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     // Without the protection baseline the battery subsystem is
                     // already unknown, so the dependent override is not queried.
                     IProductionBatteryPort port = await lease.GetAsync().ConfigureAwait(false);
-                    // Models without an admitted override query use the protection
-                    // register alone. An admitted query must establish its real flag.
-                    bool? temporary = batteryFactory is ExperimentalBladeFactory
-                        && !port.SupportsTemporaryFullChargeQuery ? false : null;
+                    // The protection register does not report the override. Keep
+                    // that field unknown unless its own admitted query succeeds.
+                    bool? temporary = null;
                     if (port.SupportsTemporaryFullChargeQuery)
                     {
                         (_, temporary) = await ReadIsolatedStateQueryAsync(

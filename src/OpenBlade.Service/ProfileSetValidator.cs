@@ -83,6 +83,10 @@ public sealed class ProfileValidationPolicy
             new(PerformancePreset.Balanced, FanMode.Automatic),
             new(PerformancePreset.Silent, FanMode.Automatic),
             new(PerformancePreset.Performance, FanMode.Automatic),
+            new(PerformancePreset.Turbo, FanMode.Automatic),
+            new(PerformancePreset.MaximumPower, FanMode.Automatic),
+            new(PerformancePreset.Gaming, FanMode.Automatic),
+            new(PerformancePreset.Creator, FanMode.Automatic),
             new(PerformancePreset.Custom, FanMode.Automatic),
             new(PerformancePreset.Balanced, FanMode.Maximum),
             new(PerformancePreset.Balanced, FanMode.Fixed),
@@ -314,6 +318,10 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
                 PerformancePreset.Silent
                 or PerformancePreset.Balanced
                 or PerformancePreset.Performance
+                or PerformancePreset.Turbo
+                or PerformancePreset.MaximumPower
+                or PerformancePreset.Gaming
+                or PerformancePreset.Creator
                 or PerformancePreset.Custom,
             PowerSource.Battery => performance is
                 PerformancePreset.BatterySaver

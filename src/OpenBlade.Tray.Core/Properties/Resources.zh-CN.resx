@@ -1440,11 +1440,11 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>请登录交互式 Windows 会话以更改笔记本设置。</value>
   </data>
-  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
-    <value>此笔记本电脑可使用实验性控制项。请在“关于”中导出诊断信息，帮助测试这些功能。</value>
+  <data name="This laptop is supported using reviewed sources. Physical validation is tracked separately." xml:space="preserve">
+    <value>此笔记本电脑的支持基于已审核的来源。实机验证情况单独记录。</value>
   </data>
-  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
-    <value>由于 OpenBlade 无法确认某项更改，实验性写入已暂停。请先检查当前状态，再恢复实验性控制。OpenBlade 不会重试之前的更改。</value>
+  <data name="Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>由于 OpenBlade 无法确认某项更改，笔记本控制已暂停。请先检查当前状态，再恢复笔记本控制。OpenBlade 不会重试之前的更改。</value>
   </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>不支持此笔记本电脑</value>
@@ -1707,6 +1707,18 @@
   </data>
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>电源来源已更改。请检查当前配置方案后重试。</value>
+  </data>
+  <data name="Turbo" xml:space="preserve">
+    <value>极速</value>
+  </data>
+  <data name="Maximum Power" xml:space="preserve">
+    <value>最大功率</value>
+  </data>
+  <data name="Gaming" xml:space="preserve">
+    <value>游戏</value>
+  </data>
+  <data name="Creator" xml:space="preserve">
+    <value>创作</value>
   </data>
   <data name="Apply now" xml:space="preserve"><value>立即应用</value></data>
   <data name="mixed per-core values" xml:space="preserve"><value>各核心数值不同</value></data>
