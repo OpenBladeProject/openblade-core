@@ -13,6 +13,8 @@ public sealed class PerformancePresetPresentationTests
         Assert.Equal("Performance", PerformancePresetPresentation.Label(PerformancePreset.Performance));
         Assert.Equal("Turbo", PerformancePresetPresentation.Label(PerformancePreset.Turbo));
         Assert.Equal("Maximum Power", PerformancePresetPresentation.Label(PerformancePreset.MaximumPower));
+        Assert.Equal("Gaming", PerformancePresetPresentation.Label(PerformancePreset.Gaming));
+        Assert.Equal("Creator", PerformancePresetPresentation.Label(PerformancePreset.Creator));
         Assert.Equal("Custom", PerformancePresetPresentation.Label(PerformancePreset.Custom));
         Assert.Equal("Balanced", PerformancePresetPresentation.Label(PerformancePreset.BatteryBalanced));
         Assert.Equal("Battery Saver", PerformancePresetPresentation.Label(PerformancePreset.BatterySaver));
@@ -37,11 +39,13 @@ public sealed class PerformancePresetPresentationTests
                 PerformancePreset.Performance,
                 PerformancePreset.Turbo,
                 PerformancePreset.MaximumPower,
+                PerformancePreset.Gaming,
+                PerformancePreset.Creator,
                 PerformancePreset.Custom,
             ],
             pluggedIn.Select(option => option.Value));
         Assert.Equal(
-            ["Balanced", "Silent", "Performance", "Turbo", "Maximum Power", "Custom"],
+            ["Balanced", "Silent", "Performance", "Turbo", "Maximum Power", "Gaming", "Creator", "Custom"],
             pluggedIn.Select(option => option.Label));
         Assert.Equal(
             [PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver],
@@ -110,6 +114,8 @@ public sealed class PerformancePresetPresentationTests
     [Theory]
     [InlineData(PerformancePreset.Turbo)]
     [InlineData(PerformancePreset.MaximumPower)]
+    [InlineData(PerformancePreset.Gaming)]
+    [InlineData(PerformancePreset.Creator)]
     public void NewHighPerformancePresets_RequireExplicitCapabilitiesAndFullPower(PerformancePreset preset)
     {
         var legacy = new HashSet<PerformancePreset>
@@ -130,13 +136,15 @@ public sealed class PerformancePresetPresentationTests
     }
 
     [Theory]
-    [InlineData("ru-RU", "Турбо", "Максимальная мощность")]
-    [InlineData("zh-CN", "极速", "最大功率")]
-    public void NewHighPerformanceLabels_AreLocalized(string language, string turbo, string maximumPower)
+    [InlineData("ru-RU", "Турбо", "Максимальная мощность", "Игровой", "Творческий")]
+    [InlineData("zh-CN", "极速", "最大功率", "游戏", "创作")]
+    public void NewHighPerformanceLabels_AreLocalized(string language, string turbo, string maximumPower, string gaming, string creator)
     {
         using var culture = new CultureScope(language);
         Assert.Equal(turbo, PerformancePresetPresentation.Label(PerformancePreset.Turbo));
         Assert.Equal(maximumPower, PerformancePresetPresentation.Label(PerformancePreset.MaximumPower));
+        Assert.Equal(gaming, PerformancePresetPresentation.Label(PerformancePreset.Gaming));
+        Assert.Equal(creator, PerformancePresetPresentation.Label(PerformancePreset.Creator));
     }
 
     [Fact]

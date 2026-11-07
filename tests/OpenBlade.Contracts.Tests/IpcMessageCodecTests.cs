@@ -735,6 +735,8 @@ public sealed class IpcMessageCodecTests
     [Theory]
     [InlineData(PerformancePreset.Turbo, 6)]
     [InlineData(PerformancePreset.MaximumPower, 7)]
+    [InlineData(PerformancePreset.Gaming, 8)]
+    [InlineData(PerformancePreset.Creator, 9)]
     public async Task CurrentProtocolNewPerformanceModes_RoundTripDistinctRequestAndStatusValues(
         PerformancePreset preset, int wireValue)
     {
@@ -765,6 +767,8 @@ public sealed class IpcMessageCodecTests
                     Performance = WindowsPowerMode.BestPowerEfficiency,
                     Turbo = WindowsPowerMode.BestPerformance,
                     MaximumPower = WindowsPowerMode.Balanced,
+                    Gaming = WindowsPowerMode.BestPerformance,
+                    Creator = WindowsPowerMode.BestPowerEfficiency,
                 },
             },
             DesiredState = baseline.DesiredState with
@@ -793,16 +797,22 @@ public sealed class IpcMessageCodecTests
         JsonObject associations = json["profiles"]!["windowsPowerModes"]!.AsObject();
         Assert.True(associations.Remove("turbo"));
         Assert.True(associations.Remove("maximumPower"));
+        Assert.True(associations.Remove("gaming"));
+        Assert.True(associations.Remove("creator"));
         using MemoryStream projected = FrameJson(json.ToJsonString());
         UpdateProfilesRequest decoded = Assert.IsType<UpdateProfilesRequest>(
             await IpcMessageCodec.ReadRequestAsync(projected, CancellationToken.None));
         Assert.Null(decoded.Profiles.WindowsPowerModes.Turbo);
         Assert.Null(decoded.Profiles.WindowsPowerModes.MaximumPower);
+        Assert.Null(decoded.Profiles.WindowsPowerModes.Gaming);
+        Assert.Null(decoded.Profiles.WindowsPowerModes.Creator);
     }
 
     [Theory]
     [InlineData(PerformancePreset.Turbo)]
     [InlineData(PerformancePreset.MaximumPower)]
+    [InlineData(PerformancePreset.Gaming)]
+    [InlineData(PerformancePreset.Creator)]
     public async Task NewWindowsPowerModeAssociations_RejectUndefinedValues(PerformancePreset preset)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();

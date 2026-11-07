@@ -12,6 +12,8 @@ public sealed class PerformanceShortcutNotificationTextTests
     [InlineData("Fn+P selected BatterySaver.", "Current mode: Battery Saver")]
     [InlineData("The performance button selected Custom.", "Current mode: Custom")]
     [InlineData("Fn+P selected Turbo.", "Current mode: Turbo")]
+    [InlineData("Fn+P selected Gaming.", "Current mode: Gaming")]
+    [InlineData("Fn+P selected Creator.", "Current mode: Creator")]
     [InlineData("Fn+P selected Maximum Power.", "Current mode: Maximum Power")]
     [InlineData("Fn+P selected MaximumPower.", "Current mode: Maximum Power")]
     public void AppliedShortcutMessageUsesFriendlyCurrentMode(
@@ -27,6 +29,8 @@ public sealed class PerformanceShortcutNotificationTextTests
     [InlineData("The performance button selected Silent.", PerformancePreset.Silent)]
     [InlineData("Fn+P selected BatterySaver.", PerformancePreset.BatterySaver)]
     [InlineData("Fn+P selected Turbo.", PerformancePreset.Turbo)]
+    [InlineData("Fn+P selected Gaming.", PerformancePreset.Gaming)]
+    [InlineData("Fn+P selected Creator.", PerformancePreset.Creator)]
     [InlineData("Fn+P selected Maximum Power.", PerformancePreset.MaximumPower)]
     [InlineData("Fn+P selected MaximumPower.", PerformancePreset.MaximumPower)]
     public void SelectedPresetCanBeComparedWithOptimisticFeedback(

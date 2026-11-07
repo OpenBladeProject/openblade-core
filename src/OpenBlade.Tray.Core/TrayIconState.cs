@@ -40,6 +40,8 @@ public static class TrayIconStateResolver
                     or PerformancePreset.Performance
                     or PerformancePreset.Turbo
                     or PerformancePreset.MaximumPower
+                    or PerformancePreset.Gaming
+                    or PerformancePreset.Creator
                     or PerformancePreset.Custom
                 ? TrayIconState.AcHyperBoost
                 : TrayIconState.GenericError;
@@ -52,7 +54,8 @@ public static class TrayIconStateResolver
             (PowerSource.PluggedIn, PerformancePreset.Silent) =>
                 TrayIconState.AcSilent,
             (PowerSource.PluggedIn, PerformancePreset.Performance
-                or PerformancePreset.Turbo or PerformancePreset.MaximumPower) =>
+                or PerformancePreset.Turbo or PerformancePreset.MaximumPower
+                or PerformancePreset.Gaming or PerformancePreset.Creator) =>
                 TrayIconState.AcPerformance,
             (PowerSource.PluggedIn, PerformancePreset.Custom) =>
                 TrayIconState.AcCustom,

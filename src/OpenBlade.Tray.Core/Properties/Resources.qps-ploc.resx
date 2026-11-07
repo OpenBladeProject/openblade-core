@@ -1804,4 +1804,10 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Maximum Power" xml:space="preserve">
     <value>[!! Máxímúm Pówér ~~~~~ !!]</value>
   </data>
+  <data name="Gaming" xml:space="preserve">
+    <value>[!! Gámíng ~~~ !!]</value>
+  </data>
+  <data name="Creator" xml:space="preserve">
+    <value>[!! Créátór ~~~ !!]</value>
+  </data>
 </root>

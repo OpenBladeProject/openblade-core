@@ -49,13 +49,17 @@ public sealed class ProfileExportSerializerTests
         var definition = new ApplicationProfileDefinition(Guid.NewGuid(), "Game", @"C:\Games\game.exe",
             ApplicationActivationMode.WhileRunningAfterActivation, new ApplicationProfileOverrideSet
             {
-                PluggedIn = new ApplicationPowerProfileOverride { Performance = PerformancePreset.Performance },
+                PluggedIn = new ApplicationPowerProfileOverride
+                {
+                    Performance = schema == 15 ? PerformancePreset.Creator : PerformancePreset.Performance,
+                },
             });
         ProfileSet configured = defaults with
         {
             ApplicationProfiles = [definition],
             PluggedIn = defaults.PluggedIn with
             {
+                Performance = schema == 15 ? PerformancePreset.Gaming : PerformancePreset.Balanced,
                 Display = new DisplayProfileSettings(null, true, null) { BrightnessPercent = 65 },
             },
             WindowsPowerModes = defaults.WindowsPowerModes with
@@ -63,6 +67,8 @@ public sealed class ProfileExportSerializerTests
                 Performance = WindowsPowerMode.BestPowerEfficiency,
                 Turbo = WindowsPowerMode.BestPerformance,
                 MaximumPower = WindowsPowerMode.Balanced,
+                Gaming = WindowsPowerMode.BestPerformance,
+                Creator = WindowsPowerMode.BestPowerEfficiency,
             },
         };
         JsonObject document = JsonNode.Parse(ProfileExportSerializer.Serialize(configured, "1.0.0", DateTimeOffset.UtcNow))!.AsObject();
@@ -73,13 +79,18 @@ public sealed class ProfileExportSerializerTests
             JsonObject associations = document["profiles"]!["windowsPowerModes"]!.AsObject();
             Assert.True(associations.Remove("turbo"));
             Assert.True(associations.Remove("maximumPower"));
+            Assert.True(associations.Remove("gaming"));
+            Assert.True(associations.Remove("creator"));
         }
         ProfileSet imported = ProfileExportSerializer.Deserialize(document.ToJsonString());
         Assert.Equal(definition, Assert.Single(imported.ApplicationProfiles));
         Assert.Equal((byte)65, imported.PluggedIn.Display!.BrightnessPercent);
+        Assert.Equal(configured.PluggedIn.Performance, imported.PluggedIn.Performance);
         Assert.Equal(WindowsPowerMode.BestPowerEfficiency, imported.WindowsPowerModes.Performance);
         Assert.Equal(schema == 14 ? null : WindowsPowerMode.BestPerformance, imported.WindowsPowerModes.Turbo);
         Assert.Equal(schema == 14 ? null : WindowsPowerMode.Balanced, imported.WindowsPowerModes.MaximumPower);
+        Assert.Equal(schema == 14 ? null : WindowsPowerMode.BestPerformance, imported.WindowsPowerModes.Gaming);
+        Assert.Equal(schema == 14 ? null : WindowsPowerMode.BestPowerEfficiency, imported.WindowsPowerModes.Creator);
     }
 
     [Fact]
@@ -368,6 +379,8 @@ public sealed class ProfileExportSerializerTests
             imported.WindowsPowerModes.Performance);
         Assert.Null(imported.WindowsPowerModes.ForPerformance(PerformancePreset.Turbo));
         Assert.Null(imported.WindowsPowerModes.ForPerformance(PerformancePreset.MaximumPower));
+        Assert.Null(imported.WindowsPowerModes.ForPerformance(PerformancePreset.Gaming));
+        Assert.Null(imported.WindowsPowerModes.ForPerformance(PerformancePreset.Creator));
         Assert.Equal(WindowsPowerMode.BestPowerEfficiency,
             imported.WindowsPowerModes.BatterySaver);
         Assert.Equal(WindowsPowerMode.Balanced,

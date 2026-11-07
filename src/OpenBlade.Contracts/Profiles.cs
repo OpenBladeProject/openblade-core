@@ -10,6 +10,8 @@ public enum PerformancePreset
     Custom,
     Turbo,
     MaximumPower,
+    Gaming,
+    Creator,
 }
 
 /// <summary>
@@ -36,6 +38,10 @@ public sealed record WindowsPowerModeAssociations(
 
     public WindowsPowerMode? MaximumPower { get; init; }
 
+    public WindowsPowerMode? Gaming { get; init; }
+
+    public WindowsPowerMode? Creator { get; init; }
+
     public static WindowsPowerModeAssociations LeaveUnchanged { get; } = new(
         null,
         null,
@@ -52,6 +58,8 @@ public sealed record WindowsPowerModeAssociations(
             PerformancePreset.Performance => Performance,
             PerformancePreset.Turbo => Turbo,
             PerformancePreset.MaximumPower => MaximumPower,
+            PerformancePreset.Gaming => Gaming,
+            PerformancePreset.Creator => Creator,
             PerformancePreset.BatterySaver => BatterySaver,
             PerformancePreset.BatteryBalanced => BatteryBalanced,
             PerformancePreset.Custom => Custom,
@@ -67,6 +75,8 @@ public sealed record WindowsPowerModeAssociations(
             PerformancePreset.Performance => this with { Performance = windowsPowerMode },
             PerformancePreset.Turbo => this with { Turbo = windowsPowerMode },
             PerformancePreset.MaximumPower => this with { MaximumPower = windowsPowerMode },
+            PerformancePreset.Gaming => this with { Gaming = windowsPowerMode },
+            PerformancePreset.Creator => this with { Creator = windowsPowerMode },
             PerformancePreset.BatterySaver => this with { BatterySaver = windowsPowerMode },
             PerformancePreset.BatteryBalanced => this with { BatteryBalanced = windowsPowerMode },
             PerformancePreset.Custom => this with { Custom = windowsPowerMode },

@@ -15,6 +15,8 @@ public static class PerformanceShortcutSelection
                 PerformancePreset.Performance,
                 PerformancePreset.Turbo,
                 PerformancePreset.MaximumPower,
+                PerformancePreset.Gaming,
+                PerformancePreset.Creator,
                 PerformancePreset.Custom,
             ],
             PowerSource.Battery =>
@@ -28,7 +30,8 @@ public static class PerformanceShortcutSelection
         {
             // Unverified/default capabilities retain the established cycle.
             return ordered.Where(preset => preset is not
-                (PerformancePreset.Turbo or PerformancePreset.MaximumPower)).ToArray();
+                (PerformancePreset.Turbo or PerformancePreset.MaximumPower
+                    or PerformancePreset.Gaming or PerformancePreset.Creator)).ToArray();
         }
 
         return ordered.Where(admitted.Contains).ToArray();

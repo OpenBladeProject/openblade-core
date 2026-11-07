@@ -1714,4 +1714,10 @@
   <data name="Maximum Power" xml:space="preserve">
     <value>最大功率</value>
   </data>
+  <data name="Gaming" xml:space="preserve">
+    <value>游戏</value>
+  </data>
+  <data name="Creator" xml:space="preserve">
+    <value>创作</value>
+  </data>
 </root>

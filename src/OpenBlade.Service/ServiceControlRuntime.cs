@@ -20545,6 +20545,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         PerformancePreset.Performance => "Performance",
         PerformancePreset.Turbo => "Turbo",
         PerformancePreset.MaximumPower => "Maximum Power",
+        PerformancePreset.Gaming => "Gaming",
+        PerformancePreset.Creator => "Creator",
         _ => mode.ToString(),
     };
 

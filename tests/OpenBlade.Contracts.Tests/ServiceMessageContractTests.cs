@@ -25,6 +25,8 @@ public sealed class ServiceMessageContractTests
     [InlineData(PerformancePreset.Custom, 5)]
     [InlineData(PerformancePreset.Turbo, 6)]
     [InlineData(PerformancePreset.MaximumPower, 7)]
+    [InlineData(PerformancePreset.Gaming, 8)]
+    [InlineData(PerformancePreset.Creator, 9)]
     public void PerformancePreset_WireValuesAppendDistinctModesWithoutRenumbering(
         PerformancePreset preset, int wireValue)
     {

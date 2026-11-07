@@ -220,6 +220,7 @@ public sealed partial class MainViewModelTests
                 {
                     PerformancePreset.Balanced, PerformancePreset.Performance,
                     PerformancePreset.Turbo, PerformancePreset.MaximumPower,
+                    PerformancePreset.Gaming, PerformancePreset.Creator,
                 },
             },
         });
@@ -230,6 +231,14 @@ public sealed partial class MainViewModelTests
         viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
         await select.ExecuteAsync(PerformancePreset.MaximumPower);
         viewModel.StageWindowsPowerMode(WindowsPowerMode.Balanced);
+        await select.ExecuteAsync(PerformancePreset.Gaming);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+        await select.ExecuteAsync(PerformancePreset.Creator);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPowerEfficiency);
+        await select.ExecuteAsync(PerformancePreset.Gaming);
+        Assert.Equal(WindowsPowerMode.BestPerformance, viewModel.SelectedWindowsPowerModeOption.Value);
+        await select.ExecuteAsync(PerformancePreset.Creator);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, viewModel.SelectedWindowsPowerModeOption.Value);
         await select.ExecuteAsync(PerformancePreset.Turbo);
         Assert.Equal(WindowsPowerMode.BestPerformance, viewModel.SelectedWindowsPowerModeOption.Value);
         await select.ExecuteAsync(PerformancePreset.Performance);
@@ -240,6 +249,8 @@ public sealed partial class MainViewModelTests
         Assert.Equal(WindowsPowerMode.BestPowerEfficiency, client.LastProfiles?.WindowsPowerModes.Performance);
         Assert.Equal(WindowsPowerMode.BestPerformance, client.LastProfiles?.WindowsPowerModes.Turbo);
         Assert.Equal(WindowsPowerMode.Balanced, client.LastProfiles?.WindowsPowerModes.MaximumPower);
+        Assert.Equal(WindowsPowerMode.BestPerformance, client.LastProfiles?.WindowsPowerModes.Gaming);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, client.LastProfiles?.WindowsPowerModes.Creator);
     }
 
     [Fact]
@@ -3652,12 +3663,16 @@ public sealed partial class MainViewModelTests
                 PerformancePreset.Performance,
                 PerformancePreset.Turbo,
                 PerformancePreset.MaximumPower,
+                PerformancePreset.Gaming,
+                PerformancePreset.Creator,
                 PerformancePreset.Custom,
             ],
             viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Turbo));
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
         Assert.Equal("AC profile", viewModel.ActivePowerSourceLabel);
         Assert.Equal("Save to AC profile", viewModel.SaveToActiveProfileLabel);
@@ -3679,6 +3694,8 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Turbo));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
         Assert.Equal(
             [FanMode.Automatic, FanMode.Fixed],
             viewModel.AvailableActiveFanModeOptions.Select(option => option.Value));
@@ -3700,6 +3717,8 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Turbo));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.Equal("Low-power profile", viewModel.ActivePowerSourceLabel);

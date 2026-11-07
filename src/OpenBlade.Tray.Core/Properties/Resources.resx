@@ -1714,4 +1714,10 @@ Details: {1}</value>
   <data name="Maximum Power" xml:space="preserve">
     <value>Maximum Power</value>
   </data>
+  <data name="Gaming" xml:space="preserve">
+    <value>Gaming</value>
+  </data>
+  <data name="Creator" xml:space="preserve">
+    <value>Creator</value>
+  </data>
 </root>

@@ -63,13 +63,17 @@ public sealed class ProfileStoreTests : IDisposable
         var definition = new ApplicationProfileDefinition(Guid.NewGuid(), "Game", @"C:\Games\game.exe",
             ApplicationActivationMode.WhileRunningAfterActivation, new ApplicationProfileOverrideSet
             {
-                PluggedIn = new ApplicationPowerProfileOverride { Performance = PerformancePreset.Performance },
+                PluggedIn = new ApplicationPowerProfileOverride
+                {
+                    Performance = schema == 23 ? PerformancePreset.Creator : PerformancePreset.Performance,
+                },
             });
         ProfileSet configured = defaults with
         {
             ApplicationProfiles = [definition],
             PluggedIn = defaults.PluggedIn with
             {
+                Performance = schema == 23 ? PerformancePreset.Gaming : PerformancePreset.Balanced,
                 Display = new DisplayProfileSettings(null, true, null) { BrightnessPercent = 65 },
             },
             WindowsPowerModes = defaults.WindowsPowerModes with
@@ -77,6 +81,8 @@ public sealed class ProfileStoreTests : IDisposable
                 Performance = WindowsPowerMode.BestPowerEfficiency,
                 Turbo = WindowsPowerMode.BestPerformance,
                 MaximumPower = WindowsPowerMode.Balanced,
+                Gaming = WindowsPowerMode.BestPerformance,
+                Creator = WindowsPowerMode.BestPowerEfficiency,
             },
         };
         Assert.Equal(23, ProfileStore.CurrentSchemaVersion);
@@ -87,15 +93,20 @@ public sealed class ProfileStoreTests : IDisposable
             JsonObject associations = document["profiles"]!["windowsPowerModes"]!.AsObject();
             Assert.True(associations.Remove("turbo"));
             Assert.True(associations.Remove("maximumPower"));
+            Assert.True(associations.Remove("gaming"));
+            Assert.True(associations.Remove("creator"));
         }
         await File.WriteAllTextAsync(path, document.ToJsonString());
         ProfileLoadResult result = await new ProfileStore(path).LoadAsync(CancellationToken.None);
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.Equal(definition, Assert.Single(result.Profiles.ApplicationProfiles));
         Assert.Equal((byte)65, result.Profiles.PluggedIn.Display!.BrightnessPercent);
+        Assert.Equal(configured.PluggedIn.Performance, result.Profiles.PluggedIn.Performance);
         Assert.Equal(WindowsPowerMode.BestPowerEfficiency, result.Profiles.WindowsPowerModes.Performance);
         Assert.Equal(schema == 22 ? null : WindowsPowerMode.BestPerformance, result.Profiles.WindowsPowerModes.Turbo);
         Assert.Equal(schema == 22 ? null : WindowsPowerMode.Balanced, result.Profiles.WindowsPowerModes.MaximumPower);
+        Assert.Equal(schema == 22 ? null : WindowsPowerMode.BestPerformance, result.Profiles.WindowsPowerModes.Gaming);
+        Assert.Equal(schema == 22 ? null : WindowsPowerMode.BestPowerEfficiency, result.Profiles.WindowsPowerModes.Creator);
         Assert.Equal(23, JsonNode.Parse(await File.ReadAllTextAsync(path))!["schemaVersion"]!.GetValue<int>());
     }
 
@@ -260,6 +271,8 @@ public sealed class ProfileStoreTests : IDisposable
             result.Profiles.WindowsPowerModes.Performance);
         Assert.Null(result.Profiles.WindowsPowerModes.ForPerformance(PerformancePreset.Turbo));
         Assert.Null(result.Profiles.WindowsPowerModes.ForPerformance(PerformancePreset.MaximumPower));
+        Assert.Null(result.Profiles.WindowsPowerModes.ForPerformance(PerformancePreset.Gaming));
+        Assert.Null(result.Profiles.WindowsPowerModes.ForPerformance(PerformancePreset.Creator));
         Assert.Equal(
             WindowsPowerMode.BestPowerEfficiency,
             result.Profiles.WindowsPowerModes.BatterySaver);

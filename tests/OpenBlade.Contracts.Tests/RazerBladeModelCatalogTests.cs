@@ -7,6 +7,8 @@ public sealed class RazerBladeModelCatalogTests
     [Fact]
     public void Catalog_SeparatesOfficialSupportFromPhysicalValidation()
     {
+        Assert.Equal(18, RazerBladeModelCatalog.All.Count);
+        Assert.Equal(16, RazerBladeModelCatalog.All.Count(model => model.SupportBasis == BladeSupportBasis.SourceReviewed));
         Assert.All(RazerBladeModelCatalog.All, model => Assert.True(model.IsOfficiallySupported));
         Assert.Equal(new[] { "RZ09-0528", "RZ09-0581" }, RazerBladeModelCatalog.All
             .Where(model => model.HasPhysicalValidation)
@@ -86,11 +88,14 @@ public sealed class RazerBladeModelCatalogTests
     }
 
     [Theory]
+    [InlineData("RZ09-0300", "Razer Blade 15 Base", 2019, "0246")]
+    [InlineData("RZ09-0330", "Razer Blade 15 Advanced", 2020, "0253")]
+    [InlineData("RZ09-0351", "Razer Blade 15 Base", 2020, "0268")]
     [InlineData("RZ09-0370", "Razer Blade 14", 2021, "0270")]
     [InlineData("RZ09-0427", "Razer Blade 14", 2022, "028C")]
     [InlineData("RZ09-0421", "Razer Blade 15", 2022, "028A")]
     [InlineData("RZ09-0423", "Razer Blade 17", 2022, "028B")]
-    public void Find_Recognizes2021And2022SourceReviewedIdentities(
+    public void Find_RecognizesAdditionalSourceReviewedIdentities(
         string modelNumber, string productName, int year, string productId)
     {
         RazerBladeModelInfo model = Assert.IsType<RazerBladeModelInfo>(
@@ -110,6 +115,9 @@ public sealed class RazerBladeModelCatalogTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("RZ09-9999")]
+    [InlineData("RZ09-0313")]
+    [InlineData("RZ09-0314")]
+    [InlineData("RZ09-0329")]
     public void Find_RejectsMissingOrUnsupportedModels(string? modelNumber)
     {
         Assert.Null(RazerBladeModelCatalog.Find(modelNumber));

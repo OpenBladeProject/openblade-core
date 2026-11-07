@@ -27,6 +27,8 @@ public static class PerformancePresetPresentation
         PerformancePreset.Performance,
         PerformancePreset.Turbo,
         PerformancePreset.MaximumPower,
+        PerformancePreset.Gaming,
+        PerformancePreset.Creator,
         PerformancePreset.Custom,
     ];
 
@@ -48,6 +50,8 @@ public static class PerformancePresetPresentation
         PerformancePreset.Performance => TrayText.Get("Performance"),
         PerformancePreset.Turbo => TrayText.Get("Turbo"),
         PerformancePreset.MaximumPower => TrayText.Get("Maximum Power"),
+        PerformancePreset.Gaming => TrayText.Get("Gaming"),
+        PerformancePreset.Creator => TrayText.Get("Creator"),
         PerformancePreset.BatteryBalanced => TrayText.Get("Balanced"),
         PerformancePreset.BatterySaver => TrayText.Get("Battery Saver"),
         PerformancePreset.Custom => TrayText.Get("Custom"),
@@ -61,6 +65,8 @@ public static class PerformancePresetPresentation
             or PerformancePreset.Performance
             or PerformancePreset.Turbo
             or PerformancePreset.MaximumPower
+            or PerformancePreset.Gaming
+            or PerformancePreset.Creator
             or PerformancePreset.Custom,
         PowerSource.Battery => value is PerformancePreset.BatteryBalanced
             or PerformancePreset.BatterySaver,

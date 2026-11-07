@@ -161,6 +161,8 @@ public sealed class ProfileSetValidatorTests
     [InlineData(PerformancePreset.Performance, FanMode.Automatic)]
     [InlineData(PerformancePreset.Turbo, FanMode.Automatic)]
     [InlineData(PerformancePreset.MaximumPower, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Gaming, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Creator, FanMode.Automatic)]
     [InlineData(PerformancePreset.Balanced, FanMode.Maximum)]
     [InlineData(PerformancePreset.Silent, FanMode.Fixed)]
     [InlineData(PerformancePreset.Performance, FanMode.ManualCurve)]
@@ -211,6 +213,8 @@ public sealed class ProfileSetValidatorTests
     [InlineData(PerformancePreset.Performance, PowerSource.PluggedIn)]
     [InlineData(PerformancePreset.Turbo, PowerSource.PluggedIn)]
     [InlineData(PerformancePreset.MaximumPower, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.Gaming, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.Creator, PowerSource.PluggedIn)]
     [InlineData(PerformancePreset.BatterySaver, PowerSource.Battery)]
     [InlineData(PerformancePreset.BatteryBalanced, PowerSource.Battery)]
     public void SourceAwareCombinationValidation_AcceptsCompatiblePreset(
@@ -227,6 +231,8 @@ public sealed class ProfileSetValidatorTests
     [Theory]
     [InlineData(PerformancePreset.Turbo)]
     [InlineData(PerformancePreset.MaximumPower)]
+    [InlineData(PerformancePreset.Gaming)]
+    [InlineData(PerformancePreset.Creator)]
     public void Validate_PreservesSourceReviewedAcIntentAndRejectsItOnBattery(PerformancePreset performance)
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();

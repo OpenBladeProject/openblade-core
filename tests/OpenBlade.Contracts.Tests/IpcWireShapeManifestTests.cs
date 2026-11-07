@@ -58,8 +58,8 @@ public sealed class IpcWireShapeManifestTests
             71 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
             // Protocol 72 changes only the diagnostic-response transport bound; the JSON shape is unchanged.
             72 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
-            // Protocol 73 appends Turbo=6/MaximumPower=7 and their optional Windows power-mode associations.
-            73 => "9D1C06AC47696C7A136E0B9F8AB11CB2EE2D05B547B7F356452E09225D96F5DF",
+            // Protocol 73 appends Turbo=6/MaximumPower=7/Gaming=8/Creator=9 and their optional Windows power-mode associations.
+            73 => "93C291B7F811B3094DED568A375C1AEA9739A2C93A4699A5616018CC35C81A08",
             _ => null,
         };
 

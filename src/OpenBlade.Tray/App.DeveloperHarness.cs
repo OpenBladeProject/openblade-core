@@ -1677,9 +1677,9 @@ public partial class App
         {
             return;
         }
-        if (state == "source-reviewed-presets")
+        if (state is "source-reviewed-presets" or "source-reviewed-base")
         {
-            ApplySourceReviewedPresetsSnapshotState(window);
+            ApplySourceReviewedPresetsSnapshotState(window, legacyBase: state == "source-reviewed-base");
             return;
         }
         if (state == "experimental-custom")
@@ -1828,9 +1828,9 @@ public partial class App
         refreshCards.Invoke(window, null);
     }
 
-    private static void ApplySourceReviewedPresetsSnapshotState(MainWindow window)
+    private static void ApplySourceReviewedPresetsSnapshotState(MainWindow window, bool legacyBase = false)
     {
-        // Disconnected RZ09-0529 / product 711 presentation fixture. Match the
+        // Disconnected RZ09-0529 / 711 or RZ09-0300 / 582 fixture. Match the
         // reviewed production capability set; this never connects to the service.
         CustomPerformanceLevel[] levels =
             [CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High];
@@ -1843,7 +1843,9 @@ public partial class App
             }
         }
         var capabilities = new DeviceCapabilities(
-            new HashSet<PerformancePreset>
+            legacyBase ? new HashSet<PerformancePreset>
+            { PerformancePreset.Balanced, PerformancePreset.Gaming, PerformancePreset.Creator }
+            : new HashSet<PerformancePreset>
             {
                 PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Turbo,
                 PerformancePreset.MaximumPower, PerformancePreset.Custom,
@@ -1851,30 +1853,38 @@ public partial class App
             },
             new HashSet<FanMode> { FanMode.Automatic },
             new HashSet<LightingEffect>(),
-            Enumerable.Range(10, 7).Select(value => value * 5).Append(100).ToHashSet(),
-            SupportsBatteryProtectionOff: true,
+            legacyBase ? new HashSet<int>() : Enumerable.Range(10, 7).Select(value => value * 5).Append(100).ToHashSet(),
+            SupportsBatteryProtectionOff: !legacyBase,
             SupportsTemporaryFullCharge: false)
         {
-            CustomPerformance = new(combinations) { SupportsMaximumFans = false },
+            CustomPerformance = legacyBase ? null : new(combinations) { SupportsMaximumFans = false },
             SupportsBreathingColorSelection = false,
             SupportsWaveDirectionSelection = false,
         };
+        PerformancePreset selected = legacyBase ? PerformancePreset.Creator : PerformancePreset.MaximumPower;
+        PerformancePreset[] expected = legacyBase
+            ? [PerformancePreset.Balanced, PerformancePreset.Gaming, PerformancePreset.Creator]
+            : [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Turbo,
+                PerformancePreset.MaximumPower, PerformancePreset.Custom];
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         profiles = profiles with
         {
-            PluggedIn = profiles.PluggedIn with { Performance = PerformancePreset.MaximumPower },
+            PluggedIn = profiles.PluggedIn with { Performance = selected },
             WindowsPowerModes = profiles.WindowsPowerModes with
             {
                 Turbo = WindowsPowerMode.BestPerformance,
                 MaximumPower = WindowsPowerMode.Balanced,
+                Gaming = WindowsPowerMode.BestPerformance,
+                Creator = WindowsPowerMode.Balanced,
             },
         };
         var status = new ServiceStatusSnapshot(
-            1, true, false, [], null, [], "Source-reviewed RZ09-0529 preset preview", capabilities,
-            new ConfirmedDeviceState(PerformancePreset.MaximumPower, FanMode.Automatic,
-                new ConfirmedBatteryState(true, 80, null), null), profiles,
+            1, true, false, [], null, [],
+            legacyBase ? "Source-reviewed RZ09-0300 preset preview" : "Source-reviewed RZ09-0529 preset preview", capabilities,
+            new ConfirmedDeviceState(selected, FanMode.Automatic,
+                legacyBase ? null : new ConfirmedBatteryState(true, 80, null), null), profiles,
             new DesiredDeviceState(
-                new ResolvedSetting<PerformancePreset>(PerformancePreset.MaximumPower, SettingValueSource.PowerProfile),
+                new ResolvedSetting<PerformancePreset>(selected, SettingValueSource.PowerProfile),
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
@@ -1882,17 +1892,16 @@ public partial class App
         {
             IsExperimentalDevice = true,
             AllowExperimentalFeatures = true,
-            ExperimentalSupportSource = "SynapseSourceBacked:RZ09-0529:711",
+            ExperimentalSupportSource = legacyBase ? "SynapseSourceBacked:RZ09-0300:582" : "SynapseSourceBacked:RZ09-0529:711",
         };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
             "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Status presentation hook was not found.");
         applyStatus.Invoke(window.ViewModel, [status, false]);
         if (!window.ViewModel.AvailablePluggedInPerformanceOptions.Select(option => option.Value).SequenceEqual(
-                new[] { PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Turbo,
-                    PerformancePreset.MaximumPower, PerformancePreset.Custom }))
+                expected))
         {
-            throw new InvalidOperationException("The source-reviewed RZ09-0529 preset preview is incomplete.");
+            throw new InvalidOperationException("The source-reviewed preset preview is incomplete.");
         }
     }
 

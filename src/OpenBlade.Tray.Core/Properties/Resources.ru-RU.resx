@@ -1714,4 +1714,10 @@
   <data name="Maximum Power" xml:space="preserve">
     <value>Максимальная мощность</value>
   </data>
+  <data name="Gaming" xml:space="preserve">
+    <value>Игровой</value>
+  </data>
+  <data name="Creator" xml:space="preserve">
+    <value>Творческий</value>
+  </data>
 </root>
