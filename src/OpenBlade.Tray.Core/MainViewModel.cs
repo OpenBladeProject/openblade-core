@@ -1112,6 +1112,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string ActiveFanModeLabel => IsConnected
         ? CurrentFanStopStatus.State switch
         {
+            FanStopState.Starting => TrayText.Get("Waiting for fan stop confirmation"),
+            FanStopState.ReturningToAutomatic => TrayText.Get("Returning to Auto"),
             FanStopState.Stopped => TrayText.Get("Fans are stopped"),
             FanStopState.RecoveryRequired => TrayText.Get("Fan control needs recovery"),
             FanStopState.Automatic => TrayText.Format("{0} fans", FanModePresentation.Label(FanMode.Automatic)),
@@ -5540,7 +5542,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? ResolvePresentedPerformance(status, confirmed, capabilities);
         FanControlSettings? normalFanControl = status.BatterySaverFanStopStatus is { Requested: true }
             ? status.BatterySaverFanStopStatus.NormalFanControl : null;
-        if (status.FanStopStatus is { State: FanStopState.Stopped or FanStopState.RecoveryRequired } fanStop)
+        if (status.FanStopStatus is { State: FanStopState.Stopped or FanStopState.Starting or FanStopState.ReturningToAutomatic or FanStopState.RecoveryRequired } fanStop)
         {
             normalFanControl = fanStop.NormalFanControl ?? normalFanControl;
         }

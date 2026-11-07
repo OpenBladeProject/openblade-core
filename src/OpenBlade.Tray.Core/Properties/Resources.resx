@@ -1730,4 +1730,19 @@ Details: {1}</value>
   <data name="Fan control needs recovery" xml:space="preserve">
     <value>Fan control needs recovery</value>
   </data>
+  <data name="Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto." xml:space="preserve">
+    <value>Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto.</value>
+  </data>
+  <data name="Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds." xml:space="preserve">
+    <value>Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds.</value>
+  </data>
+  <data name="Fan stop is unavailable because its safety guardian is not ready." xml:space="preserve">
+    <value>Fan stop is unavailable because its safety guardian is not ready.</value>
+  </data>
+  <data name="Waiting for fan stop confirmation" xml:space="preserve">
+    <value>Waiting for fan stop confirmation</value>
+  </data>
+  <data name="Returning to Auto" xml:space="preserve">
+    <value>Returning to Auto</value>
+  </data>
 </root>

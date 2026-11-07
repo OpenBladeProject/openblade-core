@@ -47,6 +47,32 @@ public sealed class So6120GuardianIntegrationTests
             "APPLY", signals.StopToken));
     }
 
+    [Fact]
+    public async Task ProductStartupGraceAllowsLateFirstHeartbeatThenUsesNormalLease()
+    {
+        var clock = new So6120DirectDutySessionTests.Clock();
+        await using var signals = new So6120GuardianSignals(clock, startupLease: TimeSpan.FromSeconds(10));
+        clock.Advance(TimeSpan.FromSeconds(7));
+        signals.CheckDeadline();
+        Assert.Equal(So6120GuardianStopReason.None, signals.StopReason);
+        Assert.True(signals.Receive(1));
+        await signals.FirstHeartbeat;
+        clock.Advance(TimeSpan.FromSeconds(5));
+        Assert.False(signals.Receive(1));
+        Assert.Equal(So6120GuardianStopReason.LeaseExpired, signals.StopReason);
+    }
+
+    [Fact]
+    public async Task ProductStartupGraceStillExpiresWithoutHeartbeat()
+    {
+        var clock = new So6120DirectDutySessionTests.Clock();
+        await using var signals = new So6120GuardianSignals(clock, startupLease: TimeSpan.FromSeconds(10));
+        clock.Advance(TimeSpan.FromSeconds(10));
+        Assert.False(signals.Receive(1));
+        Assert.True(signals.StopToken.IsCancellationRequested);
+        Assert.False(signals.FirstHeartbeat.IsCompleted);
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]

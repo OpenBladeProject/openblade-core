@@ -1081,6 +1081,8 @@ type enum OpenBlade.Contracts.FanStopState
   field const OpenBlade.Contracts.FanStopState Automatic = 3
   field const OpenBlade.Contracts.FanStopState Inactive = 1
   field const OpenBlade.Contracts.FanStopState RecoveryRequired = 4
+  field const OpenBlade.Contracts.FanStopState ReturningToAutomatic = 6
+  field const OpenBlade.Contracts.FanStopState Starting = 5
   field const OpenBlade.Contracts.FanStopState Stopped = 2
   field const OpenBlade.Contracts.FanStopState Unavailable = 0
 type sealed class OpenBlade.Contracts.FanStopStatus
@@ -1117,6 +1119,7 @@ type sealed class OpenBlade.Contracts.FanStopStatus
   property System.String Message { get; init; }
 type enum OpenBlade.Contracts.FanStopUnavailableReason
   field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopUnavailableReason GuardianUnavailable = 3
   field const OpenBlade.Contracts.FanStopUnavailableReason None = 0
   field const OpenBlade.Contracts.FanStopUnavailableReason RecoveryNotValidated = 2
   field const OpenBlade.Contracts.FanStopUnavailableReason UnsupportedDevice = 1
@@ -1712,7 +1715,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 74
+  field const System.Int32 ProtocolVersion = 75
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

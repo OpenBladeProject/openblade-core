@@ -23,7 +23,8 @@ internal static class WindowsSetupPlatformTestFactory
         IDotNetRuntimeAdmission? dotNetRuntimeAdmission = null,
         string? setupExecutablePath = null,
         string? currentUserSid = null,
-        ISignInTaskScheduler? signInTaskScheduler = null) =>
+        ISignInTaskScheduler? signInTaskScheduler = null,
+        ISetupGuardianQuiescenceGuard? guardianQuiescenceGuard = null) =>
         new(
             new WindowsSetupPlatformOptions(
                 ServiceControl: serviceControl,
@@ -44,7 +45,8 @@ internal static class WindowsSetupPlatformTestFactory
                 ProgressReporter: progressReporter,
                 DotNetRuntimeAdmission: dotNetRuntimeAdmission ?? AcceptingDotNetRuntimeAdmission.Instance,
                 SetupExecutablePath: setupExecutablePath,
-                CurrentUserSid: currentUserSid));
+                CurrentUserSid: currentUserSid,
+                GuardianQuiescenceGuard: guardianQuiescenceGuard));
 
     private sealed class AcceptingDotNetRuntimeAdmission : IDotNetRuntimeAdmission
     {

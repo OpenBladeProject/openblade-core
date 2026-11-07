@@ -6,6 +6,71 @@ namespace OpenBlade.Tray.Tests;
 public sealed partial class MainViewModelTests
 {
     [Fact]
+    public async Task FanStop_AcceptedRequestsPresentPendingUntilIndependentConfirmation()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        var status = CreateFanStopStatus(new(State: FanStopState.Inactive,
+            UnavailableReason: FanStopUnavailableReason.None, CanStop: true));
+        await PushAsync(client, dispatcher, status);
+        client.GetStatusResponse = status with
+        {
+            Revision = status.Revision + 1,
+            FanStopStatus = new(FanStopMode.Stop, FanStopState.Starting,
+                FanStopUnavailableReason.None, CanReturnToAutomatic: true),
+        };
+        await viewModel.SetFanStopAsync(true, CancellationToken.None);
+        Assert.True(viewModel.FanStopRequested);
+        Assert.Equal("Waiting for fan stop confirmation", viewModel.ActiveFanModeLabel);
+        client.GetStatusResponse = status with
+        {
+            Revision = status.Revision + 2,
+            FanStopStatus = new(FanStopMode.Automatic, FanStopState.ReturningToAutomatic,
+                FanStopUnavailableReason.None, CanReturnToAutomatic: true),
+        };
+        await viewModel.SetFanStopAsync(false, CancellationToken.None);
+        Assert.False(viewModel.FanStopRequested);
+        Assert.Equal("Returning to Auto", viewModel.ActiveFanModeLabel);
+        Assert.Contains("not confirmed yet", viewModel.FanStopDescription);
+        Assert.False(viewModel.CanToggleFanStop);
+        Assert.Contains("fanStop:Automatic", client.MutationOperations);
+    }
+
+    [Theory]
+    [InlineData(FanStopState.Starting, FanStopMode.Stop, true, "Waiting for fan stop confirmation")]
+    [InlineData(FanStopState.ReturningToAutomatic, FanStopMode.Automatic, false, "Returning to Auto")]
+    public async Task FanStop_PendingStatePreservesIntentWithoutClaimingConfirmation(
+        FanStopState state, FanStopMode mode, bool canToggle, string label)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        var normal = new FanControlSettings(FanMode.Fixed, 3000, ManualFanCurve.Default);
+        var status = CreateFanStopStatus(new(mode, state, FanStopUnavailableReason.None,
+            CanReturnToAutomatic: true, NormalFanControl: normal));
+        status = status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                SupportsFanStop = false,
+                HasFanStopTrialEvidence = false,
+            },
+        };
+        await PushAsync(client, dispatcher, status);
+        Assert.True(viewModel.IsFanStopVisible);
+        Assert.Equal(mode == FanStopMode.Stop, viewModel.FanStopRequested);
+        Assert.Equal(canToggle, viewModel.CanToggleFanStop);
+        Assert.False(viewModel.CanEditFanControl);
+        Assert.Equal(FanMode.Fixed, viewModel.SelectedFanMode);
+        Assert.Equal(3000, viewModel.FixedFanSpeedRpm);
+        Assert.Equal(label, viewModel.ActiveFanModeLabel);
+        Assert.Contains("tens of seconds", viewModel.FanStopDescription);
+    }
+
+    [Fact]
     public async Task FanStop_TrialEvidenceShowsUnavailableControlWithoutGrantingWrites()
     {
         var client = new FakeServiceClient();

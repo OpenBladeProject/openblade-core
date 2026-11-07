@@ -1,4 +1,4 @@
-namespace OpenBlade.Capture;
+namespace OpenBlade.FanStop;
 
 // Exact SO6120 EC 1.04 bank-zero mapping. This enum is not a raw-address API.
 internal enum So6120MailboxRegister : byte

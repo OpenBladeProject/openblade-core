@@ -1730,4 +1730,19 @@
   <data name="Fan control needs recovery" xml:space="preserve">
     <value>Требуется восстановить управление вентиляторами</value>
   </data>
+  <data name="Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto." xml:space="preserve">
+    <value>Ожидание подтверждения остановки вентиляторов. Это может занять десятки секунд. Выключите, чтобы вернуть авторежим.</value>
+  </data>
+  <data name="Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds." xml:space="preserve">
+    <value>Возврат в авторежим. Автоматическое охлаждение пока не подтверждено; это может занять десятки секунд.</value>
+  </data>
+  <data name="Fan stop is unavailable because its safety guardian is not ready." xml:space="preserve">
+    <value>Остановка вентиляторов недоступна: защитный контроллер не готов.</value>
+  </data>
+  <data name="Waiting for fan stop confirmation" xml:space="preserve">
+    <value>Ожидание подтверждения остановки вентиляторов</value>
+  </data>
+  <data name="Returning to Auto" xml:space="preserve">
+    <value>Возврат в авторежим</value>
+  </data>
 </root>

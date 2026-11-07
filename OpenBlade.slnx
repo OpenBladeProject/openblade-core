@@ -10,6 +10,8 @@
     <Project Path="src/OpenBlade.DeploymentClient/OpenBlade.DeploymentClient.csproj" />
     <Project Path="src/OpenBlade.DevelopmentDeployment.Setup/OpenBlade.DevelopmentDeployment.Setup.csproj" />
     <Project Path="src/OpenBlade.Display/OpenBlade.Display.csproj" />
+    <Project Path="src/OpenBlade.FanStop.Core/OpenBlade.FanStop.Core.csproj" />
+    <Project Path="src/OpenBlade.FanStop.Guardian/OpenBlade.FanStop.Guardian.csproj" />
     <Project Path="src/OpenBlade.FirmwareSmoke/OpenBlade.FirmwareSmoke.csproj" />
     <Project Path="src/OpenBlade.Platform/OpenBlade.Platform.csproj" />
     <Project Path="src/OpenBlade.Protocol/OpenBlade.Protocol.csproj" />

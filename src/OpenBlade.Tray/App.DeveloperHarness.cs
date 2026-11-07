@@ -1681,7 +1681,8 @@ public partial class App
             return;
         }
         if (state is "direct-fan-stop-off" or "direct-fan-stop-on" or "direct-fan-stop-gated"
-            or "direct-fan-stop-recovery" or "direct-fan-stop-unsupported")
+            or "direct-fan-stop-recovery" or "direct-fan-stop-unsupported"
+            or "direct-fan-stop-starting" or "direct-fan-stop-returning" or "direct-fan-stop-guardian-unavailable")
         {
             ApplyDirectFanStopSnapshotState(window, state);
             return;
@@ -1892,8 +1893,10 @@ public partial class App
     private static void ApplyDirectFanStopSnapshotState(MainWindow window, string state)
     {
         // Disconnected synthetic status only; this never acquires a hardware backend.
-        bool owned = state is "direct-fan-stop-on" or "direct-fan-stop-recovery";
-        bool gated = state is "direct-fan-stop-gated" or "direct-fan-stop-unsupported";
+        bool starting = state == "direct-fan-stop-starting";
+        bool returning = state == "direct-fan-stop-returning";
+        bool owned = state is "direct-fan-stop-on" or "direct-fan-stop-recovery" || starting || returning;
+        bool gated = state is "direct-fan-stop-gated" or "direct-fan-stop-unsupported" or "direct-fan-stop-guardian-unavailable";
         bool recovery = state == "direct-fan-stop-recovery";
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         var normal = new FanControlSettings(FanMode.Fixed, 3000, ManualFanCurve.Default);
@@ -1912,15 +1915,29 @@ public partial class App
                 new DesiredBatteryState(profiles.BatteryPolicy, false, false)),
             PowerSource.UsbC, null, null, null, null, false)
         {
-            FanStopStatus = new(owned ? FanStopMode.Stop : FanStopMode.Automatic,
-                recovery ? FanStopState.RecoveryRequired : owned ? FanStopState.Stopped : gated ? FanStopState.Unavailable : FanStopState.Inactive,
+            FanStopStatus = new(owned && !returning ? FanStopMode.Stop : FanStopMode.Automatic,
+                starting ? FanStopState.Starting : returning ? FanStopState.ReturningToAutomatic : recovery ? FanStopState.RecoveryRequired : owned ? FanStopState.Stopped : gated ? FanStopState.Unavailable : FanStopState.Inactive,
                 state == "direct-fan-stop-unsupported" ? FanStopUnavailableReason.UnsupportedDevice
+                    : state == "direct-fan-stop-guardian-unavailable" ? FanStopUnavailableReason.GuardianUnavailable
                     : gated ? FanStopUnavailableReason.RecoveryNotValidated : FanStopUnavailableReason.None,
                 CanStop: !gated && !owned, CanReturnToAutomatic: owned && !recovery,
                 NormalFanControl: owned ? normal : null),
         };
         typeof(MainViewModel).GetMethod("ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .Invoke(window.ViewModel, [status, false]);
+        // Dashboard pinning is independent of hardware state. Keep the tested
+        // controls visible even when the current user's dashboard is empty.
+        var changingCards = typeof(MainWindow).GetField("changingDashboardCards",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        changingCards.SetValue(window, true);
+        try
+        {
+            window.DashboardCards.Add(new DashboardCardOption(
+                DashboardCardKind.Fans, "Fans", string.Empty, true));
+        }
+        finally { changingCards.SetValue(window, false); }
+        typeof(MainWindow).GetMethod("RefreshDashboardCards",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
     }
 
     private static void ApplyBatterySaverFanStopSnapshotState(MainWindow window, string state)

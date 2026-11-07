@@ -1,4 +1,4 @@
-namespace OpenBlade.Capture;
+namespace OpenBlade.FanStop;
 
 // Only liveness and stop requests cross the caller boundary. Approval and all
 // hardware operands stay in the attended owner. This latch also covers the
@@ -9,6 +9,7 @@ internal sealed class So6120GuardianSignals : IAsyncDisposable
     private readonly object sync = new();
     private readonly TimeProvider clock;
     private readonly TimeSpan lease;
+    private readonly TimeSpan startupLease;
     private readonly CancellationTokenSource stop = new();
     private readonly TaskCompletionSource firstHeartbeat = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ITimer timer;
@@ -18,12 +19,15 @@ internal sealed class So6120GuardianSignals : IAsyncDisposable
     private So6120GuardianStopReason reason;
     private So6120TrialGuardian? guardian;
 
-    public So6120GuardianSignals(TimeProvider? clock = null, TimeSpan? lease = null)
+    public So6120GuardianSignals(TimeProvider? clock = null, TimeSpan? lease = null, TimeSpan? startupLease = null)
     {
         this.clock = clock ?? TimeProvider.System;
         this.lease = lease ?? TimeSpan.FromSeconds(5);
+        this.startupLease = startupLease ?? this.lease;
         if (this.lease < TimeSpan.FromMilliseconds(100) || this.lease > TimeSpan.FromSeconds(30))
         { throw new ArgumentOutOfRangeException(nameof(lease)); }
+        if (this.startupLease < this.lease || this.startupLease > TimeSpan.FromSeconds(30))
+        { throw new ArgumentOutOfRangeException(nameof(startupLease)); }
         renewed = this.clock.GetTimestamp();
         timer = this.clock.CreateTimer(_ => CheckDeadline(), null, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50));
     }
@@ -75,7 +79,8 @@ internal sealed class So6120GuardianSignals : IAsyncDisposable
 
     private void CheckDeadlineLocked(long now)
     {
-        if (clock.GetElapsedTime(renewed, now) >= lease) { StopLocked(So6120GuardianStopReason.LeaseExpired); }
+        TimeSpan limit = firstHeartbeat.Task.IsCompleted ? lease : startupLease;
+        if (clock.GetElapsedTime(renewed, now) >= limit) { StopLocked(So6120GuardianStopReason.LeaseExpired); }
     }
 
     private void StopLocked(So6120GuardianStopReason cause)

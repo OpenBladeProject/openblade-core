@@ -36,7 +36,8 @@ public sealed record WindowsSetupPlatformOptions(
     ISetupProgressReporter? ProgressReporter = null,
     IDotNetRuntimeAdmission? DotNetRuntimeAdmission = null,
     string? BundleOwnerId = null,
-    string? CurrentUserSid = null);
+    string? CurrentUserSid = null,
+    ISetupGuardianQuiescenceGuard? GuardianQuiescenceGuard = null);
 
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {
@@ -53,6 +54,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly ISetupServiceHealthProbe healthProbe;
     private readonly ISetupFileOperations fileOperations;
     private readonly ISetupProcessOperations processOperations;
+    private readonly ISetupGuardianQuiescenceGuard guardianQuiescenceGuard;
     private readonly IMachineDataDirectorySecurity machineDataDirectorySecurity;
     private readonly IUninstallRegistration uninstallRegistration;
     private readonly IBundleOwnershipRegistration bundleOwnershipRegistration;
@@ -76,6 +78,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         healthProbe = options.HealthProbe ?? new SetupServiceHealthProbe();
         fileOperations = options.FileOperations ?? new WindowsSetupFileOperations();
         processOperations = options.ProcessOperations ?? new WindowsSetupProcessOperations();
+        guardianQuiescenceGuard = options.GuardianQuiescenceGuard ??
+            new SetupGuardianQuiescenceGuard(paths, processOperations, payloadFileSystem.GetAttributes);
         machineDataDirectorySecurity = options.MachineDataDirectorySecurity
             ?? new WindowsMachineDataDirectorySecurity();
         uninstallRegistration = options.UninstallRegistration ?? new WindowsUninstallRegistration();
@@ -187,7 +191,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 TimeSpan.FromSeconds(30),
                 cancellationToken);
         }
-
+        guardianQuiescenceGuard.EnsureClear();
     }
 
     public Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken)
@@ -199,7 +203,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             payloadDirectory,
             payloadFileSystem,
             cancellationToken,
-            progressReporter);
+            progressReporter,
+            guardianQuiescenceGuard.EnsureClear);
     }
 
     public async Task RestoreServiceInstallStateAsync(
@@ -541,6 +546,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         if (!await serviceControl.ExistsAsync(ServiceName, cancellationToken))
         {
+            guardianQuiescenceGuard.EnsureClear();
             return;
         }
 
@@ -550,6 +556,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             SetupServiceState.Stopped,
             TimeSpan.FromSeconds(30),
             cancellationToken);
+        guardianQuiescenceGuard.EnsureClear();
         await serviceControl.RunAsync(["delete", ServiceName], [ServiceDoesNotExist], cancellationToken);
         await serviceControl.WaitForDeletionAsync(ServiceName, TimeSpan.FromSeconds(30), cancellationToken);
     }
@@ -641,6 +648,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     public Task RemoveBinariesAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        guardianQuiescenceGuard.EnsureClear();
         DeleteOwnedDirectoryIfPresent(paths.InstallDirectory, paths.ProgramFilesRoot);
 
         return Task.CompletedTask;
@@ -649,6 +657,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     public Task RemoveDataAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        guardianQuiescenceGuard.EnsureClear();
         DeleteOwnedDirectoryIfPresent(paths.MachineDataDirectory, paths.MachineDataRoot);
         DeleteOwnedDirectoryIfPresent(paths.UserDataDirectory, paths.UserDataRoot);
         return Task.CompletedTask;

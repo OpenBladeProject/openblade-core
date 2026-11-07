@@ -1822,4 +1822,19 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Fan control needs recovery" xml:space="preserve">
     <value>[!! Fán cóntról nééds récóvérý ~~~~~~~~~ !!]</value>
   </data>
+  <data name="Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto." xml:space="preserve">
+    <value>[!! Wáítíng fór fán stóp cónfírmátíón. Thís máý táké téns óf sécónds. Túrn óff tó rétúrn tó Áútó. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds." xml:space="preserve">
+    <value>[!! Rétúrníng tó Áútó. Áútómátíc cóólíng ís nót cónfírméd ýét; thís máý táké téns óf sécónds. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan stop is unavailable because its safety guardian is not ready." xml:space="preserve">
+    <value>[!! Fán stóp ís únáváíláblé bécáúsé íts sáfétý gúárdíán ís nót réádý. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Waiting for fan stop confirmation" xml:space="preserve">
+    <value>[!! Wáítíng fór fán stóp cónfírmátíón ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Returning to Auto" xml:space="preserve">
+    <value>[!! Rétúrníng tó Áútó ~~~~~~ !!]</value>
+  </data>
 </root>

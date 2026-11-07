@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
-namespace OpenBlade.Capture;
+namespace OpenBlade.FanStop;
 
 internal sealed class So6120GuardianCallerLifetime : IDisposable
 {

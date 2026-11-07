@@ -1,6 +1,6 @@
 using OpenBlade.Contracts;
 
-namespace OpenBlade.Capture;
+namespace OpenBlade.FanStop;
 
 // Supplied evidence is unauthenticated. This comparison boundary does not grant
 // hardware authority, consent, firmware exclusion, or driver-handle admission.
@@ -38,10 +38,27 @@ internal sealed partial class So6120DirectDutySession : IDisposable
     private readonly TimeProvider clock;
     private readonly So6120SessionOptions options;
     private readonly So6120DirectDutyJournal journal;
+    private readonly ISo6120SessionAdmissionPolicy admissionPolicy;
     private readonly So6120DirectDutyOperation operation;
     private readonly Boundary boundary;
     private bool running, disposed, blocked, entered, restored;
     private bool transferActive;
+    private int commandsPossiblySubmitted, commandsCompleted, mutationsPossiblySubmitted;
+    private bool nativeCommandAmbiguity;
+
+    // Positive in-memory command evidence survives storage/admission failures.
+    // A missing checkpoint or a faulted journal is never itself release proof.
+    internal So6120SessionCommandEvidence CommandEvidence
+    {
+        get
+        {
+            lock (sync)
+            {
+                return new(commandsPossiblySubmitted, commandsCompleted,
+                    mutationsPossiblySubmitted, nativeCommandAmbiguity, transferActive);
+            }
+        }
+    }
     private So6120DutyFailure deferredFence;
     private long observationSequence;
     private So6120DutyObservation? latestObservation;
@@ -55,7 +72,8 @@ internal sealed partial class So6120DirectDutySession : IDisposable
     // user of that port. No claim is made that an injected port is authentic.
     internal static So6120DirectDutySession CreateInjected(string runRoot, So6120SessionBinding binding,
         ISo6120MailboxBytePort port, ISo6120SessionEvidenceSource source, TimeProvider clock,
-        So6120SessionOptions? options = null, Action<So6120JournalWriteStage>? storageFault = null)
+        So6120SessionOptions? options = null, Action<So6120JournalWriteStage>? storageFault = null,
+        ISo6120SessionAdmissionPolicy? admissionPolicy = null)
     {
         ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(binding.Identity);
@@ -73,17 +91,19 @@ internal sealed partial class So6120DirectDutySession : IDisposable
         try
         {
             return new(binding, port, lifetime, source, clock, options,
-                So6120DirectDutyJournal.Create(runRoot, binding.Identity, storageFault));
+                So6120DirectDutyJournal.Create(runRoot, binding.Identity, storageFault),
+                admissionPolicy ?? So6120SupervisedSessionAdmissionPolicy.Instance);
         }
         catch { lifetime.Dispose(); throw; }
     }
 
     private So6120DirectDutySession(So6120SessionBinding binding, ISo6120MailboxBytePort port,
         IDisposable lifetime, ISo6120SessionEvidenceSource source, TimeProvider clock, So6120SessionOptions options,
-        So6120DirectDutyJournal journal)
+        So6120DirectDutyJournal journal, ISo6120SessionAdmissionPolicy admissionPolicy)
     {
         this.binding = binding; this.port = port; portLifetime = lifetime;
         this.source = source; this.clock = clock; this.options = options; this.journal = journal;
+        this.admissionPolicy = admissionPolicy;
         boundary = new(this);
         operation = new(binding.Identity.Owner, boundary);
     }
@@ -95,6 +115,7 @@ internal sealed partial class So6120DirectDutySession : IDisposable
             BeginInvocation();
             try
             {
+                if (ownedStopHooks is not null) { throw new InvalidOperationException("Use the owned Stop entry point."); }
                 if (entered || !binding.Identity.RequestedDuty1.HasValue || !binding.Identity.RequestedDuty2.HasValue)
                 { throw new InvalidOperationException("Fixed entry requires an unused fixed-target identity."); }
                 entered = true;
@@ -113,6 +134,7 @@ internal sealed partial class So6120DirectDutySession : IDisposable
             BeginInvocation();
             try
             {
+                if (ownedStopHooks is not null) { throw new InvalidOperationException("Use the owned Auto entry point."); }
                 return RestoreWorkflow(cancellationToken);
             }
             finally { running = false; }
@@ -184,7 +206,7 @@ internal sealed partial class So6120DirectDutySession : IDisposable
     // single A1+confirmation deadline immediately after the callback returns.
     private void Reassess(So6120SessionEvidence evidence)
     {
-        if (So6120SupervisedAdmission.Assess(clock, evidence.Metadata, evidence.Challenge, evidence.Handoff)
+        if (admissionPolicy.Assess(clock, evidence.Metadata, evidence.Challenge, evidence.Handoff)
             != So6120AdmissionAssessment.InputsMatched)
         { Fence(So6120DutyFailure.AdmissionRefused); throw new InvalidOperationException("Fresh supervised admission refused."); }
     }
@@ -215,12 +237,12 @@ internal sealed partial class So6120DirectDutySession : IDisposable
     private So6120MailboxResult Transfer(So6120MailboxRegister register, byte? value, CancellationToken cancellationToken)
     {
         EnsureCommands();
-        if (!AutoTransactionAllowed())
+        if (!SessionTransactionAllowed())
         { return new(So6120MailboxFailure.Deadline, null, 0, 0, false, []); }
         Store(() => journal.BeginTransfer(new(Guid.NewGuid(), register, value)));
         long? priorPermissionStarted = permissionStarted;
         TimeSpan transferTimeout = options.TransactionTimeout;
-        if (trialExecuting) { cancellationToken = CancellationToken.None; }
+        if (trialExecuting || ownedStopHooks is not null) { cancellationToken = CancellationToken.None; }
         softPublicationRefused = false;
         transferActive = true;
         try
@@ -230,6 +252,15 @@ internal sealed partial class So6120DirectDutySession : IDisposable
                     .WriteAndConfirm(register, written, cancellationToken)
                 : new So6120HostMailboxTransaction(port, boundary, clock, transferTimeout, options.MaxPolls)
                     .Read(register, cancellationToken);
+            commandsPossiblySubmitted += result.CommandsPossiblySubmitted;
+            commandsCompleted += result.CommandsCompleted;
+            if (value.HasValue) { mutationsPossiblySubmitted += result.CommandsPossiblySubmitted; }
+            nativeCommandAmbiguity |= result.CommandsPossiblySubmitted != result.CommandsCompleted
+                || result.Operations.Any(row => row.ExceptionType is not null || row.Result is not { } native
+                    || native.Effect == So6120PortEffect.MayHavePerformed
+                    || native.Succeeded && (native.Effect != So6120PortEffect.Performed
+                        || row.Operation == So6120PortOperation.ReadData && native.BytesReturned != 1)
+                    || !native.Succeeded && native.Effect != So6120PortEffect.NotPerformed);
             bool clean = !blocked && !result.Success && (KnownUnsubmitted(result)
                 || softPublicationRefused && result.Failure == So6120MailboxFailure.AdmissionRefused
                     && result.CommandsPossiblySubmitted == 0 && result.CommandsCompleted == 0 && !result.WriteHandlerCompleted);
@@ -245,6 +276,13 @@ internal sealed partial class So6120DirectDutySession : IDisposable
             }
             if (!result.Success && !clean) { Fence(So6120DutyFailure.CommandUnresolved); }
             return result;
+        }
+        catch
+        {
+            // Unexpected escape from the transaction boundary cannot establish
+            // whether its native command completed.
+            nativeCommandAmbiguity = true;
+            throw;
         }
         finally
         {
@@ -336,7 +374,7 @@ internal sealed partial class So6120DirectDutySession : IDisposable
         }
         public bool AdmitWrite(DirectDutyOwner owner, So6120DutyMutation mutation)
         {
-            if (!session.EntryAllowed(refresh: false, checkThermal: false)) { return false; }
+            if (!session.SessionEntryAllowed(refresh: false, checkThermal: false)) { return false; }
             session.FreshAdmission();
             return owner == session.binding.Identity.Owner && mutation.Expected == session.latestObservation?.Snapshot.Controls;
         }
@@ -346,6 +384,12 @@ internal sealed partial class So6120DirectDutySession : IDisposable
             session.EnsureCommands();
             if (!ReferenceEquals(before, session.latestObservation) || before.Snapshot.Controls != mutation.Expected)
             { session.Fence(So6120DutyFailure.StateChanged); return new(So6120DutyIoDisposition.Unresolved, null); }
+            if (session.ownedStopHooks is not null && !session.ownedStopRestoring &&
+                !session.SessionEntryAllowed(refresh: true))
+            {
+                return new(So6120DutyIoDisposition.DefinitelyUnsubmitted,
+                    new(So6120MailboxFailure.AdmissionRefused, null, 0, 0, false, []));
+            }
             if (session.trialExecuting && !session.trialRestoring)
             {
                 var plan = session.preparedPlan!;
@@ -389,7 +433,7 @@ internal sealed partial class So6120DirectDutySession : IDisposable
         }
         public bool Prepare(So6120MailboxRequest request)
         {
-            if (request.WriteValue.HasValue && !session.EntryAllowed(refresh: false))
+            if (request.WriteValue.HasValue && !session.SessionEntryAllowed(refresh: false))
             { session.softPublicationRefused = true; return false; }
             var evidence = session.FreshAdmission();
             session.Store(() => session.journal.PrepareRequest(request));
@@ -398,12 +442,12 @@ internal sealed partial class So6120DirectDutySession : IDisposable
         }
         public bool AdmitPublication(So6120MailboxRequest request)
         {
-            if (request.WriteValue.HasValue && !session.EntryAllowed(refresh: false))
+            if (request.WriteValue.HasValue && !session.SessionEntryAllowed(refresh: false))
             { session.softPublicationRefused = true; return false; }
             var evidence = session.FreshAdmission();
             session.Store(() => session.journal.RecordPublication(request.Id));
             session.Reassess(evidence);
-            if (request.WriteValue.HasValue && !session.EntryAllowed(refresh: false))
+            if (request.WriteValue.HasValue && !session.SessionEntryAllowed(refresh: false))
             { session.softPublicationRefused = true; return false; }
             if (session.trialExecuting && !session.trialRestoring && request.Register == So6120MailboxRegister.Override
                 && request.WriteValue is byte flags && (flags & 0x40) != 0 && session.permissionStarted is null)

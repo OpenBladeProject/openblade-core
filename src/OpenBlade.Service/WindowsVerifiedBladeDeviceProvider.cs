@@ -117,6 +117,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     public void SetRecoveryWriteAdmission(Func<bool> admission) =>
         device.SetRecoveryWriteAdmission(admission);
 
+    public Task<IDisposable> AcquireFanStopHardwareLeaseAsync(CancellationToken cancellationToken) =>
+        device.AcquireFanStopHardwareLeaseAsync(cancellationToken);
+
     public string? ExperimentalSupportSource => experimentalFactory?.EvidenceSource;
 
     public bool IsExperimentalWritesPaused => experimentalFactory?.IsWritesPaused == true;
@@ -474,6 +477,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         private readonly object lifecycleSync = new();
         private readonly object gpuClockOffsetManagementSync = new();
         private readonly SemaphoreSlim hardwareOperationGate = new(1, 1);
+        private bool fanStopDelegated;
         private Task? deferredDisposal;
         private bool closing;
         private bool disposed;
@@ -2830,12 +2834,49 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
+        internal async Task<IDisposable> AcquireFanStopHardwareLeaseAsync(CancellationToken cancellationToken)
+        {
+            lock (lifecycleSync)
+            {
+                ObjectDisposedException.ThrowIf(closing || disposed, this);
+                if (fanStopDelegated) { throw new InvalidOperationException("Fan guardian hardware is already delegated."); }
+                fanStopDelegated = true;
+            }
+            bool acquired = false;
+            try
+            {
+                await hardwareOperationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                acquired = true;
+                ThrowIfClosingOrDisposed();
+                return new FanStopHardwareLease(this);
+            }
+            catch
+            {
+                lock (lifecycleSync) { fanStopDelegated = false; }
+                if (acquired) { hardwareOperationGate.Release(); }
+                throw;
+            }
+        }
+
+        private sealed class FanStopHardwareLease(SerializedBladeDevice owner) : IDisposable
+        {
+            private SerializedBladeDevice? retained = owner;
+            public void Dispose()
+            {
+                SerializedBladeDevice? current = Interlocked.Exchange(ref retained, null);
+                if (current is null) { return; }
+                lock (current.lifecycleSync) { current.fanStopDelegated = false; }
+                current.hardwareOperationGate.Release();
+            }
+        }
+
         private async Task EnterHardwareOperationAsync(CancellationToken cancellationToken)
         {
             Task waitForHardware;
             lock (lifecycleSync)
             {
                 ObjectDisposedException.ThrowIf(closing || disposed, this);
+                if (fanStopDelegated) { throw new CapabilityUnavailableException("Ordinary hardware access is blocked by the fan guardian delegation."); }
                 waitForHardware = hardwareOperationGate.WaitAsync(cancellationToken);
             }
 
@@ -2843,6 +2884,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             try
             {
                 ThrowIfClosingOrDisposed();
+                lock (lifecycleSync)
+                {
+                    if (fanStopDelegated) { throw new CapabilityUnavailableException("Ordinary hardware access is blocked by the fan guardian delegation."); }
+                }
             }
             catch
             {

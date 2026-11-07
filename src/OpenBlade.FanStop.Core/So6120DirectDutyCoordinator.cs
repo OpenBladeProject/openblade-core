@@ -1,6 +1,6 @@
 using OpenBlade.Contracts;
 
-namespace OpenBlade.Capture;
+namespace OpenBlade.FanStop;
 
 internal sealed record So6120DutyControls(byte Selector, byte Manual, byte Override,
     byte Staged1, byte Staged2, byte Cycle, byte PolicyCommand);

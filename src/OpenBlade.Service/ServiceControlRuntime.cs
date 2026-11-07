@@ -873,8 +873,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ?? throw new ArgumentNullException(nameof(subscriptionHub));
         this.deviceProvider = deviceProvider
             ?? throw new ArgumentNullException(nameof(deviceProvider));
+        if (fanStopController.Guardian is { } guardian)
+        {
+            guardian.ConfigureHardwareDelegation(AcquireGuardianHardwareLeaseAsync);
+            guardian.SnapshotChanged += NotifyGuardianSnapshotChanged;
+        }
         this.deviceProvider.SetRecoveryWriteAdmission(() =>
-            !laptopControlExecutor.RequiresReconciliation && !fanStopController.RequiresRecovery
+            !laptopControlExecutor.RequiresReconciliation && !fanStopController.BlocksOrdinaryHardware
             && Volatile.Read(ref laptopRecoveryObservationActive) == 0
             && Volatile.Read(ref laptopRecoveryPowerDestinationPending) == 0);
         this.history = history ?? throw new ArgumentNullException(nameof(history));
@@ -2936,6 +2941,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (fanStopController.BlocksOrdinaryHardware)
+            {
+                return new(ControlOperationStatus.Blocked, fanStopController.RequiresRecovery
+                    ? GetStatus().FanStopStatus.Message! : GuardianHardwareBlockedMessage);
+            }
             if (usage == DisplayBrightnessHidUsage.Released)
             {
                 return await ReleaseDisplayBrightnessUsageCoreAsync(token)
@@ -3002,9 +3012,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private async Task<ControlOperationResult> ReleaseDisplayBrightnessUsageCoreAsync(
         CancellationToken token)
     {
-        if (fanStopController.RequiresRecovery)
+        if (fanStopController.BlocksOrdinaryHardware)
         {
-            return new(ControlOperationStatus.Blocked, GetStatus().FanStopStatus.Message!);
+            return new(ControlOperationStatus.Blocked, fanStopController.RequiresRecovery
+                ? GetStatus().FanStopStatus.Message! : GuardianHardwareBlockedMessage);
         }
         ControlOperationResult release =
             await displayBrightnessHidController.SetUsageAsync(
@@ -4730,7 +4741,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
             || laptopControlExecutor.RequiresReconciliation
-            || fanStopController.RequiresRecovery
+            || fanStopController.BlocksOrdinaryHardware
             || Volatile.Read(ref laptopRecoveryObservationActive) != 0
             || current.ActivePowerSource == PowerSource.ExternalUnknown)
         {
@@ -6252,7 +6263,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 return new(ControlOperationStatus.Blocked, GetStatus().FanStopStatus.Message!);
             }
-            if (fanStopController.OwnsStop)
+            if (fanStopController.BlocksOrdinaryThermalWrites)
             {
                 ControlOperationResult? stopRelease = await ReleaseFanStopCoreAsync(token, stillPreparing).ConfigureAwait(false);
                 if (stopRelease?.Status != ControlOperationStatus.Applied)
@@ -10150,6 +10161,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         await operationGate.WaitAsync(cancellationToken);
         try
         {
+            if (fanStopController.Guardian is not null && fanStopController.BlocksOrdinaryHardware)
+            {
+                await fanStopController.RefreshAsync(true, () => false, cancellationToken).ConfigureAwait(false);
+                PublishFanStopOutcome();
+                if (fanStopController.BlocksOrdinaryHardware) { return; }
+            }
             resumeStateValidation.DiscardExpired();
             bool includeLiveReadings = requestedLiveReadings != LiveReadingSensors.None;
             cancellationToken.ThrowIfCancellationRequested();
@@ -11646,6 +11663,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             resumeStateValidation.DiscardExpired();
             resumeStateValidation.DiscardUnstarted();
+            if (await HandleGuardianPowerBoundaryAsync(powerStateProvider.CapturePowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             RefreshBatteryHealthAfterPowerSourceChangeCore();
@@ -11735,6 +11753,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 return;
             }
+
+            if (await HandleGuardianPowerBoundaryAsync(powerStateProvider.CapturePowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
 
             Interlocked.Increment(ref powerAdmissionEpoch);
             await RefreshControllerPresenceAndRelinquishLightingAsync(
@@ -11873,7 +11893,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         try
         {
             if (lowPowerGate.IsActive || laptopControlExecutor.RequiresReconciliation
-                || fanStopController.RequiresRecovery)
+                || fanStopController.BlocksOrdinaryHardware)
             {
                 return;
             }
@@ -12341,6 +12361,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 fanStopResult = await ReleaseFanStopForLifecycleAsync(StillPreparing).ConfigureAwait(false);
             }
+            if (driverModeResult.Message == GuardianHardwareBlockedMessage
+                && activeBoundary && StillPreparing() && !fanStopController.BlocksOrdinaryHardware)
+            {
+                // First attempt was command-free and refused specifically by the
+                // delegated owner. Retry only after its native release proof;
+                // canceled/uncertain keyboard calls never enter this branch.
+                using var retry = new CancellationTokenSource(FanStopController.AutomaticCleanupBudget);
+                driverModeResult = await ReleaseDriverModeAsync(preserveLightingIntent: true,
+                    reasonLabel: "low power", retry.Token, lowPowerGeneration: generation,
+                    captureResumeState: false, stillAuthorized: StillPreparing).ConfigureAwait(false);
+            }
             if (activeBoundary && StillPreparing() && OwnsBatterySaverFanStop)
             {
                 using var fanCleanupBudget = CancellationTokenSource.CreateLinkedTokenSource(cleanupToken);
@@ -12670,9 +12701,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         long? lowPowerGeneration = null,
         Func<bool>? stillAuthorized = null)
     {
-        if (fanStopController.RequiresRecovery)
+        if (fanStopController.BlocksOrdinaryHardware)
         {
-            return new(ControlOperationStatus.Blocked, GetStatus().FanStopStatus.Message!);
+            return new(ControlOperationStatus.Blocked, fanStopController.RequiresRecovery
+                ? GetStatus().FanStopStatus.Message! : GuardianHardwareBlockedMessage);
         }
         if (laptopControlExecutor.RequiresReconciliation)
         {
@@ -13185,7 +13217,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         CancellationToken cancellationToken,
         Func<bool>? stillControlsSession = null)
     {
-        if (laptopControlExecutor.RequiresReconciliation || fanStopController.RequiresRecovery)
+        if (laptopControlExecutor.RequiresReconciliation || fanStopController.BlocksOrdinaryHardware)
         {
             return false;
         }
@@ -13475,10 +13507,18 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     public void Dispose()
     {
+        if (fanStopController.Guardian is { } guardian)
+        {
+            Volatile.Write(ref guardianNotificationsStopped, 1);
+            guardian.SnapshotChanged -= NotifyGuardianSnapshotChanged;
+            guardian.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
         applicationContextLeaseCancellation?.Cancel();
         applicationContextLeaseCancellation?.Dispose();
         thermalConvergenceArbiter.Dispose();
-        operationGate.Dispose();
+        // An unresolved owner/publication can still retain the gate. Do not
+        // dispose synchronization beneath its pending Auto or native operation.
+        if (Volatile.Read(ref guardianNotificationPump) == 0) { operationGate.Dispose(); }
         if (fanTemperatureSource is IDisposable disposable)
         {
             disposable.Dispose();
@@ -13813,7 +13853,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return new(ControlOperationStatus.Blocked, GetStatus().FanStopStatus.Message!);
         }
 
-        if (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans && fanStopController.OwnsStop)
+        if (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans && fanStopController.BlocksOrdinaryThermalWrites)
         {
             ControlOperationResult? release = await ReleaseFanStopCoreAsync(token, stillControlsSession).ConfigureAwait(false);
             if (release?.Status != ControlOperationStatus.Applied)
@@ -14866,7 +14906,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         CancellationToken cancellationToken,
         bool allowRecentObservation = false)
     {
-        if (laptopControlExecutor.RequiresReconciliation || fanStopController.RequiresRecovery)
+        if (laptopControlExecutor.RequiresReconciliation || fanStopController.BlocksOrdinaryHardware)
         {
             return;
         }

@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 74;
+    public const int ProtocolVersion = 75;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -415,7 +415,8 @@ public static class IpcMessageCodec
             || !Enum.IsDefined(fanStop.UnavailableReason)
             || fanStop.State is FanStopState.Unavailable or FanStopState.RecoveryRequired
                 && (fanStop.CanStop || fanStop.CanReturnToAutomatic)
-            || fanStop.CanReturnToAutomatic && fanStop.State != FanStopState.Stopped)
+            || fanStop.CanReturnToAutomatic && fanStop.State is not
+                (FanStopState.Stopped or FanStopState.Starting or FanStopState.ReturningToAutomatic))
         {
             throw InvalidStatus("fan-stop status is invalid");
         }

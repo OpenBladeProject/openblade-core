@@ -4,9 +4,9 @@ namespace OpenBlade.Contracts;
 
 public enum FanStopMode { Automatic, Stop }
 
-public enum FanStopState { Unavailable, Inactive, Stopped, Automatic, RecoveryRequired }
+public enum FanStopState { Unavailable, Inactive, Stopped, Automatic, RecoveryRequired, Starting, ReturningToAutomatic }
 
-public enum FanStopUnavailableReason { None, UnsupportedDevice, RecoveryNotValidated }
+public enum FanStopUnavailableReason { None, UnsupportedDevice, RecoveryNotValidated, GuardianUnavailable }
 
 /// <summary>Separate SO6120 ownership state; ordinary fan settings remain saved.
 /// Automatic is reported only after an independently confirmed owned handback.

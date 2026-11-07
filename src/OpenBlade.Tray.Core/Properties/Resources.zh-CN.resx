@@ -1730,4 +1730,19 @@
   <data name="Fan control needs recovery" xml:space="preserve">
     <value>风扇控制需要恢复</value>
   </data>
+  <data name="Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto." xml:space="preserve">
+    <value>正在等待风扇停止确认，可能需要几十秒。关闭即可返回自动模式。</value>
+  </data>
+  <data name="Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds." xml:space="preserve">
+    <value>正在返回自动模式。自动散热尚未确认，可能需要几十秒。</value>
+  </data>
+  <data name="Fan stop is unavailable because its safety guardian is not ready." xml:space="preserve">
+    <value>安全监护程序尚未就绪，无法停止风扇。</value>
+  </data>
+  <data name="Waiting for fan stop confirmation" xml:space="preserve">
+    <value>正在等待风扇停止确认</value>
+  </data>
+  <data name="Returning to Auto" xml:space="preserve">
+    <value>正在返回自动模式</value>
+  </data>
 </root>

@@ -7,7 +7,8 @@ public sealed partial class MainViewModel
     private FanStopStatus CurrentFanStopStatus => latestStatus?.FanStopStatus ?? new();
 
     private bool FanStopOwnsControl => CurrentFanStopStatus.State is
-        FanStopState.Stopped or FanStopState.RecoveryRequired;
+        FanStopState.Stopped or FanStopState.Starting or FanStopState.ReturningToAutomatic
+        or FanStopState.RecoveryRequired;
 
     public bool IsFanStopVisible => Capabilities.HasFanStopTrialEvidence
         || Capabilities.SupportsFanStop || FanStopOwnsControl;
@@ -16,7 +17,7 @@ public sealed partial class MainViewModel
 
     public bool CanToggleFanStop => IsFanStopVisible && CanRequestHardwareControl
         && !IsFanControlOperationInProgress
-        && CurrentFanStopStatus.State != FanStopState.RecoveryRequired
+        && CurrentFanStopStatus.State is not (FanStopState.RecoveryRequired or FanStopState.ReturningToAutomatic)
         && (FanStopRequested
             ? CurrentFanStopStatus.CanReturnToAutomatic
             : Capabilities.SupportsFanStop && CurrentFanStopStatus.CanStop);
@@ -27,9 +28,15 @@ public sealed partial class MainViewModel
         {
             { State: FanStopState.RecoveryRequired } =>
                 TrayText.Get("Fan control needs recovery. Automatic cooling is not confirmed."),
+            { State: FanStopState.Starting } =>
+                TrayText.Get("Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto."),
+            { State: FanStopState.ReturningToAutomatic } =>
+                TrayText.Get("Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds."),
             { State: FanStopState.Stopped } when CanToggleFanStop =>
                 TrayText.Get("Fans are stopped. Turn off to return to Auto."),
             { State: FanStopState.Stopped } => TrayText.Get("Fans are stopped"),
+            { UnavailableReason: FanStopUnavailableReason.GuardianUnavailable } =>
+                TrayText.Get("Fan stop is unavailable because its safety guardian is not ready."),
             { UnavailableReason: FanStopUnavailableReason.RecoveryNotValidated } =>
                 TrayText.Get("Fan stop is not available in this build."),
             { CanStop: true } when CanToggleFanStop => TrayText.Get("Turn on to stop the fans. Turn off to return to Auto."),

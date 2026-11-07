@@ -64,6 +64,11 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         "OpenBlade.Service.dll",
         "OpenBlade.Service.deps.json",
         "OpenBlade.Service.runtimeconfig.json",
+        "OpenBlade.FanStop.Core.dll",
+        "OpenBlade.FanStop.Guardian.exe",
+        "OpenBlade.FanStop.Guardian.dll",
+        "OpenBlade.FanStop.Guardian.deps.json",
+        "OpenBlade.FanStop.Guardian.runtimeconfig.json",
         "OpenBlade.Platform.dll",
         "OpenBlade.SessionAgent.exe",
         "OpenBlade.SessionAgent.dll",
@@ -90,6 +95,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
     private readonly string backupDirectory;
     private readonly string failedDirectory;
     private readonly ISetupProgressReporter progressReporter;
+    private readonly Action ensureGuardianQuiescent;
     private TransactionState state = TransactionState.Staged;
 
     private SetupPayloadTransaction(
@@ -99,7 +105,8 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         string backupDirectory,
         string failedDirectory,
         bool hadExistingInstall,
-        ISetupProgressReporter progressReporter)
+        ISetupProgressReporter progressReporter,
+        Action ensureGuardianQuiescent)
     {
         this.paths = paths;
         this.files = files;
@@ -107,6 +114,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         this.backupDirectory = backupDirectory;
         this.failedDirectory = failedDirectory;
         this.progressReporter = progressReporter;
+        this.ensureGuardianQuiescent = ensureGuardianQuiescent;
         HadExistingInstall = hadExistingInstall;
     }
 
@@ -123,12 +131,15 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         string payloadDirectory,
         ISetupPayloadFileSystem files,
         CancellationToken cancellationToken,
-        ISetupProgressReporter? progressReporter = null)
+        ISetupProgressReporter? progressReporter = null,
+        Action? ensureGuardianQuiescent = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentException.ThrowIfNullOrWhiteSpace(payloadDirectory);
         ArgumentNullException.ThrowIfNull(files);
         progressReporter ??= NullSetupProgressReporter.Instance;
+        ensureGuardianQuiescent ??= new SetupGuardianQuiescenceGuard(
+            paths, new WindowsSetupProcessOperations(), files.GetAttributes).EnsureClear;
 
         string payloadRoot = NormalizeRoot(payloadDirectory);
         IReadOnlyDictionary<string, PayloadEntry> sourceManifest =
@@ -179,7 +190,8 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
                 backup,
                 failed,
                 files.DirectoryExists(paths.InstallDirectory),
-                progressReporter);
+                progressReporter,
+                ensureGuardianQuiescent);
         }
         catch (Exception failure)
         {
@@ -190,7 +202,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
             try
             {
-                DeleteTransactionDirectory(files, paths, staging);
+                DeleteTransactionDirectory(files, paths, staging, ensureGuardianQuiescent);
             }
             catch (Exception cleanupFailure)
             {
@@ -231,7 +243,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                files.MoveDirectory(stagingDirectory, paths.InstallDirectory);
+                GuardedMoveDirectory(stagingDirectory, paths.InstallDirectory);
                 state = TransactionState.Active;
             }
             catch (Exception activationFailure)
@@ -258,10 +270,16 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         }
         else
         {
-            files.MoveDirectory(stagingDirectory, paths.InstallDirectory);
+            GuardedMoveDirectory(stagingDirectory, paths.InstallDirectory);
             state = TransactionState.Active;
         }
 
+    }
+
+    private void GuardedMoveDirectory(string source, string destination)
+    {
+        ensureGuardianQuiescent();
+        files.MoveDirectory(source, destination);
     }
 
     private async Task MoveAtomicDirectoryWithRetryAsync(
@@ -274,7 +292,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                files.MoveDirectory(source, destination);
+                GuardedMoveDirectory(source, destination);
                 return;
             }
             catch (Exception exception) when (
@@ -310,7 +328,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         {
             try
             {
-                DeleteTransactionDirectory(files, paths, backupDirectory);
+                DeleteTransactionDirectory(files, paths, backupDirectory, ensureGuardianQuiescent);
             }
             catch (Exception exception)
             {
@@ -344,7 +362,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             case TransactionState.Staged:
                 if (files.DirectoryExists(stagingDirectory))
                 {
-                    DeleteTransactionDirectory(files, paths, stagingDirectory);
+                    DeleteTransactionDirectory(files, paths, stagingDirectory, ensureGuardianQuiescent);
                 }
                 state = TransactionState.RolledBack;
                 break;
@@ -362,7 +380,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
                 }
                 else
                 {
-                    DeleteLiveDirectory(files, paths);
+                    DeleteLiveDirectory(files, paths, ensureGuardianQuiescent);
                 }
                 state = TransactionState.RolledBack;
                 break;
@@ -376,7 +394,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         {
             try
             {
-                DeleteTransactionDirectory(files, paths, stagingDirectory);
+                DeleteTransactionDirectory(files, paths, stagingDirectory, ensureGuardianQuiescent);
                 state = TransactionState.RolledBack;
             }
             catch (Exception exception)
@@ -394,7 +412,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
     private async Task RollbackUpdateAsync(CancellationToken cancellationToken)
     {
-        files.MoveDirectory(paths.InstallDirectory, failedDirectory);
+        GuardedMoveDirectory(paths.InstallDirectory, failedDirectory);
         try
         {
             await MoveAtomicDirectoryWithRetryAsync(
@@ -406,7 +424,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         {
             try
             {
-                files.MoveDirectory(failedDirectory, paths.InstallDirectory);
+                GuardedMoveDirectory(failedDirectory, paths.InstallDirectory);
             }
             catch (Exception reverseFailure)
             {
@@ -452,7 +470,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
             try
             {
-                DeleteTransactionDirectory(files, paths, directory);
+                DeleteTransactionDirectory(files, paths, directory, ensureGuardianQuiescent);
             }
             catch (Exception exception)
             {
@@ -616,7 +634,8 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
     private static void DeleteTransactionDirectory(
         ISetupPayloadFileSystem files,
         SetupPaths paths,
-        string directory)
+        string directory,
+        Action ensureGuardianQuiescent)
     {
         if (!SetupPaths.IsExactTransactionSiblingDirectory(directory, paths.ProgramFilesRoot))
         {
@@ -624,10 +643,11 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
                 $"Refusing to recursively delete unexpected transaction path '{directory}'.");
         }
 
+        ensureGuardianQuiescent();
         files.DeleteDirectory(directory);
     }
 
-    private static void DeleteLiveDirectory(ISetupPayloadFileSystem files, SetupPaths paths)
+    private static void DeleteLiveDirectory(ISetupPayloadFileSystem files, SetupPaths paths, Action ensureGuardianQuiescent)
     {
         if (!SetupPaths.IsExactOpenBladeDirectory(paths.InstallDirectory, paths.ProgramFilesRoot))
         {
@@ -637,6 +657,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
         if (files.DirectoryExists(paths.InstallDirectory))
         {
+            ensureGuardianQuiescent();
             files.DeleteDirectory(paths.InstallDirectory);
         }
     }

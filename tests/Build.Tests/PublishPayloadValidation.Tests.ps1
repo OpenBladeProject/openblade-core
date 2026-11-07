@@ -141,6 +141,11 @@ function Write-ValidServicePayload {
     Write-ServiceManifest -Payload $Payload -Manifest (New-ValidServiceManifest)
     foreach ($sessionAgentFile in @(
             'OpenBlade.Platform.dll',
+            'OpenBlade.FanStop.Core.dll',
+            'OpenBlade.FanStop.Guardian.exe',
+            'OpenBlade.FanStop.Guardian.dll',
+            'OpenBlade.FanStop.Guardian.deps.json',
+            'OpenBlade.FanStop.Guardian.runtimeconfig.json',
             'OpenBlade.SessionAgent.exe',
             'OpenBlade.SessionAgent.dll',
             'OpenBlade.SessionAgent.deps.json',
@@ -484,7 +489,7 @@ try {
         -Value 'runtime resource loader' -NoNewline
     [xml]$buildProperties = Get-Content -LiteralPath (Join-Path $repository 'Directory.Build.props')
     $runtimeVersion = [string]$buildProperties.Project.PropertyGroup.OpenBladeMinimumDotNetRuntimeVersion
-    foreach ($application in @('OpenBlade.Service', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
+    foreach ($application in @('OpenBlade.Service', 'OpenBlade.FanStop.Guardian', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
         $frameworks = @([ordered]@{ name = 'Microsoft.NETCore.App'; version = $runtimeVersion })
         if ($application -eq 'OpenBlade.Tray') {
             $frameworks += [ordered]@{ name = 'Microsoft.WindowsDesktop.App'; version = $runtimeVersion }

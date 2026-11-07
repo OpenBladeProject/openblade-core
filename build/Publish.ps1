@@ -49,6 +49,7 @@ $developerTools = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlad
 $stagingRoot = [IO.Path]::GetFullPath((Join-Path $artifacts ('.staging\' + [Guid]::NewGuid().ToString('N'))))
 $stagingBundle = Join-Path $stagingRoot 'OpenBlade'
 $stagingDeveloperTools = Join-Path $stagingRoot 'OpenBlade.DeveloperTools'
+$stagingGuardian = Join-Path $stagingRoot 'OpenBlade.FanStop.Guardian'
 $stagingInstallerOutput = Join-Path $stagingRoot 'installer'
 $stagingInstallerUi = Join-Path $stagingRoot 'installer-ui'
 $stagingUpgradeProbeOutput = Join-Path $stagingRoot 'installer-upgrade-probe'
@@ -195,6 +196,9 @@ try {
 
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Service\OpenBlade.Service.csproj') `
         $payload ($installedPublishArguments + $serviceValidationArguments)
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.FanStop.Guardian\OpenBlade.FanStop.Guardian.csproj') `
+        $stagingGuardian ($installedPublishArguments + $serviceValidationArguments)
+    Add-GuardianPublishPayload -Guardian $stagingGuardian -Payload $payload
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.SessionAgent\OpenBlade.SessionAgent.csproj') `
         $payload $installedPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `

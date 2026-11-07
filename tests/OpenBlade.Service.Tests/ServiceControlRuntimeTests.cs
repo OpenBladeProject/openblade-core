@@ -31749,6 +31749,15 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public string? LaptopControlRecoveryIdentity { get; set; } = "RZ09-0581|1532:02E0";
 
         public Func<bool>? RecoveryWriteAdmission { get; private set; }
+        public int GuardianLeaseAcquisitions { get; private set; }
+        public GuardianFanStopBackendTests.Lease GuardianLease { get; } = new();
+
+        public Task<IDisposable> AcquireFanStopHardwareLeaseAsync(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            GuardianLeaseAcquisitions++;
+            return Task.FromResult<IDisposable>(GuardianLease);
+        }
 
         public void SetRecoveryWriteAdmission(Func<bool> admission) => RecoveryWriteAdmission = admission;
 

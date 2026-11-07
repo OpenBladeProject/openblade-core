@@ -1,0 +1,140 @@
+# SO6120 Stop/Auto guardian integration
+
+The service Stop/Auto request now delegates an activation to a separate native
+owner. It does not run Capture or change the installed driver. This is an
+experimental implementation on exact Blade 16 RZ09-0581 / `1532:02E0`, using
+the reviewed SO6120 EC 1.04 command contract. Other Blade models do not inherit
+its registers, driver, admission or physical results.
+
+Entry remains scoped to Balanced on USB-C. The initial destination is zero
+PWM directly through the reviewed coordinator; the half-cycle step in the
+attended experiment is not a firmware prerequisite. Stop is activation-local
+and is never restored from a saved profile after startup.
+
+## Duration and transitions
+
+There is no fixed Stop dwell timer. Selecting Auto, making an explicit
+performance/profile/fan-mode change, losing the active session, or failing
+continuation safety requests Auto from the same owner. The current conservative
+thermal policy requires a CPU thermal-zone reading between 10 and 55 C, no
+active GPU, and a reading completed within two seconds. Unavailable readings
+end continuation. These inputs are not measurements of every die hotspot.
+
+External power is classified by the existing typed adapter query in the owner,
+serialized outside mailbox transactions. Windows external-power indication by
+itself cannot distinguish USB-C from the full-power adapter.
+
+| Change while Stop is owned | Action |
+| --- | --- |
+| Same known source | Keep Stop while continuation admission holds |
+| AC to USB-C, USB-C to battery, or AC to battery | Verify the existing owned controls and zero PWM, then keep Stop |
+| Battery to USB-C/AC, or USB-C to AC | Return to Auto |
+| Complete adapter reply with an unknown value | Request same-owner Auto |
+| Unresolved native observation | Stop further commands and report recovery required |
+| Explicit mode change | Complete Auto and release ownership before applying the destination |
+
+The power comparison is generic; it does not widen initial entry admission.
+Destination profile intent is retained during a downward power transition, but
+its ordinary hardware writes wait for Auto. The owner never rewrites zero or FE
+to fight a firmware reset. If the downgrade changes owned fields, the complete
+control observation fences the operation instead of inventing ownership.
+
+Same-power firmware changes made outside OpenBlade do not have an established
+continuous notification channel. The ordinary thermal query cannot be assumed
+to decode the direct FE selector. This implementation detects competing
+controllers and checks owned controls before cleanup and on power downgrades;
+it does not claim continuous detection of every external register change.
+
+## Ownership and recovery
+
+The service marks delegation pending, drains its shared hardware semaphore,
+then retains that semaphore for the whole activation. Queued and new ordinary
+HID reads and writes are rejected. The independent owner alone performs the
+reviewed mailbox and adapter queries during this interval.
+
+A hardware-free proxy creates the private breakaway/kill-on-close job used by
+the attended guardian. The native owner escapes that private job. Independent
+control readers observe both proxy and service heartbeats; either loss requests
+Auto. The installed service is not assigned to a disposable per-activation job.
+The private SYSTEM-only channel binds the original service, launched owner,
+operation ID and increasing status revisions. It exposes Stop and Auto signals,
+not raw registers or PWM values.
+
+Before launching a child, the service flushes a create-once pending reservation
+in protected machine data. Any old marker, malformed marker or read failure
+blocks acquisition on restart without issuing a hardware command. A journal
+cannot be replayed or adopted by a new service. The live service archives its
+reservation only after independently observing the original owner's exit and
+all required evidence: Auto readback, owned-field cleanup, complete journal and
+native handle release. A clean refusal can release ownership without claiming
+that Auto was observed only when explicit command evidence proves no EC mutation
+and no pending or unresolved native command. Completed read-only commands do not
+establish Stop ownership. Missing checkpoints alone never prove no write occurred.
+
+The UI distinguishes preparing Stop, confirmed Stop, returning to Auto, and
+recovery required. Historical confirmed Stop is retained even if the owner
+returns to Auto before the next service status sample. Cancellation of the UI
+request does not cancel mandatory native confirmation or authorize a replay.
+Confirmed Stop additionally requires a complete zero-PWM, zero-tach observation
+after bounded coast checks. Continued coasting requests Auto; ambiguous reads
+remain fenced. This is EC-indicated stop, not an independent mechanical sensor.
+
+Startup allows ten seconds for the first authenticated heartbeat, followed by
+the normal five-second lease. The continuous monitor samples cheap session,
+controller and thermal inputs once per second. Each native command still checks
+fresh host, HID, controller, ownership and driver-service admission. Only the
+boot-reported EC version and bytes of the already verified, write/delete-pinned
+driver file are reused. Service heartbeats use an immutable status snapshot and
+volatile lifecycle flags; they cannot issue HID reads or take the service gate.
+
+Keyboard shutdown still attempts its guarded Normal-mode release first. An
+attempt definitely blocked by guardian delegation may be retried only after
+verified Auto and native release. An uncertain keyboard operation is not
+replayed. Installation and removal must also preserve any active owner and
+unfinished guardian records.
+
+## Evidence and remaining validation
+
+The shared coordinator, journal, port and caller-isolation code are extracted
+into `OpenBlade.FanStop.Core`; Capture keeps its separate attended consent,
+stopped-OpenBlade admission and developer attempt marker. The product owner
+requires the already installed pinned InpOut driver. No driver or vendor DLL
+is downloaded, installed, loaded through a vendor API, or bundled by this work.
+The product host check uses the exact model and HID identity; SKU and BIOS are
+diagnostic metadata. The EC 1.04 requirement is explicit because this register
+contract was decoded from that exact image. Its source SHA-256 is
+`8537E9FD55B7B35504D8D87B0191ACC4391B67365B3FE72F6E1029A424C9E707`,
+not a claimed hash of running EC memory.
+
+The [attended caller-loss result](so6120-guardian-caller-loss-validation.md)
+establishes recovery by the surviving owner for its frozen Capture build.
+It does not validate the new installed Session-0 delegation path, direct zero
+entry without the spinning test step, sustained Stop, or power transitions.
+These still need one appropriately scoped, attended installed-path test after
+review. This implementation task performs no installation or hardware test.
+
+Guardian termination, an unknown outer-job termination, a native call that
+never returns, sleep/resume and OS failure do not have a demonstrated
+independent cooling fallback. A fenced owner retains its native resources;
+neither the service nor Setup kills it to clear the condition. A previous
+developer attempt also requires independent completed-run evidence before it
+can be disregarded; the new service does not erase its marker.
+
+## Completed developer attempt
+
+The one-time developer marker from the reviewed caller-loss run is separate from
+product reservations. `build/Archive-So6120CompletedDeveloperAttempt.ps1` supports
+its explicit offline archival. Supply the local evidence directory; the default
+only verifies the pinned complete journal, log, native-close and independent
+process-exit receipts. It does not access the machine marker or hardware.
+
+An explicitly requested `-Archive` run from an administrator console additionally
+holds the global owner semaphore, rechecks original process absence or later PID
+reuse, and renames only the matching marker without changing its bytes. Unknown
+runs, altered evidence, active owners and existing destinations are refused.
+The tool does not reopen a device, restore firmware or replay a journal. Adding
+another run requires separate evidence review. This implementation was tested
+using temporary marker fixtures; the real machine marker remains unchanged.
+
+See [review dispositions](so6120-stop-auto-guardian-review.md) for the independent
+Claude review and the corrections made afterward.

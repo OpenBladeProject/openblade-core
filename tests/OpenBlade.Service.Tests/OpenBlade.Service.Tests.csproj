@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenBlade.Service\OpenBlade.Service.csproj" />
+    <Compile Include="..\..\src\OpenBlade.FanStop.Guardian\So6120ServiceAdmissionPolicies.cs"
+             Link="So6120ServiceAdmissionPolicies.cs" />
   </ItemGroup>
 
 </Project>

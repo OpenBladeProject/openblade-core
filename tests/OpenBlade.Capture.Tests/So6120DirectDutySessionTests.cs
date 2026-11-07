@@ -57,6 +57,35 @@ public sealed class So6120DirectDutySessionTests
         Assert.True(session.Restore().Success);
     }
 
+    [Fact]
+    public void ExplicitAdmissionPolicyFailureFencesBeforeAnyPortOperation()
+    {
+        using var fixture = new Fixture();
+        var policy = new RefusingAdmissionPolicy();
+        using var session = So6120DirectDutySession.CreateInjected(fixture.Root, fixture.Binding,
+            fixture.Port, fixture.Source, fixture.Clock, admissionPolicy: policy);
+
+        var result = session.Enter();
+
+        Assert.True(result.CommandsFenced);
+        Assert.Equal(1, policy.Calls);
+        Assert.Empty(fixture.Port.Publications);
+        Assert.Empty(fixture.Port.Writes);
+        Assert.Throws<InvalidOperationException>(() => session.Restore());
+    }
+
+    private sealed class RefusingAdmissionPolicy : ISo6120SessionAdmissionPolicy
+    {
+        internal int Calls { get; private set; }
+
+        public So6120AdmissionAssessment Assess(TimeProvider clock, So6120SupervisedMetadata metadata,
+            So6120CallerChallengeContext challenge, So6120OpenBladeHandoff handoff)
+        {
+            Calls++;
+            return So6120AdmissionAssessment.ControllerDetected;
+        }
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -420,10 +449,12 @@ public sealed class So6120DirectDutySessionTests
         public So6120SessionBinding Binding { get; }
         public EvidenceSource Source { get; }
         private int durableCapture;
-        public Fixture(PerformancePreset profile = PerformancePreset.Silent, byte selector = 5, bool preparing = false)
+        public Fixture(PerformancePreset profile = PerformancePreset.Silent, byte selector = 5, bool preparing = false,
+            bool zeroDuty = false)
         {
             Identity = new(new(Guid.NewGuid(), "synthetic SO6120", "synthetic EC1.04", Guid.NewGuid()), profile,
-                preparing ? null : (byte)30, preparing ? null : (byte)40, new('A', 64), new('B', 64), Guid.NewGuid(), new('D', 64), "synthetic-boot");
+                preparing ? null : zeroDuty ? (byte)0 : (byte)30, preparing ? null : zeroDuty ? (byte)0 : (byte)40,
+                new('A', 64), new('B', 64), Guid.NewGuid(), new('D', 64), "synthetic-boot");
             var stamp = new So6120AdmissionStamp(Identity.Owner.OperationId, 1, Clock, Clock.GetTimestamp());
             var scope = new So6120ChallengeScope(@"\\?\hid#vid_1532&pid_02e0&mi_03&col01#synthetic", "4.01", new(1, 4),
                 So6120SupervisedAdmission.DriverHash, new('E', 64), new('F', 64));

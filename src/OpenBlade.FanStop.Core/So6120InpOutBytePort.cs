@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace OpenBlade.Capture;
+namespace OpenBlade.FanStop;
 
 internal sealed record So6120InpOutNativeResult(bool Succeeded, uint BytesReturned, int NativeError);
 

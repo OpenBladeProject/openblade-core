@@ -34,7 +34,7 @@ public sealed class RepositoryArchitectureTests
                 && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "Rz090528PadlessHyperBoostValidation.cs")
                 // The attended Capture runner uses only candidate identity metadata;
                 // this does not admit another feature-report composition point.
-                && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Capture", "So6120SupervisedAdmission.cs")
+                && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.FanStop.Core", "So6120WindowsSupervisedMetadata.cs")
                 && !pair.Key.EndsWith("HidInputAccessProbe.cs")),
             pair => pair.Value.Contains("new WindowsHidNative("));
         string[] composition = sources
@@ -62,7 +62,7 @@ public sealed class RepositoryArchitectureTests
             $"{separator}OpenBlade.Capture{separator}",
             candidateProbePath,
             StringComparison.OrdinalIgnoreCase);
-        string admission = sources[Path.Combine(sourceDirectory, "OpenBlade.Capture", "So6120SupervisedAdmission.cs")];
+        string admission = sources[Path.Combine(sourceDirectory, "OpenBlade.FanStop.Core", "So6120WindowsSupervisedMetadata.cs")];
         Assert.Contains("ReadHidMetadata(IReadOnlyList<string> paths, IHidCandidateNative native)", admission, StringComparison.Ordinal);
         Assert.DoesNotContain("OverlappedFeatureOperation", admission, StringComparison.Ordinal);
     }

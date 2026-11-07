@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -41,50 +40,6 @@ internal sealed class So6120AttendedBaselineConsent(So6120JournalIdentity identi
     }
 
     private static bool IsDigest(string? value) => value is { Length: 64 } && value.All(Uri.IsHexDigit);
-}
-
-internal enum So6120NativeCloseState { NotAttempted, Closed, Failed }
-internal sealed record So6120NativeCloseResult(bool Succeeded, int NativeError);
-internal sealed class So6120NativeCloseEvidence
-{
-    private So6120NativeCloseResult? result;
-    public So6120NativeCloseState State => Volatile.Read(ref result) switch
-    {
-        null => So6120NativeCloseState.NotAttempted,
-        { Succeeded: true } => So6120NativeCloseState.Closed,
-        _ => So6120NativeCloseState.Failed,
-    };
-    public int? NativeError => Volatile.Read(ref result)?.NativeError;
-    internal void Record(So6120NativeCloseResult value) => Volatile.Write(ref result, value);
-}
-
-internal sealed class So6120OwnedInpOutHandle : SafeHandleZeroOrMinusOneIsInvalid
-{
-    private readonly Func<nint, So6120NativeCloseResult>? closeForTest;
-    public So6120OwnedInpOutHandle() : base(ownsHandle: true) { }
-    internal So6120OwnedInpOutHandle(nint value, Func<nint, So6120NativeCloseResult> close) : this()
-    {
-        closeForTest = close;
-        SetHandle(value);
-    }
-
-    internal So6120NativeCloseEvidence Evidence { get; } = new();
-    protected override bool ReleaseHandle()
-    {
-        So6120NativeCloseResult result;
-        if (closeForTest is not null) { result = closeForTest(handle); }
-        else
-        {
-            bool succeeded = CloseHandle(handle);
-            result = new(succeeded, succeeded ? 0 : Marshal.GetLastWin32Error());
-        }
-        Evidence.Record(result);
-        return result.Succeeded;
-    }
-
-    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CloseHandle(nint value);
 }
 
 internal sealed class So6120WindowsDutyAcquisition(So6120SessionBinding binding, So6120InpOutBytePort port,
@@ -282,38 +237,9 @@ internal static class So6120WindowsDirectDutyPlatform
             }
         }
 
-        public IDisposable PinDriverFile(So6120DriverMetadata driver)
-        {
-            string expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                So6120SupervisedAdmission.DriverRelativePath);
-            if (!Path.IsPathFullyQualified(expected) || !string.Equals(driver.FilePath, expected, StringComparison.OrdinalIgnoreCase)
-                || (File.GetAttributes(expected) & FileAttributes.ReparsePoint) != 0)
-            { throw new InvalidOperationException("The reviewed InpOut disk path is unavailable."); }
-            var file = new FileStream(expected, FileMode.Open, FileAccess.Read, FileShare.Read);
-            try
-            {
-                if (file.Length != So6120SupervisedAdmission.DriverBytes
-                    || Convert.ToHexString(SHA256.HashData(file)) != So6120SupervisedAdmission.DriverHash)
-                { throw new InvalidOperationException("The locked InpOut disk file differs from the reviewed driver."); }
-                return file;
-            }
-            catch { file.Dispose(); throw; }
-        }
+        public IDisposable PinDriverFile(So6120DriverMetadata driver) => So6120NativeAcquisition.PinDriverFile(driver);
 
-        public So6120OwnedInpOutHandle OpenDevice()
-        {
-            const uint shareReadWriteDelete = 7;
-            const uint openExisting = 3;
-            So6120OwnedInpOutHandle handle = CreateFileW(@"\\.\inpoutx64", 0, shareReadWriteDelete, 0, openExisting, 0, 0);
-            int error = Marshal.GetLastWin32Error();
-            if (!handle.IsInvalid) { return handle; }
-            handle.Dispose();
-            throw new Win32Exception(error, "The fixed zero-access InpOut open failed.");
-        }
-
-        [DllImport("kernel32.dll", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern So6120OwnedInpOutHandle CreateFileW(string name, uint access, uint share, nint security,
-            uint disposition, uint flags, nint template);
+        public So6120OwnedInpOutHandle OpenDevice() => So6120NativeAcquisition.OpenDevice();
     }
 
     private sealed class RunReservation(Semaphore semaphore) : IDisposable

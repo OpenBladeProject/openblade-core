@@ -1,6 +1,6 @@
 using System.Threading.Channels;
 
-namespace OpenBlade.Capture;
+namespace OpenBlade.FanStop;
 
 internal enum So6120GuardianStopReason { None, ExplicitAuto, CallerDisconnected, LeaseExpired, OperationLimit }
 

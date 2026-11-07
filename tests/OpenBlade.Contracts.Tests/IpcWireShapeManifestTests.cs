@@ -61,6 +61,8 @@ public sealed class IpcWireShapeManifestTests
             // Protocol 72 changes only the diagnostic-response transport bound; the JSON shape is unchanged.
             73 => "5B4568285F1ED8B41EF30E4C75AAC002B4C70CB96272F543ABFC46533191D094",
             74 => "3A7F0F0E543BA35C9702F1F28081547A9FA2A1F166D3E6EC4AE7116A394B9113",
+            // Protocol 75 appends pending fan-stop states and the guardian-unavailable reason.
+            75 => "1874A6AF68CE588911929DFAC00A5B2742718349C2B33146C3B8C1C9FC37D814",
             72 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
             _ => null,
         };

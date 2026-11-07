@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
 
-namespace OpenBlade.Capture;
+namespace OpenBlade.FanStop;
 
 internal sealed record So6120JournalIdentity(DirectDutyOwner Owner, PerformancePreset CapturedProfile,
     byte? RequestedDuty1, byte? RequestedDuty2, string DeviceEvidenceSha256, string FirmwareEvidenceSha256,

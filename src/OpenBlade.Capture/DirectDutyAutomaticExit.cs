@@ -2,8 +2,6 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Capture;
 
-internal sealed record DirectDutyOwner(Guid OperationId, string DeviceIdentity, string FirmwareEvidence, Guid ControllerSession);
-
 internal sealed record DirectDutyAutoDestination(PerformancePreset Performance, CustomPerformanceSettings? Custom = null);
 
 // Firmware-observable fields only; legacy profile GPU offsets are host intent.

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
-namespace OpenBlade.Capture;
+namespace OpenBlade.FanStop;
 
 internal static class So6120GuardianProcess
 {

@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
@@ -9,6 +10,175 @@ public sealed partial class ServiceControlRuntime
     private long synchronizedFanStopGeneration;
     private FanStopState recordedFanStopState = FanStopState.Inactive;
     private string? recordedFanStopMessage;
+    internal const string GuardianHardwareBlockedMessage = "Ordinary hardware cleanup is blocked by the active fan guardian delegation.";
+    private long guardianNotificationVersion;
+    private int guardianNotificationPump;
+    private int guardianNotificationsStopped;
+    private int guardianHardwareDelegated;
+    private bool guardianDeferredPowerTransition;
+
+    private async Task<IDisposable> AcquireGuardianHardwareLeaseAsync(CancellationToken token)
+    {
+        IDisposable lease = await deviceProvider.AcquireFanStopHardwareLeaseAsync(token).ConfigureAwait(false);
+        Volatile.Write(ref guardianHardwareDelegated, 1);
+        return new ActionDisposable(() =>
+        {
+            Volatile.Write(ref guardianHardwareDelegated, 0);
+            lease.Dispose();
+        });
+    }
+
+    private void ObserveGuardianPowerSource()
+    {
+        if (fanStopController.Guardian is not { HasOperation: true } guardian) { return; }
+        FanStopGuardianSnapshot snapshot = guardian.Snapshot;
+        if (snapshot.Unresolved || snapshot.Failure is not null
+            || snapshot.ObservedPowerSource is not { } source || source == PowerSource.ExternalUnknown)
+        { return; }
+        ServiceStatusSnapshot current = GetStatus();
+        if (source == current.ActivePowerSource) { return; }
+        if (ChangePowerSourceCore(source)) { guardianDeferredPowerTransition = true; }
+        PublishIfChanged(current with
+        {
+            ActivePowerSource = source,
+            DesiredState = ResolveAutomationDesired(current.ConfirmedState ?? UnknownConfirmedState),
+        });
+    }
+
+    // Caller owns operationGate. A known decrease stores destination intent;
+    // ordinary profile writes wait for the same owner's verified Auto/release.
+    private async Task<bool> HandleGuardianPowerBoundaryAsync(PowerSource source, CancellationToken token)
+    {
+        if (fanStopController.Guardian is null || !fanStopController.BlocksOrdinaryThermalWrites) { return false; }
+        await fanStopController.RefreshAsync(true, () => false, token).ConfigureAwait(false);
+        if (!fanStopController.BlocksOrdinaryThermalWrites) { return false; }
+        ServiceStatusSnapshot current = GetStatus();
+        static int Strength(PowerSource value) => value switch
+        { PowerSource.PluggedIn => 3, PowerSource.UsbC => 2, PowerSource.Battery => 1, _ => 0 };
+        if (source == PowerSource.ExternalUnknown && !fanStopController.RequiresRecovery)
+        {
+            // Windows knows an external supply exists, but only the sole owner
+            // may issue the reviewed adapter query during delegation. It chooses
+            // higher-power Auto or verifies retained Stop on a decrease.
+            guardianDeferredPowerTransition = true;
+            PublishFanStopOutcome();
+            return true;
+        }
+        if (!fanStopController.RequiresRecovery && Strength(source) != 0
+            && Strength(current.ActivePowerSource) != 0
+            && Strength(source) <= Strength(current.ActivePowerSource))
+        {
+            if (source != current.ActivePowerSource)
+            {
+                ChangePowerSourceCore(source);
+                guardianDeferredPowerTransition = true;
+            }
+            PublishIfChanged(current with
+            {
+                ActivePowerSource = source,
+                DesiredState = ResolveAutomationDesired(current.ConfirmedState ?? UnknownConfirmedState),
+                Message = "The guardian retains Stop while verifying its owned state on the lower-power source; destination profile application is deferred.",
+            });
+            PublishFanStopOutcome();
+            return true;
+        }
+        // A known increase requires same-run Auto. Native release must precede
+        // the ordinary destination profile commands.
+        ControlOperationResult? release = await ReleaseFanStopCoreAsync(token).ConfigureAwait(false);
+        return release?.Status != ControlOperationStatus.Applied;
+    }
+
+    private void NotifyGuardianSnapshotChanged()
+    {
+        if (Volatile.Read(ref guardianNotificationsStopped) != 0) { return; }
+        Interlocked.Increment(ref guardianNotificationVersion);
+        if (Interlocked.CompareExchange(ref guardianNotificationPump, 1, 0) == 0)
+        {
+            _ = Task.Run(PublishGuardianSnapshotsAsync);
+        }
+    }
+
+    private async Task PublishGuardianSnapshotsAsync()
+    {
+        long observed = 0;
+        try
+        {
+            do
+            {
+                observed = Volatile.Read(ref guardianNotificationVersion);
+                // This path is independent of fan-curve maintenance and performs
+                // only cached observation plus a typed same-run Auto signal.
+                if (Volatile.Read(ref guardianNotificationsStopped) == 0 && Volatile.Read(ref status) is not null)
+                { await MaintainFanStopAsync(CancellationToken.None).ConfigureAwait(false); }
+            }
+            while (observed != Volatile.Read(ref guardianNotificationVersion));
+        }
+        catch (Exception error)
+        {
+            history.RecordSummary(ControlOperationStatus.Blocked,
+                $"Guardian status publication failed: {error.Message}");
+        }
+        finally
+        {
+            Volatile.Write(ref guardianNotificationPump, 0);
+            if (observed != Volatile.Read(ref guardianNotificationVersion)) { NotifyGuardianSnapshotChanged(); }
+        }
+    }
+
+    // One immutable accepted status plus immediate volatile termination flags.
+    // This is the heartbeat's only service input: no backend observation,
+    // controller mutation, device/OS query or operation-gate acquisition.
+    internal FanStopAdmission ReadFanStopContinuationAdmission()
+    {
+        ServiceStatusSnapshot? current = Volatile.Read(ref status);
+        if (current is null)
+        { return new(false, false, false, false, false, false, false, false, false, false); }
+        bool session = Volatile.Read(ref pendingSessionAdmissions) == 0
+            && !Volatile.Read(ref activeUserActivationIncomplete)
+            && current.ControlAccess == SessionControlAccess.Active;
+        bool active = ConfigurationIsAdmitted && session
+            && Volatile.Read(ref guardianHardwareDelegated) != 0
+            && Volatile.Read(ref fanStopShutdownStarted) == 0
+            && Volatile.Read(ref guardianNotificationsStopped) == 0
+            && !Volatile.Read(ref thermalConvergenceShutdown) && !lowPowerGate.IsActive
+            && current.FanStopStatus.State != FanStopState.RecoveryRequired;
+        return new(current.DeviceVerified && current.Capabilities?.HasFanStopTrialEvidence == true,
+            !FanControllerAdmissionUnsafe(current), PowerKnown: true, session, active,
+            current.ConfirmedState?.Performance == PerformancePreset.Balanced,
+            PowerInScope: true, TemperatureSafe: true,
+            OwnershipConfirmed: Volatile.Read(ref guardianHardwareDelegated) != 0,
+            TransactionResolved: !current.WritesBlocked && current.UnconfirmedWrites.Count == 0
+                && current.FanStopStatus.State != FanStopState.RecoveryRequired);
+        // Power and thermal freshness remain the sole native owner's job. A
+        // cached service classification is deliberately not sent as a fresh read.
+    }
+
+    // Invoked under operationGate by the explicit admission callback. HID is used
+    // only before delegation. The owner performs its own fresh native admission
+    // during delegation; status publication never issues an A0 or HID command.
+    internal async Task<FanStopAdmission> ReadFanStopServiceAdmissionAsync(CancellationToken token)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        bool delegated = fanStopController.Guardian?.BlocksOrdinaryHardware == true;
+        bool profile = current.ConfirmedState?.Performance == PerformancePreset.Balanced;
+        bool exact = current.DeviceVerified && current.Capabilities?.HasFanStopTrialEvidence == true;
+        if (!delegated && !fanStopController.RequiresRecovery && exact
+            && deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+        {
+            ConfirmedDeviceState observed = await device.ReadPerformanceFanStateAsync(token).ConfigureAwait(false);
+            profile = observed.Performance == PerformancePreset.Balanced;
+        }
+        PowerSource source = delegated ? powerStateProvider.CapturePowerSource()
+            : await ResolveCurrentPowerSourceAsync(token).ConfigureAwait(false);
+        return new(exact, !FanControllerAdmissionUnsafe(current), delegated || source != PowerSource.ExternalUnknown,
+            activeUserStillControlsSession?.Invoke() != false, delegated ? FanStopOwnedContinuationAdmitted() : FanStopEntryAdmitted(), profile,
+            delegated || source == PowerSource.UsbC, TemperatureSafe: true,
+            OwnershipConfirmed: delegated && !fanStopController.RequiresRecovery,
+            TransactionResolved: !fanStopController.RequiresRecovery
+                && !pendingWriteConfirmations.HasPending && !laptopControlExecutor.RequiresReconciliation
+                && !hyperBoostJournalSafetyBlock && !current.WritesBlocked)
+        { ObservedPowerSource = source };
+    }
 
     public async Task<ControlOperationResult> SetFanStopModeAsync(
         FanStopMode mode, Func<bool> stillControlsSession, CancellationToken cancellationToken)
@@ -29,7 +199,7 @@ public sealed partial class ServiceControlRuntime
                 ResolveCurrentFanIntent(),
                 FanStopCommandAdmitted, cancellationToken,
                 () => stillControlsSession() && FanStopEntryAdmitted(),
-                stillControlsSession).ConfigureAwait(false);
+                stillControlsSession, FanStopOwnedContinuationAdmitted).ConfigureAwait(false);
 
             return result;
         }
@@ -45,12 +215,22 @@ public sealed partial class ServiceControlRuntime
     {
         FanStopStatus projected = fanStopController.GetStatus(current.Capabilities?.HasFanStopTrialEvidence == true);
         bool writesBlocked = current.WritesBlocked || fanStopController.RequiresRecovery;
+        DeviceCapabilities? capabilities = current.Capabilities;
+        if (capabilities is not null)
+        {
+            // Capability is service/backend potential. Current device, session,
+            // thermal and ownership admission remains in FanStopStatus.CanStop.
+            bool supported = capabilities.HasFanStopTrialEvidence && fanStopController.BackendAvailable;
+            if (capabilities.SupportsFanStop != supported)
+            { capabilities = capabilities with { SupportsFanStop = supported }; }
+        }
         // Unchanged status reads retain the accepted snapshot identity. Creating
         // a record on every read fabricates changes for cancellation/telemetry
         // observers even though no controller transition occurred.
         return current.FanStopStatus == projected && current.WritesBlocked == writesBlocked
+            && ReferenceEquals(capabilities, current.Capabilities)
             ? current
-            : current with { FanStopStatus = projected, WritesBlocked = writesBlocked };
+            : current with { FanStopStatus = projected, WritesBlocked = writesBlocked, Capabilities = capabilities };
     }
 
     private async Task MaintainFanStopAsync(CancellationToken token)
@@ -73,13 +253,26 @@ public sealed partial class ServiceControlRuntime
         }
         try
         {
+            ObserveGuardianPowerSource();
             if (FanStopEntryAdmitted())
             {
                 await fanStopController.RefreshAsync(GetStatus().Capabilities?.HasFanStopTrialEvidence == true,
                     () => FanStopCommandAdmitted() && FanStopEntryAdmitted(), token).ConfigureAwait(false);
             }
-            await fanStopController.ReconcileAsync(!FanStopEntryAdmitted(),
+            await fanStopController.ReconcileAsync(!(fanStopController.Guardian is not null
+                    ? FanStopOwnedContinuationAdmitted() : FanStopEntryAdmitted()),
                 FanStopCommandAdmitted, token).ConfigureAwait(false);
+            if (guardianDeferredPowerTransition && !fanStopController.BlocksOrdinaryThermalWrites
+                && FanStopOwnedContinuationAdmitted())
+            {
+                guardianDeferredPowerTransition = false;
+                PowerSource source = await ResolveCurrentPowerSourceAsync(token).ConfigureAwait(false);
+                if (source != PowerSource.ExternalUnknown)
+                {
+                    ChangePowerSourceCore(source);
+                    await ApplyFullTransitionAsync(source, token).ConfigureAwait(false);
+                }
+            }
         }
         finally
         {
@@ -119,6 +312,16 @@ public sealed partial class ServiceControlRuntime
         && !activeUserActivationIncomplete
         && activeUserStillControlsSession?.Invoke() != false;
 
+    // An entry-only USB-C/profile/power-settling gate must not itself end an
+    // owned Stop on a lower-power transition. The owner verifies retained native
+    // ownership and independently handles thermal/power uncertainty and increase.
+    private bool FanStopOwnedContinuationAdmitted() => ConfigurationIsAdmitted
+        && Volatile.Read(ref fanStopShutdownStarted) == 0
+        && !lowPowerGate.IsActive && !thermalConvergenceShutdown
+        && Volatile.Read(ref pendingSessionAdmissions) == 0
+        && !activeUserActivationIncomplete
+        && activeUserStillControlsSession?.Invoke() != false;
+
     private void PublishFanStopOutcome()
     {
         // Confirmation can be followed by caller cancellation or cleanup failure.
@@ -142,7 +345,8 @@ public sealed partial class ServiceControlRuntime
     private void RecordFanStopTransition()
     {
         FanStopStatus current = fanStopController.GetStatus(true);
-        if (current.State is not (FanStopState.Stopped or FanStopState.Automatic or FanStopState.RecoveryRequired)
+        if (current.State is not (FanStopState.Stopped or FanStopState.Automatic or FanStopState.RecoveryRequired
+                or FanStopState.Starting or FanStopState.ReturningToAutomatic)
             || current.State == recordedFanStopState && current.Message == recordedFanStopMessage)
         {
             return;
@@ -228,6 +432,21 @@ public sealed partial class ServiceControlRuntime
         }
         ControlOperationResult fan = await ReleaseFanStopForLifecycleAsync(static () => true).ConfigureAwait(false)
             ?? new(ControlOperationStatus.Stored, "No fan-stop ownership requires handback.");
+        // The first keyboard attempt is retained. Its specific, command-free
+        // delegation refusal is the only reason to retry after confirmed release;
+        // uncertain/canceled keyboard operations are never replayed.
+        if (keyboard.Message == GuardianHardwareBlockedMessage && !fanStopController.BlocksOrdinaryHardware)
+        {
+            using var retry = new CancellationTokenSource(FanStopController.AutomaticCleanupBudget);
+            await operationGate.WaitAsync(retry.Token).ConfigureAwait(false);
+            try
+            {
+                if (brightness?.Message == GuardianHardwareBlockedMessage)
+                { brightness = await ReleaseDisplayBrightnessUsageCoreAsync(retry.Token).ConfigureAwait(false); }
+                keyboard = await ReleaseDriverModeCoreAsync("shutdown", retry.Token).ConfigureAwait(false);
+            }
+            finally { operationGate.Release(); }
+        }
         return CombineDisplayBrightnessCleanup(brightness,
             CombineShutdownCleanupResults(hyperBoostResult, null, null, fan, keyboard));
     }

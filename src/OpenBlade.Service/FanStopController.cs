@@ -23,6 +23,7 @@ internal sealed record FanStopAdmission(
     bool OwnershipConfirmed,
     bool TransactionResolved)
 {
+    public PowerSource? ObservedPowerSource { get; init; }
     public bool CanWrite => ExactDeviceVerified && ControllersAbsent && PowerKnown
         && SessionAdmitted && TransactionResolved;
     public bool CanStop => CanWrite && SystemActive && ProfileInScope
@@ -36,7 +37,7 @@ internal sealed record FanStopAdmission(
 /// durably checkpoint ownership before submission, revalidate every native write,
 /// and independently observe actual PWM and tach or exact Auto control state.
 /// It must not infer Stop from HID RPM, load the Capture runner, or recover by
-/// replaying an unresolved journal. No production implementation is admitted.</summary>
+/// replaying an unresolved journal.</summary>
 internal interface IFanStopBackend
 {
     FanStopUnavailableReason UnavailableReason { get; }
@@ -85,8 +86,12 @@ internal sealed class FanStopController(IFanStopBackend backend)
     public long ConfirmedStopGeneration { get; private set; }
     public bool OwnsStop => status.State == FanStopState.Stopped;
     public bool RequiresRecovery => status.State == FanStopState.RecoveryRequired;
-    public bool BlocksOrdinaryThermalWrites => OwnsStop || RequiresRecovery;
+    public bool BlocksOrdinaryHardware => RequiresRecovery
+        || backend is GuardianFanStopBackend guardian && guardian.BlocksOrdinaryHardware;
+    public bool BlocksOrdinaryThermalWrites => OwnsStop || BlocksOrdinaryHardware;
     public bool HoldsAutomatic => status.State == FanStopState.Automatic;
+    public GuardianFanStopBackend? Guardian => backend as GuardianFanStopBackend;
+    private Guid countedGuardianOperation;
 
     public void RetireAutomaticObservation()
     {
@@ -98,6 +103,20 @@ internal sealed class FanStopController(IFanStopBackend backend)
 
     public async Task RefreshAsync(bool hasTrialEvidence, Func<bool> stillAdmitted, CancellationToken token)
     {
+        if (Guardian is not null)
+        {
+            ObserveGuardian();
+            if (!hasTrialEvidence || !BackendAvailable || BlocksOrdinaryThermalWrites) { return; }
+            try
+            {
+                FanStopAdmission admission = await backend.ReadAdmissionAsync(token).ConfigureAwait(false);
+                if (!admission.TransactionResolved) { Fence("Guardian startup or transaction ownership is unresolved."); }
+                else { status = status with { CanStop = admission.CanStop && stillAdmitted() }; }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch (Exception) { status = status with { CanStop = false }; }
+            return;
+        }
         if (!hasTrialEvidence || backend.UnavailableReason != FanStopUnavailableReason.None
             || BlocksOrdinaryThermalWrites)
         {
@@ -164,7 +183,8 @@ internal sealed class FanStopController(IFanStopBackend backend)
     public FanStopStatus GetStatus(bool hasTrialEvidence)
     {
         FanStopStatus current = Volatile.Read(ref status);
-        if (current.State == FanStopState.RecoveryRequired || current.State == FanStopState.Stopped)
+        if (current.State is FanStopState.RecoveryRequired or FanStopState.Stopped
+            or FanStopState.Starting or FanStopState.ReturningToAutomatic)
         {
             return current;
         }
@@ -181,7 +201,7 @@ internal sealed class FanStopController(IFanStopBackend backend)
     public async Task<ControlOperationResult> SetModeAsync(
         FanStopMode mode, bool hasTrialEvidence, FanControlSettings normalFanControl,
         Func<bool> stillAdmitted, CancellationToken token, Func<bool>? stopEntryAdmitted = null,
-        Func<bool>? requestAdmitted = null)
+        Func<bool>? requestAdmitted = null, Func<bool>? ownedContinuationAdmitted = null)
     {
         if (!Enum.IsDefined(mode))
         {
@@ -189,6 +209,12 @@ internal sealed class FanStopController(IFanStopBackend backend)
         }
 
         token.ThrowIfCancellationRequested();
+        if (Guardian is not null)
+        {
+            return await SetGuardianModeAsync(mode, hasTrialEvidence, normalFanControl,
+                stillAdmitted, token, stopEntryAdmitted, requestAdmitted,
+                ownedContinuationAdmitted ?? stopEntryAdmitted).ConfigureAwait(false);
+        }
         FanStopStatus current = GetStatus(hasTrialEvidence);
         if (current.State == FanStopState.Unavailable)
         {
@@ -365,6 +391,26 @@ internal sealed class FanStopController(IFanStopBackend backend)
     public async Task<ControlOperationResult?> ReconcileAsync(
         bool forceAutomatic, Func<bool> stillAdmitted, CancellationToken token)
     {
+        if (Guardian is not null)
+        {
+            ObserveGuardian();
+            if (RequiresRecovery) { return Blocked(status.Message!); }
+            if (!Guardian.HasOperation) { return null; }
+            if (!Guardian.BlocksOrdinaryHardware)
+            { return new(ControlOperationStatus.Applied, status.Message ?? "Guardian native ownership is released."); }
+            FanStopAdmission guardianAdmission;
+            try { guardianAdmission = await backend.ReadAdmissionAsync(token).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch (Exception) { return Fence("Guardian safety admission could not be observed."); }
+            if (!guardianAdmission.TransactionResolved) { return Fence("Guardian transaction is unresolved."); }
+            if (forceAutomatic || !guardianAdmission.CanStop)
+            {
+                // This signals an already admitted owner. The owner independently
+                // rechecks every native command; no service A0/Auto replay occurs.
+                return await ReturnGuardianToAutomaticAsync(token).ConfigureAwait(false);
+            }
+            return new(ControlOperationStatus.Applied, status.Message ?? "Guardian ownership remains active.");
+        }
         if (RequiresRecovery)
         {
             return Blocked(status.Message!);
@@ -409,4 +455,194 @@ internal sealed class FanStopController(IFanStopBackend backend)
     }
 
     private static ControlOperationResult Blocked(string message) => new(ControlOperationStatus.Blocked, message);
+
+    private void ObserveGuardian()
+    {
+        GuardianFanStopBackend guardian = Guardian!;
+        FanStopGuardianSnapshot snapshot = guardian.Snapshot;
+        if (snapshot.StopConfirmed && countedGuardianOperation != snapshot.OperationId)
+        {
+            countedGuardianOperation = snapshot.OperationId;
+            ConfirmedStopGeneration++;
+        }
+        if (snapshot.Unresolved || snapshot.Phase == FanStopGuardianPhase.RecoveryRequired
+            || snapshot.Failure is not null)
+        {
+            Fence(snapshot.Failure ?? snapshot.Reason ?? "Guardian ownership or native command is unresolved.");
+            return;
+        }
+        // A service fence cannot be cleared by later matching state. Only the
+        // active exact operation can progress normally to its terminal proof.
+        if (RequiresRecovery) { return; }
+        if (!guardian.HasOperation) { return; }
+        if (snapshot.Released)
+        {
+            if (snapshot.Phase == FanStopGuardianPhase.Refused)
+            {
+                status = new(State: FanStopState.Inactive, UnavailableReason: FanStopUnavailableReason.None,
+                    Message: snapshot.Reason ?? "Guardian refused before hardware command submission; native ownership is released.");
+                return;
+            }
+            status = new(FanStopMode.Automatic, FanStopState.Automatic,
+                FanStopUnavailableReason.None, Message: snapshot.Reason ?? "Firmware Auto, durable cleanup and native release confirmed.");
+            return;
+        }
+        bool stopped = snapshot.Phase == FanStopGuardianPhase.Stopped
+            && snapshot.StopConfirmed && snapshot.ConfirmedState == FanStopObservedState.Stopped
+            && !snapshot.CommandPending;
+        bool returning = snapshot.Phase is FanStopGuardianPhase.ReturningToAutomatic or FanStopGuardianPhase.Completed
+            || snapshot.AutoConfirmed;
+        status = status with
+        {
+            RequestedMode = returning ? FanStopMode.Automatic : FanStopMode.Stop,
+            State = stopped ? FanStopState.Stopped : returning ? FanStopState.ReturningToAutomatic : FanStopState.Starting,
+            UnavailableReason = FanStopUnavailableReason.None,
+            CanStop = false,
+            CanReturnToAutomatic = true,
+            Message = snapshot.Reason ?? (stopped ? "Guardian Stop independently confirmed."
+                : returning ? "Guardian is returning to Auto; native ownership is retained until cleanup completes."
+                : "Guardian is preparing Stop under its independent safety admission."),
+        };
+    }
+
+    private async Task<ControlOperationResult> SetGuardianModeAsync(FanStopMode mode,
+        bool hasTrialEvidence, FanControlSettings normalFanControl, Func<bool> stillAdmitted,
+        CancellationToken token, Func<bool>? stopEntryAdmitted, Func<bool>? requestAdmitted,
+        Func<bool>? ownedContinuationAdmitted)
+    {
+        ObserveGuardian();
+        FanStopStatus current = GetStatus(hasTrialEvidence);
+        if (current.State == FanStopState.Unavailable || RequiresRecovery)
+        { return Blocked(current.Message ?? UnavailableMessage); }
+        if (!stillAdmitted() || requestAdmitted?.Invoke() == false)
+        { return Blocked("The active service control context changed."); }
+        if (mode == FanStopMode.Automatic)
+        {
+            return Guardian!.BlocksOrdinaryHardware
+                ? await ReturnGuardianToAutomaticAsync(token).ConfigureAwait(false)
+                : new(ControlOperationStatus.Stored, "No guardian ownership needs Auto handback.");
+        }
+        if (Guardian!.BlocksOrdinaryHardware)
+        {
+            return OwnsStop ? new(ControlOperationStatus.Applied, status.Message!)
+                : Blocked("The previous guardian operation still owns hardware; a new Stop is refused.");
+        }
+        if (stopEntryAdmitted?.Invoke() == false)
+        { return Blocked("Fan-stop entry is closed by the service lifecycle or configuration."); }
+        FanStopAdmission admission;
+        try { admission = await backend.ReadAdmissionAsync(token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (Exception) { return Blocked("Guardian safety admission could not be observed."); }
+        if (!admission.TransactionResolved) { return Fence("Guardian startup or transaction ownership is unresolved."); }
+        if (!admission.CanStop || !stillAdmitted() || requestAdmitted?.Invoke() == false
+            || stopEntryAdmitted?.Invoke() == false)
+        { return Blocked("Fresh device, controller, power, session and thermal admission is required."); }
+        token.ThrowIfCancellationRequested();
+        status = new(FanStopMode.Stop, FanStopState.Starting, FanStopUnavailableReason.None,
+            NormalFanControl: normalFanControl, Message: "Guardian Stop dispatch is pending.");
+        FanStopSubmission submission;
+        try { submission = await backend.SubmitAsync(mode, token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            ObserveGuardian();
+            if (!Guardian.BlocksOrdinaryHardware && !Guardian.HasOperation)
+            { status = new(State: FanStopState.Inactive, UnavailableReason: FanStopUnavailableReason.None); }
+            // A cached, resolved owner is allowed to run its one latched Auto.
+            // Uncertain dispatch is fenced instead of sending an alternate write.
+            if (!RequiresRecovery && Guardian.HasOperation)
+            {
+                using var cleanup = new CancellationTokenSource(AutomaticCleanupBudget);
+                try { await ReturnGuardianToAutomaticAsync(cleanup.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (cleanup.IsCancellationRequested) { }
+            }
+            throw;
+        }
+        catch (Exception)
+        {
+            if (!Guardian.BlocksOrdinaryHardware)
+            {
+                status = new(State: FanStopState.Inactive, UnavailableReason: FanStopUnavailableReason.None);
+                return Blocked("Exclusive guardian hardware admission failed before dispatch.");
+            }
+            return Fence("Guardian dispatch failed after ownership may have transferred.", normalFanControl);
+        }
+        if (submission == FanStopSubmission.NotSubmitted)
+        {
+            status = new(State: FanStopState.Inactive, UnavailableReason: FanStopUnavailableReason.None);
+            return Blocked("Guardian refused before acquiring hardware.");
+        }
+        if (submission != FanStopSubmission.Submitted)
+        { return Fence("Guardian dispatch is unresolved; commands remain fenced.", normalFanControl); }
+        // Owner startup and mandatory confirmation outlive the UI request. This
+        // bound does not cancel native IO or extend the owner's bounded Stop.
+        using var confirmation = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        try
+        {
+            while (true)
+            {
+                ObserveGuardian();
+                if (RequiresRecovery) { return Blocked(status.Message!); }
+                if (Guardian.Snapshot is { Released: true, KnownNotSubmitted: true })
+                { return Blocked(status.Message!); }
+                if (OwnsStop || HoldsAutomatic || status.State == FanStopState.ReturningToAutomatic) { break; }
+                if (token.IsCancellationRequested || ownedContinuationAdmitted?.Invoke() == false)
+                {
+                    using var cleanup = new CancellationTokenSource(AutomaticCleanupBudget);
+                    await ReturnGuardianToAutomaticAsync(cleanup.Token).ConfigureAwait(false);
+                    token.ThrowIfCancellationRequested();
+                    return new(ControlOperationStatus.Applied, status.Message!);
+                }
+                await Task.Delay(25, confirmation.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (confirmation.IsCancellationRequested)
+        { return Fence("Guardian Stop confirmation expired; retained ownership requires attention.", normalFanControl); }
+        if (token.IsCancellationRequested || ownedContinuationAdmitted?.Invoke() == false)
+        {
+            using var cleanup = new CancellationTokenSource(AutomaticCleanupBudget);
+            await ReturnGuardianToAutomaticAsync(cleanup.Token).ConfigureAwait(false);
+        }
+        token.ThrowIfCancellationRequested();
+        return new(ControlOperationStatus.Applied, status.Message!);
+    }
+
+    private async Task<ControlOperationResult> ReturnGuardianToAutomaticAsync(CancellationToken token)
+    {
+        ObserveGuardian();
+        if (RequiresRecovery) { return Blocked(status.Message!); }
+        if (!Guardian!.BlocksOrdinaryHardware)
+        { return new(ControlOperationStatus.Applied, status.Message ?? "Guardian native ownership is released."); }
+        try
+        {
+            FanStopSubmission result = await backend.SubmitAsync(FanStopMode.Automatic, token).ConfigureAwait(false);
+            if (result != FanStopSubmission.Submitted)
+            {
+                // Autonomous cleanup can complete between our cached observation
+                // and dispatch. Exact terminal proof resolves that race without
+                // an additional signal or an inferred matching Auto value.
+                ObserveGuardian();
+                if (!RequiresRecovery && Guardian.Snapshot.Released)
+                { return new(ControlOperationStatus.Applied, status.Message!); }
+                return Fence("Guardian Auto request is unresolved; no replay is permitted.");
+            }
+            status = status with { RequestedMode = FanStopMode.Automatic, State = FanStopState.ReturningToAutomatic, CanReturnToAutomatic = true };
+            while (true)
+            {
+                ObserveGuardian();
+                if (RequiresRecovery) { return Blocked(status.Message!); }
+                if (Guardian.Snapshot is { Released: true, KnownNotSubmitted: true })
+                { return new(ControlOperationStatus.Applied, status.Message!); }
+                if (HoldsAutomatic) { return new(ControlOperationStatus.Applied, status.Message!); }
+                await Task.Delay(25, token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // Cancellation stops waiting, never the owner or its independent
+            // Auto. Retain the hardware fence while terminal proof is pending.
+            ObserveGuardian();
+            throw;
+        }
+        catch (Exception) { return Fence("Guardian Auto signaling failed; native ownership remains unresolved."); }
+    }
 }

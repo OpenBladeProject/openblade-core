@@ -23,7 +23,12 @@ internal static class ServiceComposition
         services.AddSingleton<IHyperBoostOwnershipJournalStore>(
             _ => new HyperBoostOwnershipJournalStore(journalPath));
         services.AddSingleton<IServiceControlRuntime>(provider =>
-            new ServiceControlRuntime(
+        {
+            ServiceControlRuntime? runtime = null;
+            var guardian = new GuardianFanStopBackend(new WindowsFanStopGuardianClient(
+                machineDataDirectory, token => runtime!.ReadFanStopServiceAdmissionAsync(token),
+                () => runtime!.ReadFanStopContinuationAdmission()));
+            runtime = new ServiceControlRuntime(
                 provider.GetRequiredService<BatteryConfigurationStore>(),
                 provider.GetRequiredService<PersistentOverrideStore>(),
                 provider.GetRequiredService<IPowerStateProvider>(),
@@ -42,7 +47,10 @@ internal static class ServiceComposition
                 hyperBoostOwnershipJournalStore:
                     provider.GetRequiredService<IHyperBoostOwnershipJournalStore>(),
                 laptopControlPendingStore: new LaptopControlPendingStore(
-                    Path.Combine(machineDataDirectory, "laptop-control-pending.json"))));
+                    Path.Combine(machineDataDirectory, "laptop-control-pending.json")),
+                fanStopBackend: guardian);
+            return runtime;
+        });
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();
         return services;
     }

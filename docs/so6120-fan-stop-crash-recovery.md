@@ -1,6 +1,8 @@
 # SO6120 fan-stop crash and hang recovery
 
-An ordinary unattended Stop switch is **not admitted by the current evidence**.
+The [service guardian integration](so6120-stop-auto-guardian.md) implements
+conditional caller-loss recovery for the experimental Stop/Auto switch.
+Ordinary unattended use and sustained Stop are **not physically validated**.
 A separate surviving process can request the already reviewed Auto handback
 after a caller disappears, but only while it still owns a resolved operation.
 It cannot guarantee recovery from its own crash, unresolved native I/O, an OS
@@ -89,7 +91,13 @@ These checks rule out those specific mechanisms as established recovery. They
 do not prove the absence of every hardware protection outside the recovered
 code or quantify the laptop's thermal tolerance with stopped fans.
 
-## Existing implementation boundaries
+## Original design baseline
+
+The following sections record the original prototype boundary and its failure
+analysis. The service integration now supplies protected startup reservations,
+exclusive hardware delegation and a separate product owner; see the linked
+integration document for its current behavior. The unresolved hardware-owner,
+native-hang and OS-failure limitations below still apply.
 
 The gated service controller requires an explicit, command-free startup
 ownership verdict. Unknown or unresolved ownership blocks controls before

@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
 
-namespace OpenBlade.Capture;
+namespace OpenBlade.FanStop;
 
 internal enum So6120TrialTargetPolicy { PlusFour, HalfCycle, HalfCycleThenStop }
 

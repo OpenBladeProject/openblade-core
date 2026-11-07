@@ -14,12 +14,14 @@ serializes it with ordinary thermal operations. Saved profile fan settings are
 kept separate from temporary Stop ownership. The UI waits for authoritative
 service state and shows recovery uncertainty separately from those saved settings.
 
-The production backend remains unavailable. Exact RZ09-0581 trial evidence can
-show the disabled control, but it does not grant native access or enable
-`SupportsFanStop`. The old Battery Saver HID/RPM stop path remains separate and
-disabled. No Capture executable, InpOut driver, or developer attempt marker is
-loaded by this control. Service IPC version 74 adds the typed request; this
-requires a coordinated product update rather than a tray-only deployment.
+The [service guardian integration](so6120-stop-auto-guardian.md) supplies the
+backend through a separately packaged native owner. Exact-device evidence and
+backend availability determine `SupportsFanStop`; fresh entry admission remains
+separate. The old Battery Saver HID/RPM stop path remains disabled. The control
+does not run Capture or install a driver. An existing developer attempt marker
+blocks acquisition until independently reconciled. Service IPC version 75 carries
+the typed request and pending confirmation states; this requires a coordinated
+product update rather than a tray-only deployment.
 
 The shared controller has an injected backend contract for fresh identity,
 controller, power, session, ownership and transaction admission. Stop also
@@ -30,18 +32,17 @@ commands; an ordinary mapped A0 read is not an independent recovery mechanism.
 
 The injectable backend must supply a command-free startup ownership verdict
 before ordinary service controls can run. Unknown or unresolved ownership
-starts the controller in recovery. This is an interface requirement; installed
-service delegation and durable startup inspection remain unimplemented. The
-separate developer guardian now has
+starts the controller in recovery. The service integration implements durable
+startup inspection without replaying or adopting an old journal. The separate
+developer guardian has
 [attended caller-loss evidence](so6120-guardian-caller-loss-validation.md).
-The permanently
-unavailable production backend has never admitted a direct operation.
+The new installed delegation path has not yet been physically tested.
 Later observation of direct Stop without owned entry also requires recovery;
 it neither establishes ownership nor authorizes an Auto command.
 
 The [crash-recovery investigation](so6120-fan-stop-crash-recovery.md) describes
-the surviving-owner design and the remaining backend/recovery admission.
-Simulated controller and UI tests do not establish that missing live boundary.
+the surviving-owner design and its recovery limits. Simulated controller and UI
+tests do not establish physical validation of the installed path.
 
 ## Attended result on 2026-11-06
 

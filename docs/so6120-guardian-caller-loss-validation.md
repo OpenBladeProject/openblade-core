@@ -10,7 +10,9 @@ This result covers exact RZ09-0581 / `1532:02E0`, SO6120 EC 1.04, reported BIOS
 4.01, USB-C Balanced, and frozen Capture commit
 `1ceb0112d03f24f0fb1661df266fc691ba9bac0d`. These firmware versions identify this
 developer test; they do not establish a production version allowlist.
-The installed Stop backend remains unavailable.
+The installed application was not changed by this test. The later
+[service integration](so6120-stop-auto-guardian.md) is a separate implementation
+whose installed path still needs physical validation.
 
 ## Observed sequence
 
