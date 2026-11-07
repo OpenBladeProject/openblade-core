@@ -3,7 +3,10 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:OpenBlade.Tray">
-    <Grid x:Name="Root" Background="Transparent">
+    <Grid x:Name="Root" Background="Transparent" SizeChanged="OnGlobalSearchShellSizeChanged">
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator x:Name="GlobalSearchAccelerator" Key="K" Modifiers="Control" Invoked="OnGlobalSearchShortcut" />
+        </Grid.KeyboardAccelerators>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -14,6 +17,18 @@
             <x:Double x:Key="DashboardSingleLineRowContentMinHeight">40</x:Double>
             <Thickness x:Key="DashboardSingleLineRowPadding">16,4</Thickness>
             <Thickness x:Key="DashboardWrappedTitleRowPadding">16,14</Thickness>
+
+            <Style x:Key="GlobalSearchTextBoxStyle" TargetType="TextBox">
+                <Setter Property="Padding" Value="31,5,43,6" />
+                <Setter Property="MaxLength" Value="120" />
+            </Style>
+            <DataTemplate x:Key="GlobalSearchResultTemplate" x:DataType="local:GlobalSearchResult">
+                <StackPanel Padding="4,6" AutomationProperties.Name="{x:Bind AccessibleName}">
+                    <TextBlock Text="{x:Bind Title}" Style="{StaticResource AppBodyStrongTextStyle}" TextWrapping="Wrap" />
+                    <TextBlock Text="{x:Bind Breadcrumb}" Style="{StaticResource AppCaptionTextStyle}" TextWrapping="Wrap"
+                               Visibility="{x:Bind BreadcrumbVisibility}" />
+                </StackPanel>
+            </DataTemplate>
             <local:Int32DoubleConverter x:Key="Int32Double" />
             <local:RgbColorConverter x:Key="RgbColor" />
 
@@ -1038,7 +1053,7 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <Expander Header="{CustomResource MainWindow_ExpanderCPUCurve.Header}"
+                                        <Expander x:Name="GlobalSearchCpuFanCurve" Header="{CustomResource MainWindow_ExpanderCPUCurve.Header}"
                                                   IsExpanded="True"
                                                   HorizontalContentAlignment="Stretch">
                                             <ItemsControl ItemsSource="{x:Bind CpuFanCurveEditorPoints, Mode=OneWay}"
@@ -1073,7 +1088,7 @@
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
                                         </Expander>
-                                        <Expander Grid.Column="1"
+                                        <Expander x:Name="GlobalSearchGpuFanCurve" Grid.Column="1"
                                                   Header="{CustomResource MainWindow_ExpanderGPUCurve.Header}"
                                                   IsExpanded="True"
                                                   HorizontalContentAlignment="Stretch">
@@ -2227,7 +2242,71 @@
         <TitleBar x:Name="AppTitleBar"
                   Grid.Row="0"
                   Title="OpenBlade"
-                  Background="Transparent" />
+                  Background="Transparent">
+            <TitleBar.Resources>
+                <HorizontalAlignment x:Key="TitleBarContentHorizontalAlignment">Stretch</HorizontalAlignment>
+            </TitleBar.Resources>
+            <TitleBar.Content>
+                <Grid x:Name="GlobalSearchTitleSlot" SizeChanged="OnGlobalSearchTitleSlotSizeChanged">
+                    <Grid x:Name="GlobalSearchHost" Width="360" HorizontalAlignment="Left" VerticalAlignment="Center">
+                        <AutoSuggestBox x:Name="GlobalSearchBox"
+                                        TitleBar.IsDragRegion="False"
+                                        PlaceholderText="{CustomResource GlobalSearchBox.PlaceholderText}"
+                                        AutomationProperties.Name="{CustomResource GlobalSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                        AutomationProperties.AcceleratorKey="Ctrl+K"
+                                        UpdateTextOnSelect="False"
+                                        ItemTemplate="{StaticResource GlobalSearchResultTemplate}"
+                                        TextBoxStyle="{StaticResource GlobalSearchTextBoxStyle}"
+                                        TextChanged="OnGlobalSearchTextChanged"
+                                        QuerySubmitted="OnGlobalSearchSubmitted"
+                                        PreviewKeyDown="OnGlobalSearchPreviewKeyDown"
+                                        GettingFocus="OnGlobalSearchGettingFocus"
+                                            GotFocus="OnGlobalSearchGotFocus" />
+                        <SymbolIcon Symbol="Find" Margin="9,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                    IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock x:Name="GlobalSearchShortcutHint" Text="{x:Bind GlobalSearchShortcutLabel}" AutomationProperties.AccessibilityView="Raw"
+                                   Style="{StaticResource AppCaptionTextStyle}" Margin="0,0,10,0" HorizontalAlignment="Right"
+                                   VerticalAlignment="Center" IsHitTestVisible="False" />
+                    </Grid>
+                </Grid>
+            </TitleBar.Content>
+            <TitleBar.RightHeader>
+                <Button x:Name="GlobalSearchButton"
+                        TitleBar.IsDragRegion="False"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Visibility="Collapsed"
+                        Style="{StaticResource AppToolbarButtonStyle}"
+                        AutomationProperties.Name="{CustomResource GlobalSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                        AutomationProperties.AcceleratorKey="Ctrl+K">
+                    <FontIcon Glyph="&#xE721;" Style="{StaticResource AppToolbarIconStyle}" />
+                    <Button.Flyout>
+                        <Flyout x:Name="GlobalSearchFlyout" Placement="BottomEdgeAlignedRight"
+                                Opening="OnGlobalSearchFlyoutOpening" Opened="OnGlobalSearchFlyoutOpened"
+                                Closed="OnGlobalSearchFlyoutClosed">
+                            <Flyout.FlyoutPresenterStyle>
+                                <Style TargetType="FlyoutPresenter">
+                                    <Setter Property="MaxWidth" Value="760" />
+                                    <Setter Property="Padding" Value="8" />
+                                </Style>
+                            </Flyout.FlyoutPresenterStyle>
+                            <Grid x:Name="CompactGlobalSearchHost">
+                                <AutoSuggestBox x:Name="CompactGlobalSearchBox"
+                                                PlaceholderText="{CustomResource GlobalSearchBox.PlaceholderText}"
+                                                AutomationProperties.Name="{CustomResource GlobalSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                UpdateTextOnSelect="False"
+                                                ItemTemplate="{StaticResource GlobalSearchResultTemplate}"
+                                                TextBoxStyle="{StaticResource GlobalSearchTextBoxStyle}"
+                                                TextChanged="OnGlobalSearchTextChanged"
+                                                QuerySubmitted="OnGlobalSearchSubmitted"
+                                                PreviewKeyDown="OnGlobalSearchPreviewKeyDown" />
+                                <SymbolIcon Symbol="Find" Margin="9,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                            IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw" />
+                            </Grid>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+            </TitleBar.RightHeader>
+        </TitleBar>
 
         <NavigationView x:Name="MainNavigation"
                         Grid.Row="1"
@@ -3640,7 +3719,7 @@
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="20">
+                                        <Grid x:Name="ThxAudioIntegrationRow" ColumnSpacing="20">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
@@ -3712,7 +3791,7 @@
                                                     IsEnabled="{x:Bind ThxViewModel.CanInstallStack, Mode=OneWay}"
                                                     Click="OnThxInstallStack" />
                                         </StackPanel>
-                                        <Grid ColumnSpacing="24">
+                                        <Grid x:Name="ThxAudioSpatialRow" ColumnSpacing="24">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
@@ -3725,7 +3804,7 @@
                                                           IsEnabled="{x:Bind ThxViewModel.CanEdit, Mode=OneWay}"
                                                           AutomationProperties.Name="{CustomResource MainWindow_ThxAudioSpatial.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" Toggled="OnThxSpatialToggled" />
                                         </Grid>
-                                        <Grid ColumnSpacing="24" Visibility="{x:Bind ThxViewModel.ShowEqualizerControls, Mode=OneWay}">
+                                        <Grid x:Name="ThxAudioEqualizerRow" ColumnSpacing="24" Visibility="{x:Bind ThxViewModel.ShowEqualizerControls, Mode=OneWay}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
@@ -3738,7 +3817,7 @@
                                                           IsEnabled="{x:Bind ThxViewModel.CanEditEqualizer, Mode=OneWay}"
                                                           AutomationProperties.Name="{CustomResource MainWindow_ThxAudioEqualizer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" Toggled="OnThxEqualizerToggled" />
                                         </Grid>
-                                        <Grid ColumnSpacing="16" Visibility="{x:Bind ThxViewModel.ShowEqualizerControls, Mode=OneWay}">
+                                        <Grid x:Name="ThxAudioPresetRow" ColumnSpacing="16" Visibility="{x:Bind ThxViewModel.ShowEqualizerControls, Mode=OneWay}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
@@ -5745,5 +5824,10 @@
                 </ScrollViewer>
             </Grid>
         </NavigationView>
+        <Canvas x:Name="GlobalSearchArrivalOverlay" Grid.RowSpan="2" IsHitTestVisible="False"
+                AutomationProperties.AccessibilityView="Raw">
+            <Border x:Name="GlobalSearchArrivalOutline" BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                    BorderThickness="2" CornerRadius="4" Visibility="Collapsed" />
+        </Canvas>
     </Grid>
 </UserControl>

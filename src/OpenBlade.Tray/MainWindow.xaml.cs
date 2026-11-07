@@ -388,6 +388,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             return;
         }
         hostAttached = false;
+        DisposeComponentSafely("global search detachment", CloseGlobalSearch);
         DisposeComponentSafely("window closing handler", DetachCloseHandler);
         DisposeComponentSafely("Mica theme source detachment", () => ContentHost.DetachBackdrop(Root));
         DisposeComponentSafely("content detachment", () =>
@@ -874,6 +875,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
 
     private async ValueTask DisposeOwnedResourcesAsync()
     {
+        DisposeComponentSafely("global search retirement", ReleaseGlobalSearch);
         WindowXamlBindingLifetime.Release(this, Bindings, Bindings.StopTracking);
 
         DisposeComponentSafely("GPU app cleanup cancellation", gpuAppCleanupCoordinator.Cancel);
@@ -3409,6 +3411,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
 
         string destination = (args.SelectedItemContainer as NavigationViewItem)?.Tag as string
             ?? "home";
+        ClearGlobalSearchArrival();
         ApplyNavigationDestination(destination);
     }
 
@@ -3654,6 +3657,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             _ => throw new ArgumentOutOfRangeException(nameof(destination)),
         };
         MainNavigation.SelectedItem = selected;
+        ClearGlobalSearchArrival();
         ApplyNavigationDestination(destination);
     }
 
@@ -5337,6 +5341,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             changingPrimaryNavigationOrder = false;
         }
 
+        ClearGlobalSearchArrival();
         ApplyNavigationDestination(destination);
     }
 
