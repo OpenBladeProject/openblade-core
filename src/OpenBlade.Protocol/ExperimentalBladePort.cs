@@ -433,7 +433,8 @@ internal sealed partial class ExperimentalBladePort(
                         variableResponse: acceptsStatusOnlyAck,
                         payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
                         requireEcho: !acceptsStatusOnlyAck,
-                        requireAdequateAdapter: value != PerformancePreset.Balanced).ConfigureAwait(false);
+                        requireAdequateAdapter: value is not (PerformancePreset.Balanced
+                            or PerformancePreset.BatteryBalanced)).ConfigureAwait(false);
                     submitted = true;
                     if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false))
                     {
@@ -548,6 +549,15 @@ internal sealed partial class ExperimentalBladePort(
         }
     }
 
+    // The pinned 694/695/696 task runners clear Maximum Fans before their
+    // DC-Balanced branch. Only that reviewed source family admits disable-only
+    // cleanup on battery; other bits and independent readback retain their guards.
+    private bool IsSourceReviewedMaximumFansDisable(
+        string operation, byte commandClass, byte commandId, byte[] arguments) =>
+        model.ThermalPolicy is { SupportsMaximumFans: true, SupportsBalancedDc: true }
+            && operation == "MaximumFans" && commandClass == 0x07 && commandId == 0x0F
+            && arguments.Length == 1 && arguments[0] == 0;
+
     private bool ThermalSubmissionAllowed(
         string operation,
         byte commandClass,
@@ -560,6 +570,11 @@ internal sealed partial class ExperimentalBladePort(
         if (IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments))
         {
             return arguments[0] == 0 || TemporaryFullChargeEnablePowerAdmitted();
+        }
+        if (IsSourceReviewedMaximumFansDisable(operation, commandClass, commandId, arguments)
+            && capturePowerSource() == PowerSource.Battery)
+        {
+            return true;
         }
         if (IsFanOperation(operation))
         {
@@ -667,6 +682,16 @@ internal sealed partial class ExperimentalBladePort(
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "Battery performance requires agreement between Windows power and the fresh firmware adapter reading.");
             }
+            bool sourceReviewedMaximumFansDisable =
+                IsSourceReviewedMaximumFansDisable(operation, commandClass, commandId, arguments);
+            bool sourceReviewedBatteryMaximumFansCleanup = sourceReviewedMaximumFansDisable
+                && currentSource == PowerSource.Battery && adapter == AdapterPowerState.Battery;
+            if (sourceReviewedMaximumFansDisable && currentSource == PowerSource.Battery
+                && !sourceReviewedBatteryMaximumFansCleanup)
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "Maximum Fans battery cleanup requires agreement between Windows power and the fresh firmware adapter reading.");
+            }
             bool batteryHyperBoostCleanup = operation == "HyperBoostRestore"
                 && currentSource == PowerSource.Battery && adapter == AdapterPowerState.Battery
                 && commandClass == 0x0D && commandId == 0x02
@@ -674,7 +699,8 @@ internal sealed partial class ExperimentalBladePort(
             if (fanOperation && !fanPowerAllowed
                 || !fanOperation
                     && !HyperBoostValidationPower.IsAdmittedFullPower(adapter)
-                    && !limitedCleanupAllowed && !batteryHyperBoostCleanup && !sourceReviewedBatteryPreset)
+                    && !limitedCleanupAllowed && !batteryHyperBoostCleanup && !sourceReviewedBatteryPreset
+                    && !sourceReviewedBatteryMaximumFansCleanup)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "The adapter does not admit this thermal write on the current power source.");

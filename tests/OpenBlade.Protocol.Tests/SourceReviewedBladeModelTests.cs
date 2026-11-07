@@ -149,6 +149,111 @@ public sealed class SourceReviewedBladeModelTests
     }
 
     [Theory]
+    [InlineData(0x02B6)]
+    [InlineData(0x02B7)]
+    [InlineData(0x02B8)]
+    public async Task BatteryBalanced_ClearsMaximumFansAfterAcDisconnectBeforeEitherPresetSetter(int product)
+    {
+        var session = new Session { Mode = 4 };
+        PowerSource power = PowerSource.PluggedIn;
+        var policy = new ExperimentalFeaturesPolicy(Model(product));
+        await using var port = Create(product, session, policy, power: () => power);
+        await port.SetCustomPerformanceAsync(
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low) { MaximumFans = true }, default);
+        Assert.Equal(TemporaryFullChargeProtocol.MaximumFanSpeedBit, session.Flags);
+
+        power = PowerSource.Battery;
+        session.Adapter = [0, 0x11];
+        session.Commands.Clear();
+        await port.SetPerformanceAsync(PerformancePreset.BatteryBalanced, default);
+
+        // Each exact vendor non-Custom transition disables Maximum Fans before
+        // its DC-Balanced branch. Confirm cleanup before issuing either mode SET.
+        RazerCommandSpec[] setters = session.Commands.Where(command => command.CommandId < 0x80).ToArray();
+        Assert.Collection(setters,
+            command =>
+            {
+                Assert.Equal((byte)0x07, command.ClassId);
+                Assert.Equal((byte)0x0F, command.CommandId);
+                Assert.Equal(new byte[] { 0 }, command.Arguments.ToArray());
+            },
+            command => Assert.Equal(new byte[] { 1, 1, 6, 0 }, command.Arguments.ToArray()),
+            command => Assert.Equal(new byte[] { 1, 2, 6, 0 }, command.Arguments.ToArray()));
+        int cleanupIndex = session.Commands.IndexOf(setters[0]);
+        Assert.Equal((byte)0x8F, session.Commands[cleanupIndex + 1].CommandId);
+        Assert.Equal((byte)0, session.Flags);
+        Assert.Equal((byte)6, session.Mode);
+        Assert.Equal(PerformancePreset.BatteryBalanced, (await port.QueryPerformanceFanStateAsync(default)).Performance);
+        Assert.True(policy.WritesAllowed);
+        AssertFreshAdapterBeforeSetters(session);
+    }
+
+    [Fact]
+    public async Task BatteryMaximumFansCleanup_RequiresMatchingFirmwareBatteryAdapter()
+    {
+        var session = new Session { Mode = 4, Flags = TemporaryFullChargeProtocol.MaximumFanSpeedBit };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02B6));
+        await using var port = Create(0x02B6, session, policy, power: () => PowerSource.Battery);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.BatteryBalanced, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.True(policy.WritesAllowed);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
+    }
+
+    [Fact]
+    public async Task BatteryMaximumFansCleanup_RechecksPowerAtNativeSubmission()
+    {
+        var session = new Session { Mode = 4, Flags = TemporaryFullChargeProtocol.MaximumFanSpeedBit, Adapter = [0, 0x11] };
+        PowerSource power = PowerSource.Battery;
+        session.BeforeSubmission = command =>
+        {
+            if (command.ClassId == 0x07 && command.CommandId == 0x0F)
+            {
+                power = PowerSource.UsbC;
+            }
+        };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02B6));
+        await using var port = Create(0x02B6, session, policy, power: () => power);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.BatteryBalanced, default));
+
+        Assert.Equal(PowerSource.UsbC, power);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.True(policy.WritesAllowed);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
+    }
+
+    [Fact]
+    public async Task BatteryMaximumFansCleanup_UnconfirmedClearPausesBeforePresetWithoutReplay()
+    {
+        var session = new Session
+        {
+            Mode = 4,
+            Flags = TemporaryFullChargeProtocol.MaximumFanSpeedBit,
+            Adapter = [0, 0x11],
+            IgnoreWrites = true,
+        };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02B6));
+        await using var port = Create(0x02B6, session, policy, power: () => PowerSource.Battery);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.BatteryBalanced, default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(policy.WritesAllowed);
+        Assert.Single(session.Commands, command => command.CommandId == 0x0F);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x02);
+        int before = session.Commands.Count;
+        await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.BatteryBalanced, default));
+        Assert.Equal(before, session.Commands.Count);
+    }
+
+    [Theory]
     [MemberData(nameof(Products))]
     public async Task AutomaticHandback_PreservesPresetAndNeverQueriesOrWritesTargets(int product)
     {
@@ -332,7 +437,9 @@ public sealed class SourceReviewedBladeModelTests
     {
         for (int index = 0; index < session.Commands.Count; index++)
         {
-            if (session.Commands[index].ClassId == 0x0D && session.Commands[index].CommandId < 0x80)
+            if (session.Commands[index].CommandId < 0x80
+                && (session.Commands[index].ClassId == 0x0D
+                    || session.Commands[index].ClassId == 0x07 && session.Commands[index].CommandId == 0x0F))
             {
                 Assert.Equal(0x8C, session.Commands[index - 1].CommandId);
             }

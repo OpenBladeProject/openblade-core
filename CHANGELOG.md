@@ -16,6 +16,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Clear Maximum Fans before applying Battery Balanced on Blade 14, 16 and 18 (2024), including after disconnecting AC power. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Allow paused charge-limit controls to resume after successful recovery on source-reviewed models. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Preserve saved Windows power modes, app rules and brightness when migrating profiles. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Apply and verify the internal display's active signal rate when selecting a fixed refresh rate. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))

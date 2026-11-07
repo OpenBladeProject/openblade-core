@@ -33,7 +33,9 @@ retain the actual saved threshold and protection flag separately.
 Maximum Fans is available only on products 694, 695 and 696, in Custom. Its
 whole-byte Power Mode Control write requires all other settings to be clear.
 Leaving Custom clears an owned Maximum Fans setting through the guarded cleanup
-path. Automatic handback is supported; arbitrary fixed targets and fan curves
+path. Disable-only cleanup is also admitted on battery when Windows and firmware
+agree on the power source; enabling Maximum Fans still requires full-power AC.
+Automatic handback is supported; arbitrary fixed targets and fan curves
 are not admitted. The vendor reads mode-specific fan ranges at runtime, and its
 UI and middleware definitions need further reconciliation before those writes
 can be implemented safely. If the current fan mode is manual, preset and Custom
