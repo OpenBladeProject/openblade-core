@@ -45,6 +45,26 @@ Missing evidence follows independent observation; malformed offered evidence
 denies. Ambiguous submission, drift or uncertain cleanup blocks further
 mutation without replay or guessed restoration.
 
+Live ownership is also bound to the Service instance and its sleep and
+power-source generations. After that continuity changes, an observation or
+restoration attempt can persist `Blocked` in the live curve journal, retaining
+the exact original vector and prior context. Returning to AC, restarting
+Service or pressing Refresh does not rebind that ownership or authorize
+restoration.
+
+Recovery currently has a narrower read-only post-boot path: an explicit
+observation may settle `PossibleSubmission` or an interrupted, partially
+verified restoration only after a changed trusted boot, a new Service instance,
+two exact-original curve readbacks, unchanged power peers, no power ownership
+journal, fresh admission and durable archive/compare-and-swap settlement.
+It does not admit ordinary `OwnedVerified` or `Blocked` journals. Supporting
+those states needs a separately reviewed read-only settlement contract and
+failure tests; this is an unresolved recovery limitation. Preserve their
+journals and diagnostics for that review rather than deleting ownership
+evidence. The [validation session's Status](cpu-voltage-session.md) retains
+available job evidence, but its `CleanupReadOnly` action only releases verified
+resources and refuses known pending CPU recovery; it cannot clear this state.
+
 The validation profile permits only −1 and zero, at most twelve forward and
 twelve reverse setters and one nonrenewable 600-second budget. Normal builds
 retain the reviewed −30 to −1 editor range. Live PPT setters remain absent;

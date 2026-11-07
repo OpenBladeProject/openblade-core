@@ -99,7 +99,7 @@ public sealed class CpuTuningViewModelTests
         Assert.False(vm.CanApply);
         vm.UpdateStatus(Status(), Caps()); safe = false; Assert.False(vm.CanApply); Assert.False(vm.CanRestore); Assert.True(vm.CanRefresh);
         safe = true;
-        vm.UpdateStatus(Status() with { LiveRecovery = new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.CurveOptimizer) }, Caps());
+        vm.UpdateStatus(Status() with { RestorePending = true, LiveRecovery = new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.CurveOptimizer) }, Caps());
         Assert.False(vm.CanApply); Assert.True(vm.ShowRecoverySummary); Assert.Contains("blocked", vm.RecoverySummary);
     }
     [Theory]
@@ -155,6 +155,74 @@ public sealed class CpuTuningViewModelTests
             await request; Assert.Null(client.Settings);
         });
     }
+    [Fact]
+    public async Task ExplicitRefreshSynchronizesCleanUniformThenInvalidatesMixedValues()
+    {
+        var client = new Client(); var vm = new CpuTuningViewModel(client, () => true, () => true);
+        vm.UpdateStatus(Status(-5), Caps());
+        client.Observation = Status(-12); await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal(-12, vm.CurveValue); Assert.True(vm.CurveEnabled); Assert.True(vm.CanApply);
+        client.Observation = Status() with { LiveState = new(null, [new(0, -5), new(1, -12)]) };
+        await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.Contains("mixed", vm.LiveSummary); Assert.False(vm.CanApply);
+        vm.CurveEnabled = true; Assert.True(vm.CanApply);
+        client.Observation = Status(-7); await vm.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal(-12, vm.CurveValue);
+    }
+    [Fact]
+    public void CleanZeroMeasurementRemembersLastNegativeValue()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
+        vm.UpdateStatus(Status(-17), Caps()); vm.UpdateStatus(Status(0), Caps());
+        Assert.False(vm.CurveEnabled); Assert.Equal(-17, vm.CurveValue); Assert.True(vm.CanApply);
+        vm.CurveEnabled = true; Assert.Equal(-17, vm.Settings.CurveOptimizer!.EffectiveValue);
+    }
+    [Fact]
+    public void UnownedReadDenialShowsAvailabilityRatherThanOwnedRecovery()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
+        vm.UpdateStatus(Status() with { LiveRecovery = new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.None) }, Caps());
+        Assert.False(vm.CanApply); Assert.True(vm.ShowAvailabilitySummary);
+        Assert.False(vm.ShowRecoverySummary); Assert.Empty(vm.RecoverySummary);
+    }
+    [Fact]
+    public void InvalidSavedJournalDenialShowsAvailabilityWithoutClaimingOwnedRecovery()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
+        vm.UpdateStatus(Status() with { RestorePending = true, FirmwareRecovery = new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.None) }, Caps());
+        Assert.False(vm.CanApply); Assert.False(vm.CanRestore); Assert.True(vm.ShowAvailabilitySummary);
+        Assert.False(vm.ShowRecoverySummary); Assert.Empty(vm.RecoverySummary);
+    }
+    [Fact]
+    public void LegacyBlockedRecoveryExplainsDisabledApplyWithoutOfferingSavedRestore()
+    {
+        var vm = new CpuTuningViewModel(new Client(), () => true, () => true);
+        vm.UpdateStatus(Status() with { RestorePending = true, FirmwareRecovery = new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.CurveOptimizer) }, Caps());
+        Assert.False(vm.CanApply); Assert.False(vm.ShowAvailabilitySummary);
+        Assert.True(vm.ShowRecoverySummary); Assert.Contains("earlier saved", vm.RecoverySummary); Assert.False(vm.CanRestore);
+    }
+    [Fact]
+    public void EquivalentStatusAndRepeatedGlobalNotificationsAreSilentButSafetyAndConnectivityStillUpdate()
+    {
+        bool safe = true, connected = true;
+        var vm = new CpuTuningViewModel(new Client(), () => safe, () => connected);
+        var changed = new List<string?>(); int commandChanges = 0;
+        vm.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+        vm.ApplyCommand.CanExecuteChanged += (_, _) => commandChanges++;
+        vm.RefreshCommand.CanExecuteChanged += (_, _) => commandChanges++;
+        vm.RestoreCommand.CanExecuteChanged += (_, _) => commandChanges++;
+        vm.UpdateStatus(null, DeviceCapabilities.SafeTargetDefaults()); vm.NotifyState();
+        Assert.Empty(changed); Assert.Equal(0, commandChanges);
+        vm.UpdateStatus(Status(), Caps()); changed.Clear(); commandChanges = 0;
+        vm.UpdateStatus(Status(), Caps()); vm.NotifyState();
+        Assert.Empty(changed); Assert.Equal(0, commandChanges);
+        safe = false; vm.NotifyState();
+        Assert.Contains(nameof(vm.CanApply), changed); Assert.Equal(1, commandChanges);
+        changed.Clear(); commandChanges = 0; connected = false; vm.NotifyState();
+        Assert.Contains(nameof(vm.CanRefresh), changed); Assert.Equal(1, commandChanges);
+        changed.Clear(); commandChanges = 0; vm.NotifyState();
+        Assert.Empty(changed); Assert.Equal(0, commandChanges);
+    }
     private sealed class Client : OpenBlade.Testing.UnavailableServiceClient, IServiceClient
     {
         public CpuTuningTarget Target { get; private set; }
@@ -162,11 +230,12 @@ public sealed class CpuTuningViewModelTests
         public bool InstalledOptIn { get; private set; }
         public int RestoreRequests { get; private set; }
         public int ObserveRequests { get; private set; }
+        public CpuTuningStatus? Observation { get; set; }
         public void ClearSettings() => Settings = null;
         public Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target, CpuTuningSettings settings, CancellationToken token)
         { Target = target; Settings = settings; return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "test")); }
         public Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend, CancellationToken token)
-        { ObserveRequests++; InstalledOptIn = useInstalledBackend; return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Stored, "test")); }
+        { ObserveRequests++; InstalledOptIn = useInstalledBackend; return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Stored, "test") { CpuTuning = Observation }); }
         public Task<ControlOperationResult> RestoreCpuTuningAsync(CpuTuningTarget target, CancellationToken token)
         { Target = target; RestoreRequests++; return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "test")); }
     }

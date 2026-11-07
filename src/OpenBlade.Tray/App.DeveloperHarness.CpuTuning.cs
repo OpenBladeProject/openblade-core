@@ -22,6 +22,7 @@ public partial class App
     {
         string directory = Path.Combine(CpuLayoutEvidenceRoot, Guid.NewGuid().ToString("N"));
         MainWindow? window = null;
+        bool reviewOnly = Environment.GetEnvironmentVariable("OPENBLADE_CPU_LAYOUT_REVIEW_ONLY") == "1";
         var observations = new List<object>();
         var wrappedCommands = new List<object>();
         try
@@ -48,13 +49,20 @@ public partial class App
             {
                 card.Width = width;
                 card.HorizontalAlignment = HorizontalAlignment.Left;
-                foreach (CpuLayoutCase fixture in CpuLayoutCases())
+                foreach (CpuLayoutCase fixture in CpuLayoutCases(reviewOnly))
                 {
-                    applyStatus.Invoke(window.ViewModel, [CpuLayoutStatus(++revision, fixture), false]);
                     CpuTuningViewModel editor = window.ViewModel.CpuTuning;
+                    // Start each synthetic observation with a clean editor, independently of prior fixture intent.
+                    object draft = typeof(CpuTuningViewModel).GetField("editor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(editor)!;
+                    draft.GetType().GetField("Dirty")!.SetValue(draft, false);
+                    draft.GetType().GetField("Initialized")!.SetValue(draft, false);
+                    if (fixture.MixedReadback)
+                    {
+                        applyStatus.Invoke(window.ViewModel, [CpuLayoutStatus(++revision, fixture with { MixedReadback = false }), false]);
+                    }
+                    applyStatus.Invoke(window.ViewModel, [CpuLayoutStatus(++revision, fixture), false]);
                     // Editor intent changes raise presentation notifications only.
-                    editor.CurveEnabled = true;
-                    editor.CurveValue = -12;
+                    if (!fixture.MixedReadback) { editor.CurveEnabled = true; editor.CurveValue = -12; }
                     await WaitForSnapshotLayoutAsync();
                     root.UpdateLayout();
                     RequireCpuLayout(card.Visibility == Visibility.Visible && card.ActualHeight > 0
@@ -81,16 +89,17 @@ public partial class App
                         + summaryPanel.Spacing * Math.Max(0, visibleSummaries.Length - 1);
                     RequireCpuLayout(Math.Abs(summaryPanel.ActualHeight - expectedSummaryHeight) < 2,
                         "Collapsed optional CPU summaries retained phantom row spacing.");
-                    RequireCpuLayout(fixture.Measured ? editor.LiveSummary == "Measured running optimizer: -7."
+                    RequireCpuLayout(fixture.MixedReadback ? editor.LiveSummary == "Measured running optimizer: mixed per-core values."
+                        : fixture.Measured ? editor.LiveSummary == "Measured running optimizer: -7."
                             : editor.LiveSummary == "Measured running optimizer: unknown.",
                         "Saved optimizer was substituted for measured running state.");
                     RequireCpuLayout(editor.CanEditCurve == fixture.Editable
-                        && editor.CanApply == (fixture.Editable && fixture.Recovery != CpuTuningRecoveryState.Blocked && !fixture.OwnedPowerRestore)
+                        && editor.CanApply == (fixture.Editable && fixture.Recovery != CpuTuningRecoveryState.Blocked && !fixture.OwnedPowerRestore && !fixture.LegacyBlocked && !fixture.MixedReadback)
                         && editor.CanRestore == fixture.Restorable,
                         "Synthetic backend or recovery admission was presented incorrectly.");
                     var apply = elements.OfType<Button>().Single(button => ReferenceEquals(button.Command, editor.ApplyCommand));
                     var restore = elements.OfType<Button>().Single(button => ReferenceEquals(button.Command, editor.RestoreCommand));
-                    RequireCpuLayout(apply.IsEnabled == (fixture.Editable && fixture.Recovery != CpuTuningRecoveryState.Blocked && !fixture.OwnedPowerRestore)
+                    RequireCpuLayout(apply.IsEnabled == (fixture.Editable && fixture.Recovery != CpuTuningRecoveryState.Blocked && !fixture.OwnedPowerRestore && !fixture.LegacyBlocked && !fixture.MixedReadback)
                         && (restore.Visibility == Visibility.Visible) == fixture.Restorable,
                         "Rendered apply/restore controls disagree with presentation admission.");
                     var controlGeometry = elements.OfType<FrameworkElement>()
@@ -161,7 +170,8 @@ public partial class App
                 serviceClientStarted = false,
                 cpuCommandsInvoked = false,
                 preferencesSaved = false,
-                wrappedCommandImage = "live-curve-recoverable-wrapped-520.png",
+                reviewOnly,
+                wrappedCommandImage = reviewOnly ? null : "live-curve-recoverable-wrapped-520.png",
                 wrappedCommands,
                 observations,
             });
@@ -191,8 +201,15 @@ public partial class App
         }
     }
 
-    private static IEnumerable<CpuLayoutCase> CpuLayoutCases()
+    private static IEnumerable<CpuLayoutCase> CpuLayoutCases(bool reviewOnly)
     {
+        if (reviewOnly)
+        {
+            yield return new("live-unowned-observation-denial", true, true, true, false, CpuTuningRecoveryState.Blocked, UnownedDenial: true);
+            yield return new("live-legacy-recovery-blocked", true, true, true, false, CpuTuningRecoveryState.None, LegacyBlocked: true);
+            yield return new("live-clean-mixed-observation", true, true, true, false, CpuTuningRecoveryState.None, MixedReadback: true);
+            yield break;
+        }
         yield return new("live-missing-backend", false, false, false, false, CpuTuningRecoveryState.None);
         yield return new("live-available", true, true, true, false, CpuTuningRecoveryState.None);
         yield return new("live-unknown-measurement", true, false, false, false, CpuTuningRecoveryState.None);
@@ -201,7 +218,8 @@ public partial class App
         yield return new("live-mixed-recovery", true, true, true, false, CpuTuningRecoveryState.RestoreReady, true);
     }
     private sealed record CpuLayoutCase(string Name, bool BackendAvailable, bool Editable,
-        bool Measured, bool Restorable, CpuTuningRecoveryState Recovery, bool OwnedPowerRestore = false);
+        bool Measured, bool Restorable, CpuTuningRecoveryState Recovery, bool OwnedPowerRestore = false, bool UnownedDenial = false,
+        bool LegacyBlocked = false, bool MixedReadback = false);
 
     private static ServiceStatusSnapshot CpuLayoutStatus(long revision, CpuLayoutCase fixture)
     {
@@ -209,7 +227,7 @@ public partial class App
         var available = new CpuTuningBackendStatus(DeviceFeatureAccess.ReadWrite, CpuTuningBackendAvailability.Available);
         var unavailable = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.Unavailable);
         var recovery = new CpuTuningRecoveryStatus(fixture.Recovery,
-            fixture.Recovery is CpuTuningRecoveryState.None ? CpuTuningFeatures.None
+            fixture.UnownedDenial || fixture.Recovery is CpuTuningRecoveryState.None ? CpuTuningFeatures.None
                 : fixture.OwnedPowerRestore ? CpuTuningFeatures.PowerLimit | CpuTuningFeatures.CurveOptimizer : CpuTuningFeatures.CurveOptimizer);
         return new(revision, true, false, [], null, [], "Synthetic CPU layout fixture",
             DeviceCapabilities.SafeTargetDefaults() with
@@ -226,11 +244,11 @@ public partial class App
         {
             CpuTuning = new(new(65000, 2, 2, new(CpuCurveOptimizerMode.AllCore, -10, [])),
                 fixture.Measured ? new(null, new[] { 0, 2, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15 }
-                    .Select(core => new CpuCoreCurveOptimizerValue(core, -7)).ToArray()) : null,
+                    .Select(core => new CpuCoreCurveOptimizerValue(core, fixture.MixedReadback && core == 0 ? -12 : -7)).ToArray()) : null,
                 unavailable, fixture.BackendAvailable ? available : unavailable,
                 CpuTuningPendingBoot.Unknown,
-                fixture.Recovery is CpuTuningRecoveryState.Blocked or CpuTuningRecoveryState.RestoreReady)
-            { LiveRecovery = recovery },
+                fixture.LegacyBlocked || !fixture.UnownedDenial && fixture.Recovery is CpuTuningRecoveryState.Blocked or CpuTuningRecoveryState.RestoreReady)
+            { LiveRecovery = recovery, FirmwareRecovery = fixture.LegacyBlocked ? new(CpuTuningRecoveryState.Blocked, CpuTuningFeatures.CurveOptimizer) : null },
         };
     }
     private static IEnumerable<DependencyObject> FindCpuLayoutDescendants(DependencyObject root)

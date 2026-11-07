@@ -1708,10 +1708,7 @@
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>电源来源已更改。请检查当前配置方案后重试。</value>
   </data>
-  <data name="{0:0.###} W" xml:space="preserve"><value>{0:0.###} 瓦</value></data>
   <data name="Apply now" xml:space="preserve"><value>立即应用</value></data>
-  <data name="enabled" xml:space="preserve"><value>已启用</value></data>
-  <data name="disabled" xml:space="preserve"><value>已禁用</value></data>
   <data name="mixed per-core values" xml:space="preserve"><value>各核心数值不同</value></data>
   <data name="CPU tuning request failed: {0}" xml:space="preserve"><value>CPU 调节请求失败：{0}</value></data>
   <data name="Measured running optimizer: unknown." xml:space="preserve"><value>运行中优化器实测：未知。</value></data>
@@ -1719,4 +1716,5 @@
   <data name="Running optimizer changes are unavailable." xml:space="preserve"><value>当前无法更改运行中的优化器。</value></data>
   <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve"><value>优化器恢复受阻。请刷新以检查状态。</value></data>
   <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve"><value>CPU 恢复包含功耗设置，无法在此处恢复。</value></data>
+  <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve"><value>先前保存的 CPU 设置恢复已受阻。</value></data>
 </root>

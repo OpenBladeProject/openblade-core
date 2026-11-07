@@ -102,6 +102,20 @@ public sealed partial class ServiceControlRuntime
                         liveGeneration, livePowerSourceGeneration, operationToken, lifetime, liveDiagnostic)).ConfigureAwait(false);
                 observation = MergeLiveCpuStatus(observation, live);
             }
+            else
+            {
+                // A saved-only inspection does not observe or settle live ownership.
+                // Retain its last confirmed presentation; every later live mutation
+                // still obtains its own fresh runtime admission and readback.
+                CpuTuningStatus? previous = GetStatus().CpuTuning;
+                observation = observation with
+                {
+                    LiveState = previous?.LiveState,
+                    Live = previous?.Live ?? observation.Live,
+                    LiveRecovery = previous?.LiveRecovery,
+                    RestorePending = observation.RestorePending || HasCpuRecovery(previous?.LiveRecovery),
+                };
+            }
             if (!diagnostic.Check(stillControlsSession(), "runtime controlling session")
                 || !diagnostic.Check(!lowPowerGate.IsActive, "runtime active power lifecycle")
                 || useInstalledBackend && cpuTuningController.HasLiveBackend
@@ -115,8 +129,10 @@ public sealed partial class ServiceControlRuntime
             }
             PublishStatusUpdate(status => status with { CpuTuning = observation });
             return Finish(new(ControlOperationStatus.Stored,
-                (observation.LiveState is null ? "CPU configuration was inspected. Live measurements remain unavailable."
-                    : "Saved configuration and live CPU observations were inspected.")
+                (!useInstalledBackend || !cpuTuningController.HasLiveBackend
+                    ? "CPU configuration was inspected. Previous live CPU status was retained."
+                    : observation.LiveState is null ? "CPU configuration was inspected. Live measurements remain unavailable."
+                        : "Saved configuration and live CPU observations were inspected.")
                     + (liveDiagnostic.LiveObservationReason is { } reason ? $" Live observation: {reason}." : string.Empty)
                     + (liveDiagnostic.FirstFailure is { } failure ? $" First rejection: {failure}." : string.Empty))
             {

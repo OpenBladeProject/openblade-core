@@ -12,6 +12,7 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     private CpuTuningStatus? status;
     private DeviceCapabilities? capabilities;
     private bool busy;
+    private readonly Dictionary<string, object?> presentationValues = new(StringComparer.Ordinal);
     private readonly CurveEditor editor = new();
     private sealed class CurveEditor
     {
@@ -33,6 +34,7 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
             _ => CanApply, lifetimeToken, _ => new ApplyRequest(Settings));
         RestoreCommand = new((_, token) => RestoreAsync(token),
             _ => CanRestore, lifetimeToken);
+        NotifyState();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -69,17 +71,31 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
     public bool CanRefresh => IsVisible && connected() && !busy;
     public string ApplyLabel => TrayText.Get("Apply now");
     public string OperationMessage => operationMessage;
-    public bool ShowAvailabilitySummary => !(BackendReadWriteAvailable && CurveAdmitted() && OptimizerConfirmed());
+    public bool ShowAvailabilitySummary => !(BackendReadWriteAvailable && CurveAdmitted() && OptimizerConfirmed())
+        || status?.LiveRecovery is { State: CpuTuningRecoveryState.Blocked, Features: CpuTuningFeatures.None }
+        || status?.FirmwareRecovery is { State: CpuTuningRecoveryState.Blocked, Features: CpuTuningFeatures.None };
     public string AvailabilitySummary => ShowAvailabilitySummary
         ? TrayText.Get("Running optimizer changes are unavailable.") : string.Empty;
     public bool ShowRecoverySummary => !string.IsNullOrEmpty(RecoverySummary);
-    public string RecoverySummary => status?.LiveRecovery switch
+    public string RecoverySummary
     {
-        { State: CpuTuningRecoveryState.Blocked } => TrayText.Get("Optimizer recovery is blocked. Refresh to check its status."),
-        { State: CpuTuningRecoveryState.RestoreReady, Features: not CpuTuningFeatures.CurveOptimizer }
-            => TrayText.Get("CPU recovery includes power settings and cannot be restored here."),
-        _ => string.Empty,
-    };
+        get
+        {
+            if (status?.FirmwareRecovery is { State: CpuTuningRecoveryState.Blocked, Features: not CpuTuningFeatures.None })
+            {
+                return TrayText.Get("Recovery of earlier saved CPU settings is blocked.");
+            }
+            if (status?.RestorePending != true) { return string.Empty; }
+            return status.LiveRecovery switch
+            {
+                { State: CpuTuningRecoveryState.Blocked, Features: not CpuTuningFeatures.None }
+                    => TrayText.Get("Optimizer recovery is blocked. Refresh to check its status."),
+                { State: CpuTuningRecoveryState.RestoreReady, Features: not (CpuTuningFeatures.None or CpuTuningFeatures.CurveOptimizer) }
+                    => TrayText.Get("CPU recovery includes power settings and cannot be restored here."),
+                _ => string.Empty,
+            };
+        }
+    }
     public string LiveSummary => status?.LiveState is { IsWellFormed: true } live
         ? TrayText.Format("Measured running optimizer: {0}.",
             live.CoreValues.Count == 0 ? TrayText.Get("Unknown")
@@ -97,16 +113,34 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
 
     public void NotifyState()
     {
-        foreach (string property in new[] { nameof(IsVisible), nameof(Settings), nameof(BackendReadWriteAvailable),
-            nameof(CanEdit), nameof(CanEditCurve), nameof(CanEditCurveValue), nameof(CurveEnabled), nameof(CurveValue),
-            nameof(CanApply), nameof(CanRestore), nameof(CanRefresh), nameof(ApplyLabel), nameof(LiveSummary),
-            nameof(RecoverySummary), nameof(AvailabilitySummary), nameof(ShowRecoverySummary), nameof(ShowAvailabilitySummary) })
-        {
-            Notify(property);
-        }
-        RefreshCommand.NotifyCanExecuteChanged();
-        ApplyCommand.NotifyCanExecuteChanged();
-        RestoreCommand.NotifyCanExecuteChanged();
+        NotifyComputed(nameof(IsVisible), IsVisible);
+        NotifyComputed(nameof(Settings), Settings);
+        NotifyComputed(nameof(BackendReadWriteAvailable), BackendReadWriteAvailable);
+        NotifyComputed(nameof(CanEdit), CanEdit);
+        NotifyComputed(nameof(CanEditCurve), CanEditCurve);
+        NotifyComputed(nameof(CanEditCurveValue), CanEditCurveValue);
+        NotifyComputed(nameof(CurveEnabled), CurveEnabled);
+        NotifyComputed(nameof(CurveValue), CurveValue);
+        bool applyChanged = NotifyComputed(nameof(CanApply), CanApply);
+        bool restoreChanged = NotifyComputed(nameof(CanRestore), CanRestore);
+        bool refreshChanged = NotifyComputed(nameof(CanRefresh), CanRefresh);
+        NotifyComputed(nameof(ApplyLabel), ApplyLabel);
+        NotifyComputed(nameof(LiveSummary), LiveSummary);
+        NotifyComputed(nameof(RecoverySummary), RecoverySummary);
+        NotifyComputed(nameof(AvailabilitySummary), AvailabilitySummary);
+        NotifyComputed(nameof(ShowRecoverySummary), ShowRecoverySummary);
+        NotifyComputed(nameof(ShowAvailabilitySummary), ShowAvailabilitySummary);
+        if (refreshChanged) { RefreshCommand.NotifyCanExecuteChanged(); }
+        if (applyChanged) { ApplyCommand.NotifyCanExecuteChanged(); }
+        if (restoreChanged) { RestoreCommand.NotifyCanExecuteChanged(); }
+    }
+
+    private bool NotifyComputed<T>(string property, T value)
+    {
+        if (presentationValues.TryGetValue(property, out object? previous) && Equals(previous, value)) { return false; }
+        presentationValues[property] = value;
+        Notify(property);
+        return true;
     }
 
     private Task ApplyAsync(ApplyRequest request, CancellationToken token) => CanApplyRequest(request.Settings)
@@ -131,9 +165,10 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
 
     private void InitializeEditor()
     {
-        if (editor.Initialized || editor.Dirty || status?.IsWellFormed != true) { return; }
-        int? value = status.LiveState?.UniformCurveOptimizerValue;
-        if (value is not (0 or >= -30 and <= -1)) { return; }
+        if (editor.Dirty) { return; }
+        int? value = status?.IsWellFormed == true ? status.LiveState?.UniformCurveOptimizerValue : null;
+        editor.Initialized = value is 0 or >= -30 and <= -1;
+        if (!editor.Initialized) { editor.Enabled = false; return; }
         editor.Enabled = value != 0;
         if (value < 0) { editor.Value = value.Value; }
         editor.Initialized = true;

@@ -923,6 +923,45 @@ public sealed partial class CpuTuningRuntimeTests : IDisposable
         Assert.Empty(live.Curve.Sent);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SavedOnlyObservationPreservesLivePresentationAndRecoveryWithoutRefreshingAuthority(bool uncertain)
+    {
+        var live = new LiveFixture(curve: true, power: true);
+        var context = await CreateContextAsync(admittedSavedBackend: true, live: live);
+        if (uncertain) { live.CurveStore!.FailWrite = 1; }
+        var applied = await context.Runtime.SetCpuTuningAsync(CpuTuningTarget.LiveNow,
+            new(null, new(true, -2)), () => true, default);
+        var previous = applied.CpuTuning!;
+        Assert.Equal(uncertain ? CpuTuningRecoveryState.Blocked : CpuTuningRecoveryState.RestoreReady,
+            previous.LiveRecovery!.State);
+        int curveReads = live.Curve!.Reads, powerReads = live.Power!.Reads, setters = live.Curve.Sent.Count;
+        var journal = live.CurveStore!.Journal;
+        int savedReads = context.Source.SavedReads;
+
+        var observed = await context.Runtime.ObserveCpuTuningAsync(false, () => true, default);
+
+        Assert.Equal(ControlOperationStatus.Stored, observed.Status);
+        Assert.Contains("Previous live CPU status was retained.", observed.Message);
+        Assert.True(context.Source.SavedReads > savedReads);
+        Assert.Equal(previous.LiveState, observed.CpuTuning!.LiveState);
+        Assert.Equal(previous.Live, observed.CpuTuning.Live);
+        Assert.Equal(previous.LiveRecovery, observed.CpuTuning.LiveRecovery);
+        Assert.True(observed.CpuTuning.RestorePending);
+        Assert.True(observed.CpuTuning.IsWellFormed);
+        Assert.Equal(observed.CpuTuning, context.Runtime.GetStatus().CpuTuning);
+        Assert.Same(journal, live.CurveStore.Journal);
+        Assert.Equal(curveReads, live.Curve.Reads);
+        Assert.Equal(powerReads, live.Power.Reads);
+        Assert.Equal(setters, live.Curve.Sent.Count);
+
+        // Retained presentation cannot authorize a new command after session loss.
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.RestoreCpuTuningAsync(
+            CpuTuningTarget.LiveNow, () => false, default)).Status);
+        Assert.Equal(setters, live.Curve.Sent.Count);
+    }
+
     [Fact]
     public async Task SuspendAndResumeInsideAdmissionCannotReviveTheOriginalRuntimeLease()
     {

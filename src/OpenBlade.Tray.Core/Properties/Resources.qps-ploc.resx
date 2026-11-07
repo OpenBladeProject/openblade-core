@@ -1798,17 +1798,8 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>[!! Thé pówér sóúrcé chángéd. Révíéw thé cúrrént prófílé ánd trý ágáín. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="{0:0.###} W" xml:space="preserve">
-    <value>[!! {0:0.###} W ~~ !!]</value>
-  </data>
   <data name="Apply now" xml:space="preserve">
     <value>[!! Ápplý nów ~~~ !!]</value>
-  </data>
-  <data name="enabled" xml:space="preserve">
-    <value>[!! énábléd ~~~ !!]</value>
-  </data>
-  <data name="disabled" xml:space="preserve">
-    <value>[!! dísábléd ~~~ !!]</value>
   </data>
   <data name="mixed per-core values" xml:space="preserve">
     <value>[!! míxéd pér-córé válúés ~~~~~~~ !!]</value>
@@ -1830,5 +1821,8 @@ Détáíls: {1} ~~~ !!]</value>
   </data>
   <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve">
     <value>[!! CPÚ récóvérý ínclúdés pówér séttíngs ánd cánnót bé réstóréd héré. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve">
+    <value>[!! Récóvérý óf éárlíér sávéd CPÚ séttíngs ís blóckéd. ~~~~~~~~~~~~~~~ !!]</value>
   </data>
 </root>
