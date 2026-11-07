@@ -11,10 +11,13 @@ PWM directly through the reviewed coordinator; the half-cycle step in the
 attended experiment is not a firmware prerequisite. Stop is activation-local
 and is never restored from a saved profile after startup.
 
-The formerly selected Windows TZRZ thermal counters are now rejected because
-their firmware methods return a constant 45.05 C. Until a dynamic CPU source
-is admitted, CPU temperature is unavailable and both manual and automatic Stop
-entry are refused. See [CPU temperature source investigation](so6120-cpu-temperature-source.md).
+The formerly selected Windows TZRZ thermal counters are rejected because their
+firmware methods return a constant 45.05 C. CPU readings now use the bundled
+LibreHardwareMonitor CPU subset through PawnIO, in a separate job-owned helper
+with a one-second request deadline. Missing or failed readings refuse Stop entry
+and end an owned Stop immediately. This integration still requires physical
+validation; no earlier Intel diagnostic or EC fan experiment validates the new
+reader. See [CPU temperature source](so6120-cpu-temperature-source.md).
 
 ## Duration and transitions
 

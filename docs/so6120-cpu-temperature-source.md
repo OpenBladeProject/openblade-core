@@ -1,5 +1,55 @@
 # CPU temperature for Stop
 
+## Bundled production reader
+
+The branch now uses a pinned LibreHardwareMonitor CPU-temperature subset and
+the official PawnIO installer for the shared telemetry, fan-curve and Stop CPU
+reader. This implements the user's explicit approval to bundle this driver;
+the earlier no-new-driver investigation below remains historical evidence.
+No HWiNFO or Synapse installation is required.
+
+The source pin is LibreHardwareMonitor
+`b4718a6208ebbcf028cc29f2aea30e58b138e830`, also identified by upstream's
+`0.9.7-pre781` package. Stable `0.9.6` lacks Panther Lake support. The reviewed
+CPU-only source is kept in `third_party/LibreHardwareMonitor`, with provenance,
+licenses and a corresponding source archive in the installed payload. It
+initializes only the supported Intel MSR or AMD Zen thermal path, without
+motherboard, GPU, storage, tuning or Ryzen SMU discovery.
+
+OpenBlade's changes make failed IOCTLs and incomplete replies fail explicitly,
+reject invalid Intel TjMax calibration, and clear sensor values before each
+acquisition. Core MSR `0x19C` retains its Reading Valid check; package MSR
+`0x1B1` does not incorrectly require reserved bit 31. The selected reading is
+the hottest valid Intel package/core temperature, requiring complete core
+coverage if package temperature is missing, or AMD's corrected Tdie where
+available. Distances to TjMax, historical maxima and averages are excluded.
+The final admitted range is 10–125 C. Unsupported processors or failed sensors
+remain unavailable; installing PawnIO does not guarantee processor coverage.
+
+`OpenBlade.CpuTemperature.exe` owns the native session. Its parent assigns an
+unnamed kill-on-close Windows Job before sending the first sample request.
+Requests and replies use private redirected streams, fixed-size frames and
+monotonic sequence matching. Each read has a one-second deadline including
+startup; timeout or malformed output poisons that worker. A replacement cannot
+start until its predecessor's exit is confirmed. The helper exits after ten
+seconds without requests. Service and guardian never execute sensor IOCTLs in
+their own processes, so a blocked sensor cannot block their Auto handoff.
+
+Setup carries the unmodified official PawnIO 2.2.0 installer, verifies its pinned
+SHA-256 and Windows signer before staging, and checks installed service, device,
+DriverStore and catalog trust. A compatible trusted existing installation is
+reused without a version/hash allowlist. Setup journals intent before invoking
+the installer, refuses uncertain retries, and propagates restart-required
+status. Runtime requires the trusted driver to be running and the actual signed
+module/API operation to succeed. OpenBlade uninstall preserves shared PawnIO.
+
+Offline tests cover sensor selection, missing/failed samples, worker lifetime,
+protocol matching and installer outcomes. This implementation has **not** been
+installed or physically validated on the laptop. The prior IPF readings below
+do not validate this provider. CPU reader coverage is shared across admitted
+Blade profiles; it does not add fan-control support to another model. Stop's
+existing exact-device and mode admission remains unchanged.
+
 ## Imported correction
 
 This branch incorporates the shared source and fan-curve regression changes from
@@ -38,7 +88,7 @@ no driver was installed, and no fan command was issued for this investigation.
 ## Standalone investigation
 
 The replacement should work without HWiNFO or another monitoring application.
-The strongest candidate is the Intel Innovation Platform Framework (IPF) driver
+The first investigated candidate was the Intel Innovation Platform Framework (IPF) driver
 already installed on this Intel machine. It offers a temperature GET independent
 of Synapse, without adding a kernel driver. This remains a candidate; the branch
 does not yet use it for telemetry or Stop.
@@ -163,11 +213,9 @@ Offline checks covered ABI/SDK fields, participant lifecycle and error/response
 rejection (17 assertions plus packing); the worker-exit harness also passed.
 
 This establishes a working standalone CPU source on the observed host and
-installed Intel stack. It has **not** been connected to production telemetry or
-Stop, and the correction has not been locally installed. The next implementation
-is a bounded reader shared by telemetry and the surviving Stop owner, with
-explicit unavailable/stale results, cancellation, power/session invalidation and
-native-client lifetime handling. The observed elevated diagnostic does not prove
+installed Intel stack. IPF remains diagnostic code and is not connected to
+production telemetry or Stop; the selected production path is described above.
+The observed elevated diagnostic does not prove
 that production requires elevation. No other model, future package contract,
 surviving guardian session or lifecycle transition inherits this observation.
 
@@ -187,11 +235,10 @@ The successful existing Intel service route currently avoids those additional
 monitoring and driver dependencies on this laptop. No HWiNFO component has been
 acquired, bundled, installed or invoked.
 
-For AMD support, share the CPU-temperature result and policy contract while
-selecting a reviewed processor-specific provider. The working Intel IPF route
-does not establish an AMD backend. LibreHardwareMonitor is a relevant source
-to evaluate if a new driver becomes acceptable; this research does not add that
-dependency or establish its sensor behavior on an AMD Blade.
+The working Intel IPF route does not establish an AMD backend. The now-selected
+LibreHardwareMonitor source provides separate Intel and AMD implementations,
+sharing OpenBlade's temperature-result and failure contract. AMD sensor behavior
+on Blade hardware still needs physical validation.
 
 ## Deployment and processor coverage
 
@@ -212,14 +259,14 @@ driver as a private app component. See the [MPL terms](https://github.com/LibreH
 [PawnIO licensing guide](https://github.com/namazso/PawnIO.Modules/wiki/Using-PawnIO-Modules#licensing-considerations)
 and [author's redistribution clarification](https://github.com/a1ive/nwinfo/issues/86).
 
-One OpenBlade setup could include the library and verified official installer,
+OpenBlade setup includes the library and verified official installer, can
 reuse a compatible existing PawnIO installation, or install it during the normal
 elevated setup. No separate user download or wizard is inherently required.
 Silent installation is supported; PawnIO 2.2.0 explicitly returns a restart-needed
 result when applicable. Setup must handle that outcome before enabling telemetry.
 PawnIO is shared with other applications, so OpenBlade should not unconditionally
-remove it on uninstall. This is a feasible packaging design, not an implemented
-installer or a change to the repository's current no-new-driver policy.
+remove it on uninstall. This packaging is now implemented under the explicit
+CPU-temperature exception in the repository's driver policy.
 See [upstream silent-install guidance](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/discussions/1904)
 and [PawnIO 2.2.0 release notes](https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0).
 
@@ -239,6 +286,15 @@ Other Intel systems need compatible-stack discovery and source/measurement
 validation; AMD requires another provider. See [Intel's platform requirements](https://www.intel.com/content/www/us/en/support/articles/000102775/processors.html).
 
 ## Alternatives ruled out for now
+
+The installed Synapse 4 app-engine component includes Razer-signed
+`cpuidsdk64.dll` version 1.3.7.6 and a registered Microsoft-signed CPUID kernel
+driver. Historical Synapse 3 code has `GetCPUTemperature` and a `CPU Package`
+sensor path, but that does not establish the current component's API or activity
+on this Blade. No public Razer temperature API or transferable redistribution
+permission was found. CPUID's [commercial SDK agreement](https://www.cpuid-pro.com/cula.php)
+is proprietary and non-transferable; Razer's copy is not a redistribution grant
+to OpenBlade. No CPUID component was loaded or invoked in this investigation.
 
 The EC firmware genuinely obtains CPU temperature through PECI, but the exposed
 raw and filtered bytes can retain an old value after a failed transaction. No

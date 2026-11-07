@@ -204,6 +204,22 @@ public sealed class InstallerWindowTests
         });
     }
 
+    [Theory]
+    [InlineData("en-US", "Restart needed")]
+    [InlineData("zh-CN", "需要重新启动")]
+    [InlineData("ru-RU", "Требуется перезагрузка")]
+    public void DriverRestartSuccessDoesNotClaimTemperatureReadiness(string culture, string heading)
+    {
+        RunWithUiCulture(culture, () =>
+        {
+            InstallerWindow window = new(new OpenBladeBootstrapperApplication(), "1.2.3");
+            window.ShowSuccess(LaunchAction.Install, purgeProfiles: false, rebootRequired: true);
+            Assert.Equal(heading, window.SuccessHeading.Text);
+            Assert.NotEqual(InstallerStrings.Get("Setup completed successfully."), window.SuccessMessage.Text);
+            Assert.Equal(Visibility.Visible, window.LaunchButton.Visibility);
+        });
+    }
+
     [Fact]
     public void MalformedTranslatedFormatFallsBackToAuthoritativeEnglishTemplate()
     {
@@ -292,6 +308,12 @@ public sealed class InstallerWindowTests
                     "installer-success",
                     window => window.ShowSuccess(LaunchAction.Install, purgeProfiles: false),
                     window => [window.LaunchButton, window.SuccessCloseButton]);
+                break;
+            case "success-reboot":
+                Capture(
+                    "installer-success-reboot",
+                    window => window.ShowSuccess(LaunchAction.Install, purgeProfiles: false, rebootRequired: true),
+                    window => [window.SuccessHeading, window.SuccessMessage, window.LaunchButton, window.SuccessCloseButton]);
                 break;
             case "failure":
                 Capture(
@@ -1325,6 +1347,14 @@ public sealed class InstallerWindowTests
                 action: LaunchAction.Uninstall,
                 uninstallOutcome: UninstallOutcome.Failed));
     }
+
+    [Theory]
+    [InlineData(0, ApplyRestart.None, 0)]
+    [InlineData(0, ApplyRestart.RestartRequired, 3010)]
+    [InlineData(0, ApplyRestart.RestartInitiated, 3010)]
+    [InlineData(-1, ApplyRestart.RestartRequired, -1)]
+    public void RebootRequirementSurvivesQuietInstallerCompletion(int status, ApplyRestart restart, int expected) =>
+        Assert.Equal(expected, OpenBladeBootstrapperApplication.SelectRestartCompletionStatus(status, restart));
 
     [Theory]
     [InlineData(true, true, "choose Repair or Uninstall")]

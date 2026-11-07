@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <SelfContained>false</SelfContained>
+    <AppHostDotNetSearch>Global</AppHostDotNetSearch>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Update="Microsoft.NETCore.App" RuntimeFrameworkVersion="$(OpenBladeMinimumDotNetRuntimeVersion)" />
+    <ProjectReference Include="..\OpenBlade.Platform\OpenBlade.Platform.csproj" />
+    <ProjectReference Include="..\..\third_party\LibreHardwareMonitor\LibreHardwareMonitorLib.csproj" />
+    <InternalsVisibleTo Include="OpenBlade.CpuTemperature.Tests" />
+  </ItemGroup>
+</Project>

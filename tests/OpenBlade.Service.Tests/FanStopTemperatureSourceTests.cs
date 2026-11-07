@@ -5,6 +5,49 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class FanStopTemperatureSourceTests
 {
+    [Fact]
+    public async Task TelemetryAndStopConsumeTheSameFreshCpuReader()
+    {
+        int calls = 0;
+        using var source = new SafeWindowsFanTemperatureSource(new Inactive(),
+            _ => ValueTask.FromResult<int?>(++calls == 1 ? 45 : null),
+            new Gpu(), TimeProvider.System, gpuPowerState: () => FanStopGpuPowerState.PoweredDown);
+        Assert.Equal(45, (await source.ReadAsync(default)).CpuCelsius);
+        Assert.Null((await source.ReadForFanStopAsync(default)).CpuCelsius);
+        Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public async Task CpuCancellationReleasesTheSharedTemperatureGate()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int calls = 0;
+        using var source = new SafeWindowsFanTemperatureSource(new Inactive(), async token =>
+        {
+            if (++calls == 1)
+            {
+                entered.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+            return 40;
+        }, new Gpu(), TimeProvider.System, gpuPowerState: () => FanStopGpuPowerState.PoweredDown);
+        using var cancellation = new CancellationTokenSource();
+        Task<FanTemperatureReadings> pending = source.ReadForFanStopAsync(cancellation.Token).AsTask();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        Assert.Equal(40, (await source.ReadForFanStopAsync(default).AsTask().WaitAsync(TimeSpan.FromSeconds(5))).CpuCelsius);
+    }
+
+    [Fact]
+    public async Task GpuOnlySamplingDoesNotStartCpuHelper()
+    {
+        using var source = new SafeWindowsFanTemperatureSource(new Inactive(),
+            _ => throw new InvalidOperationException("CPU sampling was not requested."),
+            new Gpu(), TimeProvider.System);
+        Assert.Null((await source.ReadAsync(includeCpu: false, includeGpu: true, default)).CpuCelsius);
+    }
+
     [Theory]
     [InlineData(0, false)]
     [InlineData(2, true)]

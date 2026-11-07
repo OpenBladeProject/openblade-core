@@ -4,6 +4,7 @@ param(
     [string]$Configuration = 'Release',
     [string]$VcRedistPath,
     [string]$DotNetRuntimePath,
+    [string]$PawnIoInstallerPath,
     [switch]$OfflineInstaller,
     [string]$SigningThumbprint,
     [string]$SignTool,
@@ -27,6 +28,7 @@ $artifacts = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts'))
 . (Join-Path $PSScriptRoot 'PublishPayloadValidation.ps1')
 . (Join-Path $PSScriptRoot 'InstallerValidation.ps1')
 . (Join-Path $PSScriptRoot 'InstallerPrerequisites.ps1')
+. (Join-Path $PSScriptRoot 'PawnIoPrerequisite.ps1')
 . (Join-Path $PSScriptRoot 'StoreSubmissionValidation.ps1')
 . (Join-Path $PSScriptRoot 'WindowsAppRuntimeNotificationResource.ps1')
 . (Join-Path $PSScriptRoot 'BuildIdentity.ps1')
@@ -50,6 +52,7 @@ $stagingRoot = [IO.Path]::GetFullPath((Join-Path $artifacts ('.staging\' + [Guid
 $stagingBundle = Join-Path $stagingRoot 'OpenBlade'
 $stagingDeveloperTools = Join-Path $stagingRoot 'OpenBlade.DeveloperTools'
 $stagingGuardian = Join-Path $stagingRoot 'OpenBlade.FanStop.Guardian'
+$stagingCpuTemperature = Join-Path $stagingRoot 'OpenBlade.CpuTemperature'
 $stagingInstallerOutput = Join-Path $stagingRoot 'installer'
 $stagingInstallerUi = Join-Path $stagingRoot 'installer-ui'
 $stagingUpgradeProbeOutput = Join-Path $stagingRoot 'installer-upgrade-probe'
@@ -203,6 +206,11 @@ try {
         $payload $installedPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `
         $payload $installedPublishArguments
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.CpuTemperature\OpenBlade.CpuTemperature.csproj') `
+        $stagingCpuTemperature $installedPublishArguments
+    Add-CpuTemperaturePublishPayload -Helper $stagingCpuTemperature -Payload $payload
+    [void](Copy-OpenBladePawnIoPrerequisite -SourcePath $PawnIoInstallerPath -DestinationDirectory $payload)
+    Add-CpuTemperatureLicensePayload -Repository $repository -Payload $payload
     $trayAssets = Join-Path $repository (
         'src\OpenBlade.Tray\obj\project.assets.json')
     Add-WindowsAppRuntimeNotificationResource `

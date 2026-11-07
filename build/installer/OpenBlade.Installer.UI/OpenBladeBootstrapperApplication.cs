@@ -776,6 +776,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             }
         }
 
+        bool rebootRequired = e.Restart != ApplyRestart.None;
+        completionStatus = SelectRestartCompletionStatus(completionStatus, e.Restart);
         result = completionStatus;
 
         if (command?.Display != Display.Full)
@@ -800,7 +802,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
             Ui(() => window?.ShowSuccess(
                 plannedAction,
                 purgeProfilesRequested,
-                uninstallOutcome));
+                uninstallOutcome,
+                rebootRequired));
         }
     }
 
@@ -1504,6 +1507,9 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         (status & unchecked((int)0xFFFF0000)) == unchecked((int)0x80070000)
             ? status & 0xFFFF
             : status;
+
+    internal static int SelectRestartCompletionStatus(int status, ApplyRestart restart) =>
+        status < 0 || restart == ApplyRestart.None ? status : 3010;
 
     private static string DescribeAction(LaunchAction action) => action switch
     {

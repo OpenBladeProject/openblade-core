@@ -1,0 +1,6 @@
+GetCurrentThread
+GetActiveProcessorGroupCount
+GROUP_AFFINITY
+SetThreadGroupAffinity
+CreateFile
+DeviceIoControl

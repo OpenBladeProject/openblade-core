@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using OpenBlade.Contracts;
+using OpenBlade.Platform;
 
 namespace OpenBlade.Service;
 
@@ -198,7 +199,7 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     internal static readonly TimeSpan GpuSessionIdleRetry = TimeSpan.FromMilliseconds(100);
 
     private readonly IGpuActivitySource gpuActivitySource;
-    private readonly Func<int?> cpuTemperatureReader;
+    private readonly Func<CancellationToken, ValueTask<int?>> cpuTemperatureReader;
     private readonly IDisposable? cpuTemperatureOwner;
     private readonly IGpuTemperatureSession gpuTemperature;
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -212,7 +213,7 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     public SafeWindowsFanTemperatureSource()
         : this(
             new WindowsGpuActivitySource(),
-            new WindowsThermalZone(),
+            new WindowsCpuTemperatureReader(),
             new NvidiaNvmlTemperatureSession(),
             TimeProvider.System)
     {
@@ -220,15 +221,15 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
 
     private SafeWindowsFanTemperatureSource(
         IGpuActivitySource gpuActivitySource,
-        WindowsThermalZone thermalZone,
+        WindowsCpuTemperatureReader cpuTemperature,
         IGpuTemperatureSession gpuTemperature,
         TimeProvider timeProvider)
         : this(
             gpuActivitySource,
-            thermalZone.TryRead,
+            cpuTemperature.ReadAsync,
             gpuTemperature,
             timeProvider,
-            cpuTemperatureOwner: thermalZone)
+            cpuTemperatureOwner: cpuTemperature)
     {
     }
 
@@ -247,6 +248,20 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     internal SafeWindowsFanTemperatureSource(
         IGpuActivitySource gpuActivitySource,
         Func<int?> cpuTemperatureReader,
+        IGpuTemperatureSession gpuTemperature,
+        TimeProvider timeProvider,
+        IDisposable? cpuTemperatureOwner = null,
+        Func<FanStopGpuPowerState>? gpuPowerState = null)
+        : this(gpuActivitySource,
+            _ => ValueTask.FromResult(cpuTemperatureReader()),
+            gpuTemperature, timeProvider, cpuTemperatureOwner, gpuPowerState)
+    {
+        ArgumentNullException.ThrowIfNull(cpuTemperatureReader);
+    }
+
+    internal SafeWindowsFanTemperatureSource(
+        IGpuActivitySource gpuActivitySource,
+        Func<CancellationToken, ValueTask<int?>> cpuTemperatureReader,
         IGpuTemperatureSession gpuTemperature,
         TimeProvider timeProvider,
         IDisposable? cpuTemperatureOwner = null,
@@ -283,7 +298,7 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         try
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            int? cpu = cpuTemperatureReader();
+            int? cpu = await cpuTemperatureReader(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             FanStopGpuPowerState power = gpuPowerState();
             cancellationToken.ThrowIfCancellationRequested();
@@ -338,7 +353,8 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         try
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            int? cpuCelsius = includeCpu ? cpuTemperatureReader() : null;
+            int? cpuCelsius = includeCpu
+                ? await cpuTemperatureReader(cancellationToken).ConfigureAwait(false) : null;
             int? gpuCelsius = null;
             if (gpuActive is true)
             {

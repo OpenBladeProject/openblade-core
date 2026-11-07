@@ -368,7 +368,16 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    policy may restore lighting automatically.
 6. Keep queues bounded, cancellations observable, writes atomic, and native
    handles deterministically released. Do not add a kernel driver or depend on
-   Synapse components. As an optional integration, the native-brightness path
+   Synapse components except for the explicitly approved CPU-temperature path:
+   bundle the pinned, unmodified official PawnIO installer and the reviewed
+   LibreHardwareMonitor CPU-only source subset. Setup verifies acquisition and
+   installed driver trust, preserves compatible shared installations and reports
+   restart-required outcomes. Never remove shared PawnIO during OpenBlade uninstall.
+   CPU acquisition runs in a bounded, job-owned helper; failed, incomplete or stale
+   readings remain unavailable and must not delay Stop's Auto restoration.
+   This exception admits CPU reads only, not additional laptop control commands,
+   live development installs or hardware validation. Retain corresponding source
+   and third-party notices. As an optional integration, the native-brightness path
    may use each admitted model's own exact, signed Razer driver stack (`02E0`
    for RZ09-0581, `02C6` for RZ09-0528) when that stack is already installed
    or separately provisioned. Keep WMI fallback available, never mix one

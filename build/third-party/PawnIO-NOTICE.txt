@@ -1,0 +1,19 @@
+PawnIO 2.2.0 official installer
+Copyright (C) namazso. https://pawnio.eu/
+
+OpenBlade distributes the original, unmodified official PawnIO installer.
+The installer explicitly permits unmodified redistribution. OpenBlade does not
+modify, re-sign, extract or replace the vendor's driver installer.
+
+Source: https://github.com/namazso/PawnIO
+Release: https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0
+Installer: https://github.com/namazso/PawnIO.Setup/releases/download/2.2.0/PawnIO_setup.exe
+SHA-256: 1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032
+Redistribution permission:
+https://github.com/namazso/PawnIO.Modules/wiki/Using-PawnIO-Modules
+https://github.com/a1ive/nwinfo/issues/86
+
+PawnIO is a shared system driver. OpenBlade preserves an existing trusted
+installation and never removes PawnIO when OpenBlade is uninstalled.
+Temperature sensing remains unavailable until the actual driver is trusted,
+started and successfully completes the required read-only API/module handshake.

@@ -184,7 +184,8 @@ internal partial class InstallerWindow : Window
     public void ShowSuccess(
         LaunchAction action,
         bool purgeProfiles,
-        UninstallOutcome uninstallOutcome = UninstallOutcome.Removed)
+        UninstallOutcome uninstallOutcome = UninstallOutcome.Removed,
+        bool rebootRequired = false)
     {
         ShowOnly(SuccessPanel);
         HeaderSubtitle.Text = InstallerStrings.Get("Complete");
@@ -212,8 +213,10 @@ internal partial class InstallerWindow : Window
         }
         else
         {
-            SuccessHeading.Text = InstallerStrings.Get("OpenBlade is ready");
-            SuccessMessage.Text = InstallerStrings.Get("Setup completed successfully.");
+            SuccessHeading.Text = InstallerStrings.Get(rebootRequired ? "Restart needed" : "OpenBlade is ready");
+            SuccessMessage.Text = InstallerStrings.Get(rebootRequired
+                ? "Setup completed successfully. Restart Windows to finish driver setup. CPU temperature sensing may remain unavailable until then."
+                : "Setup completed successfully.");
         }
 
         QueueFocus(canLaunch ? LaunchButton : SuccessCloseButton);

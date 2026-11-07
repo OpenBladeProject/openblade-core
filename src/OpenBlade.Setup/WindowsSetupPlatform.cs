@@ -37,7 +37,8 @@ public sealed record WindowsSetupPlatformOptions(
     IDotNetRuntimeAdmission? DotNetRuntimeAdmission = null,
     string? BundleOwnerId = null,
     string? CurrentUserSid = null,
-    ISetupGuardianQuiescenceGuard? GuardianQuiescenceGuard = null);
+    ISetupGuardianQuiescenceGuard? GuardianQuiescenceGuard = null,
+    IPawnIoPrerequisite? PawnIoPrerequisite = null);
 
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {
@@ -62,6 +63,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly IDynamicLightingIdentityRegistration dynamicLightingIdentityRegistration;
     private readonly ISetupProgressReporter progressReporter;
     private readonly IDotNetRuntimeAdmission dotNetRuntimeAdmission;
+    private readonly IPawnIoPrerequisite pawnIoPrerequisite;
     private readonly string setupExecutablePath;
     private readonly string currentUserSid;
 
@@ -92,6 +94,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         progressReporter = options.ProgressReporter ?? NullSetupProgressReporter.Instance;
         dotNetRuntimeAdmission = options.DotNetRuntimeAdmission
             ?? InstalledDotNetRuntimeAdmission.CreateForCurrentBuild();
+        pawnIoPrerequisite = options.PawnIoPrerequisite ?? new PawnIoPrerequisite(new WindowsPawnIoSetupOperations(paths));
         setupExecutablePath = options.SetupExecutablePath
             ?? Environment.ProcessPath
             ?? throw new InvalidOperationException("The OpenBlade setup executable path is unavailable.");
@@ -99,6 +102,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     }
 
     public string CurrentUserSid => currentUserSid;
+
+    public Task<bool> EnsureCpuTemperaturePrerequisiteAsync(string stagedPayloadDirectory, CancellationToken cancellationToken) =>
+        pawnIoPrerequisite.EnsureAsync(stagedPayloadDirectory, cancellationToken);
 
     internal static string ResolveCurrentUserSid(string? enrolledUserSid)
     {

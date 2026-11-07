@@ -943,6 +943,14 @@ public sealed class SetupPayloadTransactionTests
     {
         private static readonly string[] RequiredFiles =
         [
+            "PawnIO_setup.exe",
+            "PawnIO-NOTICE.txt",
+            @"licenses\LibreHardwareMonitor-source.zip",
+            "LibreHardwareMonitorLib.dll",
+            "OpenBlade.CpuTemperature.exe",
+            "OpenBlade.CpuTemperature.dll",
+            "OpenBlade.CpuTemperature.deps.json",
+            "OpenBlade.CpuTemperature.runtimeconfig.json",
             "OpenBlade.Service.exe",
             "OpenBlade.Service.dll",
             "OpenBlade.Service.deps.json",
@@ -1087,6 +1095,8 @@ public sealed class SetupPayloadTransactionTests
 
     private sealed class CaptureFailingSetupPlatform(ISetupPayloadTransaction transaction) : ISetupPlatform
     {
+        public Task<bool> EnsureCpuTemperaturePrerequisiteAsync(string stagedPayloadDirectory, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
         public string CurrentUserSid => throw new NotSupportedException();
 
         public Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken) =>

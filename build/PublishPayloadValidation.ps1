@@ -215,6 +215,14 @@ function Assert-ServicePublishPayload {
     Assert-DynamicLightingIdentityPayload -Payload $Payload
 
     $requiredSessionAgentFiles = @(
+        'OpenBlade.CpuTemperature.exe',
+        'OpenBlade.CpuTemperature.dll',
+        'OpenBlade.CpuTemperature.deps.json',
+        'OpenBlade.CpuTemperature.runtimeconfig.json',
+        'LibreHardwareMonitorLib.dll',
+        'PawnIO_setup.exe',
+        'PawnIO-NOTICE.txt',
+        'licenses\LibreHardwareMonitor-source.zip',
         'OpenBlade.Platform.dll',
         'OpenBlade.FanStop.Core.dll',
         'OpenBlade.FanStop.Guardian.exe',
@@ -396,7 +404,7 @@ function Assert-FrameworkDependentProductPayload {
 
     [xml]$properties = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Directory.Build.props')
     $minimumVersion = [string]$properties.Project.PropertyGroup.OpenBladeMinimumDotNetRuntimeVersion
-    foreach ($application in @('OpenBlade.Service', 'OpenBlade.FanStop.Guardian', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
+    foreach ($application in @('OpenBlade.Service', 'OpenBlade.FanStop.Guardian', 'OpenBlade.CpuTemperature', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
         $configurationPath = Join-Path $Payload ($application + '.runtimeconfig.json')
         $configuration = Get-Content -LiteralPath $configurationPath -Raw | ConvertFrom-Json
         $options = $configuration.runtimeOptions

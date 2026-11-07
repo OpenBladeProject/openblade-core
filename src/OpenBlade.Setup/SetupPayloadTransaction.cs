@@ -60,6 +60,14 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
     private static readonly string[] RequiredRelativePaths =
     [
+        "PawnIO_setup.exe",
+        "PawnIO-NOTICE.txt",
+        @"licenses\LibreHardwareMonitor-source.zip",
+        "LibreHardwareMonitorLib.dll",
+        "OpenBlade.CpuTemperature.exe",
+        "OpenBlade.CpuTemperature.dll",
+        "OpenBlade.CpuTemperature.deps.json",
+        "OpenBlade.CpuTemperature.runtimeconfig.json",
         "OpenBlade.Service.exe",
         "OpenBlade.Service.dll",
         "OpenBlade.Service.deps.json",
@@ -119,6 +127,8 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
     }
 
     public bool HadExistingInstall { get; }
+
+    public string StagedPayloadDirectory => stagingDirectory;
 
     public bool IsActivated => state is TransactionState.BackupMoved
         or TransactionState.Active
