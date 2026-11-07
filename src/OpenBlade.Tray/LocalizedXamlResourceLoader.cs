@@ -16,6 +16,9 @@ internal sealed partial class LocalizedXamlResourceLoader : CustomXamlResourceLo
         string objectType,
         string propertyName,
         string propertyType) =>
+        GetText(resourceId);
+
+    internal static string GetText(string resourceId) =>
         LocalizedResources.Get(resourceId, EnglishFallbacks.Value[resourceId]);
 
     private static FrozenDictionary<string, string> ReadEnglishFallbacks()
