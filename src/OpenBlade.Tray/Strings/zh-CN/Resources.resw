@@ -2861,4 +2861,11 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
     <value>使用 Razer 驱动可更改 F1–F12 的默认行为。Windows 钩子保留默认 Fn 快捷键。</value>
   </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>CPU 电压优化器</value></data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>全核心优化偏移</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>关闭时使用零并保留偏移值。选择应用以进行更改。</value></data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>刷新</value></data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>恢复之前的优化器值</value></data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>CPU 电压优化器</value></data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve"><value>全核心偏移</value></data>
 </root>

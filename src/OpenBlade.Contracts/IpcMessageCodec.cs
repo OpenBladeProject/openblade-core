@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 73;
+    public const int ProtocolVersion = 74;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -264,6 +264,11 @@ public static class IpcMessageCodec
             SetGpuClockTuningRequest set =>
                 GpuClockTuningSettings.IsWellFormed(set.Value)
                 && Enum.IsDefined(set.Lifetime),
+            SetCpuTuningRequest set =>
+                Enum.IsDefined(set.Target)
+                && set.Settings is { IsWellFormed: true, IsConfigured: true },
+            ObserveCpuTuningRequest => true,
+            RestoreCpuTuningRequest restore => Enum.IsDefined(restore.Target),
             ValidatePadlessHyperBoostLifecycleRequest validate =>
                 Enum.IsDefined(validate.Scenario)
                 && validate.ValidationRunId != Guid.Empty
@@ -379,6 +384,7 @@ public static class IpcMessageCodec
                     || Enum.IsDefined(response.ErrorCode.Value));
         return valid
             && (response.Status is null || ValidateStatus(response.Status))
+            && (response.Result?.CpuTuning is null || response.Result.CpuTuning.IsWellFormed)
             && (response.Archive is null || ValidateArchive(response.Archive));
     }
 
@@ -409,6 +415,11 @@ public static class IpcMessageCodec
         if (!Enum.IsDefined(status.ObservationReason))
         {
             throw InvalidStatus("observation reason is invalid");
+        }
+
+        if (status.CpuTuning is { IsWellFormed: false })
+        {
+            throw InvalidStatus("CPU tuning state is invalid");
         }
 
         if (status.Revision < 0)
@@ -984,6 +995,7 @@ public static class IpcMessageCodec
             HyperBoostBlockingControllers = null,
             ObservationReason = DeviceObservationReason.None,
             UnsupportedLaptop = false,
+            CpuTuning = null,
         };
 
         static bool IsProtocol51BatteryLimit(int value) =>
@@ -1129,6 +1141,15 @@ public static class IpcMessageCodec
         var resolver = new DefaultJsonTypeInfoResolver();
         resolver.Modifiers.Add(typeInfo =>
         {
+            if (protocol51Projection
+                && (typeInfo.Type == typeof(ServiceStatusSnapshot)
+                    || typeInfo.Type == typeof(ControlOperationResult)))
+            {
+                JsonPropertyInfo cpuTuning = typeInfo.Properties.Single(property =>
+                    string.Equals(property.Name, "cpuTuning", StringComparison.OrdinalIgnoreCase));
+                cpuTuning.ShouldSerialize = static (_, _) => false;
+            }
+
             if (typeInfo.Type == typeof(ProfileSet))
             {
                 JsonPropertyInfo windowsPowerModes = typeInfo.Properties.Single(property =>

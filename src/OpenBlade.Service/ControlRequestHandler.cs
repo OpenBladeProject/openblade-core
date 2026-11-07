@@ -169,6 +169,9 @@ public sealed class ControlRequestHandler
         await userRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // Release may win SemaphoreSlim's cancellation race. Observe the
+            // canceled request before dispatch, while finally still owns the permit.
+            cancellationToken.ThrowIfCancellationRequested();
             Volatile.Write(ref userRequestOwner,
                 client.IsInteractive && request is not ShutdownOpenBladeRequest
                     ? new ServiceUserRequestOwner(client, stillControlsSession)
@@ -287,6 +290,15 @@ public sealed class ControlRequestHandler
                     set.Lifetime,
                     stillControlsSession,
                     cancellationToken)),
+            ObserveCpuTuningRequest observe => Result(request.RequestId,
+                await runtime.ObserveCpuTuningAsync(observe.UseInstalledBackend,
+                    stillControlsSession, cancellationToken)),
+            SetCpuTuningRequest set => Result(request.RequestId,
+                await runtime.SetCpuTuningAsync(set.Target, set.Settings,
+                    stillControlsSession, cancellationToken)),
+            RestoreCpuTuningRequest restore => Result(request.RequestId,
+                await runtime.RestoreCpuTuningAsync(restore.Target,
+                    stillControlsSession, cancellationToken)),
             ValidatePadlessHyperBoostLifecycleRequest validate => Result(
                 request.RequestId,
                 await runtime.ValidatePadlessHyperBoostLifecycleAsync(

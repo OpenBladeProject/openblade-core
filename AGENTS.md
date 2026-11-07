@@ -498,6 +498,11 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    validated. This exception admits no other laptop or API contract family. Keep
    standalone native/audio validation separate from simulated tests; see
    [THX audio](docs/thx-audio.md).
+   CPU Voltage Optimizer on RZ09-0528 is live-only through its reviewed,
+   signed, already installed AMD stack. Availability checks and reads must not
+   provision or start a driver. New saved-setting requests are retired; retain
+   saved observations and exact-original journal recovery for compatibility.
+   Firmware shadows must never substitute for measured running offsets.
 7. Prefer one shared implementation or presentation primitive over
    page-specific fixes. When a bug can affect every picker, card, or firmware
    field, fix the shared layer and add a regression test there.

@@ -420,6 +420,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IExternalUriLauncher? externalUriLauncher = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
+        CpuTuning = new CpuTuningViewModel(serviceClient,
+            () => CanControlHardware && CanMutate
+                && ActivePowerSource == PowerSource.PluggedIn
+                && !IsPerformanceOperationInProgress && !IsHyperBoostOperationInProgress
+                && !HyperBoostActive && !HasUnconfirmedWrites
+                && !HasControllerDetectionWarning && latestStatus?.PotentialControllers.Count == 0,
+            () => IsConnected, lifetime.Token);
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         this.diagnosticArchiveSaver = diagnosticArchiveSaver
             ?? throw new ArgumentNullException(nameof(diagnosticArchiveSaver));
@@ -662,6 +669,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         get => isReadOnly;
         private set => SetField(ref isReadOnly, value);
     }
+
+    public CpuTuningViewModel CpuTuning { get; }
 
     public bool CanControlHardware
     {
@@ -5268,6 +5277,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         lifetime.Cancel();
+        await CpuTuning.DisposeAsync();
         foreach (AsyncRelayCommand command in commands)
         {
             await command.DisposeAsync();
@@ -8607,6 +8617,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private void NotifyCommands()
     {
         NotifyComputed(nameof(CanSaveThxAudioProfile), CanSaveThxAudioProfile);
+        CpuTuning.NotifyState();
         foreach (AsyncRelayCommand command in commands)
         {
             command.NotifyCanExecuteChanged();
@@ -9184,6 +9195,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyPresentationState()
     {
+        CpuTuning.UpdateStatus(latestStatus?.CpuTuning, Capabilities);
         NotifyComputed(nameof(IsServiceUnavailable), IsServiceUnavailable);
         NotifyComputed(nameof(ControlAccessStatus), ControlAccessStatus);
         NotifyComputed(nameof(CanRequestHardwareControl), CanRequestHardwareControl);
