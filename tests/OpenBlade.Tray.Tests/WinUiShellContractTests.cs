@@ -3150,7 +3150,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("CountRingTransitions(pixels, width, centerX, centerY) == 2", canonicalizer, StringComparison.Ordinal);
         Assert.Contains("channelDelta > 16", canonicalizer, StringComparison.Ordinal);
         Assert.Contains(
-            "bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4",
+            "bgra8-4-bit-midpoint-local-majority-edge-alpha-accent-fringe-v5",
             canonicalizer,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -3194,7 +3194,7 @@ public sealed class WinUiShellContractTests
             capture,
             StringComparison.Ordinal);
         Assert.Contains(
-            "pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4'",
+            "pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-edge-alpha-accent-fringe-v5'",
             capture,
             StringComparison.Ordinal);
         Assert.Contains(

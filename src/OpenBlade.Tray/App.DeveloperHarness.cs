@@ -665,6 +665,10 @@ public partial class App
         string? localizationLanguage)
     {
         string? reportPath = null;
+        string? requestedPage = Environment.GetEnvironmentVariable(
+            LocalizationSnapshotPageVariable);
+        bool captureGlobalSearch = requestedPage is "global-search" or "global-search-compact";
+        bool compactGlobalSearch = requestedPage == "global-search-compact";
         MainWindow? snapshotMainWindow = null;
         TrayDashboardWindow? snapshotDashboardWindow = null;
         try
@@ -710,8 +714,6 @@ public partial class App
                 "about",
                 "whats-new",
             };
-            string? requestedPage = Environment.GetEnvironmentVariable(
-                LocalizationSnapshotPageVariable);
             bool captureNarrowProfiles = string.Equals(
                 requestedPage,
                 "profiles-narrow",
@@ -772,6 +774,7 @@ public partial class App
                 && !captureFeatureSnapshot
                 && !captureSnapTap
                 && !captureDischargeSettings
+                && !captureGlobalSearch
                 && !string.Equals(
                     requestedPage,
                     "tray-dashboard",
@@ -781,7 +784,7 @@ public partial class App
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
             IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
-                || captureDischargeSettings
+                || captureDischargeSettings || captureGlobalSearch
                 ? [requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
@@ -840,6 +843,13 @@ public partial class App
                     {
                         snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
                     }
+                    if (captureGlobalSearch)
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(
+                            (int)Math.Ceiling((compactGlobalSearch ? 800 : 1120)
+                                * snapshotMainWindow.XamlRoot.RasterizationScale),
+                            (int)Math.Ceiling(820 * snapshotMainWindow.XamlRoot.RasterizationScale));
+                    }
                     if (captureSnapTap && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(
                         "OPENBLADE_LOCALIZATION_SNAPSHOT_KEYBOARD_INPUTS")))
                     {
@@ -859,7 +869,8 @@ public partial class App
                     await WaitForSnapshotLayoutAsync();
                     string navigationDestination = destination switch
                     {
-                        "settings-appearance" or "settings-experimental" or "settings-notifications" => "settings",
+                        "settings-appearance" or "settings-experimental" or "settings-notifications"
+                            or "global-search" or "global-search-compact" => "settings",
                         "profiles-applications" or "profiles-applications-empty"
                             or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                             or "profiles-application-discovery-empty" => "profiles",
@@ -904,6 +915,13 @@ public partial class App
                     if (captureSnapTap)
                     {
                         snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing, driverSetupState);
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (captureGlobalSearch)
+                    {
+                        snapshotMainWindow.ShowGlobalSearchSnapshot(compactGlobalSearch);
+                        await WaitForSnapshotLayoutAsync();
+                        snapshotMainWindow.SetGlobalSearchSnapshotQuery("nightly", compactGlobalSearch);
                         await WaitForSnapshotLayoutAsync();
                     }
                     if (captureFeatureSnapshot || destination == "telemetry")
@@ -1010,6 +1028,17 @@ public partial class App
                         await SaveSnapshotAsync(
                             snapshotMainWindow.Content,
                             Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+                        if (captureGlobalSearch)
+                        {
+                            FrameworkElement results = snapshotMainWindow.GetGlobalSearchSnapshotResults()
+                                ?? throw new InvalidOperationException(
+                                    "The global search results popup was not available for capture.");
+                            string resultsName = compactGlobalSearch
+                                ? "global-search-results-compact.png"
+                                : "global-search-results.png";
+                            await SaveSnapshotAsync(results, Path.Combine(resolvedDirectory, resultsName));
+                            await snapshotMainWindow.VerifyGlobalSearchSnapshotNavigationAsync(compactGlobalSearch);
+                        }
                     }
                 }
                 finally

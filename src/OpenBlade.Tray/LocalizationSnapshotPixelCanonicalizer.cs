@@ -3,7 +3,7 @@ namespace OpenBlade.Tray;
 internal static class LocalizationSnapshotPixelCanonicalizer
 {
     public const string RenderProfileIdentifier =
-        "bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4";
+        "bgra8-4-bit-midpoint-local-majority-edge-alpha-accent-fringe-v5";
 
     private const int RoundedEdgeBandWidth = 2;
 
@@ -87,7 +87,11 @@ internal static class LocalizationSnapshotPixelCanonicalizer
                     y,
                     majority);
 
-                if (majorityCount >= 6 && IsAdjacentPaletteColor(center, majority))
+                if (TryResolveNearWhiteAccentFringe(quantized, width, x, y, center))
+                {
+                    WritePixel(pixels, centerIndex, uint.MaxValue);
+                }
+                else if (majorityCount >= 6 && IsAdjacentPaletteColor(center, majority))
                 {
                     WritePixel(pixels, centerIndex, majority);
                 }
@@ -105,6 +109,53 @@ internal static class LocalizationSnapshotPixelCanonicalizer
         }
 
         CanonicalizeOpaqueFilledRoundedCorners(pixels, quantized, width, height);
+    }
+
+    private static bool TryResolveNearWhiteAccentFringe(
+        byte[] pixels, int width, int x, int y, uint center)
+    {
+        byte blue = (byte)center;
+        byte green = (byte)(center >> 8);
+        byte red = (byte)(center >> 16);
+        // Native slider edges can alternate between white and an almost-white
+        // accent blend across processes. Limit repair to mixed endpoint bins
+        // beside both a white surface and a saturated accent. Neutral selection
+        // shading, isolated pale detail and ordinary text remain unchanged.
+        if ((byte)(center >> 24) != 255 ||
+            Math.Min(blue, Math.Min(green, red)) != 247 ||
+            Math.Max(blue, Math.Max(green, red)) != 255)
+        {
+            return false;
+        }
+
+        int whiteCount = 0;
+        int accentCount = 0;
+        for (int neighborY = y - 1; neighborY <= y + 1; neighborY++)
+        {
+            for (int neighborX = x - 1; neighborX <= x + 1; neighborX++)
+            {
+                if (neighborX == x && neighborY == y)
+                {
+                    continue;
+                }
+                uint neighbor = ReadPixel(pixels, ((neighborY * width) + neighborX) * 4);
+                if (neighbor == uint.MaxValue)
+                {
+                    whiteCount++;
+                }
+                else if ((byte)(neighbor >> 24) == 255)
+                {
+                    byte b = (byte)neighbor;
+                    byte g = (byte)(neighbor >> 8);
+                    byte r = (byte)(neighbor >> 16);
+                    if (Math.Max(b, Math.Max(g, r)) - Math.Min(b, Math.Min(g, r)) >= 32)
+                    {
+                        accentCount++;
+                    }
+                }
+            }
+        }
+        return whiteCount >= 3 && accentCount >= 2;
     }
 
     private static void CanonicalizeOpaqueFilledRoundedCorners(

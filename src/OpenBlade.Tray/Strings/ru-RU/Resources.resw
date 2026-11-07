@@ -2878,6 +2878,33 @@ OpenBlade повторно проверит этот список и остан�
   <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
     <value>Используйте драйвер Razer, чтобы изменить поведение клавиш F1–F12. Перехват Windows сохраняет стандартные сочетания с Fn.</value>
   </data>
+  <data name="GlobalSearchBox.PlaceholderText" xml:space="preserve">
+    <value>Поиск по страницам и настройкам</value>
+  </data>
+  <data name="GlobalSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Поиск по страницам и настройкам</value>
+  </data>
+  <data name="GlobalSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Поиск по страницам и настройкам</value>
+  </data>
+  <data name="GlobalSearch_NoResults" xml:space="preserve">
+    <value>Подходящих страниц и настроек нет</value>
+  </data>
+  <data name="GlobalSearch_BatteryAliases" xml:space="preserve">
+    <value>лимит заряда состояние аккумулятора</value>
+  </data>
+  <data name="GlobalSearch_SnapTapAliases" xml:space="preserve">
+    <value>A/D SOCD контрстрейф</value>
+  </data>
+  <data name="GlobalSearch_UpdateChannelAliases" xml:space="preserve">
+    <value>Nightly ночные сборки стабильные выпуски</value>
+  </data>
+  <data name="GlobalSearch_BrightnessAliases" xml:space="preserve">
+    <value>подсветка экрана</value>
+  </data>
+  <data name="GlobalSearch_FansAliases" xml:space="preserve">
+    <value>охлаждение обороты RPM</value>
+  </data>
   <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>Оптимизатор напряжения CPU</value></data>
   <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Смещение оптимизатора всех ядер</value></data>
   <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Выключение использует ноль и сохраняет смещение. Нажмите «Применить», чтобы изменить настройки.</value></data>
