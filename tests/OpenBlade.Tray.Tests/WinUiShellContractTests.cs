@@ -1473,6 +1473,13 @@ public sealed class WinUiShellContractTests
         Assert.Equal("{x:Bind CanControlLighting, Mode=OneWay}", Attribute(import, "IsEnabled"));
         Assert.Equal("OnImportKeyboardLighting", Attribute(import, "Click"));
         Assert.Equal(Attribute(import, "Name"), Attribute(importGuide, "Tag"));
+        XElement importCue = Assert.Single(import.Descendants(), element =>
+            element.Name.LocalName == "FontIcon" && Attribute(element, "Grid.Column") == "1");
+        XElement guideCue = Assert.Single(importGuide.Descendants(), element =>
+            element.Name.LocalName == "FontIcon" && Attribute(element, "Grid.Column") == "1");
+        Assert.Equal(Attribute(guideCue, "Glyph"), Attribute(importCue, "Glyph"));
+        Assert.Equal(Attribute(guideCue, "Style"), Attribute(importCue, "Style"));
+        Assert.Equal("Raw", Attribute(importCue, "AutomationProperties.AccessibilityView"));
         XElement rate = Assert.Single(rateCard.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
         Assert.Equal("{x:Bind IsSixtyHzLightingEnabled, Mode=OneWay}", Attribute(rate, "IsOn"));
         Assert.Equal("{x:Bind CanSetLightingRefreshRate, Mode=OneWay}", Attribute(rate, "IsEnabled"));
