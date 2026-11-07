@@ -66,6 +66,8 @@ public sealed class IpcWireShapeManifestTests
             73 => "93C291B7F811B3094DED568A375C1AEA9739A2C93A4699A5616018CC35C81A08",
             // Protocol 74 adds typed live CPU operations to the protocol 73 shape.
             74 => "6D8B3D1A749E2B3F52F3990AE1383FC2CA052515198F8996B73863581FE3A45A",
+            // Protocol 75 adds optional independent lighting intent/readback and a bounded typed request.
+            75 => "646E0ADEA4D0038513194BFF2D6157AD3D329ACC0CF0A7D9DD2E784977437FFD",
             _ => null,
         };
 

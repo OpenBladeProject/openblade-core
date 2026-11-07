@@ -59,6 +59,7 @@ Assert-ModelNumber -Model 'RZ09-0509' -Expected '`RZ09-0509`'
 Assert-ModelNumber -Model 'RZ09-0483' -Expected '`RZ09-0483`'
 Assert-ModelNumber -Model 'RZ09-0482' -Expected '`RZ09-0482`'
 Assert-ModelNumber -Model 'RZ09-0530' -Expected '`RZ09-0530`'
+Assert-ModelNumber -Model 'RZ09-0301' -Expected '`RZ09-0301`'
 Assert-ModelNumber -Model 'RZ09-0300' -Expected '`RZ09-0300`'
 Assert-ModelNumber -Model 'RZ09-0330' -Expected '`RZ09-0330`'
 Assert-ModelNumber -Model 'RZ09-0351' -Expected '`RZ09-0351`'
@@ -70,18 +71,13 @@ Assert-ModelNumber -Model 'RZ09-0423' -Expected '`RZ09-0423`'
 Assert-ModelNumber -Model 'RZ09-0484' -Expected '`RZ09-0484`'
 
 $supportedRows = @($readme | Where-Object { $_ -match '^\| .*`RZ09-\d{4}`.*\|$' })
-if ($supportedRows.Count -ne 18) {
-    throw 'README must list all eighteen reviewed supported models.'
+if ($supportedRows.Count -ne 19) {
+    throw 'README must list all nineteen reviewed supported models.'
 }
 $supportText = $readme -join "`n"
-if ($supportText -notmatch 'All listed laptops are officially supported\.') {
-    throw 'README must distinguish official model support from physical validation.'
-}
-if ($supportText -notmatch 'RZ09-0581 and RZ09-0528 have\s+physically validated support;' -or
-    $supportText -notmatch 'the other sixteen families are supported on reviewed\s+exact-model sources, with physical validation tracked separately\.') {
-    throw 'README must retain the two physically validated models and separate source-reviewed support for the other sixteen.'
-}
-if ($supportText -notmatch '\[Source-reviewed Blade support\]\(docs/experimental-blade-support\.md\)') {
+# Keep the introduction brief; detailed evidence and validation status belong
+# in the linked support guide rather than a required README disclaimer.
+if ($supportText -notmatch '\[[^\]]+\]\(docs/experimental-blade-support\.md\)') {
     throw 'README must link the source-reviewed model, recovery, and tester guide.'
 }
 
@@ -114,6 +110,7 @@ Assert-UsbIdentity -Model 'RZ09-0509' -Expected '1532:02B8'
 Assert-UsbIdentity -Model 'RZ09-0483' -Expected '1532:029F'
 Assert-UsbIdentity -Model 'RZ09-0482' -Expected '1532:029D'
 Assert-UsbIdentity -Model 'RZ09-0530' -Expected '1532:02C5'
+Assert-UsbIdentity -Model 'RZ09-0301' -Expected '1532:0245'
 Assert-UsbIdentity -Model 'RZ09-0300' -Expected '1532:0246'
 Assert-UsbIdentity -Model 'RZ09-0330' -Expected '1532:0253'
 Assert-UsbIdentity -Model 'RZ09-0351' -Expected '1532:0268'

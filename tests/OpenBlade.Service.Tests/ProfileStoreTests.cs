@@ -55,6 +55,7 @@ public sealed class ProfileStoreTests : IDisposable
     [Theory]
     [InlineData(22)]
     [InlineData(23)]
+    [InlineData(ProfileStore.CurrentSchemaVersion)]
     public async Task PreviousAndCurrentSchemas_PreserveSettingsAndUseOptionalIndependentAssociations(int schema)
     {
         Directory.CreateDirectory(storeDirectory);
@@ -65,7 +66,7 @@ public sealed class ProfileStoreTests : IDisposable
             {
                 PluggedIn = new ApplicationPowerProfileOverride
                 {
-                    Performance = schema == 23 ? PerformancePreset.Creator : PerformancePreset.Performance,
+                    Performance = schema >= 23 ? PerformancePreset.Creator : PerformancePreset.Performance,
                 },
             });
         ProfileSet configured = defaults with
@@ -73,7 +74,7 @@ public sealed class ProfileStoreTests : IDisposable
             ApplicationProfiles = [definition],
             PluggedIn = defaults.PluggedIn with
             {
-                Performance = schema == 23 ? PerformancePreset.Gaming : PerformancePreset.Balanced,
+                Performance = schema >= 23 ? PerformancePreset.Gaming : PerformancePreset.Balanced,
                 Display = new DisplayProfileSettings(null, true, null) { BrightnessPercent = 65 },
             },
             WindowsPowerModes = defaults.WindowsPowerModes with
@@ -85,7 +86,6 @@ public sealed class ProfileStoreTests : IDisposable
                 Creator = WindowsPowerMode.BestPowerEfficiency,
             },
         };
-        Assert.Equal(23, ProfileStore.CurrentSchemaVersion);
         JsonObject document = JsonSerializer.SerializeToNode(new ProfileDocument(schema, configured),
             ProfileStore.SerializerOptions)!.AsObject();
         if (schema == 22)
@@ -107,7 +107,7 @@ public sealed class ProfileStoreTests : IDisposable
         Assert.Equal(schema == 22 ? null : WindowsPowerMode.Balanced, result.Profiles.WindowsPowerModes.MaximumPower);
         Assert.Equal(schema == 22 ? null : WindowsPowerMode.BestPerformance, result.Profiles.WindowsPowerModes.Gaming);
         Assert.Equal(schema == 22 ? null : WindowsPowerMode.BestPowerEfficiency, result.Profiles.WindowsPowerModes.Creator);
-        Assert.Equal(23, JsonNode.Parse(await File.ReadAllTextAsync(path))!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(ProfileStore.CurrentSchemaVersion, JsonNode.Parse(await File.ReadAllTextAsync(path))!["schemaVersion"]!.GetValue<int>());
     }
 
     [Fact]

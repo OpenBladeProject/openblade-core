@@ -459,6 +459,17 @@ public sealed partial class SourceReviewedBladeModelTests
         internal byte Cpu;
         internal byte Gpu;
         internal byte Flags;
+        internal byte Brightness = 128;
+        internal byte LogoOn = 1;
+        internal byte LogoEffect;
+        internal bool RejectLightingQuery;
+        internal bool RetireOnQueryFailure;
+        private RazerCommandSessionDisposition disposition;
+        internal bool RejectLogoQuery;
+        internal byte Fan1 = 45;
+        internal byte Fan2 = 45;
+        internal byte[] DynamicFanRange = [0, 0, 0, 0, 0, 0, 37, 0, 45, 0, 53, 0];
+        internal bool RejectDynamicFanRange;
         internal byte Battery = 0xD0;
         internal byte[] Adapter = [0x11, 0x11];
         internal bool IgnoreWrites;
@@ -468,7 +479,7 @@ public sealed partial class SourceReviewedBladeModelTests
         internal Action<RazerCommandSpec>? BeforeSubmission;
         internal List<RazerCommandSpec> Commands { get; } = [];
         internal List<int> Transactions { get; } = [];
-        public RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
+        public RazerCommandSessionDisposition Disposition => disposition;
 
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(RazerCommandSpec command,
             Func<TransactionIdAssignment> assignTransactionId, TimeSpan exchangeTimeout, CancellationToken cancellationToken)
@@ -484,28 +495,48 @@ public sealed partial class SourceReviewedBladeModelTests
             Commands.Add(command);
             Transactions.Add(assignTransactionId().TransactionId);
             if (RejectBatteryQuery && command.ClassId == 0x07 && command.CommandId == 0x92
-                || RejectAdapterQuery && command.ClassId == 0x07 && command.CommandId == 0x8C)
+                || RejectAdapterQuery && command.ClassId == 0x07 && command.CommandId == 0x8C
+                || RejectDynamicFanRange && command.ClassId == 0x0D && command.CommandId == 0x83
+                || RejectLightingQuery && command.ClassId == 0x03 && command.CommandId >= 0x80
+                || RejectLogoQuery && command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82)
             {
+                if (RetireOnQueryFailure)
+                {
+                    disposition = RazerCommandSessionDisposition.RecoveryRequired;
+                }
                 return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.ProtocolFailure));
             }
             byte[] arguments = command.Arguments.ToArray();
             byte[] payload = (command.ClassId, command.CommandId) switch
             {
+                (0x03, 0x83) => [1, 5, Brightness],
+                (0x03, 0x80) => [0, 4, LogoOn],
+                (0x03, 0x82) => [0, 4, LogoEffect],
+                (0x03, 0x00) or (0x03, 0x02) or (0x03, 0x03) => [],
                 (0x07, 0x8C) => Adapter,
                 (0x07, 0x8F) => [Flags],
                 (0x07, 0x92) => [Battery],
                 (0x0D, 0x82) => [1, arguments[1], Mode, Manual],
                 (0x0D, 0x87) => [1, arguments[1], arguments[1] == 1 ? Cpu : Gpu],
-                (0x07, 0x12) or (0x07, 0x0F) or (0x0D, 0x02) or (0x0D, 0x07) => arguments,
+                (0x0D, 0x81) => [arguments[0], arguments[1], arguments[1] == 1 ? Fan1 : Fan2],
+                (0x0D, 0x83) => DynamicFanRange,
+                (0x07, 0x12) or (0x07, 0x0F) or (0x0D, 0x02) or (0x0D, 0x07) or (0x0D, 0x01) => arguments,
                 _ => throw new InvalidOperationException($"Unexpected command {command.ClassId:X2}/{command.CommandId:X2}"),
             };
             if (!IgnoreWrites)
             {
                 switch (command.ClassId, command.CommandId)
                 {
+                    case (0x03, 0x03): Brightness = arguments[2]; break;
+                    case (0x03, 0x02): LogoEffect = arguments[2]; break;
+                    case (0x03, 0x00): LogoOn = arguments[2]; break;
                     case (0x07, 0x12): Battery = arguments[0]; break;
                     case (0x07, 0x0F): Flags = arguments[0]; break;
                     case (0x0D, 0x02): Mode = arguments[2]; Manual = arguments[3]; break;
+                    case (0x0D, 0x01):
+                        if (arguments[1] == 1) { Fan1 = arguments[2]; }
+                        else { Fan2 = arguments[2]; }
+                        break;
                     case (0x0D, 0x07):
                         if (arguments[1] == 1)
                         {

@@ -66,8 +66,11 @@ internal static class ProfileAdmissionPolicy
         && (ThermalCombinationSupported(draft.Performance, draft.Fans, capabilities)
             || (draft.Fans == current.Fans
                 && !capabilities.FanModes.Contains(draft.Fans)))
-        && (LightingSupported(draft.Lighting, capabilities)
-            || draft.Lighting == current.Lighting);
+        && (capabilities.SupportsIndependentLightingControls
+            ? LightingSupported(draft.Lighting, capabilities)
+                && (draft.Lighting with { IndependentControls = null })
+                    == (current.Lighting with { IndependentControls = null })
+            : LightingSupported(draft.Lighting, capabilities) || draft.Lighting == current.Lighting);
 
     private static bool ThermalCombinationSupported(
         PerformancePreset performance,
@@ -91,7 +94,15 @@ internal static class ProfileAdmissionPolicy
         LightingSettings lighting,
         DeviceCapabilities capabilities)
     {
-        if (!Enum.IsDefined(lighting.Effect)
+        if (capabilities.SupportsIndependentLightingControls)
+        {
+            return LightingSettingsValidation.IsWellFormed(lighting)
+                && (lighting.IndependentControls is null || lighting.IndependentControls.IsWellFormed)
+                && (lighting.IndependentControls?.LogoMode is not { } logo
+                    || capabilities.LogoLightingModes.Contains(logo));
+        }
+        if (lighting.IndependentControls is not null
+            || !Enum.IsDefined(lighting.Effect)
             || !capabilities.LightingEffects.Contains(lighting.Effect)
             || !LightingSettingsValidation.IsWellFormed(lighting))
         {

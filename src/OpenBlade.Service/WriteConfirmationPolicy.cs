@@ -45,6 +45,8 @@ internal static class WriteConfirmationPolicy
                         ? PendingConfirmationResult.Match
                         : PendingConfirmationResult.Mismatch),
             DeviceSubsystem.Battery => MatchPendingBattery(pending, confirmed.Battery),
+            DeviceSubsystem.Lighting when pending.Target.Lighting.Value.IndependentControls is { } fields =>
+                MatchIndependentLighting(fields, confirmed),
             DeviceSubsystem.Lighting => confirmed.Lighting is null
                 ? PendingConfirmationResult.Unavailable
                 : confirmed.Lighting == pending.Target.Lighting.Value
@@ -52,6 +54,20 @@ internal static class WriteConfirmationPolicy
                     : PendingConfirmationResult.Mismatch,
             _ => PendingConfirmationResult.Unavailable,
         };
+
+    private static PendingConfirmationResult MatchIndependentLighting(
+        IndependentLightingSettings requested, ConfirmedDeviceState confirmed)
+    {
+        byte? brightness = confirmed.IndependentLighting?.Brightness;
+        LogoLightingMode? logo = confirmed.IndependentLighting?.LogoMode ?? confirmed.LogoLighting;
+        if (requested.Brightness.HasValue && !brightness.HasValue || requested.LogoMode.HasValue && !logo.HasValue)
+        {
+            return PendingConfirmationResult.Unavailable;
+        }
+        return (!requested.Brightness.HasValue || requested.Brightness == brightness)
+            && (!requested.LogoMode.HasValue || requested.LogoMode == logo)
+                ? PendingConfirmationResult.Match : PendingConfirmationResult.Mismatch;
+    }
 
     private static PendingConfirmationResult? MatchPendingHyperBoost(
         WriteConfirmationExpectation pending,

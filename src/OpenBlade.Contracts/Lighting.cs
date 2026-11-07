@@ -329,7 +329,7 @@ public static class LightingSettingsFactory
             && settings.Effect == LightingEffect.Off
             && settings.Color == default
             && settings.Brightness == 0
-                ? Off()
+                ? Off() with { LogoMode = settings.LogoMode, IndependentControls = settings.IndependentControls }
                 : settings;
     }
 
@@ -469,6 +469,7 @@ public static class LightingSettingsValidation
     {
         if (settings is null
             || !Enum.IsDefined(settings.Effect)
+            || settings.IndependentControls is { IsWellFormed: false }
             || settings.LogoMode is { } logoMode && !Enum.IsDefined(logoMode)
             || settings.Brightness > 100
             || (settings.Effect != LightingEffect.Off && settings.Brightness == 0))

@@ -61,14 +61,22 @@ internal static class ExperimentalBladeModels
                 new(!thermal.SupportsCustom ? "ThermalPresetsOnlyBalancedGamingCreator"
                     : thermal.SupportsCpuBoost ? "PerformanceAndCustomCpu0To3Gpu0To2" : "PerformanceAndCustomLevels0To2",
                     "SynapseSourceBackedWithoutPhysicalValidation", sources),
+                .. (model.ProductId == 0x0245
+                    ? new ExperimentalFeatureEvidence[] { new("CustomGpuWattageLevels0To2",
+                        "SynapseSourceBackedWithoutPhysicalValidation", sources),
+                        new("ManualFanEnvelope3700To5300Step100", "SourceDerivedOuterEnvelopeRequiresFreshFirmwareIntersection", sources),
+                        new("IndependentKeyboardBrightnessAndLogo", "SynapseSourceBackedWithoutPhysicalValidation", sources) }
+                    : []),
                 new("AutomaticFanHandback", "SynapseSourceBackedWithoutPhysicalValidation", sources),
-                new("FixedAndCurveFanWrites", "NotEstablishedDynamicFanRangesRequireReview", sources),
-                new("ManualBaselinePerformanceChanges", "BlockedUntilFanTargetPreservationIsAdmitted", sources),
+                new("FixedAndCurveFanWrites", model.ProductId == 0x0245
+                    ? "SynapseSourceBackedBalancedOnlyWithFreshDynamicRange" : "NotEstablishedDynamicFanRangesRequireReview", sources),
+                new("ManualBaselinePerformanceChanges", model.ProductId == 0x0245
+                    ? "BalancedOnlyCustomRequiresAutomatic" : "BlockedUntilFanTargetPreservationIsAdmitted", sources),
                 new("ChargeLimits50To80Step5AndOff", model.SupportsBatteryProtection
                     ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("MaximumFans", thermal.SupportsMaximumFans ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
-                new("LightingAndHyperBoost", "NotEstablished", sources),
+                new(model.ProductId == 0x0245 ? "KeyboardEffectsFramesAndHyperBoost" : "LightingAndHyperBoost", "NotEstablished", sources),
             ];
         }
         IReadOnlyList<ExperimentalFeatureEvidence> features = model.ProductId switch
@@ -218,6 +226,15 @@ internal static class ExperimentalBladeModels
             "main.f9ef043eaf3feceba719.js", "rzDevice25.9c9299b0f9660c882e16.js",
             "330835150F88BC505B181EAC4828506750CD7365F9F4CB242437CF3CFC133A24", false, turbo: false, silent: false, balancedDc: false,
             batteryProtection: false, custom: false, gaming: true, creator: true),
+        // RZ09-0301 is Mid 2019 Advanced (Razer answer 1580). Product 581
+        // explicitly admits ordinary and Mercury editions; the original Mid 2019
+        // Advanced owner report corroborates 0245 (OpenRGB issue 199).
+        // Its GPU "wattage" selector independently uses the same bounded 0D/07
+        // bytes as advanced levels. Vendor DLL GPU clocks remain unadmitted.
+        CreateSourceReviewed("RZ09-0301", "Blade", 0x0245,
+            "main.450b813b36b314f7abf0.js", "rzDevice25.f668146da6ee1d0b3b6c.js",
+            "8459C76B984DDF5894CC7C7E00A40B76EEDE5E32D65DF2F7D6D75A541C36DAC7", false,
+            turbo: false, silent: false, balancedDc: false, batteryProtection: false),
         // The exact DMI name and product 582 guide jointly identify RZ09-0300.
         CreateSourceReviewed("RZ09-0300", "Blade 15 Mid 2019-Base", 0x0246,
             "main.c9ac81170313d8740ddc.js", "rzDevice25.56d11fe9830f93920735.js",
@@ -241,6 +258,16 @@ internal static class ExperimentalBladeModels
     private static System.Collections.Immutable.ImmutableArray<string> SourceReviewedEvidence(ushort product) =>
         product switch
         {
+            581 => [
+                "https://apps.razer.com/synapse/products/581/mw/main.450b813b36b314f7abf0.js;SHA256=F7A863CF5E95D94539ABD3F4C29076E1710901B5D02624EFDC0275265C651D7A",
+                "https://apps.razer.com/synapse/products/581/mw/6737.f49b9965ecd5cf011e43.js;SHA256=5B11C5CD3E26BBD74DAC7A98413AB31315DAFEFAD5B783DBF0CF014E6A33D017",
+                "https://apps.razer.com/synapse/products/581/mw/rzDevice25.f668146da6ee1d0b3b6c.js;SHA256=8459C76B984DDF5894CC7C7E00A40B76EEDE5E32D65DF2F7D6D75A541C36DAC7",
+                "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrixBladeWattage.09358e38f5994093ae20.js;SHA256=EB94694DBB49AE38AD1837AC926D3D78515F9F501B249B68FE48C200250036F5",
+                "https://apps.razer.com/synapse/products/581/ui/static/js/main.98cf2efe.js;SHA256=C29CE6F4E66E5658B9B7FC4443AE27057EFA4C06DF3A96F6C0E70B79E712DB85",
+                "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrix.dadaa67383371e256a18.js;SHA256=BEB240485210034445236483B1226DBCCEC67A5C8AB216C9CF976B57F604A1E6",
+                "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrixBlade.211294bf38840fcb516b.js;SHA256=7F25B39B209807B8582E30717B90129AAB0B3B20B01DE5B0465C2819D4FD99DF",
+                "https://apps.razer.com/synapse/products/581/mw/3159.f364bf525336e07016a6.js;SHA256=9099AB575124FDDCE557262C2D6DD4A67F872F678127D89AFBE8DF8781A4EDDF",
+                "https://apps.razer.com/synapse/products/581/mw/3689.30a0792a28654ef8ef1c.js;SHA256=E9CFC508E4D6C81671C7A57081DA3DD640398B191AF87B761A17CCDF04B0440C"],
             582 => [
                 "https://apps.razer.com/synapse/products/582/mw/6737.3d32e8efb681572a4d05.js;SHA256=EFFE1404E33611F8B26AA248B64A7B25A1F9283217BE1CC5C85DEEC98AB10B6E",
                 "https://apps.razer.com/synapse/products/582/mw/main.c9ac81170313d8740ddc.js;SHA256=EAEE32B144B086165E43FC97446378D22919FB19360826028A0434B03D7190C4",
@@ -339,8 +366,14 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     private long uniformFrameSuccessCount;
     private LinkedListNode<ExperimentalControlObservation>? animationFrameSuccess;
     private long animationFrameSuccessCount;
+    private FanSpeedRange? confirmedFanRange;
     private int recoveryRequired;
     private ExperimentalRecoveryScope recoveryScope = ExperimentalRecoveryScope.All;
+
+    // Observed capability metadata only; never a saved fan target or write admission.
+    internal FanSpeedRange? ConfirmedFanRange => Volatile.Read(ref confirmedFanRange);
+
+    internal void ConfirmFanRange(FanSpeedRange range) => Volatile.Write(ref confirmedFanRange, range);
 
     internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
 

@@ -1737,6 +1737,12 @@ public partial class App
             ApplyExperimentalBatterySnapshotState(window, state == "blade18-battery-off");
             return;
         }
+        if (state is "rz0301-lighting-unknown" or "rz0301-lighting-populated" or "rz0301-lighting-paused")
+        {
+            ApplyRz0301IndependentLightingSnapshotState(window,
+                populated: state != "rz0301-lighting-unknown", paused: state == "rz0301-lighting-paused");
+            return;
+        }
         if (state is "blade18-breathing" or "blade18-wave")
         {
             ApplyExperimentalLightingSnapshotState(window, state == "blade18-wave");
@@ -2050,6 +2056,71 @@ public partial class App
             "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Status presentation hook was not found.");
         applyStatus.Invoke(window.ViewModel, [status, false]);
+    }
+
+    private static void ApplyRz0301IndependentLightingSnapshotState(
+        MainWindow window, bool populated, bool paused)
+    {
+        // Synthetic observations only. Snapshot windows never start the service
+        // client or native integration, and this fixture cannot access hardware.
+        IndependentLightingSettings? controls = populated ? new(65, LogoLightingMode.Static) : null;
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        LightingSettings lighting = profiles.PluggedIn.Lighting with { IndependentControls = controls };
+        profiles = profiles with { PluggedIn = profiles.PluggedIn with { Lighting = lighting } };
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            FanModes = new HashSet<FanMode> { FanMode.Automatic },
+            LightingEffects = new HashSet<LightingEffect>(),
+            SupportsKeyboardBrightness = true,
+            SupportsIndependentLightingControls = true,
+            LogoLightingModes = new HashSet<LogoLightingMode>
+                { LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing },
+        };
+        ServiceStatusSnapshot status = new(
+            1, true, paused, [], null, [], "Source-reviewed RZ09-0301 independent lighting preview",
+            capabilities,
+            new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, null, null)
+            { IndependentLighting = controls }, profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, false, false)),
+            PowerSource.PluggedIn, null, null, null, null, false)
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalSupportSource = "SynapseSourceBacked:RZ09-0301:581",
+            ExperimentalWritesPaused = paused,
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        if (paused)
+        {
+            applyStatus.Invoke(window.ViewModel, [status with
+            {
+                WritesBlocked = false, ExperimentalWritesPaused = false,
+            }, false]);
+            status = status with
+            {
+                Revision = 2,
+                Capabilities = capabilities with
+                {
+                    SupportsKeyboardBrightness = false,
+                    LogoLightingModes = new HashSet<LogoLightingMode>(),
+                },
+            };
+        }
+        applyStatus.Invoke(window.ViewModel, [status, false]);
+        if (window.ViewModel.LightingBrightnessValueText != (populated ? "65" : "—")
+            || window.ViewModel.SelectedLogoLightingModeOption?.Mode != controls?.LogoMode
+            || window.ViewModel.IsKeyboardEffectSelectionVisible
+            || window.ViewModel.IsLightingApplyPending || window.ViewModel.CanControlLighting == paused)
+        {
+            throw new InvalidOperationException("The independent lighting preview state is incomplete.");
+        }
     }
 
     private static void ApplyExperimentalLightingSnapshotState(MainWindow window, bool wave)

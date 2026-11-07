@@ -132,7 +132,7 @@ public sealed class ReadFailureMetadataTests
     [InlineData(0x029F, true)]
     [InlineData(0x02A0, false)]
     [InlineData(0x02A0, true)]
-    public async Task ExperimentalFanTargetFailure_IdentifiesThermalDependencyWithoutWrites(
+    public async Task ExperimentalRecoveryFanTargetFailure_IdentifiesThermalDependencyWithoutWrites(
         int productId, bool secondTarget)
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
@@ -143,6 +143,16 @@ public sealed class ReadFailureMetadataTests
             new(new byte[] { 0, 1, 0, 1 }, null),
             new(new byte[] { 0, 2, 0, 1 }, null),
         };
+        // Recovery retains strict target validation. Product672 reads its
+        // independent charge policy/override before the thermal baseline.
+        if (productId == 0x02A0)
+        {
+            results.InsertRange(0,
+            [
+                new(new byte[] { 0x50 }, null),
+                new(new byte[] { 0 }, null),
+            ]);
+        }
         if (secondTarget)
         {
             results.Add(new(new byte[] { profile, 1, 30 }, null));
@@ -153,12 +163,13 @@ public sealed class ReadFailureMetadataTests
             new ExperimentalFeaturesPolicy(model), () => true, () => PowerSource.ExternalUnknown);
 
         NativeDeviceReadException error = await Assert.ThrowsAsync<NativeDeviceReadException>(
-            () => port.QueryPerformanceFanStateAsync(default));
+            () => port.ReadRecoveryStateAsync(default));
 
         Assert.Equal(DeviceStateQuery.PerformanceAndFans, error.StateQuery);
         Assert.Equal(diagnostic, error.Diagnostic);
-        Assert.Equal(secondTarget ? 4 : 3, session.Commands.Count);
-        Assert.All(session.Commands, command => Assert.True(command.CommandId is 0x82 or 0x81));
+        int batteryReads = productId == 0x02A0 ? 2 : 0;
+        Assert.Equal((secondTarget ? 4 : 3) + batteryReads, session.Commands.Count);
+        Assert.All(session.Commands.Skip(batteryReads), command => Assert.True(command.CommandId is 0x82 or 0x81));
         Assert.Equal(new byte[] { profile, secondTarget ? (byte)2 : (byte)1, 0 },
             session.Commands[^1].Arguments.ToArray());
     }

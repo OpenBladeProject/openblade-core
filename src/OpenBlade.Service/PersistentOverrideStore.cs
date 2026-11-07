@@ -51,7 +51,8 @@ public sealed class PersistentOverrideStore
         new(StringComparer.OrdinalIgnoreCase);
     // CPU Boost and the Custom maximum-fan flag require a new schema so older
     // builds preserve this document rather than accepting an incomplete intent.
-    private const int CurrentSchemaVersion = 7;
+    private const int CurrentSchemaVersion = 8;
+    private const int SchemaSevenVersion = 7;
     private const int SchemaSixVersion = 6;
     private const int SchemaFiveVersion = 5;
     private const int SchemaFourVersion = 4;
@@ -310,6 +311,7 @@ public sealed class PersistentOverrideStore
 
         PersistentOverrideState overrides;
         if (schemaVersion is CurrentSchemaVersion
+            or SchemaSevenVersion
             or SchemaSixVersion
             or SchemaFiveVersion
             or SchemaFourVersion
@@ -354,6 +356,10 @@ public sealed class PersistentOverrideStore
             throw new InvalidDataException("The persistent override schema is unsupported.");
         }
 
+        if (schemaVersion < 8 && overrides.Lighting?.IndependentControls is not null)
+        {
+            throw new InvalidDataException("Independent lighting controls require override schema 8.");
+        }
         PersistentOverrideState normalized =
             NormalizeLegacyGpuClockTuning(
                 NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides)));

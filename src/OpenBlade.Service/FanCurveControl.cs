@@ -176,11 +176,11 @@ internal sealed class NativeStatusChangeObserver(
     }
 }
 
-// The exact target firmware exposes a Razer-specific ACPI thermal zone named
-// TZRZ. Windows publishes its EC-backed _TMP value through the standard Thermal
-// Zone Information counter set. This is a platform/CPU-side thermal input, not a
-// claim that Windows exposes the processor's per-core DTS values. NVML remains
-// the signed user-mode source for the NVIDIA GPU temperature.
+// CPU temperature requires a reviewed dynamic sensor contract. The BIOS/EC
+// source review found constant _TMP values in both formerly selected TZRZ paths;
+// they cannot drive a fan curve or stand in for CPU temperature. An unavailable
+// CPU input retains the existing maximum-fan fail-safe. NVML remains the signed
+// user-mode source for the NVIDIA GPU temperature.
 public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDisposable
 {
     // A GPU workload that ends between samples leaves the NVML session open
@@ -391,13 +391,13 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     /// </summary>
     internal sealed class WindowsThermalZone : IDisposable
     {
-        internal static IReadOnlyList<string> RazerEcCounterPaths { get; } =
-        [
-            // RZ09-0528 BIOS 2.02 / EC 1.09.
-            @"\Thermal Zone Information(\_SB.PCI0.SBRG.EC0.TZRZ)\High Precision Temperature",
-            // RZ09-0581 validated baseline.
-            @"\Thermal Zone Information(\_SB.PC00.LPCB.EC0.TZRZ)\High Precision Temperature",
-        ];
+        // RZ09-0528 BIOS 2.02 and the live-retained RZ09-0581 BIOS 4.01
+        // DSDTs both return the literal 0x0C6E from TZRZ._TMP. A successful
+        // PDH read of either path cannot establish CPU temperature. Keep the
+        // shared source list empty until a dynamic sensor contract is reviewed;
+        // do not substitute another zone or blacklist a legitimate 45 C value.
+        // Provenance: docs/bios-ec-source-validation.md.
+        internal static IReadOnlyList<string> RazerEcCounterPaths { get; } = [];
         private const uint PdhFormatDouble = 0x00000200;
         private const uint PdhStatusValidData = 0x00000000;
         private const uint PdhStatusNewData = 0x00000001;

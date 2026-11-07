@@ -768,7 +768,8 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
 
     private void OnOpenLabsLightingControl(object sender, RoutedEventArgs args)
     {
-        if (sender is not Microsoft.UI.Xaml.Controls.Button { Tag: string targetName })
+        if (!ViewModel.ShowLightingEffectLabControls
+            || sender is not Microsoft.UI.Xaml.Controls.Button { Tag: string targetName })
         {
             return;
         }
@@ -3148,7 +3149,10 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 : null,
             ViewModel.HasUnsavedLightingPowerPolicy
                 ? ViewModel.LightingPowerPolicyDraft
-                : null);
+                : null)
+        {
+            EditorGeneration = ViewModel.LightingCommitGeneration,
+        };
         if (Volatile.Read(ref disposed) != 0 || !request.HasWork)
         {
             lightingCommits.ClearPending();
@@ -3189,7 +3193,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             if (request.Lighting is { } draft
                 && ViewModel.SetLightingCommand is AsyncRelayCommand lightingCommand)
             {
-                if (lightingCommand.CanExecute(draft))
+                if (ViewModel.IsLightingCommitCurrent(request) && lightingCommand.CanExecute(draft))
                 {
                     await lightingCommand.ExecuteAsync(draft);
                 }

@@ -855,6 +855,37 @@ public sealed class ControlCoordinator
                 cancellationToken).ConfigureAwait(false);
         }
 
+        // Preset-ranged backends report the independent performance and manual
+        // flag, and use the same typed targets for Fixed and host curves. A
+        // subtype change within their admitted preset needs no Automatic or
+        // Balanced write. Recheck the actual preset in the requested step;
+        // unknown state must block rather than select the historical bridge.
+        FanSpeedRange? presetRange = transitionCapabilities.GetFanSpeedRange(performanceIntent);
+        bool directPresetRangedSubtype = previousManual && requestedManual
+            && transitionCapabilities.ReportsPerformanceWithManualFans
+            && transitionCapabilities.FanSpeedRangesByPerformancePreset.Count > 0;
+        if (directPresetRangedSubtype)
+        {
+            if (presetRange is not { IsWellFormed: true }
+                || !(requested.Mode == FanMode.Fixed && presetRange.Supports(requested.FixedSpeedRpm)
+                    || requested.Mode == FanMode.ManualCurve && performanceIntent == PerformancePreset.Balanced))
+            {
+                return new ScopedApplyOutcome(
+                    Unsupported("Fans"), null, WriteAttempted: false, ReadbackMatched: false,
+                    Capabilities: transitionCapabilities, DeviceAccessFailed: false);
+            }
+            ScopedApplyOutcome direct = await ApplyRequestedFanControlStepOutcomeAsync(
+                requested,
+                cancellationToken,
+                initialStateBlockReason: state => state.Performance == performanceIntent
+                    && IsConfirmedDirectManualFanWriteBaseline(state)
+                        ? null
+                        : "Manual subtype changes require the freshly confirmed admitted performance preset and fan state.")
+                .ConfigureAwait(false);
+            RecordWriteAttempt(writeAttempted, DeviceSubsystem.Fans, direct);
+            return direct;
+        }
+
         bool requiresAutomaticBridge = !supportsDirectManualFanTransitions
             && requestedManual
             && (!previousManual || previous.Mode != requested.Mode);
@@ -1186,27 +1217,49 @@ public sealed class ControlCoordinator
                 confirmed),
             cancellationToken);
 
-    internal Task<ScopedApplyOutcome> ApplyLightingOutcomeAsync(
+    internal async Task<ScopedApplyOutcome> ApplyLightingOutcomeAsync(
         LightingSettings value,
         CancellationToken cancellationToken,
         bool forceWrite = false,
         Func<bool>? writeAllowed = null,
-        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null) =>
-        ApplyScopedAsync(
+        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null)
+    {
+        bool independent = false;
+        ConfirmedDeviceState? baseline = null;
+        ScopedApplyOutcome outcome = await ApplyScopedAsync(
             DeviceSubsystem.Lighting,
             "Lighting",
             IsLightingValid(value),
-            capabilities => LightingSupported(capabilities, value),
-            state => LightingMatches(state, value),
-            token => device.SetLightingAsync(value, token),
+            capabilities =>
+            {
+                independent = capabilities.SupportsIndependentLightingControls;
+                return LightingSupported(capabilities, value);
+            },
+            state => LightingMatches(state, value, independent),
+            token => independent
+                ? value.IndependentControls is { } fields
+                    ? device.SetIndependentLightingAsync(fields, token) : Task.CompletedTask
+                : device.SetLightingAsync(value, token),
             cancellationToken,
             initialStateBlockReason,
-            acceptSetterCompletionWithoutReadback: value.Effect != LightingEffect.Off,
-            setterCompletionEvidence: state => LogoMatches(state, value),
+            acceptSetterCompletionWithoutReadback: value.IndependentControls is null && value.Effect != LightingEffect.Off,
+            setterCompletionEvidence: state => !independent && LogoMatches(state, value),
             forceWrite: forceWrite,
             writeAllowed: writeAllowed,
-            stateReader: device.ReadLightingStateAsync);
-
+            stateReader: async token =>
+            {
+                ConfirmedDeviceState state = independent && value.IndependentControls is { } fields
+                    ? await device.ReadIndependentLightingStateAsync(fields, token)
+                    : await device.ReadLightingStateAsync(token);
+                baseline ??= state;
+                return state;
+            });
+        // Each admitted independent field needs its own observed confirmation.
+        // A successful setter or a readable different value cannot allow replay.
+        return independent && outcome.WriteAttempted && !outcome.ReadbackMatched
+            ? outcome with { ConfirmationUnavailable = true, PreWriteState = baseline }
+            : outcome;
+    }
     internal async Task<FullTransitionApplyOutcome> ApplyDesiredStateOutcomeAsync(
         DesiredDeviceState desired,
         CancellationToken cancellationToken,
@@ -1589,11 +1642,14 @@ public sealed class ControlCoordinator
                 "Lighting",
                 IsLightingValid(desired.Lighting.Value)
                     && LightingSupported(capabilities, desired.Lighting.Value),
-                LightingMatches(initial, desired.Lighting.Value),
-                token => device.SetLightingAsync(desired.Lighting.Value, token),
-                state => LightingMatches(state, desired.Lighting.Value),
+                LightingMatches(initial, desired.Lighting.Value, capabilities.SupportsIndependentLightingControls),
+                token => capabilities.SupportsIndependentLightingControls
+                    ? desired.Lighting.Value.IndependentControls is { } fields
+                        ? device.SetIndependentLightingAsync(fields, token) : Task.CompletedTask
+                    : device.SetLightingAsync(desired.Lighting.Value, token),
+                state => LightingMatches(state, desired.Lighting.Value, capabilities.SupportsIndependentLightingControls),
                 AcceptSetterCompletionWithoutReadback:
-                    desired.Lighting.Value.Effect != LightingEffect.Off),
+                    !capabilities.SupportsIndependentLightingControls && desired.Lighting.Value.Effect != LightingEffect.Off),
         };
     }
 
@@ -2814,14 +2870,26 @@ public sealed class ControlCoordinator
     private static bool LightingSupported(
         DeviceCapabilities capabilities,
         LightingSettings value) =>
-        capabilities.LightingEffects.Contains(value.Effect)
-        && (value.LogoMode is null
-            || capabilities.LogoLightingModes.Contains(value.LogoMode.Value));
+        capabilities.SupportsIndependentLightingControls
+            ? value.IndependentControls is null
+                || value.IndependentControls is { IsWellFormed: true } fields
+                    && (!fields.Brightness.HasValue || capabilities.SupportsKeyboardBrightness)
+                    && (fields.LogoMode is null || capabilities.LogoLightingModes.Contains(fields.LogoMode.Value))
+            : value.IndependentControls is null
+                && capabilities.LightingEffects.Contains(value.Effect)
+                && (value.LogoMode is null || capabilities.LogoLightingModes.Contains(value.LogoMode.Value));
 
     private static bool LightingMatches(
         ConfirmedDeviceState confirmed,
-        LightingSettings desired)
+        LightingSettings desired,
+        bool independent = false)
     {
+        if (independent)
+        {
+            return desired.IndependentControls is not { } fields
+                || (!fields.Brightness.HasValue || confirmed.IndependentLighting?.Brightness == fields.Brightness)
+                    && (fields.LogoMode is null || (confirmed.IndependentLighting?.LogoMode ?? confirmed.LogoLighting) == fields.LogoMode);
+        }
         LightingSettings desiredKeyboard = desired with { LogoMode = null };
         LightingSettings? confirmedKeyboard = confirmed.Lighting is { } lighting
             ? lighting with { LogoMode = null }

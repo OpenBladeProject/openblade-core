@@ -1516,7 +1516,8 @@
                         <Border Style="{StaticResource SettingsGroupStyle}"
                                 Visibility="{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}">
                             <StackPanel local:CardReorder.GroupId="LightingEffectPickerRows">
-                                <Border local:CardReorder.CardId="LightingEffectPicker" Style="{StaticResource SettingsLastRowStyle}">
+                                <Border local:CardReorder.CardId="LightingEffectPicker" Style="{StaticResource SettingsLastRowStyle}"
+                                        Visibility="{x:Bind IsKeyboardEffectSelectionVisible, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1562,21 +1563,22 @@
                                             </Grid.ColumnDefinitions>
                                             <Slider x:Name="DashboardLightingBrightnessSlider"
                                                     Style="{StaticResource InlineCardSliderStyle}"
-                                                    Minimum="1"
+                                                    Minimum="{x:Bind LightingBrightnessMinimum, Mode=OneWay}"
                                                     Maximum="100"
                                                     StepFrequency="1"
                                                     SmallChange="1"
                                                     LargeChange="10"
-                                                    IsThumbToolTipEnabled="True"
+                                                    IsThumbToolTipEnabled="{x:Bind HasLightingBrightnessValue, Mode=OneWay}"
                                                     AutomationProperties.Name="{CustomResource MainWindow_DashboardLightingBrightnessSliderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
                                                     Value="{Binding LightingBrightnessEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
                                             <StackPanel Grid.Column="1"
                                                         Orientation="Horizontal"
                                                         HorizontalAlignment="Right"
                                                         VerticalAlignment="Center">
-                                                <TextBlock Text="{x:Bind LightingBrightnessEditor, Mode=OneWay}"
+                                                <TextBlock Text="{x:Bind LightingBrightnessValueText, Mode=OneWay}"
                                                            Style="{StaticResource CardTitleStyle}" />
-                                                <TextBlock Text="%" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock Text="%" Style="{StaticResource CardTitleStyle}"
+                                                           Visibility="{x:Bind HasLightingBrightnessValue, Mode=OneWay}" />
                                             </StackPanel>
                                         </Grid>
                                     </Grid>
@@ -1929,7 +1931,8 @@
                         <!-- The Lighting page reveals these guide targets; dashboard copies keep them hidden. -->
                         <Border x:Name="ImportKeyboardLightingPresetCard"
                                 Style="{StaticResource SettingsGroupStyle}"
-                                Margin="0,10,0,0">
+                                Margin="0,10,0,0"
+                                Visibility="{x:Bind ShowLightingEffectLabControls, Mode=OneWay}">
                             <Border Style="{StaticResource SettingsLastRowStyle}"
                                     Padding="0">
                                 <Button x:Name="ImportKeyboardLightingPresetButton"
@@ -1970,7 +1973,8 @@
                         </Border>
                         <Border x:Name="LightingRefreshRateCard"
                                 Style="{StaticResource SettingsGroupStyle}"
-                                Margin="0,10,0,0">
+                                Margin="0,10,0,0"
+                                Visibility="{x:Bind ShowLightingEffectLabControls, Mode=OneWay}">
                             <Border Style="{StaticResource SettingsLastRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -2030,6 +2034,7 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <local:ResponsiveChoiceSelector x:Name="LaptopLogoModeSelector"
+                                                                        PlaceholderText="{x:Bind LogoLightingPlaceholderText}"
                                                                         Grid.Column="1"
                                                                         CompactMinWidth="170"
                                                                         ExpandedMinWindowWidth="800"
@@ -4269,7 +4274,8 @@
                                  Margin="0,0,0,18"
                                  Title="{CustomResource MainWindow_LightingUnavailableInfoBarText.Title}"
                                  Message="{x:Bind ViewModel.LightingControlUnavailableMessage, Mode=OneWay}" />
-                        <StackPanel x:Name="LabsKeyboardSection" Spacing="10">
+                        <StackPanel x:Name="LabsKeyboardSection" Spacing="10"
+                                    Visibility="{x:Bind ViewModel.ShowLightingEffectLabControls, Mode=OneWay}">
                             <TextBlock Text="{CustomResource MainWindow_TextBlockKeyboard2.Text}"
                                        Style="{StaticResource SectionHeaderStyle}" />
                             <Border Style="{StaticResource SettingsGroupStyle}">
@@ -4562,7 +4568,8 @@
                                                       Toggled="OnFirmwareCompatibilityOverrideToggled" />
                                     </Grid>
                                 </Border>
-                                <Border local:CardReorder.CardId="MainWindow_TextBlockOverrideExternalLightingChanges" Style="{StaticResource SettingsLastRowStyle}">
+                                <Border local:CardReorder.CardId="MainWindow_TextBlockOverrideExternalLightingChanges" Style="{StaticResource SettingsLastRowStyle}"
+                                        Visibility="{x:Bind ViewModel.IsKeyboardEffectSelectionVisible, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />

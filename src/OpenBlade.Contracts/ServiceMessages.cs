@@ -39,6 +39,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
+[JsonDerivedType(typeof(SetIndependentLightingOverrideRequest), "setIndependentLightingOverride")]
 [JsonDerivedType(typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness")]
 [JsonDerivedType(typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage")]
 [JsonDerivedType(typeof(SetKeyboardLightingControlModeRequest), "setKeyboardLightingControlMode")]
@@ -217,6 +218,12 @@ public sealed record SetLightingOverrideRequest(
     int Version,
     Guid RequestId,
     ManualOverride<LightingSettings>? Value)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetIndependentLightingOverrideRequest(
+    int Version,
+    Guid RequestId,
+    ManualOverride<IndependentLightingSettings>? Value)
     : ServiceRequest(Version, RequestId);
 
 public sealed record StepKeyboardBrightnessRequest(

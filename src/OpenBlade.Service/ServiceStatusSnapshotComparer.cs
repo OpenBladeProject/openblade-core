@@ -108,6 +108,7 @@ internal static class ServiceStatusSnapshotComparer
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
             && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
             && left.LampArrayLightingAccess == right.LampArrayLightingAccess
+            && left.SupportsIndependentLightingControls == right.SupportsIndependentLightingControls
             && left.ObservedPowerSourceBehaviors.SequenceEqual(
                 right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)

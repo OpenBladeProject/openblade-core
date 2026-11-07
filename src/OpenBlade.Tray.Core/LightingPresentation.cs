@@ -107,6 +107,22 @@ public static class LightingPresentation
 
     public static string FormatLightingProfile(LightingSettings lighting)
     {
+        if (lighting.IndependentControls is { } independent)
+        {
+            var parts = new List<string>();
+            if (independent.Brightness is { } brightness)
+            {
+                parts.Add(TrayText.Get("Lighting brightness") + ": " + TrayText.Format("{0}%", brightness));
+            }
+
+            if (independent.LogoMode is { } logo)
+            {
+                parts.Add(TrayText.Get("Laptop lid logo") + ": " + LogoLightingModeLabel(logo));
+            }
+
+            return string.Join(" · ", parts);
+        }
+
         if (lighting.Effect == LightingEffect.Off)
         {
             return TrayText.Get("Off");

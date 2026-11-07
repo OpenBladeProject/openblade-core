@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Support Blade 15 Advanced (Mid 2019) RZ09-0301 with Balanced/Custom performance, Balanced fixed fans and host curves on full-power AC, independent keyboard brightness and logo controls. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Search OpenBlade pages and settings from the title bar. Press Ctrl+K to open search and jump to a result. ([#883](https://github.com/OpenBladeProject/openblade-core/pull/883))
 - Adjust the running CPU's all-core Voltage Optimizer on Blade 16 (2025, RZ09-0528) with the supported AMD driver already running. Off preserves the remembered offset. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
 - Support Blade 15 Base (2019) RZ09-0300, Blade 15 Advanced (Early 2020) RZ09-0330 and Blade 15 Base (Late 2020) RZ09-0351 with reviewed preset controls and Automatic fans. Advanced Custom CPU/GPU levels are bounded to Low/Medium/High; physical validation remains pending. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
@@ -16,11 +17,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Shorten the README support section in English, Chinese and Russian, with model details in the support guide. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Document exact BIOS/EC source findings for Blade 16 RZ09-0581 and RZ09-0528. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Open Labs from the sidebar to learn about experimental features and jump to their controls. A beaker marks experimental controls on the Lighting page. ([#885](https://github.com/OpenBladeProject/openblade-core/pull/885))
 - List source-reviewed laptops as officially supported and track physical validation separately. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 
 ### Fixed
 
+- Change directly between Fixed fans and host curves in an admitted preset on source-reviewed backends. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Stop treating constant ACPI values as CPU temperature, so custom fan curves use the existing maximum-speed fallback when no CPU sensor is available. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Preserve cancellation when a queued service request resumes. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
 - Preserve the original diagnostic stage when a CPU read times out. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
 - Keep older app clients in a readable, read-only upgrade view when the service exposes newer presets and settings. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))

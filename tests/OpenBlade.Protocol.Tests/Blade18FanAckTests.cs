@@ -120,7 +120,8 @@ public sealed partial class ExperimentalThermalExpansionTests
 
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
         Assert.False(policy.WritesAllowed);
-        Assert.Equal(2, session.FanModeSetAttempts);
+        // Fresh paired flags reject the unconfirmed first mode write before zone two.
+        Assert.Equal(1, session.FanModeSetAttempts);
         Assert.Equal(0, session.FanTargetSetAttempts);
     }
 

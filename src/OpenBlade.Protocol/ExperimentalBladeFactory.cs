@@ -37,8 +37,10 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
 
-    public DeviceCapabilities Capabilities => ExperimentalBladePort.WithStartupReadAdmission(
-        ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState);
+    public DeviceCapabilities Capabilities => ExperimentalBladePort.WithConfirmedExperimentalFanRange(
+        ExperimentalBladePort.WithStartupReadAdmission(
+            ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
+        model, policy.ConfirmedFanRange);
 
     public DeviceCapabilities PotentialCapabilities => ExperimentalBladePort.CreateCapabilities(model, true);
 

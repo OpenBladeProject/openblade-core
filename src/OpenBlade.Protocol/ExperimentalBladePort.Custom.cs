@@ -81,16 +81,18 @@ internal sealed partial class ExperimentalBladePort
             RequireWriteAdmission(thermal: true);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             // 029F/029D admit fixed targets through Custom entry (sqmagellan
-            // 9c66e705/librazer/src/command.rs). 02A0 admits fixed targets only
-            // in Balanced, so it requires Automatic handback before Custom.
+            // 9c66e705/librazer/src/command.rs). Preset-ranged backends do not
+            // admit Custom/manual, so that destination requires Automatic.
             if (baseline.HyperBoostActive || baseline.Fans != FanMode.Automatic
-                    && (GetExperimentalFanRange(model) is null || model.ProductId == 0x02A0)
+                    && (GetExperimentalFanRange(model) is null || GetExperimentalFanRangesByPerformancePreset(model).Count > 0)
                 || baseline.Performance is not (PerformancePreset.Balanced or PerformancePreset.Silent
                     or PerformancePreset.Performance or PerformancePreset.Custom
                     or PerformancePreset.Turbo or PerformancePreset.MaximumPower))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                    model.ThermalPolicy is not null && baseline.Fans != FanMode.Automatic
+                    GetExperimentalFanRangesByPerformancePreset(model).Count > 0 && baseline.Fans != FanMode.Automatic
+                        ? "This exact model admits Custom only with Automatic fans. Select Automatic fans explicitly."
+                        : model.ThermalPolicy is not null && baseline.Fans != FanMode.Automatic
                         ? "Custom changes cannot preserve this model's manual targets until dynamic fan ranges are admitted. Select Automatic fans explicitly."
                         : "Experimental custom performance requires an ordinary AC preset and a model-supported fan baseline.");
             }

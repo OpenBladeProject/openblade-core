@@ -5,6 +5,29 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class WinUiShellContractTests
 {
+    [Theory]
+    [InlineData("LightingEffectPicker", "IsKeyboardEffectSelectionVisible")]
+    [InlineData("ImportKeyboardLightingPresetCard", "ShowLightingEffectLabControls")]
+    [InlineData("LightingRefreshRateCard", "ShowLightingEffectLabControls")]
+    public void GlobalSearchLightingRowsShareTheirCanonicalVisibilityGate(string rowId, string predicate)
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement row = document.Descendants().Single(element => element.Name.LocalName == "Border"
+            && element.Attributes().Any(attribute => attribute.Name.LocalName is "Name" or "CardReorder.CardId"
+                && attribute.Value == rowId));
+        Assert.Equal("{x:Bind " + predicate + ", Mode=OneWay}", row.Attribute("Visibility")?.Value);
+
+        // Before a canonical template is realized, search cannot consult the
+        // live row. Its explicit predicate must enforce the same capability gate.
+        string catalog = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.GlobalSearchCatalog.cs");
+        int start = catalog.IndexOf("\"" + rowId + "\"", StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        int end = catalog.IndexOf(");", start, StringComparison.Ordinal);
+        Assert.True(end > start);
+        Assert.Contains("ViewModel.ShowOpenBladeKeyboardLightingControls && ViewModel." + predicate,
+            catalog[start..end], StringComparison.Ordinal);
+    }
+
     [Fact]
     public void WindowsBatteryReportLivesOutsideCollectionControlsAndKeepsDetailsOptional()
     {
@@ -1500,8 +1523,9 @@ public sealed class WinUiShellContractTests
         Assert.Equal("Collapsed", Attribute(labControls, "Visibility"));
         Assert.Contains(labControls, importCard.Ancestors());
         Assert.Contains(labControls, rateCard.Ancestors());
-        Assert.Null(Attribute(importCard, "Visibility"));
-        Assert.Null(Attribute(rateCard, "Visibility"));
+        Assert.Equal("{x:Bind ShowLightingEffectLabControls, Mode=OneWay}", Attribute(importCard, "Visibility"));
+        Assert.Equal("{x:Bind ShowLightingEffectLabControls, Mode=OneWay}", Attribute(rateCard, "Visibility"));
+        Assert.Equal("{x:Bind ViewModel.ShowLightingEffectLabControls, Mode=OneWay}", Attribute(keyboard, "Visibility"));
 
         XElement import = Assert.Single(importCard.Descendants(), element => element.Name.LocalName == "Button");
         Assert.Equal("Import keyboard lighting preset", Attribute(import, "AutomationProperties.Name"));
@@ -1536,13 +1560,21 @@ public sealed class WinUiShellContractTests
 
         string search = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.GlobalSearchCatalog.cs");
         Assert.Contains("Page(LabsNavigationItem, LabsPage, \"MainWindow_LabsTitle.Text\")", search, StringComparison.Ordinal);
-        Assert.Contains("Section(labs, LabsKeyboardSection, \"MainWindow_TextBlockKeyboard2.Text\")", search, StringComparison.Ordinal);
+        Assert.Contains("Section(labs, LabsKeyboardSection, \"MainWindow_TextBlockKeyboard2.Text\",", search, StringComparison.Ordinal);
         Assert.Contains("Row(labsKeyboard, \"MainWindow_LabsImportTitle.Text\", nameof(LabsImportGuideButton))", search, StringComparison.Ordinal);
         Assert.Contains("Row(labsKeyboard, \"MainWindow_TextBlockSixtyHzLighting.Text\", nameof(LabsLightingRateGuideButton))", search, StringComparison.Ordinal);
-        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockImportPreset.Text\", \"ImportKeyboardLightingPresetCard\")", search, StringComparison.Ordinal);
-        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockSixtyHzLighting.Text\", \"LightingRefreshRateCard\")", search, StringComparison.Ordinal);
+        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockImportPreset.Text\", \"ImportKeyboardLightingPresetCard\",", search, StringComparison.Ordinal);
+        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockSixtyHzLighting.Text\", \"LightingRefreshRateCard\",", search, StringComparison.Ordinal);
         Assert.DoesNotContain("LabFeaturesEnabled", search, StringComparison.Ordinal);
         Assert.DoesNotContain("LabFeaturesInfoButton", search, StringComparison.Ordinal);
+        string guideScope = SliceMethod(search, "GlobalSearchResult labsKeyboard =", "Row(labsKeyboard,");
+        Assert.Contains("exposed: () => ViewModel.ShowLightingEffectLabControls", guideScope, StringComparison.Ordinal);
+        string guideHandler = SliceMethod(window, "private void OnOpenLabsLightingControl(",
+            "public void NavigateToNotificationDestination(");
+        Assert.Contains("!ViewModel.ShowLightingEffectLabControls", guideHandler, StringComparison.Ordinal);
+        Assert.True(guideHandler.IndexOf("!ViewModel.ShowLightingEffectLabControls", StringComparison.Ordinal)
+            < guideHandler.IndexOf("sections.Single(", StringComparison.Ordinal));
+        Assert.Contains("OpenGlobalSearchResult(new GlobalSearchResult(", guideHandler, StringComparison.Ordinal);
     }
 
     [Fact]
