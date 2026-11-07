@@ -45,15 +45,12 @@ OpenBlade requires Windows 11 x64, version 24H2 or later.
 | Razer Blade 15 Base (Early 2020) | `RZ09-0328` |
 | Razer Blade 15 Advanced (Early 2020) | `RZ09-0330` |
 | Razer Blade 15 Base (Late 2020) | `RZ09-0351` |
+| Razer Blade 15 Advanced (Mid 2019) | `RZ09-0301` |
 | Razer Blade 15 Base (2019) | `RZ09-0300` |
 
-All listed laptops are officially supported. RZ09-0581 and RZ09-0528 have
-physically validated support; the other sixteen families are supported on reviewed
-exact-model sources, with physical validation tracked separately. Available
-controls vary by model and enable automatically. See the
-[user guide](https://github.com/OSSBlade/openblade-docs) for compatibility and
-[Source-reviewed Blade support](docs/experimental-blade-support.md) for model
-features, evidence limits, and testing instructions.
+OpenBlade automatically enables the controls available on your model. See the
+[user guide](https://github.com/OSSBlade/openblade-docs) for compatibility and the
+[model support guide](docs/experimental-blade-support.md) for features and testing details.
 
 On an unlisted Razer laptop, select **Help add support** in OpenBlade. Save the
 identity report, then follow the

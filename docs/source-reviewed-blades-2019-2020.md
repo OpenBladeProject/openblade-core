@@ -1,6 +1,6 @@
 # Source-reviewed Blade 15 models from 2019 and 2020
 
-This review adds three exact profiles to official source-reviewed support. Physical validation remains pending. The complete supported list contains 18 profiles: 16 source-reviewed and two physically validated. The [admission manifest](../evidence/source-reviewed-blades/2026-11-07-models-2019-2020.json) records 79 complete source pins, 97 byte-offset excerpts, exact identity evidence and two signed firmware carriers.
+This review adds three exact profiles to official source-reviewed support. Physical validation remains pending. The [admission manifest](../evidence/source-reviewed-blades/2026-11-07-models-2019-2020.json) records 79 complete source pins, 97 byte-offset excerpts, exact identity evidence and two signed firmware carriers.
 
 ## Exact identities and admitted controls
 

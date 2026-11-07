@@ -4,7 +4,7 @@
 
 [English](../experimental-blade-support.md) | [简体中文](../zh-CN/experimental-blade-support.md) | Русский
 
-Эти шестнадцать семейств ноутбуков официально поддерживаются на основе проверенных
+Эти семнадцать семейств ноутбуков официально поддерживаются на основе проверенных
 источников Synapse и сторонних проектов для каждой точной модели. OpenBlade
 распознаёт их автоматически в стабильных и предварительных выпусках. Проверка
 на оборудовании учитывается отдельно для каждой модели и функции; поддержка
@@ -77,6 +77,7 @@ HyperBoost, подсветка, интеграции с драйверами и 
 
 | Ноутбук | Номер модели | Начальные настройки |
 | --- | --- | --- |
+| [Blade 15 Advanced (середина 2019 года)](../source-reviewed-rz09-0301.md) | `RZ09-0301` | Balanced и Custom CPU/GPU Low, Medium, High от адаптера полной мощности, Automatic |
 | Blade 15 Base (2019) | `RZ09-0300` | Balanced, Gaming и Creator от адаптера полной мощности, Automatic |
 | Blade 15 Advanced (Early 2020) | `RZ09-0330` | Balanced и Custom CPU/GPU Low/Medium/High от адаптера полной мощности, Automatic |
 | Blade 15 Base (Late 2020) | `RZ09-0351` | Balanced, Gaming и Creator от адаптера полной мощности, Automatic |
