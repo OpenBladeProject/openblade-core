@@ -7,8 +7,8 @@ public sealed class RazerBladeModelCatalogTests
     [Fact]
     public void Catalog_SeparatesOfficialSupportFromPhysicalValidation()
     {
-        Assert.Equal(18, RazerBladeModelCatalog.All.Count);
-        Assert.Equal(16, RazerBladeModelCatalog.All.Count(model => model.SupportBasis == BladeSupportBasis.SourceReviewed));
+        Assert.Equal(19, RazerBladeModelCatalog.All.Count);
+        Assert.Equal(17, RazerBladeModelCatalog.All.Count(model => model.SupportBasis == BladeSupportBasis.SourceReviewed));
         Assert.All(RazerBladeModelCatalog.All, model => Assert.True(model.IsOfficiallySupported));
         Assert.Equal(new[] { "RZ09-0528", "RZ09-0581" }, RazerBladeModelCatalog.All
             .Where(model => model.HasPhysicalValidation)
@@ -23,6 +23,7 @@ public sealed class RazerBladeModelCatalogTests
 
     [Theory]
     [InlineData("RZ09-0483", true, "Supported", BladeSupportBasis.SourceReviewed, "Pending")]
+    [InlineData("RZ09-0301", true, "Supported", BladeSupportBasis.SourceReviewed, "Pending")]
     [InlineData("RZ09-0528", true, "Supported", BladeSupportBasis.PhysicallyValidated, "Validated")]
     [InlineData("RZ09-0483", false, "NotEstablished", BladeSupportBasis.NotEstablished, "NotEstablished")]
     [InlineData("RZ09-9999", true, "NotEstablished", BladeSupportBasis.NotEstablished, "NotEstablished")]
@@ -88,6 +89,7 @@ public sealed class RazerBladeModelCatalogTests
     }
 
     [Theory]
+    [InlineData("RZ09-0301", "Razer Blade 15 Advanced", 2019, "0245")]
     [InlineData("RZ09-0300", "Razer Blade 15 Base", 2019, "0246")]
     [InlineData("RZ09-0330", "Razer Blade 15 Advanced", 2020, "0253")]
     [InlineData("RZ09-0351", "Razer Blade 15 Base", 2020, "0268")]
