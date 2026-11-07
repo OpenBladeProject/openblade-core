@@ -136,7 +136,7 @@ public sealed class ExperimentalBladeBatteryRangeTests
             var session = new Session();
             var policy = new ExperimentalFeaturesPolicy(model);
             await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true, () => PowerSource.ExternalUnknown);
-            if (model.ThermalPolicy is not null)
+            if (model.SupportsBatteryProtection && model.ThermalPolicy is not null)
             {
                 Assert.Equal(new[] { 50, 55, 60, 65, 70, 75, 80, 100 }, port.Capabilities.ChargeLimits.Order());
                 await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(99, CancellationToken.None));

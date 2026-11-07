@@ -207,7 +207,7 @@ internal sealed partial class ExperimentalBladePort
                 // Products 671/669 use DC Balanced raw 6; preserve their battery mode.
                 PerformancePreset.Balanced => SupportsExperimentalHyperBoost(model)
                     && source == PowerSource.Battery ? (byte)6 : (byte)0,
-                PerformancePreset.Turbo when model.ThermalPolicy is not null => 1,
+                PerformancePreset.Turbo when model.ThermalPolicy?.SupportsTurbo == true => 1,
                 PerformancePreset.MaximumPower when model.ThermalPolicy?.SupportsMaximumPower == true => 2,
                 PerformancePreset.BatterySaver when model.ThermalPolicy?.SupportsBatterySaver == true => 3,
                 PerformancePreset.BatteryBalanced when model.ThermalPolicy?.SupportsBalancedDc == true => 6,

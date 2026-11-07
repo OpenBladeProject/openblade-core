@@ -209,11 +209,18 @@ internal sealed partial class ExperimentalBladePort(
         }
         var presets = new HashSet<PerformancePreset>
         {
-            PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Custom,
+            PerformancePreset.Balanced, PerformancePreset.Custom,
         };
         if (model.ThermalPolicy is { } thermal)
         {
-            presets.Add(PerformancePreset.Turbo);
+            if (thermal.SupportsSilent)
+            {
+                presets.Add(PerformancePreset.Silent);
+            }
+            if (thermal.SupportsTurbo)
+            {
+                presets.Add(PerformancePreset.Turbo);
+            }
             if (thermal.SupportsMaximumPower)
             {
                 presets.Add(PerformancePreset.MaximumPower);
@@ -228,6 +235,7 @@ internal sealed partial class ExperimentalBladePort(
             }
             return presets;
         }
+        presets.Add(PerformancePreset.Silent);
         // 0255 Gaming uses code 1. Code 2 has direct 029F/02A0 source evidence;
         // do not infer that distinct preset for the two AMD Blade 14 profiles.
         if (model.ProductId is 0x0255 or 0x029F or 0x02A0)
@@ -308,8 +316,8 @@ internal sealed partial class ExperimentalBladePort(
         {
             0 => PerformancePreset.Balanced,
             4 => PerformancePreset.Custom,
-            5 => PerformancePreset.Silent,
-            1 when model.ThermalPolicy is not null => PerformancePreset.Turbo,
+            5 when model.ThermalPolicy?.SupportsSilent != false => PerformancePreset.Silent,
+            1 when model.ThermalPolicy?.SupportsTurbo == true => PerformancePreset.Turbo,
             2 when model.ThermalPolicy?.SupportsMaximumPower == true => PerformancePreset.MaximumPower,
             3 when model.ThermalPolicy?.SupportsBatterySaver == true => PerformancePreset.BatterySaver,
             6 when model.ThermalPolicy?.SupportsBalancedDc == true => PerformancePreset.BatteryBalanced,
@@ -445,7 +453,7 @@ internal sealed partial class ExperimentalBladePort(
             byte mode = value switch
             {
                 PerformancePreset.Balanced => 0,
-                PerformancePreset.Turbo when model.ThermalPolicy is not null => 1,
+                PerformancePreset.Turbo when model.ThermalPolicy?.SupportsTurbo == true => 1,
                 PerformancePreset.MaximumPower when model.ThermalPolicy?.SupportsMaximumPower == true => 2,
                 PerformancePreset.Silent => 5,
                 PerformancePreset.Performance => model.ProductId == 0x0255 ? (byte)1 : (byte)2,
@@ -554,7 +562,8 @@ internal sealed partial class ExperimentalBladePort(
     // cleanup on battery; other bits and independent readback retain their guards.
     private bool IsSourceReviewedMaximumFansDisable(
         string operation, byte commandClass, byte commandId, byte[] arguments) =>
-        model.ThermalPolicy is { SupportsMaximumFans: true, SupportsBalancedDc: true }
+        model.ProductId is 0x02B6 or 0x02B7 or 0x02B8
+            && model.ThermalPolicy is { SupportsMaximumFans: true, SupportsBalancedDc: true }
             && operation == "MaximumFans" && commandClass == 0x07 && commandId == 0x0F
             && arguments.Length == 1 && arguments[0] == 0;
 

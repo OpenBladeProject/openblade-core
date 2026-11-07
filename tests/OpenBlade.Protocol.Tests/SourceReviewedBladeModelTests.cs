@@ -2,7 +2,7 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol.Tests;
 
-public sealed class SourceReviewedBladeModelTests
+public sealed partial class SourceReviewedBladeModelTests
 {
     public static TheoryData<int> Products => new() { 0x02B6, 0x02B7, 0x02B8, 0x02C7 };
 
@@ -121,6 +121,7 @@ public sealed class SourceReviewedBladeModelTests
 
     [Theory]
     [MemberData(nameof(Products))]
+    [MemberData(nameof(EarlyBatteryProducts))]
     public async Task Battery_StatusOnlyAckStillRequiresIndependentStateChange(int product)
     {
         var session = new Session { EmptyBatteryAck = true };
@@ -138,6 +139,7 @@ public sealed class SourceReviewedBladeModelTests
 
     [Theory]
     [MemberData(nameof(Products))]
+    [MemberData(nameof(EarlyBatteryProducts))]
     public async Task BatteryBalanced_UsesRawSixWithFreshBatteryAdapter(int product)
     {
         var session = new Session { Mode = 0, Adapter = [0, 0x11] };
@@ -302,6 +304,7 @@ public sealed class SourceReviewedBladeModelTests
 
     [Theory]
     [MemberData(nameof(Products))]
+    [MemberData(nameof(EarlyBatteryProducts))]
     public async Task Battery_DisableRetainsThresholdAndRequiresExactReadback(int product)
     {
         var session = new Session { Battery = 0xB7 };
@@ -371,6 +374,7 @@ public sealed class SourceReviewedBladeModelTests
 
     [Theory]
     [MemberData(nameof(Products))]
+    [MemberData(nameof(EarlyBatteryProducts))]
     public async Task BatteryPreset_RejectsContradictoryFullPowerAdapter(int product)
     {
         var session = new Session();
@@ -416,6 +420,7 @@ public sealed class SourceReviewedBladeModelTests
 
     [Theory]
     [MemberData(nameof(Products))]
+    [MemberData(nameof(EarlyProducts))]
     public async Task Transactions_StayWithinExactVendorRange(int product)
     {
         var session = new Session();
@@ -457,6 +462,7 @@ public sealed class SourceReviewedBladeModelTests
         internal byte[] Adapter = [0x11, 0x11];
         internal bool IgnoreWrites;
         internal bool EmptyBatteryAck;
+        internal bool RejectBatteryQuery;
         internal Action<RazerCommandSpec>? BeforeSubmission;
         internal List<RazerCommandSpec> Commands { get; } = [];
         internal List<int> Transactions { get; } = [];
@@ -475,6 +481,10 @@ public sealed class SourceReviewedBladeModelTests
             }
             Commands.Add(command);
             Transactions.Add(assignTransactionId().TransactionId);
+            if (RejectBatteryQuery && command.ClassId == 0x07 && command.CommandId == 0x92)
+            {
+                return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.ProtocolFailure));
+            }
             byte[] arguments = command.Arguments.ToArray();
             byte[] payload = (command.ClassId, command.CommandId) switch
             {

@@ -86,6 +86,27 @@ public sealed class RazerBladeModelCatalogTests
     }
 
     [Theory]
+    [InlineData("RZ09-0370", "Razer Blade 14", 2021, "0270")]
+    [InlineData("RZ09-0427", "Razer Blade 14", 2022, "028C")]
+    [InlineData("RZ09-0421", "Razer Blade 15", 2022, "028A")]
+    [InlineData("RZ09-0423", "Razer Blade 17", 2022, "028B")]
+    public void Find_Recognizes2021And2022SourceReviewedIdentities(
+        string modelNumber, string productName, int year, string productId)
+    {
+        RazerBladeModelInfo model = Assert.IsType<RazerBladeModelInfo>(
+            RazerBladeModelCatalog.Find(modelNumber));
+
+        Assert.Equal(modelNumber, model.ModelNumber);
+        Assert.Equal(productName, model.ProductName);
+        Assert.Equal(year, model.ModelYear);
+        Assert.Equal("1532", model.UsbVendorId);
+        Assert.Equal(productId, model.UsbProductId);
+        Assert.Equal(BladeSupportBasis.SourceReviewed, model.SupportBasis);
+        Assert.True(model.IsOfficiallySupported);
+        Assert.False(model.HasPhysicalValidation);
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("RZ09-9999")]
