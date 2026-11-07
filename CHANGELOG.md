@@ -15,6 +15,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Verify the attended fan guardian's separation from its actual caller job and preserve startup errors after its console closes. Ambient host-job and OS failure remain outside the supervised recovery contract. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Recognize a confirmed Silent/manual thermal state without enabling an unvalidated fan-stop capability. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Reduce memory growth when changing app language by sharing localized resource lookups across the main window and quick controls. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Avoid native event-argument memory growth when closing main and quick-controls windows to the tray. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))

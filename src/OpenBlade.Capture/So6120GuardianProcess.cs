@@ -20,7 +20,7 @@ internal static class So6120GuardianProcess
     private const nuint ProcThreadAttributeHandleList = 0x00020002;
 
     internal static So6120GuardianChild Start(string executable, IReadOnlyList<string> arguments,
-        SafePipeHandle inheritedControlReadHandle, bool showConsole)
+        SafePipeHandle inheritedControlReadHandle, bool showConsole, So6120GuardianCallerLifetime callerLifetime)
     {
         if (!Path.IsPathFullyQualified(executable))
         {
@@ -36,6 +36,8 @@ internal static class So6120GuardianProcess
         }
 
         bool handleReference = false;
+        bool jobReference = false;
+        bool callerReference = false;
         nint handleList = 0;
         nint attributeList = 0;
         bool attributesInitialized = false;
@@ -53,6 +55,19 @@ internal static class So6120GuardianProcess
             {
                 throw new ArgumentException("The guardian control handle must be inheritable.", nameof(inheritedControlReadHandle));
             }
+            callerLifetime.JobQueryHandle.DangerousAddRef(ref jobReference);
+            callerLifetime.CallerQueryHandle.DangerousAddRef(ref callerReference);
+            nint jobHandle = callerLifetime.JobQueryHandle.DangerousGetHandle();
+            nint callerHandle = callerLifetime.CallerQueryHandle.DangerousGetHandle();
+            if (!GetHandleInformation(jobHandle, out uint jobFlags) ||
+                !GetHandleInformation(callerHandle, out uint callerFlags))
+            {
+                throw NativeFailure("Inspecting guardian caller verification handles failed.");
+            }
+            if ((jobFlags & HandleFlagInherit) == 0 || (callerFlags & HandleFlagInherit) == 0)
+            {
+                throw new ArgumentException("Guardian caller verification handles must be inheritable.", nameof(callerLifetime));
+            }
 
             nuint size = 0;
             if (InitializeProcThreadAttributeList(0, 1, 0, ref size)
@@ -68,10 +83,12 @@ internal static class So6120GuardianProcess
             }
 
             attributesInitialized = true;
-            handleList = Marshal.AllocHGlobal(IntPtr.Size);
+            handleList = Marshal.AllocHGlobal(3 * IntPtr.Size);
             Marshal.WriteIntPtr(handleList, controlHandle);
+            Marshal.WriteIntPtr(handleList, IntPtr.Size, jobHandle);
+            Marshal.WriteIntPtr(handleList, 2 * IntPtr.Size, callerHandle);
             if (!UpdateProcThreadAttribute(attributeList, 0, ProcThreadAttributeHandleList, handleList,
-                    (nuint)IntPtr.Size, 0, 0))
+                    (nuint)(3 * IntPtr.Size), 0, 0))
             {
                 throw NativeFailure("Restricting guardian handle inheritance failed.");
             }
@@ -101,11 +118,69 @@ internal static class So6120GuardianProcess
             if (attributesInitialized) { DeleteProcThreadAttributeList(attributeList); }
             Marshal.FreeHGlobal(attributeList);
             Marshal.FreeHGlobal(handleList);
+            if (callerReference) { callerLifetime.CallerQueryHandle.DangerousRelease(); }
+            if (jobReference) { callerLifetime.JobQueryHandle.DangerousRelease(); }
             if (handleReference) { inheritedControlReadHandle.DangerousRelease(); }
         }
     }
 
-    internal static void VerifyOwnerIsolation()
+    internal static So6120GuardianIsolationEvidence VerifyOwnerIsolation(SafeFileHandle job, SafeProcessHandle caller)
+    {
+        bool jobReference = false;
+        bool callerReference = false;
+        try
+        {
+            job.DangerousAddRef(ref jobReference);
+            caller.DangerousAddRef(ref callerReference);
+            nint jobHandle = job.DangerousGetHandle();
+            nint callerHandle = caller.DangerousGetHandle();
+            if (!SetHandleInformation(jobHandle, HandleFlagInherit, 0) ||
+                !SetHandleInformation(callerHandle, HandleFlagInherit, 0))
+            {
+                throw NativeFailure("Disabling guardian verification handle inheritance failed.");
+            }
+
+            VerifyOwnerConsoleIsolation();
+            uint callerId = GetProcessId(callerHandle);
+            if (callerId == 0) { throw NativeFailure("Reading the original guardian caller identity failed."); }
+            if (callerId == (uint)Environment.ProcessId)
+            {
+                throw new InvalidOperationException("The guardian cannot be its own caller.");
+            }
+
+            uint flags = So6120GuardianCallerLifetime.ReadJobFlags(jobHandle);
+            if ((flags & So6120GuardianCallerLifetime.RequiredJobFlags) != So6120GuardianCallerLifetime.RequiredJobFlags)
+            {
+                throw new InvalidOperationException("The caller job must permit breakaway and terminate members when its last handle closes.");
+            }
+
+            if (!IsProcessInJob(callerHandle, jobHandle, out bool callerInJob) ||
+                !IsProcessInJob(GetCurrentProcess(), jobHandle, out bool ownerInJob) ||
+                !IsProcessInJob(GetCurrentProcess(), 0, out bool inAmbientJob))
+            {
+                throw NativeFailure("Checking the guardian caller job isolation failed.");
+            }
+
+            // Exit code 259 is a valid terminal process status as well as the
+            // STILL_ACTIVE sentinel. Only the process object's signal proves
+            // that the retained original caller has terminated.
+            uint callerWait = WaitForSingleObject(callerHandle, 0);
+            if (callerWait == WaitFailed) { throw NativeFailure("Checking original guardian caller liveness failed."); }
+            if (!callerInJob || ownerInJob || callerWait != WaitTimeout)
+            {
+                throw new InvalidOperationException("The guardian requires a live original caller in its private job and must run outside that job.");
+            }
+
+            return new(checked((int)callerId), inAmbientJob);
+        }
+        finally
+        {
+            if (callerReference) { caller.DangerousRelease(); }
+            if (jobReference) { job.DangerousRelease(); }
+        }
+    }
+
+    internal static void VerifyOwnerConsoleIsolation()
     {
         if (GetConsoleWindow() == 0)
         {
@@ -122,15 +197,6 @@ internal static class So6120GuardianProcess
             throw new InvalidOperationException("The guardian cannot run in a shared console.");
         }
 
-        if (!IsProcessInJob(GetCurrentProcess(), 0, out bool inJob))
-        {
-            throw NativeFailure("Checking the guardian's Windows job membership failed.");
-        }
-
-        if (inJob)
-        {
-            throw new InvalidOperationException("The guardian must run outside a Windows job.");
-        }
     }
 
     internal static void VerifyInheritedControl(SafePipeHandle controlReadHandle)
@@ -295,6 +361,9 @@ internal static class So6120GuardianProcess
     private static extern nint GetCurrentProcess();
 
     [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    private static extern uint GetProcessId(nint process);
+
+    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsProcessInJob(nint process, nint job, [MarshalAs(UnmanagedType.Bool)] out bool inJob);
 
@@ -311,6 +380,8 @@ internal static class So6120GuardianProcess
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetExitCodeProcess(nint process, out int exitCode);
 }
+
+internal sealed record So6120GuardianIsolationEvidence(int CallerProcessId, bool InAmbientJob);
 
 internal sealed class So6120GuardianChild(SafeProcessHandle process, int id) : IDisposable
 {

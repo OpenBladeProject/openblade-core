@@ -26,8 +26,11 @@ internal static class Program
             case ["launch-caller", var root, var mode, .. var payload]:
                 await GuardianLaunchFixture.RunCaller(root, mode, payload);
                 return 0;
-            case ["launch-owner", var root, var mode, var control, var jobName, var unrelatedHandle, var eventName, .. var payload]:
-                try { return await GuardianLaunchFixture.RunOwner(root, mode, control, jobName, unrelatedHandle, eventName, payload); }
+            case ["launch-job-member", var root]:
+                await GuardianLaunchFixture.RunJobMember(root);
+                return 0;
+            case ["launch-owner", var root, var mode, var control, var job, var caller, var unrelatedHandle, var eventName, .. var payload]:
+                try { return await GuardianLaunchFixture.RunOwner(root, mode, control, job, caller, unrelatedHandle, eventName, payload); }
                 catch (Exception error)
                 {
                     WriteReport(root, "owner-error.json", error.ToString());

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO.Pipes;
 using System.Security.Principal;
+using Microsoft.Win32.SafeHandles;
 
 namespace OpenBlade.Capture;
 
@@ -18,15 +19,21 @@ internal static class So6120GuardianHost
     internal static bool IsTrialName(string name) => name is So6120SilentPwmCommand.Name
         or So6120SilentPwmCommand.BalancedName or So6120SilentPwmCommand.HalfCycleName or So6120SilentPwmCommand.StopName;
 
-    internal static bool TryParseOwner(IReadOnlyList<string> args, out string? trial, out string? root, out string? handle)
+    internal static bool TryParseOwner(IReadOnlyList<string> args, out string? trial, out string? root, out string? handle,
+        out nint jobHandle, out nint callerHandle)
     {
         trial = root = handle = null;
-        if (args.Count != 6 || args[0] != "--trial" || !IsTrialName(args[1]) || args[2] != "--run-root"
+        jobHandle = callerHandle = 0;
+        if (args.Count != 10 || args[0] != "--trial" || !IsTrialName(args[1]) || args[2] != "--run-root"
             || !So6120SilentPwmCommand.TryParse([args[2], args[3]], out root) || root is null
             || args[4] != "--control-handle" || !long.TryParse(args[5], NumberStyles.None, CultureInfo.InvariantCulture, out long value)
-            || value <= 0 || !Environment.Is64BitProcess)
+            || value <= 0 || !Environment.Is64BitProcess
+            || args[6] != "--caller-job-handle" || !long.TryParse(args[7], NumberStyles.None, CultureInfo.InvariantCulture, out long job)
+            || job <= 0 || args[8] != "--caller-process-handle"
+            || !long.TryParse(args[9], NumberStyles.None, CultureInfo.InvariantCulture, out long caller)
+            || caller <= 0 || value == job || value == caller || job == caller)
         { return false; }
-        trial = args[1]; handle = args[5]; return true;
+        trial = args[1]; handle = args[5]; jobHandle = (nint)job; callerHandle = (nint)caller; return true;
     }
 
     internal static async Task<int> RunClientAsync(string trial, string root, TextWriter output)
@@ -40,23 +47,28 @@ internal static class So6120GuardianHost
         string executable = Environment.ProcessPath ?? throw new InvalidOperationException("Capture executable path unavailable.");
         if (!string.Equals(Path.GetFileName(executable), "OpenBlade.Capture.exe", StringComparison.OrdinalIgnoreCase))
         { await output.WriteLineAsync("Use the reviewed Capture apphost executable, not a shared dotnet host."); return 2; }
-        if (Directory.Exists(root) || File.Exists(root))
-        { await output.WriteLineAsync("Run root already exists; never reuse an attempt directory."); return 2; }
+        if (Directory.Exists(root) || File.Exists(root) || File.Exists(So6120GuardianStartup.GetPath(root)))
+        { await output.WriteLineAsync("Run root or startup diagnostic already exists; never reuse an attempt."); return 2; }
 
         using var control = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.Inheritable);
         using var stopPump = new CancellationTokenSource();
         int autoRequested = 0;
+        bool ownerStarted = false;
         using var registration = ConsoleCancellation.Register(() => Interlocked.Exchange(ref autoRequested, 1));
         try
         {
+            using var lifetime = So6120GuardianCallerLifetime.CreateForCurrentProcess();
             So6120GuardianChild launched;
             try
             {
                 launched = So6120GuardianProcess.Start(executable,
-                    [OwnerName, "--trial", trial, "--run-root", root, "--control-handle", control.GetClientHandleAsString()],
-                    control.ClientSafePipeHandle, showConsole: true);
+                    [OwnerName, "--trial", trial, "--run-root", root, "--control-handle", control.GetClientHandleAsString(),
+                        "--caller-job-handle", lifetime.JobQueryHandle.DangerousGetHandle().ToString(CultureInfo.InvariantCulture),
+                        "--caller-process-handle", lifetime.CallerQueryHandle.DangerousGetHandle().ToString(CultureInfo.InvariantCulture)],
+                    control.ClientSafePipeHandle, showConsole: true, lifetime);
+                ownerStarted = true;
             }
-            finally { control.DisposeLocalCopyOfClientHandle(); }
+            finally { control.DisposeLocalCopyOfClientHandle(); lifetime.Dispose(); }
             using var owner = launched;
             // The control pump is independent of console output/backpressure.
             var pump = Task.Run(() => PumpControlAsync(control, () => Volatile.Read(ref autoRequested) != 0, stopPump.Token));
@@ -66,6 +78,7 @@ internal static class So6120GuardianHost
                 {
                     await output.WriteLineAsync($"Guardian PID {owner.Id} owns the attended trial in its separate console. Complete both approvals there. Ctrl+C here requests Auto; closing this client requests cleanup. Never close or kill the guardian.");
                     await output.WriteLineAsync($"Reports: {root}. A process exit alone does not prove Auto or native release; retain the closed row and journal.");
+                    await output.WriteLineAsync(So6120GuardianStartup.ScopeNotice);
                 }
                 catch (Exception error) when (error is IOException or ObjectDisposedException)
                 { Interlocked.Exchange(ref autoRequested, 1); }
@@ -84,6 +97,8 @@ internal static class So6120GuardianHost
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
+            if (!ownerStarted)
+            { return await So6120GuardianStartup.RefuseAsync(trial, root, "launch", 2, error, output); }
             await output.WriteLineAsync($"Guardian launch/control failed: {error.GetType().Name}: {error.Message}. No fallback, retry or owner termination was attempted.");
             return 2;
         }
@@ -92,15 +107,16 @@ internal static class So6120GuardianHost
     internal static string FormatOwnerExit(int exitCode, string root)
     {
         string manifest = Path.Combine(root, "attended-run.jsonl");
+        string startup = $"Startup diagnostic (admission only): {So6120GuardianStartup.GetPath(root)}";
         string preserveEvidence = $"Leave OpenBlade stopped. Preserve the run folder and inspect its durable evidence "
             + $"before any new hardware command. Manifest: {manifest}";
         return exitCode switch
         {
             0 => $"Guardian reported a completed trial (exit 0). Manifest: {manifest}",
             3 => $"Guardian reported that the trial was declined without setting writes (exit 3). Manifest: {manifest}",
-            IsolationRefused => $"Guardian isolation refused (exit {exitCode}). No hardware acquisition occurred.",
-            ControlRefused => $"Guardian inherited control refused (exit {exitCode}). No hardware acquisition occurred.",
-            CallerUnavailable => $"Guardian caller connection unavailable (exit {exitCode}). No hardware acquisition occurred.",
+            IsolationRefused => $"Guardian isolation refused (exit {exitCode}). No hardware acquisition occurred. {startup}",
+            ControlRefused => $"Guardian inherited control refused (exit {exitCode}). No hardware acquisition occurred. {startup}",
+            CallerUnavailable => $"Guardian caller connection unavailable (exit {exitCode}). No hardware acquisition occurred. {startup}",
             OwnerFailure => $"Guardian setup or reporting failed (exit {exitCode}). {preserveEvidence}",
             _ => $"Guardian exited without a confirmed successful trial (exit {exitCode}). {preserveEvidence}",
         };
@@ -126,12 +142,25 @@ internal static class So6120GuardianHost
 
     internal static async Task<int> RunOwnerAsync(IReadOnlyList<string> args, TextReader input, TextWriter output)
     {
-        if (!OperatingSystem.IsWindows() || !TryParseOwner(args, out string? trial, out string? root, out string? handle))
+        if (!OperatingSystem.IsWindows() || !TryParseOwner(args, out string? trial, out string? root, out string? handle,
+                out nint jobHandle, out nint callerHandle))
         { await output.WriteLineAsync("Invalid supervised guardian entry."); return 2; }
-        // These checks precede metadata, consent and every acquisition path.
-        try { So6120GuardianProcess.VerifyOwnerIsolation(); }
-        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
-        { await output.WriteLineAsync($"Guardian isolation refused before acquisition: {error.Message}"); return IsolationRefused; }
+        So6120GuardianIsolationEvidence? isolation = null;
+        string isolationFailure = "Guardian isolation refused before acquisition.";
+        // These checks precede trial metadata, consent and every acquisition.
+        // Persist refusal before closing a possibly last caller-job handle.
+        using (var job = new SafeFileHandle(jobHandle, ownsHandle: true))
+        using (var caller = new SafeProcessHandle(callerHandle, ownsHandle: true))
+        {
+            try { isolation = So6120GuardianProcess.VerifyOwnerIsolation(job, caller); }
+            catch (Exception error) when (error is InvalidOperationException or ArgumentException or System.ComponentModel.Win32Exception)
+            { isolationFailure = So6120GuardianStartup.PersistRefusal(trial!, root!, "isolation", error); }
+        }
+        if (isolation is null)
+        {
+            await So6120GuardianStartup.ReportRefusalAsync(isolationFailure, output);
+            return IsolationRefused;
+        }
         AnonymousPipeClientStream connected;
         try
         {
@@ -140,7 +169,7 @@ internal static class So6120GuardianHost
             catch { connected.Dispose(); throw; }
         }
         catch (Exception error) when (error is ArgumentException or IOException or System.ComponentModel.Win32Exception)
-        { await output.WriteLineAsync($"Guardian control refused before acquisition: {error.Message}"); return ControlRefused; }
+        { return await So6120GuardianStartup.RefuseAsync(trial!, root!, "control", ControlRefused, error, output, isolation); }
         using var control = connected;
         await using var signals = new So6120GuardianSignals();
         using var stopReader = new CancellationTokenSource();
@@ -153,7 +182,10 @@ internal static class So6120GuardianHost
                 signals.StopToken.ThrowIfCancellationRequested();
             }
             catch (Exception error) when (error is TimeoutException or OperationCanceledException)
-            { await output.WriteLineAsync("Caller connection unavailable; no new trial may start."); return CallerUnavailable; }
+            { return await So6120GuardianStartup.RefuseAsync(trial!, root!, "caller-connection", CallerUnavailable, error, output, isolation); }
+
+            if (!await So6120GuardianStartup.CompleteAdmissionAsync(trial!, root!, isolation, output))
+            { return OwnerFailure; }
 
             try { return await So6120SilentPwmCommand.RunOwnedWindowsAsync(trial!, root!, input, output, signals); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException

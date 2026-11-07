@@ -121,11 +121,30 @@ public sealed class So6120GuardianIntegrationTests
     [InlineData("validate-so6120-balanced-pwm-stop", "-1", false)]
     [InlineData("validate-so6120-balanced-pwm-stop", "1 --raw", false)]
     [InlineData("raw-write", "1", false)]
-    public void OwnerEntryHasOnlyFixedTrialsAndAnInheritedControlHandle(string trial, string handle, bool valid)
+    public void OwnerEntryHasOnlyFixedTrialsAndDistinctInheritedHandles(string trial, string handle, bool valid)
     {
         string root = Path.Combine(Path.GetTempPath(), "ob-guardian-parse-" + Guid.NewGuid().ToString("N"));
         Assert.Equal(valid, So6120GuardianHost.TryParseOwner(
-            ["--trial", trial, "--run-root", root, "--control-handle", handle], out _, out _, out _));
+            ["--trial", trial, "--run-root", root, "--control-handle", handle,
+                "--caller-job-handle", "2", "--caller-process-handle", "3"], out _, out _, out _, out _, out _));
+    }
+
+    [Theory]
+    [InlineData("1", "3")]
+    [InlineData("2", "1")]
+    [InlineData("2", "2")]
+    [InlineData("0", "3")]
+    [InlineData("2", "-1")]
+    [InlineData("2 --raw", "3")]
+    public void OwnerEntryRejectsMissingInvalidOrAliasedIsolationHandles(string job, string caller)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ob-guardian-parse-" + Guid.NewGuid().ToString("N"));
+        Assert.False(So6120GuardianHost.TryParseOwner(
+            ["--trial", So6120SilentPwmCommand.StopName, "--run-root", root, "--control-handle", "1",
+                "--caller-job-handle", job, "--caller-process-handle", caller], out _, out _, out _, out _, out _));
+        Assert.False(So6120GuardianHost.TryParseOwner(
+            ["--trial", So6120SilentPwmCommand.StopName, "--run-root", root, "--control-handle", "1"],
+            out _, out _, out _, out _, out _));
     }
 
     [Fact]

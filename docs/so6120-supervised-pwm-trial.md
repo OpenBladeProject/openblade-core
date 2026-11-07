@@ -96,11 +96,18 @@ commanded fan stop.
 ## Ownership and operator approval
 
 The CLI is now a hardware-free client. It starts an attended guardian in a
-separate console outside the client's Windows job; inability to establish that
-isolation refuses the launch. Both approval prompts appear in the guardian
+separate console outside a private job created for the client. Read-only handles
+prove the original caller belongs to that job and the guardian does not;
+inability to establish that isolation refuses the launch. Ambient Windows jobs
+may remain, and their termination is outside the supervised recovery contract.
+Startup results persist in `<run-root>.guardian-startup.json` before hardware
+acquisition; this is admission evidence only, not an Auto or release receipt.
+Both approval prompts appear in the guardian
 console. Client Ctrl+C sends an Auto request; client disappearance or a missed
 five-second heartbeat latches stop. The owner finishes any required confirmation
 before the existing Auto handback. Do not close or kill the guardian itself.
+Guardian loss, unknown outer host-job termination, sleep and OS failure remain
+uncovered; the owner prints that scope before the approval prompts.
 This integration is implemented and tested with fake hardware; its live
 caller-loss behavior still needs separate attended validation. See
 [guardian recovery](so6120-fan-stop-crash-recovery.md#supervised-guardian-integration).

@@ -190,15 +190,35 @@ a checkpoint action. Ordinary journal inspection remains available only after
 owner release. Legacy v1 journals retain exclusive access.
 
 The launcher uses `CREATE_NEW_CONSOLE`, `CREATE_BREAKAWAY_FROM_JOB` and an
-explicit inherited-handle list. The owner independently verifies it is outside
-all jobs, is the only process attached to its console, and has a readable pipe
-before any metadata or acquisition. A restrictive job refuses launch; there is
-no ordinary-process fallback, alternate parent/token, restart or takeover.
+explicit inherited-handle list. The client assigns itself to a private unnamed
+job with breakaway and kill-on-close enabled. Its owning handle stays rooted
+until client process teardown; disposing that last handle during normal client
+execution would terminate the client before it could report its result.
+Only the control pipe, a query-only job handle and an original-client process
+handle with query and wait access cross into the owner. The owner verifies the job contract, the
+original live client's membership and nonsignaled handle, its own absence from that job, sole console
+attachment and readable control before trial metadata or acquisition. It closes
+the temporary query handles before continuing so they cannot prolong the caller
+job's lifetime. Assignment or verification failure refuses startup; there is no
+ordinary-process fallback, alternate parent/token, restart or takeover.
 These flags and handle-list requirements follow Microsoft's
 [process creation](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)
 and [startup attribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
-contracts. They do not protect against closing the guardian's own console,
-session logoff, native hangs or OS failure.
+contracts. This is a supervised **caller-process and dedicated caller-job**
+recovery contract. Ambient job membership is recorded, not identified as safe or
+as belonging to Windows. Unknown outer host-job termination, closing the
+guardian's own console, session logoff, sleep, native hangs and OS failure remain
+uncovered. The owner prints this scope before either attended approval.
+
+`<run-root>.guardian-startup.json` persists the startup stage, native error and
+known isolation facts even if the owner console disappears. It is written once
+with durable flushing, without creating the trial directory. A prior or partial
+sidecar refuses reuse. The owner records isolation refusal before releasing its
+inherited job handle, since an incorrectly attached owner might be terminated by
+that release. Query handles close before any potentially blocking console output.
+Successful admission is recorded after startup console reporting succeeds and before the hardware
+runner is called. This file describes **startup admission only**, never the
+eventual hardware state, Auto confirmation or native release.
 
 `So6120TrialGuardian` receives the already approved session and runs the trial
 and its disposal on one worker. Explicit Auto, caller disconnect, a missed
@@ -250,11 +270,11 @@ Additional fake tests exercise the actual native launcher, inherited pipe,
 control latch and guardian: the caller's breakaway-enabled kill-on-close job can
 close while the same owner survives and returns Auto from the zero checkpoint.
 A restrictive job refuses launch, and unrelated inheritable handles are excluded.
-The current test host retains an ancestor Windows job. The production gate
-correctly rejects it; the fake fixture alone continues after independently
-verifying absence from the caller's named job and sole console attachment.
-The tests record this distinction. Successful full production admission outside
-all jobs still needs validation from the actual attended launch environment.
+The test host retains an ambient Windows job. The fake fixture now uses the
+same caller-lifetime creation, inherited handles and isolation verification as
+the live developer command; there is no fake-only exception to job admission.
+Tests record the actual original caller identity and ambient membership without
+claiming survival of that ambient job's termination.
 This remains offline process evidence, not a live native-driver trial or a
 future service-delegation contract. Killing
 the fake owner leaves an incomplete journal and no receipt; the existing
@@ -293,9 +313,9 @@ guardian tests. Their role is to prove ordering and failure handling; no
 additional physical stop repetition is needed to re-prove the unchanged
 command sequence.
 
-## Attended launch blocker (2026-11-07 UTC)
+## Earlier attended launch blocker (2026-11-07 UTC)
 
-The authorized caller-loss trial has not reached hardware. Both the elevated
+The authorized caller-loss trial on candidate `c5d52703` did not reach hardware. Both the elevated
 prepared launcher and a standalone launch from Windows Start returned the
 guardian's isolation-refusal code before metadata or acquisition. The earlier
 restored attempt marker was archived and verified; neither launch created a new
@@ -317,20 +337,18 @@ that is a possible explanation, not an identification of the observed job.
 with a null handle describes only the immediate job. No kill-on-close flag is
 not proof that an unknown job controller cannot terminate the guardian.
 
-Keep the current admission gate while resolving this distinction. Before another
-hardware attempt, review a launch/admission contract that establishes the
-required caller independence, verify it with fake hardware, and retain detailed
-startup refusal evidence outside the disappearing owner console. Repeated UAC
-or alternate shell launches do not resolve the unknown job ownership. Any
-narrower caller-only guarantee must be explicit; it cannot be presented as
-survival of every host job or OS failure.
+The replacement above establishes the narrower caller-process and private-job
+contract through actual inherited object handles. It does not infer ownership
+of an unknown job from its flags or process list. Repeated UAC or alternate shell
+launches were ruled out as a solution. Hardware validation remains a separate
+step after review and fake-hardware verification of the replacement.
 
 ## Remaining live question
 
 The one useful next attended test is **caller loss with a surviving owner at a
-confirmed zero checkpoint**. The current test is authorized but blocked before
-acquisition. Preserve that authorization within its scope; review any changed
-launch contract before proceeding. Reuse exact RZ09-0581, the reported
+confirmed zero checkpoint**. The current test remains authorized and unperformed.
+Preserve that authorization within its scope; review the changed launch contract
+and freeze the new candidate before proceeding. Reuse exact RZ09-0581, the reported
 BIOS/EC pins, USB-C Balanced, original bounded trial, saved baseline and fresh
 admission. After the already reviewed zero observation, deliberately disconnect
 or terminate only a client with no hardware handle. Keep the owner and its

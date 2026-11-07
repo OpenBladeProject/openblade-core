@@ -24,12 +24,13 @@ public sealed class So6120GuardianLaunchTests
         LaunchReadyReport ready = await run.Report<LaunchReadyReport>("ready.json");
         Assert.Equal(await run.Report<int>("launched.json"), ready.ProcessId);
         Assert.NotEqual(run.Caller.Id, ready.ProcessId);
-        Assert.True(ready.OutsideCallerJob);
-        output.WriteLine($"Production owner isolation passed: {ready.ProductionIsolationPassed}.");
+        Assert.Equal(run.Caller.Id, ready.CallerProcessId);
+        output.WriteLine($"Owner retained an ambient host job: {ready.InAmbientJob}.");
         Assert.False(ready.InheritedUnrelated);
         Assert.Equal(payload, ready.Payload);
 
         Process owner = run.ObserveOwner(ready.ProcessId);
+        Process member = run.ObserveMember(await run.Report<int>("member.json"));
         PendingReport pending = await run.Report<PendingReport>("pending.json", owner);
         Assert.Equal(ready.ProcessId, pending.OwnerPid);
         Assert.Equal("zero-checkpoint", pending.Gate);
@@ -38,6 +39,10 @@ public sealed class So6120GuardianLaunchTests
 
         run.Caller.Kill(entireProcessTree: false);
         await run.Caller.WaitForExitAsync(run.Token);
+        // The fake member has no job handle and stays alive until either the
+        // private job closes or the explicit release file appears.
+        await member.WaitForExitAsync(run.Token);
+        Assert.False(run.Exists("release"));
         DisconnectReport disconnect = await run.Report<DisconnectReport>("disconnected.json", owner);
         Assert.Equal(ready.ProcessId, disconnect.OwnerPid);
         Assert.Equal(nameof(So6120GuardianStopReason.CallerDisconnected), disconnect.StopReason);
@@ -72,8 +77,8 @@ public sealed class So6120GuardianLaunchTests
     {
         await using var run = new LaunchRun("observe", []);
         LaunchReadyReport ready = await run.Report<LaunchReadyReport>("ready.json");
-        Assert.True(ready.OutsideCallerJob);
-        output.WriteLine($"Production owner isolation passed: {ready.ProductionIsolationPassed}.");
+        Assert.Equal(run.Caller.Id, ready.CallerProcessId);
+        output.WriteLine($"Owner retained an ambient host job: {ready.InAmbientJob}.");
         Process owner = run.ObserveOwner(ready.ProcessId);
         Assert.Equal(2, await run.Report<int>("control.json"));
         Assert.Equal(0, await run.Report<int>("shared-console.json", owner));
@@ -93,15 +98,49 @@ public sealed class So6120GuardianLaunchTests
         using var nonPipe = new SafePipeHandle(fakeFile.DangerousGetHandle(), ownsHandle: false);
         using var writeEnd = new SafePipeHandle(control.SafePipeHandle.DangerousGetHandle(), ownsHandle: false);
 
-        Assert.Throws<ArgumentException>(() => So6120GuardianProcess.Start(Executable, [], invalid, showConsole: false));
-        Assert.Throws<ArgumentException>(() => So6120GuardianProcess.Start(Executable, [], nonPipe, showConsole: false));
+        // Invalid control handles must fail before accessing a caller lifetime.
+        Assert.Throws<ArgumentException>(() => So6120GuardianProcess.Start(Executable, [], invalid, showConsole: false, null!));
+        Assert.Throws<ArgumentException>(() => So6120GuardianProcess.Start(Executable, [], nonPipe, showConsole: false, null!));
         try
         {
             Assert.Throws<ArgumentException>(() =>
-                So6120GuardianProcess.Start(Executable, [], control.ClientSafePipeHandle, showConsole: false));
+                So6120GuardianProcess.Start(Executable, [], control.ClientSafePipeHandle, showConsole: false, null!));
         }
         finally { control.DisposeLocalCopyOfClientHandle(); }
-        Assert.Throws<Win32Exception>(() => So6120GuardianProcess.Start(Executable, [], writeEnd, showConsole: false));
+        Assert.Throws<Win32Exception>(() => So6120GuardianProcess.Start(Executable, [], writeEnd, showConsole: false, null!));
+    }
+
+    [Fact]
+    public async Task UnrelatedValidJobCannotEstablishCallerIsolation()
+    {
+        await using var run = new LaunchRun("wrong-job", []);
+        string refusal = await run.Report<string>("owner-error.json");
+        Assert.Contains("live original caller in its private job", refusal);
+        Assert.False(run.Exists("ready.json"));
+        Assert.False(run.Exists("pending.json"));
+    }
+
+    [Fact]
+    public void InvalidVerificationHandlesAreRefused()
+    {
+        using var job = new SafeFileHandle(0, ownsHandle: false);
+        using var caller = new SafeProcessHandle(0, ownsHandle: false);
+        Assert.Throws<Win32Exception>(() => So6120GuardianProcess.VerifyOwnerIsolation(job, caller));
+    }
+
+    [Fact]
+    public async Task OriginalCallerExitCode259CannotMasqueradeAsAlive()
+    {
+        await using var run = new LaunchRun("exit-259", []);
+        int ownerId = await run.Report<int>("launched.json");
+        Process owner = run.ObserveOwner(ownerId);
+        run.ReleaseOwner();
+        string refusal = await run.Report<string>("owner-error.json", owner);
+        await run.Caller.WaitForExitAsync(run.Token);
+        Assert.Equal(259, run.Caller.ExitCode);
+        Assert.Contains("live original caller in its private job", refusal);
+        Assert.False(run.Exists("ready.json"));
+        Assert.False(run.Exists("pending.json"));
     }
 
     private sealed class LaunchRun : IAsyncDisposable
@@ -110,6 +149,7 @@ public sealed class So6120GuardianLaunchTests
         private readonly CancellationTokenSource timeout = new(TimeSpan.FromSeconds(25));
         private readonly Task<string> callerError;
         private Process? owner;
+        private Process? member;
 
         internal LaunchRun(string mode, string[] payload)
         {
@@ -141,12 +181,19 @@ public sealed class So6120GuardianLaunchTests
             return owner;
         }
 
+        internal Process ObserveMember(int id)
+        {
+            member = Process.GetProcessById(id);
+            _ = member.SafeHandle;
+            return member;
+        }
+
         internal async Task<T> Report<T>(string name, Process? writer = null)
         {
             writer ??= Caller;
             while (!Exists(name))
             {
-                if (Exists("owner-error.json"))
+                if (name != "owner-error.json" && Exists("owner-error.json"))
                 {
                     Assert.Fail(ReadReport<string>("owner-error.json"));
                 }
@@ -189,10 +236,17 @@ public sealed class So6120GuardianLaunchTests
                     catch (ArgumentException) { } // The fake owner already exited.
                 }
                 if (owner is not null) { await owner.WaitForExitAsync(cleanup.Token); }
+                if (member is null && Exists("member.json"))
+                {
+                    try { ObserveMember(ReadReport<int>("member.json")); }
+                    catch (ArgumentException) { }
+                }
+                if (member is not null) { await member.WaitForExitAsync(cleanup.Token); }
             }
             finally
             {
                 owner?.Dispose();
+                member?.Dispose();
                 Caller.Dispose();
                 timeout.Dispose();
                 directory.Delete(recursive: true);

@@ -13,27 +13,28 @@ internal static class GuardianLaunchFixture
     private const uint BreakawayOk = 0x00000800;
     private const uint KillOnJobClose = 0x00002000;
     private const uint HandleFlagInherit = 1;
-    private const uint JobObjectQuery = 4;
     private const int JobObjectExtendedLimitInformation = 9;
     private static readonly TimeSpan Limit = TimeSpan.FromSeconds(40);
 
     internal static async Task RunCaller(string root, string mode, string[] payload)
     {
         using var timeout = new CancellationTokenSource(Limit);
-        string jobName = "ob-guardian-job-" + Guid.NewGuid().ToString("N");
-        using var job = CreateJobObjectW(0, jobName);
-        var limits = new ExtendedJobLimits
+        using var lifetime = So6120GuardianCallerLifetime.CreateForCurrentProcess();
+        bool duplicateRefused = false;
+        try { using var duplicate = So6120GuardianCallerLifetime.CreateForCurrentProcess(); }
+        catch (InvalidOperationException) { duplicateRefused = true; }
+        if (!duplicateRefused) { throw new InvalidOperationException("The fake caller acquired a second private job lifetime."); }
+
+        using var restrictiveJob = CreateJobObjectW(0, null);
+        if (mode == "restricted")
         {
-            Basic = new BasicJobLimits
+            var limits = new ExtendedJobLimits();
+            if (restrictiveJob.IsInvalid || !SetInformationJobObject(restrictiveJob, JobObjectExtendedLimitInformation,
+                    ref limits, (uint)Marshal.SizeOf<ExtendedJobLimits>()) ||
+                !AssignProcessToJobObject(restrictiveJob, GetCurrentProcess()))
             {
-                Flags = mode == "restricted" ? 0 : BreakawayOk | (mode == "disconnect" ? KillOnJobClose : 0),
-            },
-        };
-        if (job.IsInvalid || !SetInformationJobObject(job, JobObjectExtendedLimitInformation,
-                ref limits, (uint)Marshal.SizeOf<ExtendedJobLimits>())
-            || !AssignProcessToJobObject(job, GetCurrentProcess()))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not assign the fake caller to its test job.");
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not assign the fake caller to its restrictive test job.");
+            }
         }
 
         using var control = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.Inheritable);
@@ -45,12 +46,16 @@ internal static class GuardianLaunchFixture
         }
 
         string executable = Environment.ProcessPath ?? throw new InvalidOperationException("Fake apphost path missing.");
+        using var memberQuery = mode == "disconnect" ? DuplicateMemberQuery(lifetime.JobQueryHandle) : null;
         string unrelatedHandle = unrelated.SafeWaitHandle.DangerousGetHandle().ToString(CultureInfo.InvariantCulture);
-        string[] args = ["launch-owner", root, mode, control.GetClientHandleAsString(), jobName, unrelatedHandle, eventName, .. payload];
+        string jobHandle = lifetime.JobQueryHandle.DangerousGetHandle().ToString(CultureInfo.InvariantCulture);
+        string callerHandle = lifetime.CallerQueryHandle.DangerousGetHandle().ToString(CultureInfo.InvariantCulture);
+        string[] args = ["launch-owner", root, mode, control.GetClientHandleAsString(), jobHandle, callerHandle,
+            unrelatedHandle, eventName, .. payload];
         So6120GuardianChild child;
         try
         {
-            child = So6120GuardianProcess.Start(executable, args, control.ClientSafePipeHandle, showConsole: false);
+            child = So6120GuardianProcess.Start(executable, args, control.ClientSafePipeHandle, showConsole: false, lifetime);
         }
         catch (Win32Exception error) when (mode == "restricted")
         {
@@ -61,7 +66,15 @@ internal static class GuardianLaunchFixture
 
         using (child)
         {
+            // Production roots the owning job for the process lifetime. Closing
+            // the launcher query duplicates must not end this caller or its job.
+            lifetime.Dispose();
+            // A regular child may inherit every inheritable handle. The only
+            // remaining caller-job query is explicitly noninheritable.
+            using var member = mode == "disconnect" ? StartJobMember(executable, root, memberQuery!) : null;
+            memberQuery?.Dispose();
             Program.WriteReport(root, "launched.json", child.Id);
+            if (mode == "exit-259") { Environment.Exit(259); }
             if (mode == "observe")
             {
                 using var cancelWait = new CancellationTokenSource();
@@ -96,30 +109,77 @@ internal static class GuardianLaunchFixture
         }
     }
 
-    internal static async Task<int> RunOwner(string root, string mode, string control, string jobName,
-        string unrelatedHandle, string eventName, string[] payload)
+    private static SafeFileHandle DuplicateMemberQuery(SafeFileHandle job)
     {
-        bool outsideCallerJob;
-        using (var callerJob = OpenJobObjectW(JobObjectQuery, false, jobName))
+        nint current = GetCurrentProcess();
+        if (!DuplicateHandle(current, job, current, out SafeFileHandle duplicate, 0, false, 2))
         {
-            if (callerJob.IsInvalid || !IsProcessInJob(GetCurrentProcess(), callerJob, out bool inCallerJob))
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not check the fake caller job.");
-            }
-
-            outsideCallerJob = !inCallerJob;
-        } // Release the query handle before the caller can close its last job handle.
-
-        if (!outsideCallerJob) { throw new InvalidOperationException("The fake owner retained the caller's job."); }
-        bool productionIsolationPassed = true;
-        try { So6120GuardianProcess.VerifyOwnerIsolation(); }
-        catch (InvalidOperationException error) when (error.Message == "The guardian must run outside a Windows job.")
-        {
-            // A restrictive host ancestor can retain the owner even after it
-            // escapes the caller's job. Production refuses. Only this fake
-            // apphost proceeds, after the production console checks passed.
-            productionIsolationPassed = false;
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not duplicate the fake member query.");
         }
+        return duplicate;
+    }
+
+    private static Process StartJobMember(string executable, string root, SafeFileHandle callerJob)
+    {
+        var start = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList = { "launch-job-member", root },
+        };
+        var member = Process.Start(start) ?? throw new InvalidOperationException("Could not start the fake caller job member.");
+        try
+        {
+            if (!IsProcessInJob(member.SafeHandle, callerJob, out bool inJob))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not inspect the fake caller job member.");
+            }
+            if (!inJob) { throw new InvalidOperationException("The fake child did not inherit the caller's private job."); }
+            Program.WriteReport(root, "member.json", member.Id);
+            return member;
+        }
+        catch { member.Dispose(); throw; }
+    }
+
+    internal static async Task RunJobMember(string root)
+    {
+        using var timeout = new CancellationTokenSource(Limit);
+        while (!File.Exists(Path.Combine(root, "release")))
+        {
+            await Task.Delay(20, timeout.Token);
+        }
+    }
+
+    internal static async Task<int> RunOwner(string root, string mode, string control, string jobHandle,
+        string callerHandle, string unrelatedHandle, string eventName, string[] payload)
+    {
+        So6120GuardianIsolationEvidence isolation;
+        using (var job = new SafeFileHandle(nint.Parse(jobHandle, CultureInfo.InvariantCulture), ownsHandle: true))
+        using (var caller = new SafeProcessHandle(nint.Parse(callerHandle, CultureInfo.InvariantCulture), ownsHandle: true))
+        {
+            if (mode == "exit-259")
+            {
+                if (WaitForSingleObject(caller, 10_000) != 0)
+                {
+                    throw new InvalidOperationException("The synthetic original caller did not reach its terminal status.");
+                }
+                // Keep the fake owner alive until the test has retained its
+                // process handle, avoiding a PID lookup after owner exit.
+                await RunJobMember(root);
+            }
+            if (mode == "wrong-job")
+            {
+                using var unrelatedJob = CreateJobObjectW(0, null);
+                var limits = new ExtendedJobLimits { Basic = new BasicJobLimits { Flags = BreakawayOk | KillOnJobClose } };
+                if (!SetInformationJobObject(unrelatedJob, JobObjectExtendedLimitInformation, ref limits,
+                        (uint)Marshal.SizeOf<ExtendedJobLimits>()))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+                isolation = So6120GuardianProcess.VerifyOwnerIsolation(unrelatedJob, caller);
+            }
+            else { isolation = So6120GuardianProcess.VerifyOwnerIsolation(job, caller); }
+        } // Release inherited queries before readiness and any fake acquisition.
 
         using var pipe = new AnonymousPipeClientStream(PipeDirection.In, control);
         So6120GuardianProcess.VerifyInheritedControl(pipe.SafePipeHandle);
@@ -129,7 +189,7 @@ internal static class GuardianLaunchFixture
         bool inheritedUnrelated = candidate != unrelated.SafeWaitHandle.DangerousGetHandle()
             && CompareObjectHandles(candidate, unrelated.SafeWaitHandle);
         Program.WriteReport(root, "ready.json", new LaunchReadyReport(Environment.ProcessId, inheritedUnrelated,
-            productionIsolationPassed, outsideCallerJob, payload));
+            isolation.CallerProcessId, isolation.InAmbientJob, payload));
         if (mode == "disconnect")
         {
             await RunTrialUntilDisconnect(root, pipe);
@@ -164,7 +224,7 @@ internal static class GuardianLaunchFixture
 
     internal static int ProbeSharedConsole()
     {
-        try { So6120GuardianProcess.VerifyOwnerIsolation(); }
+        try { So6120GuardianProcess.VerifyOwnerConsoleIsolation(); }
         catch (InvalidOperationException error) when (error.Message == "The guardian cannot run in a shared console.")
         { return 0; }
         return 1;
@@ -221,13 +281,6 @@ internal static class GuardianLaunchFixture
     [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern SafeFileHandle CreateJobObjectW(nint attributes, string? name);
 
-    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern SafeFileHandle OpenJobObjectW(uint desiredAccess, [MarshalAs(UnmanagedType.Bool)] bool inherit, string name);
-
-    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool IsProcessInJob(nint process, SafeFileHandle job, [MarshalAs(UnmanagedType.Bool)] out bool inJob);
-
     [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetInformationJobObject(SafeFileHandle job, int informationClass,
@@ -240,6 +293,19 @@ internal static class GuardianLaunchFixture
     [DllImport("kernel32.dll", ExactSpelling = true)]
     private static extern nint GetCurrentProcess();
 
+    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DuplicateHandle(nint sourceProcess, SafeFileHandle source, nint targetProcess,
+        out SafeFileHandle target, uint desiredAccess, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint options);
+
+    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsProcessInJob(SafeProcessHandle process, SafeFileHandle job,
+        [MarshalAs(UnmanagedType.Bool)] out bool inJob);
+
+    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    private static extern uint WaitForSingleObject(SafeProcessHandle process, uint milliseconds);
+
     [DllImport("kernelbase.dll", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CompareObjectHandles(nint first, SafeWaitHandle second);
@@ -249,5 +315,5 @@ internal static class GuardianLaunchFixture
     private static extern bool SetHandleInformation(SafeWaitHandle handle, uint mask, uint flags);
 }
 
-public sealed record LaunchReadyReport(int ProcessId, bool InheritedUnrelated, bool ProductionIsolationPassed,
-    bool OutsideCallerJob, string[] Payload);
+public sealed record LaunchReadyReport(int ProcessId, bool InheritedUnrelated, int CallerProcessId,
+    bool InAmbientJob, string[] Payload);
