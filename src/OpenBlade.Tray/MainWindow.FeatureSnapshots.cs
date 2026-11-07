@@ -413,14 +413,18 @@ public sealed partial class MainWindow
                 ?? throw new InvalidOperationException("Telemetry history fixture hook was not found.");
             var history = (TelemetryHistory)(historyField.GetValue(ViewModel)
                 ?? throw new InvalidOperationException("Telemetry history was unavailable."));
+            // Keep connected fixture segments horizontal: native diagonal
+            // stroke antialiasing can vary by one channel across processes.
+            // Separate levels, gaps, missing readings and both power-flow
+            // directions still exercise the real chart and inspection UI.
             TelemetrySample[] samples =
             [
                 Sample(0, PowerSource.Battery, "Battery profile", 42_000, 2_350, 2_280, 67, 59),
-                Sample(2, PowerSource.Battery, "Creative rendering profile", 48_500, 2_780, 2_690, 73, 64),
+                Sample(2, PowerSource.Battery, "Creative rendering profile", 42_000, 2_350, 2_280, 67, 59),
                 Sample(14, PowerSource.Battery, "Creative rendering profile", 45_000, 2_920, 2_840, 75, 66)
                     with { CpuTemperatureCelsius = null, Fan2Rpm = null },
                 Sample(20, PowerSource.PluggedIn, "Creative rendering profile", -18_000, 3_120, 3_050, 78, 69),
-                Sample(22, PowerSource.PluggedIn, "Plugged-in profile", -24_000, 2_600, 2_520, 70, 62),
+                Sample(22, PowerSource.PluggedIn, "Plugged-in profile", -18_000, 3_120, 3_050, 78, 69),
                 Sample(28, PowerSource.PluggedIn, "Plugged-in profile", -22_000, 2_450, 2_400, 68, 61),
             ];
             foreach (TelemetrySample sample in samples)
