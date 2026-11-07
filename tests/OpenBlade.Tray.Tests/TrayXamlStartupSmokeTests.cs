@@ -223,7 +223,7 @@ public sealed class TrayXamlStartupSmokeTests
             }
             catch (OperationCanceledException exception)
             {
-                string timeoutDiagnostic = await ReadSmokeReportAsync(reportPath);
+                string timeoutDiagnostic = await ReadSmokeReportAsync(reportPath, includeProgress: true);
                 await StopSmokeProcessAsync(process, argument, timeoutDiagnostic);
 
                 throw new TimeoutException(
@@ -349,7 +349,7 @@ public sealed class TrayXamlStartupSmokeTests
             {
                 if (!process.HasExited)
                 {
-                    string cleanupDiagnostic = await ReadSmokeReportAsync(reportPath);
+                    string cleanupDiagnostic = await ReadSmokeReportAsync(reportPath, includeProgress: true);
                     await StopSmokeProcessAsync(process, argument, cleanupDiagnostic);
                 }
                 process.Dispose();
@@ -408,12 +408,44 @@ public sealed class TrayXamlStartupSmokeTests
         }
     }
 
-    private static async Task<string> ReadSmokeReportAsync(string reportPath) =>
-        File.Exists(reportPath)
-            ? await File.ReadAllTextAsync(reportPath)
-            : File.Exists(reportPath + ".error.txt")
-                ? await File.ReadAllTextAsync(reportPath + ".error.txt")
-                : "<no smoke report was written>";
+    private static async Task<string> ReadSmokeReportAsync(string reportPath, bool includeProgress = false)
+    {
+        string diagnostic;
+        try
+        {
+            diagnostic = File.Exists(reportPath)
+                ? await File.ReadAllTextAsync(reportPath)
+                : File.Exists(reportPath + ".error.txt")
+                    ? await File.ReadAllTextAsync(reportPath + ".error.txt")
+                    : "<no smoke report was written>";
+        }
+        catch (Exception exception) when (includeProgress && exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostic = $"<smoke report read failed: {exception.GetType().Name}>";
+        }
+        if (!includeProgress) { return diagnostic; }
+
+        // The resource audit writes its final JSON only after disposal. Preserve
+        // existing progress in timeout/TRX output before finally deletes these
+        // sidecars; a missing final report alone does not locate the stalled step.
+        var sections = new List<string> { diagnostic };
+        foreach (string suffix in new[] { ".ready", ".phase", ".phases.txt", ".retention.json" })
+        {
+            string path = reportPath + suffix;
+            try
+            {
+                if (!File.Exists(path)) { continue; }
+                string text = await File.ReadAllTextAsync(path);
+                const int MaximumProgressCharacters = 16 * 1024;
+                if (text.Length > MaximumProgressCharacters)
+                { text = "<earlier progress omitted>" + text[^MaximumProgressCharacters..]; }
+                sections.Add($"{Path.GetFileName(path)}:{Environment.NewLine}{text}");
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            { sections.Add($"{Path.GetFileName(path)}: <progress read failed: {exception.GetType().Name}>"); }
+        }
+        return string.Join(Environment.NewLine, sections);
+    }
 
     [Theory]
     [InlineData(null, false)]
