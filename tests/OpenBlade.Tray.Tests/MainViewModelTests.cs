@@ -6500,7 +6500,7 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task LightingRefreshRate_DistinguishesUnknownAndUnsupported()
+    public async Task LightingRefreshRate_DistinguishesReadinessSupportAndOwnership()
     {
         using var culture = new CultureScope("en-US");
         var client = new FakeServiceClient();
@@ -6525,6 +6525,36 @@ public sealed partial class MainViewModelTests
         await WaitUntilAsync(() => viewModel.CanControlLighting);
         Assert.Equal("60 Hz lighting is not available for this keyboard.", viewModel.LightingRefreshRateAvailabilityText);
         Assert.False(viewModel.CanSetLightingRefreshRate);
+
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ReadWrite,
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            },
+        };
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities);
+        client.Publish(status with
+        {
+            KeyboardLightingControlMode = KeyboardLightingControlMode.WindowsDynamicLighting,
+        });
+        await WaitUntilAsync(() => viewModel.UseWindowsDynamicLighting);
+        Assert.True(viewModel.SupportsSixtyHzLighting);
+        Assert.Equal("Windows Dynamic Lighting manages keyboard lighting.", viewModel.LightingRefreshRateAvailabilityText);
+        Assert.False(viewModel.CanSetLightingRefreshRate);
+        Assert.False(await viewModel.SetLightingRefreshRateAsync(
+            LightingRefreshRate.SixtyHz, CancellationToken.None));
+
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.CanSetLightingRefreshRate);
+        Assert.Equal(
+            "Render supported animated effects at 60 Hz. Uses more CPU and power.",
+            viewModel.LightingRefreshRateAvailabilityText);
     }
 
     [Fact]

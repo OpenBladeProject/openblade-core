@@ -1925,7 +1925,8 @@
 
                             </StackPanel>
                         </Border>
-                        <!-- Keep Labs link targets visible while their controls are unavailable. -->
+                        <StackPanel x:Name="LightingLabControls" Visibility="Collapsed">
+                        <!-- The Lighting page reveals these guide targets; dashboard copies keep them hidden. -->
                         <Border x:Name="ImportKeyboardLightingPresetCard"
                                 Style="{StaticResource SettingsGroupStyle}"
                                 Margin="0,10,0,0">
@@ -2002,6 +2003,7 @@
                                 </Grid>
                             </Border>
                         </Border>
+                        </StackPanel>
                         </StackPanel>
                         </ContentControl>
                         </StackPanel>

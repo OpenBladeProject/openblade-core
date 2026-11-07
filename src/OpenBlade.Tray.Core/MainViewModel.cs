@@ -1588,6 +1588,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return TrayText.Get("60 Hz lighting support couldn’t be checked.");
             }
 
+            if (UseWindowsDynamicLighting)
+            {
+                return TrayText.Get("Windows Dynamic Lighting manages keyboard lighting.");
+            }
+
             return SupportsSixtyHzLighting
                 ? TrayText.Get("Render supported animated effects at 60 Hz. Uses more CPU and power.")
                 : TrayText.Get("60 Hz lighting is not available for this keyboard.");
@@ -1671,6 +1676,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Notify(nameof(LightingControlUnavailableMessage));
                 Notify(nameof(ShowOpenBladeKeyboardLightingControls));
                 Notify(nameof(CanSetLightingRefreshRate));
+                Notify(nameof(LightingRefreshRateAvailabilityText));
                 Notify(nameof(CanReapplyChangedSettings));
             }
         }

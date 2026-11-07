@@ -39,6 +39,8 @@ public sealed class UiPreferenceStoreTests : IDisposable
     [InlineData("[4,3,1,0,2]")]
     [InlineData("""["Settings","Display","Laptop","Profiles","Lighting"]""")]
     [InlineData("""["Settings","Display","Laptop","Profiles","Lighting","ThxAudio","Telemetry","Labs"]""")]
+    [InlineData("""["Settings","FuturePage","Display","Laptop","Profiles","Lighting"]""")]
+    [InlineData("""["4","FuturePage",3,"Laptop","Profiles","Lighting",999]""")]
     public async Task NavigationPreservesCustomOrderAndWritesRollbackCompatibleIds(string navigation)
     {
         Directory.CreateDirectory(directory);
@@ -58,6 +60,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             PrimaryNavigationItemKind.Telemetry,
             PrimaryNavigationItemKind.Labs,
         ];
+        Assert.Equal(ThemePreference.Dark, loaded.Theme);
         Assert.Equal(expected, loaded.EffectivePrimaryNavigationItems);
         await store.SaveAsync(loaded with { PrimaryNavigationItems = loaded.EffectivePrimaryNavigationItems });
         using JsonDocument saved = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -69,6 +72,27 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(ThemePreference.Dark, reloaded.Theme);
         Assert.Equal(expected, reloaded.PrimaryNavigationItems);
         Assert.Equal(expected, reloaded.EffectivePrimaryNavigationItems);
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("1.5")]
+    [InlineData("\"\"")]
+    [InlineData("\"2147483648\"")]
+    public async Task NavigationRejectsMalformedItems(string item)
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "navigation-preferences.json");
+        await File.WriteAllTextAsync(path,
+            $$"""{"theme":"Dark","primaryNavigationItems":["Settings",{{item}},"Display"]}""");
+        var store = new UiPreferenceStore(path);
+
+        UiPreferences loaded = await store.LoadAsync();
+
+        Assert.Equal(ThemePreference.FollowWindows, loaded.Theme);
+        Assert.Equal(PrimaryNavigationPreferenceDefaults.Items, loaded.EffectivePrimaryNavigationItems);
     }
 
     private readonly string directory = Path.Combine(

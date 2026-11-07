@@ -157,7 +157,7 @@
     <value>[!! 60 Hz líghtíng ís nót áváíláblé fór thís kéýbóárd. ~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="60 Hz lighting support couldn’t be checked." xml:space="preserve">
-    <value>[!! 60 Hz líghtíng súppórt cóúldn’t bé chéckéd. ~~~~~~~~~~~ !!]</value>
+    <value>[!! 60 Hz líghtíng súppórt cóúldn’t bé chéckéd. ~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="A shortcut must include a non-modifier key." xml:space="preserve">
     <value>[!! Á shórtcút múst ínclúdé á nón-módífíér kéý. ~~~~~~~~~~~~~ !!]</value>
@@ -319,7 +319,7 @@
     <value>[!! Chéck státús ~~~~ !!]</value>
   </data>
   <data name="Checking keyboard support…" xml:space="preserve">
-    <value>[!! Chéckíng kéýbóárd súppórt… ~~~~~~~ !!]</value>
+    <value>[!! Chéckíng kéýbóárd súppórt… ~~~~~~~~~ !!]</value>
   </data>
   <data name="Checking" xml:space="preserve">
     <value>[!! Chéckíng ~~~ !!]</value>

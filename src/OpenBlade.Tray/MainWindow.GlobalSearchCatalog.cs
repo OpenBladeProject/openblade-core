@@ -77,10 +77,8 @@ public sealed partial class MainWindow
             exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls);
         Row(keyboardLighting, "MainWindow_TextBlockBrightness.Text", "DashboardLightingBrightnessSlider",
             exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls && ViewModel.LightingShowsBrightness);
-        Row(keyboardLighting, "MainWindow_TextBlockImportPreset.Text", "ImportKeyboardLightingPresetCard",
-            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls);
-        Row(keyboardLighting, "MainWindow_TextBlockSixtyHzLighting.Text", "LightingRefreshRateCard",
-            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls);
+        Row(keyboardLighting, "MainWindow_TextBlockImportPreset.Text", "ImportKeyboardLightingPresetCard");
+        Row(keyboardLighting, "MainWindow_TextBlockSixtyHzLighting.Text", "LightingRefreshRateCard");
         Section(lighting, LightingCard, "MainWindow_TextBlockLaptopLogo.Text", "LightingLogoSection",
             exposed: () => ViewModel.IsLogoLightingVisible && IsSearchLightingSectionShown(PageSectionKind.LightingLogo));
         GlobalSearchResult lightingPower = Section(lighting, LightingCard, "MainWindow_TextBlockSwitchOffLighting.Text",

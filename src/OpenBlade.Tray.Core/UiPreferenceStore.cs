@@ -743,8 +743,23 @@ public sealed class UiPreferenceStore
                 .CreateConverter(typeof(PrimaryNavigationItemKind), JsonSerializerOptions.Default);
 
         public override PrimaryNavigationItemKind Read(
-            ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-            Reader.Read(ref reader, typeToConvert, options);
+            ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                string name = reader.GetString()!.Trim();
+                if (name.Length > 0
+                    && (char.IsLetter(name[0]) || name[0] == '_')
+                    && name.All(character => char.IsLetterOrDigit(character) || character == '_')
+                    && !Enum.TryParse<PrimaryNavigationItemKind>(name, ignoreCase: true, out _))
+                {
+                    // Navigation normalization drops undefined IDs while preserving the known order.
+                    return (PrimaryNavigationItemKind)(-1);
+                }
+            }
+
+            return Reader.Read(ref reader, typeToConvert, options);
+        }
 
         public override void Write(
             Utf8JsonWriter writer, PrimaryNavigationItemKind value, JsonSerializerOptions options) =>

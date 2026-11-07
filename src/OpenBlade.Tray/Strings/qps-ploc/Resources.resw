@@ -1262,16 +1262,16 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Lábs ~~ !!]</value>
   </data>
   <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
-    <value>[!! Éxplóré éxpéríméntál ÓpénBládé féátúrés. ~~~~~~~~~~ !!]</value>
+    <value>[!! Éxplóré éxpéríméntál OpenBlade féátúrés. ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_LabsImportTitle.Text" xml:space="preserve">
-    <value>[!! Ímpórt á líghtíng prését ~~~~~~ !!]</value>
+    <value>[!! Ímpórt á líghtíng prését ~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_LabsImportDescription.Text" xml:space="preserve">
-    <value>[!! Lóád án ÓpénBládé ór Rázér Chrómá fílé, révíéw thé éfféct béfóré ápplýíng ít, ánd sávé ít tó ýóúr áctívé pówér prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Lóád án OpenBlade ór Razer Chrómá fílé, révíéw thé éfféct béfóré ápplýíng ít, ánd sávé ít tó ýóúr áctívé pówér prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_LabsLightingRateDescription.Text" xml:space="preserve">
-    <value>[!! Máké súppórtéd kéýbóárd ánímátíóns smóóthér át thé cóst óf móré CPU ánd pówér. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Máké súppórtéd kéýbóárd ánímátíóns smóóthér át thé cóst óf móré CPÚ ánd pówér. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>[!! Láptóp ~~~ !!]</value>

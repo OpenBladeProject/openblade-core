@@ -1496,6 +1496,10 @@ public sealed class WinUiShellContractTests
             Assert.Equal("Wrap", Attribute(title, "TextWrapping"));
             Assert.Equal("1", Attribute(title, "Grid.Column"));
         }
+        XElement labControls = NamedElement(document, "StackPanel", "LightingLabControls");
+        Assert.Equal("Collapsed", Attribute(labControls, "Visibility"));
+        Assert.Contains(labControls, importCard.Ancestors());
+        Assert.Contains(labControls, rateCard.Ancestors());
         Assert.Null(Attribute(importCard, "Visibility"));
         Assert.Null(Attribute(rateCard, "Visibility"));
 
@@ -1535,8 +1539,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Section(labs, LabsKeyboardSection, \"MainWindow_TextBlockKeyboard2.Text\")", search, StringComparison.Ordinal);
         Assert.Contains("Row(labsKeyboard, \"MainWindow_LabsImportTitle.Text\", nameof(LabsImportGuideButton))", search, StringComparison.Ordinal);
         Assert.Contains("Row(labsKeyboard, \"MainWindow_TextBlockSixtyHzLighting.Text\", nameof(LabsLightingRateGuideButton))", search, StringComparison.Ordinal);
-        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockImportPreset.Text\", \"ImportKeyboardLightingPresetCard\",\r\n            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls)", search, StringComparison.Ordinal);
-        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockSixtyHzLighting.Text\", \"LightingRefreshRateCard\",\r\n            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls)", search, StringComparison.Ordinal);
+        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockImportPreset.Text\", \"ImportKeyboardLightingPresetCard\")", search, StringComparison.Ordinal);
+        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockSixtyHzLighting.Text\", \"LightingRefreshRateCard\")", search, StringComparison.Ordinal);
         Assert.DoesNotContain("LabFeaturesEnabled", search, StringComparison.Ordinal);
         Assert.DoesNotContain("LabFeaturesInfoButton", search, StringComparison.Ordinal);
     }

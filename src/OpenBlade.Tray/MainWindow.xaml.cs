@@ -768,37 +768,20 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
 
     private void OnOpenLabsLightingControl(object sender, RoutedEventArgs args)
     {
-        if (sender is not Microsoft.UI.Xaml.Controls.Button { Tag: string targetName } || !ViewModel.IsLightingVisible)
+        if (sender is not Microsoft.UI.Xaml.Controls.Button { Tag: string targetName })
         {
             return;
         }
 
-        MainNavigation.SelectedItem = LightingNavigationItem;
-        dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+        // Opening a guide explicitly requests its section, even when hidden in Customize.
+        if (pageSections.TryGetValue(CustomizablePageKind.Lighting, out var sections))
         {
-            if (Volatile.Read(ref disposed) != 0 || LightingPage.Visibility != Visibility.Visible)
-            {
-                return;
-            }
+            sections.Single(section => section.Kind == PageSectionKind.LightingKeyboard).IsVisible = true;
+        }
 
-            LightingPage.UpdateLayout();
-            if (FindDescendant<Microsoft.UI.Xaml.Controls.Control>(LightingCard, targetName) is not { } target)
-            {
-                return;
-            }
-
-            if (target.IsEnabled)
-            {
-                target.Focus(FocusState.Programmatic);
-            }
-
-            target.StartBringIntoView(
-                new BringIntoViewOptions
-                {
-                    AnimationDesired = false,
-                    VerticalAlignmentRatio = 0.5,
-                });
-        });
+        OpenGlobalSearchResult(new GlobalSearchResult(
+            LocalizedResources.Get("MainWindow_TextBlockKeyboard2.Text", "Keyboard"),
+            string.Empty, LightingNavigationItem, LightingPage, LightingCard, targetName));
     }
 
     public void NavigateToNotificationDestination(
@@ -5380,7 +5363,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             PrimaryNavigationItemKind.Lighting => LocalizedResources.Get("Navigation_Lighting", "Lighting"),
             PrimaryNavigationItemKind.Display => LocalizedResources.Get("Navigation_Display", "Display"),
             PrimaryNavigationItemKind.Settings => LocalizedResources.Get("Navigation_Settings", "Settings"),
-            PrimaryNavigationItemKind.Labs => LocalizedResources.Get("MainWindow_LabsTitle.Text", "Labs"),
+            PrimaryNavigationItemKind.Labs => LocalizedResources.Get("MainWindow_LabsNavigationItem.Content", "Labs"),
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -5629,11 +5612,14 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         StackPanel? powerSaving = FindDescendant<StackPanel>(
             LightingCard,
             "LightingPowerSavingSection");
-        if (host is null || keyboard is null || logo is null || powerSaving is null)
+        StackPanel? labControls = FindDescendant<StackPanel>(LightingCard, "LightingLabControls");
+        if (host is null || keyboard is null || logo is null || powerSaving is null || labControls is null)
         {
             return false;
         }
 
+        // The shared dashboard template keeps these actions hidden. Their profile actions live here.
+        labControls.Visibility = Visibility.Visible;
         pageSectionHosts[CustomizablePageKind.Lighting] = host;
         ConfigureSectionHostTransitions(host);
         pageSectionPresentations[PageSectionKind.LightingKeyboard] = keyboard;
