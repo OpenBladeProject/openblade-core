@@ -1717,6 +1717,6 @@
   <data name="Measured running optimizer: unknown." xml:space="preserve"><value>运行中优化器实测：未知。</value></data>
   <data name="Measured running optimizer: {0}." xml:space="preserve"><value>运行中优化器实测：{0}。</value></data>
   <data name="Running optimizer changes are unavailable." xml:space="preserve"><value>当前无法更改运行中的优化器。</value></data>
-  <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve"><value>优化器恢复已暂停。请刷新以检查状态。</value></data>
+  <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve"><value>优化器恢复受阻。请刷新以检查状态。</value></data>
   <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve"><value>CPU 恢复包含功耗设置，无法在此处恢复。</value></data>
 </root>
