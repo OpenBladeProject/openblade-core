@@ -71,7 +71,7 @@ and evidence.
 
 | Laptop | Model number | Initial controls |
 | --- | --- | --- |
-| [Blade 15 Advanced (Mid 2019)](source-reviewed-rz09-0301.md) | `RZ09-0301` | Balanced and Custom CPU/GPU Low, Medium and High on full-power AC, Automatic fans |
+| [Blade 15 Advanced (Mid 2019)](source-reviewed-rz09-0301.md) | `RZ09-0301` | Balanced/Custom CPU/GPU levels; Balanced fixed fans and curves on full-power AC; brightness and logo |
 | Blade 15 Base (2019) | `RZ09-0300` | Balanced, Gaming and Creator on full-power AC, Automatic fans |
 | Blade 15 Advanced (Early 2020) | `RZ09-0330` | Balanced and Custom CPU/GPU Low/Medium/High on full-power AC, Automatic fans |
 | Blade 15 Base (Late 2020) | `RZ09-0351` | Balanced, Gaming and Creator on full-power AC, Automatic fans |

@@ -66,7 +66,7 @@ Turbo、最大风扇、固定转速、风扇曲线、灯光、HyperBoost 或驱�
 
 | 笔记本 | 型号 | 初始功能 |
 | --- | --- | --- |
-| [Blade 15 Advanced (Mid 2019)](../source-reviewed-rz09-0301.md) | `RZ09-0301` | 全功率交流电下的平衡、自定义 CPU/GPU 低、中、高档位与自动风扇 |
+| [Blade 15 Advanced (Mid 2019)](../source-reviewed-rz09-0301.md) | `RZ09-0301` | 平衡与自定义 CPU/GPU 档位；全功率交流电下的平衡模式固定风速和曲线；亮度与标志灯 |
 | Blade 15 Base (2019) | `RZ09-0300` | 全功率交流电下的平衡、游戏、创作模式与自动风扇 |
 | Blade 15 Advanced (Early 2020) | `RZ09-0330` | 全功率交流电下的平衡、自定义 CPU/GPU 低/中/高档与自动风扇 |
 | Blade 15 Base (Late 2020) | `RZ09-0351` | 全功率交流电下的平衡、游戏、创作模式与自动风扇 |

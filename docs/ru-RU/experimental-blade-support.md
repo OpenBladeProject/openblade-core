@@ -77,7 +77,7 @@ HyperBoost, подсветка, интеграции с драйверами и 
 
 | Ноутбук | Номер модели | Начальные настройки |
 | --- | --- | --- |
-| [Blade 15 Advanced (середина 2019 года)](../source-reviewed-rz09-0301.md) | `RZ09-0301` | Balanced и Custom CPU/GPU Low, Medium, High от адаптера полной мощности, Automatic |
+| [Blade 15 Advanced (середина 2019 года)](../source-reviewed-rz09-0301.md) | `RZ09-0301` | Balanced/Custom CPU/GPU; фиксированная скорость и кривые в Balanced от адаптера полной мощности; яркость и подсветка логотипа |
 | Blade 15 Base (2019) | `RZ09-0300` | Balanced, Gaming и Creator от адаптера полной мощности, Automatic |
 | Blade 15 Advanced (Early 2020) | `RZ09-0330` | Balanced и Custom CPU/GPU Low/Medium/High от адаптера полной мощности, Automatic |
 | Blade 15 Base (Late 2020) | `RZ09-0351` | Balanced, Gaming и Creator от адаптера полной мощности, Automatic |
