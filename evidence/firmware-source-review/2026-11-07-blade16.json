@@ -704,13 +704,907 @@
         "identity": "RTW--81202-01.09",
         "boardStringOffset": "0x2d00",
         "boardString": "RTW81202 PI480",
-        "instructionSetStatus": "Reset-vector bytes are consistent with compressed RISC-V; no complete EC disassembly or normal-control ingress trace performed."
+        "architecture": "RISC-V RV32 with compressed instructions; coherent reset, interrupt and ordinary code recovered.",
+        "followUpReviewCommit": "96a8f82ed69f1e98dbc9f404aee03c535a9708c8",
+        "addressConvention": "Runtime code addresses use the 0x80000000 flash mapping; subtract that base for image offsets. RAM/MMIO addresses are explicit operand-derived addresses. No 0581 code/table offsets were transferred.",
+        "loadMap": {
+          "flashBase": "0x80000000",
+          "imageBytes": 262144,
+          "resetImageOffset": "0xa0",
+          "interruptEntryImageOffset": "0x400",
+          "stackWhenExecutingHighMapping": "0x80084000",
+          "ramRangesUsedByRecoveredCode": [
+            "0x80000..0x8ffff",
+            "0x80080000..0x8008ffff"
+          ],
+          "mmioRangeUsed": "0xf00000..0xf2ffff",
+          "initialDataCopy": {
+            "codeRange": "0x8000013c..0x80000164",
+            "source": "0x80023d16",
+            "destination": "0x80081000",
+            "bytes": 36
+          },
+          "caveat": "RAM regions describe actual operand ranges, not independently verified physical aliasing."
+        },
+        "bankMap": {
+          "pointerTableImageOffset": "0x23d16",
+          "initializedPointerTable": "0x80081000",
+          "bankPointers": [
+            "0x800232a8",
+            "0x80022aa8",
+            "0x800222a8",
+            "0x80021aa8",
+            "0x800212a8",
+            "0x80020aa8",
+            "0x800202a8",
+            "0x8001faa8"
+          ],
+          "descriptorBytes": 8,
+          "format": "little-endian uint32 metadata, uint32 target pointer",
+          "writeExclusion": "metadata byte equal to 1 is skipped; table entries 2 pass. The handler does not validate a feature-specific typed operation.",
+          "descriptors": [
+            {
+              "bank": 0,
+              "index": "0x0",
+              "descriptorImageOffset": "0x232a8",
+              "metadata": 1,
+              "target": "0x84e20"
+            },
+            {
+              "bank": 0,
+              "index": "0x1",
+              "descriptorImageOffset": "0x232b0",
+              "metadata": 1,
+              "target": "0x84e21"
+            },
+            {
+              "bank": 0,
+              "index": "0x2",
+              "descriptorImageOffset": "0x232b8",
+              "metadata": 1,
+              "target": "0x84e22"
+            },
+            {
+              "bank": 0,
+              "index": "0x3",
+              "descriptorImageOffset": "0x232c0",
+              "metadata": 1,
+              "target": "0x84e23"
+            },
+            {
+              "bank": 0,
+              "index": "0x8",
+              "descriptorImageOffset": "0x232e8",
+              "metadata": 1,
+              "target": "0x80816"
+            },
+            {
+              "bank": 0,
+              "index": "0x9",
+              "descriptorImageOffset": "0x232f0",
+              "metadata": 1,
+              "target": "0x80817"
+            },
+            {
+              "bank": 0,
+              "index": "0xf",
+              "descriptorImageOffset": "0x23320",
+              "metadata": 2,
+              "target": "0x800810b1"
+            },
+            {
+              "bank": 0,
+              "index": "0x1a",
+              "descriptorImageOffset": "0x23378",
+              "metadata": 2,
+              "target": "0x8035f"
+            },
+            {
+              "bank": 0,
+              "index": "0x1b",
+              "descriptorImageOffset": "0x23380",
+              "metadata": 2,
+              "target": "0x80330"
+            },
+            {
+              "bank": 0,
+              "index": "0x1c",
+              "descriptorImageOffset": "0x23388",
+              "metadata": 2,
+              "target": "0x80331"
+            },
+            {
+              "bank": 0,
+              "index": "0x2a",
+              "descriptorImageOffset": "0x233f8",
+              "metadata": 2,
+              "target": "0x808e0"
+            },
+            {
+              "bank": 0,
+              "index": "0x2b",
+              "descriptorImageOffset": "0x23400",
+              "metadata": 2,
+              "target": "0x808e1"
+            },
+            {
+              "bank": 0,
+              "index": "0x36",
+              "descriptorImageOffset": "0x23458",
+              "metadata": 2,
+              "target": "0x8034d"
+            },
+            {
+              "bank": 0,
+              "index": "0xc1",
+              "descriptorImageOffset": "0x238b0",
+              "metadata": 2,
+              "target": "0x808e4"
+            },
+            {
+              "bank": 0,
+              "index": "0xc2",
+              "descriptorImageOffset": "0x238b8",
+              "metadata": 2,
+              "target": "0x808ee"
+            }
+          ]
+        },
+        "ingress": {
+          "smbus": {
+            "initializationFunction": "0x80009d7e",
+            "configurationCall": "0x8001ca1a(0,0xff,0x58,0,0,0)",
+            "slaveAddressRegisterValue": "0x58",
+            "interruptDispatcher": "0x80003200",
+            "interruptSelector": "MMIO0xf03f10 minus0x10",
+            "interruptPointerTable": "0x80005000",
+            "slot": 9,
+            "slotImageOffset": "0x5024",
+            "slotTarget": "0x800189be",
+            "wrapperCall": "0x800189c2 calls0x80001958",
+            "handler": "0x80001958",
+            "selectedBank": "RAM0x800810b1",
+            "registerIndex": "RAM0x800810b0",
+            "descriptorLoadRange": "0x80001a64..0x80001a94",
+            "writeRange": "0x80001aa8..0x80001b04",
+            "actualStore": "0x80001b00",
+            "readRange": "0x800019ee..0x800019fe",
+            "readCaveat": "Instructions write mapped data then zero to the data register; pseudocode omits the first store. Bus latch timing and live transactions were not tested.",
+            "narrowWriteExclusion": "The separate index0x36/manual-bit 7 gate derives from next-index comparison0x37 at0x80001ac2..0x80001ada; other listed writes still require their own host admission."
+          },
+          "mailbox": {
+            "periodicCall": "0x8000ecb0",
+            "handler": "0x80014f1c",
+            "fields": {
+              "bank": "0xf02290",
+              "index": "0xf02291",
+              "length": "0xf02292",
+              "command": "0xf02293",
+              "status": "0xf02294",
+              "data": "0xf022a0"
+            },
+            "bounds": "bank<=7; length<=32; index addition wraps to8bits",
+            "admissionRange": "0x800151c8..0x800151f0",
+            "mappedRead": {
+              "command": "0xa0",
+              "range": "0x800151f4..0x80015240"
+            },
+            "mappedWrite": {
+              "command": "0xa1",
+              "range": "0x80015242..0x800152ae",
+              "metadataSkip": "0x80015292",
+              "actualStore": "0x8001529a",
+              "changedFlag": "RAM0x8008000e=1 at0x8001529e"
+            },
+            "statusCaveat": "Sets0x80 before the mapped loop. Skipped read-only descriptors can still return that transfer status; this is not feature readback."
+          }
+        },
+        "normalThermal": {
+          "modeField": "0x8035f",
+          "manualFlags": "0x8034d bit 0",
+          "fanRequests": [
+            "0x80330",
+            "0x80331"
+          ],
+          "modePolicy": "0x8000915e",
+          "periodicCallSites": [
+            "0x8000f576",
+            "0x8000fade"
+          ],
+          "admission": "RAM0x84ee3 bit 0 gates this policy. Selectors0..7 follow normal path;08..FD return after separateFE/FF branches.",
+          "normalSelectorBoundRange": "0x8000918a..0x8000919c",
+          "tableLoader": "0x800089ea",
+          "record": "0x20 + requested selector (normal0..7)",
+          "activeTable": "RAM0x8a000",
+          "loadCaveat": "Checks persistent record metadata/checksum and may seed defaults; no active table was read.",
+          "factorySeeder": "0x8000781a",
+          "factoryBoardSelector": "RAM0x804e9 selects bases0x3b000/0x3c000/0x3d000/0x3e000",
+          "recordBytes": 512,
+          "manualClamp": "0x80008dfc..0x80008f6e",
+          "firstFanInstructionRange": "0x80008e18..0x80008e5c",
+          "secondFanInstructionRange": "0x80008e6e..0x80008eb6",
+          "requestMultiplierRpm": 100,
+          "belowMinimumException": {
+            "selector": 3,
+            "resultTargetRpm": 0
+          },
+          "limitLoader": "0x80009048",
+          "minimumLoad": "0x80009092..0x800090a4 reads extension+4 intoRAM0x80555",
+          "maximumLoad": "0x800090be..0x800090d0 reads extension+9 intoRAM0x8055a",
+          "automaticStageDecoder": "0x80007a56",
+          "automaticTargetMultiplierRpm": 50,
+          "tableCount": 32,
+          "stageCount": 344,
+          "factoryManualMinimumRpm": 2000,
+          "factoryManualMaximumRpm": 5100,
+          "productCapCaveat": "OpenBlade retains its separately established5000RPM cap for0528. Image defaults do not expand host authority or establish effective RPM."
+        },
+        "factoryTables": [
+          {
+            "boardGroup": 1,
+            "selector": 0,
+            "imageOffset": "0x3b000",
+            "length": 512,
+            "sha256": "e0a6a208534f00c669a5a25bb813b3afc04106405ccc996bfc81b9141f655ebe",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 1,
+            "selector": 1,
+            "imageOffset": "0x3b200",
+            "length": 512,
+            "sha256": "17da17c5568464ed16e4a5e58ddbbc0bf399a34a7635a3796bd58073ff1a948d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 1,
+            "selector": 2,
+            "imageOffset": "0x3b400",
+            "length": 512,
+            "sha256": "17da17c5568464ed16e4a5e58ddbbc0bf399a34a7635a3796bd58073ff1a948d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 1,
+            "selector": 3,
+            "imageOffset": "0x3b600",
+            "length": 512,
+            "sha256": "8435e14df444e9f3e86f821e6093228bbf664b80fa78a42a64de4e32423dbba4",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 1,
+            "selector": 4,
+            "imageOffset": "0x3b800",
+            "length": 512,
+            "sha256": "a150f23fd96543b0d4a8db1760fac505afacd9226ec5ac2531b68fa82e0cd28d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 1,
+            "selector": 5,
+            "imageOffset": "0x3ba00",
+            "length": 512,
+            "sha256": "bcba4d99616886a8f4448edf21e850f1e7164b9a26ef106dd694195ad3126099",
+            "stages": 8,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 1,
+            "selector": 6,
+            "imageOffset": "0x3bc00",
+            "length": 512,
+            "sha256": "8435e14df444e9f3e86f821e6093228bbf664b80fa78a42a64de4e32423dbba4",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 1,
+            "selector": 7,
+            "imageOffset": "0x3be00",
+            "length": 512,
+            "sha256": "4a0d9f156c9ad2de56fd5f83b05821efe5b26d77b4f521b317b6118865d27d3a",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 2,
+            "selector": 0,
+            "imageOffset": "0x3c000",
+            "length": 512,
+            "sha256": "e0a6a208534f00c669a5a25bb813b3afc04106405ccc996bfc81b9141f655ebe",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 2,
+            "selector": 1,
+            "imageOffset": "0x3c200",
+            "length": 512,
+            "sha256": "17da17c5568464ed16e4a5e58ddbbc0bf399a34a7635a3796bd58073ff1a948d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 2,
+            "selector": 2,
+            "imageOffset": "0x3c400",
+            "length": 512,
+            "sha256": "17da17c5568464ed16e4a5e58ddbbc0bf399a34a7635a3796bd58073ff1a948d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 2,
+            "selector": 3,
+            "imageOffset": "0x3c600",
+            "length": 512,
+            "sha256": "8435e14df444e9f3e86f821e6093228bbf664b80fa78a42a64de4e32423dbba4",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 2,
+            "selector": 4,
+            "imageOffset": "0x3c800",
+            "length": 512,
+            "sha256": "a150f23fd96543b0d4a8db1760fac505afacd9226ec5ac2531b68fa82e0cd28d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 2,
+            "selector": 5,
+            "imageOffset": "0x3ca00",
+            "length": 512,
+            "sha256": "bcba4d99616886a8f4448edf21e850f1e7164b9a26ef106dd694195ad3126099",
+            "stages": 8,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 2,
+            "selector": 6,
+            "imageOffset": "0x3cc00",
+            "length": 512,
+            "sha256": "8435e14df444e9f3e86f821e6093228bbf664b80fa78a42a64de4e32423dbba4",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 2,
+            "selector": 7,
+            "imageOffset": "0x3ce00",
+            "length": 512,
+            "sha256": "4a0d9f156c9ad2de56fd5f83b05821efe5b26d77b4f521b317b6118865d27d3a",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 3,
+            "selector": 0,
+            "imageOffset": "0x3d000",
+            "length": 512,
+            "sha256": "e0a6a208534f00c669a5a25bb813b3afc04106405ccc996bfc81b9141f655ebe",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 3,
+            "selector": 1,
+            "imageOffset": "0x3d200",
+            "length": 512,
+            "sha256": "17da17c5568464ed16e4a5e58ddbbc0bf399a34a7635a3796bd58073ff1a948d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 3,
+            "selector": 2,
+            "imageOffset": "0x3d400",
+            "length": 512,
+            "sha256": "17da17c5568464ed16e4a5e58ddbbc0bf399a34a7635a3796bd58073ff1a948d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 3,
+            "selector": 3,
+            "imageOffset": "0x3d600",
+            "length": 512,
+            "sha256": "8435e14df444e9f3e86f821e6093228bbf664b80fa78a42a64de4e32423dbba4",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 3,
+            "selector": 4,
+            "imageOffset": "0x3d800",
+            "length": 512,
+            "sha256": "a150f23fd96543b0d4a8db1760fac505afacd9226ec5ac2531b68fa82e0cd28d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 3,
+            "selector": 5,
+            "imageOffset": "0x3da00",
+            "length": 512,
+            "sha256": "bcba4d99616886a8f4448edf21e850f1e7164b9a26ef106dd694195ad3126099",
+            "stages": 8,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 3,
+            "selector": 6,
+            "imageOffset": "0x3dc00",
+            "length": 512,
+            "sha256": "8435e14df444e9f3e86f821e6093228bbf664b80fa78a42a64de4e32423dbba4",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 3,
+            "selector": 7,
+            "imageOffset": "0x3de00",
+            "length": 512,
+            "sha256": "4a0d9f156c9ad2de56fd5f83b05821efe5b26d77b4f521b317b6118865d27d3a",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 4,
+            "selector": 0,
+            "imageOffset": "0x3e000",
+            "length": 512,
+            "sha256": "e0a6a208534f00c669a5a25bb813b3afc04106405ccc996bfc81b9141f655ebe",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 4,
+            "selector": 1,
+            "imageOffset": "0x3e200",
+            "length": 512,
+            "sha256": "17da17c5568464ed16e4a5e58ddbbc0bf399a34a7635a3796bd58073ff1a948d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 4,
+            "selector": 2,
+            "imageOffset": "0x3e400",
+            "length": 512,
+            "sha256": "17da17c5568464ed16e4a5e58ddbbc0bf399a34a7635a3796bd58073ff1a948d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 4,
+            "selector": 3,
+            "imageOffset": "0x3e600",
+            "length": 512,
+            "sha256": "8435e14df444e9f3e86f821e6093228bbf664b80fa78a42a64de4e32423dbba4",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 4,
+            "selector": 4,
+            "imageOffset": "0x3e800",
+            "length": 512,
+            "sha256": "a150f23fd96543b0d4a8db1760fac505afacd9226ec5ac2531b68fa82e0cd28d",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 4,
+            "selector": 5,
+            "imageOffset": "0x3ea00",
+            "length": 512,
+            "sha256": "bcba4d99616886a8f4448edf21e850f1e7164b9a26ef106dd694195ad3126099",
+            "stages": 8,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 4,
+            "selector": 6,
+            "imageOffset": "0x3ec00",
+            "length": 512,
+            "sha256": "8435e14df444e9f3e86f821e6093228bbf664b80fa78a42a64de4e32423dbba4",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          },
+          {
+            "boardGroup": 4,
+            "selector": 7,
+            "imageOffset": "0x3ee00",
+            "length": 512,
+            "sha256": "4a0d9f156c9ad2de56fd5f83b05821efe5b26d77b4f521b317b6118865d27d3a",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "extensionOffset": "0x1a8",
+            "rowStride": 21,
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5100
+          }
+        ],
+        "customPerformance": {
+          "firstSelector": {
+            "bank": 0,
+            "index": "0x2a",
+            "field": "0x808e0"
+          },
+          "secondSelector": {
+            "bank": 0,
+            "index": "0x2b",
+            "field": "0x808e1"
+          },
+          "consumer": "0x800145a6",
+          "customMode": 4,
+          "consumerRange": "0x800145aa..0x80014682",
+          "firstSelectorEffect": "Selects a policy index, with concrete0/1/2 branches and policy-condition variants;19-byte record fromRAM0x86d00+index*0x13 is copied intoRAM0x86fe8 at0x80014648..0x8001465e.",
+          "secondSelectorEffect": "Feeds distinct computation 0x80009e34, including0/1/other branches for mode4; updates request/config bytes0x86ff4/0x86ff6/0x86ff9/0x86ffa under board/power gates.",
+          "labelBasis": "CPU/GPU labels belong to the separately reviewed host vendor contract; firmware proves distinct selectors and their consumers here.",
+          "limits": "No exact live CPU wattage, maximum frequency or GPU TGP established; complete02C6 MCU HID-to-EC translation remains untraced."
+        },
+        "chargeAndPowerMode": {
+          "chargeField": {
+            "bank": 0,
+            "index": "0xc2",
+            "field": "0x808ee",
+            "encoding": "bit 7 enables a low 7-bit numeric ceiling; high byte0x808ef is inhibit latch"
+          },
+          "powerFlags": {
+            "bank": 0,
+            "index": "0xc1",
+            "field": "0x808e4",
+            "writeContract": "A mapped write replaces the entire byte; no implicit bit preservation."
+          },
+          "chargeHandler": "0x8000c9ac",
+          "chargeInstructionRange": "0x8000cc06..0x8000cc9a",
+          "stateOfChargeField": "0x84e80 (namedRsoc by adjacent firmware battery diagnostic)",
+          "hysteresis": "Under existing charger gates: latch when Rsoc>=ceiling; clear when Rsoc<ceiling-5 (or ceiling<=5).",
+          "chargeInhibitOutput": "RAM0x84e3c=0 andRAM0x84ea2 bit 3 set at0x8000cc4a..0x8000cc5e when enabled+latch and no bypass.",
+          "temporaryFullCharge": "Powerflagsbit 2 bypasses the ceiling inhibit at0x8000cc40..0x8000cc48.",
+          "configurationMirrors": "Handler copies0x808ee low byte toRAM0x86055 andpowerflagsbit 2 toRAM0x8605a bit 0, markingRAM0x8091c bit 0. This is not a reviewed durable write/restoration contract.",
+          "maximumFans": "Powerflagsbit 1 participates in Custommode4 fan handling0x8001447e, including an internal5500RPM target literal, plus GPU policy branches0x80009e34. This is not an effective tach or new host range.",
+          "unresolvedBits": "CPU boostbit 0 andlocal dimmingbit 3 meanings were not independently completed from this EC; retain reviewed vendor host contract and whole-byte safeguards.",
+          "limits": "No live charge transition, current measurement, ceiling range/step admission or complete07/0f HID translation tested/recovered."
+        },
+        "versionPublication": {
+          "initializer": "0x8000bbb4",
+          "initializerRange": "0x8000bbcc..0x8000bbec",
+          "value": "ASCII0109",
+          "initializerFields": [
+            "0x80a82",
+            "0x80a83",
+            "0x80a84",
+            "0x80a85"
+          ],
+          "publisher": "0x8000e0d2",
+          "publicationRange": "0x8000e130..0x8000e18a",
+          "publishedReadOnlyBank": 0,
+          "publishedIndices": [
+            "0x00",
+            "0x01",
+            "0x02",
+            "0x03"
+          ],
+          "publishedFields": [
+            "0x84e20",
+            "0x84e21",
+            "0x84e22",
+            "0x84e23"
+          ],
+          "mailboxMirrors": [
+            "0xf02286",
+            "0xf02287",
+            "0xf02288",
+            "0xf02289"
+          ],
+          "limits": "Publishes a firmware-owned version representation; does not prove running-device identity or Windows firmware-metadata equivalence."
+        },
+        "analysisLimitations": [
+          "Compiler save/restore helpers useJALt0/nonstandard return; recovered pseudocode has extraout and jump-table artifacts. Conclusions above were checked against explicit instructions and image descriptors.",
+          "No vendor debug symbols, execution, active-state reads or physical validation.",
+          "EC SMBus/mailbox ingress is established. The normal 02C6 MCU translation of HID 0D/01,0D/02,07/12 and07/0F remains a separate missing link."
+        ]
       },
       "limits": [
-        "The 0581 NDS32 offsets/tables are not transferred to this distinct image.",
-        "No 0528 EC fan table, manual clamp, battery selector, keyboard-mode, or runtime HID-to-EC chain was established in this bounded review.",
-        "The BIOS thermal-zone path exists, but its literal _TMP cannot establish live CPU temperature.",
-        "Package SKU/SSID cases are updater applicability provenance and do not change runtime host admission."
+        "The exact 0528 image independently establishes banked EC ingress, normal thermal policy and distinct Custom selectors; no 0581 offsets were reused.",
+        "Factory manual maximum 5100 differs from the separately admitted OpenBlade 5000 cap; no runtime range change is proposed.",
+        "Battery ceiling and PowerModebits1/2 have selectedEC consumers; bits0/3 and completeHID translation are unproven here.",
+        "BIOS thermal-zone path exists but literal_TMP cannot establish live CPU temperature.",
+        "No physical command submission, active table read, charge/fan response or durable restoration verified."
       ]
     }
   ],
@@ -720,7 +1614,8 @@
     "0528 BIOS parsed with existing UEFIExtract NE alpha74; flat short-path extraction completed successfully with a last-VTF-in-compressed-item warning.",
     "ACPI tables selected by signature, bounded declared length and checksum; exact DSDT disassembled using ACPICA iASL20250807 without evaluating methods.",
     "0581 factory tables independently redecoded from the pinned EC image; selected retained NDS32 instruction listings inspected.",
-    "0528 RazerAcpiDxe parsed with existing Ghidra12.1.3 x86-64; recovered C is pseudocode, not vendor source."
+    "0528 RazerAcpiDxe parsed with existing Ghidra12.1.3 x86-64; recovered C is pseudocode, not vendor source.",
+    "0528 follow-up independently recovered RISC-V startup/flash mapping, IRQ+banked ingress and selected state consumers; data-only decoder checked 32 factory tables and 344 stages and 8 bank pointers."
   ],
   "conclusions": [
     "Retain exact-model runtime support and existing physical-validation records unchanged.",
