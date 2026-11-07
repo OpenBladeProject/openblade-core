@@ -18,6 +18,9 @@ public sealed record ServiceClientContext(
     bool IsAdministrator,
     ServiceClientLogonKind LogonKind)
 {
+    public int? ProcessId { get; init; }
+    internal long? ProcessStartTimeUtcTicks { get; init; }
+
     public bool IsInteractive => LogonKind is
         ServiceClientLogonKind.Interactive or ServiceClientLogonKind.RemoteInteractive;
 
@@ -47,8 +50,19 @@ public sealed class WindowsServiceClientContextResolver : IServiceClientContextR
 
         ServiceClientContext? context = null;
         pipe.RunAsClient(() => context = ReadImpersonatedContext());
-        return context
-            ?? throw new UnauthorizedAccessException("The pipe client identity is unavailable.");
+        if (context is null) { throw new UnauthorizedAccessException("The pipe client identity is unavailable."); }
+        if (GetNamedPipeClientProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out uint processId)
+            && processId is > 0 and <= int.MaxValue)
+        {
+            try
+            {
+                using var process = System.Diagnostics.Process.GetProcessById((int)processId);
+                context = context with { ProcessId = (int)processId, ProcessStartTimeUtcTicks = process.StartTime.ToUniversalTime().Ticks };
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+            { }
+        }
+        return context;
     }
 
     private static ServiceClientContext ReadImpersonatedContext()
@@ -104,6 +118,10 @@ public sealed class WindowsServiceClientContextResolver : IServiceClientContextR
 
         return value;
     }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetNamedPipeClientProcessId(IntPtr pipe, out uint processId);
 
     private enum TokenInformationClass
     {

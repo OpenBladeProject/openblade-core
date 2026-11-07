@@ -1708,4 +1708,64 @@
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>电源来源已更改。请检查当前配置方案后重试。</value>
   </data>
+  <data name="CPU/GPU curves" xml:space="preserve">
+    <value>CPU/GPU 曲线</value>
+  </data>
+  <data name="Mirror keyboard" xml:space="preserve">
+    <value>同步键盘灯效</value>
+  </data>
+  <data name="Cooling-pad control is paused. Refresh status before making another change." xml:space="preserve">
+    <value>散热底座控制已暂停。请刷新状态后再更改设置。</value>
+  </data>
+  <data name="Reconnecting. Showing the last confirmed cooling-pad state." xml:space="preserve">
+    <value>正在重新连接。显示的是散热底座上次确认的状态。</value>
+  </data>
+  <data name="OpenBlade is controlling the cooling pad." xml:space="preserve">
+    <value>OpenBlade 正在控制散热底座。</value>
+  </data>
+  <data name="Connected. Choose settings and apply them to take control." xml:space="preserve">
+    <value>已连接。选择并应用设置以开始控制。</value>
+  </data>
+  <data name="Configured fan target: {0} RPM" xml:space="preserve">
+    <value>已设定风扇目标转速：{0} RPM</value>
+  </data>
+  <data name="Configured fan target unavailable" xml:space="preserve">
+    <value>无法获取已设定的风扇目标转速</value>
+  </data>
+  <data name="Configured brightness: {0}%" xml:space="preserve">
+    <value>已配置亮度：{0}%</value>
+  </data>
+  <data name="Configured brightness unavailable" xml:space="preserve">
+    <value>无法获取已配置的亮度</value>
+  </data>
+  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
+    <value>请检查风扇转速、曲线温度递增顺序和六位 RGB 色值。</value>
+  </data>
+  <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
+    <value>散热底座设置更改已被阻止。请刷新状态并查看“故障排除”。</value>
+  </data>
+  <data name="The cooling-pad change could not be confirmed. Refresh status before continuing." xml:space="preserve">
+    <value>无法确认散热底座设置更改。请刷新状态后再继续。</value>
+  </data>
+  <data name="Cooling-pad status is unavailable. Showing the last confirmed state." xml:space="preserve">
+    <value>无法获取散热底座状态。显示的是上次确认的状态。</value>
+  </data>
+  <data name="Apply new settings, or release control to restore the captured cooling-pad settings." xml:space="preserve">
+    <value>请应用新设置，或释放控制以恢复接管前读取的散热底座设置。</value>
+  </data>
+  <data name="Keep current" xml:space="preserve">
+    <value>保持当前</value>
+  </data>
+  <data name="Spectrum" xml:space="preserve">
+    <value>光谱循环</value>
+  </data>
+  <data name="CPU" xml:space="preserve">
+    <value>CPU</value>
+  </data>
+  <data name="GPU" xml:space="preserve">
+    <value>GPU</value>
+  </data>
+  <data name="Both" xml:space="preserve">
+    <value>两者</value>
+  </data>
 </root>

@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 72;
+    public const int ProtocolVersion = 73;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -239,6 +239,11 @@ public static class IpcMessageCodec
         bool validBody = request switch
         {
             GetStatusRequest => true,
+            SetCoolingPadSettingsRequest set => CoolingPadSettings.IsWellFormed(set.Settings),
+            SetCoolingPadDemandLeaseRequest lease => lease.LeaseId != Guid.Empty
+                && CoolingPadSettings.ValidRpm(lease.Rpm) && lease.DurationSeconds is >= 1 and <= 30,
+            RemoveCoolingPadDemandLeaseRequest lease => lease.LeaseId != Guid.Empty,
+            ReadCoolingPadStatusRequest or ReleaseCoolingPadControlRequest => true,
             ObserveStateRequest observe =>
                 (observe.RequestedLiveReadings & ~LiveReadingSensors.All) == 0,
             SubscribeStatusRequest => true,
@@ -733,6 +738,11 @@ public static class IpcMessageCodec
             }
         }
 
+        if (!CoolingPadStatusSnapshot.IsWellFormed(status.CoolingPad))
+        {
+            throw InvalidStatus("cooling-pad status is malformed");
+        }
+
         if (status.Capabilities is { IsWellFormed: false })
         {
             throw InvalidStatus("capability collections are malformed");
@@ -1141,6 +1151,8 @@ public static class IpcMessageCodec
             if (protocol51Projection
                 && typeInfo.Type == typeof(ServiceStatusSnapshot))
             {
+                typeInfo.Properties.Single(property => string.Equals(property.Name, "coolingPad", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
                 JsonPropertyInfo thermalConvergence = typeInfo.Properties.Single(property =>
                     string.Equals(
                         property.Name,

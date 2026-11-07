@@ -826,6 +826,7 @@ internal sealed partial class ExperimentalBladePort(
             if (!disposed)
             {
                 await StopAnimationCoreAsync().ConfigureAwait(false);
+                KeyboardLightingFrameStream.Clear(this);
                 disposed = true;
                 await session.DisposeAsync().ConfigureAwait(false);
             }

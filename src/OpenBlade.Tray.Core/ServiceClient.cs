@@ -50,6 +50,18 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ReportApplicationContextRequest request,
         CancellationToken token) => SendMutationAsync(request, token);
 
+    public Task<ControlOperationResult> SetCoolingPadSettingsAsync(CoolingPadSettings settings, CancellationToken token) =>
+        SendMutationAsync(new SetCoolingPadSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), settings), token);
+
+    public Task<ControlOperationResult> ReleaseCoolingPadControlAsync(CancellationToken token) =>
+        SendMutationAsync(new ReleaseCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), token);
+
+    public async Task<ServiceStatusSnapshot> ReadCoolingPadStatusAsync(CancellationToken token)
+    {
+        ServiceResponse response = await SendOnceAsync(new ReadCoolingPadStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), token).ConfigureAwait(false);
+        return response.Status ?? throw new InvalidDataException("Cooling-pad read response is missing its status body.");
+    }
+
     public async Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
     {
         var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());

@@ -17,6 +17,10 @@ internal sealed class ExperimentalLightingOwnershipState
 
 internal sealed partial class ExperimentalBladePort
 {
+    private IReadOnlyList<RgbColor>? keyboardMirrorFrame;
+    private int keyboardMirrorColumns;
+    private int keyboardMirrorRows;
+    private bool keyboardMirrorTransitionPending;
     public LightingRendererOwnershipState OwnershipState =>
         (LightingRendererOwnershipState)Volatile.Read(ref lightingOwnership.Ownership);
 
@@ -465,6 +469,10 @@ internal sealed partial class ExperimentalBladePort
                 ?? standardEffect?.RenderFrame(TimeSpan.Zero)
                 ?? Blade18LightingAnimation.Render(settings, TimeSpan.Zero) : null;
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        bool mirrorCommitted = false;
+        keyboardMirrorTransitionPending = true;
+        keyboardMirrorFrame = null;
+        KeyboardLightingFrameStream.Clear(this);
         bool stoppedAnimation = animationCancellation is not null;
         bool submitted = false;
         bool frameWriteAttempted = false;
@@ -758,12 +766,17 @@ internal sealed partial class ExperimentalBladePort
 
             if (setOnlyFrame)
             {
+                if (settings.Effect == LightingEffect.Static)
+                {
+                    RecordKeyboardMirrorFrame([settings.Color], 1, 1);
+                }
                 if (animationRequest)
                 {
                     StartAnimationCore(lightingOwnership.Intent!, spatialEffect, sequenceEffect, standardEffect);
                 }
                 policy.Record("KeyboardLighting", "Readback", "Unavailable", submitted,
                     requested, "OwnedFrameIntent", "FrameColorReadbackUnavailable");
+                mirrorCommitted = true;
                 return;
             }
 
@@ -776,6 +789,7 @@ internal sealed partial class ExperimentalBladePort
             }
             policy.Record("KeyboardLighting", "Readback", "Confirmed", submitted,
                 requested, requested);
+            mirrorCommitted = true;
         }
         catch (DeviceStateContentRejectedException)
             when (startingHostFrameFromFault && !submitted)
@@ -812,6 +826,9 @@ internal sealed partial class ExperimentalBladePort
         }
         finally
         {
+            keyboardMirrorTransitionPending = false;
+            if (mirrorCommitted) { PublishKeyboardMirrorCore(); }
+            else { KeyboardLightingFrameStream.Clear(this); }
             operationGate.Release();
         }
     }
@@ -907,8 +924,32 @@ internal sealed partial class ExperimentalBladePort
         && confirmed.Color == requested.Color
         && Equals(confirmed.Parameters, requested.Parameters);
 
-    private void SetLightingOwnership(LightingRendererOwnershipState value) =>
+    private void SetLightingOwnership(LightingRendererOwnershipState value)
+    {
         Volatile.Write(ref lightingOwnership.Ownership, (int)value);
+        if (value is LightingRendererOwnershipState.None or LightingRendererOwnershipState.Faulted)
+        {
+            keyboardMirrorFrame = null;
+            KeyboardLightingFrameStream.Clear(this);
+        }
+    }
+
+    private void RecordKeyboardMirrorFrame(IReadOnlyList<RgbColor> colors, int columns, int rows)
+    {
+        keyboardMirrorFrame = colors;
+        keyboardMirrorColumns = columns;
+        keyboardMirrorRows = rows;
+        PublishKeyboardMirrorCore();
+    }
+
+    private void PublishKeyboardMirrorCore()
+    {
+        if (!keyboardMirrorTransitionPending && !disposed && IsOwnedFrameOwnership(OwnershipState)
+            && keyboardMirrorFrame is { } colors)
+        {
+            KeyboardLightingFrameStream.Publish(colors, keyboardMirrorColumns, keyboardMirrorRows, this);
+        }
+    }
 
     private void SetLightingFaulted()
     {
@@ -1109,6 +1150,7 @@ internal sealed partial class ExperimentalBladePort
             requireEcho: false,
             recordAcknowledgedSubmission: false).ConfigureAwait(false);
         onSubmitted();
+        RecordKeyboardMirrorFrame([color], 1, 1);
     }
 
     public Task SetPlaybackMuteIndicatorAsync(

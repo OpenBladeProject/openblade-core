@@ -51,6 +51,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             PrimaryNavigationItemKind.Laptop,
             PrimaryNavigationItemKind.Profiles,
             PrimaryNavigationItemKind.Lighting,
+            PrimaryNavigationItemKind.CoolingPad,
             PrimaryNavigationItemKind.ThxAudio,
             PrimaryNavigationItemKind.Telemetry,
         ];
@@ -655,6 +656,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 PrimaryNavigationItemKind.Display,
                 PrimaryNavigationItemKind.Laptop,
                 PrimaryNavigationItemKind.Profiles,
+                PrimaryNavigationItemKind.CoolingPad,
                 PrimaryNavigationItemKind.ThxAudio,
                 PrimaryNavigationItemKind.Lighting,
                 PrimaryNavigationItemKind.Telemetry,

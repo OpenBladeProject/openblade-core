@@ -39,6 +39,12 @@ public interface IServiceClient : IServiceStatusWatcher
 
     Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token);
 
+    Task<ServiceStatusSnapshot> ReadCoolingPadStatusAsync(CancellationToken token) => GetStatusAsync(token);
+    Task<ControlOperationResult> SetCoolingPadSettingsAsync(CoolingPadSettings settings, CancellationToken token) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling-pad control is unavailable."));
+    Task<ControlOperationResult> ReleaseCoolingPadControlAsync(CancellationToken token) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling-pad control is unavailable."));
+
     Task<ServiceStatusSnapshot> ObserveStateAsync(
         bool includeLiveReadings,
         CancellationToken cancellationToken);

@@ -32,7 +32,8 @@ public sealed class RepositoryArchitectureTests
                 && !pair.Key.EndsWith("GetterCandidateProbeRunner.cs")
                 && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "Rz090528HyperBoostValidation.cs")
                 && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "Rz090528PadlessHyperBoostValidation.cs")
-                && !pair.Key.EndsWith("HidInputAccessProbe.cs")),
+                && !pair.Key.EndsWith("HidInputAccessProbe.cs")
+                && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "WindowsCoolingPadDeviceProvider.cs")),
             pair => pair.Value.Contains("new WindowsHidNative("));
         string[] composition = sources
             .Where(pair => pair.Value.Contains("OverlappedFeatureOperation")
@@ -50,6 +51,7 @@ public sealed class RepositoryArchitectureTests
                 "ProductionLightingFactory.cs",
                 "Rz090528HyperBoostValidation.cs",
                 "Rz090528PadlessHyperBoostValidation.cs",
+                "WindowsCoolingPadDeviceProvider.cs",
             ],
             composition);
         string candidateProbePath = Assert.Single(
