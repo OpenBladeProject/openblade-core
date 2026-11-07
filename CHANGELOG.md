@@ -16,6 +16,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Reject the firmware's constant 45°C CPU-temperature sources. Missing CPU readings prevent Stop activation and retain the existing maximum-speed fallback for CPU-dependent fan curves. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879), [#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Verify the attended fan guardian's separation from its actual caller job and preserve startup errors after its console closes. Ambient host-job and OS failure remain outside the supervised recovery contract. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Recognize a confirmed Silent/manual thermal state without enabling an unvalidated fan-stop capability. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Reduce memory growth when changing app language by sharing localized resource lookups across the main window and quick controls. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))

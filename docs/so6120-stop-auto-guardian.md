@@ -11,12 +11,17 @@ PWM directly through the reviewed coordinator; the half-cycle step in the
 attended experiment is not a firmware prerequisite. Stop is activation-local
 and is never restored from a saved profile after startup.
 
+The formerly selected Windows TZRZ thermal counters are now rejected because
+their firmware methods return a constant 45.05 C. Until a dynamic CPU source
+is admitted, CPU temperature is unavailable and both manual and automatic Stop
+entry are refused. See [CPU temperature source investigation](so6120-cpu-temperature-source.md).
+
 ## Duration and transitions
 
 There is no fixed Stop dwell timer. Selecting Auto, making an explicit
 performance/profile/fan-mode change, losing the active session, or failing
 continuation safety requests Auto from the same owner. The current conservative
-Auto thermal policy requires a CPU thermal-zone reading between 10 and 55 C, no
+Auto thermal policy requires an admitted CPU-temperature reading between 10 and 55 C, no
 active GPU, and a reading completed within two seconds. Custom uses separate
 CPU/GPU thresholds (55 C by default) and independent continuous over-limit
 timers (five seconds by default). Either sensor can end Stop. A reading at or

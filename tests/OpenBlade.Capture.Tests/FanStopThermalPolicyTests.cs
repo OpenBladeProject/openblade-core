@@ -8,6 +8,20 @@ public sealed class FanStopThermalPolicyTests
     private static FanStopSettings Custom => FanStopSettings.Default with { EndMode = FanStopEndMode.Custom };
 
     [Theory]
+    [InlineData(FanStopEndMode.Auto)]
+    [InlineData(FanStopEndMode.Custom)]
+    public void MissingCpuTemperatureRefusesEntryAndEndsOwnedStopWithoutWaiting(FanStopEndMode mode)
+    {
+        var settings = FanStopSettings.Default with { EndMode = mode, SecondsAboveLimit = 300 };
+        var policy = new FanStopThermalPolicy(settings, new Clock());
+        Assert.True(policy.Observe(45, null, true, true, TimeSpan.Zero));
+        Assert.False(policy.AdmitsEntry(null, null, true, true, TimeSpan.Zero));
+        Assert.False(policy.Observe(null, null, true, true, TimeSpan.Zero));
+        Assert.Equal(FanStopEndReason.SafetyCondition, policy.EndReason);
+        Assert.False(policy.AdmitsCommand(45, null, true, true, TimeSpan.Zero));
+    }
+
+    [Theory]
     [InlineData(10, true, 2000, true)]
     [InlineData(55, true, 0, true)]
     [InlineData(56, true, 0, false)]
