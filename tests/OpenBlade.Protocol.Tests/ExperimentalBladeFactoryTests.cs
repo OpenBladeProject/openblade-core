@@ -5,7 +5,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
-public sealed class ExperimentalBladeFactoryTests
+public sealed partial class ExperimentalBladeFactoryTests
 {
     [Theory]
     [InlineData(true)]

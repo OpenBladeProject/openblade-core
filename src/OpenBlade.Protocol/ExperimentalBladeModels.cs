@@ -324,6 +324,12 @@ internal static class ExperimentalBladeModels
     }
 }
 
+internal enum ExperimentalRecoveryScope
+{
+    All,
+    ThermalOnly,
+}
+
 internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
 {
     private readonly object sync = new();
@@ -334,15 +340,63 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     private LinkedListNode<ExperimentalControlObservation>? animationFrameSuccess;
     private long animationFrameSuccessCount;
     private int recoveryRequired;
+    private ExperimentalRecoveryScope recoveryScope = ExperimentalRecoveryScope.All;
 
     internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
 
     internal bool WritesAllowed => !IsPaused;
 
-    internal void RequireRecovery() => Volatile.Write(ref recoveryRequired, 1);
+    internal ExperimentalRecoveryScope RecoveryScope
+    {
+        get
+        {
+            lock (sync)
+            {
+                return recoveryScope;
+            }
+        }
+    }
+
+    internal void RequireRecovery(ExperimentalRecoveryScope scope = ExperimentalRecoveryScope.All)
+    {
+        lock (sync)
+        {
+            // Only a known thermal operation can omit unrelated limiter state.
+            // A later thermal fault cannot narrow an existing battery/unknown obligation.
+            if (!IsPaused || scope != ExperimentalRecoveryScope.ThermalOnly)
+            {
+                recoveryScope = scope == ExperimentalRecoveryScope.ThermalOnly
+                    ? ExperimentalRecoveryScope.ThermalOnly : ExperimentalRecoveryScope.All;
+            }
+            Volatile.Write(ref recoveryRequired, 1);
+        }
+    }
 
     // The caller owns the provider hardware gate and has reconciled fresh readback.
-    internal void CompleteRecovery() => Volatile.Write(ref recoveryRequired, 0);
+    internal void CompleteRecovery()
+    {
+        lock (sync)
+        {
+            recoveryScope = ExperimentalRecoveryScope.All;
+            Volatile.Write(ref recoveryRequired, 0);
+        }
+    }
+
+    internal bool TryCompleteRecovery(ExperimentalRecoveryScope observedScope, Func<bool> acceptObservedState)
+    {
+        lock (sync)
+        {
+            // Keep runtime acceptance and pause release together. A widened
+            // obligation cannot be discharged by an earlier partial observation.
+            if (!IsPaused || recoveryScope != observedScope || !acceptObservedState()
+                || recoveryScope != observedScope)
+            {
+                return false;
+            }
+            CompleteRecovery();
+            return true;
+        }
+    }
 
     internal void Record(string operation, string stage, string outcome, bool submitted = false,
         string? requested = null, string? confirmed = null, string? failure = null)

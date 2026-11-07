@@ -54,7 +54,12 @@ internal sealed partial class ExperimentalBladePort(
             {
                 throw new IOException("Experimental performance readback cannot form a confirmed recovery state.");
             }
+            // A thermal-only fault does not require a limiter GET that older firmware
+            // may not implement. Leave those fields unknown rather than poisoning
+            // the fresh recovery session with an unrelated optional query. Override-
+            // capable backends still read their real policy and flag above.
             ConfirmedBatteryState? battery = recoveredTemporaryBattery ?? (model.SupportsBatteryProtection
+                && policy.RecoveryScope != ExperimentalRecoveryScope.ThermalOnly
                 ? await ReadBatteryAsync(cancellationToken).ConfigureAwait(false) : null);
             // The limiter GET reports only its enable bit and threshold. Without
             // an admitted full-charge query, preserve null rather than infer Off.
@@ -636,7 +641,9 @@ internal sealed partial class ExperimentalBladePort(
         submitted |= exception is BladeWriteException { SubmissionState: WriteSubmissionState.Indeterminate };
         if (submitted)
         {
-            policy.RequireRecovery();
+            policy.RequireRecovery(operation is "Performance" or "CustomPerformance" or "Fans"
+                or "HyperBoost" or "HyperBoostRestore"
+                ? ExperimentalRecoveryScope.ThermalOnly : ExperimentalRecoveryScope.All);
         }
         policy.Record(operation, "Failure", submitted ? "Indeterminate" : "NotApplied", submitted,
             failure: exception.GetType().Name);

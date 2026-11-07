@@ -85,6 +85,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         {
             throw new CapabilityUnavailableException("Experimental writes are not paused or recovery is no longer authorized.");
         }
+        ExperimentalRecoveryScope recoveryScope = policy.RecoveryScope;
         policy.Record("WriteRecovery", "Recovery", "Started");
         try
         {
@@ -118,13 +119,12 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                 throw new CapabilityUnavailableException("Fresh recovery safety admission failed.");
             }
             cancellationToken.ThrowIfCancellationRequested();
-            if (!acceptObservedState(observed))
+            if (!policy.TryCompleteRecovery(recoveryScope, () => acceptObservedState(observed)))
             {
                 throw new CapabilityUnavailableException("The confirmed state could not be reconciled for recovery.");
             }
             // Acceptance synchronously commits reconciliation under the runtime gate.
             // No asynchronous work or fallible admission may split that commit.
-            policy.CompleteRecovery();
             policy.Record("WriteRecovery", "Recovery", "Resumed");
             return observed;
         }
