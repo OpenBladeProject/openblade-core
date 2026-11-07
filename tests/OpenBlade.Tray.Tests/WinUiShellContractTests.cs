@@ -748,6 +748,31 @@ public sealed class WinUiShellContractTests
                 powerModeCard,
                 "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.DoesNotContain("SettingsEmphasizedSubcardStyle", powerModeCard, StringComparison.Ordinal);
+        XElement cpuCard = XDocument.Parse(xaml).Descendants().Single(element =>
+            Attribute(element, "DataContext") == "{Binding CpuTuning}");
+        Assert.Equal("{StaticResource SettingsEditorSubcardStyle}", Attribute(cpuCard, "Style"));
+        XElement[] cpuCommands = cpuCard.Descendants().Where(element => element.Name.LocalName == "Button").ToArray();
+        Assert.All(cpuCommands, button =>
+        {
+            Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(button, "Style"));
+            Assert.Equal("Stretch", Attribute(button, "HorizontalAlignment"));
+            Assert.Equal("Grid", button.Parent?.Name.LocalName);
+        });
+        Assert.Equal(3, cpuCommands[0].Parent!.Elements().Single(element => element.Name.LocalName == "Grid.ColumnDefinitions").Elements().Count());
+        Assert.DoesNotContain(cpuCard.Descendants(), element => element.Name.LocalName == "CheckBox");
+        Assert.DoesNotContain(cpuCard.Descendants(), element => CanonicalLocalizedXaml.Identity(element) == "MainWindow_CpuTuningTarget");
+        Assert.DoesNotContain("SavedSummary", cpuCard.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("PendingBootSummary", cpuCard.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(cpuCard.Descendants(), element => element.Name.LocalName == "NumberBox");
+        Assert.DoesNotContain(cpuCard.Descendants(), element => Attribute(element, "IsChecked")?.Contains("Manage", StringComparison.Ordinal) == true);
+        XElement optimizerToggle = LocalizedElement(CanonicalLocalizedXaml.Load("MainWindow.xaml"), "ToggleSwitch", "MainWindow_CpuTuningCurveEnabled");
+        Assert.Equal("{StaticResource CompactCardToggleSwitchStyle}", Attribute(optimizerToggle, "Style"));
+        Assert.Equal("{Binding CurveEnabled, Mode=TwoWay}", Attribute(optimizerToggle, "IsOn"));
+        XElement optimizerSlider = LocalizedElement(CanonicalLocalizedXaml.Load("MainWindow.xaml"), "Slider", "MainWindow_CpuTuningCurveValue");
+        Assert.Equal("{StaticResource InlineCardSliderStyle}", Attribute(optimizerSlider, "Style"));
+        Assert.Equal("-30", Attribute(optimizerSlider, "Minimum"));
+        Assert.Equal("-1", Attribute(optimizerSlider, "Maximum"));
+        Assert.Equal("1", Attribute(optimizerSlider, "StepFrequency"));
     }
 
     [Fact]

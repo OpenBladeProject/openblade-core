@@ -2878,4 +2878,25 @@ OpenBlade did not retry any stop request.</value>
   <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
     <value>Use Razer driver to change F1–F12 behavior. Windows hook keeps the default Fn shortcuts.</value>
   </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve">
+    <value>CPU Voltage Optimizer</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>All-core optimizer offset</value>
+  </data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve">
+    <value>Off uses zero and keeps your offset. Choose Apply to make changes.</value>
+  </data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve">
+    <value>Restore prior optimizer</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU Voltage Optimizer</value>
+  </data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve">
+    <value>All-core offset</value>
+  </data>
 </root>

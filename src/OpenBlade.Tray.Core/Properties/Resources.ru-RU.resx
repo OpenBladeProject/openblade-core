@@ -1708,4 +1708,15 @@
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>Источник питания изменился. Проверьте текущий профиль и повторите попытку.</value>
   </data>
+  <data name="{0:0.###} W" xml:space="preserve"><value>{0:0.###} Вт</value></data>
+  <data name="Apply now" xml:space="preserve"><value>Применить сейчас</value></data>
+  <data name="enabled" xml:space="preserve"><value>включено</value></data>
+  <data name="disabled" xml:space="preserve"><value>выключено</value></data>
+  <data name="mixed per-core values" xml:space="preserve"><value>значения различаются по ядрам</value></data>
+  <data name="CPU tuning request failed: {0}" xml:space="preserve"><value>Не удалось выполнить запрос настройки CPU: {0}</value></data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve"><value>Измеренный текущий оптимизатор: неизвестен.</value></data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve"><value>Измеренный текущий оптимизатор: {0}.</value></data>
+  <data name="Running optimizer changes are unavailable." xml:space="preserve"><value>Изменение текущего оптимизатора недоступно.</value></data>
+  <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve"><value>Восстановление оптимизатора заблокировано. Обновите, чтобы проверить состояние.</value></data>
+  <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve"><value>Восстановление CPU включает параметры мощности и недоступно здесь.</value></data>
 </root>

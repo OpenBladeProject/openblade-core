@@ -2878,4 +2878,11 @@ OpenBlade повторно проверит этот список и остан�
   <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
     <value>Используйте драйвер Razer, чтобы изменить поведение клавиш F1–F12. Перехват Windows сохраняет стандартные сочетания с Fn.</value>
   </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>Оптимизатор напряжения CPU</value></data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Смещение оптимизатора всех ядер</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Выключение использует ноль и сохраняет смещение. Нажмите «Применить», чтобы изменить настройки.</value></data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>Обновить</value></data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>Восстановить прежние значения оптимизатора</value></data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Оптимизатор напряжения CPU</value></data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve"><value>Смещение всех ядер</value></data>
 </root>

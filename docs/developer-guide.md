@@ -495,6 +495,10 @@ Manual CI runs and the weekly Sunday run at 00:00 UTC validate the full solution
 build contracts, and installer. Release builds also retain full validation.
 The weekly run uses a separate concurrency group so a main push cannot cancel it.
 
+The RZ09-0528's separate saved and live CPU tuning paths, admission status, and
+attended validation are described in
+[`rz09-0528-cpu-tuning.md`](rz09-0528-cpu-tuning.md).
+
 Keep changes narrow, add focused tests, and run the affected project tests
 before the full solution. Hardware support is not complete until its
 read/query, apply, readback, and restoration workflow has passed on the exact

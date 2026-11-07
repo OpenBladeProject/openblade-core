@@ -7,6 +7,7 @@ public sealed class AsyncRelayCommand : ICommand, IAsyncDisposable
     private readonly Func<object?, CancellationToken, Task> execute;
     private readonly Predicate<object?> canExecute;
     private readonly CancellationToken lifetimeToken;
+    private readonly Func<object?, object?>? captureParameter;
     private readonly object sync = new();
     private CancellationTokenSource? executionCancellation;
     private Task currentExecution = Task.CompletedTask;
@@ -16,11 +17,13 @@ public sealed class AsyncRelayCommand : ICommand, IAsyncDisposable
     public AsyncRelayCommand(
         Func<object?, CancellationToken, Task> execute,
         Predicate<object?> canExecute,
-        CancellationToken lifetimeToken)
+        CancellationToken lifetimeToken,
+        Func<object?, object?>? captureParameter = null)
     {
         this.execute = execute ?? throw new ArgumentNullException(nameof(execute));
         this.canExecute = canExecute ?? throw new ArgumentNullException(nameof(canExecute));
         this.lifetimeToken = lifetimeToken;
+        this.captureParameter = captureParameter;
     }
 
     public event EventHandler? CanExecuteChanged;
@@ -40,7 +43,7 @@ public sealed class AsyncRelayCommand : ICommand, IAsyncDisposable
     {
         lock (sync)
         {
-            return !disposed && !running && canExecute(parameter);
+            return !disposed && !running && !lifetimeToken.IsCancellationRequested && canExecute(parameter);
         }
     }
 
@@ -51,15 +54,16 @@ public sealed class AsyncRelayCommand : ICommand, IAsyncDisposable
         Task task;
         lock (sync)
         {
-            if (disposed || running || !canExecute(parameter))
+            if (disposed || running || lifetimeToken.IsCancellationRequested || !canExecute(parameter))
             {
                 return Task.CompletedTask;
             }
 
+            object? capturedParameter = captureParameter is null ? parameter : captureParameter(parameter);
             running = true;
             executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 lifetimeToken);
-            task = RunAsync(parameter, executionCancellation);
+            task = RunAsync(capturedParameter, executionCancellation);
             currentExecution = task;
         }
 

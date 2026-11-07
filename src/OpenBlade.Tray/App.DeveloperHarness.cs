@@ -84,6 +84,7 @@ public partial class App
 {
     private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
     private const string CaptionThemeSmokeArgument = "--caption-theme-smoke";
+    private const string CpuTuningLayoutSmokeArgument = "--cpu-tuning-layout-smoke";
     private const string ResponsivePageHeaderSmokeArgument =
         "--responsive-page-header-smoke";
     private const string ResponsiveChoiceSelectorSmokeArgument =
@@ -132,6 +133,11 @@ public partial class App
             return true;
         }
 
+        if (commandLineArguments is [_, CpuTuningLayoutSmokeArgument])
+        {
+            _ = RunCpuTuningLayoutSmokeAsync();
+            return true;
+        }
         bool pseudoLocalizationRequested = string.Equals(
             Environment.GetEnvironmentVariable("OPENBLADE_PSEUDO_LOCALIZATION"),
             "1",

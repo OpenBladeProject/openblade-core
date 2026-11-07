@@ -2878,4 +2878,25 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
     <value>[!! Úsé Razer drívér tó chángé F1–F12 béhávíór. Windows hóók kééps thé défáúlt Fn shórtcúts. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve">
+    <value>[!! CPÚ Vóltágé Óptímízér ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Áll-córé óptímízér óffsét ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve">
+    <value>[!! Óff úsés zéró ánd kééps ýóúr óffsét. Chóósé Ápplý tó máké chángés. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve">
+    <value>[!! Réfrésh ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve">
+    <value>[!! Réstóré príór óptímízér ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! CPÚ Vóltágé Óptímízér ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve">
+    <value>[!! Áll-córé óffsét ~~~~~ !!]</value>
+  </data>
 </root>
