@@ -4,7 +4,7 @@
 
 English | [简体中文](zh-CN/experimental-blade-support.md) | [Русский](ru-RU/experimental-blade-support.md)
 
-These sixteen laptop families are officially supported using reviewed exact-model
+These seventeen laptop families are officially supported using reviewed exact-model
 Synapse and upstream sources. OpenBlade recognizes them automatically in both
 stable and pre-release builds. Physical validation is tracked separately for each
 model and feature; source-reviewed support does not claim complete hardware
@@ -71,6 +71,7 @@ and evidence.
 
 | Laptop | Model number | Initial controls |
 | --- | --- | --- |
+| [Blade 15 Advanced (Mid 2019)](source-reviewed-rz09-0301.md) | `RZ09-0301` | Balanced and Custom CPU/GPU Low, Medium and High on full-power AC, Automatic fans |
 | Blade 15 Base (2019) | `RZ09-0300` | Balanced, Gaming and Creator on full-power AC, Automatic fans |
 | Blade 15 Advanced (Early 2020) | `RZ09-0330` | Balanced and Custom CPU/GPU Low/Medium/High on full-power AC, Automatic fans |
 | Blade 15 Base (Late 2020) | `RZ09-0351` | Balanced, Gaming and Creator on full-power AC, Automatic fans |

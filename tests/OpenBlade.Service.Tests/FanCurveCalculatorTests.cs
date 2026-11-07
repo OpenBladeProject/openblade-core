@@ -200,15 +200,31 @@ public sealed class FanCurveCalculatorTests
                 .TryConvertHighPrecisionKelvin(value));
     }
 
-    [Fact]
-    public void RazerThermalZoneRetainsBothExactModelCounterPaths()
+    [Theory]
+    [InlineData(false, 5400)]
+    [InlineData(true, 5000)]
+    public async Task ConstantBackedThermalZonesCannotDriveFanCurves(bool gpuInactive, int maximumRpm)
     {
+        using var zone = new SafeWindowsFanTemperatureSource.WindowsThermalZone();
+        Assert.Empty(SafeWindowsFanTemperatureSource.WindowsThermalZone.RazerEcCounterPaths);
+        int gpuReads = 0;
+        using var source = new SafeWindowsFanTemperatureSource(
+            new FixedGpuActivitySource(IsActive: !gpuInactive),
+            cpuTemperatureReader: zone.TryRead,
+            gpuTemperatureReader: () =>
+            {
+                gpuReads++;
+                return 52;
+            });
+
+        FanTemperatureReadings readings = await source.ReadAsync(CancellationToken.None);
+        Assert.Null(readings.CpuCelsius);
+        Assert.Equal(gpuInactive ? null : (int?)52, readings.GpuCelsius);
+        Assert.Equal(gpuInactive, readings.GpuInactive);
+        Assert.Equal(gpuInactive ? 0 : 1, gpuReads);
         Assert.Equal(
-            [
-                @"\Thermal Zone Information(\_SB.PCI0.SBRG.EC0.TZRZ)\High Precision Temperature",
-                @"\Thermal Zone Information(\_SB.PC00.LPCB.EC0.TZRZ)\High Precision Temperature",
-            ],
-            SafeWindowsFanTemperatureSource.WindowsThermalZone.RazerEcCounterPaths);
+            new FanTargetSpeeds(maximumRpm, maximumRpm, FailSafe: true),
+            FanCurveCalculator.Calculate(ManualFanCurve.Default, readings, maximumRpm));
     }
 
     [Fact]
