@@ -10,10 +10,11 @@ internal sealed record So6120GuardianOptions(TimeSpan CallerLease, TimeSpan Oper
 }
 
 // The factory transfers the prepared session to the guardian. Until it returns,
-// it must release its session on preparation failure. Only injected fake ports
-// compose this prototype; there is no CLI, native acquisition, or IPC admission.
+// it must release its session on preparation failure. The supervised Windows
+// owner also transfers its acquisition lifetime and independent close evidence.
 internal sealed record So6120GuardianTrial(So6120DirectDutySession Session,
-    So6120SilentTrialPlan Plan, So6120SilentTrialApproval Approval);
+    So6120SilentTrialPlan Plan, So6120SilentTrialApproval Approval,
+    IDisposable? AdditionalLifetime = null, Func<bool>? VerifyRelease = null);
 
 internal sealed record So6120GuardianStatus(long Sequence, string Phase, So6120GuardianStopReason StopReason,
     bool OwnerRunning, bool LastReportedPermissionPublicationPossible, bool LastReportedPermissionRestoredConfirmed);
@@ -28,7 +29,7 @@ internal sealed record So6120GuardianReceipt(So6120SilentTrialResult? Trial, So6
 }
 
 /// <summary>
-/// Offline owner-lifetime prototype. All session commands run on one worker;
+/// Single-owner trial lifetime. Approved session commands run on one worker;
 /// caller loss only requests its existing confirmed-boundary Auto path. A lease
 /// is a cutoff for new trial work, never a native-call or cooling deadline.
 /// </summary>
@@ -40,7 +41,9 @@ internal sealed class So6120TrialGuardian
     private readonly CancellationTokenSource stop = new();
     private readonly ITimer watchdog;
     private readonly long started;
+    private readonly bool tracksStandaloneLease;
     private long renewed;
+    private bool trialWorkEnded;
     private bool finishing;
     private Task cancellation = Task.CompletedTask;
     private So6120GuardianStatus status = new(0, "Preparing", So6120GuardianStopReason.None, true, false, false);
@@ -54,26 +57,34 @@ internal sealed class So6120TrialGuardian
         });
 
     private So6120TrialGuardian(Func<Action<So6120SilentTrialProgress>, So6120GuardianTrial> prepare,
-        TimeProvider clock, So6120GuardianOptions options)
+        TimeProvider clock, So6120GuardianOptions options, So6120GuardianSignals? signals)
     {
         this.clock = clock;
         this.options = options;
+        tracksStandaloneLease = signals is null;
         started = renewed = clock.GetTimestamp();
         watchdog = clock.CreateTimer(_ => CheckDeadline(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         statuses.Writer.TryWrite(status);
-        watchdog.Change(TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50));
+        // Transfer an already latched caller loss before scheduling any trial
+        // execution; there is no Start/Attach window for an unobserved stop.
+        try
+        {
+            signals?.Attach(this);
+            watchdog.Change(TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50));
+        }
+        catch { watchdog.Dispose(); stop.Dispose(); throw; }
         Completion = Task.Run(() => RunAsync(prepare));
     }
 
     public static So6120TrialGuardian Start(Func<Action<So6120SilentTrialProgress>, So6120GuardianTrial> prepare,
-        TimeProvider? clock = null, So6120GuardianOptions? options = null)
+        TimeProvider? clock = null, So6120GuardianOptions? options = null, So6120GuardianSignals? signals = null)
     {
         ArgumentNullException.ThrowIfNull(prepare);
         options ??= So6120GuardianOptions.Default;
         if (options.CallerLease < TimeSpan.FromMilliseconds(100) || options.CallerLease > TimeSpan.FromSeconds(30)
             || options.OperationLimit < TimeSpan.FromMilliseconds(100) || options.OperationLimit > TimeSpan.FromSeconds(45))
         { throw new ArgumentOutOfRangeException(nameof(options)); }
-        return new(prepare, clock ?? TimeProvider.System, options);
+        return new(prepare, clock ?? TimeProvider.System, options, signals);
     }
 
     public Task<So6120GuardianReceipt> Completion { get; }
@@ -85,6 +96,7 @@ internal sealed class So6120TrialGuardian
 
     public bool Heartbeat()
     {
+        if (!tracksStandaloneLease) { return false; }
         lock (sync)
         {
             long now = clock.GetTimestamp();
@@ -103,13 +115,13 @@ internal sealed class So6120TrialGuardian
     private void CheckDeadlineLocked(long now)
     {
         if (finishing || status.StopReason != So6120GuardianStopReason.None) { return; }
-        if (clock.GetElapsedTime(started, now) >= options.OperationLimit)
+        if (!trialWorkEnded && clock.GetElapsedTime(started, now) >= options.OperationLimit)
         { LatchStopLocked(So6120GuardianStopReason.OperationLimit); }
-        else if (clock.GetElapsedTime(renewed, now) >= options.CallerLease)
+        else if (tracksStandaloneLease && clock.GetElapsedTime(renewed, now) >= options.CallerLease)
         { LatchStopLocked(So6120GuardianStopReason.LeaseExpired); }
     }
 
-    private void RequestStop(So6120GuardianStopReason reason)
+    internal void RequestStop(So6120GuardianStopReason reason)
     {
         lock (sync)
         {
@@ -129,6 +141,9 @@ internal sealed class So6120TrialGuardian
     {
         lock (sync)
         {
+            // The session reports this before starting its separately timed
+            // Auto workflow. The cutoff only stops further experiment work.
+            if (progress.Phase == "Restoring") { trialWorkEnded = true; }
             CheckDeadlineLocked(clock.GetTimestamp());
             PublishLocked(status with
             {
@@ -165,9 +180,29 @@ internal sealed class So6120TrialGuardian
             // is in a pending invocation, and never issue commands from Dispose.
             if (owned is not null)
             {
-                lock (sync) { PublishLocked(status with { Phase = "Releasing" }); }
+                lock (sync)
+                {
+                    trialWorkEnded = true;
+                    PublishLocked(status with { Phase = "Releasing" });
+                }
                 try { owned.Session.Dispose(); released = true; }
                 catch (Exception ex) { failure = $"{failure} Release: {ex.GetType().Name}: {ex.Message}".Trim(); }
+                try { owned.AdditionalLifetime?.Dispose(); }
+                catch (Exception ex)
+                {
+                    released = false;
+                    failure = $"{failure} Acquisition release: {ex.GetType().Name}: {ex.Message}".Trim();
+                }
+                try
+                {
+                    if (owned.VerifyRelease is not null && !owned.VerifyRelease())
+                    { released = false; failure = $"{failure} Native release was not confirmed.".Trim(); }
+                }
+                catch (Exception ex)
+                {
+                    released = false;
+                    failure = $"{failure} Release verification: {ex.GetType().Name}: {ex.Message}".Trim();
+                }
             }
             lock (sync) { finishing = true; }
             await watchdog.DisposeAsync().ConfigureAwait(false);

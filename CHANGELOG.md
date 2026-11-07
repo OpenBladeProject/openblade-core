@@ -8,7 +8,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Prepare a service-owned Stop fans switch with confirmed Auto return and recovery status. It remains disabled until the live backend and crash recovery are validated. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
-- Add a fake-only guardian prototype and process tests for caller-loss Auto restoration, uncertain-operation fencing and restart refusal. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Integrate the guardian with the attended PWM runner, separating its hardware owner from the console client and retaining confirmed Auto/native-release results. Live caller-loss validation remains pending. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Add a developer-only offline firmware CLI and HTML register explorer with exact-image EC/MCU profiles, factory table decoding and report comparison. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Add a bounded developer Windows battery recorder that preserves unsupported temperature results without changing fan or profile settings. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Add developer mailbox observation scripts and offline trace/ACPI inspectors with bounded recording, explicit coverage limits and no direct fan commands. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))

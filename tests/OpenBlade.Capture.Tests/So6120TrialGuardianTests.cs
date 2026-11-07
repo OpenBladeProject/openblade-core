@@ -195,6 +195,85 @@ public sealed class So6120TrialGuardianTests
     }
 
     [Fact]
+    public async Task OperationCutoffDuringAutoDoesNotCancelSuccessfulTrial()
+    {
+        using var fixture = So6120SilentTrialTests.StopFixture();
+        using var release = new ManualResetEventSlim();
+        var pendingAuto = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var update = fixture.Port.AfterWrite;
+        fixture.Port.AfterWrite = (register, value) =>
+        {
+            update!(register, value);
+            if (register != 0x1A || value != 0) { return; }
+            pendingAuto.SetResult();
+            if (!release.Wait(Wait)) { throw new TimeoutException("Fake Auto transfer was not released."); }
+        };
+        var operationLimit = TimeSpan.FromSeconds(1);
+        var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress), fixture.Clock,
+            new(TimeSpan.FromSeconds(5), operationLimit));
+        try
+        {
+            await pendingAuto.Task.WaitAsync(Wait);
+            Assert.Equal("Restoring", guardian.Snapshot.Phase);
+            fixture.Clock.Advance(operationLimit);
+            guardian.CheckDeadline();
+            Assert.Equal(So6120GuardianStopReason.None, guardian.Snapshot.StopReason);
+            Assert.False(fixture.Port.Disposed);
+        }
+        finally { release.Set(); }
+
+        var receipt = await guardian.Completion.WaitAsync(Wait);
+        Assert.True(receipt.Resolved, receipt.Failure);
+        Assert.Equal(So6120GuardianStopReason.None, receipt.StopReason);
+        Assert.True(receipt.Trial!.Success);
+        Assert.False(receipt.Trial.CancelRequested);
+        Assert.Equal(1, fixture.Port.Writes.Count(write => write == (0x1A, 0)));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AttachedSignalsOwnCallerLeaseWithoutReplacingOperationCutoff(bool operationExpires)
+    {
+        using var fixture = So6120SilentTrialTests.StopFixture();
+        using var release = new ManualResetEventSlim();
+        var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Port.AfterWrite = (_, _) =>
+        {
+            if (fixture.Port.Writes.Count != 1) { return; }
+            pending.SetResult();
+            if (!release.Wait(Wait)) { throw new TimeoutException("Fake entry transfer was not released."); }
+        };
+        await using var signals = new So6120GuardianSignals(fixture.Clock, TimeSpan.FromMilliseconds(900));
+        Assert.True(signals.Receive(1));
+        var options = new So6120GuardianOptions(TimeSpan.FromMilliseconds(300),
+            TimeSpan.FromMilliseconds(operationExpires ? 800 : 5000));
+        var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress), fixture.Clock, options, signals);
+        var expected = operationExpires ? So6120GuardianStopReason.OperationLimit : So6120GuardianStopReason.LeaseExpired;
+        try
+        {
+            await pending.Task.WaitAsync(Wait);
+            fixture.Clock.Advance(options.CallerLease);
+            guardian.CheckDeadline();
+            Assert.Equal(So6120GuardianStopReason.None, guardian.Snapshot.StopReason);
+            Assert.False(guardian.Heartbeat());
+            Assert.True(signals.Receive(1));
+
+            fixture.Clock.Advance(TimeSpan.FromMilliseconds(operationExpires ? 500 : 900));
+            guardian.CheckDeadline();
+            signals.CheckDeadline();
+            Assert.Equal(operationExpires ? So6120GuardianStopReason.None : expected, signals.StopReason);
+            Assert.Equal(expected, guardian.Snapshot.StopReason);
+        }
+        finally { release.Set(); }
+
+        var receipt = await guardian.Completion.WaitAsync(Wait);
+        Assert.True(receipt.Resolved, receipt.Failure);
+        Assert.Equal(expected, receipt.StopReason);
+        Assert.True(receipt.Trial!.CancelRequested);
+    }
+
+    [Fact]
     public async Task LiveCallerWithoutHeartbeatsExpiresWhileItsTransferRemainsPending()
     {
         using var fixture = So6120SilentTrialTests.StopFixture();

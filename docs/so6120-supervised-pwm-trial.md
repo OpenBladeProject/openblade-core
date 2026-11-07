@@ -95,6 +95,16 @@ commanded fan stop.
 
 ## Ownership and operator approval
 
+The CLI is now a hardware-free client. It starts an attended guardian in a
+separate console outside the client's Windows job; inability to establish that
+isolation refuses the launch. Both approval prompts appear in the guardian
+console. Client Ctrl+C sends an Auto request; client disappearance or a missed
+five-second heartbeat latches stop. The owner finishes any required confirmation
+before the existing Auto handback. Do not close or kill the guardian itself.
+This integration is implemented and tested with fake hardware; its live
+caller-loss behavior still needs separate attended validation. See
+[guardian recovery](so6120-fan-stop-crash-recovery.md#supervised-guardian-integration).
+
 Before starting the live command, use the installed application's normal
 **Shut down OpenBlade** action. Do not merely close its window. The runner
 requires the service stopped and its writer, tray and Session Agent processes

@@ -57,6 +57,8 @@ internal static class So6120SilentPwmCommand
         Select {profile} + Automatic, then use OpenBlade's normal Shut down command.
         Service, Tray and Session Agent must all be stopped before acquisition.
         Live run requires an elevated interactive console and a new absolute run directory.
+        A separate-console guardian must escape the caller's job before acquisition; otherwise launch is refused.
+        Both BASELINE and APPLY approvals occur in that guardian console. The client holds no hardware handle.
         Metadata inspection opens HID descriptor handles without sending feature reports.
         It first obtains explicit acceptance of the scoped contention/abort limits.
         {targetDescription}
@@ -67,6 +69,7 @@ internal static class So6120SilentPwmCommand
         CPU thermal-zone 10..55 C and confirmed inactive GPU admit entry only.
         High/unknown thermal readings stop entry; they do not block sound Auto cleanup.
         Ctrl+C requests stop at a resolved boundary and the approved Auto handback.
+        Caller loss or a missed five-second heartbeat also requests that handback; it cannot recover guardian/OS failure.
         Ambiguous commands/readback/storage fence ALL mailbox commands, including A0.
         No retry, alternate writer, automatic kill, forced reboot or GUI Auto fallback.
         Stop new entry or experiment work after 45s or 30s since possible F0; finish confirmation first.
@@ -96,38 +99,51 @@ internal static class So6120SilentPwmCommand
 
     internal static Task<int> RunAsync(IReadOnlyList<string> args, TextReader input, TextWriter output,
         Func<string, TextReader, TextWriter, Task<int>>? live = null) =>
-        RunAsync(PerformancePreset.Silent, So6120TrialTargetPolicy.PlusFour, args, input, output, live);
+        RunAsync(Name, args, input, output, live);
 
     internal static Task<int> RunBalancedAsync(IReadOnlyList<string> args, TextReader input, TextWriter output,
         Func<string, TextReader, TextWriter, Task<int>>? live = null) =>
-        RunAsync(PerformancePreset.Balanced, So6120TrialTargetPolicy.PlusFour, args, input, output, live);
+        RunAsync(BalancedName, args, input, output, live);
 
     internal static Task<int> RunBalancedHalfCycleAsync(IReadOnlyList<string> args, TextReader input, TextWriter output,
         Func<string, TextReader, TextWriter, Task<int>>? live = null) =>
-        RunAsync(PerformancePreset.Balanced, So6120TrialTargetPolicy.HalfCycle, args, input, output, live);
+        RunAsync(HalfCycleName, args, input, output, live);
 
     internal static Task<int> RunBalancedStopAsync(IReadOnlyList<string> args, TextReader input, TextWriter output,
         Func<string, TextReader, TextWriter, Task<int>>? live = null) =>
-        RunAsync(PerformancePreset.Balanced, So6120TrialTargetPolicy.HalfCycleThenStop, args, input, output, live);
+        RunAsync(StopName, args, input, output, live);
 
-    private static async Task<int> RunAsync(PerformancePreset profile, So6120TrialTargetPolicy targetPolicy, IReadOnlyList<string> args,
+    private static async Task<int> RunAsync(string name, IReadOnlyList<string> args,
         TextReader input, TextWriter output, Func<string, TextReader, TextWriter, Task<int>>? live)
     {
-        bool balanced = profile == PerformancePreset.Balanced;
-        string name = targetPolicy switch
-        {
-            So6120TrialTargetPolicy.HalfCycleThenStop => StopName,
-            So6120TrialTargetPolicy.HalfCycle => HalfCycleName,
-            _ => balanced ? BalancedName : Name,
-        };
-        string planText = balanced
-            ? FormatPlan(profile, name, "Keep the operator-reported USB-C power connected. Windows checks external power only.", targetPolicy)
-            : FormatPlan(profile, name, "Keep AC connected.", targetPolicy);
+        string planText = GetTrialDefinition(name).Plan;
         if (!TryParse(args, out string? root))
         { await output.WriteLineAsync(planText); return 1; }
         if (root is null) { await output.WriteLineAsync(planText); return 0; }
         return live is not null ? await live(root, input, output)
-            : await RunWindowsAsync(profile, targetPolicy, planText, root, input, output);
+            : await So6120GuardianHost.RunClientAsync(name, root, output);
+    }
+
+    internal static Task<int> RunOwnedWindowsAsync(string name, string root, TextReader input, TextWriter output,
+        So6120GuardianSignals signals)
+    {
+        var definition = GetTrialDefinition(name);
+        return RunWindowsAsync(definition.Profile, definition.Policy, definition.Plan, root, input, output, signals);
+    }
+
+    private static (PerformancePreset Profile, So6120TrialTargetPolicy Policy, string Plan) GetTrialDefinition(string name)
+    {
+        var (profile, policy) = name switch
+        {
+            Name => (PerformancePreset.Silent, So6120TrialTargetPolicy.PlusFour),
+            BalancedName => (PerformancePreset.Balanced, So6120TrialTargetPolicy.PlusFour),
+            HalfCycleName => (PerformancePreset.Balanced, So6120TrialTargetPolicy.HalfCycle),
+            StopName => (PerformancePreset.Balanced, So6120TrialTargetPolicy.HalfCycleThenStop),
+            _ => throw new ArgumentException("Unknown supervised trial.", nameof(name)),
+        };
+        string power = profile == PerformancePreset.Balanced
+            ? "Keep the operator-reported USB-C power connected. Windows checks external power only." : "Keep AC connected.";
+        return (profile, policy, FormatPlan(profile, name, power, policy));
     }
 
     internal static async Task<bool> ConfirmAsync(TextReader input, TextWriter output,
@@ -147,8 +163,26 @@ internal static class So6120SilentPwmCommand
         catch (OperationCanceledException) { return false; }
     }
 
+    internal static async Task<bool> ConfirmLiveApprovalAsync(TextReader input, TextWriter output,
+        string token, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        bool accepted = await ConfirmAsync(input, output, token, cancellationToken);
+        // Caller loss and Auto are stop requests, never an operator decline.
+        cancellationToken.ThrowIfCancellationRequested();
+        return accepted;
+    }
+
+    internal static So6120SilentTrialResult RecordGuardianOutcome(Action<object> record, So6120GuardianReceipt receipt)
+    {
+        // A failed invocation can have no trial result. Preserve its independent
+        // Auto, cleanup, journal and release facts before raising the failure.
+        record(new { phase = "guardianReceipt", receipt });
+        return receipt.Trial ?? throw new InvalidOperationException(receipt.Failure ?? "Guardian returned no trial result.");
+    }
+
     private static async Task<int> RunWindowsAsync(PerformancePreset profile, So6120TrialTargetPolicy targetPolicy, string planText,
-        string root, TextReader input, TextWriter output)
+        string root, TextReader input, TextWriter output, So6120GuardianSignals signals)
     {
         if (!OperatingSystem.IsWindows() || Console.IsInputRedirected || Console.IsOutputRedirected
             || !Environment.UserInteractive)
@@ -156,7 +190,9 @@ internal static class So6120SilentPwmCommand
         using var windowsIdentity = WindowsIdentity.GetCurrent();
         if (!new WindowsPrincipal(windowsIdentity).IsInRole(WindowsBuiltInRole.Administrator))
         { await output.WriteLineAsync("Start the reviewed runner in an elevated console; it never requests UAC itself."); return 2; }
+        signals.StopToken.ThrowIfCancellationRequested();
         await output.WriteLineAsync(planText);
+        signals.StopToken.ThrowIfCancellationRequested();
         if (Directory.Exists(root) || File.Exists(root))
         { await output.WriteLineAsync("Run root already exists; never reuse an attempt directory."); return 2; }
         _ = So6120DirectDutyJournal.ValidateRunRoot(root);
@@ -169,8 +205,8 @@ internal static class So6120SilentPwmCommand
             string row = JsonSerializer.Serialize(value, Json);
             writer.WriteLine(row); writer.Flush(); manifest.Flush(flushToDisk: true);
         }
-        using var cancellation = new CancellationTokenSource();
-        using var registration = ConsoleCancellation.Register(() => ConsoleCancellation.Cancel(cancellation));
+        CancellationToken cancellationToken = signals.StopToken;
+        using var registration = ConsoleCancellation.Register(() => signals.Receive(2));
         var clock = TimeProvider.System;
         var run = Guid.NewGuid();
         string capturedProfile = profile.ToString();
@@ -185,10 +221,14 @@ internal static class So6120SilentPwmCommand
         bool terminalRecorded = false;
         bool acquisitionStarted = false;
         bool knownNoSettingWrite = false;
+        string? deferredResult = null;
+        string? deferredFailure = null;
+        So6120GuardianStopReason? guardianStopReason = null;
         var releaseFailures = new List<string>();
         int exitCode = 2;
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Record(new
             {
                 phase = "created",
@@ -201,6 +241,8 @@ internal static class So6120SilentPwmCommand
                 HandleControlHash,
                 physicalStimulusWindowsPerformed = false,
                 actualRpmScaleEstablished = false,
+                guardianPid = Environment.ProcessId,
+                callerHasHardwareAccess = false,
             });
             var read = So6120WindowsSupervisedMetadata.Capture(run, clock);
             if (read.Metadata is not { } metadata) { throw new InvalidOperationException($"Metadata unavailable: {read.FailedStage}/{read.Error}"); }
@@ -233,9 +275,9 @@ internal static class So6120SilentPwmCommand
             if (profile == PerformancePreset.Balanced)
             { await output.WriteLineAsync("Your BASELINE approval also confirms that USB-C power is connected and will remain unchanged during this attempt."); }
             string baselineToken = $"BASELINE {run:N}";
-            if (!await ConfirmAsync(input, output, baselineToken, cancellation.Token))
+            if (!await ConfirmLiveApprovalAsync(input, output, baselineToken, cancellationToken))
             { Record(new { phase = "declinedBeforeAcquisition" }); throw new TrialDeclinedException(); }
-            cancellation.Token.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
             string? operatorReportedPowerSource = requestedPowerSource;
             long stamp = clock.GetTimestamp();
             var challenge = new So6120CallerChallengeContext(new(run, metadata.Stamp.ConsoleSession, clock, stamp),
@@ -261,10 +303,10 @@ internal static class So6120SilentPwmCommand
             // A warm/unavailable baseline must not consume the machine's
             // one-shot latch. Preparation repeats this check after acquisition.
             if (!thermal.Refresh()) { throw new InvalidOperationException("Thermal precheck refused before InpOut acquisition."); }
-            cancellation.Token.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
             acquisitionStarted = true;
             acquisition = So6120WindowsDirectDutyPlatform.Acquire(new So6120AttendedBaselineConsent(identity,
-                metadata.Stamp.ConsoleSession, clock, challenge, So6120WindowsDirectDutyPlatform.ObserveCurrentScope), cancellation.Token);
+                metadata.Stamp.ConsoleSession, clock, challenge, So6120WindowsDirectDutyPlatform.ObserveCurrentScope), cancellationToken);
             session = So6120DirectDutySession.CreateInjected(root, acquisition.Binding, acquisition.Port,
                 acquisition.EvidenceSource, clock);
             // Console backpressure must not delay an approved Auto handback.
@@ -272,17 +314,19 @@ internal static class So6120SilentPwmCommand
             // the session. Buffer this small optional progress summary and
             // publish it only after execution has restored or fenced.
             var progressBuffer = new List<So6120SilentTrialProgress>(16);
+            Action<So6120SilentTrialProgress>? guardianProgress = null;
             var hooks = new So6120SilentTrialHooks(thermal.Refresh, thermal.CachedAdmission, progress =>
             {
                 if (progressBuffer.Count == 16) { throw new InvalidOperationException("Trial progress bound exceeded."); }
                 progressBuffer.Add(progress);
+                guardianProgress?.Invoke(progress);
             });
             var plan = targetPolicy switch
             {
-                So6120TrialTargetPolicy.HalfCycleThenStop => session.PrepareBalancedStop(hooks, cancellation.Token),
-                So6120TrialTargetPolicy.HalfCycle => session.PrepareBalancedHalfCycle(hooks, cancellation.Token),
-                _ when profile == PerformancePreset.Balanced => session.PrepareBalancedIncrease(hooks, cancellation.Token),
-                _ => session.PrepareSilentIncrease(hooks, cancellation.Token),
+                So6120TrialTargetPolicy.HalfCycleThenStop => session.PrepareBalancedStop(hooks, cancellationToken),
+                So6120TrialTargetPolicy.HalfCycle => session.PrepareBalancedHalfCycle(hooks, cancellationToken),
+                _ when profile == PerformancePreset.Balanced => session.PrepareBalancedIncrease(hooks, cancellationToken),
+                _ => session.PrepareSilentIncrease(hooks, cancellationToken),
             };
             var derivedPlan = new { phase = "derivedPlan", capturedProfile, operatorReportedPowerSource, plan };
             Record(derivedPlan);
@@ -304,19 +348,33 @@ internal static class So6120SilentPwmCommand
                 await output.WriteLineAsync("The runner keeps the approved targets. Changed controls or either increase outside the range stops entry. Reads and writes are separate operations.");
             }
             string writeToken = $"APPLY {plan.PlanId:N} {plan.PlanSha256}";
-            if (!await ConfirmAsync(input, output, writeToken, cancellation.Token))
+            if (!await ConfirmLiveApprovalAsync(input, output, writeToken, cancellationToken))
             { Record(new { phase = "declinedAfterBaseline", plan.PlanId }); declinedAfterConfirmedBaseline = true; throw new TrialDeclinedException(); }
-            cancellation.Token.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
             var writeConsent = new { writeToken, run, capturedProfile, plan.PlanId, plan.PlanSha256, stamp = clock.GetTimestamp() };
             Record(new { phase = "writeConsent", writeConsent });
-            var result = session.ExecuteApproved(plan, new So6120SilentTrialApproval(plan.PlanId,
-                plan.PlanSha256, Guid.NewGuid(), Hash(writeConsent)), cancellation.Token);
-            cleanupConfirmed = result.Restoration is { Success: true, CleanupConfirmed: true, CommandsFenced: false };
-            knownNoSettingWrite = result.NoSettingWritePublished;
+            var ownedSession = session;
+            var ownedAcquisition = acquisition;
+            var approval = new So6120SilentTrialApproval(plan.PlanId, plan.PlanSha256, Guid.NewGuid(), Hash(writeConsent));
+            // The existing two attended prompts finish before arming the
+            // execution cutoff. Signals have covered liveness throughout
+            // preparation, and attach atomically before the worker starts.
+            var guardian = So6120TrialGuardian.Start(progress =>
+            {
+                guardianProgress = progress;
+                return new(ownedSession, plan, approval, ownedAcquisition,
+                    () => ownedAcquisition.CloseEvidence.State == So6120NativeCloseState.Closed);
+            }, clock, So6120GuardianOptions.Default with { OperationLimit = TimeSpan.FromSeconds(45) }, signals);
+            var receipt = await guardian.Completion;
+            guardianStopReason = receipt.StopReason;
+            if (!receipt.ReleaseCompleted) { releaseFailures.Add($"Guardian:{receipt.Failure ?? "Release unconfirmed"}"); }
+            cleanupConfirmed = receipt.Trial?.Restoration is { Success: true, CleanupConfirmed: true, CommandsFenced: false };
+            knownNoSettingWrite = receipt.Trial?.NoSettingWritePublished == true;
+            var result = RecordGuardianOutcome(Record, receipt);
             foreach (var progress in progressBuffer) { Record(new { phase = "progress", progress }); }
             Record(new { phase = "trialResult", result });
-            await output.WriteLineAsync(JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
-            exitCode = cleanupConfirmed && result.Success ? 0 : 2;
+            deferredResult = JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+            exitCode = receipt.Resolved && result.Success ? 0 : 2;
         }
         catch (TrialDeclinedException) { exitCode = 3; }
         catch (Exception error)
@@ -338,7 +396,7 @@ internal static class So6120SilentPwmCommand
                 });
             }
             catch { }
-            await output.WriteLineAsync($"Stopped: {error.GetType().Name}: {error.Message}. No retry or alternate writer.");
+            deferredFailure = $"Stopped: {error.GetType().Name}: {error.Message}. No retry or alternate writer.";
         }
         finally
         {
@@ -356,6 +414,9 @@ internal static class So6120SilentPwmCommand
                     acquisitionStarted,
                     close = acquisition?.CloseEvidence,
                     acquisitionFailureClose = acquisitionFailure?.CloseEvidence,
+                    callerStopReason = signals.StopReason,
+                    guardianStopReason,
+                    retainsNativeOwnership = NativeReleaseRequiresHold(acquisition?.CloseEvidence, acquisitionFailure?.CloseEvidence),
                     releaseFailures,
                 });
                 terminalRecorded = true;
@@ -364,6 +425,7 @@ internal static class So6120SilentPwmCommand
         }
         bool closed = releaseFailures.Count == 0 && acquisitionFailure is null
             && (acquisition is null || acquisition.CloseEvidence.State == So6120NativeCloseState.Closed);
+        bool retainNativeOwnership = NativeReleaseRequiresHold(acquisition?.CloseEvidence, acquisitionFailure?.CloseEvidence);
         if (!closed) { exitCode = 2; }
         string completionMessage;
         if (terminalRecorded && closed && cleanupConfirmed)
@@ -376,10 +438,37 @@ internal static class So6120SilentPwmCommand
         { completionMessage = "Refused before any setting write was published; native handle closed. The trial did not change fan settings. Retain the journal and attempt latch for review."; }
         else
         { completionMessage = "Attempt incomplete. Leave OpenBlade stopped; preserve this console/report and reconcile before any new hardware command."; }
-        await output.WriteLineAsync(completionMessage);
-        GC.KeepAlive(acquisitionFailure);
+        try
+        {
+            try { Record(new { phase = "completion", exitCode, message = completionMessage }); }
+            catch
+            {
+                exitCode = 2;
+                completionMessage = "Final report could not be saved. Leave OpenBlade stopped; preserve the run folder and reconcile before any new hardware command.";
+            }
+            // Console backpressure and output failures must not postpone
+            // native release or the durable terminal row on any path.
+            if (deferredResult is not null) { await output.WriteLineAsync(deferredResult); }
+            if (deferredFailure is not null) { await output.WriteLineAsync(deferredFailure); }
+            await output.WriteLineAsync(completionMessage);
+            if (retainNativeOwnership)
+            { await output.WriteLineAsync("Native close is unconfirmed. This guardian will remain alive with its retained ownership. Leave OpenBlade stopped and obtain supervised reconciliation; it will not retry, read more console input or exit automatically."); }
+        }
+        finally
+        {
+            // Even an output exception must not drop an unconfirmed native
+            // ownership lifetime. The operator's reconciliation is external;
+            // caller EOF/Auto cannot authorize terminating this owner.
+            if (retainNativeOwnership) { await Task.Delay(Timeout.InfiniteTimeSpan); }
+            GC.KeepAlive(acquisition);
+            GC.KeepAlive(acquisitionFailure);
+        }
         return exitCode;
     }
+
+    internal static bool NativeReleaseRequiresHold(So6120NativeCloseEvidence? acquired, So6120NativeCloseEvidence? attachFailure) =>
+        acquired is not null && acquired.State != So6120NativeCloseState.Closed
+        || attachFailure is not null && attachFailure.State != So6120NativeCloseState.Closed;
 
     private static string Hash(object value) => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value, Json)));
     private static string HashFile(string path)

@@ -23,6 +23,18 @@ internal static class Program
             case ["probe-reuse", var root]:
                 ProbeReuse(root);
                 return 0;
+            case ["launch-caller", var root, var mode, .. var payload]:
+                await GuardianLaunchFixture.RunCaller(root, mode, payload);
+                return 0;
+            case ["launch-owner", var root, var mode, var control, var jobName, var unrelatedHandle, var eventName, .. var payload]:
+                try { return await GuardianLaunchFixture.RunOwner(root, mode, control, jobName, unrelatedHandle, eventName, payload); }
+                catch (Exception error)
+                {
+                    WriteReport(root, "owner-error.json", error.ToString());
+                    return 24;
+                }
+            case ["probe-shared-console"]:
+                return GuardianLaunchFixture.ProbeSharedConsole();
             default:
                 return 2;
         }
@@ -41,6 +53,11 @@ internal static class Program
         var receipt = await guardian.Completion.WaitAsync(timeout.Token);
         await timeout.CancelAsync();
         await monitor;
+        WriteTerminalReport(root, receipt);
+    }
+
+    internal static void WriteTerminalReport(string root, So6120GuardianReceipt receipt)
+    {
         WriteReport(root, "receipt.json", new TerminalReport(Environment.ProcessId, receipt.AutoConfirmed,
             receipt.CleanupConfirmed, receipt.JournalCompleted, receipt.ReleaseCompleted, receipt.Resolved,
             receipt.Failure, receipt.Trial?.StopReason.ToString(), receipt.Trial?.Entry?.Failure.ToString(),

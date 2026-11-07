@@ -174,14 +174,39 @@ The present inspector/format supplies no such resume capability. Even a
 correct future clean-boundary takeover would cover only a subset of process
 crashes and would not close the OS/native-hang boundary.
 
-## Offline guardian prototype
+## Supervised guardian integration
 
-`So6120TrialGuardian` in Capture now owns preparation, one approved trial and
-session disposal on a single worker. Explicit Auto, caller disconnect, a missed
+The four supervised PWM commands now launch a separate Capture guardian. The
+client holds no hardware resources and sends only heartbeats and an Auto
+request through one inherited anonymous pipe. The owner performs both existing
+BASELINE and APPLY prompts in its own console, creates the same one-shot journal
+and attempt latch, and retains all exact-device, controller and thermal checks.
+Default command invocation still prints an offline plan.
+
+The launcher uses `CREATE_NEW_CONSOLE`, `CREATE_BREAKAWAY_FROM_JOB` and an
+explicit inherited-handle list. The owner independently verifies it is outside
+all jobs, is the only process attached to its console, and has a readable pipe
+before any metadata or acquisition. A restrictive job refuses launch; there is
+no ordinary-process fallback, alternate parent/token, restart or takeover.
+These flags and handle-list requirements follow Microsoft's
+[process creation](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)
+and [startup attribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
+contracts. They do not protect against closing the guardian's own console,
+session logoff, native hangs or OS failure.
+
+`So6120TrialGuardian` receives the already approved session and runs the trial
+and its disposal on one worker. Explicit Auto, caller disconnect, a missed
 heartbeat or the fixed operation cutoff requests the existing trial runner's
 Auto path. The first observed stop cause stays latched. Heartbeats use one
 monotonic timestamp for both expiry checking and renewal; a late heartbeat
-cannot revive an expired lease or extend the fixed operation cutoff.
+cannot revive an expired lease or extend the fixed operation cutoff. A separate
+latch covers the approval waits and attaches before the execution worker starts.
+The live control latch alone owns the five-second caller lease throughout.
+The 45-second execution cutoff starts after APPLY and disarms at the existing
+Restoring milestone, preserving the session's independent Auto limit. A stop
+before handoff cannot fall into a Start/Attach race or authorize another
+preparation read. Interrupted approvals are recorded as cancellation, rather
+than an operator declining the trial.
 
 The wrapper adds no firmware sequence. A pending command finishes its mandatory
 confirmation and checkpoint before cleanup; an ambiguous result fences all
@@ -192,20 +217,40 @@ I/O activity monitor. The 50 ms watchdog is cooperative: scheduling delay can
 delay observation of expiry, and neither deadline bounds a native call or Auto.
 
 The receipt separates Auto readback, ancillary restoration, journal completion
-and successful session disposal. Cancellation can coexist with confirmed
+and verified native/acquisition release. Cancellation can coexist with confirmed
 cleanup; it still makes the underlying trial unsuccessful. A disposal failure
-leaves the receipt unresolved even when the journal is complete. Successful
-disposal in this fake-only prototype does not establish native release on a
-future live adapter.
+leaves the receipt unresolved even when the journal is complete. Live composition
+disposes the session and acquisition, then requires `CloseEvidence.Closed` and
+successful ownership release. Session disposal or process exit alone cannot
+confirm that release. The durable `guardianReceipt` is retained even when
+execution fails before producing a `trialResult`; the `closed` row retains both
+caller and guardian stop reasons. A canceled trial can restore Auto and still
+exit with code 2; inspect these facts rather than treating exit status as readback.
+Results and failure text are printed only after release and the durable terminal
+row. The completion message is also saved, and the original client reports the
+exit outcome and evidence path after the owner's console closes. An unconfirmed
+native close keeps the owner and its retained resources
+alive for external supervised reconciliation, even if console output fails;
+there is no second console read, automatic exit or cleanup retry on that path.
 
-Only tests compose the guardian. The separate `OpenBlade.Guardian.TestHost`
+The separate `OpenBlade.Guardian.TestHost`
 executable uses synthetic admission and an in-memory port. It cannot acquire a
 native port and is excluded from installed payloads. Its process tests launch
 the fake caller and fake owner as independent children of the test fixture.
 They check caller loss during a pending fake FE command and after the committed
 zero-duty checkpoint. The same owner completes one handback, after mandatory
 confirmation when a command is pending.
-They do not validate a future service launcher's parent/job inheritance. Killing
+Additional fake tests exercise the actual native launcher, inherited pipe,
+control latch and guardian: the caller's breakaway-enabled kill-on-close job can
+close while the same owner survives and returns Auto from the zero checkpoint.
+A restrictive job refuses launch, and unrelated inheritable handles are excluded.
+The current test host retains an ancestor Windows job. The production gate
+correctly rejects it; the fake fixture alone continues after independently
+verifying absence from the caller's named job and sole console attachment.
+The tests record this distinction. Successful full production admission outside
+all jobs still needs validation from the actual attended launch environment.
+This remains offline process evidence, not a live native-driver trial or a
+future service-delegation contract. Killing
 the fake owner leaves an incomplete journal and no receipt; the existing
 one-shot journal refuses reuse without issuing commands. There is no restart
 takeover or production backend integration.
@@ -242,7 +287,7 @@ guardian tests. Their role is to prove ordering and failure handling; no
 additional physical stop repetition is needed to re-prove the unchanged
 command sequence.
 
-## Next live question, only after the prototype passes
+## Next live question, after review and separate approval
 
 The one useful next attended test is **caller loss with a surviving owner at a
 confirmed zero checkpoint**. Freeze and review the guardian candidate; obtain

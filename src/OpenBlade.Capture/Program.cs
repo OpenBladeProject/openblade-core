@@ -1671,6 +1671,11 @@ if (args.Length > 0 && args[0].Equals(
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length > 0 && args[0] == So6120GuardianHost.OwnerName)
+{
+    return await So6120GuardianHost.RunOwnerAsync(args[1..], Console.In, Console.Out);
+}
+
 if (args.Length > 0 && args[0] == So6120SilentPwmCommand.Name)
 {
     return await So6120SilentPwmCommand.RunAsync(args[1..], Console.In, Console.Out);
