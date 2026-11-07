@@ -43,7 +43,7 @@ Automatic handback changes the fan flag directly rather than resetting presets.
 
 Fixed fan speeds and curves require further review of this model's dynamic fan
 ranges. Lighting, charge limits, Maximum Fans, CPU Boost, HyperBoost and driver
-or THX integrations are not enabled by this profile. The driver catalog records
+or THX integrations are not enabled by this profile. The [driver catalog review](https://github.com/OpenBladeProject/blade-driver-catalog/pull/29) records
 an explicit review of all seven existing artifacts, without inheriting another
 model's driver stack. Windows battery-health information remains independent of
 a firmware charge-limit command.
