@@ -72,15 +72,18 @@ internal sealed class So6120DirectDutyJournal : IDisposable
     {
         ValidateIdentity(identity);
         string path = ResolvePath(runRoot, createRoot: true);
+        bool planned = !identity.RequestedDuty1.HasValue;
+        // The attended v2 observer can read complete frames while this
+        // owner retains exclusive write access. Legacy v1 has no live observer.
         var file = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite,
-            FileShare.None, 4096, FileOptions.WriteThrough);
+            planned ? FileShare.Read : FileShare.None, 4096, FileOptions.WriteThrough);
         var journal = new So6120DirectDutyJournal(path, file, fault);
         try
         {
             // Recheck after opening. This is not protection from a malicious
             // administrator replacing ancestor directories; no such claim is made.
             _ = ResolvePath(runRoot, createRoot: false);
-            journal.state.FormatVersion = identity.RequestedDuty1.HasValue ? 1 : 2;
+            journal.state.FormatVersion = planned ? 2 : 1;
             file.Write(journal.state.FormatVersion == 1 ? Magic : PlanningMagic);
             file.Flush(flushToDisk: true);
             journal.Append(Kind.Binding, identity);
@@ -160,8 +163,8 @@ internal sealed class So6120DirectDutyJournal : IDisposable
         }
     }
 
-    // Post-release inspection only. An active writer's FileShare.None prevents
-    // inspection of a partially appended live tail. Valid bytes after interruption
+    // Post-release inspection only. This reader does not share write access,
+    // so it cannot open alongside a live owner. Valid bytes after interruption
     // do not prove the old caller received a flush acknowledgement. No inspection
     // opens a writer or grants authority to resume/reconcile hardware.
     public static So6120JournalInspection Inspect(string runRoot)

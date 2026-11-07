@@ -323,14 +323,37 @@ public sealed class So6120DirectDutyJournalTests
         Assert.Throws<IOException>(() => fixture.Create());
     }
 
-    [Fact]
-    public void ExclusiveOwnershipBlocksOtherWriterAndInspectionUntilDisposal()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OnlyPlannedJournalAllowsLiveReadWhileWriterAndInspectionRemainExclusive(bool planned)
     {
         using var fixture = new Fixture();
-        using (var journal = fixture.Create())
+        var identity = planned ? fixture.Identity with { RequestedDuty1 = null, RequestedDuty2 = null } : fixture.Identity;
+        using (var journal = So6120DirectDutyJournal.Create(fixture.Root, identity))
         {
             Assert.Throws<IOException>(() => fixture.Create());
+            Assert.Throws<IOException>(() =>
+            {
+                using var otherWriter = File.Open(journal.Path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
+            });
+            Assert.Throws<IOException>(() => File.Delete(journal.Path));
             Assert.Throws<IOException>(() => So6120DirectDutyJournal.Inspect(fixture.Root));
+            if (planned)
+            {
+                using var observer = File.Open(journal.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                byte[] header = new byte[11];
+                observer.ReadExactly(header);
+                Assert.Equal("OBSO6120J2\n", Encoding.ASCII.GetString(header));
+                Assert.True(observer.Length > header.Length);
+            }
+            else
+            {
+                Assert.Throws<IOException>(() =>
+                {
+                    using var observer = File.Open(journal.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                });
+            }
         }
         var recovered = So6120DirectDutyJournal.Inspect(fixture.Root);
         Assert.True(recovered.UnresolvedWork);

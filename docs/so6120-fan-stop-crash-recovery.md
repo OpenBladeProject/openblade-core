@@ -183,6 +183,12 @@ BASELINE and APPLY prompts in its own console, creates the same one-shot journal
 and attempt latch, and retains all exact-device, controller and thermal checks.
 Default command invocation still prints an offline plan.
 
+Planned v2 journals permit a read-only attended observer while the owner retains
+exclusive write and delete access. The observer must validate complete chained
+records and the run identity; a partial tail or an exit claim cannot authorize
+a checkpoint action. Ordinary journal inspection remains available only after
+owner release. Legacy v1 journals retain exclusive access.
+
 The launcher uses `CREATE_NEW_CONSOLE`, `CREATE_BREAKAWAY_FROM_JOB` and an
 explicit inherited-handle list. The owner independently verifies it is outside
 all jobs, is the only process attached to its console, and has a readable pipe
