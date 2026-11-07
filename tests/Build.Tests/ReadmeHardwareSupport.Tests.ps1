@@ -60,19 +60,23 @@ Assert-ModelNumber -Model 'RZ09-0483' -Expected '`RZ09-0483`'
 Assert-ModelNumber -Model 'RZ09-0482' -Expected '`RZ09-0482`'
 Assert-ModelNumber -Model 'RZ09-0530' -Expected '`RZ09-0530`'
 Assert-ModelNumber -Model 'RZ09-0328' -Expected '`RZ09-0328`'
+Assert-ModelNumber -Model 'RZ09-0370' -Expected '`RZ09-0370`'
+Assert-ModelNumber -Model 'RZ09-0427' -Expected '`RZ09-0427`'
+Assert-ModelNumber -Model 'RZ09-0421' -Expected '`RZ09-0421`'
+Assert-ModelNumber -Model 'RZ09-0423' -Expected '`RZ09-0423`'
 Assert-ModelNumber -Model 'RZ09-0484' -Expected '`RZ09-0484`'
 
 $supportedRows = @($readme | Where-Object { $_ -match '^\| .*`RZ09-\d{4}`.*\|$' })
-if ($supportedRows.Count -ne 11) {
-    throw 'README must list all eleven reviewed supported models.'
+if ($supportedRows.Count -ne 15) {
+    throw 'README must list all fifteen reviewed supported models.'
 }
 $supportText = $readme -join "`n"
 if ($supportText -notmatch 'All listed laptops are officially supported\.') {
     throw 'README must distinguish official model support from physical validation.'
 }
 if ($supportText -notmatch 'RZ09-0581 and RZ09-0528 have\s+physically validated support;' -or
-    $supportText -notmatch 'the other nine families are supported on reviewed\s+exact-model sources, with physical validation tracked separately\.') {
-    throw 'README must retain the two physically validated models and separate source-reviewed support for the other nine.'
+    $supportText -notmatch 'the other thirteen families are supported on reviewed\s+exact-model sources, with physical validation tracked separately\.') {
+    throw 'README must retain the two physically validated models and separate source-reviewed support for the other thirteen.'
 }
 if ($supportText -notmatch '\[Source-reviewed Blade support\]\(docs/experimental-blade-support\.md\)') {
     throw 'README must link the source-reviewed model, recovery, and tester guide.'
@@ -108,6 +112,10 @@ Assert-UsbIdentity -Model 'RZ09-0483' -Expected '1532:029F'
 Assert-UsbIdentity -Model 'RZ09-0482' -Expected '1532:029D'
 Assert-UsbIdentity -Model 'RZ09-0530' -Expected '1532:02C5'
 Assert-UsbIdentity -Model 'RZ09-0328' -Expected '1532:0255'
+Assert-UsbIdentity -Model 'RZ09-0370' -Expected '1532:0270'
+Assert-UsbIdentity -Model 'RZ09-0427' -Expected '1532:028C'
+Assert-UsbIdentity -Model 'RZ09-0421' -Expected '1532:028A'
+Assert-UsbIdentity -Model 'RZ09-0423' -Expected '1532:028B'
 Assert-UsbIdentity -Model 'RZ09-0484' -Expected '1532:02A0'
 
 Write-Host 'README hardware-support tests passed.'

@@ -21,15 +21,19 @@ public sealed class LegacyThxAudioCommandTests
     [Fact]
     public void EverySupportedModelHasAnExplicitReviewedThxAdmissionDecision()
     {
-        // Vendor THX is present on these models, but their runtime/setup API contracts
-        // are not admitted. This is distinct from the reviewed non-THX exclusions.
-        // See evidence/source-reviewed-blades/2026-11-07-models.json.
+        // These exact source-reviewed models have no admitted THX runtime/setup API
+        // contract. Missing contract evidence is distinct from a non-THX exclusion.
+        // See evidence/source-reviewed-blades/2026-11-07-models{,-2021-2022}.json.
         (string ModelNumber, string UsbProductId)[] notAdmitted =
         [
             ("RZ09-0508", "02B6"),
             ("RZ09-0510", "02B7"),
             ("RZ09-0509", "02B8"),
             ("RZ09-0529", "02C7"),
+            ("RZ09-0370", "0270"),
+            ("RZ09-0427", "028C"),
+            ("RZ09-0421", "028A"),
+            ("RZ09-0423", "028B"),
         ];
         var admitted = ThxAudioCompatibility.Profiles.Select(profile => (profile.ModelNumber, profile.UsbProductId));
         var excluded = ThxAudioCompatibility.ExcludedModels.Select(profile => (profile.ModelNumber, profile.UsbProductId));

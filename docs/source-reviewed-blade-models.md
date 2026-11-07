@@ -1,20 +1,20 @@
-# Source-reviewed 2024/2025 Blade models
+# Source-reviewed additional Blade models
 
-OpenBlade officially supports the four exact-model profiles below using reviewed
+OpenBlade officially supports the eight exact-model profiles below using reviewed
 Synapse definitions. Physical validation is a separate evidence status and remains
 pending for these implementations. Source review does not establish measured fan
 behavior, successful restoration on a laptop, or another model's capabilities.
 The [support guide](experimental-blade-support.md) lists the earlier five
 source-reviewed models and their different feature sets.
 
-## Exact identity and initial controls
+## 2024/2025 exact identity and initial controls
 
 | Laptop | Exact Windows product name | USB identity | Synapse product | Initial controls |
 | --- | --- | --- | --- | --- |
+| Blade 18 (2025), RZ09-0529 | `Blade 18 - RZ09-0529` | `1532:02C7` | 711 | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic fans, bounded charge limits; no Maximum Fans |
 | Blade 14 (2024), RZ09-0508 | `Blade 14 - RZ09-0508` | `1532:02B6` | 694 | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, bounded charge limits |
 | Blade 16 (2024), RZ09-0510 | `Blade 16 - RZ09-0510` | `1532:02B7` | 695 | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, bounded charge limits |
 | Blade 18 (2024), RZ09-0509 | `Blade 18 - RZ09-0509` | `1532:02B8` | 696 | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic fans, Maximum Fans, bounded charge limits |
-| Blade 18 (2025), RZ09-0529 | `Blade 18 - RZ09-0529` | `1532:02C7` | 711 | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic fans, bounded charge limits; no Maximum Fans |
 
 All four offer battery Balanced. Other listed presets require confirmed full-power
 AC, except Battery Saver on Blade 18 (2025), which is a battery mode. Turbo is
@@ -42,6 +42,42 @@ can be implemented safely. If the current fan mode is manual, preset and Custom
 changes are blocked until an explicit Automatic handback is confirmed. This is
 a software admission boundary: the backend cannot yet confirm and restore the
 mode-specific manual targets, rather than evidence of a firmware prerequisite.
+
+## 2021/2022 exact identity and initial controls
+
+| Laptop | Exact Windows product name | USB identity | Synapse product | Initial controls |
+| --- | --- | --- | --- | --- |
+| Blade 14 (2022), RZ09-0427 | `Blade 14 (2022) - RZ09-0427` | `1532:028C` | 652 | Balanced on AC/battery, Silent and Custom on full-power AC, CPU 0–3 including Boost, GPU 0–2, Automatic fans, bounded charge limits |
+| Blade 15 (2022), RZ09-0421 | `Blade 15 (2022) - RZ09-0421` | `1532:028A` | 650 | Balanced on AC/battery, Silent and Custom on full-power AC, CPU 0–3 including Boost, GPU 0–2, Automatic fans, bounded charge limits |
+| Blade 17 (2022), RZ09-0423 | `Blade 17 (2022) - RZ09-0423` | `1532:028B` | 651 | Balanced on AC/battery, Silent and Custom on full-power AC, CPU 0–3 including Boost, GPU 0–2, Automatic fans, bounded charge limits |
+| Blade 14 (2021), RZ09-0370 | `Blade 14 - RZ09-0370` | `1532:0270` | 624 | Balanced and Custom on full-power AC only, CPU 0–3 including Boost, GPU 0–2, Automatic fans; no battery or charge-limit controls |
+
+These four profiles retain independent exact host, HID and command admission.
+The three 2022 profiles use firmware modes 0 (AC Balanced), 5 (Silent), 4
+(Custom) and 6 (battery Balanced). The 2021 profile admits only modes 0 and 4
+on AC. All four admit CPU Low/Medium/High/Boost (0–3) independently of GPU
+Low/Medium/High (0–2). They admit no Turbo or Maximum Fans command.
+
+Charge protection on the three 2022 profiles depends on the reviewed updated
+firmware. The exact-model Razer update pages and signed carrier evidence are
+recorded in the [2021/2022 review](source-reviewed-blades-2021-2022.md). A fresh
+charge-state GET must succeed before each SET; unsupported or failed readback
+blocks the write. Firmware version strings remain provenance, not a static BIOS
+allowlist. OpenBlade does not update firmware automatically.
+
+The three 2022 profiles offer charge limits 50–80% in 5% steps or protection
+off, preserving the saved threshold and protection flag independently. RZ09-0370
+has no admitted charge-limit contract. Fixed fan targets and curves remain
+unavailable; an existing manual fan state requires explicit, confirmed Automatic
+handback before performance changes because manual target restoration is not
+established. None of these profiles admits lighting, HyperBoost or driver/THX
+integration. Physical validation remains pending for each model and feature.
+
+See the [2021/2022 source review](source-reviewed-blades-2021-2022.md) and its
+[admission manifest](../evidence/source-reviewed-blades/2026-11-07-models-2021-2022.json)
+for exact primary sources, full hashes and per-feature decisions. Those sources
+were inspected as inert data; package presence does not establish API or setup
+compatibility.
 
 ## Admission and recovery
 

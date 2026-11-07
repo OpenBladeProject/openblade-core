@@ -4,7 +4,7 @@
 
 English | [简体中文](zh-CN/experimental-blade-support.md) | [Русский](ru-RU/experimental-blade-support.md)
 
-These nine laptop families are officially supported using reviewed exact-model
+These thirteen laptop families are officially supported using reviewed exact-model
 Synapse and upstream sources. OpenBlade recognizes them automatically in both
 stable and pre-release builds. Physical validation is tracked separately for each
 model and feature; source-reviewed support does not claim complete hardware
@@ -13,8 +13,8 @@ support. The limits and remaining experimental features below still apply.
 
 ## Available controls
 
-The earlier five models retain the following controls. The four additional
-2024/2025 models have a separate, narrower contract below.
+The earlier five models retain the following controls. The additional 2024/2025
+and 2021/2022 models have separate, narrower contracts below.
 
 | Laptop | Model number | Controls |
 | --- | --- | --- |
@@ -28,10 +28,10 @@ The earlier five models retain the following controls. The four additional
 
 | Laptop | Model number | Initial controls |
 | --- | --- | --- |
+| Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic fans, charge limits 50–80% in 5% steps or protection off |
 | Blade 14 (2024) | `RZ09-0508` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 | Blade 16 (2024) | `RZ09-0510` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 | Blade 18 (2024) | `RZ09-0509` | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic fans, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
-| Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic fans, charge limits 50–80% in 5% steps or protection off |
 
 All four offer Custom CPU/GPU Low, Medium and High. Only Blade 14 (2024)
 and Blade 16 (2024) additionally offer CPU Boost.
@@ -44,6 +44,28 @@ the earlier models' feature list. If fans are currently manual, choose Automatic
 and confirm the handback before changing presets or Custom levels: these profiles
 cannot yet confirm and restore manual targets. See the [exact-model admission guide](source-reviewed-blade-models.md)
 for identity, source pins, command boundaries, and remaining physical validation.
+
+### Additional 2021/2022 models
+
+| Laptop | Model number | Initial controls |
+| --- | --- | --- |
+| Blade 14 (2022) | `RZ09-0427` | Balanced, Silent, Custom CPU Low/Medium/High/Boost and GPU Low/Medium/High, Automatic fans, charge limits 50–80% in 5% steps or protection off |
+| Blade 15 (2022) | `RZ09-0421` | Balanced, Silent, Custom CPU Low/Medium/High/Boost and GPU Low/Medium/High, Automatic fans, charge limits 50–80% in 5% steps or protection off |
+| Blade 17 (2022) | `RZ09-0423` | Balanced, Silent, Custom CPU Low/Medium/High/Boost and GPU Low/Medium/High, Automatic fans, charge limits 50–80% in 5% steps or protection off |
+| Blade 14 (2021) | `RZ09-0370` | Balanced and Custom CPU Low/Medium/High/Boost and GPU Low/Medium/High on full-power AC, Automatic fans; no charge-limit controls |
+
+Charge limits require the reviewed firmware updates for the 2022 models and a
+successful fresh charge-state read before a change. See the linked review for Razer firmware
+updates; OpenBlade does not update firmware automatically.
+
+The three 2022 models also offer Balanced on battery; Silent and Custom require
+confirmed full-power AC. The 2021 model's admitted thermal controls require AC.
+These four models do not admit Turbo, Maximum Fans, fixed fans, fan curves,
+lighting, HyperBoost or driver/THX integrations. If the current fan mode is
+manual, explicitly select Automatic and confirm handback before changing
+performance. Physical validation remains pending. See the
+[2021/2022 source review](source-reviewed-blades-2021-2022.md) for exact identities
+and evidence.
 
 The following detailed control notes apply to the earlier five models.
 

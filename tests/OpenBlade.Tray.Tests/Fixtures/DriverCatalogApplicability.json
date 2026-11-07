@@ -3,7 +3,7 @@
   "reviewedAt": "2026-11-07",
   "coreSource": {
     "repository": "OSSBlade/openblade-core",
-    "commit": "58459b919e7d11ec44a914fd81edbdf8a252586f",
+    "commit": "e67f8922c55f006644e7a6873722baf40ef09d3a",
     "path": "src/OpenBlade.Contracts/RazerBladeModelCatalog.cs"
   },
   "profiles": [
@@ -105,6 +105,42 @@
         "vid": "1532"
       },
       "vendorProductId": 711
+    },
+    {
+      "modelNumber": "RZ09-0370",
+      "productName": "Razer Blade 14 (2021)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "0270"
+      },
+      "vendorProductId": 624
+    },
+    {
+      "modelNumber": "RZ09-0427",
+      "productName": "Razer Blade 14 (2022)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "028C"
+      },
+      "vendorProductId": 652
+    },
+    {
+      "modelNumber": "RZ09-0421",
+      "productName": "Razer Blade 15 (2022)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "028A"
+      },
+      "vendorProductId": 650
+    },
+    {
+      "modelNumber": "RZ09-0423",
+      "productName": "Razer Blade 17 (2022)",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "028B"
+      },
+      "vendorProductId": 651
     }
   ],
   "entries": [
@@ -185,6 +221,38 @@
           "vendorBuild": "2610250006",
           "vendorRevision": "49ff367e9e49f1129b4f1a3887c36a21bce8bffb",
           "reason": "The complete cataloged stack targets RZ09-0528 / PID 02C6. This model has a separately named PID-specific vendor driver carrier; shared RzCommon dependencies do not establish applicability."
+        },
+        {
+          "modelNumber": "RZ09-0370",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/624/mw/manifest.json",
+          "vendorBuild": "2609301503",
+          "vendorRevision": "8d2f548809c8197100d215af8ac39b28918281bc",
+          "reason": "The complete cataloged stack targets RZ09-0528 / PID 02C6. The exact-model manifest instead names a separate PID 0270 driver carrier at version 0.1.2.0; the shared BladeNative dependency does not establish whole-stack applicability."
+        },
+        {
+          "modelNumber": "RZ09-0427",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/652/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "b96e3d33fec8d5ff05fc169d209db6ec445f7b5b",
+          "reason": "The complete cataloged stack targets RZ09-0528 / PID 02C6. The exact-model manifest instead names a separate PID 028C driver carrier at version 0.1.2.0; the shared BladeNative dependency does not establish whole-stack applicability."
+        },
+        {
+          "modelNumber": "RZ09-0421",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/650/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "fb7730a7c31f76cc79534bd9208ec53fe2c3bf2e",
+          "reason": "The complete cataloged stack targets RZ09-0528 / PID 02C6. The exact-model manifest instead names a separate PID 028A driver carrier at version 0.1.2.0; the shared BladeNative dependency does not establish whole-stack applicability."
+        },
+        {
+          "modelNumber": "RZ09-0423",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/651/mw/manifest.json",
+          "vendorBuild": "2609301509",
+          "vendorRevision": "af988c9605e191ac024d3ad402648cb03f964784",
+          "reason": "The complete cataloged stack targets RZ09-0528 / PID 02C6. The exact-model manifest instead names a separate PID 028B driver carrier at version 0.1.2.0; the shared BladeNative dependency does not establish whole-stack applicability."
         }
       ]
     },
@@ -265,6 +333,38 @@
           "vendorBuild": "2610250006",
           "vendorRevision": "49ff367e9e49f1129b4f1a3887c36a21bce8bffb",
           "reason": "The complete cataloged stack targets RZ09-0581 / PID 02E0. This model has a separately named PID-specific vendor driver carrier; shared RzCommon dependencies do not establish applicability."
+        },
+        {
+          "modelNumber": "RZ09-0370",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/624/mw/manifest.json",
+          "vendorBuild": "2609301503",
+          "vendorRevision": "8d2f548809c8197100d215af8ac39b28918281bc",
+          "reason": "The complete cataloged stack targets RZ09-0581 / PID 02E0. The exact-model manifest instead names a separate PID 0270 driver carrier at version 0.1.2.0; the shared BladeNative dependency does not establish whole-stack applicability."
+        },
+        {
+          "modelNumber": "RZ09-0427",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/652/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "b96e3d33fec8d5ff05fc169d209db6ec445f7b5b",
+          "reason": "The complete cataloged stack targets RZ09-0581 / PID 02E0. The exact-model manifest instead names a separate PID 028C driver carrier at version 0.1.2.0; the shared BladeNative dependency does not establish whole-stack applicability."
+        },
+        {
+          "modelNumber": "RZ09-0421",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/650/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "fb7730a7c31f76cc79534bd9208ec53fe2c3bf2e",
+          "reason": "The complete cataloged stack targets RZ09-0581 / PID 02E0. The exact-model manifest instead names a separate PID 028A driver carrier at version 0.1.2.0; the shared BladeNative dependency does not establish whole-stack applicability."
+        },
+        {
+          "modelNumber": "RZ09-0423",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/651/mw/manifest.json",
+          "vendorBuild": "2609301509",
+          "vendorRevision": "af988c9605e191ac024d3ad402648cb03f964784",
+          "reason": "The complete cataloged stack targets RZ09-0581 / PID 02E0. The exact-model manifest instead names a separate PID 028B driver carrier at version 0.1.2.0; the shared BladeNative dependency does not establish whole-stack applicability."
         }
       ]
     },
@@ -359,6 +459,38 @@
           "vendorBuild": "2610250006",
           "vendorRevision": "49ff367e9e49f1129b4f1a3887c36a21bce8bffb",
           "reason": "The exact-model manifest names the identical pinned THX V4 native DLL URL and SHA-256. This establishes artifact applicability only; runtime API, codec and installation admission are not added."
+        },
+        {
+          "modelNumber": "RZ09-0370",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/624/mw/manifest.json",
+          "vendorBuild": "2609301503",
+          "vendorRevision": "8d2f548809c8197100d215af8ac39b28918281bc",
+          "reason": "The reviewed exact-model middleware resources declare only the PID-specific driver carrier and BladeNative 1.0.10.1, with no THX native client resource. Applicability of the pinned THX V4 DLL is not established."
+        },
+        {
+          "modelNumber": "RZ09-0427",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/652/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "b96e3d33fec8d5ff05fc169d209db6ec445f7b5b",
+          "reason": "The reviewed exact-model middleware resources declare only the PID-specific driver carrier and BladeNative 1.0.10.1, with no THX native client resource. Applicability of the pinned THX V4 DLL is not established."
+        },
+        {
+          "modelNumber": "RZ09-0421",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/650/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "fb7730a7c31f76cc79534bd9208ec53fe2c3bf2e",
+          "reason": "The reviewed exact-model middleware resources declare only the PID-specific driver carrier and BladeNative 1.0.10.1, with no THX native client resource. Applicability of the pinned THX V4 DLL is not established."
+        },
+        {
+          "modelNumber": "RZ09-0423",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/651/mw/manifest.json",
+          "vendorBuild": "2609301509",
+          "vendorRevision": "af988c9605e191ac024d3ad402648cb03f964784",
+          "reason": "The reviewed exact-model middleware resources declare only the PID-specific driver carrier and BladeNative 1.0.10.1, with no THX native client resource. Applicability of the pinned THX V4 DLL is not established."
         }
       ]
     },
@@ -439,6 +571,38 @@
           "vendorBuild": "2610250006",
           "vendorRevision": "49ff367e9e49f1129b4f1a3887c36a21bce8bffb",
           "reason": "The exact-model manifest names the same rznb11 4.2.29.1159 carrier, but the complete exact-codec signed extension binding and model-specific setup recipe are not reviewed. Shared carrier bytes alone do not establish whole-stack applicability."
+        },
+        {
+          "modelNumber": "RZ09-0370",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/624/mw/manifest.json",
+          "vendorBuild": "2609301503",
+          "vendorRevision": "8d2f548809c8197100d215af8ac39b28918281bc",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb11 4.2.29.1159 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
+        },
+        {
+          "modelNumber": "RZ09-0427",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/652/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "b96e3d33fec8d5ff05fc169d209db6ec445f7b5b",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb11 4.2.29.1159 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
+        },
+        {
+          "modelNumber": "RZ09-0421",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/650/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "fb7730a7c31f76cc79534bd9208ec53fe2c3bf2e",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb11 4.2.29.1159 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
+        },
+        {
+          "modelNumber": "RZ09-0423",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/651/mw/manifest.json",
+          "vendorBuild": "2609301509",
+          "vendorRevision": "af988c9605e191ac024d3ad402648cb03f964784",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb11 4.2.29.1159 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
         }
       ]
     },
@@ -519,6 +683,38 @@
           "vendorBuild": "2610250006",
           "vendorRevision": "49ff367e9e49f1129b4f1a3887c36a21bce8bffb",
           "reason": "The exact-model manifest does not declare this rznb12 stack. Its pinned exact-codec packages, base dependencies and installation recipe are not established for this model."
+        },
+        {
+          "modelNumber": "RZ09-0370",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/624/mw/manifest.json",
+          "vendorBuild": "2609301503",
+          "vendorRevision": "8d2f548809c8197100d215af8ac39b28918281bc",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb12 4.2.37.1621 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
+        },
+        {
+          "modelNumber": "RZ09-0427",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/652/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "b96e3d33fec8d5ff05fc169d209db6ec445f7b5b",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb12 4.2.37.1621 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
+        },
+        {
+          "modelNumber": "RZ09-0421",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/650/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "fb7730a7c31f76cc79534bd9208ec53fe2c3bf2e",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb12 4.2.37.1621 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
+        },
+        {
+          "modelNumber": "RZ09-0423",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/651/mw/manifest.json",
+          "vendorBuild": "2609301509",
+          "vendorRevision": "af988c9605e191ac024d3ad402648cb03f964784",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb12 4.2.37.1621 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
         }
       ]
     },
@@ -599,6 +795,38 @@
           "vendorBuild": "2610250006",
           "vendorRevision": "49ff367e9e49f1129b4f1a3887c36a21bce8bffb",
           "reason": "The exact-model manifest does not declare this rznb12 stack. Its pinned exact-codec packages, base dependencies and installation recipe are not established for this model."
+        },
+        {
+          "modelNumber": "RZ09-0370",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/624/mw/manifest.json",
+          "vendorBuild": "2609301503",
+          "vendorRevision": "8d2f548809c8197100d215af8ac39b28918281bc",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb12 4.2.41.2499 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
+        },
+        {
+          "modelNumber": "RZ09-0427",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/652/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "b96e3d33fec8d5ff05fc169d209db6ec445f7b5b",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb12 4.2.41.2499 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
+        },
+        {
+          "modelNumber": "RZ09-0421",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/650/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "fb7730a7c31f76cc79534bd9208ec53fe2c3bf2e",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb12 4.2.41.2499 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
+        },
+        {
+          "modelNumber": "RZ09-0423",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/651/mw/manifest.json",
+          "vendorBuild": "2609301509",
+          "vendorRevision": "af988c9605e191ac024d3ad402648cb03f964784",
+          "reason": "The reviewed exact-model middleware resources do not declare the cataloged rznb12 4.2.41.2499 stack. Its exact-codec signed package binding, complete base dependencies and installation recipe are not established for this model."
         }
       ]
     },
@@ -679,6 +907,38 @@
           "vendorBuild": "2610250006",
           "vendorRevision": "49ff367e9e49f1129b4f1a3887c36a21bce8bffb",
           "reason": "The exact-model manifest declares a different THX generation. No exact-model legacy service/APO stack, codec tuning, endpoint binding or installation recipe has been established."
+        },
+        {
+          "modelNumber": "RZ09-0370",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/624/mw/manifest.json",
+          "vendorBuild": "2609301503",
+          "vendorRevision": "8d2f548809c8197100d215af8ac39b28918281bc",
+          "reason": "The reviewed exact-model middleware resources declare no THX stack. No exact-model legacy 2.6.5 service/APO packages, codec tuning, endpoint binding or installation recipe have been established."
+        },
+        {
+          "modelNumber": "RZ09-0427",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/652/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "b96e3d33fec8d5ff05fc169d209db6ec445f7b5b",
+          "reason": "The reviewed exact-model middleware resources declare no THX stack. No exact-model legacy 2.6.5 service/APO packages, codec tuning, endpoint binding or installation recipe have been established."
+        },
+        {
+          "modelNumber": "RZ09-0421",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/650/mw/manifest.json",
+          "vendorBuild": "2609301510",
+          "vendorRevision": "fb7730a7c31f76cc79534bd9208ec53fe2c3bf2e",
+          "reason": "The reviewed exact-model middleware resources declare no THX stack. No exact-model legacy 2.6.5 service/APO packages, codec tuning, endpoint binding or installation recipe have been established."
+        },
+        {
+          "modelNumber": "RZ09-0423",
+          "status": "NotEstablished",
+          "evidence": "https://apps.razer.com/synapse/products/651/mw/manifest.json",
+          "vendorBuild": "2609301509",
+          "vendorRevision": "af988c9605e191ac024d3ad402648cb03f964784",
+          "reason": "The reviewed exact-model middleware resources declare no THX stack. No exact-model legacy 2.6.5 service/APO packages, codec tuning, endpoint binding or installation recipe have been established."
         }
       ]
     }
