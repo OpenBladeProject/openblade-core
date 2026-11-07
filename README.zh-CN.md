@@ -50,7 +50,7 @@ OpenBlade 是一款免费的 Razer Blade 笔记本管理工具，在 Windows 系
 | Razer Blade 15 Advanced (Mid 2019) | `RZ09-0301` |
 | Razer Blade 15 Base (2019) | `RZ09-0300` |
 
-OpenBlade 会自动启用该型号支持的功能。兼容性信息见[使用指南](https://openblade.sh/zh-CN/)，
+OpenBlade 会根据你的型号显示可用设置。兼容性信息见[使用指南](https://openblade.sh/zh-CN/)，
 各型号的功能和测试详情见[型号支持指南](docs/zh-CN/experimental-blade-support.md)。
 
 如果你的 Razer 笔记本尚未列出，请在 OpenBlade 中选择**协助添加支持**。

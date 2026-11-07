@@ -48,7 +48,7 @@ OpenBlade requires Windows 11 x64, version 24H2 or later.
 | Razer Blade 15 Advanced (Mid 2019) | `RZ09-0301` |
 | Razer Blade 15 Base (2019) | `RZ09-0300` |
 
-OpenBlade automatically enables the controls available on your model. See the
+OpenBlade shows the controls available on your model. See the
 [user guide](https://github.com/OSSBlade/openblade-docs) for compatibility and the
 [model support guide](docs/experimental-blade-support.md) for features and testing details.
 
