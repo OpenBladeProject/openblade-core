@@ -58,6 +58,10 @@ public static class RazerBladeModelCatalog
         new("RZ09-0510", "Razer Blade 16", 2024) { UsbVendorId = "1532", UsbProductId = "02B7", SupportBasis = BladeSupportBasis.SourceReviewed },
         new("RZ09-0509", "Razer Blade 18", 2024) { UsbVendorId = "1532", UsbProductId = "02B8", SupportBasis = BladeSupportBasis.SourceReviewed },
         new("RZ09-0529", "Razer Blade 18", 2025) { UsbVendorId = "1532", UsbProductId = "02C7", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0370", "Razer Blade 14", 2021) { UsbVendorId = "1532", UsbProductId = "0270", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0427", "Razer Blade 14", 2022) { UsbVendorId = "1532", UsbProductId = "028C", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0421", "Razer Blade 15", 2022) { UsbVendorId = "1532", UsbProductId = "028A", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0423", "Razer Blade 17", 2022) { UsbVendorId = "1532", UsbProductId = "028B", SupportBasis = BladeSupportBasis.SourceReviewed },
     ];
 
     public static IReadOnlyList<RazerBladeModelInfo> All { get; } = Array.AsReadOnly(Models);
