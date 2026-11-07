@@ -149,6 +149,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
     [Theory]
     [InlineData("thermalControlPolicy")]
     [InlineData("thermalPolicyUpgradeDisclosure")]
+    [InlineData("fanStopSettings")]
     public async Task LoadAsync_CurrentSchemaMissingRequiredThermalMemberPreservesExactAggregate(
         string missingMember)
     {
@@ -794,7 +795,8 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
                 "schemaVersion": {{ProfileStore.CurrentSchemaVersion}},
                 "preferences": {
                   "thermalControlPolicy": {{(int)ThermalControlPolicy.Strict}},
-                  "thermalPolicyUpgradeDisclosure": {{(int)ThermalPolicyUpgradeDisclosureState.Acknowledged}}
+                  "thermalPolicyUpgradeDisclosure": {{(int)ThermalPolicyUpgradeDisclosureState.Acknowledged}},
+                  "fanStopSettings": {}
                 }
               }
               """);
@@ -1594,6 +1596,60 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             Endpoint(ThxAudioProfileSettings.HeadphoneEqualizerBandCount, speakers: false),
             [new("game.exe", ThxApplicationAudioOutput.Competitive),
                 new("player.exe", ThxApplicationAudioOutput.Music)]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LoadAsync_PreStopSchemaCannotArmAutomaticFanStop(bool injectFutureSettings)
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
+        const int previousSchema = 23;
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(previousSchema, ProfileDefaults.CreateSafeDefaults()), options);
+        var preferences = JsonSerializer.SerializeToNode(new BatteryAutomationPreferences(), options)!.AsObject();
+        if (injectFutureSettings)
+        {
+            preferences["fanStopSettings"] = JsonSerializer.SerializeToNode(
+                new FanStopSettings { AutomaticEnabled = true, EndMode = FanStopEndMode.Custom }, options);
+        }
+        else
+        {
+            preferences.Remove("fanStopSettings");
+        }
+        byte[] preferenceBytes = JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = previousSchema, preferences }, options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferenceBytes);
+        await File.WriteAllBytesAsync(paths.Marker, JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(previousSchema, Hash(profiles), Hash(preferenceBytes)), options));
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(CancellationToken.None);
+
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        Assert.Equal(FanStopSettings.Default, loaded.Preferences.FanStopSettings);
+        Assert.Equal(FanStopSettings.Default, (await CreateStore(paths).LoadAsync(CancellationToken.None)).Preferences.FanStopSettings);
+    }
+
+    [Fact]
+    public async Task SaveConfigurationAsync_RoundTripsCustomFanStopPolicy()
+    {
+        Paths paths = CreatePaths();
+        var settings = new FanStopSettings
+        {
+            EndMode = FanStopEndMode.Custom,
+            CpuLimitCelsius = 61,
+            GpuLimitCelsius = 64,
+            SecondsAboveLimit = 11,
+            AutomaticEnabled = true,
+            SecondsBelowLimits = 40,
+        };
+        BatteryConfigurationStore store = CreateStore(paths);
+        BatteryConfiguration initial = await store.LoadAsync(CancellationToken.None);
+        await store.SaveConfigurationAsync(initial.Profiles, initial.Preferences with { FanStopSettings = settings }, CancellationToken.None);
+
+        Assert.Equal(settings, (await CreateStore(paths).LoadAsync(CancellationToken.None)).Preferences.FanStopSettings);
     }
 
     private BatteryConfigurationStore CreateStore(Paths paths) =>

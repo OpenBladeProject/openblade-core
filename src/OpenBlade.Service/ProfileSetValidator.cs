@@ -191,6 +191,10 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
     public void ValidatePreferences(BatteryAutomationPreferences preferences)
     {
         ArgumentNullException.ThrowIfNull(preferences);
+        if (!FanStopSettings.IsWellFormed(preferences.FanStopSettings))
+        {
+            throw Invalid("Fan Stop settings are invalid.");
+        }
         if (!Enum.IsDefined(preferences.KeyboardLightingControlMode))
         {
             throw Invalid("The keyboard lighting control mode is undefined.");

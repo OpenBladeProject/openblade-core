@@ -84,6 +84,14 @@ public interface IServiceControlRuntime
         Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked,
             "Fan stop is unavailable."));
 
+    Task<ControlOperationResult> SetFanStopSettingsAsync(
+        FanStopSettings settings, Func<bool> stillControlsSession, CancellationToken cancellationToken) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Fan Stop settings are unavailable."));
+
+    Task<ControlOperationResult> ResumeAutomaticFanStopAsync(
+        Func<bool> stillControlsSession, CancellationToken cancellationToken) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Automatic Stop is unavailable."));
+
     Task<ControlOperationResult> ReportApplicationContextAsync(
         ReportApplicationContextRequest request,
         Func<bool> stillControlsSession,
@@ -1190,6 +1198,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private IDisposable BeginSessionAdmission()
     {
+        PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.SessionChanged);
         CloseThermalConvergenceAdmission(
             ThermalConvergenceReason.InactiveSession,
             thermalConvergenceShutdown: false);
@@ -1349,6 +1358,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 // here so an unrelated preference save cannot turn that runtime
                 // fallback into a permanent Strict selection.
                 preferences = context.Configuration.Preferences;
+                PauseAutomaticFanStop(FanStopAutomationPauseReason.SessionChanged);
                 deviceProvider.SetAllowUntestedFirmware(
                     context.Configuration.Preferences.AllowUntestedFirmware);
 
@@ -1842,6 +1852,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
 
             current = GetStatus();
+            if (activeApplicationIntentChanged) { PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged); }
             if (activeApplicationIntentChanged
                 && current.ActivePowerSource is
                     PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
@@ -1926,6 +1937,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 changed
                     ? "The active application profile changed."
                     : "The active application profile lease was renewed.");
+            if (changed) { PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged); }
             ServiceStatusSnapshot current = GetStatus();
             if (changed && current.ActivePowerSource is
                     PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
@@ -1982,6 +1994,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 }
                 PublishApplicationContextStatus(
                     "The application profile lease expired; the current power profile is active.");
+                PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged);
                 ServiceStatusSnapshot current = GetStatus();
                 if (current.ActivePowerSource is
                         PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
@@ -2293,6 +2306,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return SessionAuthorityChanged(
                     "The active Windows session changed before the performance shortcut started.");
             }
+
+            PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged);
 
             if (pendingWriteConfirmations.Blocks(DeviceSubsystem.Performance))
             {
@@ -3483,6 +3498,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
             HashSet<DeviceSubsystem> targetSet =
                 [.. driftTracker.ExternalChanges];
+            if (targetSet.Contains(DeviceSubsystem.Performance) || targetSet.Contains(DeviceSubsystem.Fans))
+            { PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged); }
             if (targetSet.Count == 0)
             {
                 const string reconciledMessage =
@@ -12220,6 +12237,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     {
         EnsureInitialized();
         Interlocked.Exchange(ref fanStopShutdownStarted, 1);
+        PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.SessionChanged);
         CloseThermalConvergenceAdmission(
             ThermalConvergenceReason.Shutdown,
             thermalConvergenceShutdown: true);
@@ -12305,6 +12323,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.SessionChanged);
         CloseThermalConvergenceAdmission(
             ThermalConvergenceReason.LowPower,
             thermalConvergenceShutdown: false);
@@ -12527,6 +12546,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     public async Task BeginResumeValidationAsync(CancellationToken cancellationToken)
     {
+        PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.SessionChanged);
         EnsureInitialized();
         CloseThermalConvergenceAdmission(
             ThermalConvergenceReason.LowPower,
@@ -13644,6 +13664,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return SessionAuthorityChanged(
                     "The active Windows session changed before the control request started.");
             }
+
+            if (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans)
+            { PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged); }
 
             if (subsystem == DeviceSubsystem.Lighting && lowPowerGate.IsActive)
             {
@@ -17134,6 +17157,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private bool ChangePowerSourceCore(PowerSource powerSource)
     {
+        // Any typed request can discover a new source before the power observer.
+        // Apply the same waiting-policy boundary to all of those shared paths.
+        PauseAutomaticFanStopForPowerIncrease(powerSource);
         if (laptopControlExecutor.RequiresReconciliation)
         {
             // Keep the destination unconsumed until the read-only recovery

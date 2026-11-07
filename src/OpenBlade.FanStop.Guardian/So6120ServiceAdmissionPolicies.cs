@@ -34,15 +34,6 @@ internal static class So6120ServicePowerReadPolicy
     }
 }
 
-internal static class So6120ServiceThermalPolicy
-{
-    internal static readonly TimeSpan MaximumSampleAge = TimeSpan.FromSeconds(2);
-
-    internal static bool Admits(int? cpuCelsius, bool gpuInactive, TimeSpan elapsed, bool canceled) =>
-        !canceled && elapsed >= TimeSpan.Zero && elapsed <= MaximumSampleAge
-        && cpuCelsius is >= 10 and <= 55 && gpuInactive;
-}
-
 // This cache grants no command authority. Every actual command still performs
 // the independent full admission in ISo6120SessionEvidenceSource.Capture.
 internal sealed class So6120ServiceContinuationMonitor(Func<bool> observe, TimeProvider clock)
@@ -51,16 +42,21 @@ internal sealed class So6120ServiceContinuationMonitor(Func<bool> observe, TimeP
     internal static readonly TimeSpan MaximumSampleAge = TimeSpan.FromSeconds(2);
     private long? started;
     private bool admitted;
+    internal bool SampleFresh { get; private set; }
 
     internal bool Observe()
     {
-        if (started is long previous && clock.GetElapsedTime(previous) < PollInterval) { return admitted; }
+        if (started is long previous && clock.GetElapsedTime(previous) is var elapsed
+            && elapsed >= TimeSpan.Zero && elapsed < PollInterval) { return admitted; }
         started = clock.GetTimestamp();
         admitted = false;
+        SampleFresh = false;
         try
         {
             bool result = observe();
-            admitted = result && clock.GetElapsedTime(started.Value) <= MaximumSampleAge;
+            TimeSpan age = clock.GetElapsedTime(started.Value);
+            SampleFresh = age >= TimeSpan.Zero && age <= MaximumSampleAge;
+            admitted = result && SampleFresh;
         }
         catch { admitted = false; }
         return admitted;

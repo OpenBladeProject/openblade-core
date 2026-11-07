@@ -16,9 +16,65 @@ and is never restored from a saved profile after startup.
 There is no fixed Stop dwell timer. Selecting Auto, making an explicit
 performance/profile/fan-mode change, losing the active session, or failing
 continuation safety requests Auto from the same owner. The current conservative
-thermal policy requires a CPU thermal-zone reading between 10 and 55 C, no
-active GPU, and a reading completed within two seconds. Unavailable readings
-end continuation. These inputs are not measurements of every die hotspot.
+Auto thermal policy requires a CPU thermal-zone reading between 10 and 55 C, no
+active GPU, and a reading completed within two seconds. Custom uses separate
+CPU/GPU thresholds (55 C by default) and independent continuous over-limit
+timers (five seconds by default). Either sensor can end Stop. A reading at or
+below its threshold resets only that sensor's timer. GPU activity alone does
+not end Custom Stop. Unavailable, stale or implausible readings still end
+continuation immediately. These inputs are not measurements of every die hotspot.
+
+The Stop card has independently foldable End Stop and Automatic Stop sections.
+Custom warns above 60 C or an exit delay above ten seconds. Input bounds are
+10-100 C and 1-300 seconds; they are parsing bounds, not independently validated
+safe operating limits. An active guardian keeps its immutable policy. Changing
+that thermal policy requests and confirms Auto before saving the next policy.
+
+Automatic Stop is off by default. When enabled, both available CPU and GPU
+temperatures must stay strictly below their individually configurable limits
+(50 C by default) for a complete cool interval (30 seconds, configurable from
+1 to 3600). Reaching either limit or a missing, invalid or slow read-only sample
+resets the interval. Temporary admission failures wait for fresh evidence;
+they do not silently switch off the user's waiting intent.
+The start limits must be below the corresponding Custom exit limits; Auto
+keeps its existing 55 C CPU/inactive-GPU entry policy. A long cool interval
+does not receive the warning used for delaying fan restart.
+
+Automatic entry uses the existing service monitoring loop and the same fresh
+exact-device, controller, power, session and guardian admission as manual Stop.
+It does not widen the USB-C Balanced entry scope. Only a successful thermal
+Auto completion, including cleanup, journal completion, native close and
+original-owner exit, permits another full cool interval. Manual Auto, explicit
+mode changes, power increases, session/lifecycle changes and ownership or command
+faults pause re-entry until Resume. Lower-power transitions retain waiting intent
+as well as the existing owned-Stop behavior. Only periodic maintenance can start
+an automatic Stop; guardian notifications reconcile the existing operation.
+Settings persist per user; a new service/user context starts paused. Resume
+begins observation and cannot immediately issue Stop. An uncertain or refused
+attempt is not automatically retried. Arming and pause generations change
+atomically, so Resume cannot overwrite a concurrent lifecycle or manual pause.
+Each sample keeps its two-second acquisition bound. Continuity checks measure
+the uncovered interval before the next read, without counting that read's
+bounded acquisition time twice. A genuinely missing interval resets unowned
+entry waiting and ends owned Custom Stop. Contended telemetry can delay entry;
+missing time never counts toward the cool interval.
+
+Custom and automatic-entry sampling distinguish workload inactivity from
+power state. The optional source reads Windows' latest reported
+`CM_POWER_DATA.PD_MostRecentPowerState` for one present NVIDIA display adapter.
+D3 permits an absent GPU temperature; D0 requires a successful temperature read
+and a second D0 observation. D1/D2, unknown state, multiple adapters and malformed
+data fail the sample. The source does not invoke the GPU API for D3/unknown,
+and releases a Stop-only temperature session after each D0 read. It may borrow
+an ordinary active reader's existing session without renewing its idle deadline.
+This avoids repeated driver initialization while preserving fresh command
+observations rather than hiding them behind a shared cache. This is OS-reported
+state, not proof of D3cold or physically validated no-wake behavior. Ordinary
+fan-curve and Auto-policy sampling retain their existing behavior.
+
+Policy settings use configuration schema 24 and service IPC 76. Older settings
+migrate with Auto selected and automatic Stop disabled. Software/native UI
+checks do not establish physical validation of the new temperature policies.
 
 External power is classified by the existing typed adapter query in the owner,
 serialized outside mailbox transactions. Windows external-power indication by
@@ -137,4 +193,5 @@ another run requires separate evidence review. This implementation was tested
 using temporary marker fixtures; the real machine marker remains unchanged.
 
 See [review dispositions](so6120-stop-auto-guardian-review.md) for the independent
-Claude review and the corrections made afterward.
+guardian review, and [Stop settings review](so6120-stop-settings-review.md) for
+the configurable thermal policy, automatic-entry review and subsequent fixes.

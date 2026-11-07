@@ -1745,4 +1745,31 @@
   <data name="Returning to Auto" xml:space="preserve">
     <value>正在返回自动模式</value>
   </data>
+  <data name="Custom: CPU {0} °C / GPU {1} °C for {2} s" xml:space="preserve">
+    <value>自定义：CPU {0} °C / GPU {1} °C，持续 {2} 秒</value>
+  </data>
+  <data name="Auto: use the existing conservative end conditions." xml:space="preserve">
+    <value>自动：使用现有的保守结束条件。</value>
+  </data>
+  <data name="Paused — resume to start a fresh cool interval." xml:space="preserve">
+    <value>已暂停 — 继续后将重新开始计算冷却时段。</value>
+  </data>
+  <data name="CPU below {0} °C and GPU below {1} °C for {2} s" xml:space="preserve">
+    <value>CPU 低于 {0} °C 且 GPU 低于 {1} °C，持续 {2} 秒</value>
+  </data>
+  <data name="Higher temperature limits allow the laptop to stay hotter before cooling restarts." xml:space="preserve">
+    <value>更高的温度上限会让笔记本电脑在恢复散热前保持更高温度。</value>
+  </data>
+  <data name="A longer delay keeps the fans stopped while temperatures remain above the limit." xml:space="preserve">
+    <value>更长的延迟会让风扇在温度持续超过上限时保持停转更久。</value>
+  </data>
+  <data name="The CPU start limit must be below the CPU end limit." xml:space="preserve">
+    <value>CPU 停转阈值必须低于 CPU 结束阈值。</value>
+  </data>
+  <data name="The GPU start limit must be below the GPU end limit." xml:space="preserve">
+    <value>GPU 停转阈值必须低于 GPU 结束阈值。</value>
+  </data>
+  <data name="Use whole temperatures from 10 to 100 °C, an end delay from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding end limits." xml:space="preserve">
+    <value>请输入 10 至 100 °C 的整数温度、1 至 300 秒的结束延迟，以及 1 至 3600 秒的冷却时段。停转阈值必须低于对应的结束阈值。</value>
+  </data>
 </root>

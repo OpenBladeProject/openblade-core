@@ -2184,7 +2184,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
-        Assert.Equal(14, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(15, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
@@ -4104,6 +4104,9 @@ public sealed class WinUiShellContractTests
         XDocument xaml = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
         XElement row = Assert.Single(xaml.Descendants(), element => (string?)element.Attribute(x + "Name") == "FanStopCell");
+        Assert.Equal("{StaticResource SettingsExpanderRowStyle}", (string?)row.Attribute("Style"));
+        XElement owner = row;
+        row = row.Elements().Single().Elements().First();
         XElement reference = Assert.Single(xaml.Descendants(), element =>
             CanonicalLocalizedXaml.Identity(element) == "MainWindow_TextBlockGPUCoreClockOffset");
         XElement referenceRow = reference.Ancestors().First(element => element.Name.LocalName == "Border");
@@ -4114,6 +4117,24 @@ public sealed class WinUiShellContractTests
         Assert.Equal("20", (string?)layout.Attribute("ColumnSpacing"));
         Assert.Null(row.Attribute("Background"));
         Assert.Null(row.Attribute("Height"));
+        XElement[] expanders = owner.Descendants().Where(element => element.Name.LocalName == "Expander").ToArray();
+        Assert.Equal(2, expanders.Length);
+        Assert.All(expanders, expander =>
+        {
+            Assert.Equal("False", (string?)expander.Attribute("IsExpanded"));
+            Assert.Equal("{StaticResource CardContentExpanderStyle}", (string?)expander.Attribute("Style"));
+            Assert.Null(expander.Attribute("Expanded"));
+            Assert.Null(expander.Attribute("Collapsed"));
+        });
+        Assert.Single(owner.Descendants(), element => (string?)element.Attribute(x + "Name") == "ResumeAutomaticFanStopButton");
+        Assert.All(owner.Descendants().Where(element => element.Name.LocalName == "NumberBox"), number =>
+        {
+            XElement editor = number.Ancestors().First(element => element.Name.LocalName == "Border");
+            Assert.Equal("{StaticResource SettingsEditorSubcardStyle}", (string?)editor.Attribute("Style"));
+            Assert.Equal("{StaticResource DashboardSingleLineRowPadding}", (string?)editor.Attribute("Padding"));
+            Assert.Contains(editor.Descendants(), element => (string?)element.Attribute("SizeChanged") == "OnDashboardTextStackSizeChanged");
+            Assert.Equal("OnFanStopSettingsLostFocus", (string?)number.Attribute("LostFocus"));
+        });
         XElement toggle = Assert.Single(row.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
         Assert.Equal("{x:Bind FanStopRequested, Mode=OneWay}", (string?)toggle.Attribute("IsOn"));
         Assert.Equal("{x:Bind CanToggleFanStop, Mode=OneWay}", (string?)toggle.Attribute("IsEnabled"));

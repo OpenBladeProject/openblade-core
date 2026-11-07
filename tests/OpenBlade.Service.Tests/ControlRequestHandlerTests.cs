@@ -32,6 +32,9 @@ public sealed class ControlRequestHandlerTests
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
             new SetBatterySaverFanStopRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
             new SetFanStopModeRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), FanStopMode.Stop),
+            new SetFanStopSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
+                FanStopSettings.Default with { AutomaticEnabled = true, SecondsBelowLimits = 17 }),
+            new ResumeAutomaticFanStopRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), null),
             new StepKeyboardBrightnessRequest(
                 OpenBladeIpc.ProtocolVersion,
@@ -127,7 +130,8 @@ public sealed class ControlRequestHandlerTests
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "ReportApplicationContext",
             "SetPerformanceOverride",
-            "CyclePerformanceShortcut", "SetFanOverride", "SetBatterySaverFanStop", "SetFanStopMode", "SetLightingOverride",
+            "CyclePerformanceShortcut", "SetFanOverride", "SetBatterySaverFanStop", "SetFanStopMode",
+            "SetFanStopSettings", "ResumeAutomaticFanStop", "SetLightingOverride",
             "StepKeyboardBrightness", "SetDisplayBrightnessHidUsage",
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
             "SetFirmwareCompatibilityOverride",
@@ -320,6 +324,8 @@ public sealed class ControlRequestHandlerTests
         ServiceRequest[] requests =
         [
             new ResumeExperimentalWritesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            new SetFanStopSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), FanStopSettings.Default),
+            new ResumeAutomaticFanStopRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             new SetThermalControlPolicyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -688,6 +694,21 @@ public sealed class ControlRequestHandlerTests
             Assert.Equal(FanStopMode.Stop, mode);
             Assert.True(stillControlsSession());
             return Record("SetFanStopMode");
+        }
+
+        public Task<ControlOperationResult> SetFanStopSettingsAsync(
+            FanStopSettings settings, Func<bool> stillControlsSession, CancellationToken token)
+        {
+            Assert.Equal(FanStopSettings.Default with { AutomaticEnabled = true, SecondsBelowLimits = 17 }, settings);
+            Assert.True(stillControlsSession());
+            return Record("SetFanStopSettings");
+        }
+
+        public Task<ControlOperationResult> ResumeAutomaticFanStopAsync(
+            Func<bool> stillControlsSession, CancellationToken token)
+        {
+            Assert.True(stillControlsSession());
+            return Record("ResumeAutomaticFanStop");
         }
 
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) =>

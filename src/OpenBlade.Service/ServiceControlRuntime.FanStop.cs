@@ -47,14 +47,23 @@ public sealed partial class ServiceControlRuntime
 
     // Caller owns operationGate. A known decrease stores destination intent;
     // ordinary profile writes wait for the same owner's verified Auto/release.
+    private static int FanStopPowerStrength(PowerSource value) => value switch
+    { PowerSource.PluggedIn => 3, PowerSource.UsbC => 2, PowerSource.Battery => 1, _ => 0 };
+
+    private void PauseAutomaticFanStopForPowerIncrease(PowerSource source)
+    {
+        int previousStrength = FanStopPowerStrength(GetStatus().ActivePowerSource);
+        if (previousStrength > 0 && FanStopPowerStrength(source) > previousStrength)
+        { PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.PowerChanged); }
+    }
+
     private async Task<bool> HandleGuardianPowerBoundaryAsync(PowerSource source, CancellationToken token)
     {
+        PauseAutomaticFanStopForPowerIncrease(source);
         if (fanStopController.Guardian is null || !fanStopController.BlocksOrdinaryThermalWrites) { return false; }
         await fanStopController.RefreshAsync(true, () => false, token).ConfigureAwait(false);
         if (!fanStopController.BlocksOrdinaryThermalWrites) { return false; }
         ServiceStatusSnapshot current = GetStatus();
-        static int Strength(PowerSource value) => value switch
-        { PowerSource.PluggedIn => 3, PowerSource.UsbC => 2, PowerSource.Battery => 1, _ => 0 };
         if (source == PowerSource.ExternalUnknown && !fanStopController.RequiresRecovery)
         {
             // Windows knows an external supply exists, but only the sole owner
@@ -64,9 +73,9 @@ public sealed partial class ServiceControlRuntime
             PublishFanStopOutcome();
             return true;
         }
-        if (!fanStopController.RequiresRecovery && Strength(source) != 0
-            && Strength(current.ActivePowerSource) != 0
-            && Strength(source) <= Strength(current.ActivePowerSource))
+        if (!fanStopController.RequiresRecovery && FanStopPowerStrength(source) != 0
+            && FanStopPowerStrength(current.ActivePowerSource) != 0
+            && FanStopPowerStrength(source) <= FanStopPowerStrength(current.ActivePowerSource))
         {
             if (source != current.ActivePowerSource)
             {
@@ -106,10 +115,11 @@ public sealed partial class ServiceControlRuntime
             do
             {
                 observed = Volatile.Read(ref guardianNotificationVersion);
-                // This path is independent of fan-curve maintenance and performs
-                // only cached observation plus a typed same-run Auto signal.
+                // Publish/reconcile the existing owner and any deferred profile
+                // handback. Only periodic maintenance may sample temperatures
+                // for automatic entry or start Stop.
                 if (Volatile.Read(ref guardianNotificationsStopped) == 0 && Volatile.Read(ref status) is not null)
-                { await MaintainFanStopAsync(CancellationToken.None).ConfigureAwait(false); }
+                { await MaintainFanStopAsync(CancellationToken.None, allowAutomaticEntry: false).ConfigureAwait(false); }
             }
             while (observed != Volatile.Read(ref guardianNotificationVersion));
         }
@@ -155,7 +165,9 @@ public sealed partial class ServiceControlRuntime
 
     // Invoked under operationGate by the explicit admission callback. HID is used
     // only before delegation. The owner performs its own fresh native admission
-    // during delegation; status publication never issues an A0 or HID command.
+    // during delegation; status publication cannot issue A0 or HID commands
+    // while that owner holds the hardware lease. After release it may refresh
+    // HID admission for presentation, without starting a new Stop.
     internal async Task<FanStopAdmission> ReadFanStopServiceAdmissionAsync(CancellationToken token)
     {
         ServiceStatusSnapshot current = GetStatus();
@@ -184,6 +196,8 @@ public sealed partial class ServiceControlRuntime
         FanStopMode mode, Func<bool> stillControlsSession, CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        if (mode == FanStopMode.Automatic && stillControlsSession())
+        { PauseAutomaticFanStop(FanStopAutomationPauseReason.ManualAuto); }
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -194,6 +208,9 @@ public sealed partial class ServiceControlRuntime
             }
             // Stop is transient control intent. Do not modify the saved fan profile
             // or use the legacy HID FanMode.Stop path.
+            ResetAutomaticFanStopTimer();
+            if (mode == FanStopMode.Stop && !fanStopController.BlocksOrdinaryThermalWrites)
+            { fanStopController.Guardian?.ConfigureSettings(preferences.FanStopSettings); }
             ControlOperationResult result = await fanStopController.SetModeAsync(
                 mode, current.Capabilities?.HasFanStopTrialEvidence == true,
                 ResolveCurrentFanIntent(),
@@ -213,7 +230,7 @@ public sealed partial class ServiceControlRuntime
 
     private ServiceStatusSnapshot ProjectFanStopStatus(ServiceStatusSnapshot current)
     {
-        FanStopStatus projected = fanStopController.GetStatus(current.Capabilities?.HasFanStopTrialEvidence == true);
+        FanStopStatus projected = ProjectAutomaticFanStop(fanStopController.GetStatus(current.Capabilities?.HasFanStopTrialEvidence == true));
         bool writesBlocked = current.WritesBlocked || fanStopController.RequiresRecovery;
         DeviceCapabilities? capabilities = current.Capabilities;
         if (capabilities is not null)
@@ -233,9 +250,10 @@ public sealed partial class ServiceControlRuntime
             : current with { FanStopStatus = projected, WritesBlocked = writesBlocked, Capabilities = capabilities };
     }
 
-    private async Task MaintainFanStopAsync(CancellationToken token)
+    private async Task MaintainFanStopAsync(CancellationToken token, bool allowAutomaticEntry = true)
     {
-        if (!fanStopController.BlocksOrdinaryThermalWrites
+        if (!preferences.FanStopSettings.AutomaticEnabled
+            && !fanStopController.BlocksOrdinaryThermalWrites
             && (!fanStopController.BackendAvailable
                 || GetStatus().Capabilities?.HasFanStopTrialEvidence != true))
         {
@@ -254,7 +272,7 @@ public sealed partial class ServiceControlRuntime
         try
         {
             ObserveGuardianPowerSource();
-            if (FanStopEntryAdmitted())
+            if (fanStopController.Guardian is null && FanStopEntryAdmitted())
             {
                 await fanStopController.RefreshAsync(GetStatus().Capabilities?.HasFanStopTrialEvidence == true,
                     () => FanStopCommandAdmitted() && FanStopEntryAdmitted(), token).ConfigureAwait(false);
@@ -262,6 +280,7 @@ public sealed partial class ServiceControlRuntime
             await fanStopController.ReconcileAsync(!(fanStopController.Guardian is not null
                     ? FanStopOwnedContinuationAdmitted() : FanStopEntryAdmitted()),
                 FanStopCommandAdmitted, token).ConfigureAwait(false);
+            ObserveAutomaticFanStopCompletion();
             if (guardianDeferredPowerTransition && !fanStopController.BlocksOrdinaryThermalWrites
                 && FanStopOwnedContinuationAdmitted())
             {
@@ -273,6 +292,15 @@ public sealed partial class ServiceControlRuntime
                     await ApplyFullTransitionAsync(source, token).ConfigureAwait(false);
                 }
             }
+            // Guardian reconciliation can replace its cached status after a
+            // completed owner. Read mode-neutral admission exactly once after
+            // those updates, so CanStop describes the next possible activation.
+            if (fanStopController.Guardian is not null && FanStopEntryAdmitted())
+            {
+                await fanStopController.RefreshAsync(GetStatus().Capabilities?.HasFanStopTrialEvidence == true,
+                    () => FanStopCommandAdmitted() && FanStopEntryAdmitted(), token).ConfigureAwait(false);
+            }
+            if (allowAutomaticEntry) { await MaintainAutomaticFanStopAsync(token).ConfigureAwait(false); }
         }
         finally
         {
@@ -286,6 +314,7 @@ public sealed partial class ServiceControlRuntime
     private async Task<ControlOperationResult?> ReleaseFanStopCoreAsync(
         CancellationToken token, Func<bool>? stillAuthorized = null)
     {
+        PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged);
         try
         {
             return await fanStopController.ReconcileAsync(true,
@@ -360,6 +389,7 @@ public sealed partial class ServiceControlRuntime
 
     private async Task<ControlOperationResult?> ReleaseFanStopForLifecycleAsync(Func<bool> stillAuthorized)
     {
+        PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.SessionChanged);
         if (!fanStopController.BlocksOrdinaryThermalWrites)
         {
             return null;

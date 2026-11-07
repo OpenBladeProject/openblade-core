@@ -14,6 +14,15 @@ internal sealed class GuardianFanStopBackend(IFanStopGuardianClient client) : IF
     private bool dispatchPending;
     private IDisposable? hardwareLease;
     private Func<CancellationToken, Task<IDisposable>>? acquireHardware;
+    private FanStopSettings settings = FanStopSettings.Default;
+
+    public void ConfigureSettings(FanStopSettings value)
+    {
+        if (!FanStopSettings.IsWellFormed(value)) { throw new ArgumentException("Invalid Fan Stop settings.", nameof(value)); }
+        if (HasOperation && !Snapshot.Released && settings != value)
+        { throw new InvalidOperationException("An active guardian's thermal policy is immutable."); }
+        settings = value;
+    }
 
     public void ConfigureHardwareDelegation(Func<CancellationToken, Task<IDisposable>> acquire)
     {
@@ -109,7 +118,7 @@ internal sealed class GuardianFanStopBackend(IFanStopGuardianClient client) : IF
             hardwareLease = await acquireHardware(token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             dispatched = true;
-            FanStopSubmission result = await client.StartAsync(operationId, token).ConfigureAwait(false);
+            FanStopSubmission result = await client.StartAsync(operationId, settings, token).ConfigureAwait(false);
             if (result == FanStopSubmission.NotSubmitted)
             {
                 Interlocked.Exchange(ref hardwareLease, null)?.Dispose();

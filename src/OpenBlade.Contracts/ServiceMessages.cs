@@ -34,6 +34,8 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
 [JsonDerivedType(typeof(SetBatterySaverFanStopRequest), "setBatterySaverFanStop")]
 [JsonDerivedType(typeof(SetFanStopModeRequest), "setFanStopMode")]
+[JsonDerivedType(typeof(SetFanStopSettingsRequest), "setFanStopSettings")]
+[JsonDerivedType(typeof(ResumeAutomaticFanStopRequest), "resumeAutomaticFanStop")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
 [JsonDerivedType(typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness")]
 [JsonDerivedType(typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage")]

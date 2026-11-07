@@ -24,8 +24,9 @@ internal sealed record FanStopGuardianSnapshot(
     string? Failure = null)
 {
     public PowerSource? ObservedPowerSource { get; init; }
+    public FanStopEndReason EndReason { get; init; }
     public bool KnownNotSubmitted { get; init; }
-    public bool Released => NativeReleased && OwnerExited && !CommandPending && !Unresolved && Failure is null
+    public bool Released => Enum.IsDefined(EndReason) && NativeReleased && OwnerExited && !CommandPending && !Unresolved && Failure is null
         && (Phase == FanStopGuardianPhase.Completed && AutoConfirmed && CleanupConfirmed && JournalComplete
             && ConfirmedState == FanStopObservedState.Automatic
             || Phase == FanStopGuardianPhase.Refused && KnownNotSubmitted && !StopConfirmed
@@ -42,5 +43,8 @@ internal interface IFanStopGuardianClient
     event Action? SnapshotChanged;
     Task<FanStopAdmission> ReadAdmissionAsync(CancellationToken token);
     Task<FanStopSubmission> StartAsync(Guid operationId, CancellationToken token);
+    Task<FanStopSubmission> StartAsync(Guid operationId, FanStopSettings settings, CancellationToken token) =>
+        settings.EndMode == FanStopEndMode.Auto ? StartAsync(operationId, token)
+            : Task.FromResult(FanStopSubmission.NotSubmitted);
     Task<FanStopSubmission> RequestAutoAsync(Guid operationId, CancellationToken token);
 }

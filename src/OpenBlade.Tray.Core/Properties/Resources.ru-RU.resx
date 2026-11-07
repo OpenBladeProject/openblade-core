@@ -1745,4 +1745,31 @@
   <data name="Returning to Auto" xml:space="preserve">
     <value>Возврат в авторежим</value>
   </data>
+  <data name="Custom: CPU {0} °C / GPU {1} °C for {2} s" xml:space="preserve">
+    <value>Свои условия: CPU {0} °C / GPU {1} °C в течение {2} с</value>
+  </data>
+  <data name="Auto: use the existing conservative end conditions." xml:space="preserve">
+    <value>Авто: использовать текущие консервативные условия завершения.</value>
+  </data>
+  <data name="Paused — resume to start a fresh cool interval." xml:space="preserve">
+    <value>Приостановлено — возобновите, чтобы начать новый интервал охлаждения.</value>
+  </data>
+  <data name="CPU below {0} °C and GPU below {1} °C for {2} s" xml:space="preserve">
+    <value>CPU ниже {0} °C и GPU ниже {1} °C в течение {2} с</value>
+  </data>
+  <data name="Higher temperature limits allow the laptop to stay hotter before cooling restarts." xml:space="preserve">
+    <value>Более высокие пороги позволяют ноутбуку сильнее нагреваться до возобновления охлаждения.</value>
+  </data>
+  <data name="A longer delay keeps the fans stopped while temperatures remain above the limit." xml:space="preserve">
+    <value>Более долгая задержка сохраняет остановку вентиляторов, пока температура остаётся выше порога.</value>
+  </data>
+  <data name="The CPU start limit must be below the CPU end limit." xml:space="preserve">
+    <value>Порог CPU для остановки должен быть ниже порога CPU для возобновления охлаждения.</value>
+  </data>
+  <data name="The GPU start limit must be below the GPU end limit." xml:space="preserve">
+    <value>Порог GPU для остановки должен быть ниже порога GPU для возобновления охлаждения.</value>
+  </data>
+  <data name="Use whole temperatures from 10 to 100 °C, an end delay from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding end limits." xml:space="preserve">
+    <value>Введите целые температуры от 10 до 100 °C, задержку завершения от 1 до 300 секунд и интервал охлаждения от 1 до 3600 секунд. Пороги остановки должны быть ниже соответствующих порогов возобновления охлаждения.</value>
+  </data>
 </root>

@@ -15,7 +15,10 @@ internal enum FanStopGuardianCommandKind { Heartbeat = 1, Automatic = 2 }
 internal sealed record FanStopGuardianCommand(Guid OperationId, FanStopGuardianCommandKind Kind,
     PowerSource? ObservedPowerSource = null, bool ContinueStop = true);
 internal sealed record FanStopGuardianOwnerIdentity(int Pid, long StartUtcTicks);
-internal sealed record FanStopGuardianReservation(Guid OperationId, int ServicePid, long ServiceStartUtcTicks);
+internal sealed record FanStopGuardianReservation(Guid OperationId, int ServicePid, long ServiceStartUtcTicks)
+{
+    public FanStopSettings Settings { get; init; } = FanStopSettings.Default;
+}
 
 // A private, SYSTEM-only, process-bound channel. This protocol has no register,
 // duty, profile or executable argument and is not a public service endpoint.
@@ -181,6 +184,8 @@ internal sealed class FanStopGuardianStore
 
     internal void Reserve(FanStopGuardianReservation reservation)
     {
+        if (!FanStopSettings.IsWellFormed(reservation.Settings))
+        { throw new InvalidDataException("Guardian thermal settings are invalid."); }
         if (reservation.OperationId == Guid.Empty || InspectStartup() != FanStopStartupDisposition.Clear)
         { throw new IOException("An earlier guardian operation needs read-only reconciliation."); }
         Directory.CreateDirectory(DirectoryPath);
@@ -197,7 +202,8 @@ internal sealed class FanStopGuardianStore
         using var file = new FileStream(PendingPath, FileMode.Open, FileAccess.Read, FileShare.Read);
         if (file.Length is <= 0 or > FanStopGuardianTransport.MaximumFrameBytes) { throw new InvalidDataException("Invalid guardian reservation."); }
         var value = JsonSerializer.Deserialize<FanStopGuardianReservation>(file, FanStopGuardianTransport.Json);
-        if (value is null || value.OperationId != operation || value.ServicePid <= 0 || value.ServiceStartUtcTicks <= 0)
+        if (value is null || value.OperationId != operation || value.ServicePid <= 0 || value.ServiceStartUtcTicks <= 0
+            || !FanStopSettings.IsWellFormed(value.Settings))
         { throw new InvalidDataException("Guardian reservation does not match this operation."); }
         return value;
     }

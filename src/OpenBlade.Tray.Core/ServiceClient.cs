@@ -228,6 +228,12 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         SendMutationAsync(new SetBatterySaverFanStopRequest(
             OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), enabled), token);
 
+    public Task<ControlOperationResult> SetFanStopSettingsAsync(FanStopSettings settings, CancellationToken token) =>
+        SendMutationAsync(new SetFanStopSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), settings), token);
+
+    public Task<ControlOperationResult> ResumeAutomaticFanStopAsync(CancellationToken token) =>
+        SendMutationAsync(new ResumeAutomaticFanStopRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), token);
+
     public Task<ControlOperationResult> SetFanStopModeAsync(FanStopMode mode, CancellationToken token) =>
         SendMutationAsync(new SetFanStopModeRequest(
             OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), mode), token);

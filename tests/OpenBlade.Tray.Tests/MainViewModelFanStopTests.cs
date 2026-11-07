@@ -226,6 +226,29 @@ public sealed partial class MainViewModelTests
         Assert.Equal(count, client.MutationOperations.Count);
     }
 
+    [Fact]
+    public async Task FanStop_BlockedDirectModeRetainsAuthoritativeStateWithoutClaimingSavedProfile()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(ControlOperationStatus.Blocked, "Fan Stop could not start."),
+        };
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        var status = CreateFanStopStatus(new(State: FanStopState.Inactive,
+            UnavailableReason: FanStopUnavailableReason.None, CanStop: true));
+        await PushAsync(client, dispatcher, status);
+        client.GetStatusResponse = status with { Revision = status.Revision + 1 };
+        await viewModel.SetFanStopAsync(true, CancellationToken.None);
+        Assert.True(viewModel.HasOperationFeedback);
+        Assert.Contains("Check Troubleshooting for details.", viewModel.OperationFeedbackMessage);
+        Assert.Equal("Fan Stop could not start.", viewModel.OperationStatusMessage);
+        Assert.False(viewModel.FanStopRequested);
+        Assert.True(viewModel.CanToggleFanStop);
+        Assert.Contains("fanStop:Stop", client.MutationOperations);
+    }
+
     private static ServiceStatusSnapshot CreateFanStopStatus(FanStopStatus fanStop)
     {
         var status = CreateStatus(verified: true, blocked: false);

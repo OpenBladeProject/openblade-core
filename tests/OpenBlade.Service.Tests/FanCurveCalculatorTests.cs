@@ -245,6 +245,93 @@ public sealed class FanCurveCalculatorTests
     }
 
     [Fact]
+    public async Task FanStopBorrowsActiveCurveSessionWithoutExtendingItsIdleDeadline()
+    {
+        var activity = new SettableGpuActivitySource { Active = true };
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(activity, () => 48, session, time,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        await source.ReadAsync(CancellationToken.None);
+        time.Advance(TimeSpan.FromSeconds(1));
+        FanTemperatureReadings reading = await source.ReadForFanStopAsync(CancellationToken.None);
+
+        Assert.Equal(52, reading.GpuCelsius);
+        Assert.Equal(2, session.Reads);
+        Assert.Equal(0, session.Releases);
+        Assert.Equal(SafeWindowsFanTemperatureSource.GpuSessionIdleTimeout, time.LastDueTime);
+        time.Advance(TimeSpan.FromSeconds(4));
+        time.FireTimers(advanceToDueTime: false);
+        Assert.Equal(1, session.Releases); // Original ordinary-reader deadline.
+    }
+
+    [Fact]
+    public async Task FanStopAloneNeverRetainsAnActiveGpuSession()
+    {
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = true },
+            () => 48, session, time, gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        await source.ReadForFanStopAsync(CancellationToken.None);
+        await source.ReadForFanStopAsync(CancellationToken.None);
+
+        Assert.Equal(2, session.Reads);
+        Assert.Equal(2, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+    }
+
+    [Fact]
+    public async Task FanStopReleasesBorrowedSessionAsSoonAsGpuWorkloadEnds()
+    {
+        var activity = new SettableGpuActivitySource { Active = true };
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(activity, () => 48, session, time,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        await source.ReadAsync(CancellationToken.None);
+        activity.Active = false;
+        Assert.Equal(52, (await source.ReadForFanStopAsync(CancellationToken.None)).GpuCelsius);
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+    }
+
+    [Fact]
+    public async Task FanStopCannotRenewAnExpiredCurveSession()
+    {
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = true },
+            () => 48, session, time, gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        await source.ReadAsync(CancellationToken.None);
+        time.Advance(SafeWindowsFanTemperatureSource.GpuSessionIdleTimeout);
+        await source.ReadForFanStopAsync(CancellationToken.None);
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+    }
+
+    [Fact]
+    public async Task PowerTransitionInvalidatesBorrowedSessionAndTemperature()
+    {
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        int powerReads = 0;
+        using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = true },
+            () => 48, session, time, gpuPowerState: () => ++powerReads == 1
+                ? FanStopGpuPowerState.PoweredOn : FanStopGpuPowerState.PoweredDown);
+
+        await source.ReadAsync(CancellationToken.None);
+        FanTemperatureReadings reading = await source.ReadForFanStopAsync(CancellationToken.None);
+        Assert.Null(reading.GpuCelsius);
+        Assert.False(reading.GpuPoweredDown);
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+    }
+
+    [Fact]
     public async Task UnknownGpuActivityReleasesTheDriverSession()
     {
         var activity = new SettableGpuActivitySource { Active = true };

@@ -1837,4 +1837,31 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Returning to Auto" xml:space="preserve">
     <value>[!! Rétúrníng tó Áútó ~~~~~~ !!]</value>
   </data>
+  <data name="Custom: CPU {0} °C / GPU {1} °C for {2} s" xml:space="preserve">
+    <value>[!! Cústóm: CPÚ {0} °C / GPÚ {1} °C fór {2} s ~~~~~~~ !!]</value>
+  </data>
+  <data name="Auto: use the existing conservative end conditions." xml:space="preserve">
+    <value>[!! Áútó: úsé thé éxístíng cónsérvátívé énd cóndítíóns. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Paused — resume to start a fresh cool interval." xml:space="preserve">
+    <value>[!! Páúséd — résúmé tó stárt á frésh cóól íntérvál. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="CPU below {0} °C and GPU below {1} °C for {2} s" xml:space="preserve">
+    <value>[!! CPÚ bélów {0} °C ánd GPÚ bélów {1} °C fór {2} s ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Higher temperature limits allow the laptop to stay hotter before cooling restarts." xml:space="preserve">
+    <value>[!! Híghér témpérátúré límíts állów thé láptóp tó stáý hóttér béfóré cóólíng réstárts. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="A longer delay keeps the fans stopped while temperatures remain above the limit." xml:space="preserve">
+    <value>[!! Á lóngér déláý kééps thé fáns stóppéd whílé témpérátúrés rémáín ábóvé thé límít. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The CPU start limit must be below the CPU end limit." xml:space="preserve">
+    <value>[!! Thé CPÚ stárt límít múst bé bélów thé CPÚ énd límít. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The GPU start limit must be below the GPU end limit." xml:space="preserve">
+    <value>[!! Thé GPÚ stárt límít múst bé bélów thé GPÚ énd límít. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Use whole temperatures from 10 to 100 °C, an end delay from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding end limits." xml:space="preserve">
+    <value>[!! Úsé whólé témpérátúrés fróm 10 tó 100 °C, án énd déláý fróm 1 tó 300 sécónds, ánd á cóól íntérvál fróm 1 tó 3600 sécónds. Stárt límíts múst bé bélów thé córréspóndíng énd límíts. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

@@ -51,7 +51,8 @@ public sealed partial class MainViewModel
         try
         {
             await RunOperationAsync(ct => serviceClient.SetFanStopModeAsync(
-                enabled ? FanStopMode.Stop : FanStopMode.Automatic, ct), token);
+                enabled ? FanStopMode.Stop : FanStopMode.Automatic, ct), token,
+                onCompleted: PresentFanStopOperationResult);
             ServiceStatusSnapshot status = await serviceClient.GetStatusAsync(token);
             await dispatcher.InvokeAsync(() => ApplyObservedStatus(status, stamp, trayOnly: false), token);
         }
@@ -64,6 +65,8 @@ public sealed partial class MainViewModel
 
     private void NotifyFanStopPresentation()
     {
+        SynchronizeFanStopSettings();
+        NotifyFanStopSettingsPresentation();
         NotifyComputed(nameof(IsFanStopVisible), IsFanStopVisible);
         NotifyComputed(nameof(FanStopRequested), FanStopRequested);
         NotifyComputed(nameof(CanToggleFanStop), CanToggleFanStop);

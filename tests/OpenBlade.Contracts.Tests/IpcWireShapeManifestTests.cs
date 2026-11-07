@@ -30,6 +30,9 @@ public sealed class IpcWireShapeManifestTests
         Assert.Contains("property hostManagedLaptopControls:System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> member", manifest, StringComparison.Ordinal);
         Assert.Contains("property fanSpeedRangesByPerformancePreset:System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset,OpenBlade.Contracts.FanSpeedRange> member", manifest, StringComparison.Ordinal);
         Assert.Contains("derived setFanStopMode=OpenBlade.Contracts.SetFanStopModeRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived setFanStopSettings=OpenBlade.Contracts.SetFanStopSettingsRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived resumeAutomaticFanStop=OpenBlade.Contracts.ResumeAutomaticFanStopRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("property settings:OpenBlade.Contracts.FanStopSettings required", manifest, StringComparison.Ordinal);
         Assert.Contains("property fanStopStatus:OpenBlade.Contracts.FanStopStatus member", manifest, StringComparison.Ordinal);
         string? expectedHash = OpenBladeIpc.ProtocolVersion switch
         {
@@ -63,6 +66,8 @@ public sealed class IpcWireShapeManifestTests
             74 => "3A7F0F0E543BA35C9702F1F28081547A9FA2A1F166D3E6EC4AE7116A394B9113",
             // Protocol 75 appends pending fan-stop states and the guardian-unavailable reason.
             75 => "1874A6AF68CE588911929DFAC00A5B2742718349C2B33146C3B8C1C9FC37D814",
+            // Protocol 76 adds Stop policies, typed settings/resume requests, and automation status.
+            76 => "48E804C7D6043AE74592F7C8D158F9EFEE8CDE8BE356FAA3581B29DB4F85267A",
             72 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
             _ => null,
         };

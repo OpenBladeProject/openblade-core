@@ -2887,4 +2887,82 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_FanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Stóp fáns ~~~ !!]</value>
   </data>
+  <data name="FanStop_EndTitle.Text" xml:space="preserve">
+    <value>[!! Énd Stóp ~~~ !!]</value>
+  </data>
+  <data name="FanStop_AutomaticTitle.Text" xml:space="preserve">
+    <value>[!! Áútómátíc Stóp ~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_EndDescription.Text" xml:space="preserve">
+    <value>[!! Chóósé whén thé fáns rétúrn tó Áútó. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_Auto.Content" xml:space="preserve">
+    <value>[!! Áútó ~~ !!]</value>
+  </data>
+  <data name="FanStop_Custom.Content" xml:space="preserve">
+    <value>[!! Cústóm ~~~ !!]</value>
+  </data>
+  <data name="FanStop_CpuEnd.Text" xml:space="preserve">
+    <value>[!! CPÚ límít (°C) ~~~~ !!]</value>
+  </data>
+  <data name="FanStop_GpuEnd.Text" xml:space="preserve">
+    <value>[!! GPÚ límít (°C) ~~~~ !!]</value>
+  </data>
+  <data name="FanStop_ExitDelay.Text" xml:space="preserve">
+    <value>[!! Tímé ábóvé límít (sécónds) ~~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_CustomDescription.Text" xml:space="preserve">
+    <value>[!! Rétúrn tó Áútó whén éíthér témpérátúré stáýs ábóvé íts límít fór thé chósén tímé. Sáfétý cóndítíóns cán énd Stóp sóónér. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_EnableAutomatic.Text" xml:space="preserve">
+    <value>[!! Stóp áútómátícállý whén cóól ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_CpuStart.Text" xml:space="preserve">
+    <value>[!! CPÚ bélów (°C) ~~~~ !!]</value>
+  </data>
+  <data name="FanStop_GpuStart.Text" xml:space="preserve">
+    <value>[!! GPÚ bélów (°C) ~~~~ !!]</value>
+  </data>
+  <data name="FanStop_EntryDelay.Text" xml:space="preserve">
+    <value>[!! Tímé bélów bóth límíts (sécónds) ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_AutomaticDescription.Text" xml:space="preserve">
+    <value>[!! Bóth témpérátúrés múst stáý bélów théír límíts fór thé fúll íntérvál. Rétúrníng tó Áútó mánúállý páúsés áútómátíc Stóp úntíl ýóú résúmé ít. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_Resume.Content" xml:space="preserve">
+    <value>[!! Résúmé áútómátíc Stóp ~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_AutomaticTitle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Áútómátíc Stóp ~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_CpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! CPÚ límít (°C) ~~~~ !!]</value>
+  </data>
+  <data name="FanStop_CpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! CPÚ bélów (°C) ~~~~ !!]</value>
+  </data>
+  <data name="FanStop_EnableAutomatic.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Stóp áútómátícállý whén cóól ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_EndMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Énd Stóp módé ~~~~ !!]</value>
+  </data>
+  <data name="FanStop_EndTitle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Énd Stóp ~~~ !!]</value>
+  </data>
+  <data name="FanStop_EntryDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Tímé bélów bóth límíts (sécónds) ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_ExitDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Tímé ábóvé límít (sécónds) ~~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_GpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! GPÚ límít (°C) ~~~~ !!]</value>
+  </data>
+  <data name="FanStop_GpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! GPÚ bélów (°C) ~~~~ !!]</value>
+  </data>
+  <data name="FanStop_UnsavedSettings.Text" xml:space="preserve">
+    <value>[!! Únsávéd Stóp séttíngs ~~~~~~~ !!]</value>
+  </data>
 </root>

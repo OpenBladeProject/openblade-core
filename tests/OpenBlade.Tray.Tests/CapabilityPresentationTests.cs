@@ -701,7 +701,7 @@ public sealed class CapabilityPresentationTests
                 && element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate"))
             .ToArray();
 
-        Assert.Equal(16, compactRows.Length);
+        Assert.Equal(23, compactRows.Length);
         Assert.All(compactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -711,10 +711,23 @@ public sealed class CapabilityPresentationTests
             {
                 XElement[] children = content.Elements().ToArray();
                 Assert.Equal(2, children.Length);
-                Assert.Equal("InfoBar", children[1].Name.LocalName);
-                Assert.Equal("HyperBoostUnavailableInfoBar", Attribute(children[1], "Name"));
-                Assert.Equal("{x:Bind HasHyperBoostUnavailableReason, Mode=OneWay}",
-                    Attribute(children[1], "Visibility"));
+                if (children[1].Name.LocalName == "InfoBar")
+                {
+                    Assert.Equal("HyperBoostUnavailableInfoBar", Attribute(children[1], "Name"));
+                    Assert.Equal("{x:Bind HasHyperBoostUnavailableReason, Mode=OneWay}",
+                        Attribute(children[1], "Visibility"));
+                }
+                else
+                {
+                    Assert.Equal("TextBlock", children[1].Name.LocalName);
+                    string? editorName = Attribute(Assert.Single(row.Descendants(), element => element.Name.LocalName == "NumberBox"), "Name");
+                    Assert.NotNull(editorName);
+                    Assert.Contains(editorName, new[] { "AutomaticFanStopCpuLimitEditor", "AutomaticFanStopGpuLimitEditor" });
+                    string error = editorName == "AutomaticFanStopCpuLimitEditor" ? "AutomaticFanStopCpuError" : "AutomaticFanStopGpuError";
+                    Assert.Equal($"{{Binding {error}}}", Attribute(children[1], "Text"));
+                    Assert.Equal($"{{x:Bind Has{error}, Mode=OneWay}}", Attribute(children[1], "Visibility"));
+                    Assert.Equal("Polite", Attribute(children[1], "AutomationProperties.LiveSetting"));
+                }
                 content = children[0];
             }
             Assert.Equal("Grid", content.Name.LocalName);
@@ -724,10 +737,10 @@ public sealed class CapabilityPresentationTests
             XElement title = content.Descendants().First(element =>
                 element.Name.LocalName == "TextBlock"
                 && Attribute(element, "Style") == "{StaticResource CardTitleStyle}");
-            if (CanonicalLocalizedXaml.Identity(title) is "MainWindow_TextBlockLaptopPerformance"
-                or "MainWindow_BatterySaverFanStop" or "MainWindow_FanStop")
+            if (Attribute(title, "SizeChanged") is null)
             {
                 Assert.NotNull(title.Parent);
+                Assert.Equal("StackPanel", title.Parent.Name.LocalName);
                 Assert.Equal(
                     "OnDashboardTextStackSizeChanged",
                     Attribute(title.Parent, "SizeChanged"));
@@ -749,6 +762,13 @@ public sealed class CapabilityPresentationTests
                 "Maximum fans",
                 "Fans",
                 "Stop fans",
+                "CPU limit (°C)",
+                "GPU limit (°C)",
+                "Time above limit (seconds)",
+                "Stop automatically when cool",
+                "CPU below (°C)",
+                "GPU below (°C)",
+                "Time below both limits (seconds)",
                 "Stop fans",
                 "Fan speed",
                 "Battery protection",
@@ -779,7 +799,10 @@ public sealed class CapabilityPresentationTests
         XElement[] animatedCompactRows = compactRows
             .Where(row => Attribute(row, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
-        Assert.Equal(12, animatedCompactRows.Length);
+        Assert.Equal(11, animatedCompactRows.Length);
+        XElement stopOwner = Assert.Single(document.Descendants(), element => Attribute(element, "Name") == "FanStopCell");
+        Assert.Equal("{Binding IsFanStopVisible}", Attribute(stopOwner, "AnimatedVisibility.IsVisible"));
+        Assert.Contains(compactRows, row => row.Ancestors().Contains(stopOwner));
         Assert.All(animatedCompactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));

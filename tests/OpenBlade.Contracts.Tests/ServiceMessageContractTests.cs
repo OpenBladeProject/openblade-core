@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(75, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(76, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(16 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -36,6 +36,8 @@ public sealed class ServiceMessageContractTests
             (typeof(SetFanOverrideRequest), "setFanOverride"),
             (typeof(SetBatterySaverFanStopRequest), "setBatterySaverFanStop"),
             (typeof(SetFanStopModeRequest), "setFanStopMode"),
+            (typeof(SetFanStopSettingsRequest), "setFanStopSettings"),
+            (typeof(ResumeAutomaticFanStopRequest), "resumeAutomaticFanStop"),
             (typeof(SetLightingOverrideRequest), "setLightingOverride"),
             (typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness"),
             (typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage"),

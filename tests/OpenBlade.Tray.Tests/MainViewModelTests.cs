@@ -11388,6 +11388,20 @@ public sealed partial class MainViewModelTests
             return MutateAsync(token);
         }
 
+        public FanStopSettings? LastFanStopSettings { get; private set; }
+        public Task<ControlOperationResult> SetFanStopSettingsAsync(FanStopSettings settings, CancellationToken token)
+        {
+            LastFanStopSettings = settings;
+            MutationOperations.Add("fanStopSettings");
+            return MutateAsync(token);
+        }
+
+        public Task<ControlOperationResult> ResumeAutomaticFanStopAsync(CancellationToken token)
+        {
+            MutationOperations.Add("resumeAutomaticFanStop");
+            return MutateAsync(token);
+        }
+
         public Task<ControlOperationResult> SetFanStopModeAsync(FanStopMode mode, CancellationToken token)
         {
             MutationOperations.Add($"fanStop:{mode}");

@@ -19,7 +19,10 @@ public sealed record BatteryAutomationPreferences(
         ThermalControlPolicy.MaintainDesiredState,
     ThermalPolicyUpgradeDisclosureState ThermalPolicyUpgradeDisclosure =
         ThermalPolicyUpgradeDisclosureState.NotRequired,
-    bool AllowExperimentalFeatures = true);
+    bool AllowExperimentalFeatures = true)
+{
+    public FanStopSettings FanStopSettings { get; init; } = FanStopSettings.Default;
+}
 
 public sealed record BatteryConfiguration(
     ProfileSet Profiles,

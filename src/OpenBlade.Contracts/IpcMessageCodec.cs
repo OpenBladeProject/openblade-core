@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 75;
+    public const int ProtocolVersion = 76;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -258,6 +258,8 @@ public static class IpcMessageCodec
             SetHyperBoostRequest => true,
             SetBatterySaverFanStopRequest => true,
             SetFanStopModeRequest set => Enum.IsDefined(set.Mode),
+            SetFanStopSettingsRequest set => FanStopSettings.IsWellFormed(set.Settings),
+            ResumeAutomaticFanStopRequest => true,
             SetGpuClockTuningRequest set =>
                 GpuClockTuningSettings.IsWellFormed(set.Value)
                 && Enum.IsDefined(set.Lifetime),
@@ -413,6 +415,9 @@ public static class IpcMessageCodec
             || !Enum.IsDefined(fanStop.RequestedMode)
             || !Enum.IsDefined(fanStop.State)
             || !Enum.IsDefined(fanStop.UnavailableReason)
+            || !FanStopSettings.IsWellFormed(fanStop.Settings)
+            || !Enum.IsDefined(fanStop.AutomationState)
+            || !Enum.IsDefined(fanStop.AutomationPauseReason)
             || fanStop.State is FanStopState.Unavailable or FanStopState.RecoveryRequired
                 && (fanStop.CanStop || fanStop.CanReturnToAutomatic)
             || fanStop.CanReturnToAutomatic && fanStop.State is not

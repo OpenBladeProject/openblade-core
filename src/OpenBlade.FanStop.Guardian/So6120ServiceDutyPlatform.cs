@@ -25,17 +25,21 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
     private readonly TimeProvider clock;
     private readonly Semaphore run;
     private readonly So6120ServiceContinuationMonitor continuationMonitor;
+    private readonly FanStopSettings settings;
+    private readonly FanStopThermalPolicy thermalPolicy;
     private FileStream? driverPin;
     private Version? bootReportedEcVersion;
     private bool disposed;
     private bool powerUnresolved;
     private bool thermalSafe;
     private long thermalTimestamp;
+    private bool ownedStopStarted;
     private long? powerTimestamp;
     private PowerSource observedPowerSource = PowerSource.ExternalUnknown;
 
     private So6120ServiceDutyPlatform(So6120JournalIdentity identity, int servicePid, long serviceStartUtcTicks,
-        Func<bool> ownershipStillDelegated, IFanTemperatureSource temperatureSource, TimeProvider clock, Semaphore run)
+        Func<bool> ownershipStillDelegated, IFanTemperatureSource temperatureSource, TimeProvider clock, Semaphore run,
+        FanStopSettings settings)
     {
         this.identity = identity;
         this.servicePid = servicePid;
@@ -44,7 +48,9 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
         this.temperatureSource = temperatureSource;
         this.clock = clock;
         this.run = run;
-        continuationMonitor = new(() => ReadContinuationAdmission() && RefreshTemperature(), clock);
+        this.settings = settings;
+        thermalPolicy = new(settings, clock);
+        continuationMonitor = new(() => ReadContinuationAdmission() && RefreshTemperature(continuation: true), clock);
     }
 
     internal So6120SessionBinding Binding { get; private set; } = null!;
@@ -54,16 +60,21 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
     internal So6120NativeCloseEvidence CloseEvidence { get; private set; } = null!;
     internal PowerSource ObservedPowerSource => observedPowerSource;
     internal bool NativeOperationUnresolved => powerUnresolved;
+    internal FanStopEndReason EndReason { get; private set; }
+
+    internal void BeginOwnedStop() => ownedStopStarted = true;
 
     internal static SafeWindowsFanTemperatureSource CreateTemperatureSource() => new();
 
     internal static So6120ServiceDutyPlatform Acquire(So6120JournalIdentity identity, int servicePid,
-        long serviceStartUtcTicks, Func<bool> ownershipStillDelegated, IFanTemperatureSource temperatureSource)
+        long serviceStartUtcTicks, Func<bool> ownershipStillDelegated, IFanTemperatureSource temperatureSource,
+        FanStopSettings settings)
     {
         RequireSystemSession();
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(ownershipStillDelegated);
         ArgumentNullException.ThrowIfNull(temperatureSource);
+        if (!FanStopSettings.IsWellFormed(settings)) { throw new InvalidDataException("Invalid immutable Stop policy."); }
         if (identity.Owner.OperationId == Guid.Empty || servicePid <= 0 || serviceStartUtcTicks <= 0
             || identity.CapturedProfile != PerformancePreset.Balanced || identity.RequestedDuty1 != 0 || identity.RequestedDuty2 != 0)
         { throw new InvalidOperationException("The service owner requires a fresh explicit Balanced Stop identity."); }
@@ -76,7 +87,7 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
             if (!run.WaitOne(0)) { throw new InvalidOperationException("An SO6120 owner is already active."); }
             reserved = true;
             VerifyDeveloperAttempt();
-            owner = new(identity, servicePid, serviceStartUtcTicks, ownershipStillDelegated, temperatureSource, TimeProvider.System, run);
+            owner = new(identity, servicePid, serviceStartUtcTicks, ownershipStillDelegated, temperatureSource, TimeProvider.System, run, settings);
             So6120SupervisedMetadata metadata = owner.ReadMetadata();
             // This inert challenge token satisfies shared identity binding only.
             // The service policy below does not interpret it as consent.
@@ -241,16 +252,23 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
     {
         // The parent owns typed-power polling on the same serialized worker.
         // Continuous admission has no HID/mailbox commands or durable I/O.
-        return !powerUnresolved && observedPowerSource is PowerSource.UsbC or PowerSource.Battery
-            && continuationMonitor.Observe();
+        if (powerUnresolved || observedPowerSource is not (PowerSource.UsbC or PowerSource.Battery))
+        { EndReason = FanStopEndReason.PowerChanged; return false; }
+        if (EndReason != FanStopEndReason.None) { return false; }
+        if (continuationMonitor.Observe()) { return true; }
+        if (!continuationMonitor.SampleFresh || EndReason == FanStopEndReason.None)
+        { EndReason = FanStopEndReason.SafetyCondition; }
+        return false;
     }
 
     private bool ReadContinuationAdmission()
     {
         var current = So6120WindowsSupervisedMetadata.CaptureServiceVolatile(clock);
+        bool sessionAdmitted = ActiveSession(current.Session) && !current.Session.Interactive && current.Session.ProcessSession == 0;
+        if (ownedStopStarted && !sessionAdmitted) { EndReason = FanStopEndReason.SessionChanged; }
         return current.StartedTimestamp <= current.CompletedTimestamp
             && clock.GetElapsedTime(current.StartedTimestamp) <= So6120ServiceContinuationMonitor.MaximumSampleAge
-            && ActiveSession(current.Session) && !current.Session.Interactive && current.Session.ProcessSession == 0
+            && sessionAdmitted
             && current.Session.AcLineStatus is 0 or 1 && current.DetectedControllers.Count == 0
             && current.OpenBladeStatus == ServiceControllerStatus.Running
             && current.OpenBladeWriterPids.Count == 1 && current.OpenBladeWriterPids[0] == servicePid
@@ -270,17 +288,32 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
     private bool ActiveSession(So6120SessionMetadata session) => session.ConsoleSession is not (0 or uint.MaxValue)
         && session.ConsoleSession == Binding.ConsoleSession;
 
-    private bool RefreshTemperature()
+    private bool RefreshTemperature(bool continuation = false)
     {
-        // This conservative product policy is experimental. CPU over 55 C,
-        // active GPU or unavailable temperature immediately ends sustained Stop.
         thermalSafe = false;
         thermalTimestamp = clock.GetTimestamp();
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        FanTemperatureReadings reading = temperatureSource.ReadAsync(deadline.Token).AsTask()
+        FanTemperatureReadings reading = (settings.EndMode == FanStopEndMode.Custom
+                ? temperatureSource.ReadForFanStopAsync(deadline.Token) : temperatureSource.ReadAsync(deadline.Token)).AsTask()
             .WaitAsync(TimeSpan.FromSeconds(2)).GetAwaiter().GetResult();
-        thermalSafe = So6120ServiceThermalPolicy.Admits(reading.CpuCelsius, reading.GpuInactive,
-            clock.GetElapsedTime(thermalTimestamp), deadline.IsCancellationRequested);
+        TimeSpan age = clock.GetElapsedTime(thermalTimestamp);
+        if (continuation)
+        {
+            bool admitted = thermalPolicy.Observe(reading.CpuCelsius, reading.GpuCelsius,
+                reading.GpuInactive, reading.GpuPoweredDown, age, deadline.IsCancellationRequested);
+            if (!admitted) { EndReason = thermalPolicy.EndReason; }
+            return admitted;
+        }
+        // Full entry remains strict before every zero command. Once owned,
+        // command freshness checks may observe Custom heat without bypassing or
+        // resetting the independent continuation timers. Auto cleanup does not
+        // call these Stop-entry hooks.
+        thermalSafe = ownedStopStarted
+            ? thermalPolicy.AdmitsCommand(reading.CpuCelsius, reading.GpuCelsius, reading.GpuInactive,
+                reading.GpuPoweredDown, age, deadline.IsCancellationRequested)
+            : thermalPolicy.AdmitsEntry(reading.CpuCelsius, reading.GpuCelsius, reading.GpuInactive,
+                reading.GpuPoweredDown, age, deadline.IsCancellationRequested);
+        if (ownedStopStarted && !thermalSafe) { EndReason = thermalPolicy.EndReason; }
         return thermalSafe;
     }
 

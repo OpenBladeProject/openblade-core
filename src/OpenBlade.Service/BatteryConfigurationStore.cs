@@ -487,6 +487,11 @@ public sealed class BatteryConfigurationStore
         }
 
         BatteryAutomationPreferences preferences = document.Preferences;
+        if (expectedSchemaVersion >= ProfileStore.FanStopSettingsSchemaVersion
+            && !preferencesElement.TryGetProperty("fanStopSettings", out _))
+        { throw new InvalidDataException("The current preferences are missing Fan Stop settings."); }
+        if (expectedSchemaVersion < ProfileStore.FanStopSettingsSchemaVersion)
+        { preferences = preferences with { FanStopSettings = FanStopSettings.Default }; }
         if (expectedSchemaVersion
             < ProfileStore.ExperimentalFeaturesConsentPredecessorSchemaVersion)
         {

@@ -1072,10 +1072,81 @@ type sealed class OpenBlade.Contracts.FanSpeedRange
   property System.Int32 MaximumRpm { get; init; }
   property System.Int32 MinimumRpm { get; init; }
   property System.Int32 StepRpm { get; init; }
+type enum OpenBlade.Contracts.FanStopAutomationPauseReason
+  field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason AttemptFailed = 6
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason ManualAuto = 1
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason ModeChanged = 2
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason None = 0
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason PowerChanged = 4
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason Restarted = 7
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason SafetyCondition = 5
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason SessionChanged = 3
+type enum OpenBlade.Contracts.FanStopAutomationState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopAutomationState Disabled = 0
+  field const OpenBlade.Contracts.FanStopAutomationState Paused = 2
+  field const OpenBlade.Contracts.FanStopAutomationState Stopped = 3
+  field const OpenBlade.Contracts.FanStopAutomationState Waiting = 1
+type enum OpenBlade.Contracts.FanStopEndMode
+  field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopEndMode Auto = 0
+  field const OpenBlade.Contracts.FanStopEndMode Custom = 1
+type enum OpenBlade.Contracts.FanStopEndReason
+  field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopEndReason CallerRequest = 5
+  field const OpenBlade.Contracts.FanStopEndReason None = 0
+  field const OpenBlade.Contracts.FanStopEndReason PowerChanged = 3
+  field const OpenBlade.Contracts.FanStopEndReason SafetyCondition = 2
+  field const OpenBlade.Contracts.FanStopEndReason SessionChanged = 4
+  field const OpenBlade.Contracts.FanStopEndReason ThermalThreshold = 1
 type enum OpenBlade.Contracts.FanStopMode
   field System.Int32 value__
   field const OpenBlade.Contracts.FanStopMode Automatic = 0
   field const OpenBlade.Contracts.FanStopMode Stop = 1
+type sealed class OpenBlade.Contracts.FanStopSettings
+  interface System.IEquatable<OpenBlade.Contracts.FanStopSettings>
+  ctor ()
+  field const System.Int32 DurationWarningSeconds = 10
+  field const System.Int32 MaximumSecondsAboveLimit = 300
+  field const System.Int32 MaximumSecondsBelowLimits = 3600
+  field const System.Int32 MaximumTemperatureCelsius = 100
+  field const System.Int32 MinimumTemperatureCelsius = 10
+  field const System.Int32 TemperatureWarningCelsius = 60
+  method OpenBlade.Contracts.FanStopEndMode get_EndMode()
+  method OpenBlade.Contracts.FanStopSettings <Clone>$()
+  method System.Boolean get_AutomaticEnabled()
+  method System.Int32 get_AutomaticCpuBelowCelsius()
+  method System.Int32 get_AutomaticGpuBelowCelsius()
+  method System.Int32 get_CpuLimitCelsius()
+  method System.Int32 get_GpuLimitCelsius()
+  method System.Int32 get_SecondsAboveLimit()
+  method System.Int32 get_SecondsBelowLimits()
+  method System.Void set_AutomaticCpuBelowCelsius(System.Int32 value)
+  method System.Void set_AutomaticEnabled(System.Boolean value)
+  method System.Void set_AutomaticGpuBelowCelsius(System.Int32 value)
+  method System.Void set_CpuLimitCelsius(System.Int32 value)
+  method System.Void set_EndMode(OpenBlade.Contracts.FanStopEndMode value)
+  method System.Void set_GpuLimitCelsius(System.Int32 value)
+  method System.Void set_SecondsAboveLimit(System.Int32 value)
+  method System.Void set_SecondsBelowLimits(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Contracts.FanStopSettings get_Default()
+  method static System.Boolean IsWellFormed(OpenBlade.Contracts.FanStopSettings value)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.FanStopSettings left, OpenBlade.Contracts.FanStopSettings right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.FanStopSettings left, OpenBlade.Contracts.FanStopSettings right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.FanStopSettings other)
+  property OpenBlade.Contracts.FanStopEndMode EndMode { get; init; }
+  property OpenBlade.Contracts.FanStopSettings Default { get; }
+  property System.Boolean AutomaticEnabled { get; init; }
+  property System.Int32 AutomaticCpuBelowCelsius { get; init; }
+  property System.Int32 AutomaticGpuBelowCelsius { get; init; }
+  property System.Int32 CpuLimitCelsius { get; init; }
+  property System.Int32 GpuLimitCelsius { get; init; }
+  property System.Int32 SecondsAboveLimit { get; init; }
+  property System.Int32 SecondsBelowLimits { get; init; }
 type enum OpenBlade.Contracts.FanStopState
   field System.Int32 value__
   field const OpenBlade.Contracts.FanStopState Automatic = 3
@@ -1089,7 +1160,10 @@ type sealed class OpenBlade.Contracts.FanStopStatus
   interface System.IEquatable<OpenBlade.Contracts.FanStopStatus>
   ctor (OpenBlade.Contracts.FanStopMode RequestedMode = Automatic, OpenBlade.Contracts.FanStopState State = Unavailable, OpenBlade.Contracts.FanStopUnavailableReason UnavailableReason = UnsupportedDevice, System.Boolean CanStop = false, System.Boolean CanReturnToAutomatic = false, OpenBlade.Contracts.FanControlSettings NormalFanControl = null, System.String Message = null)
   method OpenBlade.Contracts.FanControlSettings get_NormalFanControl()
+  method OpenBlade.Contracts.FanStopAutomationPauseReason get_AutomationPauseReason()
+  method OpenBlade.Contracts.FanStopAutomationState get_AutomationState()
   method OpenBlade.Contracts.FanStopMode get_RequestedMode()
+  method OpenBlade.Contracts.FanStopSettings get_Settings()
   method OpenBlade.Contracts.FanStopState get_State()
   method OpenBlade.Contracts.FanStopStatus <Clone>$()
   method OpenBlade.Contracts.FanStopUnavailableReason get_UnavailableReason()
@@ -1097,11 +1171,14 @@ type sealed class OpenBlade.Contracts.FanStopStatus
   method System.Boolean get_CanStop()
   method System.String get_Message()
   method System.Void Deconstruct(out OpenBlade.Contracts.FanStopMode RequestedMode, out OpenBlade.Contracts.FanStopState State, out OpenBlade.Contracts.FanStopUnavailableReason UnavailableReason, out System.Boolean CanStop, out System.Boolean CanReturnToAutomatic, out OpenBlade.Contracts.FanControlSettings NormalFanControl, out System.String Message)
+  method System.Void set_AutomationPauseReason(OpenBlade.Contracts.FanStopAutomationPauseReason value)
+  method System.Void set_AutomationState(OpenBlade.Contracts.FanStopAutomationState value)
   method System.Void set_CanReturnToAutomatic(System.Boolean value)
   method System.Void set_CanStop(System.Boolean value)
   method System.Void set_Message(System.String value)
   method System.Void set_NormalFanControl(OpenBlade.Contracts.FanControlSettings value)
   method System.Void set_RequestedMode(OpenBlade.Contracts.FanStopMode value)
+  method System.Void set_Settings(OpenBlade.Contracts.FanStopSettings value)
   method System.Void set_State(OpenBlade.Contracts.FanStopState value)
   method System.Void set_UnavailableReason(OpenBlade.Contracts.FanStopUnavailableReason value)
   method override System.Boolean Equals(System.Object obj)
@@ -1111,7 +1188,10 @@ type sealed class OpenBlade.Contracts.FanStopStatus
   method static System.Boolean op_Inequality(OpenBlade.Contracts.FanStopStatus left, OpenBlade.Contracts.FanStopStatus right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.FanStopStatus other)
   property OpenBlade.Contracts.FanControlSettings NormalFanControl { get; init; }
+  property OpenBlade.Contracts.FanStopAutomationPauseReason AutomationPauseReason { get; init; }
+  property OpenBlade.Contracts.FanStopAutomationState AutomationState { get; init; }
   property OpenBlade.Contracts.FanStopMode RequestedMode { get; init; }
+  property OpenBlade.Contracts.FanStopSettings Settings { get; init; }
   property OpenBlade.Contracts.FanStopState State { get; init; }
   property OpenBlade.Contracts.FanStopUnavailableReason UnavailableReason { get; init; }
   property System.Boolean CanReturnToAutomatic { get; init; }
@@ -1715,7 +1795,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 75
+  field const System.Int32 ProtocolVersion = 76
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -2149,6 +2229,19 @@ type sealed class OpenBlade.Contracts.ResolvedSetting<T>
   method virtual System.Boolean Equals(OpenBlade.Contracts.ResolvedSetting<T> other)
   property OpenBlade.Contracts.SettingValueSource Source { get; init; }
   property T Value { get; init; }
+type sealed class OpenBlade.Contracts.ResumeAutomaticFanStopRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ResumeAutomaticFanStopRequest>
+  ctor (System.Int32 Version, System.Guid RequestId)
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ResumeAutomaticFanStopRequest left, OpenBlade.Contracts.ResumeAutomaticFanStopRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ResumeAutomaticFanStopRequest left, OpenBlade.Contracts.ResumeAutomaticFanStopRequest right)
+  method virtual OpenBlade.Contracts.ResumeAutomaticFanStopRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ResumeAutomaticFanStopRequest other)
 type sealed class OpenBlade.Contracts.ResumeExperimentalWritesRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.ResumeExperimentalWritesRequest>
@@ -2628,6 +2721,22 @@ type sealed class OpenBlade.Contracts.SetFanStopModeRequest
   method virtual OpenBlade.Contracts.SetFanStopModeRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetFanStopModeRequest other)
   property OpenBlade.Contracts.FanStopMode Mode { get; init; }
+type sealed class OpenBlade.Contracts.SetFanStopSettingsRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetFanStopSettingsRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.FanStopSettings Settings)
+  method OpenBlade.Contracts.FanStopSettings get_Settings()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.FanStopSettings Settings)
+  method System.Void set_Settings(OpenBlade.Contracts.FanStopSettings value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetFanStopSettingsRequest left, OpenBlade.Contracts.SetFanStopSettingsRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetFanStopSettingsRequest left, OpenBlade.Contracts.SetFanStopSettingsRequest right)
+  method virtual OpenBlade.Contracts.SetFanStopSettingsRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetFanStopSettingsRequest other)
+  property OpenBlade.Contracts.FanStopSettings Settings { get; init; }
 type sealed class OpenBlade.Contracts.SetFirmwareCompatibilityOverrideRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.SetFirmwareCompatibilityOverrideRequest>

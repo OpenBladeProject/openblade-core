@@ -273,6 +273,12 @@ public sealed class ControlRequestHandler
             SetFanStopModeRequest set => Result(
                 request.RequestId,
                 await runtime.SetFanStopModeAsync(set.Mode, stillControlsSession, cancellationToken)),
+            SetFanStopSettingsRequest set => Result(
+                request.RequestId,
+                await runtime.SetFanStopSettingsAsync(set.Settings, stillControlsSession, cancellationToken)),
+            ResumeAutomaticFanStopRequest => Result(
+                request.RequestId,
+                await runtime.ResumeAutomaticFanStopAsync(stillControlsSession, cancellationToken)),
             ReportApplicationContextRequest report => Result(
                 request.RequestId,
                 await runtime.ReportApplicationContextAsync(

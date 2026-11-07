@@ -186,11 +186,12 @@ internal static class Program
         long revision = 0;
         bool stopped = false;
         bool stoppedObserved = false;
+        FanStopEndReason endReason = FanStopEndReason.None;
         So6120DirectDutySession? session = null;
         So6120SessionCommandEvidence? retainedCommandEvidence = null;
         So6120ServiceDutyPlatform? acquisition = null;
         FanStopGuardianSnapshot Status(FanStopGuardianPhase phase, string? reason = null) =>
-            new(operation, ++revision, phase, StopConfirmed: stopped, Reason: reason);
+            new(operation, ++revision, phase, StopConfirmed: stopped, Reason: reason) { EndReason = endReason };
         void PublishTerminal(FanStopGuardianSnapshot result)
         {
             store.RecordOwnerResult(result);
@@ -199,6 +200,8 @@ internal static class Program
         try
         {
             stop.ThrowIfCancellationRequested();
+            if (!FanStopSettings.IsWellFormed(reservation.Settings))
+            { throw new InvalidDataException("Guardian reservation has an invalid Stop policy."); }
             publish(Status(FanStopGuardianPhase.Starting) with { CommandPending = true });
             string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
                 "SO6120 EC1.04 RZ09-0581 reviewed direct zero/Auto contract")));
@@ -208,7 +211,7 @@ internal static class Program
                 $"service:{reservation.ServicePid}:{reservation.ServiceStartUtcTicks}");
             acquisition = So6120ServiceDutyPlatform.Acquire(identity, reservation.ServicePid,
                 reservation.ServiceStartUtcTicks, () => store.ReadReservation(operation) == reservation,
-                So6120ServiceDutyPlatform.CreateTemperatureSource());
+                So6120ServiceDutyPlatform.CreateTemperatureSource(), reservation.Settings);
             stop.ThrowIfCancellationRequested();
             PowerSource power = acquisition.ReadPowerSource();
             if (power != PowerSource.UsbC)
@@ -224,6 +227,7 @@ internal static class Program
             { throw new InvalidDataException($"Stop entry did not establish an owned cleanup checkpoint ({entry.Failure})."); }
             if (stopped)
             {
+                acquisition.BeginOwnedStop();
                 So6120StopCoastResult coast = session.ObserveStoppedCoast(stop);
                 if (coast == So6120StopCoastResult.Unresolved)
                 { throw new InvalidDataException("Stopped-fan coast observation is unresolved."); }
@@ -243,7 +247,8 @@ internal static class Program
                             PowerSource next = acquisition.ReadPowerSource();
                             lastPowerRead = TimeProvider.System.GetTimestamp();
                             FanStopPowerTransition transition = FanStopPowerTransitionPolicy.Evaluate(power, next);
-                            if (transition == FanStopPowerTransition.Automatic) { break; }
+                            if (transition == FanStopPowerTransition.Automatic)
+                            { endReason = FanStopEndReason.PowerChanged; break; }
                             if (transition == FanStopPowerTransition.VerifyOwnedStop)
                             {
                                 // A lower-power transition retains the existing
@@ -265,6 +270,9 @@ internal static class Program
                     }
                 }
             }
+            if (stop.IsCancellationRequested || service.HasExited) { endReason = FanStopEndReason.CallerRequest; }
+            else if (endReason == FanStopEndReason.None)
+            { endReason = acquisition.EndReason == FanStopEndReason.None ? FanStopEndReason.SafetyCondition : acquisition.EndReason; }
             publish(Status(FanStopGuardianPhase.ReturningToAutomatic, "Auto requested or continuation admission ended.")
                 with
             { CommandPending = true, ConfirmedState = stoppedObserved ? FanStopObservedState.Stopped : FanStopObservedState.Unknown });

@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.FanStop;
 using OpenBlade.FanStop.Guardian;
 
 namespace OpenBlade.Service.Tests;
@@ -79,7 +80,8 @@ public sealed class So6120ServiceAdmissionPolicyTests
     public void ThermalSampleMustBePlausibleCoolGpuInactiveAndFresh(int? cpu, bool gpuInactive,
         int milliseconds, bool canceled, bool expected)
     {
-        Assert.Equal(expected, So6120ServiceThermalPolicy.Admits(cpu, gpuInactive,
+        var policy = new FanStopThermalPolicy(FanStopSettings.Default, TimeProvider.System);
+        Assert.Equal(expected, policy.AdmitsEntry(cpu, null, gpuInactive, false,
             TimeSpan.FromMilliseconds(milliseconds), canceled));
     }
 

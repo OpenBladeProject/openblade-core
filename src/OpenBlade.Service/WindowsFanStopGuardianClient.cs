@@ -45,8 +45,12 @@ internal sealed class WindowsFanStopGuardianClient : IFanStopGuardianClient, IAs
 
     public Task<FanStopAdmission> ReadAdmissionAsync(CancellationToken token) => admission(token);
 
-    public Task<FanStopSubmission> StartAsync(Guid operationId, CancellationToken token)
+    public Task<FanStopSubmission> StartAsync(Guid operationId, CancellationToken token) =>
+        StartAsync(operationId, FanStopSettings.Default, token);
+
+    public Task<FanStopSubmission> StartAsync(Guid operationId, FanStopSettings settings, CancellationToken token)
     {
+        if (!FanStopSettings.IsWellFormed(settings)) { throw new ArgumentException("Invalid Fan Stop settings.", nameof(settings)); }
         lock (sync)
         {
             token.ThrowIfCancellationRequested();
@@ -58,7 +62,7 @@ internal sealed class WindowsFanStopGuardianClient : IFanStopGuardianClient, IAs
             bool reserved = false;
             try
             {
-                store.Reserve(new(operationId, self.Id, self.StartTime.ToUniversalTime().Ticks));
+                store.Reserve(new(operationId, self.Id, self.StartTime.ToUniversalTime().Ticks) { Settings = settings });
                 reserved = true;
                 // The marker exists before any child can start. Startup failure
                 // after launch retains it, even if the child did not reach hardware.
@@ -153,7 +157,7 @@ internal sealed class WindowsFanStopGuardianClient : IFanStopGuardianClient, IAs
                 {
                     var next = await FanStopGuardianTransport.ReadAsync<FanStopGuardianSnapshot>(pipe, CancellationToken.None);
                     if (next.OperationId != operation || next.Revision <= ownerRevision || next.OwnerExited
-                        || !Enum.IsDefined(next.Phase) || !Enum.IsDefined(next.ConfirmedState)
+                        || !Enum.IsDefined(next.Phase) || !Enum.IsDefined(next.ConfirmedState) || !Enum.IsDefined(next.EndReason)
                         || next.Reason?.Length > 1024 || next.Failure?.Length > 1024)
                     { throw new InvalidDataException("Guardian status generation or shape is invalid."); }
                     ownerRevision = next.Revision;
