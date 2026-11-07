@@ -6,7 +6,7 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Contracts.Tests;
 
-public sealed class IpcMessageCodecTests
+public sealed partial class IpcMessageCodecTests
 {
     [Fact]
     public async Task PresetFanRanges_RoundTripAndRemainAbsentFromOldPeerProjection()

@@ -10,7 +10,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Support Blade 15 Base (2019) RZ09-0300, Blade 15 Advanced (Early 2020) RZ09-0330 and Blade 15 Base (Late 2020) RZ09-0351 with reviewed preset controls and Automatic fans. Advanced Custom CPU/GPU levels are bounded to Low/Medium/High; physical validation remains pending. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Support Blade 14 (2024) RZ09-0508, Blade 16 (2024) RZ09-0510, Blade 18 (2024) RZ09-0509 and Blade 18 (2025) RZ09-0529 with reviewed model-specific controls. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Support Blade 14 (2021) RZ09-0370, Blade 14 (2022) RZ09-0427, Blade 15 (2022) RZ09-0421 and Blade 17 (2022) RZ09-0423 with reviewed performance controls and model-specific charge limits. Physical validation is tracked separately. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
-- Add Turbo and Maximum Power presets, with separate Windows power-mode preferences, on models that support them. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Add model-specific Turbo, Maximum Power, Gaming and Creator presets, each with separate Windows power-mode preferences. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 
 ### Changed
 
@@ -18,6 +18,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Keep older app clients in a readable, read-only upgrade view when the service exposes newer presets and settings. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Recover thermal controls when unrelated charge-limit readings are unavailable, while retaining strict confirmation for pending battery operations. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Clear Maximum Fans before applying Battery Balanced on Blade 14, 16 and 18 (2024), including after disconnecting AC power. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Allow paused charge-limit controls to resume after successful recovery on source-reviewed models. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Preserve saved Windows power modes, app rules and brightness when migrating profiles. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))

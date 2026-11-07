@@ -193,5 +193,9 @@ check, choose the setting again; the previous request is not replayed. For
 lighting, select a lighting setting or change the active profile's lighting.
 Failed checks keep controls paused.
 
+A thermal-only pause does not require unrelated charge-limit readings on models
+without temporary full charge. Pending battery operations still require their own
+confirmed readback.
+
 The [implementation reference](experimental-blade-reference.md) contains protocol
 limits, diagnostic fields, and upstream sources.
