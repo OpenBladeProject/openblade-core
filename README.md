@@ -30,11 +30,11 @@ OpenBlade requires Windows 11 x64, version 24H2 or later.
 | --- | --- |
 | Razer Blade 16 (2026) | `RZ09-0581` |
 | Razer Blade 16 (2025) | `RZ09-0528` |
+| Razer Blade 18 (2025) | `RZ09-0529` |
+| Razer Blade 14 (2025) | `RZ09-0530` |
 | Razer Blade 14 (2024) | `RZ09-0508` |
 | Razer Blade 16 (2024) | `RZ09-0510` |
 | Razer Blade 18 (2024) | `RZ09-0509` |
-| Razer Blade 18 (2025) | `RZ09-0529` |
-| Razer Blade 14 (2025) | `RZ09-0530` |
 | Razer Blade 16 (2023) | `RZ09-0483` |
 | Razer Blade 14 (2023) | `RZ09-0482` |
 | Razer Blade 18 (2023) | `RZ09-0484` |
