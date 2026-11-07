@@ -39,8 +39,8 @@ They are not successful restoration receipts. The no-setting-write conclusion
 comes from the complete offline journal and the source path before preparation
 returns. No hardware commands were sent during that reconciliation.
 
-The attempt marker and all original artifacts remain intact. A further trial
-needs reviewed marker disposition, a fresh attended
+At the end of that attempt, its marker and all original artifacts remained
+intact. A further trial needs reviewed marker disposition, a fresh attended
 baseline with both PWM values below the fixed target, and the existing runtime
 admission. Caller-loss Auto recovery remains physically unvalidated. Do not
 widen the target or replay this attempt to obtain a passing result.
@@ -61,3 +61,34 @@ Ignored artifact directory: `artifacts/so6120-guardian-caller-job-trial-20261107
 The startup record's `acquisitionStartedAtRecord=false` describes its recording
 instant only. This attempt subsequently acquired hardware for the baseline.
 It must not be classified as another pre-acquisition isolation refusal.
+
+## Continuation refused before acquisition
+
+The authorized continuation at 08:47 UTC on 2026-11-07 preserved the original
+evidence and archived only the audited no-setting-write marker under the shared
+semaphore. Its run ID and UTC window were verified, the move did not overwrite
+another file, and the archived bytes were independently hashed. The archive is
+`attempt-551b0f10-b731-45b4-bbd7-8a838338e605-no-setting-write.json`, SHA-256
+`E9E0EA958B9C6CB074C72E04E3C259CFAFCF9DD79DC9AE3F7B0F9175F51B7DC3`.
+
+New run `0b94a231-787b-4272-a8e8-f6072e2173ed` passed guardian startup and accepted
+BASELINE, then refused the thermal precheck: CPU 45 C, GPU 64 C, GPU active.
+The unchanged trial requires an inactive GPU for entry. The run never acquired
+InpOut, sent no mailbox commands, and consumed no new machine attempt latch.
+There is no direct-duty journal. The controller observed both caller and owner
+exit with code 2, and its parent observed controller exit with code 2. No
+caller termination, fan-setting write or Auto restoration was exercised.
+
+The original payload and fixed targets remain unchanged. Further execution
+waits for the user to finish the GPU workload and for fresh runtime admission;
+the preparation work does not close applications or relax the thermal gate.
+
+Evidence directory: `artifacts/so6120-guardian-caller-job-repeat-20261107`.
+
+| File | SHA-256 |
+| --- | --- |
+| `attended-attempt/attended-run.jsonl` | `8A731E674C2E2C63F92D4EAC16D4CDFA1BBC414E697C8A5A334A12A6F672290F` |
+| `capture-result.json` | `C36510565DC2CEC6C852EB37DD02F50FA8ABCBDCBFE97ED32FA61789B767423F` |
+| `parent-result.json` | `B80D234C510327B9137F22CEFF5DBD2E4A3AD2211556D0D7C6276900E02C14F7` |
+| `archive-result.json` | `6814AF263C88BC1FC407EA80AF295B3736922DE1BBF3A6EE9D9EE95E646BE129` |
+| `attended-attempt.guardian-startup.json` | `DF1A8EEB8478A14BD9DA895F9690A6513A78B80ECE6B06728FDE36043327E831` |
