@@ -140,11 +140,11 @@ public sealed class WinUiShellContractTests
         XElement button = NamedElement(document, "Button", "SnapTapInfoButton");
         Assert.Equal("About SnapTap", Attribute(button, "AutomationProperties.Name"));
         Assert.Equal("About SnapTap", Attribute(button, "ToolTipService.ToolTip"));
-        XElement reference = NamedElement(document, "Button", "LabFeaturesInfoButton");
-        foreach (string property in new[] { "Width", "Height", "Padding", "MinWidth", "MinHeight" })
-        {
-            Assert.Equal(Attribute(reference, property), Attribute(button, property));
-        }
+        Assert.Equal("20", Attribute(button, "Width"));
+        Assert.Equal("20", Attribute(button, "Height"));
+        Assert.Equal("0", Attribute(button, "Padding"));
+        Assert.Equal("0", Attribute(button, "MinWidth"));
+        Assert.Equal("0", Attribute(button, "MinHeight"));
         XElement description = document.Descendants().Single(element => CanonicalLocalizedXaml.Identity(element) == "SnapTap_Description");
         Assert.Equal("When A and D overlap, the last pressed key wins.", Attribute(description, "Text"));
         XElement[] details = button.Descendants().Where(element => element.Name.LocalName == "TextBlock").ToArray();
@@ -490,14 +490,6 @@ public sealed class WinUiShellContractTests
                 "MainWindow_ExperimentalControlsToggle"
                 or "MainWindow_ExperimentalControlsTitle"
                 or "MainWindow_ExperimentalControlsDescription");
-
-        XElement labFeatures = LocalizedElement(
-            document,
-            "TextBlock",
-            "MainWindow_TextBlockLabFeatures");
-        XElement labRow = labFeatures.Ancestors()
-            .First(element => element.Name.LocalName == "Border");
-        Assert.Equal("{StaticResource SettingsLastRowStyle}", Attribute(labRow, "Style"));
 
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         Assert.DoesNotContain("OnExperimentalFeaturesToggled", source, StringComparison.Ordinal);
@@ -1452,82 +1444,88 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void LightingPageOffersCapabilityGatedPresetImportWithConfirmation()
+    public void LabsGuidesLinkToCapabilityGatedControlsInTheirOriginalSection()
     {
-        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
-        string window = ReadRepositoryFile(
-            "src",
-            "OpenBlade.Tray",
-            "MainWindow.xaml.cs");
-        string lightingPage = SliceMethod(
-            xaml,
-            "<ScrollViewer x:Name=\"LightingPage\"",
-            "<ScrollViewer x:Name=\"DisplayPage\"");
-        string lightingHeader = SliceMethod(
-            lightingPage,
-            "<local:ResponsivePageHeader x:Name=\"LightingPageHeader\"",
-            "<StackPanel x:Name=\"LightingCardsHost\"");
-        string lightingTemplate = SliceMethod(
-            xaml,
-            "<DataTemplate x:Key=\"DashboardLightingCardTemplate\"",
-            "<DataTemplate x:Key=\"DashboardDisplayCardTemplate\"");
-        string keyboardSection = SliceMethod(
-            lightingTemplate,
-            "<StackPanel x:Name=\"LightingKeyboardSection\"",
-            "<StackPanel x:Name=\"LightingLogoSection\"");
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement navigation = NamedElement(document, "NavigationViewItem", "LabsNavigationItem");
+        Assert.Equal("Labs", Attribute(navigation, "Content"));
+        Assert.Equal("labs", Attribute(navigation, "Tag"));
+        Assert.Equal("NavigationView.MenuItems", navigation.Parent?.Name.LocalName);
+        Assert.Null(Attribute(navigation, "Visibility"));
+        Assert.Null(Attribute(navigation, "IsEnabled"));
 
-        Assert.DoesNotContain(
-            "Import keyboard lighting preset",
-            lightingHeader,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "x:Name=\"ImportKeyboardLightingPresetCard\"",
-            keyboardSection,
-            StringComparison.Ordinal);
-        Assert.Contains("Text=\"Import preset\"", keyboardSection, StringComparison.Ordinal);
-        Assert.Contains(
-            "AutomationProperties.Name=\"Import keyboard lighting preset\"",
-            keyboardSection,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Style=\"{StaticResource IconActionButtonStyle}\"",
-            keyboardSection,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Click=\"OnImportKeyboardLighting\"",
-            keyboardSection,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Visibility=\"{x:Bind LabFeaturesEnabled, Mode=OneWay}\"",
-            keyboardSection,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "IsEnabled=\"{x:Bind CanControlLighting, Mode=OneWay}\"",
-            keyboardSection,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "x:Name=\"LightingRefreshRateCard\"",
-            keyboardSection,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "{CustomResource MainWindow_TextBlockSixtyHzLighting.Text}",
-            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "{CustomResource MainWindow_LightingRefreshRateToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}",
-            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Toggled=\"OnLightingRefreshRateToggled\"",
-            keyboardSection,
-            StringComparison.Ordinal);
-        Assert.True(
-            keyboardSection.IndexOf(
-                "x:Name=\"ImportKeyboardLightingPresetCard\"",
-                StringComparison.Ordinal)
-            < keyboardSection.IndexOf(
-                "x:Name=\"LightingRefreshRateCard\"",
-                StringComparison.Ordinal));
+        XElement page = NamedElement(document, "ScrollViewer", "LabsPage");
+        Assert.Equal("Explore experimental OpenBlade features.",
+            Attribute(LocalizedElement(document, "TextBlock", "MainWindow_LabsDescription"), "Text"));
+        XElement importCard = NamedElement(document, "Border", "ImportKeyboardLightingPresetCard");
+        XElement rateCard = NamedElement(document, "Border", "LightingRefreshRateCard");
+        XElement keyboard = NamedElement(document, "StackPanel", "LabsKeyboardSection");
+        Assert.Contains(page, keyboard.Ancestors());
+        XElement original = NamedElement(document, "StackPanel", "LightingKeyboardSection");
+        XElement heading = keyboard.Elements().First();
+        Assert.Equal(Attribute(original.Elements().First(), "Text"), Attribute(heading, "Text"));
+        Assert.Equal("{StaticResource SectionHeaderStyle}", Attribute(heading, "Style"));
+        Assert.Contains(original, importCard.Ancestors());
+        Assert.Contains(original, rateCard.Ancestors());
+        XElement importGuide = NamedElement(document, "Button", "LabsImportGuideButton");
+        XElement rateGuide = NamedElement(document, "Button", "LabsLightingRateGuideButton");
+        Assert.Contains(keyboard, importGuide.Ancestors());
+        Assert.Contains(keyboard, rateGuide.Ancestors());
+        Assert.Equal("OnOpenLabsLightingControl", Attribute(importGuide, "Click"));
+        Assert.Equal("OnOpenLabsLightingControl", Attribute(rateGuide, "Click"));
+        Assert.DoesNotContain(page.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
+
+        XElement iconStyle = KeyedElement(document, "Style", "LabsFeatureIconStyle");
+        Assert.Equal("{StaticResource AppToolbarIconStyle}", Attribute(iconStyle, "BasedOn"));
+        XElement glyph = Assert.Single(iconStyle.Elements(), element => Attribute(element, "Property") == "Glyph");
+        XElement navigationIcon = Assert.Single(navigation.Descendants(), element => element.Name.LocalName == "FontIcon");
+        Assert.Equal(Attribute(navigationIcon, "Glyph"), Attribute(glyph, "Value"));
+
+        Assert.DoesNotContain(page.Descendants(), element =>
+            Attribute(element, "Style") == "{StaticResource LabsFeatureIconStyle}");
+
+        XElement[] featureTitles = [importCard, rateCard];
+        foreach (XElement card in featureTitles)
+        {
+            XElement icon = Assert.Single(card.Descendants(), element =>
+                element.Name.LocalName == "FontIcon"
+                && Attribute(element, "Style") == "{StaticResource LabsFeatureIconStyle}");
+            XElement title = Assert.Single(icon.Parent!.Elements(), element =>
+                element.Name.LocalName == "TextBlock");
+            Assert.Equal("{StaticResource CardTitleStyle}", Attribute(title, "Style"));
+            Assert.Equal("Wrap", Attribute(title, "TextWrapping"));
+            Assert.Equal("1", Attribute(title, "Grid.Column"));
+        }
+        XElement labControls = NamedElement(document, "StackPanel", "LightingLabControls");
+        Assert.Equal("Collapsed", Attribute(labControls, "Visibility"));
+        Assert.Contains(labControls, importCard.Ancestors());
+        Assert.Contains(labControls, rateCard.Ancestors());
+        Assert.Null(Attribute(importCard, "Visibility"));
+        Assert.Null(Attribute(rateCard, "Visibility"));
+
+        XElement import = Assert.Single(importCard.Descendants(), element => element.Name.LocalName == "Button");
+        Assert.Equal("Import keyboard lighting preset", Attribute(import, "AutomationProperties.Name"));
+        Assert.Equal("{x:Bind CanControlLighting, Mode=OneWay}", Attribute(import, "IsEnabled"));
+        Assert.Equal("OnImportKeyboardLighting", Attribute(import, "Click"));
+        Assert.Equal(Attribute(import, "Name"), Attribute(importGuide, "Tag"));
+        XElement importCue = Assert.Single(import.Descendants(), element =>
+            element.Name.LocalName == "FontIcon" && Attribute(element, "Grid.Column") == "1");
+        XElement guideCue = Assert.Single(importGuide.Descendants(), element =>
+            element.Name.LocalName == "FontIcon" && Attribute(element, "Grid.Column") == "1");
+        Assert.Equal(Attribute(guideCue, "Glyph"), Attribute(importCue, "Glyph"));
+        Assert.Equal(Attribute(guideCue, "Style"), Attribute(importCue, "Style"));
+        Assert.Equal("Raw", Attribute(importCue, "AutomationProperties.AccessibilityView"));
+        XElement rate = Assert.Single(rateCard.Descendants(), element => element.Name.LocalName == "ToggleSwitch");
+        Assert.Equal("{x:Bind IsSixtyHzLightingEnabled, Mode=OneWay}", Attribute(rate, "IsOn"));
+        Assert.Equal("{x:Bind CanSetLightingRefreshRate, Mode=OneWay}", Attribute(rate, "IsEnabled"));
+        Assert.Equal("OnLightingRefreshRateToggled", Attribute(rate, "Toggled"));
+        Assert.Equal(Attribute(rate, "Name"), Attribute(rateGuide, "Tag"));
+
+        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
+        Assert.DoesNotContain("LabFeaturesToggle", xaml, StringComparison.Ordinal);
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        Assert.Contains("LabsPage.Visibility = destination == \"labs\"", window, StringComparison.Ordinal);
+        Assert.Contains("PrimaryNavigationItemKind.Labs => LabsNavigationItem", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".oblight\")", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".chroma\")", window, StringComparison.Ordinal);
         Assert.Contains("FileTypeFilter.Add(\".json\")", window, StringComparison.Ordinal);
@@ -1535,13 +1533,16 @@ public sealed class WinUiShellContractTests
         Assert.Contains("MainWindow_LightingImport_ImportApplyButton", window, StringComparison.Ordinal);
         Assert.Contains("ViewModel.CanImportKeyboardLighting", window, StringComparison.Ordinal);
         Assert.Contains("ViewModel.TryImportKeyboardLighting", window, StringComparison.Ordinal);
-        Assert.Contains(
-            "if (!ViewModel.LabFeaturesEnabled)",
-            SliceMethod(
-                window,
-                "private async void OnImportKeyboardLighting",
-                "private static async Task<byte[]> ReadBoundedKeyboardLightingFileAsync"),
-            StringComparison.Ordinal);
+
+        string search = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.GlobalSearchCatalog.cs");
+        Assert.Contains("Page(LabsNavigationItem, LabsPage, \"MainWindow_LabsTitle.Text\")", search, StringComparison.Ordinal);
+        Assert.Contains("Section(labs, LabsKeyboardSection, \"MainWindow_TextBlockKeyboard2.Text\")", search, StringComparison.Ordinal);
+        Assert.Contains("Row(labsKeyboard, \"MainWindow_LabsImportTitle.Text\", nameof(LabsImportGuideButton))", search, StringComparison.Ordinal);
+        Assert.Contains("Row(labsKeyboard, \"MainWindow_TextBlockSixtyHzLighting.Text\", nameof(LabsLightingRateGuideButton))", search, StringComparison.Ordinal);
+        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockImportPreset.Text\", \"ImportKeyboardLightingPresetCard\")", search, StringComparison.Ordinal);
+        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockSixtyHzLighting.Text\", \"LightingRefreshRateCard\")", search, StringComparison.Ordinal);
+        Assert.DoesNotContain("LabFeaturesEnabled", search, StringComparison.Ordinal);
+        Assert.DoesNotContain("LabFeaturesInfoButton", search, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1643,8 +1644,9 @@ public sealed class WinUiShellContractTests
             element.Name.LocalName == "Border"
             && Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}");
         Assert.Contains(keyboardSection, row.Ancestors());
-        XElement heading = LocalizedElement(document, "TextBlock", "MainWindow_TextBlockKeyboard2");
-        Assert.Contains(keyboardSection, heading.Ancestors());
+        XElement heading = Assert.Single(keyboardSection.Elements(), element =>
+            element.Name.LocalName == "TextBlock"
+            && CanonicalLocalizedXaml.Identity(element) == "MainWindow_TextBlockKeyboard2");
         Assert.Equal("True", Attribute(heading, "CardReorder.IsHeader"));
         Assert.DoesNotContain(toggle.Ancestors(), ancestor =>
             Attribute(ancestor, "IsEnabled") == "{x:Bind CanRequestHardwareControl, Mode=OneWay}"
@@ -3751,14 +3753,6 @@ public sealed class WinUiShellContractTests
         Assert.Contains("StartMinimized = preferences.StartMinimized", source, StringComparison.Ordinal);
         Assert.Contains("StartMinimizedToggle.IsOn = StartMinimized", source, StringComparison.Ordinal);
         Assert.Contains(
-            "initialLabFeaturesEnabled = preferences.LabFeaturesEnabled",
-            source,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "LabFeaturesEnabled: ViewModel.LabFeaturesEnabled",
-            source,
-            StringComparison.Ordinal);
-        Assert.Contains(
             "initialLanguage = initialLanguageOverride ?? preferences.EffectiveLanguage",
             source,
             StringComparison.Ordinal);
@@ -3780,58 +3774,6 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         int watch = source.IndexOf("await ViewModel.StartAsync()", StringComparison.Ordinal);
         Assert.True(load >= 0 && load < apply && apply < subscribe && subscribe < watch);
-
-        string xaml = CanonicalLocalizedXaml.Read("MainWindow.xaml");
-        Assert.Contains("Text=\"Lab features\"", xaml, StringComparison.Ordinal);
-        Assert.Contains(
-            "Text=\"Turn on experimental features.\"",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "Show experimental features, including custom keyboard-lighting preset formats.",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"LabFeaturesInfoButton\"", xaml, StringComparison.Ordinal);
-        string labFeaturesInfoButton = SliceMethod(
-            xaml,
-            "x:Name=\"LabFeaturesInfoButton\"",
-            "<Button.Flyout>");
-        Assert.Contains("Width=\"20\"", labFeaturesInfoButton, StringComparison.Ordinal);
-        Assert.Contains("Height=\"20\"", labFeaturesInfoButton, StringComparison.Ordinal);
-        Assert.DoesNotContain("Width=\"28\"", labFeaturesInfoButton, StringComparison.Ordinal);
-        Assert.DoesNotContain("Height=\"28\"", labFeaturesInfoButton, StringComparison.Ordinal);
-        Assert.Contains(
-            "AutomationProperties.Name=\"About Lab features\"",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Contains("<Button.Flyout>", xaml, StringComparison.Ordinal);
-        Assert.Contains("Text=\"Current Lab features\"", xaml, StringComparison.Ordinal);
-        Assert.Contains(
-            "Text=\"Keyboard lighting preset import\"",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Text=\"Import .oblight and Razer .chroma files.\"",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "{CustomResource MainWindow_TextBlockSixtyHzKeyboardLighting.Text}",
-            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "{CustomResource MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text}",
-            ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Text=\"Lab features may change or be removed.\"",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"LabFeaturesToggle\"", xaml, StringComparison.Ordinal);
-        Assert.Contains(
-            "IsOn=\"{x:Bind ViewModel.LabFeaturesEnabled, Mode=OneWay}\"",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Contains("Toggled=\"OnLabFeaturesToggled\"", xaml, StringComparison.Ordinal);
 
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         Assert.Contains(

@@ -511,15 +511,6 @@ Répórtéd fáílúrés:
   <data name="MainWindow_ItemsControlTrayDashboardStatusItems.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Tráý dáshbóárd státús ítéms ~~~~~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Ábóút Láb féátúrés ~~~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>[!! Ábóút Láb féátúrés ~~~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_LabFeaturesToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Énáblé Láb éxpéríméntál féátúrés ~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_LaptopLogoModeSelectorText.AccessibleName" xml:space="preserve">
     <value>[!! Láptóp lógó líghtíng ~~~~~~~ !!]</value>
   </data>
@@ -1102,9 +1093,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockCPU.Text" xml:space="preserve">
     <value>[!! CPÚ ~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockCurrentLabFeatures.Text" xml:space="preserve">
-    <value>[!! Cúrrént Láb féátúrés ~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_TextBlockCustomColor.Text" xml:space="preserve">
     <value>[!! Cústóm cólór ~~~~ !!]</value>
   </data>
@@ -1234,9 +1222,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockHDR2.Text" xml:space="preserve">
     <value>[!! HDR ~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockImportOblightAndRazerChromaFiles.Text" xml:space="preserve">
-    <value>[!! Ímpórt .óblíght ánd Razer .chrómá fílés. ~~~~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_TextBlockImportPreset.Text" xml:space="preserve">
     <value>[!! Ímpórt prését ~~~~~ !!]</value>
   </data>
@@ -1270,14 +1255,23 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
     <value>[!! Kéýbóárd líghtíng ~~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockKeyboardLightingPresetImport.Text" xml:space="preserve">
-    <value>[!! Kéýbóárd líghtíng prését ímpórt ~~~~~~~~~~ !!]</value>
+  <data name="MainWindow_LabsNavigationItem.Content" xml:space="preserve">
+    <value>[!! Lábs ~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeatures.Text" xml:space="preserve">
-    <value>[!! Láb féátúrés ~~~~ !!]</value>
+  <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
+    <value>[!! Lábs ~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
-    <value>[!! Láb féátúrés máý chángé ór bé rémóvéd. ~~~~~~~~~~~ !!]</value>
+  <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
+    <value>[!! Éxplóré éxpéríméntál OpenBlade féátúrés. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LabsImportTitle.Text" xml:space="preserve">
+    <value>[!! Ímpórt á líghtíng prését ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LabsImportDescription.Text" xml:space="preserve">
+    <value>[!! Lóád án OpenBlade ór Razer Chrómá fílé, révíéw thé éfféct béfóré ápplýíng ít, ánd sávé ít tó ýóúr áctívé pówér prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LabsLightingRateDescription.Text" xml:space="preserve">
+    <value>[!! Máké súppórtéd kéýbóárd ánímátíóns smóóthér át thé cóst óf móré CPÚ ánd pówér. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>[!! Láptóp ~~~ !!]</value>
@@ -1459,9 +1453,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockReleaseNotes.Text" xml:space="preserve">
     <value>[!! Réléásé nótés ~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
-    <value>[!! Réndér súppórtéd éffécts móré smóóthlý ón ádmíttéd kéýbóárds. ~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
     <value>[!! Répórt á próblém ~~~~~ !!]</value>
   </data>
@@ -1515,9 +1506,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockShutDownOpenBlade.Text" xml:space="preserve">
     <value>[!! Shút dówn OpenBlade ~~~ !!]</value>
-  </data>
-  <data name="MainWindow_TextBlockSixtyHzKeyboardLighting.Text" xml:space="preserve">
-    <value>[!! 60 Hz kéýbóárd líghtíng ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockSixtyHzLighting.Text" xml:space="preserve">
     <value>[!! 60 Hz líghtíng ~~~~ !!]</value>
@@ -1599,9 +1587,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockTroubleshooting.Text" xml:space="preserve">
     <value>[!! Tróúbléshóótíng ~~~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_TextBlockTurnOnExperimentalFeatures.Text" xml:space="preserve">
-    <value>[!! Túrn ón éxpéríméntál féátúrés. ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
     <value>[!! Únsávéd ~~~ !!]</value>

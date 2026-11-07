@@ -479,9 +479,9 @@ keyboard files. Uniform files convert losslessly; classic Keyboard per-key
 animations use a bounded, exact-model logical-key projection on the validated
 RZ09-0581/RZ09-0528 layouts and the source-reviewed RZ09-0484 layout. Unsupported
 colored cells are reported, and per-key KeyboardExtended files are rejected
-instead of cropped. Enable **Lab
-features** in Settings to show the importer. The versioned format, schema,
-compatibility rules, and example are in
+instead of cropped. Open **Labs** in the sidebar and choose **Import a lighting
+preset** to jump to the importer under **Lighting → Keyboard**. The versioned
+format, schema, compatibility rules, and example are in
 [`keyboard-lighting-file-format.md`](keyboard-lighting-file-format.md).
 
 ## Contributing

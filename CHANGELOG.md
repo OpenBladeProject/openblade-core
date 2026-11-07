@@ -16,6 +16,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Open Labs from the sidebar to learn about experimental features and jump to their controls. A beaker marks experimental controls on the Lighting page. ([#885](https://github.com/OpenBladeProject/openblade-core/pull/885))
 - List source-reviewed laptops as officially supported and track physical validation separately. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 
 ### Fixed
