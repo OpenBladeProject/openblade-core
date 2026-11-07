@@ -238,6 +238,7 @@ public sealed class SourceReviewedBladeModelTests
         Assert.Null(recovered.Lighting);
         Assert.Null(recovered.LogoLighting);
         Assert.NotNull(recovered.Battery);
+        Assert.Null(recovered.Battery.TemporaryFullCharge);
         Assert.All(session.Commands, command =>
             Assert.True(command.ClassId == 0x0D && command.CommandId is 0x82 or 0x87
                 || command.ClassId == 0x07 && command.CommandId is 0x92 or 0x8F));

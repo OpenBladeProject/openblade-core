@@ -31,6 +31,11 @@ public sealed record WindowsPowerModeAssociations(
     WindowsPowerMode? BatteryBalanced,
     WindowsPowerMode? Custom)
 {
+    // Optional additive associations preserve the original six-argument constructor.
+    public WindowsPowerMode? Turbo { get; init; }
+
+    public WindowsPowerMode? MaximumPower { get; init; }
+
     public static WindowsPowerModeAssociations LeaveUnchanged { get; } = new(
         null,
         null,
@@ -44,8 +49,9 @@ public sealed record WindowsPowerModeAssociations(
         {
             PerformancePreset.Silent => Silent,
             PerformancePreset.Balanced => Balanced,
-            PerformancePreset.Performance or PerformancePreset.Turbo
-                or PerformancePreset.MaximumPower => Performance,
+            PerformancePreset.Performance => Performance,
+            PerformancePreset.Turbo => Turbo,
+            PerformancePreset.MaximumPower => MaximumPower,
             PerformancePreset.BatterySaver => BatterySaver,
             PerformancePreset.BatteryBalanced => BatteryBalanced,
             PerformancePreset.Custom => Custom,
@@ -58,8 +64,9 @@ public sealed record WindowsPowerModeAssociations(
         {
             PerformancePreset.Silent => this with { Silent = windowsPowerMode },
             PerformancePreset.Balanced => this with { Balanced = windowsPowerMode },
-            PerformancePreset.Performance or PerformancePreset.Turbo
-                or PerformancePreset.MaximumPower => this with { Performance = windowsPowerMode },
+            PerformancePreset.Performance => this with { Performance = windowsPowerMode },
+            PerformancePreset.Turbo => this with { Turbo = windowsPowerMode },
+            PerformancePreset.MaximumPower => this with { MaximumPower = windowsPowerMode },
             PerformancePreset.BatterySaver => this with { BatterySaver = windowsPowerMode },
             PerformancePreset.BatteryBalanced => this with { BatteryBalanced = windowsPowerMode },
             PerformancePreset.Custom => this with { Custom = windowsPowerMode },

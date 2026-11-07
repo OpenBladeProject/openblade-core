@@ -57,7 +57,7 @@ public sealed class ExperimentalBladeFactoryTests
         Assert.Contains(LightingEffect.Spectrum, factory.PotentialCapabilities.LightingEffects);
         Assert.True(lighting.Capabilities.SupportsKeyboardBrightness);
         Assert.DoesNotContain(OneShotLaptopControl.StartupAnimation, factory.Capabilities.OneShotLaptopControls);
-        Assert.False(factory.Capabilities.SupportsTemporaryFullCharge);
+        Assert.True(factory.Capabilities.SupportsTemporaryFullCharge);
         Assert.True(factory.PotentialCapabilities.SupportsTemporaryFullCharge);
         bool active = true;
         HidSessionResult<IProductionLightingPort> opened = await lighting.OpenAsync(() => active, CancellationToken.None);
@@ -68,7 +68,7 @@ public sealed class ExperimentalBladeFactoryTests
         Assert.Equal(1, io.StatusFailuresRemaining);
         Assert.Equal((byte)12, port.Capabilities.Blade18KeyboardLayoutId);
         Assert.DoesNotContain(OneShotLaptopControl.StartupAnimation, factory.Capabilities.OneShotLaptopControls);
-        Assert.False(factory.Capabilities.SupportsTemporaryFullCharge);
+        Assert.True(factory.Capabilities.SupportsTemporaryFullCharge);
         Assert.Contains(OneShotLaptopControl.StartupAnimation, factory.PotentialCapabilities.OneShotLaptopControls);
         Assert.True(factory.PotentialCapabilities.SupportsTemporaryFullCharge);
 
@@ -431,6 +431,30 @@ public sealed class ExperimentalBladeFactoryTests
         Assert.False(factory.IsWritesPaused);
         Assert.Equal(2, native.BoundCount);
         Assert.All(io.Commands.Skip(beforeRecovery), command => Assert.True(command >= 0x80));
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x029D)]
+    [InlineData(0x02C5)]
+    public async Task Recovery_WithoutFullChargeQueryPreservesUnknownLikeOrdinaryBatteryRead(int productId)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        var native = new Native(1) { ProductId = model.ProductId };
+        var io = new Io { TrackLightingEffect = true };
+        var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName), native,
+            new Guard(), io, () => PowerSource.PluggedIn);
+        HidSessionResult<IProductionBatteryPort> opened = await factory.OpenAsync(CancellationToken.None);
+        await using var port = Assert.IsType<ExperimentalBladePort>(opened.Value);
+
+        Assert.False(port.SupportsTemporaryFullChargeQuery);
+        Assert.Null((await port.QueryProtectionAsync(CancellationToken.None)).TemporaryFullCharge);
+        ConfirmedDeviceState recovered = await port.ReadRecoveryStateAsync(CancellationToken.None);
+
+        Assert.NotNull(recovered.Battery);
+        Assert.Null(recovered.Battery.TemporaryFullCharge);
+        Assert.DoesNotContain((byte)0x8F, io.Commands);
+        Assert.All(io.Commands, command => Assert.True(command >= 0x80));
     }
 
     private static ExperimentalBladeFactory Create(Native native, Io io) =>

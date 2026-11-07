@@ -16,7 +16,6 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ExperimentalLightingOwnershipState lightingOwnership = new();
     private readonly ExperimentalStartupAnimationState startupAnimationState = new();
-    private readonly ExperimentalTemporaryFullChargeState temporaryFullChargeState = new();
 
     internal ExperimentalBladeFactory(ExperimentalBladeModel model, IHostIdentitySource identity,
         IHidCandidateNative native, IHardwareAccessGuard guard, IHidFeatureIo io,
@@ -38,9 +37,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
 
-    public DeviceCapabilities Capabilities => ExperimentalBladePort.WithTemporaryFullChargeReadAdmission(
-        ExperimentalBladePort.WithStartupReadAdmission(
-            ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState), temporaryFullChargeState);
+    public DeviceCapabilities Capabilities => ExperimentalBladePort.WithStartupReadAdmission(
+        ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState);
 
     public DeviceCapabilities PotentialCapabilities => ExperimentalBladePort.CreateCapabilities(model, true);
 
@@ -320,8 +318,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     sharedOperationGate: operationGate,
                     sharedLightingOwnership: lightingOwnership,
                     coolingPadDiscovery: new WindowsHyperBoostEligibilitySource(native),
-                    sharedStartupAnimationState: startupAnimationState,
-                    sharedTemporaryFullChargeState: temporaryFullChargeState);
+                    sharedStartupAnimationState: startupAnimationState);
                 try
                 {
                     // Correctly correlated selectors identify the interface even when

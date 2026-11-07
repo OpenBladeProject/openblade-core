@@ -11,14 +11,14 @@ namespace OpenBlade.Service.Tests;
 public sealed partial class ExperimentalBladeBatteryIntegrationTests
 {
     [Fact]
-    public async Task OptionalCapabilities_ArePromotedOnlyAfterSuccessfulExplicitReads()
+    public async Task FullChargeCapabilityIsStableWhileStartupRequiresSuccessfulRead()
     {
         var io = new Io { Raw = 0xD0 };
         using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io);
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
 
         DeviceCapabilities initial = await device.ReadCapabilitiesAsync(CancellationToken.None);
-        Assert.False(initial.SupportsTemporaryFullCharge);
+        Assert.True(initial.SupportsTemporaryFullCharge);
         Assert.DoesNotContain(OneShotLaptopControl.StartupAnimation, initial.OneShotLaptopControls);
         Assert.DoesNotContain(io.Commands, command => command is (0x0F, 0x98) or (0x07, 0x8F));
 
@@ -320,7 +320,14 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
             Assert.True(provider.IsExperimentalWritesPaused);
             Assert.True(state.Battery!.ProtectionEnabled);
             Assert.Equal(80, state.Battery.ChargeLimitPercent);
-            Assert.False(state.Battery.TemporaryFullCharge);
+            if (productId == 0x02A0)
+            {
+                Assert.False(state.Battery.TemporaryFullCharge);
+            }
+            else
+            {
+                Assert.Null(state.Battery.TemporaryFullCharge);
+            }
             Assert.Equal(PerformancePreset.Balanced, state.Performance);
             Assert.Equal(FanMode.Automatic, state.Fans);
             Assert.Null(state.Lighting);

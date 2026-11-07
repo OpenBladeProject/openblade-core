@@ -3267,15 +3267,19 @@ type sealed class OpenBlade.Contracts.WindowsPowerModeAssociations
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_BatteryBalanced()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_BatterySaver()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Custom()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_MaximumPower()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Performance()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Silent()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Turbo()
   method System.Void Deconstruct(out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Silent, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Balanced, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Performance, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatterySaver, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatteryBalanced, out System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Custom)
   method System.Void set_Balanced(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_BatteryBalanced(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_BatterySaver(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_Custom(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_MaximumPower(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_Performance(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_Silent(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_Turbo(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
@@ -3288,5 +3292,7 @@ type sealed class OpenBlade.Contracts.WindowsPowerModeAssociations
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatteryBalanced { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatterySaver { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Custom { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> MaximumPower { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Performance { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Silent { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Turbo { get; init; }

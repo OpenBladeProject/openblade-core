@@ -12733,6 +12733,14 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.FunctionP,
                 CancellationToken.None);
+        ControlOperationResult turbo = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+        ControlOperationResult maximumPower = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.FunctionP,
+                CancellationToken.None);
         ControlOperationResult custom = await context.Runtime
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
@@ -12746,11 +12754,15 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal("The performance button selected Silent.", dedicated.Message);
         Assert.Equal(ControlOperationStatus.Applied, functionP.Status);
         Assert.Equal("Fn+P selected Performance.", functionP.Message);
+        Assert.Equal(ControlOperationStatus.Applied, turbo.Status);
+        Assert.Equal("The performance button selected Turbo.", turbo.Message);
+        Assert.Equal(ControlOperationStatus.Applied, maximumPower.Status);
+        Assert.Equal("Fn+P selected Maximum Power.", maximumPower.Message);
         Assert.Equal(ControlOperationStatus.Applied, custom.Status);
         Assert.Equal("The performance button selected Custom.", custom.Message);
         Assert.Equal(ControlOperationStatus.Applied, wrapped.Status);
         Assert.Equal("Fn+P selected Balanced.", wrapped.Message);
-        Assert.Equal(4, context.Device.PerformanceSetCalls);
+        Assert.Equal(6, context.Device.PerformanceSetCalls);
         Assert.Equal(
             new PerformanceOverride(
                 PerformancePreset.Balanced,
@@ -12877,13 +12889,13 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(
-            "The performance button selected Custom.",
+            "The performance button selected Turbo.",
             result.Message);
         Assert.Equal(
-            PerformancePreset.Custom,
+            PerformancePreset.Turbo,
             context.Runtime.GetStatus().ConfirmedState!.Performance);
         Assert.Equal(
-            PerformancePreset.Custom,
+            PerformancePreset.Turbo,
             context.Runtime.GetStatus().PerformanceOverride!.Value);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
     }

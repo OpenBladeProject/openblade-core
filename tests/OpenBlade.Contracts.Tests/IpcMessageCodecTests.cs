@@ -760,6 +760,12 @@ public sealed class IpcMessageCodecTests
             Profiles = baseline.Profiles with
             {
                 PluggedIn = baseline.Profiles.PluggedIn with { Performance = preset },
+                WindowsPowerModes = baseline.Profiles.WindowsPowerModes with
+                {
+                    Performance = WindowsPowerMode.BestPowerEfficiency,
+                    Turbo = WindowsPowerMode.BestPerformance,
+                    MaximumPower = WindowsPowerMode.Balanced,
+                },
             },
             DesiredState = baseline.DesiredState with
             {
@@ -772,6 +778,43 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(preset, decoded.Profiles.PluggedIn.Performance);
         Assert.Equal(preset, decoded.DesiredState.Performance.Value);
         Assert.Equal(preset, decoded.ConfirmedState!.Performance);
+        Assert.Equal(status.Profiles.WindowsPowerModes, decoded.Profiles.WindowsPowerModes);
+        var profilesRequest = new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), status.Profiles);
+        Assert.Equal(profilesRequest, await RoundTripRequestAsync(profilesRequest));
+    }
+
+    [Fact]
+    public async Task NewWindowsPowerModeAssociations_OmittedByOlderWriterDefaultToNull()
+    {
+        var request = new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), ProfileDefaults.CreateSafeDefaults());
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteRequestAsync(encoded, request, CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        JsonObject associations = json["profiles"]!["windowsPowerModes"]!.AsObject();
+        Assert.True(associations.Remove("turbo"));
+        Assert.True(associations.Remove("maximumPower"));
+        using MemoryStream projected = FrameJson(json.ToJsonString());
+        UpdateProfilesRequest decoded = Assert.IsType<UpdateProfilesRequest>(
+            await IpcMessageCodec.ReadRequestAsync(projected, CancellationToken.None));
+        Assert.Null(decoded.Profiles.WindowsPowerModes.Turbo);
+        Assert.Null(decoded.Profiles.WindowsPowerModes.MaximumPower);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Turbo)]
+    [InlineData(PerformancePreset.MaximumPower)]
+    public async Task NewWindowsPowerModeAssociations_RejectUndefinedValues(PerformancePreset preset)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            WindowsPowerModes = profiles.WindowsPowerModes.WithPerformance(preset, (WindowsPowerMode)999),
+        };
+        using MemoryStream encoded = new();
+        await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.WriteRequestAsync(encoded,
+            new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), profiles), CancellationToken.None));
+        Assert.Equal(0, encoded.Length);
+        await AssertStatusWriteRejectedAsync(CreateStatus() with { Profiles = profiles });
     }
 
     [Fact]

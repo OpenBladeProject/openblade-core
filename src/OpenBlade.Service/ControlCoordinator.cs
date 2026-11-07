@@ -18,7 +18,8 @@ internal sealed record ScopedApplyOutcome(
     ConfirmedDeviceState? PreWriteState = null,
     DesiredDeviceState? EffectiveDesired = null,
     WriteSubmissionState? WriteSubmissionState = null,
-    BladeWriteFailurePhase? WriteFailurePhase = null);
+    BladeWriteFailurePhase? WriteFailurePhase = null,
+    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
 
 internal sealed record FullTransitionApplyOutcome(
     SubsystemApplyResults Results,
@@ -31,7 +32,8 @@ internal sealed record FullTransitionApplyOutcome(
     IReadOnlySet<DeviceSubsystem>? ConfirmationUnavailable = null,
     ConfirmedDeviceState? PreWriteState = null,
     DesiredDeviceState? EffectiveDesired = null,
-    IReadOnlySet<DeviceSubsystem>? DeferredNotSubmitted = null);
+    IReadOnlySet<DeviceSubsystem>? DeferredNotSubmitted = null,
+    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
 
 internal sealed class IntentionalWriteCanceledException(
     IReadOnlySet<DeviceSubsystem> writeAttempted,
@@ -1339,7 +1341,8 @@ public sealed class ControlCoordinator
                     capabilities,
                     DeviceAccessFailed: false,
                     effectiveDesired: desired,
-                    deferredNotSubmitted: transition.DeferredNotSubmitted);
+                    deferredNotSubmitted: transition.DeferredNotSubmitted,
+                    batteryConfirmation: states[DeviceSubsystem.Battery].BatteryConfirmation);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -1405,7 +1408,8 @@ public sealed class ControlCoordinator
                     confirmationUnavailable: confirmationUnavailable,
                     preWriteState: initial,
                     effectiveDesired: desired,
-                    deferredNotSubmitted: transition.DeferredNotSubmitted);
+                    deferredNotSubmitted: transition.DeferredNotSubmitted,
+                    batteryConfirmation: states[DeviceSubsystem.Battery].BatteryConfirmation);
             }
 
             var finalReadUnavailable = new HashSet<DeviceSubsystem>();
@@ -1459,7 +1463,8 @@ public sealed class ControlCoordinator
                     ? initial
                     : null,
                 effectiveDesired: desired,
-                deferredNotSubmitted: transition.DeferredNotSubmitted);
+                deferredNotSubmitted: transition.DeferredNotSubmitted,
+                batteryConfirmation: states[DeviceSubsystem.Battery].BatteryConfirmation);
         }
         catch (OperationCanceledException exception)
             when (cancellationToken.IsCancellationRequested
@@ -1575,7 +1580,11 @@ public sealed class ControlCoordinator
                     capabilities,
                     initial.Battery,
                     token),
-                state => BatteryOperationPlanner.BatteryMatches(desiredBattery, state.Battery)),
+                state => BatteryOperationPlanner.BatteryMatches(desiredBattery, state.Battery,
+                    allowUnmanagedOverride: !capabilities.SupportsTemporaryFullCharge))
+            {
+                BatteryConfirmation = batteryPlan.ConfirmationScope,
+            },
             [DeviceSubsystem.Lighting] = new(
                 "Lighting",
                 IsLightingValid(desired.Lighting.Value)
@@ -2174,6 +2183,7 @@ public sealed class ControlCoordinator
         DeviceCapabilities? capabilities = null;
         bool submissionIndeterminate = false;
         bool setterCompleted = false;
+        BatteryConfirmationScope batteryConfirmation = BatteryConfirmationScope.All;
         ConfirmedDeviceState? initial = null;
         try
         {
@@ -2186,6 +2196,7 @@ public sealed class ControlCoordinator
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             BatteryOperationPlan plan = createPlan(capabilities, initial.Battery);
+            batteryConfirmation = plan.ConfirmationScope;
             if (!plan.Supported)
             {
                 return new ScopedApplyOutcome(
@@ -2194,7 +2205,8 @@ public sealed class ControlCoordinator
                     WriteAttempted: false,
                     ReadbackMatched: false,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: false,
+                    BatteryConfirmation: batteryConfirmation);
             }
 
             if (plan.InitiallyMatching)
@@ -2205,7 +2217,8 @@ public sealed class ControlCoordinator
                     WriteAttempted: false,
                     ReadbackMatched: true,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: false,
+                    BatteryConfirmation: batteryConfirmation);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -2223,7 +2236,8 @@ public sealed class ControlCoordinator
                     WriteAttempted: false,
                     ReadbackMatched: false,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: false,
+                    BatteryConfirmation: batteryConfirmation);
             }
             catch (BladeWriteException exception)
                 when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
@@ -2238,7 +2252,8 @@ public sealed class ControlCoordinator
                     capabilities,
                     DeviceAccessFailed: preWriteReadFailed,
                     WriteSubmissionState: exception.SubmissionState,
-                    WriteFailurePhase: exception.FailurePhase);
+                    WriteFailurePhase: exception.FailurePhase,
+                    BatteryConfirmation: batteryConfirmation);
             }
             catch (BladeWriteException exception)
                 when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
@@ -2257,7 +2272,8 @@ public sealed class ControlCoordinator
                     ConfirmationUnavailable: true,
                     PreWriteState: initial,
                     WriteSubmissionState: exception.SubmissionState,
-                    WriteFailurePhase: exception.FailurePhase);
+                    WriteFailurePhase: exception.FailurePhase,
+                    BatteryConfirmation: batteryConfirmation);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -2274,7 +2290,8 @@ public sealed class ControlCoordinator
                     WriteAttempted: true,
                     ReadbackMatched: true,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: false,
+                    BatteryConfirmation: batteryConfirmation);
             }
 
             return new ScopedApplyOutcome(
@@ -2284,8 +2301,10 @@ public sealed class ControlCoordinator
                 ReadbackMatched: false,
                 capabilities,
                 DeviceAccessFailed: false,
-                ConfirmationUnavailable: final.Battery?.TemporaryFullCharge is null,
-                PreWriteState: initial);
+                ConfirmationUnavailable: final.Battery is null
+                    || capabilities.SupportsTemporaryFullCharge && final.Battery.TemporaryFullCharge is null,
+                PreWriteState: initial,
+                BatteryConfirmation: batteryConfirmation);
         }
         catch (OperationCanceledException exception)
             when (cancellationToken.IsCancellationRequested && submissionIndeterminate)
@@ -2312,7 +2331,8 @@ public sealed class ControlCoordinator
                 capabilities,
                 DeviceAccessFailed: true,
                 ConfirmationUnavailable: setterCompleted,
-                PreWriteState: setterCompleted ? initial : null);
+                PreWriteState: setterCompleted ? initial : null,
+                BatteryConfirmation: batteryConfirmation);
         }
     }
 
@@ -2769,7 +2789,8 @@ public sealed class ControlCoordinator
         IReadOnlySet<DeviceSubsystem>? confirmationUnavailable = null,
         ConfirmedDeviceState? preWriteState = null,
         DesiredDeviceState? effectiveDesired = null,
-        IReadOnlySet<DeviceSubsystem>? deferredNotSubmitted = null) => new(
+        IReadOnlySet<DeviceSubsystem>? deferredNotSubmitted = null,
+        BatteryConfirmationScope batteryConfirmation = BatteryConfirmationScope.All) => new(
             new SubsystemApplyResults(
                 results[DeviceSubsystem.Performance],
                 results[DeviceSubsystem.Fans],
@@ -2784,7 +2805,8 @@ public sealed class ControlCoordinator
             confirmationUnavailable,
             preWriteState,
             effectiveDesired,
-            deferredNotSubmitted is null ? null : new HashSet<DeviceSubsystem>(deferredNotSubmitted));
+            deferredNotSubmitted is null ? null : new HashSet<DeviceSubsystem>(deferredNotSubmitted),
+            batteryConfirmation);
 
     private static bool IsLightingValid(LightingSettings value)
         => LightingSettingsValidation.IsWellFormed(value);
@@ -3195,6 +3217,8 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, bool> Matches,
         bool AcceptSetterCompletionWithoutReadback = false)
     {
+        public BatteryConfirmationScope BatteryConfirmation { get; init; } = BatteryConfirmationScope.All;
+
         public Func<ConfirmedDeviceState, CancellationToken, Task>? StateAwareSetter
         {
             get;

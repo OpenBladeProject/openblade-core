@@ -1677,6 +1677,11 @@ public partial class App
         {
             return;
         }
+        if (state == "source-reviewed-presets")
+        {
+            ApplySourceReviewedPresetsSnapshotState(window);
+            return;
+        }
         if (state == "experimental-custom")
         {
             ApplyExperimentalCustomSnapshotState(window);
@@ -1821,6 +1826,74 @@ public partial class App
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Dashboard presentation hook was not found.");
         refreshCards.Invoke(window, null);
+    }
+
+    private static void ApplySourceReviewedPresetsSnapshotState(MainWindow window)
+    {
+        // Disconnected RZ09-0529 / product 711 presentation fixture. Match the
+        // reviewed production capability set; this never connects to the service.
+        CustomPerformanceLevel[] levels =
+            [CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High];
+        var combinations = new HashSet<CustomPerformanceCombination>();
+        foreach (CustomPerformanceLevel cpu in levels)
+        {
+            foreach (CustomPerformanceLevel gpu in levels)
+            {
+                combinations.Add(new(cpu, gpu));
+            }
+        }
+        var capabilities = new DeviceCapabilities(
+            new HashSet<PerformancePreset>
+            {
+                PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Turbo,
+                PerformancePreset.MaximumPower, PerformancePreset.Custom,
+                PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver,
+            },
+            new HashSet<FanMode> { FanMode.Automatic },
+            new HashSet<LightingEffect>(),
+            Enumerable.Range(10, 7).Select(value => value * 5).Append(100).ToHashSet(),
+            SupportsBatteryProtectionOff: true,
+            SupportsTemporaryFullCharge: false)
+        {
+            CustomPerformance = new(combinations) { SupportsMaximumFans = false },
+            SupportsBreathingColorSelection = false,
+            SupportsWaveDirectionSelection = false,
+        };
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Performance = PerformancePreset.MaximumPower },
+            WindowsPowerModes = profiles.WindowsPowerModes with
+            {
+                Turbo = WindowsPowerMode.BestPerformance,
+                MaximumPower = WindowsPowerMode.Balanced,
+            },
+        };
+        var status = new ServiceStatusSnapshot(
+            1, true, false, [], null, [], "Source-reviewed RZ09-0529 preset preview", capabilities,
+            new ConfirmedDeviceState(PerformancePreset.MaximumPower, FanMode.Automatic,
+                new ConfirmedBatteryState(true, 80, null), null), profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.MaximumPower, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
+            PowerSource.PluggedIn, null, null, null, null, false)
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalSupportSource = "SynapseSourceBacked:RZ09-0529:711",
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        applyStatus.Invoke(window.ViewModel, [status, false]);
+        if (!window.ViewModel.AvailablePluggedInPerformanceOptions.Select(option => option.Value).SequenceEqual(
+                new[] { PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Turbo,
+                    PerformancePreset.MaximumPower, PerformancePreset.Custom }))
+        {
+            throw new InvalidOperationException("The source-reviewed RZ09-0529 preset preview is incomplete.");
+        }
     }
 
     private static void ApplyExperimentalCustomSnapshotState(MainWindow window)

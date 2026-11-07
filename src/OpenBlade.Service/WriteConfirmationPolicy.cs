@@ -44,16 +44,7 @@ internal static class WriteConfirmationPolicy
                         ?? pending.Target.Fans.Value)
                         ? PendingConfirmationResult.Match
                         : PendingConfirmationResult.Mismatch),
-            DeviceSubsystem.Battery =>
-                // Temporary full charge changes the meaning of the other battery
-                // fields. A null value is insufficient evidence, so keep the write
-                // pending rather than guessing or retrying it.
-                confirmed.Battery is not { TemporaryFullCharge: not null } battery
-                ? PendingConfirmationResult.Unavailable
-                : BatteryMatchesDesired(battery, pending.Target.Battery)
-                    && battery.TemporaryFullCharge == pending.Target.Battery.TemporaryFullCharge
-                    ? PendingConfirmationResult.Match
-                    : PendingConfirmationResult.Mismatch,
+            DeviceSubsystem.Battery => MatchPendingBattery(pending, confirmed.Battery),
             DeviceSubsystem.Lighting => confirmed.Lighting is null
                 ? PendingConfirmationResult.Unavailable
                 : confirmed.Lighting == pending.Target.Lighting.Value
@@ -159,6 +150,23 @@ internal static class WriteConfirmationPolicy
                     ? PendingConfirmationResult.Match
                     : PendingConfirmationResult.Mismatch;
 
+    private static PendingConfirmationResult MatchPendingBattery(
+        WriteConfirmationExpectation pending, ConfirmedBatteryState? battery)
+    {
+        // Only a recorded limiter-only operation may confirm its own fields
+        // without an override reading. Missing/unknown scope retains strictness.
+        bool policyOnly = pending.BatteryConfirmation == BatteryConfirmationScope.PolicyOnly
+            && !pending.Target.Battery.TemporaryFullCharge;
+        if (battery is null || !policyOnly && battery.TemporaryFullCharge is null)
+        {
+            return PendingConfirmationResult.Unavailable;
+        }
+        return BatteryMatchesDesired(battery, pending.Target.Battery)
+            && (policyOnly && battery.TemporaryFullCharge is null
+                || battery.TemporaryFullCharge == pending.Target.Battery.TemporaryFullCharge)
+                ? PendingConfirmationResult.Match : PendingConfirmationResult.Mismatch;
+    }
+
     internal static bool BatteryMatchesDesired(
         ConfirmedBatteryState confirmed,
         DesiredBatteryState desired) =>
@@ -179,4 +187,11 @@ internal readonly record struct WriteConfirmationExpectation(
     ConfirmedDeviceState PreWriteState,
     bool? HyperBoostActive = null,
     PerformancePreset? HyperBoostBaseMode = null,
-    bool GpuClockTuningOnly = false);
+    bool GpuClockTuningOnly = false,
+    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
+
+internal enum BatteryConfirmationScope
+{
+    All = 0,
+    PolicyOnly = 1,
+}

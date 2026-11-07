@@ -15,8 +15,7 @@ internal sealed partial class ExperimentalBladePort(
     ExperimentalLightingOwnershipState? sharedLightingOwnership = null,
     ICoolingPadDiscoverySource? coolingPadDiscovery = null,
     TimeProvider? lightingTimeProvider = null,
-    ExperimentalStartupAnimationState? sharedStartupAnimationState = null,
-    ExperimentalTemporaryFullChargeState? sharedTemporaryFullChargeState = null)
+    ExperimentalStartupAnimationState? sharedStartupAnimationState = null)
     : IProductionBatteryPort, IProductionLightingPort, ILightingRecoveryWriteAdmission
 {
     private readonly SemaphoreSlim operationGate = sharedOperationGate ?? new(1, 1);
@@ -57,10 +56,8 @@ internal sealed partial class ExperimentalBladePort(
             }
             ConfirmedBatteryState? battery = recoveredTemporaryBattery ?? (model.SupportsBatteryProtection
                 ? await ReadBatteryAsync(cancellationToken).ConfigureAwait(false) : null);
-            if (battery is not null && !SupportsTemporaryFullChargeQuery && model.ThermalPolicy is null)
-            {
-                battery = new ConfirmedBatteryState(battery.ProtectionEnabled, battery.ChargeLimitPercent, false);
-            }
+            // The limiter GET reports only its enable bit and threshold. Without
+            // an admitted full-charge query, preserve null rather than infer Off.
             (LightingSettings? lighting, LogoLightingMode? logo) =
                 SupportsExperimentalLighting(model)
                     ? await ReadRecoveryLightingStateAsync(cancellationToken).ConfigureAwait(false)
@@ -124,8 +121,8 @@ internal sealed partial class ExperimentalBladePort(
 
     internal void SetAdditionalWriteAdmission(Func<bool> admission) => additionalWriteAdmission = admission;
 
-    public DeviceCapabilities Capabilities => WithTemporaryFullChargeReadAdmission(WithStartupReadAdmission(
-        CreateCapabilities(model, policy.WritesAllowed), startupAnimationState), temporaryFullChargeState) with
+    public DeviceCapabilities Capabilities => WithStartupReadAdmission(
+        CreateCapabilities(model, policy.WritesAllowed), startupAnimationState) with
     {
         Blade18KeyboardLayoutId = blade18KeyboardLayoutId,
     };

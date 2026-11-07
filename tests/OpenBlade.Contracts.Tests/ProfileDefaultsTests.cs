@@ -34,20 +34,27 @@ public sealed class ProfileDefaultsTests
         Assert.Equal(80, profiles.BatteryPolicy.ChargeLimitPercent);
     }
 
-    [Theory]
-    [InlineData(PerformancePreset.Turbo)]
-    [InlineData(PerformancePreset.MaximumPower)]
-    public void HighPerformanceModes_UseTheExistingWindowsPerformanceAssociation(PerformancePreset preset)
+    [Fact]
+    public void NewWindowsPowerModeAssociations_AreIndependentAndRetainTheLegacyConstructor()
     {
-        WindowsPowerModeAssociations associations = WindowsPowerModeAssociations.LeaveUnchanged
-            .WithPerformance(PerformancePreset.Balanced, WindowsPowerMode.Balanced)
-            .WithPerformance(PerformancePreset.Performance, WindowsPowerMode.BestPerformance);
-        Assert.Equal(WindowsPowerMode.BestPerformance, associations.ForPerformance(preset));
-        WindowsPowerModeAssociations updated = associations.WithPerformance(preset, WindowsPowerMode.BestPowerEfficiency);
-        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, updated.ForPerformance(preset));
-        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, updated.Performance);
-        Assert.Equal(WindowsPowerMode.Balanced, updated.Balanced);
-        Assert.Null(updated.Silent);
+        var legacy = new WindowsPowerModeAssociations(null, WindowsPowerMode.Balanced,
+            WindowsPowerMode.BestPerformance, null, null, null);
+        Assert.Null(legacy.Turbo);
+        Assert.Null(legacy.MaximumPower);
+        WindowsPowerModeAssociations configured = legacy
+            .WithPerformance(PerformancePreset.Turbo, WindowsPowerMode.BestPowerEfficiency)
+            .WithPerformance(PerformancePreset.MaximumPower, WindowsPowerMode.Balanced);
+        Assert.Equal(WindowsPowerMode.BestPerformance, configured.Performance);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, configured.ForPerformance(PerformancePreset.Turbo));
+        Assert.Equal(WindowsPowerMode.Balanced, configured.ForPerformance(PerformancePreset.MaximumPower));
+        WindowsPowerModeAssociations updated = configured.WithPerformance(
+            PerformancePreset.Turbo, WindowsPowerMode.BestPerformance);
+        Assert.Equal(WindowsPowerMode.BestPerformance, updated.Turbo);
+        Assert.Equal(configured.MaximumPower, updated.MaximumPower);
+        Assert.Equal(configured.Performance, updated.Performance);
+        Assert.Equal(configured.Balanced, updated.Balanced);
+        string json = System.Text.Json.JsonSerializer.Serialize(configured);
+        Assert.Equal(configured, System.Text.Json.JsonSerializer.Deserialize<WindowsPowerModeAssociations>(json));
     }
 
     [Fact]
