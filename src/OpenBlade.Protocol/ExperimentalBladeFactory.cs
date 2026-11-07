@@ -16,7 +16,6 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ExperimentalLightingOwnershipState lightingOwnership = new();
     private readonly ExperimentalStartupAnimationState startupAnimationState = new();
-    private readonly ExperimentalTemporaryFullChargeState temporaryFullChargeState = new();
 
     internal ExperimentalBladeFactory(ExperimentalBladeModel model, IHostIdentitySource identity,
         IHidCandidateNative native, IHardwareAccessGuard guard, IHidFeatureIo io,
@@ -38,9 +37,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
 
-    public DeviceCapabilities Capabilities => ExperimentalBladePort.WithTemporaryFullChargeReadAdmission(
-        ExperimentalBladePort.WithStartupReadAdmission(
-            ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState), temporaryFullChargeState);
+    public DeviceCapabilities Capabilities => ExperimentalBladePort.WithStartupReadAdmission(
+        ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState);
 
     public DeviceCapabilities PotentialCapabilities => ExperimentalBladePort.CreateCapabilities(model, true);
 
@@ -87,6 +85,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         {
             throw new CapabilityUnavailableException("Experimental writes are not paused or recovery is no longer authorized.");
         }
+        ExperimentalRecoveryScope recoveryScope = policy.RecoveryScope;
         policy.Record("WriteRecovery", "Recovery", "Started");
         try
         {
@@ -120,13 +119,12 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                 throw new CapabilityUnavailableException("Fresh recovery safety admission failed.");
             }
             cancellationToken.ThrowIfCancellationRequested();
-            if (!acceptObservedState(observed))
+            if (!policy.TryCompleteRecovery(recoveryScope, () => acceptObservedState(observed)))
             {
                 throw new CapabilityUnavailableException("The confirmed state could not be reconciled for recovery.");
             }
             // Acceptance synchronously commits reconciliation under the runtime gate.
             // No asynchronous work or fallible admission may split that commit.
-            policy.CompleteRecovery();
             policy.Record("WriteRecovery", "Recovery", "Resumed");
             return observed;
         }
@@ -320,8 +318,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     sharedOperationGate: operationGate,
                     sharedLightingOwnership: lightingOwnership,
                     coolingPadDiscovery: new WindowsHyperBoostEligibilitySource(native),
-                    sharedStartupAnimationState: startupAnimationState,
-                    sharedTemporaryFullChargeState: temporaryFullChargeState);
+                    sharedStartupAnimationState: startupAnimationState);
                 try
                 {
                     // Correctly correlated selectors identify the interface even when

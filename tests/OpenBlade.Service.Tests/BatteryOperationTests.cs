@@ -99,6 +99,7 @@ public sealed class BatteryOperationTests
         device.Capabilities = device.Capabilities with
         {
             SupportsBatteryProtectionOff = true,
+            SupportsTemporaryFullCharge = true,
         };
         var coordinator = new ControlCoordinator(device);
 
@@ -263,9 +264,10 @@ public sealed class BatteryOperationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ChargeLimit_PartialFinalRead_RemainsUnconfirmed(bool missingBattery)
+    public async Task ChargeLimit_AdmittedOverrideQueryPartialFinalRead_RemainsUnconfirmed(bool missingBattery)
     {
         BatteryTestDevice device = new BatteryTestDevice();
+        device.Capabilities = device.Capabilities with { SupportsTemporaryFullCharge = true };
         ConfirmedDeviceState initial = device.State;
         device.AfterSetter = _ => device.State = device.State with
         {

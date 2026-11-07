@@ -691,7 +691,7 @@
     <value>Сохраняет текущий параметр Windows.</value>
   </data>
   <data name="Used whenever {0} is selected. {1}" xml:space="preserve">
-    <value>Используется при выборе {0}. {1}</value>
+    <value>Используется в режиме «{0}». {1}</value>
   </data>
   <data name="Leaves the Windows setting unchanged whenever {0} is selected." xml:space="preserve">
     <value>Оставляет параметр Windows без изменений при выборе {0}.</value>
@@ -1440,11 +1440,11 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Войдите в интерактивный сеанс Windows, чтобы изменить настройки ноутбука.</value>
   </data>
-  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
-    <value>На этом ноутбуке доступны экспериментальные элементы управления. Экспортируйте диагностику в разделе «О программе», чтобы помочь с их тестированием.</value>
+  <data name="This laptop is supported using reviewed sources. Physical validation is tracked separately." xml:space="preserve">
+    <value>Этот ноутбук поддерживается на основе проверенных источников. Проверка на реальном устройстве учитывается отдельно.</value>
   </data>
-  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
-    <value>Экспериментальная запись приостановлена, поскольку OpenBlade не смог подтвердить изменение. Проверьте текущее состояние, затем возобновите экспериментальное управление. OpenBlade не станет повторять предыдущее изменение.</value>
+  <data name="Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>Управление ноутбуком приостановлено, поскольку OpenBlade не смог подтвердить изменение. Проверьте текущее состояние, затем возобновите управление ноутбуком. OpenBlade не станет повторять предыдущее изменение.</value>
   </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>Ноутбук не поддерживается</value>
@@ -1707,5 +1707,17 @@
   </data>
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>Источник питания изменился. Проверьте текущий профиль и повторите попытку.</value>
+  </data>
+  <data name="Turbo" xml:space="preserve">
+    <value>Турбо</value>
+  </data>
+  <data name="Maximum Power" xml:space="preserve">
+    <value>Максимальная мощность</value>
+  </data>
+  <data name="Gaming" xml:space="preserve">
+    <value>Игровой</value>
+  </data>
+  <data name="Creator" xml:space="preserve">
+    <value>Творческий</value>
   </data>
 </root>

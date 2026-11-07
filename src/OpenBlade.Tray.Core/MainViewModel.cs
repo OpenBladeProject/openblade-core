@@ -1629,8 +1629,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !IsResumeExperimentalWritesOperationInProgress;
 
     public string ExperimentalSupportNotice => ExperimentalWritesPaused
-        ? TrayText.Get("Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change.")
-        : TrayText.Get("Experimental controls are available on this laptop. Export diagnostics in About to help test them.");
+        ? TrayText.Get("Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change.")
+        : TrayText.Get("This laptop is supported using reviewed sources. Physical validation is tracked separately.");
 
     public KeyboardLightingControlMode KeyboardLightingControlMode
     {
@@ -2936,10 +2936,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             if (IsChargeLimitOperationInProgress
                 || !CanMutate
                 || !HasConfirmedPowerSource
-                || latestStatus?.ConfirmedState?.Battery is not
-                {
-                    TemporaryFullCharge: false,
-                } confirmed)
+                || latestStatus?.ConfirmedState?.Battery is not { } confirmed
+                || confirmed.TemporaryFullCharge is true
+                || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
             {
                 return false;
             }
@@ -5018,10 +5017,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || !CanMutate
             || !HasConfirmedPowerSource
             || !ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
-            || status?.ConfirmedState?.Battery is not
-            {
-                TemporaryFullCharge: false,
-            } confirmed)
+            || status?.ConfirmedState?.Battery is not { } confirmed
+            || confirmed.TemporaryFullCharge is true
+            || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
         {
             return false;
         }
@@ -6237,10 +6235,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (IsChargeLimitOperationInProgress
             || !CanMutate
             || !HasConfirmedPowerSource
-            || status?.ConfirmedState?.Battery is not
-            {
-                TemporaryFullCharge: false,
-            } confirmed)
+            || status?.ConfirmedState?.Battery is not { } confirmed
+            || confirmed.TemporaryFullCharge is true
+            || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
         {
             return false;
         }
@@ -8679,9 +8676,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         string state = battery.TemporaryFullCharge switch
         {
-            null => TrayText.Get("Temporary full charge state unavailable"),
+            null when status.Capabilities?.SupportsTemporaryFullCharge is not false =>
+                TrayText.Get("Temporary full charge state unavailable"),
             true => TrayText.Get("Temporary full charge active"),
-            false when !battery.ProtectionEnabled => TrayText.Get("Battery protection off"),
+            _ when !battery.ProtectionEnabled => TrayText.Get("Battery protection off"),
             _ => TrayText.Format("Charge limit {0}%", battery.ChargeLimitPercent),
         };
         string source = changedOutside

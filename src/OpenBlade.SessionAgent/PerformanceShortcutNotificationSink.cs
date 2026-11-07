@@ -48,6 +48,13 @@ public static class PerformanceShortcutNotificationText
 
         string selectedValue = serviceMessage[
             (markerIndex + SelectedMarker.Length)..].TrimEnd('.');
+        // Service labels preserve the vendor mode name, while the enum identifier
+        // cannot contain its space. Keep all other labels under exact enum parsing.
+        if (selectedValue == "Maximum Power")
+        {
+            preset = PerformancePreset.MaximumPower;
+            return true;
+        }
         return Enum.TryParse(selectedValue, ignoreCase: false, out preset)
             && Enum.IsDefined(preset);
     }

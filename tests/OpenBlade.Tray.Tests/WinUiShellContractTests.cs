@@ -478,7 +478,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal(
             "{x:Bind ViewModel.ExperimentalWritesPaused, Mode=OneWay}",
             Attribute(resume, "Visibility"));
-        Assert.Equal("Resume experimental controls", Attribute(resume, "AutomationProperties.Name"));
+        Assert.Equal("Resume laptop controls", Attribute(resume, "AutomationProperties.Name"));
         Assert.Contains(
             resume.Descendants(),
             element => element.Name.LocalName == "ProgressRing"
@@ -519,6 +519,12 @@ public sealed class WinUiShellContractTests
                 "MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
                 keys);
             Assert.Contains("MainWindow_ResumeExperimentalWritesLabel.Text", keys);
+            string ResourceValue(string key) => resources.Descendants("data")
+                .Single(element => (string?)element.Attribute("name") == key)
+                .Element("value")!.Value;
+            Assert.Equal(
+                ResourceValue("MainWindow_ResumeExperimentalWritesLabel.Text"),
+                ResourceValue("MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"));
             Assert.DoesNotContain("MainWindow_ExperimentalConsent_Title", keys);
         }
     }

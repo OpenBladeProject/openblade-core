@@ -6,9 +6,12 @@ internal sealed partial class ExperimentalBladePort
 {
     private static readonly IReadOnlySet<int> FullExperimentalChargeLimits =
         Enumerable.Range(50, 51).ToHashSet();
+    private static readonly IReadOnlySet<int> SourceReviewedChargeLimits =
+        new HashSet<int> { 50, 55, 60, 65, 70, 75, 80, 100 };
     private static readonly IReadOnlySet<int> NoExperimentalChargeLimits = new HashSet<int>();
 
     internal static IReadOnlySet<int> GetExperimentalChargeLimits(ExperimentalBladeModel model) =>
+        model.SupportsBatteryProtection && model.ThermalPolicy is not null ? SourceReviewedChargeLimits :
         model.SupportsBatteryProtection && model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x02A0
             ? FullExperimentalChargeLimits
             : NoExperimentalChargeLimits;
@@ -45,7 +48,8 @@ internal sealed partial class ExperimentalBladePort
         // The pinned 029F implementation exercises every whole-percent threshold.
         // The other admitted battery models share this encoding; their expanded
         // range remains upstream-derived until physical validation is complete.
-        bool admitted = !flag || GetExperimentalChargeLimits(model).Contains(percent);
+        bool admitted = !flag || GetExperimentalChargeLimits(model).Contains(percent)
+            && (model.ThermalPolicy is null || percent != 100);
         if (!admitted)
         {
             RecordQuery("BatteryProtection", "UnsupportedState",
@@ -66,7 +70,7 @@ internal sealed partial class ExperimentalBladePort
         GetExperimentalChargeLimits(model).Contains(percent)
             ? SetBatteryAsync(percent == 100 ? null : percent, cancellationToken)
             : Task.FromException(new CapabilityUnavailableException(
-                "Experimental charge limits must be from 50 to 100 percent on a model with admitted battery protection."));
+                "The charge limit must belong to this exact model's admitted thresholds."));
 
     public Task SetProtectionOffAsync(CancellationToken cancellationToken) => SetBatteryAsync(null, cancellationToken);
 
@@ -83,7 +87,7 @@ internal sealed partial class ExperimentalBladePort
         try
         {
             RequireWriteAdmission();
-            ConfirmedBatteryState baseline = await ReadBatteryAsync(cancellationToken).ConfigureAwait(false);
+            (ConfirmedBatteryState baseline, byte baselineRaw) = await ReadBatteryPolicyAsync(cancellationToken).ConfigureAwait(false);
             policy.Record("BatteryProtection", "Baseline", "Confirmed", requested: requested,
                 confirmed: baseline.ProtectionEnabled ? baseline.ChargeLimitPercent!.Value.ToString() : "Off");
             if (baseline.ProtectionEnabled == enabled && baseline.ChargeLimitPercent == limit)
@@ -98,8 +102,20 @@ internal sealed partial class ExperimentalBladePort
                     "Cancel temporary full charge before changing the charge policy.");
             }
             RequireWriteAdmission();
-            await ExchangeAsync("BatteryProtection", 0x07, 0x12, [enabled ? checked((byte)(0x80 | limit!.Value)) : (byte)0x50],
-                true, cancellationToken).ConfigureAwait(false);
+            // Synapse disables protection with its retained threshold. Legacy upstream
+            // profiles retain their separately reviewed disabled-80 encoding.
+            byte requestedRaw = enabled ? checked((byte)(0x80 | limit!.Value))
+                : model.ThermalPolicy is not null ? (byte)(baselineRaw & 0x7F) : (byte)0x50;
+            // Exact-model Synapse parsers populate battery JSON only when the
+            // successful SET ACK has data (694 bytes 22017..22413; 695 49350..49742).
+            // Accept empty ACKs, validate any returned byte, then independently GET.
+            bool statusAck = model.ThermalPolicy is not null;
+            await ExchangeAsync("BatteryProtection", 0x07, 0x12, [requestedRaw],
+                true, cancellationToken, variableResponse: statusAck,
+                payloadValidator: statusAck
+                    ? payload => payload.Length == 0 || payload.Length == 1 && payload.Span[0] == requestedRaw
+                    : null,
+                requireEcho: !statusAck).ConfigureAwait(false);
             submitted = true;
             // 029F firmware may return the previous valid state for 1-2 seconds after a SET.
             // https://github.com/sqmagellan/razer-ctl/blob/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a/README.md
@@ -112,8 +128,9 @@ internal sealed partial class ExperimentalBladePort
                     await delayConfirmation(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
                 }
                 cancellationToken.ThrowIfCancellationRequested();
-                ConfirmedBatteryState confirmed = await ReadBatteryAsync(cancellationToken).ConfigureAwait(false);
-                if (confirmed.ProtectionEnabled == enabled && confirmed.ChargeLimitPercent == limit)
+                (ConfirmedBatteryState confirmed, byte confirmedRaw) = await ReadBatteryPolicyAsync(cancellationToken).ConfigureAwait(false);
+                if (confirmed.ProtectionEnabled == enabled && confirmed.ChargeLimitPercent == limit
+                    && (model.ThermalPolicy is null || confirmedRaw == requestedRaw))
                 {
                     policy.Record("BatteryProtection", "Readback", "Confirmed", true, requested, requested);
                     return;

@@ -2,16 +2,8 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-internal sealed class ExperimentalTemporaryFullChargeState
-{
-    internal int ReadAdmitted;
-}
-
 internal sealed partial class ExperimentalBladePort
 {
-    private readonly ExperimentalTemporaryFullChargeState temporaryFullChargeState =
-        sharedTemporaryFullChargeState ?? new();
-
     // Product 672 inherits rzDevice25 DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24:
     // GET 07/8F [0], SET 07/0F [mask], oneTimeOverride = bit 04.
     // Its shared middleware 651F63DCC0EFC92B0FD7496EE70751707B5F650F20AF5C01C3255B61817C1997
@@ -19,10 +11,8 @@ internal sealed partial class ExperimentalBladePort
     // with other shared bits clear; a readable zero mask is not physical validation.
     public bool SupportsTemporaryFullChargeQuery => model.ProductId == 0x02A0;
 
-    internal static DeviceCapabilities WithTemporaryFullChargeReadAdmission(
-        DeviceCapabilities capabilities, ExperimentalTemporaryFullChargeState state) =>
-        capabilities.SupportsTemporaryFullCharge && Volatile.Read(ref state.ReadAdmitted) == 0
-            ? capabilities with { SupportsTemporaryFullCharge = false } : capabilities;
+    // Command support is stable. An unknown override reading must not be
+    // mistaken for a backend without the query; every SET below reads it afresh.
 
     public async Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken)
     {
@@ -58,7 +48,6 @@ internal sealed partial class ExperimentalBladePort
             session.RetainQueryFailure(0x07, 0x8F, FirmwareQueryOutcome.ContentRejected);
             throw new IOException("Temporary full charge returned an invalid shared Power Mode Control mask.");
         }
-        Volatile.Write(ref temporaryFullChargeState.ReadAdmitted, 1);
         RecordQuery("TemporaryFullCharge", "Confirmed", $"Active={active};OtherSettings=0x{otherSettings:X2}");
         return payload.Span[0];
     }

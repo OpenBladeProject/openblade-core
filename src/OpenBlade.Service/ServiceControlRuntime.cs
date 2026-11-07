@@ -2316,9 +2316,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             }
             if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
             {
+                // Preserve legacy shortcut spellings while presenting the new
+                // two-word mode with its reviewed notification label.
+                string presetLabel = next == PerformancePreset.MaximumPower
+                    ? PerformanceLabel(next) : next.ToString();
                 string selectedBy = source == PerformanceShortcutSource.DedicatedButton
-                    ? $"The performance button selected {next}."
-                    : $"Fn+P selected {next}.";
+                    ? $"The performance button selected {presetLabel}."
+                    : $"Fn+P selected {presetLabel}.";
                 string message = result.Status == ControlOperationStatus.Stored
                     ? $"{selectedBy} It will be applied when fans return to Automatic."
                     : selectedBy;
@@ -13835,7 +13839,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 outcome.EffectiveDesired ?? desired,
                 preWriteState,
                 BatteryIntentCommit: pendingBatteryIntentCommit,
-                GpuClockTuningOnly: gpuClockTuningOnly));
+                GpuClockTuningOnly: gpuClockTuningOnly,
+                BatteryConfirmation: outcome.BatteryConfirmation));
         }
 
         if (outcome.ConfirmedCoupledWrites is not null)
@@ -15381,7 +15386,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 new HashSet<DeviceSubsystem>(deferred),
                 new HashSet<DeviceSubsystem>(outcome.WriteAttempted.Concat(
                     continuation?.Dependencies ?? new HashSet<DeviceSubsystem>())),
-                continuation?.ExpiresAt ?? timeProvider.GetUtcNow().AddMinutes(2));
+                continuation?.ExpiresAt ?? timeProvider.GetUtcNow().AddMinutes(2),
+                // Never weaken a prior cancellation/override dependency.
+                continuation?.Dependencies.Contains(DeviceSubsystem.Battery) == true
+                    && continuation.BatteryConfirmation != BatteryConfirmationScope.PolicyOnly
+                        ? BatteryConfirmationScope.All
+                        : outcome.WriteAttempted.Contains(DeviceSubsystem.Battery)
+                            ? outcome.BatteryConfirmation
+                            : continuation?.BatteryConfirmation ?? BatteryConfirmationScope.All);
         }
 
         if (outcome.PreWriteState is { } preWriteState)
@@ -15392,7 +15404,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
                     powerSource,
                     outcome.EffectiveDesired ?? desired,
-                    preWriteState));
+                    preWriteState,
+                    BatteryConfirmation: outcome.BatteryConfirmation));
             }
         }
 
@@ -16418,7 +16431,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 subsystem,
                 new WriteConfirmationExpectation(
                     pending.EffectiveDesired,
-                    pending.PreWriteState),
+                    pending.PreWriteState,
+                    BatteryConfirmation: pending.BatteryConfirmation),
                 confirmed,
                 device);
             if (result == PendingConfirmationResult.Mismatch)
@@ -19913,7 +19927,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         ConfirmedDeviceState PreWriteState,
         IReadOnlySet<DeviceSubsystem> Subsystems,
         IReadOnlySet<DeviceSubsystem> Dependencies,
-        DateTimeOffset ExpiresAt);
+        DateTimeOffset ExpiresAt,
+        BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
 
     private sealed record PendingResumePerformanceDrift(
         long PowerGeneration,
@@ -20528,6 +20543,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         PerformancePreset.Silent => "Quiet",
         PerformancePreset.Balanced => "Balanced",
         PerformancePreset.Performance => "Performance",
+        PerformancePreset.Turbo => "Turbo",
+        PerformancePreset.MaximumPower => "Maximum Power",
+        PerformancePreset.Gaming => "Gaming",
+        PerformancePreset.Creator => "Creator",
         _ => mode.ToString(),
     };
 

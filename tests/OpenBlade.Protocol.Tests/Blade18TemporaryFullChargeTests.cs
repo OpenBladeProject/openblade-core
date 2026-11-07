@@ -8,11 +8,11 @@ public sealed class Blade18TemporaryFullChargeTests
     [Theory]
     [InlineData(PowerSource.PluggedIn)]
     [InlineData(PowerSource.UsbC)]
-    public async Task FullCharge_ReadGatesCapabilityAndRoundTripPreservesPolicyWithoutThermalCommands(PowerSource source)
+    public async Task FullCharge_StableCapabilityAndRoundTripPreservePolicyWithoutThermalCommands(PowerSource source)
     {
         var session = new Session();
         await using var port = Create(session, source: source);
-        Assert.False(port.Capabilities.SupportsTemporaryFullCharge);
+        Assert.True(port.Capabilities.SupportsTemporaryFullCharge);
         Assert.False(await port.QueryTemporaryFullChargeAsync(CancellationToken.None));
         Assert.True(port.Capabilities.SupportsTemporaryFullCharge);
         await port.SetTemporaryFullChargeAsync(true, CancellationToken.None);
@@ -52,7 +52,7 @@ public sealed class Blade18TemporaryFullChargeTests
         var policy = new ExperimentalFeaturesPolicy(Model);
         await using var port = Create(session, policy);
         Assert.Null(await port.QueryTemporaryFullChargeAsync(CancellationToken.None));
-        Assert.False(port.Capabilities.SupportsTemporaryFullCharge);
+        Assert.True(port.Capabilities.SupportsTemporaryFullCharge);
         var failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetTemporaryFullChargeAsync(true, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
         Assert.Empty(session.Writes);
@@ -145,10 +145,9 @@ public sealed class Blade18TemporaryFullChargeTests
     [Fact]
     public async Task FullCharge_RecoveryReadsRealFlagAndPolicyBeforeResuming()
     {
-        var state = new ExperimentalTemporaryFullChargeState();
         var policy = new ExperimentalFeaturesPolicy(Model);
         var session = new Session { FailSet = true };
-        await using var port = Create(session, policy, state);
+        await using var port = Create(session, policy);
         await Assert.ThrowsAsync<BladeWriteException>(() => port.SetTemporaryFullChargeAsync(true, CancellationToken.None));
         Assert.False(policy.WritesAllowed);
         session.MaskReply = [16];
@@ -213,9 +212,8 @@ public sealed class Blade18TemporaryFullChargeTests
 
     private static ExperimentalBladeModel Model => ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
     private static ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy? policy = null,
-        ExperimentalTemporaryFullChargeState? state = null, Func<bool>? present = null, PowerSource source = PowerSource.PluggedIn) =>
-        new(session, new(), Model, policy ?? new(Model), present ?? (() => true), () => source,
-            sharedTemporaryFullChargeState: state);
+        Func<bool>? present = null, PowerSource source = PowerSource.PluggedIn) =>
+        new(session, new(), Model, policy ?? new(Model), present ?? (() => true), () => source);
 
     private sealed class Session : IRazerCommandSession
     {

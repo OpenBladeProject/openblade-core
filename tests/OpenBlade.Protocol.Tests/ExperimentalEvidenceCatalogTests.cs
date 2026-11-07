@@ -15,7 +15,17 @@ public sealed class ExperimentalEvidenceCatalogTests
             Assert.All(snapshot.FeatureEvidence, feature =>
             {
                 Assert.NotEmpty(feature.Sources);
-                if (feature.Feature == "AdapterPowerClassification")
+                if (model.ThermalPolicy is not null)
+                {
+                    Assert.Equal("Supported", snapshot.SupportStatus);
+                    Assert.Equal("Pending", snapshot.PhysicalValidation);
+                    Assert.All(feature.Sources, source =>
+                    {
+                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
+                else if (feature.Feature == "AdapterPowerClassification")
                 {
                     Assert.Equal("SynapseSourceBacked", feature.Basis);
                     Assert.Equal(model.AdapterPowerEvidenceSource, Assert.Single(feature.Sources));
