@@ -1,12 +1,20 @@
-# Experimental Blade support
+<a id="experimental-blade-support"></a>
+
+# Source-reviewed Blade support
 
 English | [简体中文](zh-CN/experimental-blade-support.md) | [Русский](ru-RU/experimental-blade-support.md)
 
-OpenBlade recognizes these laptops automatically in both stable and pre-release
-builds. Use the current release to try the controls and help test support.
-Hardware testing in OpenBlade is still in progress.
+These nine laptop families are officially supported using reviewed exact-model
+Synapse and upstream sources. OpenBlade recognizes them automatically in both
+stable and pre-release builds. Physical validation is tracked separately for each
+model and feature; source-reviewed support does not claim complete hardware
+testing. RZ09-0581 and RZ09-0528 retain their separately physically validated
+support. The limits and remaining experimental features below still apply.
 
 ## Available controls
+
+The earlier five models retain the following controls. The four additional
+2024/2025 models have a separate, narrower contract below.
 
 | Laptop | Model number | Controls |
 | --- | --- | --- |
@@ -16,6 +24,29 @@ Hardware testing in OpenBlade is still in progress.
 | Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, including every CPU Boost/GPU level combination and High/High, linked fixed fans in Balanced/Silent, fan curves in Balanced and maximum fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 15 Base (Early 2020) | `RZ09-0328` | Gaming and Custom levels, single-zone keyboard lighting |
 
+### Additional 2024/2025 models
+
+| Laptop | Model number | Initial controls |
+| --- | --- | --- |
+| Blade 14 (2024) | `RZ09-0508` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
+| Blade 16 (2024) | `RZ09-0510` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
+| Blade 18 (2024) | `RZ09-0509` | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic fans, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
+| Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic fans, charge limits 50–80% in 5% steps or protection off |
+
+All four offer Custom CPU/GPU Low, Medium and High. Only Blade 14 (2024)
+and Blade 16 (2024) additionally offer CPU Boost.
+
+All four offer Balanced on battery. The other listed presets require confirmed
+full-power AC, except Battery Saver on Blade 18 (2025), which is a battery mode.
+Fixed fan speeds, curves, HyperBoost, lighting, driver integrations and additional
+controls are not admitted on these four models. Their support does not inherit
+the earlier models' feature list. If fans are currently manual, choose Automatic
+and confirm the handback before changing presets or Custom levels: these profiles
+cannot yet confirm and restore manual targets. See the [exact-model admission guide](source-reviewed-blade-models.md)
+for identity, source pins, command boundaries, and remaining physical validation.
+
+The following detailed control notes apply to the earlier five models.
+
 Close Synapse before using these controls, or use
 [Synapse Blade Blocker](synapse-blade-blocker.md) after checking its model coverage
 and applying the patch. OpenBlade checks the adapter's reported wattage before
@@ -24,7 +55,7 @@ Balanced and returning fans to Automatic; other external-power thermal changes
 wait for confirmed full power. Models with fixed-speed control also offer
 Automatic and fixed fans on battery. Blade 18 also offers linked fixed fans
 in Silent on full power. Fixed speed on a limited adapter is not
-yet supported for these experimental models. If wattage cannot be confirmed,
+yet supported for these models. If wattage cannot be confirmed,
 the change is blocked. The Blade 14 (2025) also offers
 Battery Saver and Battery Balanced on battery power.
 
@@ -76,7 +107,7 @@ Battery Saver and Battery Balanced on battery power.
   actions are source-backed; behavior on the laptop still needs testing.
   OpenBlade handles these shortcuts only while the built-in keyboard is the only
   keyboard connected.
-- Blade 14 (2023) and Blade 16 (2023) offer experimental HyperBoost on full-power
+- Blade 14 (2023) and Blade 16 (2023) offer HyperBoost on full-power
   AC, with or without the Razer Laptop Cooling Pad. They require MCU firmware
   1.1.1.3 or later on the Blade 14, and 1.5.0.0 or later on the Blade 16.
   On the Blade 14, turn off
@@ -91,7 +122,7 @@ Battery Saver and Battery Balanced on battery power.
 
 ## Send a useful test report
 
-All five models also offer [SnapTap](snap-tap.md#supported-driver-profiles) through
+The earlier five models also offer [SnapTap](snap-tap.md#supported-driver-profiles) through
 the Windows-hook backend or their own reviewed Razer keyboard filters and the
 shared control driver. The Razer backend remains experimental on these models.
 If the Razer stack is missing, use **Install driver**; OpenBlade checks Windows
@@ -106,7 +137,7 @@ separate from these models' firmware controls.
    time, and visible result.
 4. Return to the starting setting and check the result. Export diagnostics again.
 5. Review the ZIPs and attach them with your observations to the
-   [experimental support issue](https://github.com/OpenBladeProject/openblade-core/issues/741).
+   [support testing issue](https://github.com/OpenBladeProject/openblade-core/issues/741).
 
 Stay with the laptop during sleep/resume testing so you can resume it and check
 the result. Reports stay local until you share them. You do not need to test every setting
@@ -114,7 +145,7 @@ or combination; report a specific problem if one appears.
 
 ## If controls pause
 
-Export diagnostics, then choose **Resume experimental controls** in the notice.
+Export diagnostics, then choose **Resume laptop controls** in the notice.
 OpenBlade checks the laptop and reads its current settings. After a successful
 check, choose the setting again; the previous request is not replayed. For
 lighting, select a lighting setting or change the active profile's lighting.

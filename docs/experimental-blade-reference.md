@@ -1,8 +1,14 @@
-# Experimental Blade implementation reference
+<a id="experimental-blade-implementation-reference"></a>
 
-This reference records the experimental backend's exact model identities,
-command limits, recovery behavior, and evidence. For setup and test reports, use
-[Experimental Blade support](experimental-blade-support.md).
+# Source-reviewed Blade implementation reference
+
+This reference records the source-reviewed backend's exact model identities,
+command limits, recovery behavior, and evidence for the earlier five models.
+The four added 2024/2025 models have a separate, narrower
+[exact-model admission guide](source-reviewed-blade-models.md). Their thermal,
+battery, lighting and driver capabilities must not be inferred from this reference.
+For setup and test reports, use
+[Source-reviewed Blade support](experimental-blade-support.md).
 
 ## Device profiles
 
@@ -19,11 +25,11 @@ sources, then the exact USB identity and 91-byte HID feature-report geometry.
 Independent queries must identify one responding interface. SKU, BIOS and EC
 versions are diagnostic metadata. HyperBoost entry on RZ09-0482 and RZ09-0483
 also requires the exact model's reviewed minimum MCU version; see
-[experimental support](experimental-blade-support.md). Unknown models and
+[source-reviewed support](experimental-blade-support.md). Unknown models and
 ambiguous interfaces stay blocked. Exact profiles enable their supported
 controls automatically.
 
-Every experimental profile pins its own official Synapse module that enables
+Every source-reviewed profile pins its own official Synapse module that enables
 the `07/8C` adapter wattage query. OpenBlade reads the current and recommended
 wattage before external-power thermal setters instead of treating any Windows
 external-power reading as adequate. Unknown values, query failures, and
@@ -89,7 +95,7 @@ Select Automatic before enabling it; a Fixed baseline is rejected before any
 setter is submitted.
 
 Blade 18 Custom getters use profile `1`, matching exact Synapse requests and
-pinned source. Other experimental profiles retain their admitted profile `0`.
+pinned source. Other source-reviewed profiles retain their admitted profile `0`.
 
 All five profiles admit Custom CPU/GPU levels Low, Medium, and High. The Blade
 16 (2023) also admits CPU Boost and the High/High combination. Blade 18 (2023)
@@ -119,22 +125,22 @@ stored targets. Their explicit
 `ReportsPerformanceWithManualFans` capability keeps this readable state separate
 from backends whose manual selector hides performance. If a model cannot read and restore its current fan
 state, the affected transition is blocked. Each submitted setting requires its
-own exact readback; a mismatch or ambiguous submission pauses experimental
+own exact readback; a mismatch or ambiguous submission pauses laptop-control
 writes and never triggers an alternate sequence or setter replay.
 
-The Blade 14 (2023), RZ09-0482, and Blade 16 (2023), RZ09-0483, admit experimental
+The Blade 14 (2023), RZ09-0482, and Blade 16 (2023), RZ09-0483, admit
 HyperBoost with the exact
 Razer Laptop Cooling Pad or without it on confirmed full-power AC. Each model's
-own pinned Synapse module enables mode 7; experimental padless access uses the same
+own pinned Synapse module enables mode 7; padless access uses the same
 commands as source-backed extrapolation and remains physically unvalidated.
 Neither model inherits another model's capture fixtures or validation status.
 See [vendor evidence and transition contract](experimental-hyperboost-evidence.md).
 The shared service journals ownership and restores saved intent, including
 Custom levels and fixed fans. Unknown or mismatched submission/readback pauses
-experimental writes; recovery performs fresh reads and never replays a setter.
+laptop-control writes; recovery performs fresh reads and never replays a setter.
 
 Blade 14 (2023) is absent from Razer's public compatibility list; its exact
-Synapse definitions are the experimental admission source. It admits Balanced,
+Synapse definitions are the source-reviewed admission source. It admits Balanced,
 Silent and Custom bases, never Performance/raw 2, and requires MCU 1.1.1.3.
 Its HyperBoost prerequisite reads Power Mode Control but never clears Maximum
 Fans: an externally enabled flag blocks entry because restoration is not
@@ -150,7 +156,7 @@ whole charge limit from 50% through 100%. Limits from 50% through 99% enable
 protection; 100% writes the firmware's protection-off value. The Blade 15 is
 excluded because upstream reports that its firmware echoes the battery command
 without applying it. Blade 18 also admits experimental temporary full charge
-after valid flag readback; the other experimental models do not.
+after valid flag readback; the other source-reviewed models do not.
 
 Battery protection uses `07/92 [0]` for GET and `07/12 [encoded limit]` for SET.
 Each operation first decodes and saves the raw protection flag and threshold,
@@ -270,7 +276,7 @@ stops playback without adding restoration writes.
 
 ## Recovery
 
-Choose **Resume experimental controls** in the experimental-support notice.
+Choose **Resume laptop controls** in the laptop-support notice.
 OpenBlade drains the previous session, checks the exact laptop and safety state
 again, and reads the current supported settings without writing them. When those
 checks succeed, choose the setting again. The uncertain request is not replayed.
@@ -308,7 +314,7 @@ redaction.
   [owner report #1](https://github.com/sqmagellan/razer-ctl/issues/1) confirms
   one RZ09-0484 unit without raw OpenBlade captures.
 - [blade-control at `bc48c916`](https://github.com/jdsgnrinfo/blade-control/tree/bc48c916d4d6cc47df8c0e32a73ef454dda37cdd)
-  remains the original model and battery-exception pin used by the experimental
+  remains the original model and battery-exception pin used by the source-reviewed
   profiles.
 - [blade-control at `92beedc8`](https://github.com/jdsgnrinfo/blade-control/tree/92beedc82e6e378cb71dac276e5820c8ea84247d)
   is the later feature pin. It supplies owner-tested Blade 15 single-zone RGB,
@@ -322,7 +328,9 @@ redaction.
 
 These projects share protocol ancestry but do not carry the same evidence for
 every model. OpenBlade records direct owner testing, owner reports,
-source-backed extrapolation, and SET-only behavior separately. Experimental
-support remains distinct from OpenBlade's physically validated command catalog.
+source-backed extrapolation, and SET-only behavior separately. These five laptop
+families are officially supported on reviewed exact-model sources. Physical
+validation remains a separate evidence status, distinct from OpenBlade's
+physically validated command catalog.
 Per-model testing still needs to confirm application, readback where available,
 restoration, and power and lifecycle behavior.

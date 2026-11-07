@@ -23,6 +23,35 @@ public sealed class PerformanceShortcutSelectionTests
     }
 
     [Fact]
+    public void PluggedInCycle_NewModesRequireExplicitAdmissionAndRemainDistinct()
+    {
+        var admitted = new HashSet<PerformancePreset>
+        {
+            PerformancePreset.MaximumPower, PerformancePreset.Turbo, PerformancePreset.Balanced,
+        };
+        Assert.Equal(new[] { PerformancePreset.Balanced, PerformancePreset.Turbo, PerformancePreset.MaximumPower },
+            PerformanceShortcutSelection.GetCycle(PowerSource.PluggedIn, admitted));
+        Assert.True(PerformanceShortcutSelection.TrySelectNext(PowerSource.PluggedIn, admitted,
+            PerformancePreset.Turbo, out PerformancePreset next));
+        Assert.Equal(PerformancePreset.MaximumPower, next);
+        Assert.True(PerformanceShortcutSelection.TrySelectNext(PowerSource.PluggedIn, admitted,
+            PerformancePreset.MaximumPower, out next));
+        Assert.Equal(PerformancePreset.Balanced, next);
+        Assert.Empty(PerformanceShortcutSelection.GetCycle(PowerSource.Battery, admitted));
+    }
+
+    [Fact]
+    public void MissingCapabilities_RetainEstablishedCycleWithoutNewModes()
+    {
+        PerformancePreset[] expected =
+        [
+            PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance, PerformancePreset.Custom,
+        ];
+        Assert.Equal(expected, PerformanceShortcutSelection.GetCycle(PowerSource.PluggedIn, null));
+        Assert.Equal(expected, PerformanceShortcutSelection.GetCycle(PowerSource.PluggedIn, new HashSet<PerformancePreset>()));
+    }
+
+    [Fact]
     public void BatteryCycle_UsesBatterySpecificModes()
     {
         Assert.True(PerformanceShortcutSelection.TrySelectNext(

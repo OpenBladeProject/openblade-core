@@ -8,6 +8,8 @@ public sealed class PerformanceNotificationIconAssetTests
     [Theory]
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Balanced, "ac-balanced")]
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Performance, "ac-performance")]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.Turbo, "ac-performance")]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.MaximumPower, "ac-performance")]
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Silent, "ac-silent")]
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Custom, "ac-custom")]
     [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, "usb-c-balanced")]
@@ -25,6 +27,8 @@ public sealed class PerformanceNotificationIconAssetTests
 
     [Theory]
     [InlineData(PowerSource.UsbC, PerformancePreset.Performance)]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Turbo)]
+    [InlineData(PowerSource.Battery, PerformancePreset.MaximumPower)]
     [InlineData(PowerSource.ExternalUnknown, PerformancePreset.Balanced)]
     public void Resolve_ReturnsNullForUnsupportedCombination(
         PowerSource powerSource,

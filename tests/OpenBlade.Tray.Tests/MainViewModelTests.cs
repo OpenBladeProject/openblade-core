@@ -6530,7 +6530,37 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.IsExperimentalDevice);
         Assert.False(viewModel.ExperimentalWritesPaused);
         Assert.False(viewModel.CanResumeExperimentalWrites);
-        Assert.Contains("Experimental controls are available", viewModel.ExperimentalSupportNotice);
+        Assert.Equal("This laptop is supported using reviewed sources. Physical validation is tracked separately.", viewModel.ExperimentalSupportNotice);
+    }
+
+    [Theory]
+    [InlineData("ru-RU", false, "Этот ноутбук поддерживается на основе проверенных источников. Проверка на реальном устройстве учитывается отдельно.")]
+    [InlineData("zh-CN", false, "此笔记本电脑的支持基于已审核的来源。实机验证情况单独记录。")]
+    [InlineData("ru-RU", true, "Управление ноутбуком приостановлено, поскольку OpenBlade не смог подтвердить изменение. Проверьте текущее состояние, затем возобновите управление ноутбуком. OpenBlade не станет повторять предыдущее изменение.")]
+    [InlineData("zh-CN", true, "由于 OpenBlade 无法确认某项更改，笔记本控制已暂停。请先检查当前状态，再恢复笔记本控制。OpenBlade 不会重试之前的更改。")]
+    public async Task ExperimentalSupport_LocalizesSupportBasisAndPausedRecovery(
+        string language,
+        bool paused,
+        string expectedNotice)
+    {
+        using var culture = new CultureScope(language);
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        await PublishStatusAndWaitAsync(
+            client,
+            dispatcher,
+            viewModel,
+            CreateStatus(verified: true, blocked: paused) with
+            {
+                IsExperimentalDevice = true,
+                ExperimentalWritesPaused = paused,
+            });
+
+        Assert.Equal(expectedNotice, viewModel.ExperimentalSupportNotice);
+        Assert.Equal(paused, viewModel.CanResumeExperimentalWrites);
+        Assert.Equal(0, client.ResumeExperimentalWritesCalls);
     }
 
     [Fact]
@@ -6554,7 +6584,7 @@ public sealed partial class MainViewModelTests
 
         Assert.True(viewModel.ExperimentalWritesPaused);
         Assert.True(viewModel.CanResumeExperimentalWrites);
-        Assert.Contains("will not retry", viewModel.ExperimentalSupportNotice);
+        Assert.Equal("Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change.", viewModel.ExperimentalSupportNotice);
         Assert.True(await viewModel.ResumeExperimentalWritesAsync(CancellationToken.None));
         Assert.Equal(1, client.ResumeExperimentalWritesCalls);
         Assert.False(viewModel.IsResumeExperimentalWritesOperationInProgress);

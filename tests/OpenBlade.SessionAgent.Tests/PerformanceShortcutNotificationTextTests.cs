@@ -11,6 +11,9 @@ public sealed class PerformanceShortcutNotificationTextTests
     [InlineData("The performance button selected BatteryBalanced.", "Current mode: Balanced")]
     [InlineData("Fn+P selected BatterySaver.", "Current mode: Battery Saver")]
     [InlineData("The performance button selected Custom.", "Current mode: Custom")]
+    [InlineData("Fn+P selected Turbo.", "Current mode: Turbo")]
+    [InlineData("Fn+P selected Maximum Power.", "Current mode: Maximum Power")]
+    [InlineData("Fn+P selected MaximumPower.", "Current mode: Maximum Power")]
     public void AppliedShortcutMessageUsesFriendlyCurrentMode(
         string serviceMessage,
         string expected)
@@ -23,6 +26,9 @@ public sealed class PerformanceShortcutNotificationTextTests
     [Theory]
     [InlineData("The performance button selected Silent.", PerformancePreset.Silent)]
     [InlineData("Fn+P selected BatterySaver.", PerformancePreset.BatterySaver)]
+    [InlineData("Fn+P selected Turbo.", PerformancePreset.Turbo)]
+    [InlineData("Fn+P selected Maximum Power.", PerformancePreset.MaximumPower)]
+    [InlineData("Fn+P selected MaximumPower.", PerformancePreset.MaximumPower)]
     public void SelectedPresetCanBeComparedWithOptimisticFeedback(
         string serviceMessage,
         PerformancePreset expected)
@@ -31,6 +37,16 @@ public sealed class PerformanceShortcutNotificationTextTests
             serviceMessage,
             out PerformancePreset actual));
         Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData("Fn+P selected Maximum  Power.")]
+    [InlineData("Fn+P selected maximum power.")]
+    [InlineData("Fn+P selected Max imumPower.")]
+    public void UnrecognizedPresetSpellingIsNotNormalized(string message)
+    {
+        Assert.False(PerformanceShortcutNotificationText.TryGetSelectedPreset(message, out _));
+        Assert.Equal(message, PerformanceShortcutNotificationText.FormatAppliedBody(message));
     }
 
     [Fact]

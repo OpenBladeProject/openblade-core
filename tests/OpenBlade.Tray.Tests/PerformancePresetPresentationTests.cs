@@ -11,6 +11,8 @@ public sealed class PerformancePresetPresentationTests
         Assert.Equal("Balanced", PerformancePresetPresentation.Label(PerformancePreset.Balanced));
         Assert.Equal("Silent", PerformancePresetPresentation.Label(PerformancePreset.Silent));
         Assert.Equal("Performance", PerformancePresetPresentation.Label(PerformancePreset.Performance));
+        Assert.Equal("Turbo", PerformancePresetPresentation.Label(PerformancePreset.Turbo));
+        Assert.Equal("Maximum Power", PerformancePresetPresentation.Label(PerformancePreset.MaximumPower));
         Assert.Equal("Custom", PerformancePresetPresentation.Label(PerformancePreset.Custom));
         Assert.Equal("Balanced", PerformancePresetPresentation.Label(PerformancePreset.BatteryBalanced));
         Assert.Equal("Battery Saver", PerformancePresetPresentation.Label(PerformancePreset.BatterySaver));
@@ -33,11 +35,13 @@ public sealed class PerformancePresetPresentationTests
                 PerformancePreset.Balanced,
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
+                PerformancePreset.Turbo,
+                PerformancePreset.MaximumPower,
                 PerformancePreset.Custom,
             ],
             pluggedIn.Select(option => option.Value));
         Assert.Equal(
-            ["Balanced", "Silent", "Performance", "Custom"],
+            ["Balanced", "Silent", "Performance", "Turbo", "Maximum Power", "Custom"],
             pluggedIn.Select(option => option.Label));
         Assert.Equal(
             [PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver],
@@ -101,6 +105,38 @@ public sealed class PerformancePresetPresentationTests
         Assert.True(withHyperBoost[^1].IsHyperBoost);
         Assert.Null(withHyperBoost[^1].Value);
         Assert.Equal(2, presets.Count);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Turbo)]
+    [InlineData(PerformancePreset.MaximumPower)]
+    public void NewHighPerformancePresets_RequireExplicitCapabilitiesAndFullPower(PerformancePreset preset)
+    {
+        var legacy = new HashSet<PerformancePreset>
+        {
+            PerformancePreset.Balanced, PerformancePreset.Performance, PerformancePreset.Custom,
+        };
+        Assert.DoesNotContain(PerformancePresetPresentation.CreateOptions(PowerSource.PluggedIn, legacy),
+            option => option.Value == preset);
+        Assert.Single(PerformancePresetPresentation.CreateOptions(PowerSource.PluggedIn,
+            new HashSet<PerformancePreset> { preset }));
+        Assert.True(PerformancePresetPresentation.IsAvailable(PowerSource.PluggedIn, preset));
+        foreach (PowerSource source in new[] { PowerSource.Battery, PowerSource.UsbC, PowerSource.ExternalUnknown })
+        {
+            Assert.False(PerformancePresetPresentation.IsAvailable(source, preset));
+            Assert.Empty(PerformancePresetPresentation.CreateOptions(source,
+                new HashSet<PerformancePreset> { preset }));
+        }
+    }
+
+    [Theory]
+    [InlineData("ru-RU", "Турбо", "Максимальная мощность")]
+    [InlineData("zh-CN", "极速", "最大功率")]
+    public void NewHighPerformanceLabels_AreLocalized(string language, string turbo, string maximumPower)
+    {
+        using var culture = new CultureScope(language);
+        Assert.Equal(turbo, PerformancePresetPresentation.Label(PerformancePreset.Turbo));
+        Assert.Equal(maximumPower, PerformancePresetPresentation.Label(PerformancePreset.MaximumPower));
     }
 
     [Fact]

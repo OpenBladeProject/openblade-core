@@ -34,6 +34,22 @@ public sealed class ProfileDefaultsTests
         Assert.Equal(80, profiles.BatteryPolicy.ChargeLimitPercent);
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.Turbo)]
+    [InlineData(PerformancePreset.MaximumPower)]
+    public void HighPerformanceModes_UseTheExistingWindowsPerformanceAssociation(PerformancePreset preset)
+    {
+        WindowsPowerModeAssociations associations = WindowsPowerModeAssociations.LeaveUnchanged
+            .WithPerformance(PerformancePreset.Balanced, WindowsPowerMode.Balanced)
+            .WithPerformance(PerformancePreset.Performance, WindowsPowerMode.BestPerformance);
+        Assert.Equal(WindowsPowerMode.BestPerformance, associations.ForPerformance(preset));
+        WindowsPowerModeAssociations updated = associations.WithPerformance(preset, WindowsPowerMode.BestPowerEfficiency);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, updated.ForPerformance(preset));
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, updated.Performance);
+        Assert.Equal(WindowsPowerMode.Balanced, updated.Balanced);
+        Assert.Null(updated.Silent);
+    }
+
     [Fact]
     public void PowerSource_AppendsUsbCStatesWithoutRenumberingExistingValues()
     {

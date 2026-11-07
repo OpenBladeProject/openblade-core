@@ -2910,6 +2910,8 @@ public sealed class ControlCoordinator
         (PerformancePreset.Silent, FanMode.Automatic)
         or (PerformancePreset.Balanced, FanMode.Automatic)
         or (PerformancePreset.Performance, FanMode.Automatic)
+        or (PerformancePreset.Turbo, FanMode.Automatic)
+        or (PerformancePreset.MaximumPower, FanMode.Automatic)
         or (PerformancePreset.Custom, FanMode.Automatic)
         or (PerformancePreset.Balanced, FanMode.Maximum)
         or (PerformancePreset.Balanced, FanMode.Fixed)
@@ -2946,6 +2948,8 @@ public sealed class ControlCoordinator
         PerformancePreset.Silent
         or PerformancePreset.Balanced
         or PerformancePreset.Performance
+        or PerformancePreset.Turbo
+        or PerformancePreset.MaximumPower
         or PerformancePreset.Custom
         or PerformancePreset.BatterySaver
         or PerformancePreset.BatteryBalanced;

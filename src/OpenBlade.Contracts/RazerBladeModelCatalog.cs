@@ -1,5 +1,12 @@
 namespace OpenBlade.Contracts;
 
+public enum BladeSupportBasis
+{
+    NotEstablished,
+    SourceReviewed,
+    PhysicallyValidated,
+}
+
 public sealed record RazerBladeModelInfo(
     string ModelNumber,
     string ProductName,
@@ -8,6 +15,15 @@ public sealed record RazerBladeModelInfo(
     public string UsbVendorId { get; init; } = string.Empty;
 
     public string UsbProductId { get; init; } = string.Empty;
+
+    // Model support and physical evidence are separate from per-feature admission.
+    // Neither property authorizes a hardware operation.
+    public BladeSupportBasis SupportBasis { get; init; }
+
+    public bool IsOfficiallySupported => SupportBasis is
+        BladeSupportBasis.SourceReviewed or BladeSupportBasis.PhysicallyValidated;
+
+    public bool HasPhysicalValidation => SupportBasis == BladeSupportBasis.PhysicallyValidated;
 
     public string DisplayName => $"{ProductName} ({ModelYear})";
 }
@@ -25,17 +41,23 @@ public static class RazerBladeModelCatalog
         {
             UsbVendorId = "1532",
             UsbProductId = "02E0",
+            SupportBasis = BladeSupportBasis.PhysicallyValidated,
         },
         new(Rz090528ModelNumber, "Razer Blade 16", 2025)
         {
             UsbVendorId = "1532",
             UsbProductId = "02C6",
+            SupportBasis = BladeSupportBasis.PhysicallyValidated,
         },
-        new(Rz090484ModelNumber, "Razer Blade 18", 2023) { UsbVendorId = "1532", UsbProductId = "02A0" },
-        new("RZ09-0483", "Razer Blade 16", 2023) { UsbVendorId = "1532", UsbProductId = "029F" },
-        new("RZ09-0482", "Razer Blade 14", 2023) { UsbVendorId = "1532", UsbProductId = "029D" },
-        new("RZ09-0530", "Razer Blade 14", 2025) { UsbVendorId = "1532", UsbProductId = "02C5" },
-        new("RZ09-0328", "Razer Blade 15 Base", 2020) { UsbVendorId = "1532", UsbProductId = "0255" },
+        new(Rz090484ModelNumber, "Razer Blade 18", 2023) { UsbVendorId = "1532", UsbProductId = "02A0", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0483", "Razer Blade 16", 2023) { UsbVendorId = "1532", UsbProductId = "029F", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0482", "Razer Blade 14", 2023) { UsbVendorId = "1532", UsbProductId = "029D", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0530", "Razer Blade 14", 2025) { UsbVendorId = "1532", UsbProductId = "02C5", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0328", "Razer Blade 15 Base", 2020) { UsbVendorId = "1532", UsbProductId = "0255", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0508", "Razer Blade 14", 2024) { UsbVendorId = "1532", UsbProductId = "02B6", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0510", "Razer Blade 16", 2024) { UsbVendorId = "1532", UsbProductId = "02B7", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0509", "Razer Blade 18", 2024) { UsbVendorId = "1532", UsbProductId = "02B8", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0529", "Razer Blade 18", 2025) { UsbVendorId = "1532", UsbProductId = "02C7", SupportBasis = BladeSupportBasis.SourceReviewed },
     ];
 
     public static IReadOnlyList<RazerBladeModelInfo> All { get; } = Array.AsReadOnly(Models);

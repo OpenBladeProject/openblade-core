@@ -13,6 +13,8 @@ public static class PerformanceShortcutSelection
                 PerformancePreset.Balanced,
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
+                PerformancePreset.Turbo,
+                PerformancePreset.MaximumPower,
                 PerformancePreset.Custom,
             ],
             PowerSource.Battery =>
@@ -24,7 +26,9 @@ public static class PerformanceShortcutSelection
         };
         if (admitted is null || admitted.Count == 0)
         {
-            return ordered;
+            // Unverified/default capabilities retain the established cycle.
+            return ordered.Where(preset => preset is not
+                (PerformancePreset.Turbo or PerformancePreset.MaximumPower)).ToArray();
         }
 
         return ordered.Where(admitted.Contains).ToArray();

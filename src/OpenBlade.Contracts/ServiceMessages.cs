@@ -482,7 +482,7 @@ public sealed record ServiceStatusSnapshot(
 
     public ThermalConvergenceStatus? ThermalConvergence { get; init; }
 
-    // Legacy status member: recognized experimental models are enabled automatically.
+    // Legacy wire member: recognized source-reviewed models are enabled automatically.
     public bool AllowExperimentalFeatures { get; init; }
 
     public bool ExperimentalWritesPaused { get; init; }
@@ -492,6 +492,8 @@ public sealed record ServiceStatusSnapshot(
     public LaptopBehaviorProfileSettings EffectiveLaptopBehavior { get; init; } =
         LaptopBehaviorProfileSettings.Unconfigured();
 
+    // Legacy backend-routing flag; model support and physical evidence are recorded
+    // separately by RazerBladeModelCatalog. This flag does not mean unsupported.
     public bool IsExperimentalDevice { get; init; }
 
     public string? ExperimentalSupportSource { get; init; }

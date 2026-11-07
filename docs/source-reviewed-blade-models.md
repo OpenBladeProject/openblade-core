@@ -1,0 +1,111 @@
+# Source-reviewed 2024/2025 Blade models
+
+OpenBlade officially supports the four exact-model profiles below using reviewed
+Synapse definitions. Physical validation is a separate evidence status and remains
+pending for these implementations. Source review does not establish measured fan
+behavior, successful restoration on a laptop, or another model's capabilities.
+The [support guide](experimental-blade-support.md) lists the earlier five
+source-reviewed models and their different feature sets.
+
+## Exact identity and initial controls
+
+| Laptop | Exact Windows product name | USB identity | Synapse product | Initial controls |
+| --- | --- | --- | --- | --- |
+| Blade 14 (2024), RZ09-0508 | `Blade 14 - RZ09-0508` | `1532:02B6` | 694 | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, bounded charge limits |
+| Blade 16 (2024), RZ09-0510 | `Blade 16 - RZ09-0510` | `1532:02B7` | 695 | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, bounded charge limits |
+| Blade 18 (2024), RZ09-0509 | `Blade 18 - RZ09-0509` | `1532:02B8` | 696 | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic fans, Maximum Fans, bounded charge limits |
+| Blade 18 (2025), RZ09-0529 | `Blade 18 - RZ09-0529` | `1532:02C7` | 711 | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic fans, bounded charge limits; no Maximum Fans |
+
+All four offer battery Balanced. Other listed presets require confirmed full-power
+AC, except Battery Saver on Blade 18 (2025), which is a battery mode. Turbo is
+firmware mode 1; Maximum Power on product 711 is mode 2. Those modes remain
+distinct. Battery Balanced uses mode 6. Custom CPU and GPU levels include Low (0), Medium (1) and High (2).
+Blade 14 (2024) and Blade 16 (2024) additionally support CPU Boost (3), established
+by their exact-model CPU selector and direct thermal setter path. The two Blade 18
+models remain bounded to CPU levels 0–2; their native overclocking UI labelled
+Boost does not establish firmware level 3.
+
+Charge protection offers 50, 55, 60, 65, 70, 75 and 80 percent. The application's
+100% selection disables protection; it does not admit enabled thresholds from
+81% through 100% or intermediate one-percent values. Readback and restoration
+retain the actual saved threshold and protection flag separately.
+
+Maximum Fans is available only on products 694, 695 and 696, in Custom. Its
+whole-byte Power Mode Control write requires all other settings to be clear.
+Leaving Custom clears an owned Maximum Fans setting through the guarded cleanup
+path. Automatic handback is supported; arbitrary fixed targets and fan curves
+are not admitted. The vendor reads mode-specific fan ranges at runtime, and its
+UI and middleware definitions need further reconciliation before those writes
+can be implemented safely. If the current fan mode is manual, preset and Custom
+changes are blocked until an explicit Automatic handback is confirmed. This is
+a software admission boundary: the backend cannot yet confirm and restore the
+mode-specific manual targets, rather than evidence of a firmware prerequisite.
+
+## Admission and recovery
+
+Close Synapse before changing controls. Exact Razer manufacturer and product name
+checks in both Windows registry sources, exact USB identity, responding interface,
+and model-specific report geometry remain required. The reviewed vendor transport
+uses 91-byte HID feature reports including the report ID and 90 protocol bytes.
+Matching that geometry alone does not admit another model.
+
+Every mutation retains fresh controller, power, session and ownership checks,
+independent readback where supported, durable restoration and stop-on-ambiguity
+handling. Failed or uncertain submission pauses controls; recovery reads the
+current state without replaying the request. See
+[recovery instructions](experimental-blade-support.md#if-controls-pause).
+BIOS and EC versions are provenance unless a reviewed command-specific restriction
+requires otherwise; update listings alone do not establish a thermal-control
+firmware floor.
+
+The legacy `ExperimentalBlade` internal type names, IPC flags and
+`experimental-support.json` diagnostic filename are retained for compatibility.
+They do not change official support classification or weaken command admission.
+This change requires a coordinated full installation when deployed, including
+the service and Session Agent; a tray-only replacement is insufficient.
+
+## Controls not admitted and remaining evidence
+
+These profiles do not initially admit fixed fans, fan curves, HyperBoost, lighting,
+custom RGB frames, spatial effects, startup animation or temporary full charge.
+They also do not admit Razer-driver SnapTap/function-row handling, keyboard driver
+setup, native-brightness driver integration or THX integration. Reviewed vendor
+package declarations do not establish a complete runtime or installation recipe.
+No model inherits another laptop's key map, frame mask, driver stack or physical
+validation results.
+
+Owner reports can establish the specific applied setting, independent readback,
+restoration, adapter and battery behavior, and lifecycle conditions exercised.
+Record those results per model and feature. An attended sleep/resume check needs
+its own authorization; support classification does not authorize development-time
+hardware writes or installations. Use the
+[report workflow](experimental-blade-support.md#send-a-useful-test-report) for a
+bounded observation and state any remaining uncertainty.
+
+## Pinned primary sources
+
+The [machine-readable admission manifest](../evidence/source-reviewed-blades/2026-11-07-models.json)
+records full SHA-256 pins, identity evidence, command definitions and bounded
+capabilities. The shortened pins below identify the reviewed primary files;
+follow the manifest for full hashes. Vendor JavaScript was inspected as inert
+data; it was not executed. Firmware packages or matching download names alone
+were not used as proof of command semantics.
+
+| Product | Source role | Exact primary source | SHA-256 prefix |
+| --- | --- | --- | --- |
+| 694 | Model and feature policy | [main.1b1b68e07824e5af9833.js](https://apps.razer.com/synapse/products/694/mw/main.1b1b68e07824e5af9833.js) | `F1AEEAFF4BBDB631` |
+| 694 | Base command and transport | [rzDevice25.06135650b7453937e0e8.js](https://apps.razer.com/synapse/products/694/mw/rzDevice25.06135650b7453937e0e8.js) | `0E5BD5C21DD610E5` |
+| 694 | Thermal policy | [6737.63910b6756fd6d249dc6.js](https://apps.razer.com/synapse/products/694/mw/6737.63910b6756fd6d249dc6.js) | `488D72368F0EBFB2` |
+| 694 | Battery UI | [ui-main.415cc878.js](https://apps.razer.com/synapse/products/694/ui/static/js/main.415cc878.js) | `C22750AAD6E54EE8` |
+| 695 | Model and feature policy | [main.27df2e7ddab0b6bc34cc.js](https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js) | `A12CD7047CC1CF09` |
+| 695 | Base command and transport | [rzDevice25.60bfcef58690c8bb715d.js](https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js) | `2D69449422DAC50C` |
+| 695 | Thermal policy | [6737.7ec91e479ef65c194b6c.js](https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js) | `22D359EB7EDA08A9` |
+| 695 | Battery UI | [ui-main.65ed4ee5.js](https://apps.razer.com/synapse/products/695/ui/static/js/main.65ed4ee5.js) | `74ECA71816B57B4C` |
+| 696 | Model and feature policy | [main.ded18de8aee09a8f8238.js](https://apps.razer.com/synapse/products/696/mw/main.ded18de8aee09a8f8238.js) | `1A9CC3E1E8E28BB8` |
+| 696 | Base command and transport | [rzDevice25.6339454cb5b2fe587300.js](https://apps.razer.com/synapse/products/696/mw/rzDevice25.6339454cb5b2fe587300.js) | `8780AA380D11665A` |
+| 696 | Thermal policy | [6737.2463f7361e4d145671a2.js](https://apps.razer.com/synapse/products/696/mw/6737.2463f7361e4d145671a2.js) | `4EF6AFB6402DD50C` |
+| 696 | Battery UI | [ui-main.cb24c0fc.js](https://apps.razer.com/synapse/products/696/ui/static/js/main.cb24c0fc.js) | `C882F2130FC41DC7` |
+| 711 | Model and feature policy | [main.1f8e0c604f19af3ea24c.js](https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js) | `C8C0C794D6D01867` |
+| 711 | Base command and transport | [rzDevice25.c8da1ead63e6cf002d32.js](https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js) | `02C55B78B3EABDCC` |
+| 711 | Thermal policy | [6737.c63928b0e4fd1b7673b4.js](https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js) | `3EF16C0BEB5E8399` |
+| 711 | Battery UI | [ui-892.12b29c32.chunk.js](https://apps.razer.com/synapse/products/711/ui/static/js/892.12b29c32.chunk.js) | `FE1298AD9FAAE663` |

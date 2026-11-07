@@ -30,16 +30,23 @@ OpenBlade requires Windows 11 x64, version 24H2 or later.
 | --- | --- |
 | Razer Blade 16 (2026) | `RZ09-0581` |
 | Razer Blade 16 (2025) | `RZ09-0528` |
-| Razer Blade 14 (2025), experimental | `RZ09-0530` |
-| Razer Blade 16 (2023), experimental | `RZ09-0483` |
-| Razer Blade 14 (2023), experimental | `RZ09-0482` |
-| Razer Blade 18 (2023), experimental | `RZ09-0484` |
-| Razer Blade 15 Base (Early 2020), experimental | `RZ09-0328` |
+| Razer Blade 14 (2024) | `RZ09-0508` |
+| Razer Blade 16 (2024) | `RZ09-0510` |
+| Razer Blade 18 (2024) | `RZ09-0509` |
+| Razer Blade 18 (2025) | `RZ09-0529` |
+| Razer Blade 14 (2025) | `RZ09-0530` |
+| Razer Blade 16 (2023) | `RZ09-0483` |
+| Razer Blade 14 (2023) | `RZ09-0482` |
+| Razer Blade 18 (2023) | `RZ09-0484` |
+| Razer Blade 15 Base (Early 2020) | `RZ09-0328` |
 
-Available controls vary by model. OpenBlade automatically enables
-available controls on experimental models. See the [user guide](https://github.com/OSSBlade/openblade-docs)
-for compatibility and [Experimental support](docs/experimental-blade-support.md)
-for model features and testing instructions.
+All listed laptops are officially supported. RZ09-0581 and RZ09-0528 have
+physically validated support; the other nine families are supported on reviewed
+exact-model sources, with physical validation tracked separately. Available
+controls vary by model and enable automatically. See the
+[user guide](https://github.com/OSSBlade/openblade-docs) for compatibility and
+[Source-reviewed Blade support](docs/experimental-blade-support.md) for model
+features, evidence limits, and testing instructions.
 
 On an unlisted Razer laptop, select **Help add support** in OpenBlade. Save the
 identity report, then follow the

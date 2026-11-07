@@ -9,11 +9,26 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(72, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(73, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(16 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
         Assert.Equal(24 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticResponseBytes);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent, 0)]
+    [InlineData(PerformancePreset.Balanced, 1)]
+    [InlineData(PerformancePreset.Performance, 2)]
+    [InlineData(PerformancePreset.BatterySaver, 3)]
+    [InlineData(PerformancePreset.BatteryBalanced, 4)]
+    [InlineData(PerformancePreset.Custom, 5)]
+    [InlineData(PerformancePreset.Turbo, 6)]
+    [InlineData(PerformancePreset.MaximumPower, 7)]
+    public void PerformancePreset_WireValuesAppendDistinctModesWithoutRenumbering(
+        PerformancePreset preset, int wireValue)
+    {
+        Assert.Equal(wireValue, (int)preset);
     }
 
     [Fact]

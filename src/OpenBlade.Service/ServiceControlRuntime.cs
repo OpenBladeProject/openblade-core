@@ -20528,6 +20528,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         PerformancePreset.Silent => "Quiet",
         PerformancePreset.Balanced => "Balanced",
         PerformancePreset.Performance => "Performance",
+        PerformancePreset.Turbo => "Turbo",
+        PerformancePreset.MaximumPower => "Maximum Power",
         _ => mode.ToString(),
     };
 

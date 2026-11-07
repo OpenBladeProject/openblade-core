@@ -1629,8 +1629,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !IsResumeExperimentalWritesOperationInProgress;
 
     public string ExperimentalSupportNotice => ExperimentalWritesPaused
-        ? TrayText.Get("Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change.")
-        : TrayText.Get("Experimental controls are available on this laptop. Export diagnostics in About to help test them.");
+        ? TrayText.Get("Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change.")
+        : TrayText.Get("This laptop is supported using reviewed sources. Physical validation is tracked separately.");
 
     public KeyboardLightingControlMode KeyboardLightingControlMode
     {

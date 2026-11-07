@@ -8,6 +8,8 @@ public enum PerformancePreset
     BatterySaver,
     BatteryBalanced,
     Custom,
+    Turbo,
+    MaximumPower,
 }
 
 /// <summary>
@@ -42,7 +44,8 @@ public sealed record WindowsPowerModeAssociations(
         {
             PerformancePreset.Silent => Silent,
             PerformancePreset.Balanced => Balanced,
-            PerformancePreset.Performance => Performance,
+            PerformancePreset.Performance or PerformancePreset.Turbo
+                or PerformancePreset.MaximumPower => Performance,
             PerformancePreset.BatterySaver => BatterySaver,
             PerformancePreset.BatteryBalanced => BatteryBalanced,
             PerformancePreset.Custom => Custom,
@@ -55,7 +58,8 @@ public sealed record WindowsPowerModeAssociations(
         {
             PerformancePreset.Silent => this with { Silent = windowsPowerMode },
             PerformancePreset.Balanced => this with { Balanced = windowsPowerMode },
-            PerformancePreset.Performance => this with { Performance = windowsPowerMode },
+            PerformancePreset.Performance or PerformancePreset.Turbo
+                or PerformancePreset.MaximumPower => this with { Performance = windowsPowerMode },
             PerformancePreset.BatterySaver => this with { BatterySaver = windowsPowerMode },
             PerformancePreset.BatteryBalanced => this with { BatteryBalanced = windowsPowerMode },
             PerformancePreset.Custom => this with { Custom = windowsPowerMode },

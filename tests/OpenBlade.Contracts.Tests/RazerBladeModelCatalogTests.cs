@@ -4,6 +4,42 @@ namespace OpenBlade.Contracts.Tests;
 
 public sealed class RazerBladeModelCatalogTests
 {
+    [Fact]
+    public void Catalog_SeparatesOfficialSupportFromPhysicalValidation()
+    {
+        Assert.All(RazerBladeModelCatalog.All, model => Assert.True(model.IsOfficiallySupported));
+        Assert.Equal(new[] { "RZ09-0528", "RZ09-0581" }, RazerBladeModelCatalog.All
+            .Where(model => model.HasPhysicalValidation)
+            .Select(model => model.ModelNumber).Order(StringComparer.Ordinal));
+        Assert.All(RazerBladeModelCatalog.All.Where(model => !model.HasPhysicalValidation),
+            model => Assert.Equal(BladeSupportBasis.SourceReviewed, model.SupportBasis));
+
+        var unknown = new RazerBladeModelInfo("RZ09-9999", "Unknown", 2026);
+        Assert.False(unknown.IsOfficiallySupported);
+        Assert.False(unknown.HasPhysicalValidation);
+    }
+
+    [Theory]
+    [InlineData("RZ09-0483", true, "Supported", BladeSupportBasis.SourceReviewed, "Pending")]
+    [InlineData("RZ09-0528", true, "Supported", BladeSupportBasis.PhysicallyValidated, "Validated")]
+    [InlineData("RZ09-0483", false, "NotEstablished", BladeSupportBasis.NotEstablished, "NotEstablished")]
+    [InlineData("RZ09-9999", true, "NotEstablished", BladeSupportBasis.NotEstablished, "NotEstablished")]
+    public void Diagnostics_KeepSupportAndPhysicalEvidenceSeparate(
+        string modelNumber, bool detected, string status, BladeSupportBasis basis, string physicalValidation)
+    {
+        var diagnostics = new DiagnosticExperimentalSupport(modelNumber, "pinned source", detected, true, [])
+        {
+            FeatureEvidence = [new("Lighting", "SourceBackedExtrapolationWithoutRgbReadback", ["pinned source"])],
+        };
+
+        Assert.Equal(status, diagnostics.SupportStatus);
+        Assert.Equal(basis, diagnostics.SupportBasis);
+        Assert.Equal(physicalValidation, diagnostics.PhysicalValidation);
+        Assert.True(diagnostics.WritesPaused);
+        Assert.Equal("SourceBackedExtrapolationWithoutRgbReadback", Assert.Single(diagnostics.FeatureEvidence).Basis);
+        Assert.Equal("NotEstablished", DiagnosticExperimentalSupport.NotDetected.SupportStatus);
+    }
+
     [Theory]
     [InlineData("RZ09-0581")]
     [InlineData("RZ09-05819EN4")]

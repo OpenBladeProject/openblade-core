@@ -127,7 +127,8 @@ internal sealed partial class ExperimentalBladePort
         PerformancePreset? requiredPerformance = null)
     {
         FanSpeedRange? range = GetExperimentalFanRange(model);
-        if (range is null || targets is { } requested
+        if (range is null && !(model.ThermalPolicy is not null && targets is null)
+            || targets is { } requested
             && (!SupportsExperimentalFanTarget(model, requested.First)
                 || !SupportsExperimentalFanTarget(model, requested.Second)))
         {
@@ -142,7 +143,9 @@ internal sealed partial class ExperimentalBladePort
             RequireWriteAdmission(fanMode: targets.HasValue ? FanMode.Fixed : FanMode.Automatic);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             if (baseline.HyperBoostActive || baseline.Performance is not (PerformancePreset.Balanced
-                or PerformancePreset.Performance or PerformancePreset.Silent or PerformancePreset.Custom))
+                or PerformancePreset.Performance or PerformancePreset.Silent or PerformancePreset.Custom
+                or PerformancePreset.Turbo or PerformancePreset.MaximumPower
+                or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "Fan changes require a supported, confirmed performance mode.");
@@ -184,13 +187,16 @@ internal sealed partial class ExperimentalBladePort
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "Turn off maximum fans in Custom before selecting fixed fan targets.");
             }
-            (int First, int Second) saved = await ReadFanTargetsAsync(
+            // Automatic handback changes only the mode flag. New profiles have no
+            // admitted target-writing range, so do not query or invent a target baseline.
+            (int First, int Second) saved = model.ThermalPolicy is not null ? default : await ReadFanTargetsAsync(
                 cancellationToken,
                 targets.HasValue && baseline.Fans == FanMode.Fixed
                     ? activeRange
                     : null).ConfigureAwait(false);
             policy.Record("Fans", "Baseline", "Confirmed", requested: targets?.ToString() ?? "Automatic",
-                confirmed: $"{baseline.Performance}/{baseline.Fans};Fan1TargetRpm={saved.First};Fan2TargetRpm={saved.Second}");
+                confirmed: model.ThermalPolicy is not null ? $"{baseline.Performance}/{baseline.Fans};Targets=NotQueried"
+                    : $"{baseline.Performance}/{baseline.Fans};Fan1TargetRpm={saved.First};Fan2TargetRpm={saved.Second}");
             if (targets is null && baseline.Fans == FanMode.Automatic
                 || targets == saved && baseline.Fans == FanMode.Fixed)
             {
@@ -201,6 +207,10 @@ internal sealed partial class ExperimentalBladePort
                 // Products 671/669 use DC Balanced raw 6; preserve their battery mode.
                 PerformancePreset.Balanced => SupportsExperimentalHyperBoost(model)
                     && source == PowerSource.Battery ? (byte)6 : (byte)0,
+                PerformancePreset.Turbo when model.ThermalPolicy is not null => 1,
+                PerformancePreset.MaximumPower when model.ThermalPolicy?.SupportsMaximumPower == true => 2,
+                PerformancePreset.BatterySaver when model.ThermalPolicy?.SupportsBatterySaver == true => 3,
+                PerformancePreset.BatteryBalanced when model.ThermalPolicy?.SupportsBalancedDc == true => 6,
                 PerformancePreset.Performance => 2,
                 PerformancePreset.Silent => 5,
                 PerformancePreset.Custom => 4,

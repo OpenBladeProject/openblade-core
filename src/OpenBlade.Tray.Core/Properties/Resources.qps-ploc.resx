@@ -1530,11 +1530,11 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>[!! Sígn ín tó án íntéráctívé Windows séssíón tó chángé láptóp séttíngs. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
-    <value>[!! Éxpéríméntál cóntróls áré áváíláblé ón thís láptóp. Éxpórt díágnóstícs ín Ábóút tó hélp tést thém. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="This laptop is supported using reviewed sources. Physical validation is tracked separately." xml:space="preserve">
+    <value>[!! Thís láptóp ís súppórtéd úsíng révíéwéd sóúrcés. Phýsícál válídátíón ís tráckéd sépárátélý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
-    <value>[!! Éxpéríméntál wrítés áré páúséd áftér OpenBlade cóúld nót cónfírm á chángé. Chéck thé cúrrént státé, thén résúmé éxpéríméntál cóntróls. OpenBlade wíll nót rétrý thé prévíóús chángé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>[!! Láptóp cóntróls áré páúséd áftér OpenBlade cóúld nót cónfírm á chángé. Chéck thé cúrrént státé, thén résúmé láptóp cóntróls. OpenBlade wíll nót rétrý thé prévíóús chángé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>[!! Láptóp nót súppórtéd ~~~~~~~ !!]</value>
@@ -1797,5 +1797,11 @@ Détáíls: {1} ~~~ !!]</value>
   </data>
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>[!! Thé pówér sóúrcé chángéd. Révíéw thé cúrrént prófílé ánd trý ágáín. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Turbo" xml:space="preserve">
+    <value>[!! Túrbó ~~ !!]</value>
+  </data>
+  <data name="Maximum Power" xml:space="preserve">
+    <value>[!! Máxímúm Pówér ~~~~~ !!]</value>
   </data>
 </root>

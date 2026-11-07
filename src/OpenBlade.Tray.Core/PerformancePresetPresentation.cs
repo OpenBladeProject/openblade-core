@@ -25,6 +25,8 @@ public static class PerformancePresetPresentation
         PerformancePreset.Balanced,
         PerformancePreset.Silent,
         PerformancePreset.Performance,
+        PerformancePreset.Turbo,
+        PerformancePreset.MaximumPower,
         PerformancePreset.Custom,
     ];
 
@@ -44,6 +46,8 @@ public static class PerformancePresetPresentation
         PerformancePreset.Balanced => TrayText.Get("Balanced"),
         PerformancePreset.Silent => TrayText.Get("Silent"),
         PerformancePreset.Performance => TrayText.Get("Performance"),
+        PerformancePreset.Turbo => TrayText.Get("Turbo"),
+        PerformancePreset.MaximumPower => TrayText.Get("Maximum Power"),
         PerformancePreset.BatteryBalanced => TrayText.Get("Balanced"),
         PerformancePreset.BatterySaver => TrayText.Get("Battery Saver"),
         PerformancePreset.Custom => TrayText.Get("Custom"),
@@ -55,6 +59,8 @@ public static class PerformancePresetPresentation
         PowerSource.PluggedIn => value is PerformancePreset.Balanced
             or PerformancePreset.Silent
             or PerformancePreset.Performance
+            or PerformancePreset.Turbo
+            or PerformancePreset.MaximumPower
             or PerformancePreset.Custom,
         PowerSource.Battery => value is PerformancePreset.BatteryBalanced
             or PerformancePreset.BatterySaver,

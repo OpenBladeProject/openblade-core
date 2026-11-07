@@ -58,6 +58,8 @@ public sealed class IpcWireShapeManifestTests
             71 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
             // Protocol 72 changes only the diagnostic-response transport bound; the JSON shape is unchanged.
             72 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
+            // Protocol 73 appends only PerformancePreset.Turbo=6 and MaximumPower=7.
+            73 => "F15B001766C5012130D724266E854610B42D55CA38805841C871E1245626927C",
             _ => null,
         };
 
