@@ -193,6 +193,51 @@ does not establish an AMD backend. LibreHardwareMonitor is a relevant source
 to evaluate if a new driver becomes acceptable; this research does not add that
 dependency or establish its sensor behavior on an AMD Blade.
 
+## Deployment and processor coverage
+
+PawnIO supplies privileged hardware access and executes signed access modules;
+LibreHardwareMonitor supplies CPU identification, processor-specific sensor
+access and conversion to temperatures. For processors it supports, OpenBlade
+can consume that library instead of implementing each register map. Integration
+still needs explicit sensor selection, failed/stale-sample handling and validation
+on the supported Blade hardware. Installing PawnIO alone does not add a CPU
+temperature API or guarantee coverage of every new processor.
+
+LibreHardwareMonitor's MPL-2.0 license permits binary distribution while retaining
+notices and making the corresponding covered source available. Its embedded
+PawnIO modules and other dependencies retain their own notices and source terms.
+The official signed PawnIO binary edition has separate terms: the author allows
+redistribution of the **unmodified installer**, not repackaging the extracted
+driver as a private app component. See the [MPL terms](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/b4718a6208ebbcf028cc29f2aea30e58b138e830/LICENSE),
+[PawnIO licensing guide](https://github.com/namazso/PawnIO.Modules/wiki/Using-PawnIO-Modules#licensing-considerations)
+and [author's redistribution clarification](https://github.com/a1ive/nwinfo/issues/86).
+
+One OpenBlade setup could include the library and verified official installer,
+reuse a compatible existing PawnIO installation, or install it during the normal
+elevated setup. No separate user download or wizard is inherently required.
+Silent installation is supported; PawnIO 2.2.0 explicitly returns a restart-needed
+result when applicable. Setup must handle that outcome before enabling telemetry.
+PawnIO is shared with other applications, so OpenBlade should not unconditionally
+remove it on uninstall. This is a feasible packaging design, not an implemented
+installer or a change to the repository's current no-new-driver policy.
+See [upstream silent-install guidance](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/discussions/1904)
+and [PawnIO 2.2.0 release notes](https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0).
+
+The Intel prototype depends on the existing compatible IPF client libraries
+(`ipfcore.dll`, `ipfipc.dll`), running Intel public service, processor/platform
+drivers and an enabled processor participant implementing the reviewed
+temperature GET. On the observed machine the stack is IPF 2.3.20303.5058, with
+`ipf_cpu`, `ipf_acpi` and `ipfsvc`; these are observation provenance, not a claim
+that every driver build or Intel processor is compatible. The prototype remains
+diagnostic code, not a shipped reader.
+
+Intel describes IPF/DTT as an OEM-configured platform solution whose capabilities
+depend on firmware and platform drivers. A modern Intel CPU alone therefore does
+not establish availability of this API or a usable temperature participant.
+Only the RZ09-0581 / Core Ultra 9 386H combination has been exercised here.
+Other Intel systems need compatible-stack discovery and source/measurement
+validation; AMD requires another provider. See [Intel's platform requirements](https://www.intel.com/content/www/us/en/support/articles/000102775/processors.html).
+
 ## Alternatives ruled out for now
 
 The EC firmware genuinely obtains CPU temperature through PECI, but the exposed
