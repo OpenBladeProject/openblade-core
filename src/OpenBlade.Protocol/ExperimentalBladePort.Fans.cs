@@ -145,6 +145,7 @@ internal sealed partial class ExperimentalBladePort
             if (baseline.HyperBoostActive || baseline.Performance is not (PerformancePreset.Balanced
                 or PerformancePreset.Performance or PerformancePreset.Silent or PerformancePreset.Custom
                 or PerformancePreset.Turbo or PerformancePreset.MaximumPower
+                or PerformancePreset.Gaming or PerformancePreset.Creator
                 or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
@@ -207,6 +208,8 @@ internal sealed partial class ExperimentalBladePort
                 // Products 671/669 use DC Balanced raw 6; preserve their battery mode.
                 PerformancePreset.Balanced => SupportsExperimentalHyperBoost(model)
                     && source == PowerSource.Battery ? (byte)6 : (byte)0,
+                PerformancePreset.Gaming when model.ThermalPolicy?.SupportsGaming == true => 1,
+                PerformancePreset.Creator when model.ThermalPolicy?.SupportsCreator == true => 2,
                 PerformancePreset.Turbo when model.ThermalPolicy?.SupportsTurbo == true => 1,
                 PerformancePreset.MaximumPower when model.ThermalPolicy?.SupportsMaximumPower == true => 2,
                 PerformancePreset.BatterySaver when model.ThermalPolicy?.SupportsBatterySaver == true => 3,

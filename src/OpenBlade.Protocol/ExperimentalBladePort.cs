@@ -186,7 +186,7 @@ internal sealed partial class ExperimentalBladePort(
         };
 
     private static bool SupportsExperimentalCustom(ExperimentalBladeModel model) =>
-        model.ThermalPolicy is not null || model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x0255 or 0x02A0;
+        model.ThermalPolicy?.SupportsCustom ?? (model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x0255 or 0x02A0);
 
     // Products 671 and 672 inherit these SET helpers from their exact pinned rzDevice25 sources:
     // 671 rzDevice25.5e330aa9fdf6f29eec62.js
@@ -203,16 +203,28 @@ internal sealed partial class ExperimentalBladePort(
 
     private static IReadOnlySet<PerformancePreset> CreatePerformancePresets(ExperimentalBladeModel model)
     {
-        if (!SupportsExperimentalCustom(model))
+        if (model.ThermalPolicy is null && !SupportsExperimentalCustom(model))
         {
             return new HashSet<PerformancePreset>();
         }
         var presets = new HashSet<PerformancePreset>
         {
-            PerformancePreset.Balanced, PerformancePreset.Custom,
+            PerformancePreset.Balanced,
         };
+        if (SupportsExperimentalCustom(model))
+        {
+            presets.Add(PerformancePreset.Custom);
+        }
         if (model.ThermalPolicy is { } thermal)
         {
+            if (thermal.SupportsGaming)
+            {
+                presets.Add(PerformancePreset.Gaming);
+            }
+            if (thermal.SupportsCreator)
+            {
+                presets.Add(PerformancePreset.Creator);
+            }
             if (thermal.SupportsSilent)
             {
                 presets.Add(PerformancePreset.Silent);
@@ -315,7 +327,9 @@ internal sealed partial class ExperimentalBladePort(
         PerformancePreset? performance = mode switch
         {
             0 => PerformancePreset.Balanced,
-            4 => PerformancePreset.Custom,
+            4 when SupportsExperimentalCustom(model) => PerformancePreset.Custom,
+            1 when model.ThermalPolicy?.SupportsGaming == true => PerformancePreset.Gaming,
+            2 when model.ThermalPolicy?.SupportsCreator == true => PerformancePreset.Creator,
             5 when model.ThermalPolicy?.SupportsSilent != false => PerformancePreset.Silent,
             1 when model.ThermalPolicy?.SupportsTurbo == true => PerformancePreset.Turbo,
             2 when model.ThermalPolicy?.SupportsMaximumPower == true => PerformancePreset.MaximumPower,
@@ -453,6 +467,8 @@ internal sealed partial class ExperimentalBladePort(
             byte mode = value switch
             {
                 PerformancePreset.Balanced => 0,
+                PerformancePreset.Gaming when model.ThermalPolicy?.SupportsGaming == true => 1,
+                PerformancePreset.Creator when model.ThermalPolicy?.SupportsCreator == true => 2,
                 PerformancePreset.Turbo when model.ThermalPolicy?.SupportsTurbo == true => 1,
                 PerformancePreset.MaximumPower when model.ThermalPolicy?.SupportsMaximumPower == true => 2,
                 PerformancePreset.Silent => 5,

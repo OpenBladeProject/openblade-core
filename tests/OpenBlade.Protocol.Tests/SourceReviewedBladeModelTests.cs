@@ -421,6 +421,7 @@ public sealed partial class SourceReviewedBladeModelTests
     [Theory]
     [MemberData(nameof(Products))]
     [MemberData(nameof(EarlyProducts))]
+    [MemberData(nameof(LegacyProducts))]
     public async Task Transactions_StayWithinExactVendorRange(int product)
     {
         var session = new Session();
@@ -463,6 +464,7 @@ public sealed partial class SourceReviewedBladeModelTests
         internal bool IgnoreWrites;
         internal bool EmptyBatteryAck;
         internal bool RejectBatteryQuery;
+        internal bool RejectAdapterQuery;
         internal Action<RazerCommandSpec>? BeforeSubmission;
         internal List<RazerCommandSpec> Commands { get; } = [];
         internal List<int> Transactions { get; } = [];
@@ -481,7 +483,8 @@ public sealed partial class SourceReviewedBladeModelTests
             }
             Commands.Add(command);
             Transactions.Add(assignTransactionId().TransactionId);
-            if (RejectBatteryQuery && command.ClassId == 0x07 && command.CommandId == 0x92)
+            if (RejectBatteryQuery && command.ClassId == 0x07 && command.CommandId == 0x92
+                || RejectAdapterQuery && command.ClassId == 0x07 && command.CommandId == 0x8C)
             {
                 return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.ProtocolFailure));
             }
