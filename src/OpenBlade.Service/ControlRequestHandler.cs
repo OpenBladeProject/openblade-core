@@ -169,6 +169,9 @@ public sealed class ControlRequestHandler
         await userRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // Release may win SemaphoreSlim's cancellation race. Observe the
+            // canceled request before dispatch, while finally still owns the permit.
+            cancellationToken.ThrowIfCancellationRequested();
             Volatile.Write(ref userRequestOwner,
                 client.IsInteractive && request is not ShutdownOpenBladeRequest
                     ? new ServiceUserRequestOwner(client, stillControlsSession)

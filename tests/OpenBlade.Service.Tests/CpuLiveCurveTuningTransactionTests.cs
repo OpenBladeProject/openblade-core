@@ -279,6 +279,50 @@ public sealed class CpuLiveCurveTuningTransactionTests
         Assert.Empty(backend.Sent); Assert.Equal(0, store.Writes);
     }
     [Fact]
+    public async Task ObservationCancellationSnapshotsBeforeLateCallbackEvenWhenBackendReturnsNormally()
+    {
+        var store = new MemoryStore(); var backend = new FakeBackend(store);
+        var diagnostic = new CpuSavedAdmissionDiagnostic();
+        using var callbackEntered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        CancellationTokenRegistration registration = default;
+        IDisposable? stage = null;
+        backend.OnObserve = token =>
+        {
+            stage = diagnostic.BeginStage("power adapter read sample 1 of 5 (open/exchange/dispose)");
+            // Later registrations run first. Hold cancellation here so the
+            // diagnostic callback cannot run before normal backend completion.
+            registration = token.Register(() =>
+            {
+                callbackEntered.Set();
+                release.Wait(TimeSpan.FromSeconds(10));
+            });
+            Assert.True(callbackEntered.Wait(TimeSpan.FromSeconds(5)));
+            return Task.FromResult(new CpuLiveCurveBackendObservation(null, null));
+        };
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store, TimeSpan.FromMilliseconds(20));
+        var observation = Task.Run(() => transaction.ObserveOwnershipAsync(default, diagnostic));
+        try
+        {
+            var result = await observation.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(callbackEntered.IsSet); Assert.False(release.IsSet);
+            Assert.Equal(CpuLiveCurveBlockReason.ObservationUnavailable, result.Reason);
+            Assert.StartsWith("; curve observation operation timeout; active stage power adapter read sample 1 of 5",
+                diagnostic.LiveObservationTimeoutContext);
+            Assert.Empty(backend.Sent); Assert.Equal(0, store.Writes);
+        }
+        finally
+        {
+            release.Set();
+            try { await observation; }
+            finally
+            {
+                try { registration.Dispose(); }
+                finally { stage?.Dispose(); }
+            }
+        }
+    }
+    [Fact]
     public async Task MixedBaselineIsRestoredPerPhysicalCoreAfterRestart()
     {
         var store = new MemoryStore();

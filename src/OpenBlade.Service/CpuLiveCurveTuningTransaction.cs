@@ -703,6 +703,13 @@ internal sealed class CpuLiveCurveTuningTransaction
             }
             throw;
         }
+        finally
+        {
+            // Admission can translate cancellation into an empty observation.
+            // Freeze before unregistering even when that task returned normally.
+            if (mutationOperation is null && timeout.IsCancellationRequested)
+            { observationDiagnostic?.RecordObservationCancellation(token.IsCancellationRequested); }
+        }
     }
 
     private static bool Valid(CpuLiveCurveBackendObservation? observed, out CpuLiveCurveSnapshot? snapshot)
