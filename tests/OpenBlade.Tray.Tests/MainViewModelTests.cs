@@ -205,6 +205,55 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task WindowsPowerMode_NewPresetDraftsRemainIndependentAcrossSelectionAndSave()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                PerformancePresets = new HashSet<PerformancePreset>
+                {
+                    PerformancePreset.Balanced, PerformancePreset.Performance,
+                    PerformancePreset.Turbo, PerformancePreset.MaximumPower,
+                    PerformancePreset.Gaming, PerformancePreset.Creator,
+                },
+            },
+        });
+        AsyncRelayCommand select = Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand);
+        await select.ExecuteAsync(PerformancePreset.Performance);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPowerEfficiency);
+        await select.ExecuteAsync(PerformancePreset.Turbo);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+        await select.ExecuteAsync(PerformancePreset.MaximumPower);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.Balanced);
+        await select.ExecuteAsync(PerformancePreset.Gaming);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+        await select.ExecuteAsync(PerformancePreset.Creator);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPowerEfficiency);
+        await select.ExecuteAsync(PerformancePreset.Gaming);
+        Assert.Equal(WindowsPowerMode.BestPerformance, viewModel.SelectedWindowsPowerModeOption.Value);
+        await select.ExecuteAsync(PerformancePreset.Creator);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, viewModel.SelectedWindowsPowerModeOption.Value);
+        await select.ExecuteAsync(PerformancePreset.Turbo);
+        Assert.Equal(WindowsPowerMode.BestPerformance, viewModel.SelectedWindowsPowerModeOption.Value);
+        await select.ExecuteAsync(PerformancePreset.Performance);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, viewModel.SelectedWindowsPowerModeOption.Value);
+        await select.ExecuteAsync(PerformancePreset.MaximumPower);
+        Assert.Equal(WindowsPowerMode.Balanced, viewModel.SelectedWindowsPowerModeOption.Value);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand).ExecuteAsync(null);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, client.LastProfiles?.WindowsPowerModes.Performance);
+        Assert.Equal(WindowsPowerMode.BestPerformance, client.LastProfiles?.WindowsPowerModes.Turbo);
+        Assert.Equal(WindowsPowerMode.Balanced, client.LastProfiles?.WindowsPowerModes.MaximumPower);
+        Assert.Equal(WindowsPowerMode.BestPerformance, client.LastProfiles?.WindowsPowerModes.Gaming);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, client.LastProfiles?.WindowsPowerModes.Creator);
+    }
+
+    [Fact]
     public async Task WindowsPowerMode_DraftSurvivesPowerSourceTransition()
     {
         var client = new FakeServiceClient();
@@ -2290,6 +2339,84 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.HasGlobalBatteryPolicyDraft);
     }
 
+    [Theory]
+    [InlineData(true, 80)]
+    [InlineData(false, null)]
+    public async Task BatteryLimiter_UnsupportedTemporaryFullChargePreservesUnknownAndAllowsOrdinaryControls(
+        bool protectionEnabled, int? currentLimit)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        status = status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+                SupportsTemporaryFullCharge = false,
+            },
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(protectionEnabled, currentLimit, null),
+            },
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
+
+        Assert.True(viewModel.CanAdjustChargeLimit);
+        Assert.True(viewModel.CanChangeBatteryProtection);
+        Assert.True(viewModel.SetChargeLimitCommand.CanExecute(75));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(false));
+        Assert.Equal("Unavailable", viewModel.FullChargeActionLabel);
+        Assert.DoesNotContain("Temporary full charge", viewModel.BatterySourceLabel, StringComparison.Ordinal);
+        Assert.Equal(protectionEnabled ? "Charge limit 80%" : "Battery protection off", viewModel.CurrentBatterySettingLabel);
+        viewModel.ProfileChargeLimitEditor = 75;
+        Assert.True(viewModel.SaveProfilesCommand.CanExecute(null));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand).ExecuteAsync(75);
+        Assert.Equal(BatteryPolicy.Create(75), client.BatteryPolicy);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ToggleBatteryProtectionCommand).ExecuteAsync(null);
+        Assert.Equal(!protectionEnabled, client.BatteryProtectionEnabled);
+        Assert.Null(client.FullChargeEnabled);
+        Assert.Null(client.CurrentStatus!.ConfirmedState!.Battery!.TemporaryFullCharge);
+    }
+
+    [Theory]
+    [InlineData(true, null)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task BatteryLimiter_ManagedUnknownOrKnownActiveTemporaryFullChargeBlocksOrdinaryControls(
+        bool supportsTemporaryFullCharge, bool? temporaryFullCharge)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                SupportsTemporaryFullCharge = supportsTemporaryFullCharge,
+            },
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(true, 80, temporaryFullCharge),
+            },
+        });
+
+        Assert.False(viewModel.CanAdjustChargeLimit);
+        Assert.False(viewModel.CanChangeBatteryProtection);
+        Assert.False(viewModel.SetChargeLimitCommand.CanExecute(75));
+        Assert.False(viewModel.SetChargeLimitCommand.CanExecute(100));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
+        Assert.Equal(supportsTemporaryFullCharge && temporaryFullCharge is true,
+            viewModel.ToggleFullChargeCommand.CanExecute(false));
+        Assert.Equal(0, client.MutationCalls);
+        Assert.Null(client.FullChargeEnabled);
+    }
+
     [Fact]
     public async Task StableChargeCapabilitiesKeepFivePercentRange()
     {
@@ -3534,10 +3661,18 @@ public sealed partial class MainViewModelTests
                 PerformancePreset.Balanced,
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
+                PerformancePreset.Turbo,
+                PerformancePreset.MaximumPower,
+                PerformancePreset.Gaming,
+                PerformancePreset.Creator,
                 PerformancePreset.Custom,
             ],
             viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Turbo));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
         Assert.Equal("AC profile", viewModel.ActivePowerSourceLabel);
         Assert.Equal("Save to AC profile", viewModel.SaveToActiveProfileLabel);
@@ -3557,6 +3692,10 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Turbo));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
         Assert.Equal(
             [FanMode.Automatic, FanMode.Fixed],
             viewModel.AvailableActiveFanModeOptions.Select(option => option.Value));
@@ -3576,6 +3715,10 @@ public sealed partial class MainViewModelTests
         Assert.Equal(viewModel.AvailableUsbCFanModes, viewModel.AvailableActiveFanModes);
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Turbo));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.Equal("Low-power profile", viewModel.ActivePowerSourceLabel);
@@ -6560,7 +6703,37 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.IsExperimentalDevice);
         Assert.False(viewModel.ExperimentalWritesPaused);
         Assert.False(viewModel.CanResumeExperimentalWrites);
-        Assert.Contains("Experimental controls are available", viewModel.ExperimentalSupportNotice);
+        Assert.Equal("This laptop is supported using reviewed sources. Physical validation is tracked separately.", viewModel.ExperimentalSupportNotice);
+    }
+
+    [Theory]
+    [InlineData("ru-RU", false, "Этот ноутбук поддерживается на основе проверенных источников. Проверка на реальном устройстве учитывается отдельно.")]
+    [InlineData("zh-CN", false, "此笔记本电脑的支持基于已审核的来源。实机验证情况单独记录。")]
+    [InlineData("ru-RU", true, "Управление ноутбуком приостановлено, поскольку OpenBlade не смог подтвердить изменение. Проверьте текущее состояние, затем возобновите управление ноутбуком. OpenBlade не станет повторять предыдущее изменение.")]
+    [InlineData("zh-CN", true, "由于 OpenBlade 无法确认某项更改，笔记本控制已暂停。请先检查当前状态，再恢复笔记本控制。OpenBlade 不会重试之前的更改。")]
+    public async Task ExperimentalSupport_LocalizesSupportBasisAndPausedRecovery(
+        string language,
+        bool paused,
+        string expectedNotice)
+    {
+        using var culture = new CultureScope(language);
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        await PublishStatusAndWaitAsync(
+            client,
+            dispatcher,
+            viewModel,
+            CreateStatus(verified: true, blocked: paused) with
+            {
+                IsExperimentalDevice = true,
+                ExperimentalWritesPaused = paused,
+            });
+
+        Assert.Equal(expectedNotice, viewModel.ExperimentalSupportNotice);
+        Assert.Equal(paused, viewModel.CanResumeExperimentalWrites);
+        Assert.Equal(0, client.ResumeExperimentalWritesCalls);
     }
 
     [Fact]
@@ -6584,7 +6757,7 @@ public sealed partial class MainViewModelTests
 
         Assert.True(viewModel.ExperimentalWritesPaused);
         Assert.True(viewModel.CanResumeExperimentalWrites);
-        Assert.Contains("will not retry", viewModel.ExperimentalSupportNotice);
+        Assert.Equal("Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change.", viewModel.ExperimentalSupportNotice);
         Assert.True(await viewModel.ResumeExperimentalWritesAsync(CancellationToken.None));
         Assert.Equal(1, client.ResumeExperimentalWritesCalls);
         Assert.False(viewModel.IsResumeExperimentalWritesOperationInProgress);
@@ -9679,7 +9852,7 @@ public sealed partial class MainViewModelTests
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(CreatePadlessHyperBoostStatus(baseline));
         await WaitUntilAsync(() => viewModel.CanToggleHyperBoost
-            && viewModel.AvailableLaptopPerformanceOptions.Count == 5);
+            && viewModel.AvailableLaptopPerformanceOptions.Count == 7);
 
         Assert.True(viewModel.IsHyperBoostVisible);
         Assert.True(viewModel.IsHyperBoostWritable);
@@ -9692,7 +9865,7 @@ public sealed partial class MainViewModelTests
             viewModel.AvailablePerformancePresets,
             preset => preset.ToString().Contains("Hyper", StringComparison.Ordinal));
         Assert.Equal(
-            ["Balanced", "Silent", "Performance", "Custom", "HyperBoost"],
+            ["Balanced", "Silent", "Performance", "Turbo", "Maximum Power", "Custom", "HyperBoost"],
             viewModel.AvailableLaptopPerformanceOptions.Select(option => option.Label));
         Assert.Equal(
             PerformancePreset.Balanced,
@@ -10818,6 +10991,14 @@ public sealed partial class MainViewModelTests
             ActivePowerSource = PowerSource.PluggedIn,
             Capabilities = baseline.Capabilities! with
             {
+                // This synthetic HyperBoost fixture admits an explicit preset set;
+                // enum extensions must not grant unrelated firmware modes.
+                PerformancePresets = new HashSet<PerformancePreset>
+                {
+                    PerformancePreset.Silent, PerformancePreset.Balanced, PerformancePreset.Performance,
+                    PerformancePreset.BatterySaver, PerformancePreset.BatteryBalanced, PerformancePreset.Custom,
+                    PerformancePreset.Turbo, PerformancePreset.MaximumPower,
+                },
                 HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
                 HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
                 HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(

@@ -19,12 +19,10 @@ public sealed class ExperimentalBladeIdentityTests
         }
     }
 
+    public static TheoryData<int> ModelIndices => new(Enumerable.Range(0, ExperimentalBladeModels.All.Count));
+
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
+    [MemberData(nameof(ModelIndices))]
     public void ExactDualRegistryIdentity_IsModelScopedWithoutInventedFirmwareValidation(int index)
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All[index];
@@ -37,22 +35,36 @@ public sealed class ExperimentalBladeIdentityTests
         Assert.Equal("unverified-local-firmware", result.Evidence.Value.BiosVersion);
     }
 
-    [Theory]
-    [InlineData("SystemManufacturer")]
-    [InlineData("SystemProductName")]
-    public void EitherRegistryMismatch_BlocksExperimentalIdentity(string field)
+    public static TheoryData<int, string> IdentityMismatchCases
     {
-        ExperimentalBladeModel model = ExperimentalBladeModels.All[0];
+        get
+        {
+            var cases = new TheoryData<int, string>();
+            foreach (int index in Enumerable.Range(0, ExperimentalBladeModels.All.Count))
+            {
+                cases.Add(index, "SystemManufacturer");
+                cases.Add(index, "SystemProductName");
+            }
+            return cases;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(IdentityMismatchCases))]
+    public void EitherRegistryMismatch_BlocksExperimentalIdentity(int index, string field)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All[index];
         var registry = new Registry(model.ProductName) { MismatchedField = field };
         HostIdentityReadResult result = ExperimentalBladeModels.CreateIdentity(model, registry, new Platform()).ReadExactIdentity();
         Assert.Null(result.Evidence);
         Assert.Equal(HidSessionFailureKind.IdentityBlocked, result.Failure);
     }
 
-    [Fact]
-    public void NeighborModelProductName_DoesNotMatchPrefix()
+    [Theory]
+    [MemberData(nameof(ModelIndices))]
+    public void NeighborModelProductName_DoesNotMatchPrefix(int index)
     {
-        ExperimentalBladeModel model = ExperimentalBladeModels.All[0];
+        ExperimentalBladeModel model = ExperimentalBladeModels.All[index];
         HostIdentityReadResult result = ExperimentalBladeModels.CreateIdentity(model,
             new Registry(model.ProductName + "-other"), new Platform()).ReadExactIdentity();
         Assert.Null(result.Evidence);
@@ -69,6 +81,27 @@ public sealed class ExperimentalBladeIdentityTests
     {
         Assert.Equal(matches, ExperimentalBladeFactory.IsCandidateDescriptor(ExperimentalBladeModels.All[0],
             new((ushort)vendor, (ushort)product, 0xFF00, 3, (ushort)length)));
+    }
+
+    [Theory]
+    [InlineData(0x0270, "Blade 14 - RZ09-0370")]
+    [InlineData(0x028C, "Blade 14 (2022) - RZ09-0427")]
+    [InlineData(0x028A, "Blade 15 (2022) - RZ09-0421")]
+    [InlineData(0x028B, "Blade 17 (2022) - RZ09-0423")]
+    [InlineData(0x0246, "Blade 15 Mid 2019-Base")]
+    [InlineData(0x0253, "Blade 15 Advanced Model (Early 2020) - RZ09-033")]
+    [InlineData(0x0268, "Blade 15 Base Model (Late 2020)")]
+    public void EarlyProfiles_UseDmiExactNameAndRejectSiblingDescriptors(int product, string expectedName)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == product);
+        Assert.Equal(expectedName, model.ProductName);
+        Assert.True(ExperimentalBladeFactory.IsCandidateDescriptor(model, new(0x1532, (ushort)product, 0xFF00, 3, 91)));
+        foreach (ExperimentalBladeModel other in ExperimentalBladeModels.All.Where(item => item != model))
+        {
+            Assert.False(ExperimentalBladeFactory.IsCandidateDescriptor(model, new(0x1532, other.ProductId, 0xFF00, 3, 91)));
+        }
+        Assert.False(ExperimentalBladeFactory.IsCandidateDescriptor(model, new(0x1111, (ushort)product, 0xFF00, 3, 91)));
+        Assert.False(ExperimentalBladeFactory.IsCandidateDescriptor(model, new(0x1532, (ushort)product, 0xFF00, 3, 90)));
     }
 
     private sealed class Registry(string productName) : IRegistryValueSource

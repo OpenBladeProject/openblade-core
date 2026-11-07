@@ -478,7 +478,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal(
             "{x:Bind ViewModel.ExperimentalWritesPaused, Mode=OneWay}",
             Attribute(resume, "Visibility"));
-        Assert.Equal("Resume experimental controls", Attribute(resume, "AutomationProperties.Name"));
+        Assert.Equal("Resume laptop controls", Attribute(resume, "AutomationProperties.Name"));
         Assert.Contains(
             resume.Descendants(),
             element => element.Name.LocalName == "ProgressRing"
@@ -511,6 +511,12 @@ public sealed class WinUiShellContractTests
                 "MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name",
                 keys);
             Assert.Contains("MainWindow_ResumeExperimentalWritesLabel.Text", keys);
+            string ResourceValue(string key) => resources.Descendants("data")
+                .Single(element => (string?)element.Attribute("name") == key)
+                .Element("value")!.Value;
+            Assert.Equal(
+                ResourceValue("MainWindow_ResumeExperimentalWritesLabel.Text"),
+                ResourceValue("MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"));
             Assert.DoesNotContain("MainWindow_ExperimentalConsent_Title", keys);
         }
     }
@@ -740,6 +746,31 @@ public sealed class WinUiShellContractTests
                 powerModeCard,
                 "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.DoesNotContain("SettingsEmphasizedSubcardStyle", powerModeCard, StringComparison.Ordinal);
+        XElement cpuCard = XDocument.Parse(xaml).Descendants().Single(element =>
+            Attribute(element, "DataContext") == "{Binding CpuTuning}");
+        Assert.Equal("{StaticResource SettingsEditorSubcardStyle}", Attribute(cpuCard, "Style"));
+        XElement[] cpuCommands = cpuCard.Descendants().Where(element => element.Name.LocalName == "Button").ToArray();
+        Assert.All(cpuCommands, button =>
+        {
+            Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(button, "Style"));
+            Assert.Equal("Stretch", Attribute(button, "HorizontalAlignment"));
+            Assert.Equal("Grid", button.Parent?.Name.LocalName);
+        });
+        Assert.Equal(3, cpuCommands[0].Parent!.Elements().Single(element => element.Name.LocalName == "Grid.ColumnDefinitions").Elements().Count());
+        Assert.DoesNotContain(cpuCard.Descendants(), element => element.Name.LocalName == "CheckBox");
+        Assert.DoesNotContain(cpuCard.Descendants(), element => CanonicalLocalizedXaml.Identity(element) == "MainWindow_CpuTuningTarget");
+        Assert.DoesNotContain("SavedSummary", cpuCard.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("PendingBootSummary", cpuCard.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(cpuCard.Descendants(), element => element.Name.LocalName == "NumberBox");
+        Assert.DoesNotContain(cpuCard.Descendants(), element => Attribute(element, "IsChecked")?.Contains("Manage", StringComparison.Ordinal) == true);
+        XElement optimizerToggle = LocalizedElement(CanonicalLocalizedXaml.Load("MainWindow.xaml"), "ToggleSwitch", "MainWindow_CpuTuningCurveEnabled");
+        Assert.Equal("{StaticResource CompactCardToggleSwitchStyle}", Attribute(optimizerToggle, "Style"));
+        Assert.Equal("{Binding CurveEnabled, Mode=TwoWay}", Attribute(optimizerToggle, "IsOn"));
+        XElement optimizerSlider = LocalizedElement(CanonicalLocalizedXaml.Load("MainWindow.xaml"), "Slider", "MainWindow_CpuTuningCurveValue");
+        Assert.Equal("{StaticResource InlineCardSliderStyle}", Attribute(optimizerSlider, "Style"));
+        Assert.Equal("-30", Attribute(optimizerSlider, "Minimum"));
+        Assert.Equal("-1", Attribute(optimizerSlider, "Maximum"));
+        Assert.Equal("1", Attribute(optimizerSlider, "StepFrequency"));
     }
 
     [Fact]
@@ -1498,6 +1529,16 @@ public sealed class WinUiShellContractTests
         Assert.Contains("MainWindow_LightingImport_ImportApplyButton", window, StringComparison.Ordinal);
         Assert.Contains("ViewModel.CanImportKeyboardLighting", window, StringComparison.Ordinal);
         Assert.Contains("ViewModel.TryImportKeyboardLighting", window, StringComparison.Ordinal);
+
+        string search = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.GlobalSearchCatalog.cs");
+        Assert.Contains("Page(LabsNavigationItem, LabsPage, \"MainWindow_LabsTitle.Text\")", search, StringComparison.Ordinal);
+        Assert.Contains("Section(labs, LabsKeyboardSection, \"MainWindow_TextBlockKeyboard2.Text\")", search, StringComparison.Ordinal);
+        Assert.Contains("Row(labsKeyboard, \"MainWindow_LabsImportTitle.Text\", nameof(LabsImportGuideButton))", search, StringComparison.Ordinal);
+        Assert.Contains("Row(labsKeyboard, \"MainWindow_TextBlockSixtyHzLighting.Text\", nameof(LabsLightingRateGuideButton))", search, StringComparison.Ordinal);
+        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockImportPreset.Text\", \"ImportKeyboardLightingPresetCard\",\r\n            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls)", search, StringComparison.Ordinal);
+        Assert.Contains("Row(keyboardLighting, \"MainWindow_TextBlockSixtyHzLighting.Text\", \"LightingRefreshRateCard\",\r\n            exposed: () => ViewModel.ShowOpenBladeKeyboardLightingControls)", search, StringComparison.Ordinal);
+        Assert.DoesNotContain("LabFeaturesEnabled", search, StringComparison.Ordinal);
+        Assert.DoesNotContain("LabFeaturesInfoButton", search, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -3103,7 +3144,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("CountRingTransitions(pixels, width, centerX, centerY) == 2", canonicalizer, StringComparison.Ordinal);
         Assert.Contains("channelDelta > 16", canonicalizer, StringComparison.Ordinal);
         Assert.Contains(
-            "bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4",
+            "bgra8-4-bit-midpoint-local-majority-edge-alpha-accent-fringe-v5",
             canonicalizer,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -3147,7 +3188,7 @@ public sealed class WinUiShellContractTests
             capture,
             StringComparison.Ordinal);
         Assert.Contains(
-            "pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4'",
+            "pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-edge-alpha-accent-fringe-v5'",
             capture,
             StringComparison.Ordinal);
         Assert.Contains(

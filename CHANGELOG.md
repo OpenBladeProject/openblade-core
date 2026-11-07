@@ -5,9 +5,32 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Search OpenBlade pages and settings from the title bar. Press Ctrl+K to open search and jump to a result. ([#883](https://github.com/OpenBladeProject/openblade-core/pull/883))
+- Adjust the running CPU's all-core Voltage Optimizer on Blade 16 (2025, RZ09-0528) with the supported AMD driver already running. Off preserves the remembered offset. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
+- Support Blade 15 Base (2019) RZ09-0300, Blade 15 Advanced (Early 2020) RZ09-0330 and Blade 15 Base (Late 2020) RZ09-0351 with reviewed preset controls and Automatic fans. Advanced Custom CPU/GPU levels are bounded to Low/Medium/High; physical validation remains pending. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Support Blade 14 (2024) RZ09-0508, Blade 16 (2024) RZ09-0510, Blade 18 (2024) RZ09-0509 and Blade 18 (2025) RZ09-0529 with reviewed model-specific controls. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Support Blade 14 (2021) RZ09-0370, Blade 14 (2022) RZ09-0427, Blade 15 (2022) RZ09-0421 and Blade 17 (2022) RZ09-0423 with reviewed performance controls and model-specific charge limits. Physical validation is tracked separately. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Add model-specific Turbo, Maximum Power, Gaming and Creator presets, each with separate Windows power-mode preferences. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+
 ### Changed
 
 - Open Labs from the sidebar to learn about experimental features and jump to their controls. A beaker marks experimental controls on the Lighting page. ([#885](https://github.com/OpenBladeProject/openblade-core/pull/885))
+- List source-reviewed laptops as officially supported and track physical validation separately. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+
+### Fixed
+
+- Preserve cancellation when a queued service request resumes. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
+- Preserve the original diagnostic stage when a CPU read times out. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
+- Keep older app clients in a readable, read-only upgrade view when the service exposes newer presets and settings. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Recover thermal controls when unrelated charge-limit readings are unavailable, while retaining strict confirmation for pending battery operations. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Clear Maximum Fans before applying Battery Balanced on Blade 14, 16 and 18 (2024), including after disconnecting AC power. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Allow paused charge-limit controls to resume after successful recovery on source-reviewed models. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Preserve saved Windows power modes, app rules and brightness when migrating profiles. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Apply and verify the internal display's active signal rate when selecting a fixed refresh rate. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
+- Keep Dynamic Refresh Rate available after choosing a low fixed rate when the panel and driver support a higher timing. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
+- Apply an app profile's refresh rate only when OpenBlade can restore the previous rate. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
 
 ## [0.51.0-nightly.107] - 2026-11-05
 

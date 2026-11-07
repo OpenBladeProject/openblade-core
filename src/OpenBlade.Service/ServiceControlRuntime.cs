@@ -27,6 +27,18 @@ public interface IServiceControlRuntime
 
     ServiceStatusSnapshot GetStatus();
 
+    Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU observation is unavailable."));
+
+    Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target, CpuTuningSettings settings,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU writes are not admitted."));
+
+    Task<ControlOperationResult> RestoreCpuTuningAsync(CpuTuningTarget target,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU restoration is unavailable."));
+
     Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() => null;
 
     DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics() =>
@@ -446,7 +458,7 @@ internal interface IServiceUserAdmission
 
 internal sealed record ServiceUserRequestOwner(ServiceClientContext Client, Func<bool> StillControlsSession);
 
-public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUserAdmission, IDisposable
+public sealed partial class ServiceControlRuntime : IServiceControlRuntime, IServiceUserAdmission, IDisposable
 {
     private const string UnclassifiedExternalPowerMessage =
         "The external power adapter could not be classified; control writes are blocked.";
@@ -499,6 +511,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
     private readonly LowPowerGate lowPowerGate;
     private readonly IFirmwareVersionSource firmwareVersionSource;
     private readonly IDisplayBrightnessHidController displayBrightnessHidController;
+    private readonly CpuTuningController cpuTuningController;
     private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
     private readonly Func<CancellationToken, Task> hyperBoostLifecycleExitBoundary;
     private readonly TimeProvider timeProvider;
@@ -840,7 +853,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
         Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
-        LaptopControlPendingStore? laptopControlPendingStore = null)
+        LaptopControlPendingStore? laptopControlPendingStore = null,
+        CpuTuningController? cpuTuningController = null)
     {
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
@@ -874,6 +888,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             ?? new SafeWindowsFanTemperatureSource();
         this.displayBrightnessHidController = displayBrightnessHidController
             ?? UnavailableDisplayBrightnessHidController.Instance;
+        this.cpuTuningController = cpuTuningController
+            ?? new CpuTuningController(new WindowsCpuTuningObservationSource());
         this.hyperBoostPadDiscoverySource = hyperBoostPadDiscoverySource
             ?? CoolingPadDiscoveryFactory.CreateWindows();
         this.hyperBoostOwnershipJournalStore = hyperBoostOwnershipJournalStore
@@ -2316,9 +2332,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
             }
             if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
             {
+                // Preserve legacy shortcut spellings while presenting the new
+                // two-word mode with its reviewed notification label.
+                string presetLabel = next == PerformancePreset.MaximumPower
+                    ? PerformanceLabel(next) : next.ToString();
                 string selectedBy = source == PerformanceShortcutSource.DedicatedButton
-                    ? $"The performance button selected {next}."
-                    : $"Fn+P selected {next}.";
+                    ? $"The performance button selected {presetLabel}."
+                    : $"Fn+P selected {presetLabel}.";
                 string message = result.Status == ControlOperationStatus.Stored
                     ? $"{selectedBy} It will be applied when fans return to Automatic."
                     : selectedBy;
@@ -13835,7 +13855,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 outcome.EffectiveDesired ?? desired,
                 preWriteState,
                 BatteryIntentCommit: pendingBatteryIntentCommit,
-                GpuClockTuningOnly: gpuClockTuningOnly));
+                GpuClockTuningOnly: gpuClockTuningOnly,
+                BatteryConfirmation: outcome.BatteryConfirmation));
         }
 
         if (outcome.ConfirmedCoupledWrites is not null)
@@ -15381,7 +15402,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 new HashSet<DeviceSubsystem>(deferred),
                 new HashSet<DeviceSubsystem>(outcome.WriteAttempted.Concat(
                     continuation?.Dependencies ?? new HashSet<DeviceSubsystem>())),
-                continuation?.ExpiresAt ?? timeProvider.GetUtcNow().AddMinutes(2));
+                continuation?.ExpiresAt ?? timeProvider.GetUtcNow().AddMinutes(2),
+                // Never weaken a prior cancellation/override dependency.
+                continuation?.Dependencies.Contains(DeviceSubsystem.Battery) == true
+                    && continuation.BatteryConfirmation != BatteryConfirmationScope.PolicyOnly
+                        ? BatteryConfirmationScope.All
+                        : outcome.WriteAttempted.Contains(DeviceSubsystem.Battery)
+                            ? outcome.BatteryConfirmation
+                            : continuation?.BatteryConfirmation ?? BatteryConfirmationScope.All);
         }
 
         if (outcome.PreWriteState is { } preWriteState)
@@ -15392,7 +15420,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
                     powerSource,
                     outcome.EffectiveDesired ?? desired,
-                    preWriteState));
+                    preWriteState,
+                    BatteryConfirmation: outcome.BatteryConfirmation));
             }
         }
 
@@ -15958,9 +15987,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
     private async Task<PowerSource> ResolveCurrentPowerSourceAsync(
         CancellationToken cancellationToken,
-        bool allowCachedExternalClassification = false)
+        bool allowCachedExternalClassification = false,
+        CpuSavedAdmissionDiagnostic? cpuDiagnostic = null)
     {
-        PowerSource windowsSource = powerStateProvider.CapturePowerSource();
+        PowerSource windowsSource;
+        using (cpuDiagnostic?.BeginStage("power Windows source capture"))
+        { windowsSource = powerStateProvider.CapturePowerSource(); }
         cancellationToken.ThrowIfCancellationRequested();
         if (windowsSource == PowerSource.Battery)
         {
@@ -15986,9 +16018,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
 
         try
         {
-            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            IBladeDevice device;
+            using (cpuDiagnostic?.BeginStage("power verified device probe"))
             {
-                return PowerSource.ExternalUnknown;
+                if (!deviceProvider.TryGetVerifiedDevice(out device))
+                { return PowerSource.ExternalUnknown; }
             }
 
             AdapterPowerState classified = AdapterPowerState.Unknown;
@@ -16004,7 +16038,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 AdapterPowerState sample;
                 try
                 {
-                    sample = await device.ReadAdapterPowerStateAsync(cancellationToken);
+                    using (cpuDiagnostic?.BeginStage($"power adapter read sample {attempts + 1} of {MaximumAdapterPowerClassificationSamples} (open/exchange/dispose)"))
+                    { sample = await device.ReadAdapterPowerStateAsync(cancellationToken); }
                 }
                 catch (OperationCanceledException) when (
                     cancellationToken.IsCancellationRequested)
@@ -16418,7 +16453,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
                 subsystem,
                 new WriteConfirmationExpectation(
                     pending.EffectiveDesired,
-                    pending.PreWriteState),
+                    pending.PreWriteState,
+                    BatteryConfirmation: pending.BatteryConfirmation),
                 confirmed,
                 device);
             if (result == PendingConfirmationResult.Mismatch)
@@ -19913,7 +19949,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         ConfirmedDeviceState PreWriteState,
         IReadOnlySet<DeviceSubsystem> Subsystems,
         IReadOnlySet<DeviceSubsystem> Dependencies,
-        DateTimeOffset ExpiresAt);
+        DateTimeOffset ExpiresAt,
+        BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
 
     private sealed record PendingResumePerformanceDrift(
         long PowerGeneration,
@@ -20528,6 +20565,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IServiceUser
         PerformancePreset.Silent => "Quiet",
         PerformancePreset.Balanced => "Balanced",
         PerformancePreset.Performance => "Performance",
+        PerformancePreset.Turbo => "Turbo",
+        PerformancePreset.MaximumPower => "Maximum Power",
+        PerformancePreset.Gaming => "Gaming",
+        PerformancePreset.Creator => "Creator",
         _ => mode.ToString(),
     };
 

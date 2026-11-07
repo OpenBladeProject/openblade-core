@@ -11,7 +11,7 @@ public sealed class EdidDetailedTimingParserTests
 
         IReadOnlyList<EdidDetailedTiming> timings = EdidDetailedTimingParser.Parse(edid);
 
-        Assert.Equal([new EdidDetailedTiming(2560, 1600, 240)], timings);
+        Assert.Equal(new EdidDetailedTiming(2560, 1600, 240, 1_140_481_000, 2640, 1800), Assert.Single(timings));
     }
 
     [Fact]
@@ -19,6 +19,17 @@ public sealed class EdidDetailedTimingParserTests
     {
         byte[] edid = CreateEdidWithType7Timing();
         edid[140] ^= 0x01;
+
+        Assert.Empty(EdidDetailedTimingParser.Parse(edid));
+    }
+
+    [Fact]
+    public void Parse_ExcludesInterlacedType7Timing()
+    {
+        byte[] edid = CreateEdidWithType7Timing();
+        Span<byte> extension = edid.AsSpan(128, 128);
+        extension[11] |= 0x10;
+        SetChecksum(extension);
 
         Assert.Empty(EdidDetailedTimingParser.Parse(edid));
     }

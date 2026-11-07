@@ -13,7 +13,9 @@ public static class PerformanceNotificationIconAsset
         {
             (PowerSource.PluggedIn, PerformancePreset.Balanced) =>
                 Asset("ac-balanced"),
-            (PowerSource.PluggedIn, PerformancePreset.Performance) =>
+            (PowerSource.PluggedIn, PerformancePreset.Performance
+                or PerformancePreset.Turbo or PerformancePreset.MaximumPower
+                or PerformancePreset.Gaming or PerformancePreset.Creator) =>
                 Asset("ac-performance"),
             (PowerSource.PluggedIn, PerformancePreset.Silent) =>
                 Asset("ac-silent"),

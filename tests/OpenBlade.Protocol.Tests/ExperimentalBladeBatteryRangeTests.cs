@@ -129,14 +129,23 @@ public sealed class ExperimentalBladeBatteryRangeTests
     }
 
     [Fact]
-    public async Task ExactBatteryProfiles_ExposeExpandedRange_UnsupportedModelsRejectBeforeIo()
+    public async Task ExactBatteryProfiles_ExposeOwnReviewedRange_UnsupportedValuesRejectBeforeIo()
     {
         foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All)
         {
             var session = new Session();
             var policy = new ExperimentalFeaturesPolicy(model);
             await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true, () => PowerSource.ExternalUnknown);
-            if (model.SupportsBatteryProtection)
+            if (model.SupportsBatteryProtection && model.ThermalPolicy is not null)
+            {
+                Assert.Equal(new[] { 50, 55, 60, 65, 70, 75, 80, 100 }, port.Capabilities.ChargeLimits.Order());
+                await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(99, CancellationToken.None));
+                Assert.Empty(session.Commands);
+                await port.SetChargeLimitAsync(75, CancellationToken.None);
+                Assert.Equal(75, (await port.QueryProtectionAsync(CancellationToken.None)).ChargeLimitPercent);
+                Assert.Single(session.Commands, command => command.CommandId == 0x12);
+            }
+            else if (model.SupportsBatteryProtection)
             {
                 Assert.Contains(50, port.Capabilities.ChargeLimits);
                 Assert.Contains(99, port.Capabilities.ChargeLimits);

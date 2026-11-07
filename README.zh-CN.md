@@ -32,15 +32,28 @@ OpenBlade 是一款免费的 Razer Blade 笔记本管理工具，在 Windows 系
 | --- | --- |
 | Razer Blade 16 (2026) | `RZ09-0581` |
 | Razer Blade 16 (2025) | `RZ09-0528` |
-| Razer Blade 14 (2025)，实验性支持 | `RZ09-0530` |
-| Razer Blade 16 (2023)，实验性支持 | `RZ09-0483` |
-| Razer Blade 14 (2023)，实验性支持 | `RZ09-0482` |
-| Razer Blade 18 (2023)，实验性支持 | `RZ09-0484` |
-| Razer Blade 15 Base (Early 2020)，实验性支持 | `RZ09-0328` |
+| Razer Blade 18 (2025) | `RZ09-0529` |
+| Razer Blade 14 (2025) | `RZ09-0530` |
+| Razer Blade 14 (2024) | `RZ09-0508` |
+| Razer Blade 16 (2024) | `RZ09-0510` |
+| Razer Blade 18 (2024) | `RZ09-0509` |
+| Razer Blade 16 (2023) | `RZ09-0483` |
+| Razer Blade 14 (2023) | `RZ09-0482` |
+| Razer Blade 18 (2023) | `RZ09-0484` |
+| Razer Blade 14 (2022) | `RZ09-0427` |
+| Razer Blade 15 (2022) | `RZ09-0421` |
+| Razer Blade 17 (2022) | `RZ09-0423` |
+| Razer Blade 14 (2021) | `RZ09-0370` |
+| Razer Blade 15 Base (Early 2020) | `RZ09-0328` |
+| Razer Blade 15 Advanced (Early 2020) | `RZ09-0330` |
+| Razer Blade 15 Base (Late 2020) | `RZ09-0351` |
+| Razer Blade 15 Base (2019) | `RZ09-0300` |
 
-可用功能因型号而异。OpenBlade 会自动启用实验性型号上的可用功能。
+所有列出的笔记本均获正式支持。RZ09-0581 和 RZ09-0528 的支持已通过实机验证；
+其余十六个系列基于已审核的对应型号来源提供支持，实机验证状态单独跟踪。
+可用功能因型号而异，识别型号后会自动启用。
 兼容性信息见[使用指南](https://openblade.sh/zh-CN/)，
-各型号的具体功能和测试方法见[实验性支持](docs/zh-CN/experimental-blade-support.md)。
+各型号的具体功能和测试方法见[基于已审核来源的 Blade 支持](docs/zh-CN/experimental-blade-support.md)。
 
 如果你的 Razer 笔记本尚未列出，请在 OpenBlade 中选择**协助添加支持**。
 保存设备身份报告，然后按照

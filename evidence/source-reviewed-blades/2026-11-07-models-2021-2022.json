@@ -1,0 +1,2180 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-11-07",
+  "baseCoreRevision": "d3a811d0edaecb7a8d5626432c48570a2874368a",
+  "supportPolicy": "Official source-reviewed support; physical validation remains separately Pending. Each feature is admitted only for its exact host and HID profile.",
+  "sourceHandling": "Static vendor sources, updater metadata, INI files and extracted firmware images were inspected as inert data. Vendor code, updaters, drivers and firmware were never executed. Only sanitized metadata and short byte-indexed excerpts are committed.",
+  "runtimeCapabilityCounts": {
+    "addedProfiles": 4,
+    "totalModelCatalogProfiles": 15,
+    "sourceReviewedProfiles": 13,
+    "physicallyValidatedProfiles": 2,
+    "newProfilesWithCustomCpuBoost": 4,
+    "newProfilesWithSilent": 3,
+    "newProfilesWithBalancedDc": 3,
+    "newProfilesWithChargeLimiter": 3,
+    "newProfilesWithMaximumFans": 0,
+    "newProfilesWithManualFanWrites": 0
+  },
+  "models": [
+    {
+      "modelNumber": "RZ09-0370",
+      "productName": "Blade 14 - RZ09-0370",
+      "manufacturer": "Razer",
+      "modelYear": 2021,
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "0270"
+      },
+      "vendorProductId": 624,
+      "supportBasis": "SourceReviewed",
+      "physicalValidation": "Pending",
+      "identityEvidence": {
+        "dmiPrimary": {
+          "url": "https://raw.githubusercontent.com/linuxhw/DMI/57b21bc6fdd863380e99c228c22aafcd1509528c/Notebook/Razer/Blade/Blade%2014%20-%20RZ09-0370/09DDA5FFE914",
+          "bytes": 14402,
+          "sha256": "AA5489301CAEAE333940ACD8DF50ABBD2D5DC039D07888AD4F1B9273C4A93C69",
+          "gitBlobSha": "b4ff8e0e32bc40f70d5b8051ba6747b3d3487554",
+          "excerpt": "System Information\n\tManufacturer: Razer\n\tProduct Name: Blade 14 - RZ09-0370\n\tVersion: 1.04"
+        },
+        "masterGuide": {
+          "file": "master-guide.pdf",
+          "url": "https://dl.razerzone.com/master-guides/RazerSynapse3/Blade14-00000624-en.pdf",
+          "bytes": 3057548,
+          "sha256": "85321057CAE079E457484E025DFE8EDF20DDFC039F05CB32560F2E8A48374813"
+        },
+        "guideModelPage": 2,
+        "scope": "NVIDIA GPU model RZ09-0370 only; guide also names separate AMD GPU model RZ09-0391, which is not admitted."
+      },
+      "vendorBuild": "2609301503",
+      "vendorRevision": "8d2f548809c8197100d215af8ac39b28918281bc",
+      "transport": {
+        "reportId": 0,
+        "claimInterface": 2,
+        "minimumTransactionId": 1,
+        "maximumTransactionId": 31,
+        "protocolReportBytes": 90,
+        "nativeFeatureReportBytes": 91
+      },
+      "presets": {
+        "Balanced": 0,
+        "Custom": 4
+      },
+      "customCpuLevels": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "customGpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "maximumFans": false,
+      "thermalQueryProfile": 1,
+      "customQueryProfile": 1,
+      "chargeLimits": [],
+      "chargeOffValue": null,
+      "automaticFanHandback": "Current-preset 0D/02 fan flag 0 with independent readback. No target writes or forced Balanced intermediate.",
+      "manualBaseline": "Performance mutations require an independently representable/restorable baseline. Existing manual fan mode blocks them until explicit Automatic handback is confirmed; manual target restoration is not admitted.",
+      "powerAdmission": "Initial runtime admission is full-power AC only for Balanced and Custom. The source shows Balanced in its battery UI, but does not select the separately supported raw6 DC contract; this batch admits no battery thermal writes.",
+      "chargeFirmwareReadiness": "No exact-model battery limiter selector; no charge command is admitted.",
+      "firmwareAdmission": "No ordinary thermal-control BIOS/EC/MCU floor is established by these reviewed command paths. Firmware image names and updater fields do not establish HID semantics.",
+      "observedOnly": [
+        "Vendor fixed fan ranges and mode-specific dynamic range reads; no fixed-target or fan-curve mutation is admitted.",
+        "Per-model resource declarations identify original packages only; they grant no runtime API or setup authority."
+      ],
+      "notAdmitted": [
+        "Turbo",
+        "Maximum Fans",
+        "Manual fan writes",
+        "Fan curves",
+        "HyperBoost",
+        "Lighting writes",
+        "Temporary full charge",
+        "Separate DC CPU Boost toggle",
+        "Native-brightness driver integration",
+        "Razer driver SnapTap/Fn setup",
+        "THX runtime/setup",
+        "Silent",
+        "Battery thermal writes",
+        "Battery charge limiter"
+      ],
+      "sources": [
+        {
+          "file": "6737.6b47e5cb8059a1bdacfb.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/6737.6b47e5cb8059a1bdacfb.js",
+          "bytes": 2353859,
+          "sha256": "C36EFB8BD1F15DC65F8C235895EFA5F20A59D71D45BC6D22BF92D88C9C8D79F7"
+        },
+        {
+          "file": "index.html",
+          "url": "https://apps.razer.com/synapse/products/624/mw/",
+          "bytes": 4389,
+          "sha256": "EAC1B73C326F2A0038E53E29F85AAAB98BE613A04574D95B9DE61C99AAAAE863"
+        },
+        {
+          "file": "main.c661207b6abe5eb319cb.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/main.c661207b6abe5eb319cb.js",
+          "bytes": 162842,
+          "sha256": "50DFF3488639F22BD3890596A047378D14CB52334A49EDDCEDDAFC7EAF0669C2"
+        },
+        {
+          "file": "manifest.json",
+          "url": "https://apps.razer.com/synapse/products/624/mw/manifest.json",
+          "bytes": 4687,
+          "sha256": "FEEFA11BEF5C1476FE6B15E49B709C449767BDA26CB64821AEFB68B82ADDD388"
+        },
+        {
+          "file": "master-guide.pdf",
+          "url": "https://dl.razerzone.com/master-guides/RazerSynapse3/Blade14-00000624-en.pdf",
+          "bytes": 3057548,
+          "sha256": "85321057CAE079E457484E025DFE8EDF20DDFC039F05CB32560F2E8A48374813"
+        },
+        {
+          "file": "rzDevice25.1672779ed3e58b9415ca.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25.1672779ed3e58b9415ca.js",
+          "bytes": 279028,
+          "sha256": "F696504C78559A2E04E503F8CF7B069D87F1298BFB767677912CD649EEB49456"
+        },
+        {
+          "file": "rzDevice25LedMatrix.41a9a87e480e7e8e752a.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrix.41a9a87e480e7e8e752a.js",
+          "bytes": 6461,
+          "sha256": "9BBA49FAE78CF93BB397A4EE76BDD147234C83DA5BFE63FF412A25E2143125CE"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade.c61a8d4fcda5f10441ea.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBlade.c61a8d4fcda5f10441ea.js",
+          "bytes": 13099,
+          "sha256": "9293920B3D6B4065F4539972C8A69E87FF3C79354309F6BA214FA4D8BD430CAF"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade2.58b0677575a642f3900f.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBlade2.58b0677575a642f3900f.js",
+          "bytes": 20253,
+          "sha256": "1D0A0B7FDB95DE34A8D14BB9F3E8C20B3D84E9F68A5D8470BEA5FA8621CEE958"
+        },
+        {
+          "file": "rzDevice25LedMatrixBladeWattage.42a7744269064ea241c2.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBladeWattage.42a7744269064ea241c2.js",
+          "bytes": 2923,
+          "sha256": "A83F5FE396DABF9D5FB1AA1DAF77CC65E0927BE2D23EDDD4CC3A19633AC002F5"
+        },
+        {
+          "file": "rzHardwareEventsProtocol25Parser.5293a6eb1a8847934c92.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzHardwareEventsProtocol25Parser.5293a6eb1a8847934c92.js",
+          "bytes": 9215,
+          "sha256": "B55B72C92D01DAC38E8631FE00753251CC264884F3543EC01B71642F2E9315DF"
+        },
+        {
+          "file": "ui-index.html",
+          "url": "https://apps.razer.com/synapse/products/624/ui/",
+          "bytes": 4922,
+          "sha256": "2D9F341922B16FBE9D86BFAA5698C42184263440EF42FA195E1E11F42BB6ABB7"
+        },
+        {
+          "file": "ui-main.2709843a.js",
+          "url": "https://apps.razer.com/synapse/products/624/ui/static/js/main.2709843a.js",
+          "bytes": 6418878,
+          "sha256": "48359BAFE13C56156017A81A72E82CEDB3F44BAD5A52BB921D4FBE96E1F1A1FE"
+        }
+      ],
+      "excerpts": [
+        {
+          "purpose": "exact model PID, VID and guide link",
+          "byteOffset": 142526,
+          "bytes": 310,
+          "quote": "productId:624,vendorId:5426,deviceName:_,backlightStep:6.25,masterGuideURL:\"https://dl.razer.com/master-guides/RazerSynapse3/Blade14-00000624-\",supportPage:\"https://mysupport.razer.com/app/answers/detail/a_id/5381/\",WAVE_DIRECTION:\"LeftRight\",category:\"SYSTEM\",claimInterface:2},d=[{id:1,mode:i.mNQ.Balanced_Mo",
+          "sourceFile": "main.c661207b6abe5eb319cb.js"
+        },
+        {
+          "purpose": "claimed control interface",
+          "byteOffset": 142762,
+          "bytes": 85,
+          "quote": "Right\",category:\"SYSTEM\",claimInterface:2},d=[{id:1,mode:i.mNQ.Balanced_Mode,title:n.",
+          "sourceFile": "main.c661207b6abe5eb319cb.js"
+        },
+        {
+          "purpose": "model-bound feature selection",
+          "byteOffset": 150935,
+          "bytes": 370,
+          "quote": "a.A.useFeature(\"deviceUI\",\"config\",{brightness:{hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0}}),a.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBladeWattage\"),a.A.injectToDependencyList(\"runtimeCache\",c.A),a.A.injectData(\"initMemoryStorageCache\",(function(){E.jf.taskRunnerBrightnessMemor",
+          "sourceFile": "main.c661207b6abe5eb319cb.js"
+        },
+        {
+          "purpose": "exact Balanced preset selector",
+          "byteOffset": 142804,
+          "bytes": 100,
+          "quote": ",d=[{id:1,mode:i.mNQ.Balanced_Mode,title:n.Y_1,content:n.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.0",
+          "sourceFile": "main.c661207b6abe5eb319cb.js"
+        },
+        {
+          "purpose": "exact Custom preset selector",
+          "byteOffset": 143363,
+          "bytes": 100,
+          "quote": "00},{id:2,mode:i.mNQ.Custom_Mode,title:n.DBO,content:n.lJc,icon:\"M22,4A18,18,0,1,0,40,22,18.021,18.0",
+          "sourceFile": "main.c661207b6abe5eb319cb.js"
+        },
+        {
+          "purpose": "raw thermal preset bytes and fan role IDs",
+          "byteOffset": 874543,
+          "bytes": 540,
+          "quote": "Balanced_Mode:0,Gaming_Mode:1,Productivity_Creator_Mode:2,BatterySaver_Ultrabook_LowPowerMode:3,Custom_Mode:4,Silent_Mode:5,Normal_Mode:6,Performance_Mode:7};Object.freeze(n),Object.freeze({Auto:0,Manual:1,ForceAuto:2});const o={NotApplicable:0,CPU_Fan:1,GPU_Fan:2,BAT_Fan1:3,BAT_Fan2:4,Fan1:5,Fan2:6,Fan3:7,Fan4:8,Fan5:9,Fan6:10,Fan7:11,Fan8:12};Object.freeze(o),Object.freeze(o);const r={Low:0,Medium:1,High:2,Extreme:3};Object.freeze(r),Object.freeze({Microsoft_Hybrid:0,Discrete_MUX:1});const a={UHD:0,FHD:1};Object.freeze(a);const s={D",
+          "sourceFile": "6737.6b47e5cb8059a1bdacfb.js"
+        },
+        {
+          "purpose": "typed profile1 and RPM units",
+          "byteOffset": 2265805,
+          "bytes": 460,
+          "quote": "static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434:(e,t,i)=>{\"use strict\";i.d(t,{L:()=>n});const n=e=>{const t=e.outputType;return\"object\"==typeof e[t]&&0===Obj",
+          "sourceFile": "6737.6b47e5cb8059a1bdacfb.js"
+        },
+        {
+          "purpose": "DC raw6 and AC raw0 constants",
+          "byteOffset": 2269748,
+          "bytes": 50,
+          "quote": "q=6,X=0,Z=1,ee=0;var te;let ie;!function(e){e[e.no",
+          "sourceFile": "6737.6b47e5cb8059a1bdacfb.js"
+        },
+        {
+          "purpose": "power-aware Balanced dispatch",
+          "byteOffset": 1821712,
+          "bytes": 420,
+          "quote": "if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,",
+          "sourceFile": "6737.6b47e5cb8059a1bdacfb.js"
+        },
+        {
+          "purpose": "actual exact-model caller enables Custom CPU Boost",
+          "byteOffset": 6213413,
+          "bytes": 210,
+          "quote": "n:(0,n_.jsx)(jR,{supportedPerformanceModes:E,isCPUBoost:!0})}),(0,n_.jsxs)(Ds,{direction:\"right\",children:[(0,n_.jsx)(al,{}),(0,n_.jsx)(sl,{})]})]})})}}const Tl=(0,B.connect)(e=>({selectedProfile:e.profileReduc",
+          "sourceFile": "ui-main.2709843a.js"
+        },
+        {
+          "purpose": "Custom CPU Boost level3 and bounded GPU defaults",
+          "byteOffset": 6191150,
+          "bytes": 470,
+          "quote": "value:1},{key:\"linear\",name:we.jT4,value:2}],KR=[{key:\"low\",name:we.luF,value:0},{key:\"medium\",name:we.wbE,value:1},{key:\"high\",name:we.jT4,value:2},{key:\"boost\",name:we.YyC,value:3}],wR=[{key:\"low\",name:we.luF,value:0},{key:\"medium\",name:we.wbE,value:1},{key:\"high\",name:we.jT4,value:2},{key:\"max\",name:we.ZuR,value:3}],zR=[{key:\"low\",name:we.luF,value:0},{key:\"medium\",name:we.wbE,value:1},{key:\"linear\",name:we.jT4,value:2}],kR=[{key:\"low\",name:we.luF,value:0},{key:\"",
+          "sourceFile": "ui-main.2709843a.js"
+        },
+        {
+          "purpose": "CPU/GPU option list selection",
+          "byteOffset": 6195073,
+          "bytes": 150,
+          "quote": "const se=(0,g.useMemo)(()=>U?wR:m?WR:KR,[m]),re=(0,g.useMemo)(()=>h?kR:zR);(0,g.useEffect)(()=>{J(null!==n&&void 0!==n?n:Q)},[n]),(0,g.useEffect)(()=>",
+          "sourceFile": "ui-main.2709843a.js"
+        },
+        {
+          "purpose": "firmware Custom CPU/GPU direct UI dispatch",
+          "byteOffset": 6196272,
+          "bytes": 180,
+          "quote": "),v.setMaxFanSpeedModeEnabled(!Ee)},Se=e=>{x(e),v.setAdvFanMode(e)},Re=e=>{j(e),v.setAdvFanModeWattage(e)},le=(e,E=!1)=>{E||J(e)},Ne=e=>{v.setCpuPowerLimit(e)},de=({currentCpuPower",
+          "sourceFile": "ui-main.2709843a.js"
+        },
+        {
+          "purpose": "thermal tuples0D/80,81,01,82,02",
+          "byteOffset": 65518,
+          "bytes": 400,
+          "quote": "st o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new ",
+          "sourceFile": "rzDevice25.1672779ed3e58b9415ca.js"
+        },
+        {
+          "purpose": "advanced0D/87 getter and0D/07 setter",
+          "byteOffset": 66137,
+          "bytes": 420,
+          "quote": "Limit\"),N=new Uint8Array([3,13,135]),C=new Uint8Array([3,13,7]),w=\"Get Thermal Advance Fan Mode\",g=\"Set Thermal Advance Fan Mode\",E=new Uint8Array([3,13,135]),D=new Uint8Array([3,13,7]),_=\"Get Thermal Advance Fan Mode Wattage\",R=\"Set Thermal Advance Fan Mode Wattage\",p=new Uint8Array([3,13,136]),T=\"Get Thermal Fan Current Speed\",L=new Uint8Array([2,13,137]),P=new Uint8Array([2,13,9]),O=\"Get VGA Configure Setting\",V=\"",
+          "sourceFile": "rzDevice25.1672779ed3e58b9415ca.js"
+        },
+        {
+          "purpose": "fan-mode response includes class,zone,mode andmanualflag",
+          "byteOffset": 55968,
+          "bytes": 190,
+          "quote": "atus===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],fanMode:t.data[2],fanModeEnum:a.np(r.IH,t.data[2]),fanModeValue:t.data[3]})},h=(t,n,e)=>s(",
+          "sourceFile": "rzDevice25.1672779ed3e58b9415ca.js"
+        },
+        {
+          "purpose": "CPU level setter direct payload",
+          "byteOffset": 59840,
+          "bytes": 310,
+          "quote": "T_VALUE,commandClass:i.iG[1],commandId:i.iG[2],commandDesc:i.OO});const a=new Uint8Array(i.iG[0]);a[0]=n,a[1]=e,a[2]=r;const s=yield t.sendCommand(i.iG,i.OO,a);return console.log(`setThermalAdvanceFanMode classId:${n}, thermalId:${e}, fanMode:${r}`),U(s),s})),w=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeRet",
+          "sourceFile": "rzDevice25.1672779ed3e58b9415ca.js"
+        },
+        {
+          "purpose": "GPU level getter and setter packed tuple",
+          "byteOffset": 60140,
+          "bytes": 440,
+          "quote": "ketSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],wattage:t.data[2]})},g=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.K2[1],commandId:i.K2[2],commandDesc:i.ug});const r=new Uint8Array(i.K2[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.K2,i.ug,r);return w(a),a})),E=(t,n,e,r)=>s(void 0,void 0,void 0,(functio",
+          "sourceFile": "rzDevice25.1672779ed3e58b9415ca.js"
+        },
+        {
+          "purpose": "report geometry",
+          "byteOffset": 111579,
+          "bytes": 170,
+          "quote": "this.reportLength=91,this.ignoreSetDeviceModeTimeoutError=!1,this.reportId=null!==(l=null==u?void 0:u.reportId)&&void 0!==l?l:0,this.restoreFileSuffix=\"\",this.isElectron)",
+          "sourceFile": "rzDevice25.1672779ed3e58b9415ca.js"
+        },
+        {
+          "purpose": "transaction rollover and90-byte report encoder",
+          "byteOffset": 112348,
+          "bytes": 390,
+          "quote": "_getTransactionId(){return 31===this.transactionId&&(this.transactionId=0),this.transactionId++}_createDataSend(t,n,e){const o=new Uint8Array(90),i=this._getTransactionId();o[0]=0,o[1]=i,o[2]=0,o[3]=0,o[4]=0,o[5]=t[0],o[6]=t[1],o[7]=t[2],void 0!==e&&\"\"!==e&&-1!==e&&!isNaN(e)&&e>0&&(o[5]=e);for(let t=0;t<n.length&&t<o[5];t++)o[t+8]=n[t];const r=this._calculateChecksum(o);return o[88]=r,o}",
+          "sourceFile": "rzDevice25.1672779ed3e58b9415ca.js"
+        },
+        {
+          "purpose": "Exact model Balanced selector",
+          "sourceFile": "main.c661207b6abe5eb319cb.js",
+          "byteOffset": 142814,
+          "bytes": 100,
+          "quote": "mode:i.mNQ.Balanced_Mode,title:n.Y_1,content:n.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,2"
+        },
+        {
+          "purpose": "Exact model Custom selector",
+          "sourceFile": "main.c661207b6abe5eb319cb.js",
+          "byteOffset": 143373,
+          "bytes": 100,
+          "quote": "mode:i.mNQ.Custom_Mode,title:n.DBO,content:n.lJc,icon:\"M22,4A18,18,0,1,0,40,22,18.021,18.021,0,0,0,2"
+        },
+        {
+          "purpose": "isCPUBoost maps to component alias o",
+          "sourceFile": "ui-main.2709843a.js",
+          "byteOffset": 6193590,
+          "bytes": 190,
+          "quote": "isCPUBoost:o,supportsShortcut:s,lang:r,isLowPower:T,customMode:I,specificCustomModeValue:O,supportMaxFanSpeedModeEnabled:A,supportCpuOverclocking:S,supportGpuOverclocking:R,supportCpuVoltage"
+        },
+        {
+          "purpose": "o selects CPU Boost option rendering",
+          "sourceFile": "ui-main.2709843a.js",
+          "byteOffset": 6201088,
+          "bytes": 330,
+          "quote": ":()=>Re(e.value),active:X===e.value},e.key))})]})]}):o?(0,n_.jsxs)(\"div\",{className:\"header_widget\",children:[(0,n_.jsxs)(\"div\",{className:\"performance-custom-boost \"+(d?\"disabled\":\"\"),children:[(0,n_.jsx)(\"div\",{className:\"title mr-10\",children:\"CPU\"}),(0,n_.jsx)(\"div\",{className:\"group-button boost-cpu\",children:D?xR.map(e=>(0"
+        }
+      ],
+      "resourceDeclarations": [
+        {
+          "resourceName": "NormalDriver_PID0270Drv",
+          "resourceVersion": "0.1.2.0",
+          "url": "https://app-assets.razer.com/files/synapse/devices/624/1.0.0.0/PID0270Drv_v0.1.2.0.exe",
+          "bytes": 2840320,
+          "sha256": "4B4C7F01EE6366024EF55E02669685478ED9B5651D1B7B194EFF428066561E8D"
+        },
+        {
+          "resourceName": "BladeDLL",
+          "resourceVersion": "1.0.10.1",
+          "url": "https://app-assets.razer.com/files/synapse/devices/common/blades/BladeNative_v1.0.10.1.dll",
+          "bytes": 353032,
+          "sha256": "87E07BF624706203EEA9925FC3EC1787AB7D097C3FC4F55009176E5B676077F1"
+        }
+      ],
+      "customCpuBoostEvidence": "The exact model caller passes isCPUBoost true. The component aliases it to o and conditionally renders the se option list; its default list contains Boost value 3. The setter uses 0D/07 with profile 1 and CPU zone 1. GPU remains 0..2."
+    },
+    {
+      "modelNumber": "RZ09-0427",
+      "productName": "Blade 14 (2022) - RZ09-0427",
+      "manufacturer": "Razer",
+      "modelYear": 2022,
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "028C"
+      },
+      "vendorProductId": 652,
+      "supportBasis": "SourceReviewed",
+      "physicalValidation": "Pending",
+      "identityEvidence": {
+        "dmiPrimary": {
+          "url": "https://raw.githubusercontent.com/linuxhw/DMI/57b21bc6fdd863380e99c228c22aafcd1509528c/Notebook/Razer/Blade/Blade%2014%20-%20RZ09-0427/18CBE95E6C70",
+          "bytes": 13495,
+          "sha256": "F1A528B8D6429DB7DF584BAC91397D02FC96301665660671AF1E9577531A2BB1",
+          "gitBlobSha": "6044231660186db89a3c982e8ed13d5e047e98bf",
+          "excerpt": "System Information\n\tManufacturer: Razer\n\tProduct Name: Blade 14 (2022) - RZ09-0427\n\tVersion: 8.04"
+        },
+        "masterGuide": {
+          "file": "master-guide.pdf",
+          "url": "https://dl.razerzone.com/master-guides/RazerSynapse3/Blade14-00000652-en.pdf",
+          "bytes": 3217402,
+          "sha256": "D9FDCBABDA849628110109052BEC7CC63FA81F00DA68F15E3E59A6D04DFF4CE6"
+        },
+        "guideModelPage": 2,
+        "scope": "Exact RZ09 model in the official guide; DMI product name is independently established by primary records."
+      },
+      "vendorBuild": "2609301510",
+      "vendorRevision": "b96e3d33fec8d5ff05fc169d209db6ec445f7b5b",
+      "transport": {
+        "reportId": 0,
+        "claimInterface": 2,
+        "minimumTransactionId": 1,
+        "maximumTransactionId": 31,
+        "protocolReportBytes": 90,
+        "nativeFeatureReportBytes": 91
+      },
+      "presets": {
+        "Balanced": 0,
+        "Silent": 5,
+        "Custom": 4,
+        "BatteryBalanced": 6
+      },
+      "customCpuLevels": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "customGpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "maximumFans": false,
+      "thermalQueryProfile": 1,
+      "customQueryProfile": 1,
+      "chargeLimits": [
+        50,
+        55,
+        60,
+        65,
+        70,
+        75,
+        80,
+        100
+      ],
+      "chargeOffValue": 100,
+      "automaticFanHandback": "Current-preset 0D/02 fan flag 0 with independent readback. No target writes or forced Balanced intermediate.",
+      "manualBaseline": "Performance mutations require an independently representable/restorable baseline. Existing manual fan mode blocks them until explicit Automatic handback is confirmed; manual target restoration is not admitted.",
+      "powerAdmission": "Silent and Custom require full-power AC. Balanced uses raw0 on full-power AC and raw6 on confirmed battery.",
+      "chargeFirmwareReadiness": "Install exact-model firmware that provides Battery Health Optimizer. Reviewed update versions below are provenance, not numeric build/hash allowlists. An independent fresh 07/92 GET must establish a valid limiter state before each write, with independent post-write confirmation.",
+      "firmwareAdmission": "No ordinary thermal-control BIOS/EC/MCU floor is established by these reviewed command paths. Firmware image names and updater fields do not establish HID semantics.",
+      "observedOnly": [
+        "Vendor fixed fan ranges and mode-specific dynamic range reads; no fixed-target or fan-curve mutation is admitted.",
+        "Per-model resource declarations identify original packages only; they grant no runtime API or setup authority."
+      ],
+      "notAdmitted": [
+        "Turbo",
+        "Maximum Fans",
+        "Manual fan writes",
+        "Fan curves",
+        "HyperBoost",
+        "Lighting writes",
+        "Temporary full charge",
+        "Separate DC CPU Boost toggle",
+        "Native-brightness driver integration",
+        "Razer driver SnapTap/Fn setup",
+        "THX runtime/setup"
+      ],
+      "sources": [
+        {
+          "file": "6737.4b526d5a88f50676de59.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/6737.4b526d5a88f50676de59.js",
+          "bytes": 2353694,
+          "sha256": "B1A181C2F4A95C1871A5AEEDC5F820DBC991A61A067CB060BAC9ABEBF04EE488"
+        },
+        {
+          "file": "index.html",
+          "url": "https://apps.razer.com/synapse/products/652/mw/",
+          "bytes": 4389,
+          "sha256": "DDD117DF1DF051518EFB69EFFFA56ABC35205A91CB5745764072E2323F512A4A"
+        },
+        {
+          "file": "main.825dec01b9aefa0b84ac.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/main.825dec01b9aefa0b84ac.js",
+          "bytes": 165986,
+          "sha256": "77AD6A8F51278C2950D07AAB3CA4E98EC67001527067F4118F50AF00954EABA1"
+        },
+        {
+          "file": "manifest.json",
+          "url": "https://apps.razer.com/synapse/products/652/mw/manifest.json",
+          "bytes": 7872,
+          "sha256": "5CBDD892D2446FA194CA6CADB560F3C289B706B19636F1E84F17391A4E8EC379"
+        },
+        {
+          "file": "master-guide.pdf",
+          "url": "https://dl.razerzone.com/master-guides/RazerSynapse3/Blade14-00000652-en.pdf",
+          "bytes": 3217402,
+          "sha256": "D9FDCBABDA849628110109052BEC7CC63FA81F00DA68F15E3E59A6D04DFF4CE6"
+        },
+        {
+          "file": "rzDevice25.ceef38d32121535173d9.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25.ceef38d32121535173d9.js",
+          "bytes": 279026,
+          "sha256": "D94B40BB4B1AEDD17C0028A625C28D00D8BC14B26361CBF25133A3CE4E5B0C67"
+        },
+        {
+          "file": "rzDevice25LedMatrix.b6323801c081b7493b2b.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrix.b6323801c081b7493b2b.js",
+          "bytes": 6459,
+          "sha256": "9D59660DEE9014DDFFC0EDEE828B402F906320232C37559DFFEA1B5DB1947519"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade.af4e2a8f0926c1f15907.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBlade.af4e2a8f0926c1f15907.js",
+          "bytes": 13097,
+          "sha256": "DD844382088CD971CD0D831D06221F9F05230083503271BC52C1C5BD9F5BE626"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade2.032e7086bcdb3c4d6e9d.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBlade2.032e7086bcdb3c4d6e9d.js",
+          "bytes": 20251,
+          "sha256": "96F6D3F024A5217FDCF7C6604D3EDC324CA1C7D0D0DBCF390851CD3B2AC45CC2"
+        },
+        {
+          "file": "rzDevice25LedMatrixBladeWattage.2c379fa5a66007f7b183.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBladeWattage.2c379fa5a66007f7b183.js",
+          "bytes": 2921,
+          "sha256": "9B07B08CEFCAE9288DCF37BBD65D28B4DEBFCB92F14FE7BC08172F1BD7634447"
+        },
+        {
+          "file": "rzHardwareEventsProtocol25Parser.f78ade0dd98dd1dc98f8.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzHardwareEventsProtocol25Parser.f78ade0dd98dd1dc98f8.js",
+          "bytes": 9213,
+          "sha256": "DCA90D14141580D90A0DA30645BCEADAFE1FB1ED366A004A3855E773885D4345"
+        },
+        {
+          "file": "ui-index.html",
+          "url": "https://apps.razer.com/synapse/products/652/ui/",
+          "bytes": 4922,
+          "sha256": "DFC9910523F103D87B7CCAF40E4F47EF6F48BB70F437B5B5A314C853D19151E6"
+        },
+        {
+          "file": "ui-main.ca1e43bb.js",
+          "url": "https://apps.razer.com/synapse/products/652/ui/static/js/main.ca1e43bb.js",
+          "bytes": 6517701,
+          "sha256": "9C640FF7F3359DFB8F8D7AA005DB01336F5C05A4EFB25C219550BA6D05A6C407"
+        }
+      ],
+      "excerpts": [
+        {
+          "purpose": "exact model PID, VID and guide link",
+          "byteOffset": 142738,
+          "bytes": 310,
+          "quote": "productId:652,vendorId:5426,deviceName:u,backlightStep:6.25,masterGuideURL:\"https://dl.razer.com/master-guides/RazerSynapse3/Blade14-00000652-\",supportPage:\"https://mysupport.razer.com/app/answers/detail/a_id/5381/\",WAVE_DIRECTION:\"LeftRight\",category:\"SYSTEM\",claimInterface:2},p=[{id:1,mode:i.mNQ.Balanced_Mo",
+          "sourceFile": "main.825dec01b9aefa0b84ac.js"
+        },
+        {
+          "purpose": "claimed control interface",
+          "byteOffset": 142974,
+          "bytes": 85,
+          "quote": "Right\",category:\"SYSTEM\",claimInterface:2},p=[{id:1,mode:i.mNQ.Balanced_Mode,title:n.",
+          "sourceFile": "main.825dec01b9aefa0b84ac.js"
+        },
+        {
+          "purpose": "model-bound feature selection",
+          "byteOffset": 156507,
+          "bytes": 420,
+          "quote": "d={brightness:{hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0,hasCpuBoostEnabled:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0,hasBatteryOptimizer:!0}};var p,f,A,S,T;r.sentry.dsn&&i.init(Object.assign(Object.assign({},r.sentry.getSentryInitOptions(\"js\")),{integrations:[new s.BrowserTracing],tracesSampleRate:null===(p=r.sentry.tracesSampleRate)||void 0===p?void 0:p.js})),f=void 0,A=v",
+          "sourceFile": "main.825dec01b9aefa0b84ac.js"
+        },
+        {
+          "purpose": "explicit Balanced DC injection",
+          "byteOffset": 157076,
+          "bytes": 170,
+          "quote": "ont-weight:bold\",a.A);try{a.A.useFeature(\"isBalancedDCSupported\",\"yes\"),a.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBlade\"),a.A.useFeature(\"deviceUI\",\"config\",d),a.",
+          "sourceFile": "main.825dec01b9aefa0b84ac.js"
+        },
+        {
+          "purpose": "exact Balanced preset selector",
+          "byteOffset": 143016,
+          "bytes": 100,
+          "quote": ",p=[{id:1,mode:i.mNQ.Balanced_Mode,title:n.Y_1,content:n.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.0",
+          "sourceFile": "main.825dec01b9aefa0b84ac.js"
+        },
+        {
+          "purpose": "exact Silent preset selector",
+          "byteOffset": 143575,
+          "bytes": 100,
+          "quote": "00},{id:2,mode:i.mNQ.Silent_Mode,title:n.Blt,content:n.REQ,icon:\"M20,2A18,18,0,1,0,38,20,18,18,0,0,0",
+          "sourceFile": "main.825dec01b9aefa0b84ac.js"
+        },
+        {
+          "purpose": "exact Custom preset selector",
+          "byteOffset": 144896,
+          "bytes": 100,
+          "quote": "00},{id:3,mode:i.mNQ.Custom_Mode,title:n.DBO,content:n.lJc,icon:\"M22,4A18,18,0,1,0,40,22,18.021,18.0",
+          "sourceFile": "main.825dec01b9aefa0b84ac.js"
+        },
+        {
+          "purpose": "raw thermal preset bytes and fan role IDs",
+          "byteOffset": 874400,
+          "bytes": 540,
+          "quote": "Balanced_Mode:0,Gaming_Mode:1,Productivity_Creator_Mode:2,BatterySaver_Ultrabook_LowPowerMode:3,Custom_Mode:4,Silent_Mode:5,Normal_Mode:6,Performance_Mode:7};Object.freeze(n),Object.freeze({Auto:0,Manual:1,ForceAuto:2});const o={NotApplicable:0,CPU_Fan:1,GPU_Fan:2,BAT_Fan1:3,BAT_Fan2:4,Fan1:5,Fan2:6,Fan3:7,Fan4:8,Fan5:9,Fan6:10,Fan7:11,Fan8:12};Object.freeze(o),Object.freeze(o);const r={Low:0,Medium:1,High:2,Extreme:3};Object.freeze(r),Object.freeze({Microsoft_Hybrid:0,Discrete_MUX:1});const a={UHD:0,FHD:1};Object.freeze(a);const s={D",
+          "sourceFile": "6737.4b526d5a88f50676de59.js"
+        },
+        {
+          "purpose": "typed profile1 and RPM units",
+          "byteOffset": 2265640,
+          "bytes": 460,
+          "quote": "static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434:(e,t,i)=>{\"use strict\";i.d(t,{L:()=>n});const n=e=>{const t=e.outputType;return\"object\"==typeof e[t]&&0===Obj",
+          "sourceFile": "6737.4b526d5a88f50676de59.js"
+        },
+        {
+          "purpose": "DC raw6 and AC raw0 constants",
+          "byteOffset": 2269583,
+          "bytes": 50,
+          "quote": "q=6,X=0,Z=1,ee=0;var te;let ie;!function(e){e[e.no",
+          "sourceFile": "6737.4b526d5a88f50676de59.js"
+        },
+        {
+          "purpose": "power-aware Balanced dispatch",
+          "byteOffset": 1821547,
+          "bytes": 420,
+          "quote": "if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,",
+          "sourceFile": "6737.4b526d5a88f50676de59.js"
+        },
+        {
+          "purpose": "actual exact-model caller enables Custom CPU Boost",
+          "byteOffset": 6309420,
+          "bytes": 210,
+          "quote": "n:(0,s_.jsx)(qR,{supportedPerformanceModes:E,isCPUBoost:!0,supportCpuBoostEnabled:!0,supportsShortcut:!0})}),(0,s_.jsxs)(ps,{direction:\"right\",children:[!1===this.props.isDDSSku&&1===this.props.supportedFlag?(0",
+          "sourceFile": "ui-main.ca1e43bb.js"
+        },
+        {
+          "purpose": "Custom CPU Boost level3 and bounded GPU defaults",
+          "byteOffset": 6280078,
+          "bytes": 470,
+          "quote": "value:1},{key:\"linear\",name:je.jT4,value:2}],zR=[{key:\"low\",name:je.luF,value:0},{key:\"medium\",name:je.wbE,value:1},{key:\"high\",name:je.jT4,value:2},{key:\"boost\",name:je.YyC,value:3}],kR=[{key:\"low\",name:je.luF,value:0},{key:\"medium\",name:je.wbE,value:1},{key:\"high\",name:je.jT4,value:2},{key:\"max\",name:je.ZuR,value:3}],xR=[{key:\"low\",name:je.luF,value:0},{key:\"medium\",name:je.wbE,value:1},{key:\"linear\",name:je.jT4,value:2}],XR=[{key:\"low\",name:je.luF,value:0},{key:\"",
+          "sourceFile": "ui-main.ca1e43bb.js"
+        },
+        {
+          "purpose": "CPU/GPU option list selection",
+          "byteOffset": 6284001,
+          "bytes": 150,
+          "quote": "const se=(0,f.useMemo)(()=>U?kR:m?KR:zR,[m]),re=(0,f.useMemo)(()=>h?XR:xR);(0,f.useEffect)(()=>{J(null!==n&&void 0!==n?n:Q)},[n]),(0,f.useEffect)(()=>",
+          "sourceFile": "ui-main.ca1e43bb.js"
+        },
+        {
+          "purpose": "firmware Custom CPU/GPU direct UI dispatch",
+          "byteOffset": 6285200,
+          "bytes": 180,
+          "quote": "),v.setMaxFanSpeedModeEnabled(!Ee)},Se=e=>{x(e),v.setAdvFanMode(e)},Re=e=>{j(e),v.setAdvFanModeWattage(e)},le=(e,E=!1)=>{E||J(e)},Ne=e=>{v.setCpuPowerLimit(e)},de=({currentCpuPower",
+          "sourceFile": "ui-main.ca1e43bb.js"
+        },
+        {
+          "purpose": "thermal tuples0D/80,81,01,82,02",
+          "byteOffset": 65516,
+          "bytes": 400,
+          "quote": "st o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new ",
+          "sourceFile": "rzDevice25.ceef38d32121535173d9.js"
+        },
+        {
+          "purpose": "advanced0D/87 getter and0D/07 setter",
+          "byteOffset": 66135,
+          "bytes": 420,
+          "quote": "Limit\"),N=new Uint8Array([3,13,135]),C=new Uint8Array([3,13,7]),w=\"Get Thermal Advance Fan Mode\",g=\"Set Thermal Advance Fan Mode\",E=new Uint8Array([3,13,135]),D=new Uint8Array([3,13,7]),_=\"Get Thermal Advance Fan Mode Wattage\",R=\"Set Thermal Advance Fan Mode Wattage\",p=new Uint8Array([3,13,136]),T=\"Get Thermal Fan Current Speed\",L=new Uint8Array([2,13,137]),P=new Uint8Array([2,13,9]),O=\"Get VGA Configure Setting\",V=\"",
+          "sourceFile": "rzDevice25.ceef38d32121535173d9.js"
+        },
+        {
+          "purpose": "fan-mode response includes class,zone,mode andmanualflag",
+          "byteOffset": 55966,
+          "bytes": 190,
+          "quote": "atus===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],fanMode:t.data[2],fanModeEnum:a.np(r.IH,t.data[2]),fanModeValue:t.data[3]})},h=(t,n,e)=>s(",
+          "sourceFile": "rzDevice25.ceef38d32121535173d9.js"
+        },
+        {
+          "purpose": "CPU level setter direct payload",
+          "byteOffset": 59838,
+          "bytes": 310,
+          "quote": "T_VALUE,commandClass:i.iG[1],commandId:i.iG[2],commandDesc:i.OO});const a=new Uint8Array(i.iG[0]);a[0]=n,a[1]=e,a[2]=r;const s=yield t.sendCommand(i.iG,i.OO,a);return console.log(`setThermalAdvanceFanMode classId:${n}, thermalId:${e}, fanMode:${r}`),U(s),s})),w=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeRet",
+          "sourceFile": "rzDevice25.ceef38d32121535173d9.js"
+        },
+        {
+          "purpose": "GPU level getter and setter packed tuple",
+          "byteOffset": 60138,
+          "bytes": 440,
+          "quote": "ketSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],wattage:t.data[2]})},g=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.K2[1],commandId:i.K2[2],commandDesc:i.ug});const r=new Uint8Array(i.K2[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.K2,i.ug,r);return w(a),a})),E=(t,n,e,r)=>s(void 0,void 0,void 0,(functio",
+          "sourceFile": "rzDevice25.ceef38d32121535173d9.js"
+        },
+        {
+          "purpose": "report geometry",
+          "byteOffset": 111577,
+          "bytes": 170,
+          "quote": "this.reportLength=91,this.ignoreSetDeviceModeTimeoutError=!1,this.reportId=null!==(l=null==u?void 0:u.reportId)&&void 0!==l?l:0,this.restoreFileSuffix=\"\",this.isElectron)",
+          "sourceFile": "rzDevice25.ceef38d32121535173d9.js"
+        },
+        {
+          "purpose": "transaction rollover and90-byte report encoder",
+          "byteOffset": 112346,
+          "bytes": 390,
+          "quote": "_getTransactionId(){return 31===this.transactionId&&(this.transactionId=0),this.transactionId++}_createDataSend(t,n,e){const o=new Uint8Array(90),i=this._getTransactionId();o[0]=0,o[1]=i,o[2]=0,o[3]=0,o[4]=0,o[5]=t[0],o[6]=t[1],o[7]=t[2],void 0!==e&&\"\"!==e&&-1!==e&&!isNaN(e)&&e>0&&(o[5]=e);for(let t=0;t<n.length&&t<o[5];t++)o[t+8]=n[t];const r=this._calculateChecksum(o);return o[88]=r,o}",
+          "sourceFile": "rzDevice25.ceef38d32121535173d9.js"
+        },
+        {
+          "purpose": "charge limit UI50..80 step5",
+          "byteOffset": 6314502,
+          "bytes": 150,
+          "quote": "min:50,max:80,step:5,minTag:\"0\",maxTag:\"100\",value:r,active:l,changeValue:e=>{o?(T(e),a.setBatteryOptimizer(o,e,t)):(s(!o),T(e),a.setBatteryOptimizer(",
+          "sourceFile": "ui-main.ca1e43bb.js"
+        },
+        {
+          "purpose": "limiter0x92GETand0x12SETtuples",
+          "byteOffset": 52857,
+          "bytes": 220,
+          "quote": "rray([1,7,17]),new Uint8Array([1,7,146])),B=new Uint8Array([1,7,18]),H=\"Get Battery Charge Limiter Control\",K=\"Set Battery Charge Limiter Control\",J=new Uint8Array([3,7,147]),W=new Uint8Array([3,7,19]),Y=\"Get Smart illum",
+          "sourceFile": "rzDevice25.ceef38d32121535173d9.js"
+        },
+        {
+          "purpose": "separate enablebit7 and thresholdbits0..6",
+          "byteOffset": 49216,
+          "bytes": 170,
+          "quote": "o),o})),G=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={value:127&t.data[0],enabled:(128&t.data[0])>>7})},B=t=>s(void 0,void 0,void 0,(function*()",
+          "sourceFile": "rzDevice25.ceef38d32121535173d9.js"
+        },
+        {
+          "purpose": "setter packedbyte, optional echoed ACK decoder",
+          "byteOffset": 49485,
+          "bytes": 180,
+          "quote": "oid 0,void 0,void 0,(function*(){const o=new Uint8Array(i.lJ[0]);o[0]=n<<7|e;const r=yield t.sendCommand(i.lJ,i.FD,o);return G(r),r})),K=t=>s(void 0,void 0,void 0,(function*(){cons",
+          "sourceFile": "rzDevice25.ceef38d32121535173d9.js"
+        },
+        {
+          "purpose": "SET battery limiter without inherited override authority",
+          "byteOffset": 1910035,
+          "bytes": 280,
+          "quote": "s:{batteryOptimizer:n}};const{isEnabled:r,value:c,batteryChargingOverrideEnabled:A}=n;try{yield o.setBatteryChargeLimiterControl(r,c),Be.hasBatteryChargingOverrideEnabled&&(r&&A?yield(0,d._w)(Fe.oneTimeOverride,Fe.oneTimeOverrideEnabled):yield(0,d._w)(Fe.oneTimeOverride,Fe.disabl",
+          "sourceFile": "6737.4b526d5a88f50676de59.js"
+        },
+        {
+          "purpose": "Exact model Balanced selector",
+          "sourceFile": "main.825dec01b9aefa0b84ac.js",
+          "byteOffset": 143026,
+          "bytes": 100,
+          "quote": "mode:i.mNQ.Balanced_Mode,title:n.Y_1,content:n.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,2"
+        },
+        {
+          "purpose": "Exact model Silent selector",
+          "sourceFile": "main.825dec01b9aefa0b84ac.js",
+          "byteOffset": 143585,
+          "bytes": 100,
+          "quote": "mode:i.mNQ.Silent_Mode,title:n.Blt,content:n.REQ,icon:\"M20,2A18,18,0,1,0,38,20,18,18,0,0,0,20,2m0-2A"
+        },
+        {
+          "purpose": "Exact model Custom selector",
+          "sourceFile": "main.825dec01b9aefa0b84ac.js",
+          "byteOffset": 144906,
+          "bytes": 100,
+          "quote": "mode:i.mNQ.Custom_Mode,title:n.DBO,content:n.lJc,icon:\"M22,4A18,18,0,1,0,40,22,18.021,18.021,0,0,0,2"
+        },
+        {
+          "purpose": "isCPUBoost maps to component alias o",
+          "sourceFile": "ui-main.ca1e43bb.js",
+          "byteOffset": 6282518,
+          "bytes": 190,
+          "quote": "isCPUBoost:o,supportsShortcut:s,lang:r,isLowPower:T,customMode:I,specificCustomModeValue:O,supportMaxFanSpeedModeEnabled:A,supportCpuOverclocking:S,supportGpuOverclocking:R,supportCpuVoltage"
+        },
+        {
+          "purpose": "o selects CPU Boost option rendering",
+          "sourceFile": "ui-main.ca1e43bb.js",
+          "byteOffset": 6290016,
+          "bytes": 330,
+          "quote": ":()=>Re(e.value),active:X===e.value},e.key))})]})]}):o?(0,s_.jsxs)(\"div\",{className:\"header_widget\",children:[(0,s_.jsxs)(\"div\",{className:\"performance-custom-boost \"+(d?\"disabled\":\"\"),children:[(0,s_.jsx)(\"div\",{className:\"title mr-10\",children:\"CPU\"}),(0,s_.jsx)(\"div\",{className:\"group-button boost-cpu\",children:D?jR.map(e=>(0"
+        }
+      ],
+      "resourceDeclarations": [
+        {
+          "resourceName": "NormalDriver_PID028cDrv",
+          "resourceVersion": "0.1.2.0",
+          "url": "https://app-assets.razer.com/files/synapse/devices/652/v1.0.0.0/PID028cDrv_v0.1.2.0.exe",
+          "bytes": 1104824,
+          "sha256": "14882ACDFFF7B627292E3D9A934C4A9175DF6B02567ABCCEAD393CC7808E113D"
+        },
+        {
+          "resourceName": "BladeDLL",
+          "resourceVersion": "1.0.10.1",
+          "url": "https://app-assets.razer.com/files/synapse/devices/common/blades/BladeNative_v1.0.10.1.dll",
+          "bytes": 353032,
+          "sha256": "87E07BF624706203EEA9925FC3EC1787AB7D097C3FC4F55009176E5B676077F1"
+        }
+      ],
+      "customCpuBoostEvidence": "The exact model caller passes isCPUBoost true. The component aliases it to o and conditionally renders the se option list; its default list contains Boost value 3. The setter uses 0D/07 with profile 1 and CPU zone 1. GPU remains 0..2."
+    },
+    {
+      "modelNumber": "RZ09-0421",
+      "productName": "Blade 15 (2022) - RZ09-0421",
+      "manufacturer": "Razer",
+      "modelYear": 2022,
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "028A"
+      },
+      "vendorProductId": 650,
+      "supportBasis": "SourceReviewed",
+      "physicalValidation": "Pending",
+      "identityEvidence": {
+        "dmiPrimary": {
+          "url": "https://raw.githubusercontent.com/linuxhw/DMI/57b21bc6fdd863380e99c228c22aafcd1509528c/Notebook/Razer/Blade/Blade%2015%20-%20RZ09-0421/06F4E5BF0A22",
+          "bytes": 33526,
+          "sha256": "5226556373092BCFA3F67A56F911B2F0268E0790D25FB8B058D70202E70BD1BF",
+          "gitBlobSha": "186e450dc3ca7573007dd88856dec8ed72351be2",
+          "excerpt": "System Information\n\tManufacturer: Razer\n\tProduct Name: Blade 15 (2022) - RZ09-0421\n\tVersion: 8.04"
+        },
+        "masterGuide": {
+          "file": "master-guide.pdf",
+          "url": "https://dl.razerzone.com/master-guides/RazerSynapse3/Blade-00000650-en.pdf",
+          "bytes": 3104297,
+          "sha256": "3FBB86774B8F0079C9159A4A42455BC0CE984B3141203E8637248558A7B54F82"
+        },
+        "guideModelPage": 2,
+        "scope": "Exact RZ09 model in the official guide; DMI product name is independently established by primary records."
+      },
+      "vendorBuild": "2609301510",
+      "vendorRevision": "fb7730a7c31f76cc79534bd9208ec53fe2c3bf2e",
+      "transport": {
+        "reportId": 0,
+        "claimInterface": 2,
+        "minimumTransactionId": 1,
+        "maximumTransactionId": 31,
+        "protocolReportBytes": 90,
+        "nativeFeatureReportBytes": 91
+      },
+      "presets": {
+        "Balanced": 0,
+        "Silent": 5,
+        "Custom": 4,
+        "BatteryBalanced": 6
+      },
+      "customCpuLevels": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "customGpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "maximumFans": false,
+      "thermalQueryProfile": 1,
+      "customQueryProfile": 1,
+      "chargeLimits": [
+        50,
+        55,
+        60,
+        65,
+        70,
+        75,
+        80,
+        100
+      ],
+      "chargeOffValue": 100,
+      "automaticFanHandback": "Current-preset 0D/02 fan flag 0 with independent readback. No target writes or forced Balanced intermediate.",
+      "manualBaseline": "Performance mutations require an independently representable/restorable baseline. Existing manual fan mode blocks them until explicit Automatic handback is confirmed; manual target restoration is not admitted.",
+      "powerAdmission": "Silent and Custom require full-power AC. Balanced uses raw0 on full-power AC and raw6 on confirmed battery.",
+      "chargeFirmwareReadiness": "Install exact-model firmware that provides Battery Health Optimizer. Reviewed update versions below are provenance, not numeric build/hash allowlists. An independent fresh 07/92 GET must establish a valid limiter state before each write, with independent post-write confirmation.",
+      "firmwareAdmission": "No ordinary thermal-control BIOS/EC/MCU floor is established by these reviewed command paths. Firmware image names and updater fields do not establish HID semantics.",
+      "observedOnly": [
+        "Vendor fixed fan ranges and mode-specific dynamic range reads; no fixed-target or fan-curve mutation is admitted.",
+        "Per-model resource declarations identify original packages only; they grant no runtime API or setup authority."
+      ],
+      "notAdmitted": [
+        "Turbo",
+        "Maximum Fans",
+        "Manual fan writes",
+        "Fan curves",
+        "HyperBoost",
+        "Lighting writes",
+        "Temporary full charge",
+        "Separate DC CPU Boost toggle",
+        "Native-brightness driver integration",
+        "Razer driver SnapTap/Fn setup",
+        "THX runtime/setup"
+      ],
+      "sources": [
+        {
+          "file": "432.ed3ddbd229b5ed6d21d0.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/432.ed3ddbd229b5ed6d21d0.js",
+          "bytes": 143023,
+          "sha256": "A9CA56E584790660B142902B0FCF75E0CEA7D1FCFE5C08A645F9063E859CE0C8"
+        },
+        {
+          "file": "6737.1cc98c1e1650ffce7912.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/6737.1cc98c1e1650ffce7912.js",
+          "bytes": 2353649,
+          "sha256": "8B31CFB0033A9C75F5E6E69D914A3A36BAE0A4944886B5CC6D076329434D1DF9"
+        },
+        {
+          "file": "index.html",
+          "url": "https://apps.razer.com/synapse/products/650/mw/index.html",
+          "bytes": 4389,
+          "sha256": "BDE1114AC7B1591DF90CBE9387B46D7C4FDDB6BC5FA6C06872B3FA7747B3C467"
+        },
+        {
+          "file": "installer-manifest.json",
+          "url": "https://apps.razer.com/synapse/products/650/mw/installer-manifest.json",
+          "bytes": 4258,
+          "sha256": "F15BEDF8E14CE400F74977C37DBE3A9F07945D63F3632D1B5E7CD340BF6A9377"
+        },
+        {
+          "file": "main.3650e97f35689328d442.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/main.3650e97f35689328d442.js",
+          "bytes": 166899,
+          "sha256": "270D5D4E4AF9674D2219EFBE609294DC46E1BAF4E08A14AF32306D4495CB5A98"
+        },
+        {
+          "file": "manifest-1.0.0.json",
+          "url": "https://apps.razer.com/synapse/products/650/mw/manifests/manifest-1.0.0.json",
+          "bytes": 1380,
+          "sha256": "7B800C645C1A1034677AD50135E344EEA40D2F5305A4AFE34E74288A7DB75282"
+        },
+        {
+          "file": "manifest.json",
+          "url": "https://apps.razer.com/synapse/products/650/mw/manifest.json",
+          "bytes": 6617,
+          "sha256": "AD68630491BF984012FED52C5E4A3E2F9CB8AFFEB7E63E080562773E4A9D93CE"
+        },
+        {
+          "file": "master-guide.pdf",
+          "url": "https://dl.razerzone.com/master-guides/RazerSynapse3/Blade-00000650-en.pdf",
+          "bytes": 3104297,
+          "sha256": "3FBB86774B8F0079C9159A4A42455BC0CE984B3141203E8637248558A7B54F82"
+        },
+        {
+          "file": "onLoad.b7d415db7c5abdb2d1b9.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/onLoad.b7d415db7c5abdb2d1b9.js",
+          "bytes": 45489,
+          "sha256": "14B5EA22FC8F86C3C6DFF98A51F4139F3C18EA66D95E3D91BE63832333023E0F"
+        },
+        {
+          "file": "rzDevice25.33bbbe9e1d2d72bdf1a1.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25.33bbbe9e1d2d72bdf1a1.js",
+          "bytes": 279028,
+          "sha256": "CEF5D482E96F2833C84998E2FE998D0A41AA7CA4483E4E69156424F76475D513"
+        },
+        {
+          "file": "rzDevice25LedMatrix.e196c7f06b29ad9b9887.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrix.e196c7f06b29ad9b9887.js",
+          "bytes": 6461,
+          "sha256": "2594338071860022682DA7363407B8CD204AF8C6196FE979D00AE1BE1F9557BD"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade.a041b7342ce44c78ec3b.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBlade.a041b7342ce44c78ec3b.js",
+          "bytes": 13099,
+          "sha256": "F0E34A36BC2A09A953835DE05F83C545CF18B11F139C86D0A0055942F8FBEA32"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade2.71032c5b3b3df82a387d.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBlade2.71032c5b3b3df82a387d.js",
+          "bytes": 20253,
+          "sha256": "E19A44993E93CAC2E79FB0FF9242CCC735A8283344CCDFA57E8E42180B29601E"
+        },
+        {
+          "file": "rzDevice25LedMatrixBladeWattage.a715fa3adc2631c080dc.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBladeWattage.a715fa3adc2631c080dc.js",
+          "bytes": 2923,
+          "sha256": "70687428706956400D3CB5227E35BB03EFFB13D75E70429E06A94A7369202306"
+        },
+        {
+          "file": "rzHardwareEventsProtocol25Parser.215fc993d3b1601ae950.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzHardwareEventsProtocol25Parser.215fc993d3b1601ae950.js",
+          "bytes": 9201,
+          "sha256": "F77065F6C1103097AE4A883D83C8E2DF8D75EE480F040C1053B1DBF96C2D6BA2"
+        },
+        {
+          "file": "ui-index.html",
+          "url": "https://apps.razer.com/synapse/products/650/ui/index.html",
+          "bytes": 4923,
+          "sha256": "11CD32CE94B8B065748F84F65B3ADC63BF4AA28836A401709946075B81104B26"
+        },
+        {
+          "file": "ui-main.90e358d5.js",
+          "url": "https://apps.razer.com/synapse/products/650/ui/static/js/main.90e358d5.js",
+          "bytes": 6591004,
+          "sha256": "06C52972C023B65B11DDF1C379671526E96C68B46105FC3EDCC714F0EF4944B0"
+        }
+      ],
+      "excerpts": [
+        {
+          "purpose": "exact model PID, VID and guide link",
+          "byteOffset": 142634,
+          "bytes": 310,
+          "quote": "productId:650,vendorId:5426,deviceName:d,backlightStep:6.25,masterGuideURL:\"https://dl.razer.com/master-guides/RazerSynapse3/Blade-00000630-\",supportPage:\"https://support.razer.com/gaming-laptops/razer-blade-15-2019-advanced/\",WAVE_DIRECTION:\"LeftRight\",category:\"SYSTEM\",claimInterface:2},f={performance:{plug",
+          "sourceFile": "main.3650e97f35689328d442.js"
+        },
+        {
+          "purpose": "claimed control interface",
+          "byteOffset": 142881,
+          "bytes": 85,
+          "quote": "Right\",category:\"SYSTEM\",claimInterface:2},f={performance:{plugged:{mode:\"balanced\",b",
+          "sourceFile": "main.3650e97f35689328d442.js"
+        },
+        {
+          "purpose": "model-bound feature selection",
+          "byteOffset": 157509,
+          "bytes": 420,
+          "quote": "d={brightness:{hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0,hasBatteryOptimizer:!0}};var p,f,A,S,T;r.sentry.dsn&&i.init(Object.assign(Object.assign({},r.sentry.getSentryInitOptions(\"js\")),{integrations:[new s.BrowserTracing],tracesSampleRate:null===(p=r.sentry.tracesSampleRate)||void 0===p?void 0:p.js})),f=void 0,A=void 0,T=function*(){va",
+          "sourceFile": "main.3650e97f35689328d442.js"
+        },
+        {
+          "purpose": "explicit Balanced DC injection",
+          "byteOffset": 158056,
+          "bytes": 170,
+          "quote": "ont-weight:bold\",a.A);try{a.A.useFeature(\"isBalancedDCSupported\",\"yes\"),a.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBlade\"),a.A.useFeature(\"deviceUI\",\"config\",d),u.",
+          "sourceFile": "main.3650e97f35689328d442.js"
+        },
+        {
+          "purpose": "raw thermal preset bytes and fan role IDs",
+          "byteOffset": 874348,
+          "bytes": 540,
+          "quote": "Balanced_Mode:0,Gaming_Mode:1,Productivity_Creator_Mode:2,BatterySaver_Ultrabook_LowPowerMode:3,Custom_Mode:4,Silent_Mode:5,Normal_Mode:6,Performance_Mode:7};Object.freeze(n),Object.freeze({Auto:0,Manual:1,ForceAuto:2});const o={NotApplicable:0,CPU_Fan:1,GPU_Fan:2,BAT_Fan1:3,BAT_Fan2:4,Fan1:5,Fan2:6,Fan3:7,Fan4:8,Fan5:9,Fan6:10,Fan7:11,Fan8:12};Object.freeze(o),Object.freeze(o);const r={Low:0,Medium:1,High:2,Extreme:3};Object.freeze(r),Object.freeze({Microsoft_Hybrid:0,Discrete_MUX:1});const a={UHD:0,FHD:1};Object.freeze(a);const s={D",
+          "sourceFile": "6737.1cc98c1e1650ffce7912.js"
+        },
+        {
+          "purpose": "typed profile1 and RPM units",
+          "byteOffset": 2265604,
+          "bytes": 460,
+          "quote": "static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434:(e,t,i)=>{\"use strict\";i.d(t,{L:()=>n});const n=e=>{const t=e.outputType;return\"object\"==typeof e[t]&&0===Obj",
+          "sourceFile": "6737.1cc98c1e1650ffce7912.js"
+        },
+        {
+          "purpose": "DC raw6 and AC raw0 constants",
+          "byteOffset": 2269547,
+          "bytes": 50,
+          "quote": "q=6,X=0,Z=1,ee=0;var te;let ie;!function(e){e[e.no",
+          "sourceFile": "6737.1cc98c1e1650ffce7912.js"
+        },
+        {
+          "purpose": "power-aware Balanced dispatch",
+          "byteOffset": 1821515,
+          "bytes": 420,
+          "quote": "if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,",
+          "sourceFile": "6737.1cc98c1e1650ffce7912.js"
+        },
+        {
+          "purpose": "actual exact-model caller enables Custom CPU Boost",
+          "byteOffset": 6383981,
+          "bytes": 210,
+          "quote": ":[(0,o_.jsx)(ZR,{supportedPerformanceModes:E,isCPUBoost:!0,supportsShortcut:!0}),(0,o_.jsx)(ll,{})]}),(0,o_.jsx)(Ls,{direction:\"right\",children:!1===this.props.isDDSSku&&1===this.props.supportedFlag?(0,o_.jsx)(",
+          "sourceFile": "ui-main.90e358d5.js"
+        },
+        {
+          "purpose": "Custom CPU Boost level3 and bounded GPU defaults",
+          "byteOffset": 6353937,
+          "bytes": 470,
+          "quote": "value:1},{key:\"linear\",name:Xe.jT4,value:2}],wR=[{key:\"low\",name:Xe.luF,value:0},{key:\"medium\",name:Xe.wbE,value:1},{key:\"high\",name:Xe.jT4,value:2},{key:\"boost\",name:Xe.YyC,value:3}],zR=[{key:\"low\",name:Xe.luF,value:0},{key:\"medium\",name:Xe.wbE,value:1},{key:\"high\",name:Xe.jT4,value:2},{key:\"max\",name:Xe.ZuR,value:3}],kR=[{key:\"low\",name:Xe.luF,value:0},{key:\"medium\",name:Xe.wbE,value:1},{key:\"linear\",name:Xe.jT4,value:2}],xR=[{key:\"low\",name:Xe.luF,value:0},{key:\"",
+          "sourceFile": "ui-main.90e358d5.js"
+        },
+        {
+          "purpose": "CPU/GPU option list selection",
+          "byteOffset": 6357860,
+          "bytes": 150,
+          "quote": "const se=(0,f.useMemo)(()=>U?zR:m?VR:wR,[m]),Te=(0,f.useMemo)(()=>h?xR:kR);(0,f.useEffect)(()=>{J(null!==n&&void 0!==n?n:Q)},[n]),(0,f.useEffect)(()=>",
+          "sourceFile": "ui-main.90e358d5.js"
+        },
+        {
+          "purpose": "firmware Custom CPU/GPU direct UI dispatch",
+          "byteOffset": 6359059,
+          "bytes": 180,
+          "quote": "),F.setMaxFanSpeedModeEnabled(!Ee)},Se=e=>{x(e),F.setAdvFanMode(e)},Re=e=>{j(e),F.setAdvFanModeWattage(e)},le=(e,E=!1)=>{E||J(e)},Ne=e=>{F.setCpuPowerLimit(e)},de=({currentCpuPower",
+          "sourceFile": "ui-main.90e358d5.js"
+        },
+        {
+          "purpose": "thermal tuples0D/80,81,01,82,02",
+          "byteOffset": 65518,
+          "bytes": 400,
+          "quote": "st o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new ",
+          "sourceFile": "rzDevice25.33bbbe9e1d2d72bdf1a1.js"
+        },
+        {
+          "purpose": "advanced0D/87 getter and0D/07 setter",
+          "byteOffset": 66137,
+          "bytes": 420,
+          "quote": "Limit\"),N=new Uint8Array([3,13,135]),C=new Uint8Array([3,13,7]),w=\"Get Thermal Advance Fan Mode\",g=\"Set Thermal Advance Fan Mode\",E=new Uint8Array([3,13,135]),D=new Uint8Array([3,13,7]),_=\"Get Thermal Advance Fan Mode Wattage\",R=\"Set Thermal Advance Fan Mode Wattage\",p=new Uint8Array([3,13,136]),T=\"Get Thermal Fan Current Speed\",L=new Uint8Array([2,13,137]),P=new Uint8Array([2,13,9]),O=\"Get VGA Configure Setting\",V=\"",
+          "sourceFile": "rzDevice25.33bbbe9e1d2d72bdf1a1.js"
+        },
+        {
+          "purpose": "fan-mode response includes class,zone,mode andmanualflag",
+          "byteOffset": 55968,
+          "bytes": 190,
+          "quote": "atus===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],fanMode:t.data[2],fanModeEnum:a.np(r.IH,t.data[2]),fanModeValue:t.data[3]})},h=(t,n,e)=>s(",
+          "sourceFile": "rzDevice25.33bbbe9e1d2d72bdf1a1.js"
+        },
+        {
+          "purpose": "CPU level setter direct payload",
+          "byteOffset": 59840,
+          "bytes": 310,
+          "quote": "T_VALUE,commandClass:i.iG[1],commandId:i.iG[2],commandDesc:i.OO});const a=new Uint8Array(i.iG[0]);a[0]=n,a[1]=e,a[2]=r;const s=yield t.sendCommand(i.iG,i.OO,a);return console.log(`setThermalAdvanceFanMode classId:${n}, thermalId:${e}, fanMode:${r}`),U(s),s})),w=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeRet",
+          "sourceFile": "rzDevice25.33bbbe9e1d2d72bdf1a1.js"
+        },
+        {
+          "purpose": "GPU level getter and setter packed tuple",
+          "byteOffset": 60140,
+          "bytes": 440,
+          "quote": "ketSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],wattage:t.data[2]})},g=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.K2[1],commandId:i.K2[2],commandDesc:i.ug});const r=new Uint8Array(i.K2[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.K2,i.ug,r);return w(a),a})),E=(t,n,e,r)=>s(void 0,void 0,void 0,(functio",
+          "sourceFile": "rzDevice25.33bbbe9e1d2d72bdf1a1.js"
+        },
+        {
+          "purpose": "report geometry",
+          "byteOffset": 111579,
+          "bytes": 170,
+          "quote": "this.reportLength=91,this.ignoreSetDeviceModeTimeoutError=!1,this.reportId=null!==(l=null==u?void 0:u.reportId)&&void 0!==l?l:0,this.restoreFileSuffix=\"\",this.isElectron)",
+          "sourceFile": "rzDevice25.33bbbe9e1d2d72bdf1a1.js"
+        },
+        {
+          "purpose": "transaction rollover and90-byte report encoder",
+          "byteOffset": 112348,
+          "bytes": 390,
+          "quote": "_getTransactionId(){return 31===this.transactionId&&(this.transactionId=0),this.transactionId++}_createDataSend(t,n,e){const o=new Uint8Array(90),i=this._getTransactionId();o[0]=0,o[1]=i,o[2]=0,o[3]=0,o[4]=0,o[5]=t[0],o[6]=t[1],o[7]=t[2],void 0!==e&&\"\"!==e&&-1!==e&&!isNaN(e)&&e>0&&(o[5]=e);for(let t=0;t<n.length&&t<o[5];t++)o[t+8]=n[t];const r=this._calculateChecksum(o);return o[88]=r,o}",
+          "sourceFile": "rzDevice25.33bbbe9e1d2d72bdf1a1.js"
+        },
+        {
+          "purpose": "charge limit UI50..80 step5",
+          "byteOffset": 6388884,
+          "bytes": 150,
+          "quote": "min:50,max:80,step:5,minTag:\"0\",maxTag:\"100\",value:T,active:l,changeValue:e=>{o?(r(e),a.setBatteryOptimizer(o,e,t)):(s(!o),r(e),a.setBatteryOptimizer(",
+          "sourceFile": "ui-main.90e358d5.js"
+        },
+        {
+          "purpose": "limiter0x92GETand0x12SETtuples",
+          "byteOffset": 52859,
+          "bytes": 220,
+          "quote": "rray([1,7,17]),new Uint8Array([1,7,146])),B=new Uint8Array([1,7,18]),H=\"Get Battery Charge Limiter Control\",K=\"Set Battery Charge Limiter Control\",J=new Uint8Array([3,7,147]),W=new Uint8Array([3,7,19]),Y=\"Get Smart illum",
+          "sourceFile": "rzDevice25.33bbbe9e1d2d72bdf1a1.js"
+        },
+        {
+          "purpose": "separate enablebit7 and thresholdbits0..6",
+          "byteOffset": 49218,
+          "bytes": 170,
+          "quote": "o),o})),G=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={value:127&t.data[0],enabled:(128&t.data[0])>>7})},B=t=>s(void 0,void 0,void 0,(function*()",
+          "sourceFile": "rzDevice25.33bbbe9e1d2d72bdf1a1.js"
+        },
+        {
+          "purpose": "setter packedbyte, optional echoed ACK decoder",
+          "byteOffset": 49487,
+          "bytes": 180,
+          "quote": "oid 0,void 0,void 0,(function*(){const o=new Uint8Array(i.lJ[0]);o[0]=n<<7|e;const r=yield t.sendCommand(i.lJ,i.FD,o);return G(r),r})),K=t=>s(void 0,void 0,void 0,(function*(){cons",
+          "sourceFile": "rzDevice25.33bbbe9e1d2d72bdf1a1.js"
+        },
+        {
+          "purpose": "SET battery limiter without inherited override authority",
+          "byteOffset": 1910003,
+          "bytes": 280,
+          "quote": "s:{batteryOptimizer:n}};const{isEnabled:r,value:c,batteryChargingOverrideEnabled:A}=n;try{yield o.setBatteryChargeLimiterControl(r,c),Be.hasBatteryChargingOverrideEnabled&&(r&&A?yield(0,d._w)(Fe.oneTimeOverride,Fe.oneTimeOverrideEnabled):yield(0,d._w)(Fe.oneTimeOverride,Fe.disabl",
+          "sourceFile": "6737.1cc98c1e1650ffce7912.js"
+        },
+        {
+          "purpose": "Exact model Balanced selector",
+          "sourceFile": "main.3650e97f35689328d442.js",
+          "byteOffset": 145902,
+          "bytes": 100,
+          "quote": "mode:r.mNQ.Balanced_Mode,title:n.Y_1,content:n.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,2"
+        },
+        {
+          "purpose": "Exact model Silent selector",
+          "sourceFile": "main.3650e97f35689328d442.js",
+          "byteOffset": 146461,
+          "bytes": 100,
+          "quote": "mode:r.mNQ.Silent_Mode,title:n.Blt,content:n.REQ,icon:\"M20,2A18,18,0,1,0,38,20,18,18,0,0,0,20,2m0-2A"
+        },
+        {
+          "purpose": "Exact model Custom selector",
+          "sourceFile": "main.3650e97f35689328d442.js",
+          "byteOffset": 147782,
+          "bytes": 100,
+          "quote": "mode:r.mNQ.Custom_Mode,title:n.DBO,content:n.lJc,icon:\"M22,4A18,18,0,1,0,40,22,18.021,18.021,0,0,0,2"
+        },
+        {
+          "purpose": "isCPUBoost maps to component alias o",
+          "sourceFile": "ui-main.90e358d5.js",
+          "byteOffset": 6356377,
+          "bytes": 190,
+          "quote": "isCPUBoost:o,supportsShortcut:s,lang:T,isLowPower:r,customMode:I,specificCustomModeValue:O,supportMaxFanSpeedModeEnabled:A,supportCpuOverclocking:S,supportGpuOverclocking:R,supportCpuVoltage"
+        },
+        {
+          "purpose": "o selects CPU Boost option rendering",
+          "sourceFile": "ui-main.90e358d5.js",
+          "byteOffset": 6363875,
+          "bytes": 330,
+          "quote": ":()=>Re(e.value),active:X===e.value},e.key))})]})]}):o?(0,o_.jsxs)(\"div\",{className:\"header_widget\",children:[(0,o_.jsxs)(\"div\",{className:\"performance-custom-boost \"+(d?\"disabled\":\"\"),children:[(0,o_.jsx)(\"div\",{className:\"title mr-10\",children:\"CPU\"}),(0,o_.jsx)(\"div\",{className:\"group-button boost-cpu\",children:D?XR.map(e=>(0"
+        }
+      ],
+      "resourceDeclarations": [
+        {
+          "resourceName": "NormalDriver_PID028aDrv",
+          "resourceVersion": "0.1.2.0",
+          "url": "https://app-assets.razer.com/files/synapse/devices/650/v1.0.0.0/PID028aDrv_v0.1.2.0.exe",
+          "bytes": 1104856,
+          "sha256": "67CD9F339ED084AF84E4DC17B25321702AD83A9F456263A330FDE2F59BE34372"
+        },
+        {
+          "resourceName": "BladeDLL",
+          "resourceVersion": "1.0.10.1",
+          "url": "https://app-assets.razer.com/files/synapse/devices/common/blades/BladeNative_v1.0.10.1.dll",
+          "bytes": 353032,
+          "sha256": "87E07BF624706203EEA9925FC3EC1787AB7D097C3FC4F55009176E5B676077F1"
+        }
+      ],
+      "customCpuBoostEvidence": "The exact model caller passes isCPUBoost true. The component aliases it to o and conditionally renders the se option list; its default list contains Boost value 3. The setter uses 0D/07 with profile 1 and CPU zone 1. GPU remains 0..2."
+    },
+    {
+      "modelNumber": "RZ09-0423",
+      "productName": "Blade 17 (2022) - RZ09-0423",
+      "manufacturer": "Razer",
+      "modelYear": 2022,
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "028B"
+      },
+      "vendorProductId": 651,
+      "supportBasis": "SourceReviewed",
+      "physicalValidation": "Pending",
+      "identityEvidence": {
+        "dmiPrimary": {
+          "url": "https://raw.githubusercontent.com/linuxhw/DMI/57b21bc6fdd863380e99c228c22aafcd1509528c/Notebook/Razer/Blade/Blade%2017%20-%20RZ09-0423/00615E92BFF7",
+          "bytes": 33919,
+          "sha256": "E4578D88E26C81F7D3FB8613C415D0E074C2A780C3FF354AAFF4CC814FC8079D",
+          "gitBlobSha": "3dc1b90babab2404fba55f1ea12eb2d920fc4eef",
+          "excerpt": "System Information\n\tManufacturer: Razer\n\tProduct Name: Blade 17 (2022) - RZ09-0423\n\tVersion: 8.04"
+        },
+        "masterGuide": {
+          "file": "master-guide.pdf",
+          "url": "https://dl.razerzone.com/master-guides/RazerSynapse3/BladePro17-00000651-en.pdf",
+          "bytes": 3191186,
+          "sha256": "F519BCABC2237644B711039F91E2DB763F5A3E6B31FFC5D5A61EB75CEEA47C3E"
+        },
+        "guideModelPage": 2,
+        "scope": "Exact RZ09 model in the official guide; DMI product name is independently established by primary records."
+      },
+      "vendorBuild": "2609301509",
+      "vendorRevision": "af988c9605e191ac024d3ad402648cb03f964784",
+      "transport": {
+        "reportId": 0,
+        "claimInterface": 2,
+        "minimumTransactionId": 1,
+        "maximumTransactionId": 31,
+        "protocolReportBytes": 90,
+        "nativeFeatureReportBytes": 91
+      },
+      "presets": {
+        "Balanced": 0,
+        "Silent": 5,
+        "Custom": 4,
+        "BatteryBalanced": 6
+      },
+      "customCpuLevels": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "customGpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "maximumFans": false,
+      "thermalQueryProfile": 1,
+      "customQueryProfile": 1,
+      "chargeLimits": [
+        50,
+        55,
+        60,
+        65,
+        70,
+        75,
+        80,
+        100
+      ],
+      "chargeOffValue": 100,
+      "automaticFanHandback": "Current-preset 0D/02 fan flag 0 with independent readback. No target writes or forced Balanced intermediate.",
+      "manualBaseline": "Performance mutations require an independently representable/restorable baseline. Existing manual fan mode blocks them until explicit Automatic handback is confirmed; manual target restoration is not admitted.",
+      "powerAdmission": "Silent and Custom require full-power AC. Balanced uses raw0 on full-power AC and raw6 on confirmed battery.",
+      "chargeFirmwareReadiness": "Install exact-model firmware that provides Battery Health Optimizer. Reviewed update versions below are provenance, not numeric build/hash allowlists. An independent fresh 07/92 GET must establish a valid limiter state before each write, with independent post-write confirmation.",
+      "firmwareAdmission": "No ordinary thermal-control BIOS/EC/MCU floor is established by these reviewed command paths. Firmware image names and updater fields do not establish HID semantics.",
+      "observedOnly": [
+        "Vendor fixed fan ranges and mode-specific dynamic range reads; no fixed-target or fan-curve mutation is admitted.",
+        "Per-model resource declarations identify original packages only; they grant no runtime API or setup authority."
+      ],
+      "notAdmitted": [
+        "Turbo",
+        "Maximum Fans",
+        "Manual fan writes",
+        "Fan curves",
+        "HyperBoost",
+        "Lighting writes",
+        "Temporary full charge",
+        "Separate DC CPU Boost toggle",
+        "Native-brightness driver integration",
+        "Razer driver SnapTap/Fn setup",
+        "THX runtime/setup"
+      ],
+      "sources": [
+        {
+          "file": "432.078f7e9fd791c4622a85.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/432.078f7e9fd791c4622a85.js",
+          "bytes": 142757,
+          "sha256": "E79E8AF69D49A50843427CD8DF7E4B64069943C18DE22CEF86939C63A14F3EBA"
+        },
+        {
+          "file": "6737.003892ae34f5de0292c0.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/6737.003892ae34f5de0292c0.js",
+          "bytes": 2345733,
+          "sha256": "E8A2CFF2F19A59B8F425E7EC70BFF5873551479560005435E1B04B34F9CC7454"
+        },
+        {
+          "file": "index.html",
+          "url": "https://apps.razer.com/synapse/products/651/mw/index.html",
+          "bytes": 4284,
+          "sha256": "DF2C0D9B3E414B81D324BC6CACD302A9054ABEBA92C6341647F1FBCA9413FFCC"
+        },
+        {
+          "file": "installer-manifest.json",
+          "url": "https://apps.razer.com/synapse/products/651/mw/installer-manifest.json",
+          "bytes": 4408,
+          "sha256": "76E5D3337AEAA70F5EC6D1D0BF510BE216967183B5CF672B603D1DDD33597000"
+        },
+        {
+          "file": "main.8378c0c79039a3f2ba23.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/main.8378c0c79039a3f2ba23.js",
+          "bytes": 168748,
+          "sha256": "F227CBA8959DFEE0B898077D4CC77651066B7BFFF8CAA20910E9B3946E026AC4"
+        },
+        {
+          "file": "manifest-1.0.0.json",
+          "url": "https://apps.razer.com/synapse/products/651/mw/manifests/manifest-1.0.0.json",
+          "bytes": 1380,
+          "sha256": "5E47931915DEDBA87394492F0F58BDD17E02EBFBB7286652892302FE76F02E56"
+        },
+        {
+          "file": "manifest.json",
+          "url": "https://apps.razer.com/synapse/products/651/mw/manifest.json",
+          "bytes": 6363,
+          "sha256": "6E7B31545C3FE9E5957B0309916A07805B07CEAE3D2DB95A556B6D19E51FE996"
+        },
+        {
+          "file": "master-guide.pdf",
+          "url": "https://dl.razerzone.com/master-guides/RazerSynapse3/BladePro17-00000651-en.pdf",
+          "bytes": 3191186,
+          "sha256": "F519BCABC2237644B711039F91E2DB763F5A3E6B31FFC5D5A61EB75CEEA47C3E"
+        },
+        {
+          "file": "onLoad.0fce2ade649737cba9ed.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/onLoad.0fce2ade649737cba9ed.js",
+          "bytes": 46323,
+          "sha256": "8C1F000938895A90586BB22368B26E5F064BA72D7160EDEC8A0E8A19BA2C3477"
+        },
+        {
+          "file": "rzDevice25.7ffcfe7d1ddb6103ac44.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25.7ffcfe7d1ddb6103ac44.js",
+          "bytes": 277066,
+          "sha256": "A9442C86AB7D8F0549E18016324462A52A040E5578410F296BDF72884A383962"
+        },
+        {
+          "file": "rzDevice25LedMatrix.91ecd705f076a69cb74b.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrix.91ecd705f076a69cb74b.js",
+          "bytes": 6443,
+          "sha256": "40237B74FDC3A2F05F47C05501117EF1E97131C88055614D9A9ED58DAB96EF31"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade.3d7a6466eb25ba2e5f2d.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBlade.3d7a6466eb25ba2e5f2d.js",
+          "bytes": 13032,
+          "sha256": "66A45A45F7B471426FE41875D2C84E7F0EFD62CCB1066CF3657949B02A163C27"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade2.82d68898207246f09200.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBlade2.82d68898207246f09200.js",
+          "bytes": 20144,
+          "sha256": "C92ED2B6966AEEEE991819C291A5E054F9EC04B72D8202C1435A76DBC8219945"
+        },
+        {
+          "file": "rzDevice25LedMatrixBladeWattage.d708c5b081c8f56a50b6.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBladeWattage.d708c5b081c8f56a50b6.js",
+          "bytes": 2915,
+          "sha256": "204DB11C43D4ECFC33EC476A770AC246FB19085A001140582A08831CBE77689D"
+        },
+        {
+          "file": "rzHardwareEventsProtocol25Parser.a26f395914db18c72edc.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzHardwareEventsProtocol25Parser.a26f395914db18c72edc.js",
+          "bytes": 9191,
+          "sha256": "39DEB017F85AD264B027635263649C014B54456DE73FBE55948D977046DCAE62"
+        },
+        {
+          "file": "ui-index.html",
+          "url": "https://apps.razer.com/synapse/products/651/ui/index.html",
+          "bytes": 4923,
+          "sha256": "4C9AB8A42617968547F321B7F4832C8CE4E778E6DAB50D2069B9B009F3499FF4"
+        },
+        {
+          "file": "ui-main.8fce5f78.js",
+          "url": "https://apps.razer.com/synapse/products/651/ui/static/js/main.8fce5f78.js",
+          "bytes": 6589571,
+          "sha256": "FF4ACE62F536DAD8E14A674177638FAC74ED462C74FECC7A42D66B2F3616C254"
+        }
+      ],
+      "excerpts": [
+        {
+          "purpose": "exact model PID, VID and guide link",
+          "byteOffset": 25620,
+          "bytes": 310,
+          "quote": "productId:651,vendorId:5426,deviceName:d,backlightStep:6.25,masterGuideURL:\"https://dl.razerzone.com/master-guides/RazerSynapse3/BladePro17-00000651-\",supportPage:\"https://support.razer.com/gaming-laptops/razer-blade-15-base-2020/\",WAVE_DIRECTION:\"LeftRight\",category:\"SYSTEM\",claimInterface:2},S=[{id:1,mode:n",
+          "sourceFile": "main.8378c0c79039a3f2ba23.js"
+        },
+        {
+          "purpose": "claimed control interface",
+          "byteOffset": 25872,
+          "bytes": 85,
+          "quote": "Right\",category:\"SYSTEM\",claimInterface:2},S=[{id:1,mode:n.mNQ.Balanced_Mode,title:r.",
+          "sourceFile": "main.8378c0c79039a3f2ba23.js"
+        },
+        {
+          "purpose": "model-bound feature selection",
+          "byteOffset": 82152,
+          "bytes": 420,
+          "quote": "f={brightness:{hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0,defaultACPerformanceMode:4,defaultCustomMode:{cpu:1,gpu:2},notification:{hasCustomFooter:!0}},power:{hasSystemPower:!0,hasBatteryOptimizer:!0}};var A,S,T,O,h;s.sentry.dsn&&r.init(Object.assign(Object.assign({},s.sentry.getSentryInitOptions(\"js\")),{integrations:[new i.BrowserTracing],tracesSampleRate:null===(A=s.sentry.tracesSampleRate)||v",
+          "sourceFile": "main.8378c0c79039a3f2ba23.js"
+        },
+        {
+          "purpose": "explicit Balanced DC injection",
+          "byteOffset": 83284,
+          "bytes": 170,
+          "quote": "ont-weight:bold\",a.A);try{a.A.useFeature(\"isBalancedDCSupported\",\"yes\"),a.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBlade\"),a.A.useFeature(\"deviceUI\",\"config\",f),d.",
+          "sourceFile": "main.8378c0c79039a3f2ba23.js"
+        },
+        {
+          "purpose": "raw thermal preset bytes and fan role IDs",
+          "byteOffset": 1916894,
+          "bytes": 540,
+          "quote": "Balanced_Mode:0,Gaming_Mode:1,Productivity_Creator_Mode:2,BatterySaver_Ultrabook_LowPowerMode:3,Custom_Mode:4,Silent_Mode:5,Normal_Mode:6,Performance_Mode:7};Object.freeze(n),Object.freeze({Auto:0,Manual:1,ForceAuto:2});const o={NotApplicable:0,CPU_Fan:1,GPU_Fan:2,BAT_Fan1:3,BAT_Fan2:4,Fan1:5,Fan2:6,Fan3:7,Fan4:8,Fan5:9,Fan6:10,Fan7:11,Fan8:12};Object.freeze(o),Object.freeze(o);const r={Low:0,Medium:1,High:2,Extreme:3};Object.freeze(r),Object.freeze({Microsoft_Hybrid:0,Discrete_MUX:1});const a={UHD:0,FHD:1};Object.freeze(a);const s={D",
+          "sourceFile": "6737.003892ae34f5de0292c0.js"
+        },
+        {
+          "purpose": "typed profile1 and RPM units",
+          "byteOffset": 1496415,
+          "bytes": 460,
+          "quote": "static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},51147:(e,t,i)=>{\"use strict\";var n=i(88205),o=i(6949),r=i(49902),a=i(98722),s=i(97128),l=i(89977).iterator;e.export",
+          "sourceFile": "6737.003892ae34f5de0292c0.js"
+        },
+        {
+          "purpose": "DC raw6 and AC raw0 constants",
+          "byteOffset": 842471,
+          "bytes": 50,
+          "quote": "q=6,X=0,Z=1,ee=0;var te;let ie;!function(e){e[e.no",
+          "sourceFile": "6737.003892ae34f5de0292c0.js"
+        },
+        {
+          "purpose": "power-aware Balanced dispatch",
+          "byteOffset": 724389,
+          "bytes": 420,
+          "quote": "if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,",
+          "sourceFile": "6737.003892ae34f5de0292c0.js"
+        },
+        {
+          "purpose": "actual exact-model caller enables Custom CPU Boost",
+          "byteOffset": 6382553,
+          "bytes": 210,
+          "quote": ":[(0,o_.jsx)(jR,{supportedPerformanceModes:E,isCPUBoost:!0,supportsShortcut:!0}),(0,o_.jsx)(Sl,{})]}),(0,o_.jsxs)(Ls,{direction:\"right\",children:[(0,o_.jsx)(Tl,{supportsShortcut:!0,isShowScreenRefreshrate:!0}),",
+          "sourceFile": "ui-main.8fce5f78.js"
+        },
+        {
+          "purpose": "Custom CPU Boost level3 and bounded GPU defaults",
+          "byteOffset": 6355145,
+          "bytes": 470,
+          "quote": "value:1},{key:\"linear\",name:Ya.jT4,value:2}],wR=[{key:\"low\",name:Ya.luF,value:0},{key:\"medium\",name:Ya.wbE,value:1},{key:\"high\",name:Ya.jT4,value:2},{key:\"boost\",name:Ya.YyC,value:3}],zR=[{key:\"low\",name:Ya.luF,value:0},{key:\"medium\",name:Ya.wbE,value:1},{key:\"high\",name:Ya.jT4,value:2},{key:\"max\",name:Ya.ZuR,value:3}],kR=[{key:\"low\",name:Ya.luF,value:0},{key:\"medium\",name:Ya.wbE,value:1},{key:\"linear\",name:Ya.jT4,value:2}],xR=[{key:\"low\",name:Ya.luF,value:0},{key:\"",
+          "sourceFile": "ui-main.8fce5f78.js"
+        },
+        {
+          "purpose": "CPU/GPU option list selection",
+          "byteOffset": 6359068,
+          "bytes": 150,
+          "quote": "const se=(0,f.useMemo)(()=>U?zR:m?VR:wR,[m]),Te=(0,f.useMemo)(()=>h?xR:kR);(0,f.useEffect)(()=>{J(null!==n&&void 0!==n?n:Q)},[n]),(0,f.useEffect)(()=>",
+          "sourceFile": "ui-main.8fce5f78.js"
+        },
+        {
+          "purpose": "firmware Custom CPU/GPU direct UI dispatch",
+          "byteOffset": 6360267,
+          "bytes": 180,
+          "quote": "),F.setMaxFanSpeedModeEnabled(!Ee)},Se=e=>{x(e),F.setAdvFanMode(e)},Re=e=>{Z(e),F.setAdvFanModeWattage(e)},le=(e,E=!1)=>{E||J(e)},Ne=e=>{F.setCpuPowerLimit(e)},de=({currentCpuPower",
+          "sourceFile": "ui-main.8fce5f78.js"
+        },
+        {
+          "purpose": "thermal tuples0D/80,81,01,82,02",
+          "byteOffset": 275444,
+          "bytes": 400,
+          "quote": "st o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new ",
+          "sourceFile": "rzDevice25.7ffcfe7d1ddb6103ac44.js"
+        },
+        {
+          "purpose": "advanced0D/87 getter and0D/07 setter",
+          "byteOffset": 276063,
+          "bytes": 420,
+          "quote": "Limit\"),N=new Uint8Array([3,13,135]),C=new Uint8Array([3,13,7]),w=\"Get Thermal Advance Fan Mode\",g=\"Set Thermal Advance Fan Mode\",E=new Uint8Array([3,13,135]),D=new Uint8Array([3,13,7]),_=\"Get Thermal Advance Fan Mode Wattage\",R=\"Set Thermal Advance Fan Mode Wattage\",p=new Uint8Array([3,13,136]),T=\"Get Thermal Fan Current Speed\",L=new Uint8Array([2,13,137]),P=new Uint8Array([2,13,9]),O=\"Get VGA Configure Setting\",V=\"",
+          "sourceFile": "rzDevice25.7ffcfe7d1ddb6103ac44.js"
+        },
+        {
+          "purpose": "fan-mode response includes class,zone,mode andmanualflag",
+          "byteOffset": 2966,
+          "bytes": 190,
+          "quote": "atus===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],fanMode:t.data[2],fanModeEnum:a.np(r.IH,t.data[2]),fanModeValue:t.data[3]})},h=(t,n,e)=>s(",
+          "sourceFile": "rzDevice25.7ffcfe7d1ddb6103ac44.js"
+        },
+        {
+          "purpose": "CPU level setter direct payload",
+          "byteOffset": 6821,
+          "bytes": 310,
+          "quote": "T_VALUE,commandClass:i.iG[1],commandId:i.iG[2],commandDesc:i.OO});const a=new Uint8Array(i.iG[0]);a[0]=n,a[1]=e,a[2]=r;const s=yield t.sendCommand(i.iG,i.OO,a);return console.log(`setThermalAdvanceFanMode classId:${n}, thermalId:${e}, fanMode:${r}`),U(s),s}),w=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeRetu",
+          "sourceFile": "rzDevice25.7ffcfe7d1ddb6103ac44.js"
+        },
+        {
+          "purpose": "GPU level getter and setter packed tuple",
+          "byteOffset": 7120,
+          "bytes": 440,
+          "quote": "ketSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],wattage:t.data[2]})},g=(t,n,e)=>s(void 0,void 0,void 0,function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.K2[1],commandId:i.K2[2],commandDesc:i.ug});const r=new Uint8Array(i.K2[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.K2,i.ug,r);return w(a),a}),E=(t,n,e,r)=>s(void 0,void 0,void 0,function*(",
+          "sourceFile": "rzDevice25.7ffcfe7d1ddb6103ac44.js"
+        },
+        {
+          "purpose": "report geometry",
+          "byteOffset": 111040,
+          "bytes": 170,
+          "quote": "this.reportLength=91,this.ignoreSetDeviceModeTimeoutError=!1,this.reportId=null!==(l=null==u?void 0:u.reportId)&&void 0!==l?l:0,this.restoreFileSuffix=\"\",this.isElectron)",
+          "sourceFile": "rzDevice25.7ffcfe7d1ddb6103ac44.js"
+        },
+        {
+          "purpose": "transaction rollover and90-byte report encoder",
+          "byteOffset": 111809,
+          "bytes": 390,
+          "quote": "_getTransactionId(){return 31===this.transactionId&&(this.transactionId=0),this.transactionId++}_createDataSend(t,n,e){const o=new Uint8Array(90),i=this._getTransactionId();o[0]=0,o[1]=i,o[2]=0,o[3]=0,o[4]=0,o[5]=t[0],o[6]=t[1],o[7]=t[2],void 0!==e&&\"\"!==e&&-1!==e&&!isNaN(e)&&e>0&&(o[5]=e);for(let t=0;t<n.length&&t<o[5];t++)o[t+8]=n[t];const r=this._calculateChecksum(o);return o[88]=r,o}",
+          "sourceFile": "rzDevice25.7ffcfe7d1ddb6103ac44.js"
+        },
+        {
+          "purpose": "charge limit UI50..80 step5",
+          "byteOffset": 6536784,
+          "bytes": 150,
+          "quote": "min:50,max:80,step:5,minTag:\"0\",maxTag:\"100\",value:T,active:l,changeValue:e=>{o?(r(e),a.setBatteryOptimizer(o,e,t)):(s(!o),r(e),a.setBatteryOptimizer(",
+          "sourceFile": "ui-main.8fce5f78.js"
+        },
+        {
+          "purpose": "limiter0x92GETand0x12SETtuples",
+          "byteOffset": 14042,
+          "bytes": 220,
+          "quote": "rray([1,7,17]),new Uint8Array([1,7,146])),B=new Uint8Array([1,7,18]),H=\"Get Battery Charge Limiter Control\",K=\"Set Battery Charge Limiter Control\",J=new Uint8Array([3,7,147]),W=new Uint8Array([3,7,19]),Y=\"Get Smart illum",
+          "sourceFile": "rzDevice25.7ffcfe7d1ddb6103ac44.js"
+        },
+        {
+          "purpose": "separate enablebit7 and thresholdbits0..6",
+          "byteOffset": 21897,
+          "bytes": 170,
+          "quote": "(o),o}),G=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={value:127&t.data[0],enabled:(128&t.data[0])>>7})},B=t=>s(void 0,void 0,void 0,function*(){",
+          "sourceFile": "rzDevice25.7ffcfe7d1ddb6103ac44.js"
+        },
+        {
+          "purpose": "setter packedbyte, optional echoed ACK decoder",
+          "byteOffset": 22163,
+          "bytes": 180,
+          "quote": "void 0,void 0,void 0,function*(){const o=new Uint8Array(i.lJ[0]);o[0]=n<<7|e;const r=yield t.sendCommand(i.lJ,i.FD,o);return G(r),r}),K=t=>s(void 0,void 0,void 0,function*(){const ",
+          "sourceFile": "rzDevice25.7ffcfe7d1ddb6103ac44.js"
+        },
+        {
+          "purpose": "SET battery limiter without inherited override authority",
+          "byteOffset": 812511,
+          "bytes": 280,
+          "quote": "s:{batteryOptimizer:n}};const{isEnabled:r,value:c,batteryChargingOverrideEnabled:A}=n;try{yield o.setBatteryChargeLimiterControl(r,c),Be.hasBatteryChargingOverrideEnabled&&(r&&A?yield(0,d._w)(Fe.oneTimeOverride,Fe.oneTimeOverrideEnabled):yield(0,d._w)(Fe.oneTimeOverride,Fe.disabl",
+          "sourceFile": "6737.003892ae34f5de0292c0.js"
+        },
+        {
+          "purpose": "Exact model Balanced selector",
+          "sourceFile": "main.8378c0c79039a3f2ba23.js",
+          "byteOffset": 25924,
+          "bytes": 100,
+          "quote": "mode:n.mNQ.Balanced_Mode,title:r.Y_1,content:r.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,2"
+        },
+        {
+          "purpose": "Exact model Silent selector",
+          "sourceFile": "main.8378c0c79039a3f2ba23.js",
+          "byteOffset": 26482,
+          "bytes": 100,
+          "quote": "mode:n.mNQ.Silent_Mode,title:r.Blt,content:r.REQ,icon:\"M20,2A18,18,0,1,0,38,20,18,18,0,0,0,20,2m0-2A"
+        },
+        {
+          "purpose": "Exact model Custom selector",
+          "sourceFile": "main.8378c0c79039a3f2ba23.js",
+          "byteOffset": 27802,
+          "bytes": 100,
+          "quote": "mode:n.mNQ.Custom_Mode,title:r.DBO,content:r.lJc,icon:\"M22,4A18,18,0,1,0,40,22,18.021,18.021,0,0,0,2"
+        },
+        {
+          "purpose": "isCPUBoost maps to component alias o",
+          "sourceFile": "ui-main.8fce5f78.js",
+          "byteOffset": 6357585,
+          "bytes": 190,
+          "quote": "isCPUBoost:o,supportsShortcut:s,lang:T,isLowPower:r,customMode:I,specificCustomModeValue:O,supportMaxFanSpeedModeEnabled:A,supportCpuOverclocking:S,supportGpuOverclocking:R,supportCpuVoltage"
+        },
+        {
+          "purpose": "o selects CPU Boost option rendering",
+          "sourceFile": "ui-main.8fce5f78.js",
+          "byteOffset": 6365083,
+          "bytes": 330,
+          "quote": ":()=>Re(e.value),active:X===e.value},e.key))})]})]}):o?(0,o_.jsxs)(\"div\",{className:\"header_widget\",children:[(0,o_.jsxs)(\"div\",{className:\"performance-custom-boost \"+(d?\"disabled\":\"\"),children:[(0,o_.jsx)(\"div\",{className:\"title mr-10\",children:\"CPU\"}),(0,o_.jsx)(\"div\",{className:\"group-button boost-cpu\",children:D?XR.map(e=>(0"
+        }
+      ],
+      "resourceDeclarations": [
+        {
+          "resourceName": "NormalDriver_PID028bDrv",
+          "resourceVersion": "0.1.2.0",
+          "url": "https://app-assets.razer.com/files/synapse/devices/651/v1.0.0.0/PID028bDrv_v0.1.2.0.exe",
+          "bytes": 1104808,
+          "sha256": "A183DC86394AE9C671529C477D20B031A239FF1FEDE09752B0C6B832FF7193A5"
+        },
+        {
+          "resourceName": "BladeDLL",
+          "resourceVersion": "1.0.10.1",
+          "url": "https://app-assets.razer.com/files/synapse/devices/common/blades/BladeNative_v1.0.10.1.dll",
+          "bytes": 353032,
+          "sha256": "87E07BF624706203EEA9925FC3EC1787AB7D097C3FC4F55009176E5B676077F1"
+        }
+      ],
+      "customCpuBoostEvidence": "The exact model caller passes isCPUBoost true. The component aliases it to o and conditionally renders the se option list; its default list contains Boost value 3. The setter uses 0D/07 with profile 1 and CPU zone 1. GPU remains 0..2."
+    }
+  ],
+  "firmwareReview": {
+    "acquiredOn": "2026-11-07",
+    "scope": "Firmware provenance, updater target/version metadata and image hashes; these are not HID command definitions, proof of on-device behavior, redistribution permission or a static runtime version/hash allowlist.",
+    "packages": [
+      {
+        "modelNumber": "RZ09-0370",
+        "component": "BIOS",
+        "version": "1.08_v3",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/5502/",
+        "publishedDownload": "https://rzr.to/i8jjaa",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%22%20%282021%29%20%7C%20RZ09-0370/PI410_PI411-BIOSv0108_v3.exe",
+        "bytes": 5152624,
+        "sha256": "4477F0C16B6BF98CBC81152A90E734AE3A1B250B46A98422AAE6AEB09C236BFA",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "signerThumbprint": "3FDDBD6F820144422494342EF44898D732E068DC",
+        "executed": false,
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade 14",
+            "SSID": "1A582013",
+            "SKU": "RZ09-0370",
+            "BIOSVER": "1.08"
+          },
+          {
+            "case": "Case2",
+            "TNAME": "Razer Blade 14",
+            "SSID": "1A582014",
+            "SKU": "RZ09-0370",
+            "BIOSVER": "1.08"
+          }
+        ],
+        "extractedData": [
+          {
+            "file": "FlashWin.bat",
+            "bytes": 504,
+            "sha256": "8B980A204DA6202A7AED79A9B31419A8DB205B8C2B97419C3036087C08477696",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "P1108.rom",
+            "bytes": 16777216,
+            "sha256": "C39D1DF88DCA0225A7107BB576D6303FBC1C8993AD674F9F811C40D4DF0939CC",
+            "kind": "firmware image"
+          },
+          {
+            "file": "torden.ini",
+            "bytes": 441,
+            "sha256": "2371E4AE720BE5CF11094865E7CDEF240936A79ECB0917B157C2F48349DD8137",
+            "kind": "static configuration"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0427",
+        "component": "BIOS/EC/MCU/PD",
+        "version": "BIOS3.06 EC1.06 MCU1.01.00 PD11",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/9724/",
+        "publishedDate": "2023-03-30",
+        "releasePurpose": "Adds Battery Health Optimizer and USB4 support",
+        "publishedDownload": "https://rzr.to/Ot4YKs",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%20%282022%29%20%E2%80%93%20RZ09-0427/RazerUpdater_v1.1.1.3_PI480-MCUv010100-PDv11-BIOSv3.06v1-ECv0106.exe",
+        "bytes": 6715752,
+        "sha256": "6DC6495A1BDEBF7AEA343F2A5F1E82E5565AECE7D1FBF50CBD2E450CC18B04EF",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "signerThumbprint": "39B818FD58E5287EAB2F9371F7E6A6B8B1A0E8D8",
+        "executed": false,
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade 14",
+            "SSID": "1A58201C",
+            "SKU": "RZ09-0427",
+            "BIOSVER": "3.06",
+            "PD1VER": "00.00.00.11",
+            "PD2VER": "00.00.00.11",
+            "MCUVER": "01.01.00",
+            "ECVER": "01.06"
+          }
+        ],
+        "extractedData": [
+          {
+            "file": "FlashWin.bat",
+            "bytes": 700,
+            "sha256": "B4E7CD2E47996573F1300B3577CE3BDD244CE7F4898FE3AEF32D9797EB6FA92B",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "MCURV.bat",
+            "bytes": 40,
+            "sha256": "435E5EE5FCCF6317018F3394BE71DEB3780DB64FF3573A268BA59B551E0D96CF",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "McuUpdate.bat",
+            "bytes": 81,
+            "sha256": "49A717448C3A3270972B7813075A77F4B2C1B0EC4B0890D2A63C294315EAA4D9",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "P480_306.rom",
+            "bytes": 33554432,
+            "sha256": "9CDF3C74907C2E35F140C203E007B829B8871D5EA78C9833CBBF943B35193304",
+            "kind": "firmware image"
+          },
+          {
+            "file": "PI480_EC_01_06.bin",
+            "bytes": 262144,
+            "sha256": "2482E6DED196B6378E92AD857CC07B2F9DB0B9AA392996172D09548F6CF6EF86",
+            "kind": "firmware image"
+          },
+          {
+            "file": "PI480_keyboard_FW_v1.01.00_20221228.hex",
+            "bytes": 164224,
+            "sha256": "057F6CA432804B4F923AC524886E99815A30011FCFC10A76E4B0F27AD27D5F5F",
+            "kind": "firmware image"
+          },
+          {
+            "file": "RazerPD1.bin",
+            "bytes": 32000,
+            "sha256": "AB01AC091E4142AAE2A64D4301817707D4A046F300015429FCFDF4F370293FC5",
+            "kind": "firmware image"
+          },
+          {
+            "file": "RazerPD2.bin",
+            "bytes": 32000,
+            "sha256": "3BBBD35CB4DDBBF4C2F298890FA470279A642D41FD794B96F9CEDB9DC61EDF6E",
+            "kind": "firmware image"
+          },
+          {
+            "file": "ToolConfig.ini",
+            "bytes": 69,
+            "sha256": "ECB1A96C4EBE3BECB748D6724E6DB1BF80DC228286A601C5D5281EE7F1062D12",
+            "kind": "static configuration"
+          },
+          {
+            "file": "torden.ini",
+            "bytes": 506,
+            "sha256": "230FEF69F481FE18DB4C8A4C16E1A479C71754F7C70CA793159FC281506DBB77",
+            "kind": "static configuration"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0427",
+        "component": "EC",
+        "version": "1.03",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14993/",
+        "publishedDate": "2022-06-08",
+        "releasePurpose": "Older EC update; do not substitute it for the 2023 Battery Health Optimizer firmware",
+        "publishedDownload": "https://rzr.to/e5gUOn",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/RazerUpdater_v1.1.1.3_PI480-ECv0103.exe",
+        "bytes": 599792,
+        "sha256": "0CFBB2516A93AC94A94A1FF220C81D210138CC37E44C3EF073EFFC684073AD2E",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "signerThumbprint": "39B818FD58E5287EAB2F9371F7E6A6B8B1A0E8D8",
+        "executed": false,
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade 14",
+            "SSID": "1A58201C",
+            "SKU": "RZ09-0427",
+            "ECVER": "01.03"
+          }
+        ],
+        "extractedData": [
+          {
+            "file": "PI480_EC_01_03.bin",
+            "bytes": 262144,
+            "sha256": "312343A3CEBD56FCB97CEFCFC103B17BD481098E4122F2B6680AB46E93FC0B9F",
+            "kind": "firmware image"
+          },
+          {
+            "file": "ToolConfig.ini",
+            "bytes": 69,
+            "sha256": "CFA16A748F5B5ED9B7A479D61C296BCA90F2A0E15FF262490B50AD2A20556252",
+            "kind": "static configuration"
+          },
+          {
+            "file": "torden.ini",
+            "bytes": 276,
+            "sha256": "732924A52803D9E46A4563EB600FF8A12674DC5CCB01DAE2EAB669FDA61C75BD",
+            "kind": "static configuration"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0421",
+        "component": "BIOS",
+        "version": "2.06",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/9729/",
+        "publishedDownload": "https://rzr.to/sQIwbX",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20%282022%29%20%7C%20RZ09-0421x/RazerUpdater_v1.1.1.3_CH580-BIOSv0206.exe",
+        "bytes": 8048824,
+        "sha256": "34CD35D840CF25A72B3CB614B6975C83C9342A3B725D0C76D69774C3E89AA35F",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "signerThumbprint": "39B818FD58E5287EAB2F9371F7E6A6B8B1A0E8D8",
+        "executed": false,
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade",
+            "SSID": "1A58201B",
+            "SKU": "RZ09-0421",
+            "BIOSVER": "2.06"
+          }
+        ],
+        "extractedData": [
+          {
+            "file": "CH580_0206_BIOSME.bin",
+            "bytes": 28377088,
+            "sha256": "74FBB0EBDF0225E0AE07C9653F08104B8D188B796B7FBE493019F7FA7FCB690C",
+            "kind": "firmware image"
+          },
+          {
+            "file": "FlashAFUWin.bat",
+            "bytes": 686,
+            "sha256": "EFA5F81F5E2B36C4625B2C20A53E049DC021E176C5711D7C06BD8E1398ECD29C",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "torden.ini",
+            "bytes": 258,
+            "sha256": "97C0239D6E07F7E3620D43A8BF905323B9772CD5A898A3DEC1AC0403F6A0A711",
+            "kind": "static configuration"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0421",
+        "component": "EC/MCU",
+        "version": "EC1.03 MCU1.03.00",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/9727/",
+        "publishedDate": "2025-01-27",
+        "releasePurpose": "Battery Health Optimizer support",
+        "publishedDownload": "https://rzr.to/534ubu",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20%282022%29%20%7C%20RZ09-0421x/RazerUpdater_v1.1.1.3_CH580_EC_0103_MCU_010300_v2.exe",
+        "bytes": 1516336,
+        "sha256": "6FCFD96615C514C6CD25944405980B6B39D8A2B0458F8CABCE299DAC37728118",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "signerThumbprint": "39B818FD58E5287EAB2F9371F7E6A6B8B1A0E8D8",
+        "executed": false,
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade",
+            "SSID": "1A58201B",
+            "SKU": "RZ09-0421",
+            "MCUVER": "01.03.00",
+            "ECVER": "01.03"
+          }
+        ],
+        "extractedData": [
+          {
+            "file": "CH580_EC_01_03.bin",
+            "bytes": 262144,
+            "sha256": "F96A009F65C49E89C76BB0874587472BEACE315A6CC616BC8DA1BDE845CB9C1B",
+            "kind": "firmware image"
+          },
+          {
+            "file": "CH580_keyboard_FW_v1.03.00_20230614.hex",
+            "bytes": 177912,
+            "sha256": "EBC8D502D3F1E3D5B38E73042FC37AEFC3FAA51B1F21CEA82553899BC67CAF1D",
+            "kind": "firmware image"
+          },
+          {
+            "file": "FW.bin",
+            "bytes": 63364,
+            "sha256": "2339F84C066424468B325ACEDFA092C8D9FEA2A796F7AF49E217215CFAF00463",
+            "kind": "firmware image"
+          },
+          {
+            "file": "MCURV.bat",
+            "bytes": 40,
+            "sha256": "42C7EE857DCA3CF32D94525D787D1CDDA0EFE7825889B2DFCB884A84D0DA8A89",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "McuUpdate.bat",
+            "bytes": 81,
+            "sha256": "8F3FC2B906BB417B2D12328581FCDB999089DA421BF01F3D59127C785058EB0F",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "ToolConfig.ini",
+            "bytes": 58,
+            "sha256": "5D96656210A7665381252DFE65DED6BC718DD54C030FE2E838238B6BA28F25EB",
+            "kind": "static configuration"
+          },
+          {
+            "file": "torden.ini",
+            "bytes": 305,
+            "sha256": "E827BE5EBA7E9F588FE1C90D0AB8044CF41CDBA7537EF31213F516FACC8F9EB3",
+            "kind": "static configuration"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0423",
+        "component": "BIOS",
+        "version": "2.01",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/6197/",
+        "publishedDownload": "https://rzr.to/gUB1Ew",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2017%22%20%282022%29%20%7C%20RZ09-0423x/RazerUpdater_v1.1.1.3_DI780-BIOSv0201.exe",
+        "bytes": 8123664,
+        "sha256": "4E514C68DFC36497167431F9C01FB62F7A71175C7678DE6A5255510EB03B786F",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "signerThumbprint": "39B818FD58E5287EAB2F9371F7E6A6B8B1A0E8D8",
+        "executed": false,
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade Pro",
+            "SSID": "1A583005",
+            "SKU": "RZ09-0423",
+            "BIOSVER": "2.01"
+          }
+        ],
+        "extractedData": [
+          {
+            "file": "DI780_201_BIOSME.bin",
+            "bytes": 28377088,
+            "sha256": "1F6BFA2CAE3EE858CA430B6EA8D721990D8F92A3B47FD517CDE284F0E1D223EF",
+            "kind": "firmware image"
+          },
+          {
+            "file": "FlashAFUWin.bat",
+            "bytes": 250,
+            "sha256": "5FD7C646ED64F202D2ECC0DEACE2C48D1AF109FFF79FF10250CA40B94F50DA57",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "torden.ini",
+            "bytes": 266,
+            "sha256": "08A139FC0977AED7B11ACC551A5197CB2D740EA8966E25DBB808892410756566",
+            "kind": "static configuration"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0423",
+        "component": "EC/MCU/VBIOS",
+        "version": "EC1.05 MCU1.02.00; variant-specific VBIOS",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14775/",
+        "publishedDate": "2025-01-27",
+        "releasePurpose": "Updated exact-model firmware including Battery Health Optimizer",
+        "publishedDownload": "https://rzr.to/xsbbhf",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2017%22%20%282022%29%20%7C%20RZ09-0423x/RazerUpdater_v1.1.1.3_DI780-ECv0105_MCUv010200_VBIOS_v3.exe",
+        "bytes": 7556096,
+        "sha256": "3F096851BED1679A83630FA588DAF0D977F0944634075E75493658CFAD03C554",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "signerThumbprint": "39B818FD58E5287EAB2F9371F7E6A6B8B1A0E8D8",
+        "executed": false,
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade Pro",
+            "SSID": "1A583005",
+            "SKU": "RZ09-0423",
+            "MCUVER": "01.02.00",
+            "ECVER": "01.05"
+          }
+        ],
+        "extractedData": [
+          {
+            "file": "DI780_EC_01_05.bin",
+            "bytes": 262144,
+            "sha256": "ADA7830BCCA91F0201D108386A4C4EFDE39197BD31719F810DB4481FD0E58DEA",
+            "kind": "firmware image"
+          },
+          {
+            "file": "DI780_Keyboard_FW_v1.02.00_20230614.hex",
+            "bytes": 165026,
+            "sha256": "86FD0E0C85FD7D70C5BC2FBF8922108A1B81870728342465A880DF56BDD401C1",
+            "kind": "firmware image"
+          },
+          {
+            "file": "Diane8_GN20-E3_MaxP_9406380030_PP_140W_GEN1.rom",
+            "bytes": 999424,
+            "sha256": "568D312FF16F0212C8E35B7194FF08DE09B4B73ECA34B9C67244D968B45CDB12",
+            "kind": "firmware image"
+          },
+          {
+            "file": "Diane8_GN20-E3_MaxP_9406380031_PP_140W_GEN2.rom",
+            "bytes": 999424,
+            "sha256": "C80754D71521CFAFC823780BE058D414A6F67B49465CC9A7A829ED8176643EBB",
+            "kind": "firmware image"
+          },
+          {
+            "file": "Diane8_GN20-E8_MaxP_9403194034_PP_175W_GEN1.rom",
+            "bytes": 999424,
+            "sha256": "2C456C7858463E1508A1EC2AE44891697B61D42B5FF70050927B0D2ACC3D12A0",
+            "kind": "firmware image"
+          },
+          {
+            "file": "Diane8_GN20-E8_MaxP_9403194036_PP_175W_GEN2.rom",
+            "bytes": 999424,
+            "sha256": "D8D5A13E3AAE1C2854084DBF7BB46A010520E8B500BD1997CD7382FC8AE34CFF",
+            "kind": "firmware image"
+          },
+          {
+            "file": "Diane8_GN20-E8_MaxP_gsync_9403194035_PP_175W_GEN1.rom",
+            "bytes": 999424,
+            "sha256": "624A8602F30BAD0ED6C4BE1E0F2CA8EF38B2127EF77184F646284EAE9DBD5CF6",
+            "kind": "firmware image"
+          },
+          {
+            "file": "Diane8_GN20-E8_MaxP_gsync_9403194037_PP_175W_GEN2.rom",
+            "bytes": 999424,
+            "sha256": "9FE8ECA567310116D82C3A27BD1659FED4C37971CB0EC6377BA2BDC5E4CEDF31",
+            "kind": "firmware image"
+          },
+          {
+            "file": "E3_update.bat",
+            "bytes": 122,
+            "sha256": "E42835F066181DB360909BAC9A3ED1DA3BBF70D4B62782191B8C87B9E46788FD",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "E3_update_gen1.bat",
+            "bytes": 122,
+            "sha256": "CBE3932FA0A6D99523FD247A38EC1EDDBDD44F9D778DD3A424346257A3083CF2",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "E8_DDS_update.bat",
+            "bytes": 128,
+            "sha256": "BD4783BD458F731726D4F010B6BAE669AD604B6A36F8C9DABD44C044793260C9",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "E8_DDS_update_gen1.bat",
+            "bytes": 128,
+            "sha256": "684E1AEA8D2A589573AEE1DE63DCC2ADB8533B6B8175FB3820F5FAE2F40D69E5",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "E8_update.bat",
+            "bytes": 124,
+            "sha256": "500FEDFA1079EBB38DF423990A272C1FF4033F500A57BF3803D445A7D3D859D7",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "E8_update_gen1.bat",
+            "bytes": 122,
+            "sha256": "020D0F48A7511B7BD3E0238B1E23E9E2B201B18BFFE5056916E222F6D8FEB370",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "GetVbiosVer.bat",
+            "bytes": 104,
+            "sha256": "DB9C744A59BE59AFBA59319B4713C81CB9BB0002963BBB0D04A36E48FA9ADC35",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "MCURV.bat",
+            "bytes": 40,
+            "sha256": "DF0F422FAEB625A2E9A558C829A431CE75081BC37EF7CDEE167003D488733D2E",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "McuUpdate.bat",
+            "bytes": 81,
+            "sha256": "4911289953E1083ADE7F24EA61A0415AF80E27EFC4EA52BB7290CC9FFA673AA7",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "ToolConfig.ini",
+            "bytes": 58,
+            "sha256": "FF3DD7383D6930E937D405DF7D7CBDA0B54F0C0207A0ADEAF39535A1C7260AA3",
+            "kind": "static configuration"
+          },
+          {
+            "file": "torden.ini",
+            "bytes": 462,
+            "sha256": "5A03253421E45705621BD258B2138EA7E60F53869AF2C9BE231A687B94B1089E",
+            "kind": "static configuration"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0421",
+        "component": "Optional Thunderbolt NVM",
+        "version": "43.03 updater field / 43.3 NVM",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14711/",
+        "publishedDate": "2024-10-18",
+        "releasePurpose": "Thunderbolt 5 accessory compatibility; not system BIOS 43.03",
+        "interpretation": "The generic torden.ini labels 43.03 BIOSVER but dispatches Run.bat to an NVM payload. The actual system BIOS package is 2.06. This optional updater is not a prerequisite for admitted thermal or charge controls.",
+        "publishedDownload": "https://rzr.to/pc1nao",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20%282022%29%20%7C%20RZ09-0421x/RazerUpdater_v1.1.1.3_CH580_NVM_v43.03.exe",
+        "bytes": 940920,
+        "sha256": "EDAFED4FE873F67D1ED8C113D388C9EF2B3C9DF4C3D78102E02AF4E3D8DC0AE9",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "signerThumbprint": "39B818FD58E5287EAB2F9371F7E6A6B8B1A0E8D8",
+        "executed": false,
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade",
+            "SSID": "1A58201B",
+            "SKU": "*",
+            "BIOSVER": "43.03"
+          },
+          {
+            "case": "Case2",
+            "TNAME": "Razer Blade",
+            "SSID": "1A58201F",
+            "SKU": "*",
+            "BIOSVER": "43.03"
+          }
+        ],
+        "extractedData": [
+          {
+            "file": "getnvmver.bat",
+            "bytes": 182,
+            "sha256": "A5577E335C28C03BAC2FB586662CC09AEA58BDCADA56FCD3A7FD90DE52B55AA0",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "Run.bat",
+            "bytes": 122,
+            "sha256": "6E9EDD55A408AA950ACFAC37B782B074A758C7A4E98817119BA6D96B3AE67D73",
+            "kind": "inert script; hash only"
+          },
+          {
+            "file": "torden.ini",
+            "bytes": 406,
+            "sha256": "79723F9E563D598690320B59777C9D5524299D77DBD3DB5F955CED2267641B00",
+            "kind": "static configuration"
+          }
+        ],
+        "extractionScope": "Signed carrier, static INI and inert scripts pinned. No separate NVM image was present in the inspected extraction at report time."
+      }
+    ]
+  },
+  "batterySetterAcknowledgement": {
+    "models": [
+      650,
+      651,
+      652
+    ],
+    "vendorContract": "07/12 SET returns the command result; the packed-byte decoder runs only when SUCCESS has response bytes. A successful empty ACK is allowed by the helper. An echoed byte is not independent readback.",
+    "openBladeContract": "Accept zero response bytes or one exact requested byte, then require independent fresh raw 07/92 confirmation. Keep enable and threshold separate. Stop on mismatched ACK, readback, uncertain submission or restoration; do not replay the setter."
+  }
+}

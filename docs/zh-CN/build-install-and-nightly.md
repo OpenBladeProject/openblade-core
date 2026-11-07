@@ -151,7 +151,7 @@ OpenBlade 修复操作不会改动已安装的共享运行时。
   只有选择 **Nightly** 更新渠道时，应用才会提供这些版本。
 
 Nightly 是测试构建。安装前，请用附带的 SHA-256 文件验证 `OpenBlade-Setup.exe`。
-如想帮助测试笔记本，请按[Blade 实验性支持指南](experimental-blade-support.md)
+如想帮助测试笔记本，请按[基于已审核来源的 Blade 支持指南](experimental-blade-support.md)
 了解可用功能和测试报告要求。无论选择哪个更新渠道，OpenBlade 都会自动启用已识别型号的可用功能。
 
 <a id="attestations-and-signing-status"></a>

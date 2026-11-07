@@ -747,12 +747,12 @@ public sealed class DisplayAutomationCoordinatorTests
                 null,
                 SessionDisplayIpcCodecTests.Snapshot("fixed-60", true, "native")),
         };
-        (ProfileSet original, Guid id) = ApplicationProfiles(hdr: false);
+        (ProfileSet original, Guid id) = ApplicationProfiles(hdr: false, refresh: "fixed-240");
         ProfileSet profiles = original with
         {
             PluggedIn = original.PluggedIn with
             {
-                Display = new DisplayProfileSettings(null, false, null),
+                Display = new DisplayProfileSettings("fixed-144", false, null),
             },
         };
         await using var coordinator = new DisplayAutomationCoordinator(
@@ -769,8 +769,90 @@ public sealed class DisplayAutomationCoordinatorTests
         await coordinator.WhenIdleAsync();
 
         Assert.Equal(2, applier.Transitions.Count);
+        Assert.Equal("fixed-240", applier.Transitions[0].Settings.RefreshRateKey);
         Assert.False(applier.Transitions[0].Settings.HdrEnabled);
+        Assert.Equal("fixed-60", applier.Transitions[1].Settings.RefreshRateKey);
         Assert.True(applier.Transitions[1].Settings.HdrEnabled);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("fixed-144")]
+    public async Task ApplicationWithoutRefreshBaselineLeavesRefreshToBaseProfile(string? baseRefresh)
+    {
+        var applier = new FakeApplier
+        {
+            QueryResult = new SessionDisplayExecutionResult(
+                SessionDisplayOperationStatus.Succeeded,
+                null,
+                SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native") with { CurrentRefreshKey = null }),
+        };
+        (ProfileSet original, Guid id) = ApplicationProfiles(hdr: true, refresh: "fixed-240");
+        ProfileSet profiles = original with
+        {
+            PluggedIn = original.PluggedIn with { Display = new DisplayProfileSettings(baseRefresh, null, null) },
+        };
+        List<DisplayAutomationRecoveryState> checkpoints = [];
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recordRecoveryState: state =>
+            {
+                checkpoints.Add(state);
+                return true;
+            });
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles) with { ActiveApplicationProfileId = id });
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(new DisplayProfileSettings(baseRefresh, true, null), Assert.Single(applier.Transitions).Settings);
+        Assert.True(checkpoints[^1].OwnedHdr);
+
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(new DisplayProfileSettings(baseRefresh, false, null), applier.Transitions[1].Settings);
+        Assert.All(checkpoints, state => Assert.False(state.OwnedRefreshRate));
+        Assert.Null(checkpoints[^1].Baseline);
+    }
+
+    [Fact]
+    public async Task ApplicationExitKeepsRecoveredRefreshOwnershipWithoutRestorableRate()
+    {
+        (ProfileSet profiles, Guid id) = ApplicationProfiles(hdr: true, refresh: "fixed-240");
+        var recovery = new DisplayAutomationRecoveryState(
+            PowerSource.PluggedIn,
+            id,
+            new DisplayProfileSettings(null, false, "native"),
+            OwnedRefreshRate: true,
+            OwnedHdr: true,
+            OwnedColorProfile: false,
+            OwnedBrightness: false,
+            ManualHold: false,
+            AutomaticWritesPaused: false,
+            UncertainRefreshRate: false,
+            UncertainHdr: false,
+            UncertainColorProfile: false,
+            UncertainBrightness: false);
+        DisplayAutomationRecoveryState? checkpoint = null;
+        var applier = new FakeApplier();
+        await using var coordinator = new DisplayAutomationCoordinator(
+            new DisplayPowerContextState(),
+            applier,
+            recoveryState: recovery,
+            recordRecoveryState: state =>
+            {
+                checkpoint = state;
+                return true;
+            });
+
+        coordinator.Observe(Status(PowerSource.PluggedIn, profiles));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(new DisplayProfileSettings(null, false, null), Assert.Single(applier.Transitions).Settings);
+        Assert.Equal(SessionDisplayOperationStatus.Blocked, coordinator.LastTransitionResult?.Result.Status);
+        Assert.True(checkpoint?.OwnedRefreshRate);
+        Assert.Null(checkpoint?.Baseline?.RefreshRateKey);
     }
 
     [Fact]
@@ -1080,7 +1162,7 @@ public sealed class DisplayAutomationCoordinatorTests
         };
     }
 
-    private static (ProfileSet Profiles, Guid Id) ApplicationProfiles(bool hdr)
+    private static (ProfileSet Profiles, Guid Id) ApplicationProfiles(bool hdr, string? refresh = null)
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         Guid id = Guid.NewGuid();
@@ -1097,7 +1179,7 @@ public sealed class DisplayAutomationCoordinatorTests
                     {
                         PluggedIn = new ApplicationPowerProfileOverride
                         {
-                            Display = new DisplayProfileSettings(null, hdr, null),
+                            Display = new DisplayProfileSettings(refresh, hdr, null),
                         },
                     }),
             ],

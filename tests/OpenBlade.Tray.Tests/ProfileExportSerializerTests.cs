@@ -40,6 +40,59 @@ public sealed class ProfileExportSerializerTests
         Assert.Equal(definition, Assert.Single(imported.ApplicationProfiles));
     }
 
+    [Theory]
+    [InlineData(14)]
+    [InlineData(15)]
+    public void PreviousAndCurrentSchemas_PreserveSettingsAndUseOptionalIndependentAssociations(int schema)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var definition = new ApplicationProfileDefinition(Guid.NewGuid(), "Game", @"C:\Games\game.exe",
+            ApplicationActivationMode.WhileRunningAfterActivation, new ApplicationProfileOverrideSet
+            {
+                PluggedIn = new ApplicationPowerProfileOverride
+                {
+                    Performance = schema == 15 ? PerformancePreset.Creator : PerformancePreset.Performance,
+                },
+            });
+        ProfileSet configured = defaults with
+        {
+            ApplicationProfiles = [definition],
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = schema == 15 ? PerformancePreset.Gaming : PerformancePreset.Balanced,
+                Display = new DisplayProfileSettings(null, true, null) { BrightnessPercent = 65 },
+            },
+            WindowsPowerModes = defaults.WindowsPowerModes with
+            {
+                Performance = WindowsPowerMode.BestPowerEfficiency,
+                Turbo = WindowsPowerMode.BestPerformance,
+                MaximumPower = WindowsPowerMode.Balanced,
+                Gaming = WindowsPowerMode.BestPerformance,
+                Creator = WindowsPowerMode.BestPowerEfficiency,
+            },
+        };
+        JsonObject document = JsonNode.Parse(ProfileExportSerializer.Serialize(configured, "1.0.0", DateTimeOffset.UtcNow))!.AsObject();
+        Assert.Equal(15, document["schemaVersion"]!.GetValue<int>());
+        document["schemaVersion"] = schema;
+        if (schema == 14)
+        {
+            JsonObject associations = document["profiles"]!["windowsPowerModes"]!.AsObject();
+            Assert.True(associations.Remove("turbo"));
+            Assert.True(associations.Remove("maximumPower"));
+            Assert.True(associations.Remove("gaming"));
+            Assert.True(associations.Remove("creator"));
+        }
+        ProfileSet imported = ProfileExportSerializer.Deserialize(document.ToJsonString());
+        Assert.Equal(definition, Assert.Single(imported.ApplicationProfiles));
+        Assert.Equal((byte)65, imported.PluggedIn.Display!.BrightnessPercent);
+        Assert.Equal(configured.PluggedIn.Performance, imported.PluggedIn.Performance);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, imported.WindowsPowerModes.Performance);
+        Assert.Equal(schema == 14 ? null : WindowsPowerMode.BestPerformance, imported.WindowsPowerModes.Turbo);
+        Assert.Equal(schema == 14 ? null : WindowsPowerMode.Balanced, imported.WindowsPowerModes.MaximumPower);
+        Assert.Equal(schema == 14 ? null : WindowsPowerMode.BestPerformance, imported.WindowsPowerModes.Gaming);
+        Assert.Equal(schema == 14 ? null : WindowsPowerMode.BestPowerEfficiency, imported.WindowsPowerModes.Creator);
+    }
+
     [Fact]
     public void CurrentSchema_RoundTripsThxSemanticSettingsWithoutNativeIds()
     {
@@ -281,7 +334,7 @@ public sealed class ProfileExportSerializerTests
             profiles,
             "0.5.6",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 14",
+                $"\"schemaVersion\": {ProfileExportSerializer.CurrentSchemaVersion}",
                 "\"schemaVersion\": 7",
                 StringComparison.Ordinal);
 
@@ -296,8 +349,10 @@ public sealed class ProfileExportSerializerTests
             imported.WindowsPowerModes);
     }
 
-    [Fact]
-    public void Deserialize_VersionNineMigratesPresetWindowsPowerModes()
+    [Theory]
+    [InlineData(WindowsPowerMode.BestPerformance)]
+    [InlineData(WindowsPowerMode.BestPowerEfficiency)]
+    public void Deserialize_VersionNineMigratesPresetWindowsPowerModes(WindowsPowerMode performanceMode)
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         ProfileSet legacy = defaults with
@@ -314,14 +369,18 @@ public sealed class ProfileExportSerializerTests
         document["schemaVersion"] = 9;
         JsonObject profiles = document["profiles"]!.AsObject();
         profiles.Remove("windowsPowerModes");
-        profiles["pluggedIn"]!["windowsPowerMode"] = "bestPerformance";
+        profiles["pluggedIn"]!["windowsPowerMode"] = JsonNamingPolicy.CamelCase.ConvertName(performanceMode.ToString());
         profiles["battery"]!["windowsPowerMode"] = "bestPowerEfficiency";
         profiles["usbC"]!["windowsPowerMode"] = "balanced";
 
         ProfileSet imported = ProfileExportSerializer.Deserialize(document.ToJsonString());
 
-        Assert.Equal(WindowsPowerMode.BestPerformance,
+        Assert.Equal(performanceMode,
             imported.WindowsPowerModes.Performance);
+        Assert.Null(imported.WindowsPowerModes.ForPerformance(PerformancePreset.Turbo));
+        Assert.Null(imported.WindowsPowerModes.ForPerformance(PerformancePreset.MaximumPower));
+        Assert.Null(imported.WindowsPowerModes.ForPerformance(PerformancePreset.Gaming));
+        Assert.Null(imported.WindowsPowerModes.ForPerformance(PerformancePreset.Creator));
         Assert.Equal(WindowsPowerMode.BestPowerEfficiency,
             imported.WindowsPowerModes.BatterySaver);
         Assert.Equal(WindowsPowerMode.Balanced,
@@ -407,7 +466,7 @@ public sealed class ProfileExportSerializerTests
             expected,
             "0.16.0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 14",
+                $"\"schemaVersion\": {ProfileExportSerializer.CurrentSchemaVersion}",
                 "\"schemaVersion\": 10",
                 StringComparison.Ordinal);
 
@@ -425,7 +484,7 @@ public sealed class ProfileExportSerializerTests
             profiles,
             "0.17.0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 14",
+                $"\"schemaVersion\": {ProfileExportSerializer.CurrentSchemaVersion}",
                 "\"schemaVersion\": 10",
                 StringComparison.Ordinal);
 
@@ -489,7 +548,7 @@ public sealed class ProfileExportSerializerTests
             legacy,
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 14",
+                $"\"schemaVersion\": {ProfileExportSerializer.CurrentSchemaVersion}",
                 "\"schemaVersion\": 5",
                 StringComparison.Ordinal);
 
@@ -565,7 +624,7 @@ public sealed class ProfileExportSerializerTests
             legacy,
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 14",
+                $"\"schemaVersion\": {ProfileExportSerializer.CurrentSchemaVersion}",
                 "\"schemaVersion\": 5",
                 StringComparison.Ordinal);
 
@@ -584,14 +643,14 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 14",
-                "\"schemaVersion\": 15",
+                $"\"schemaVersion\": {ProfileExportSerializer.CurrentSchemaVersion}",
+                $"\"schemaVersion\": {ProfileExportSerializer.CurrentSchemaVersion + 1}",
                 StringComparison.Ordinal);
 
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => ProfileExportSerializer.Deserialize(json));
 
-        Assert.Contains("schema 15", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"schema {ProfileExportSerializer.CurrentSchemaVersion + 1}", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("newer version", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -602,7 +661,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 14",
+                $"\"schemaVersion\": {ProfileExportSerializer.CurrentSchemaVersion}",
                 "\"schemaVersion\": 0",
                 StringComparison.Ordinal);
 
@@ -619,7 +678,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 14",
+                $"\"schemaVersion\": {ProfileExportSerializer.CurrentSchemaVersion}",
                 "\"schemaVersion\": 1",
                 StringComparison.Ordinal);
 

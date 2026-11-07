@@ -84,6 +84,7 @@ public partial class App
 {
     private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
     private const string CaptionThemeSmokeArgument = "--caption-theme-smoke";
+    private const string CpuTuningLayoutSmokeArgument = "--cpu-tuning-layout-smoke";
     private const string ResponsivePageHeaderSmokeArgument =
         "--responsive-page-header-smoke";
     private const string ResponsiveChoiceSelectorSmokeArgument =
@@ -132,6 +133,11 @@ public partial class App
             return true;
         }
 
+        if (commandLineArguments is [_, CpuTuningLayoutSmokeArgument])
+        {
+            _ = RunCpuTuningLayoutSmokeAsync();
+            return true;
+        }
         bool pseudoLocalizationRequested = string.Equals(
             Environment.GetEnvironmentVariable("OPENBLADE_PSEUDO_LOCALIZATION"),
             "1",
@@ -659,6 +665,10 @@ public partial class App
         string? localizationLanguage)
     {
         string? reportPath = null;
+        string? requestedPage = Environment.GetEnvironmentVariable(
+            LocalizationSnapshotPageVariable);
+        bool captureGlobalSearch = requestedPage is "global-search" or "global-search-compact";
+        bool compactGlobalSearch = requestedPage == "global-search-compact";
         MainWindow? snapshotMainWindow = null;
         TrayDashboardWindow? snapshotDashboardWindow = null;
         try
@@ -704,8 +714,6 @@ public partial class App
                 "about",
                 "whats-new",
             };
-            string? requestedPage = Environment.GetEnvironmentVariable(
-                LocalizationSnapshotPageVariable);
             bool captureNarrowProfiles = string.Equals(
                 requestedPage,
                 "profiles-narrow",
@@ -768,6 +776,7 @@ public partial class App
                 && !captureLabsTarget
                 && !captureSnapTap
                 && !captureDischargeSettings
+                && !captureGlobalSearch
                 && !string.Equals(
                     requestedPage,
                     "tray-dashboard",
@@ -777,7 +786,7 @@ public partial class App
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
             IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
-                || captureDischargeSettings || captureLabsTarget
+                || captureDischargeSettings || captureLabsTarget || captureGlobalSearch
                 ? [requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
@@ -836,6 +845,13 @@ public partial class App
                     {
                         snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
                     }
+                    if (captureGlobalSearch)
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(
+                            (int)Math.Ceiling((compactGlobalSearch ? 800 : 1120)
+                                * snapshotMainWindow.XamlRoot.RasterizationScale),
+                            (int)Math.Ceiling(820 * snapshotMainWindow.XamlRoot.RasterizationScale));
+                    }
                     if (captureSnapTap && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(
                         "OPENBLADE_LOCALIZATION_SNAPSHOT_KEYBOARD_INPUTS")))
                     {
@@ -855,7 +871,8 @@ public partial class App
                     await WaitForSnapshotLayoutAsync();
                     string navigationDestination = destination switch
                     {
-                        "settings-appearance" or "settings-notifications" => "settings",
+                        "settings-appearance" or "settings-notifications"
+                            or "global-search" or "global-search-compact" => "settings",
                         "labs-import-target" or "labs-60hz-target" => "labs",
                         "profiles-applications" or "profiles-applications-empty"
                             or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
@@ -903,6 +920,13 @@ public partial class App
                     if (captureSnapTap)
                     {
                         snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing, driverSetupState);
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if (captureGlobalSearch)
+                    {
+                        snapshotMainWindow.ShowGlobalSearchSnapshot(compactGlobalSearch);
+                        await WaitForSnapshotLayoutAsync();
+                        snapshotMainWindow.SetGlobalSearchSnapshotQuery("nightly", compactGlobalSearch);
                         await WaitForSnapshotLayoutAsync();
                     }
                     if (captureFeatureSnapshot || destination == "telemetry")
@@ -1009,6 +1033,17 @@ public partial class App
                         await SaveSnapshotAsync(
                             snapshotMainWindow.Content,
                             Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+                        if (captureGlobalSearch)
+                        {
+                            FrameworkElement results = snapshotMainWindow.GetGlobalSearchSnapshotResults()
+                                ?? throw new InvalidOperationException(
+                                    "The global search results popup was not available for capture.");
+                            string resultsName = compactGlobalSearch
+                                ? "global-search-results-compact.png"
+                                : "global-search-results.png";
+                            await SaveSnapshotAsync(results, Path.Combine(resolvedDirectory, resultsName));
+                            await snapshotMainWindow.VerifyGlobalSearchSnapshotNavigationAsync(compactGlobalSearch);
+                        }
                     }
                 }
                 finally
@@ -1682,6 +1717,11 @@ public partial class App
         {
             return;
         }
+        if (state is "source-reviewed-presets" or "source-reviewed-base")
+        {
+            ApplySourceReviewedPresetsSnapshotState(window, legacyBase: state == "source-reviewed-base");
+            return;
+        }
         if (state == "experimental-custom")
         {
             ApplyExperimentalCustomSnapshotState(window);
@@ -1829,6 +1869,83 @@ public partial class App
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Dashboard presentation hook was not found.");
         refreshCards.Invoke(window, null);
+    }
+
+    private static void ApplySourceReviewedPresetsSnapshotState(MainWindow window, bool legacyBase = false)
+    {
+        // Disconnected RZ09-0529 / 711 or RZ09-0300 / 582 fixture. Match the
+        // reviewed production capability set; this never connects to the service.
+        CustomPerformanceLevel[] levels =
+            [CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High];
+        var combinations = new HashSet<CustomPerformanceCombination>();
+        foreach (CustomPerformanceLevel cpu in levels)
+        {
+            foreach (CustomPerformanceLevel gpu in levels)
+            {
+                combinations.Add(new(cpu, gpu));
+            }
+        }
+        var capabilities = new DeviceCapabilities(
+            legacyBase ? new HashSet<PerformancePreset>
+            { PerformancePreset.Balanced, PerformancePreset.Gaming, PerformancePreset.Creator }
+            : new HashSet<PerformancePreset>
+            {
+                PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Turbo,
+                PerformancePreset.MaximumPower, PerformancePreset.Custom,
+                PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver,
+            },
+            new HashSet<FanMode> { FanMode.Automatic },
+            new HashSet<LightingEffect>(),
+            legacyBase ? new HashSet<int>() : Enumerable.Range(10, 7).Select(value => value * 5).Append(100).ToHashSet(),
+            SupportsBatteryProtectionOff: !legacyBase,
+            SupportsTemporaryFullCharge: false)
+        {
+            CustomPerformance = legacyBase ? null : new(combinations) { SupportsMaximumFans = false },
+            SupportsBreathingColorSelection = false,
+            SupportsWaveDirectionSelection = false,
+        };
+        PerformancePreset selected = legacyBase ? PerformancePreset.Creator : PerformancePreset.MaximumPower;
+        PerformancePreset[] expected = legacyBase
+            ? [PerformancePreset.Balanced, PerformancePreset.Gaming, PerformancePreset.Creator]
+            : [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Turbo,
+                PerformancePreset.MaximumPower, PerformancePreset.Custom];
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Performance = selected },
+            WindowsPowerModes = profiles.WindowsPowerModes with
+            {
+                Turbo = WindowsPowerMode.BestPerformance,
+                MaximumPower = WindowsPowerMode.Balanced,
+                Gaming = WindowsPowerMode.BestPerformance,
+                Creator = WindowsPowerMode.Balanced,
+            },
+        };
+        var status = new ServiceStatusSnapshot(
+            1, true, false, [], null, [],
+            legacyBase ? "Source-reviewed RZ09-0300 preset preview" : "Source-reviewed RZ09-0529 preset preview", capabilities,
+            new ConfirmedDeviceState(selected, FanMode.Automatic,
+                legacyBase ? null : new ConfirmedBatteryState(true, 80, null), null), profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(selected, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
+            PowerSource.PluggedIn, null, null, null, null, false)
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalSupportSource = legacyBase ? "SynapseSourceBacked:RZ09-0300:582" : "SynapseSourceBacked:RZ09-0529:711",
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        applyStatus.Invoke(window.ViewModel, [status, false]);
+        if (!window.ViewModel.AvailablePluggedInPerformanceOptions.Select(option => option.Value).SequenceEqual(
+                expected))
+        {
+            throw new InvalidOperationException("The source-reviewed preset preview is incomplete.");
+        }
     }
 
     private static void ApplyExperimentalCustomSnapshotState(MainWindow window)

@@ -12,6 +12,9 @@ public sealed record StagedVerifiedLocalDevDeployment(
 
 public interface IFixedLocalDevInboxSource
 {
+    Task<StagedVerifiedLocalDevDeployment> StageCpuVoltageAsync(string protectedStagingDirectory,
+        OpenBladeReleaseTrustPolicy trustPolicy, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("CPU deployment is not enabled by this source.");
     Task<StagedVerifiedLocalDevDeployment> StageAsync(
         string protectedStagingDirectory,
         OpenBladeReleaseTrustPolicy trustPolicy,
@@ -35,7 +38,15 @@ public sealed class FixedLocalDevInboxSource(BrokerPaths paths) : IFixedLocalDev
     public async Task<StagedVerifiedLocalDevDeployment> StageAsync(
         string protectedStagingDirectory,
         OpenBladeReleaseTrustPolicy trustPolicy,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await StageCoreAsync(protectedStagingDirectory, trustPolicy, false, cancellationToken).ConfigureAwait(false);
+
+    public Task<StagedVerifiedLocalDevDeployment> StageCpuVoltageAsync(string protectedStagingDirectory,
+        OpenBladeReleaseTrustPolicy trustPolicy, CancellationToken cancellationToken = default) =>
+        StageCoreAsync(protectedStagingDirectory, trustPolicy, true, cancellationToken);
+
+    private async Task<StagedVerifiedLocalDevDeployment> StageCoreAsync(string protectedStagingDirectory,
+        OpenBladeReleaseTrustPolicy trustPolicy, bool cpuVoltage, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(protectedStagingDirectory);
         ArgumentNullException.ThrowIfNull(trustPolicy);
@@ -43,12 +54,12 @@ public sealed class FixedLocalDevInboxSource(BrokerPaths paths) : IFixedLocalDev
         string staging = Path.GetFullPath(protectedStagingDirectory);
         ProtectedBrokerStorage.RejectReparsePoint(inbox);
         ProtectedBrokerStorage.RejectReparsePoint(staging);
-        RequireExactInboxSet(inbox);
+        RequireExactInboxSet(inbox, cpuVoltage);
 
         await using FileStream manifest = OpenExclusiveRegularFile(inbox, ManifestFileName);
         await using FileStream signature = OpenExclusiveRegularFile(inbox, SignatureFileName);
         await using FileStream installer = OpenExclusiveRegularFile(inbox, InstallerFileName);
-        RequireExactInboxSet(inbox);
+        RequireExactInboxSet(inbox, cpuVoltage);
 
         byte[] manifestBytes = await ReadBoundedAsync(
             manifest,
@@ -77,6 +88,14 @@ public sealed class FixedLocalDevInboxSource(BrokerPaths paths) : IFixedLocalDev
             manifestBytes,
             signatureBytes,
             trustPolicy);
+        if ((verified.Manifest.SchemaVersion == OpenBladeReleaseManifestCodec.CpuVoltageSchemaVersion) != cpuVoltage)
+        { throw new InvalidDataException("Signed profile does not match fixed broker action."); }
+        if (cpuVoltage)
+        {
+            using var closure = CpuVoltageClosureLease.Open(Path.Combine(inbox, CpuVoltageDeploymentClosure.DirectoryName),
+                verified.Manifest.SourceRevision, verified.Manifest.CpuVoltageManifestSha256!, verified.Manifest.CpuVoltageServiceVersion!);
+            closure.CopyTo(Path.Combine(staging, CpuVoltageDeploymentClosure.DirectoryName), paths.EnsureDirectory, paths.ProtectFile);
+        }
         if (!string.Equals(
                 verified.Manifest.InstallerFileName,
                 InstallerFileName,
@@ -152,13 +171,13 @@ public sealed class FixedLocalDevInboxSource(BrokerPaths paths) : IFixedLocalDev
         }
     }
 
-    private static void RequireExactInboxSet(string inbox)
+    private static void RequireExactInboxSet(string inbox, bool cpuVoltage = false)
     {
         string[] entries = Directory.EnumerateFileSystemEntries(inbox)
             .Select(path => Path.GetFileName(path)!)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        string[] expected = ExactFileNames.Order(StringComparer.Ordinal).ToArray();
+        string[] expected = (cpuVoltage ? ExactFileNames.Append(CpuVoltageDeploymentClosure.DirectoryName) : ExactFileNames).Order(StringComparer.Ordinal).ToArray();
         if (!entries.SequenceEqual(expected, StringComparer.Ordinal))
         {
             throw new InvalidDataException(
