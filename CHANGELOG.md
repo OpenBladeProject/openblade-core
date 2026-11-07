@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Control Razer Laptop Cooling Pad fan targets, temperature curves, lighting and keyboard lighting sync from its own page, shown when connected. Support is experimental and based on reviewed vendor definitions. ([#889](https://github.com/OpenBladeProject/openblade-core/pull/889))
+
 ### Fixed
 
 - Apply and verify the internal display's active signal rate when selecting a fixed refresh rate. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
