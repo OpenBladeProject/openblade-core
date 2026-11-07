@@ -108,8 +108,10 @@ five-second heartbeat latches stop. The owner finishes any required confirmation
 before the existing Auto handback. Do not close or kill the guardian itself.
 Guardian loss, unknown outer host-job termination, sleep and OS failure remain
 uncovered; the owner prints that scope before the approval prompts.
-This integration is implemented and tested with fake hardware; its live
-caller-loss behavior still needs separate attended validation. See
+The [attended caller-loss test](so6120-guardian-caller-loss-validation.md)
+validated the surviving developer owner's Auto restoration from a confirmed
+zero checkpoint on exact RZ09-0581 in USB-C Balanced. Other failure classes and
+the installed-product integration remain outside that result. See
 [guardian recovery](so6120-fan-stop-crash-recovery.md#supervised-guardian-integration).
 
 Before starting the live command, use the installed application's normal

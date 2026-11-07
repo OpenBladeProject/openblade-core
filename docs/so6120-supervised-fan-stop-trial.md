@@ -30,8 +30,11 @@ commands; an ordinary mapped A0 read is not an independent recovery mechanism.
 
 The injectable backend must supply a command-free startup ownership verdict
 before ordinary service controls can run. Unknown or unresolved ownership
-starts the controller in recovery. This is an interface requirement; a live
-durable inspection or guardian implementation is still missing. The permanently
+starts the controller in recovery. This is an interface requirement; installed
+service delegation and durable startup inspection remain unimplemented. The
+separate developer guardian now has
+[attended caller-loss evidence](so6120-guardian-caller-loss-validation.md).
+The permanently
 unavailable production backend has never admitted a direct operation.
 Later observation of direct Stop without owned entry also requires recovery;
 it neither establishes ownership nor authorizes an Auto command.

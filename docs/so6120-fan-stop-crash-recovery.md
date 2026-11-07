@@ -7,14 +7,16 @@ It cannot guarantee recovery from its own crash, unresolved native I/O, an OS
 hang, or an unannounced low-power transition. A software heartbeat is not an
 independent firmware fallback.
 
-This is an offline design review against base
-`d43a4e9af65683939d004a13bb238b0709bbc878`. No hardware access, driver load,
-service change, installation, marker change, crash injection, or sleep test was
-performed. The two completed attended USB-C Balanced trials already establish
+This started as an offline design review against base
+`d43a4e9af65683939d004a13bb238b0709bbc878`. That review performed no hardware
+actions. The two earlier attended USB-C Balanced trials establish
 the narrow `91/91 -> 0/0 -> Auto` sequence on exact RZ09-0581; the repeat also
 has the owner's brief physical-stop confirmation. They establish neither a
 crash recovery path nor an unlimited stop interval. See the
 [attended evidence](so6120-supervised-fan-stop-trial.md#attended-result-on-2026-11-06).
+The later [caller-loss test](so6120-guardian-caller-loss-validation.md) separately
+validated Auto restoration by the surviving developer guardian on this exact
+device and USB-C Balanced scope. It does not cover loss of the hardware owner.
 
 ## Failure coverage
 
@@ -343,21 +345,17 @@ of an unknown job from its flags or process list. Repeated UAC or alternate shel
 launches were ruled out as a solution. Hardware validation remains a separate
 step after review and fake-hardware verification of the replacement.
 
-## Remaining live question
+## Attended caller-loss result and remaining scope
 
-The one useful next attended test is **caller loss with a surviving owner at a
-confirmed zero checkpoint**. The current test remains authorized and unperformed.
-Preserve that authorization within its scope; review the changed launch contract
-and freeze the new candidate before proceeding. Reuse exact RZ09-0581, the reported
-BIOS/EC pins, USB-C Balanced, original bounded trial, saved baseline and fresh
-admission. After the already reviewed zero observation, deliberately disconnect
-or terminate only a client with no hardware handle. Keep the owner and its
-native I/O alive. Confirm autonomous selector-first Auto, original owned-field
-restoration, durable completion and native release. Do not extend the stopped
-interval to test an arbitrary lease. Record caller-loss detection and the
-start/end of actual handback separately from software cutoffs.
+The [2026-11-07 caller-loss test](so6120-guardian-caller-loss-validation.md)
+passed on frozen candidate `1ceb0112`: the hardware-free caller exited after
+confirmed zero PWM, the same owner survived, and selector-first Auto, original
+owned-field restoration, durable completion and native release were verified.
+The final Auto observation reported PWM 40/40 and raw tach 18/18. The controller
+did not extend the coast window. Caller exit preceded Auto start by about
+49.7 ms; complete handback took 11.10 s in this run.
 
-This would validate caller-loss handling only. No guardian kill, native-hang
+This validates the exercised caller-loss handling only. No guardian kill, native-hang
 injection, OS crash, forced sleep or EC reset is justified by the current
 recovery evidence. Attended sleep/resume would require its own approval and
 concrete recovery procedure. Ordinary unattended Stop still requires an

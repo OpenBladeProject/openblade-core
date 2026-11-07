@@ -1,4 +1,8 @@
-# SO6120 guardian startup passed; caller-loss test pending
+# SO6120 guardian attempts before caller-loss validation
+
+These earlier refusals were followed by a
+[successful attended caller-loss test](so6120-guardian-caller-loss-validation.md).
+The historical evidence and outcomes below remain unchanged.
 
 The attended USB-C Balanced attempt on 2026-11-07 used Capture commit
 `1ceb0112d03f24f0fb1661df266fc691ba9bac0d` on the already admitted RZ09-0581.
@@ -79,9 +83,9 @@ There is no direct-duty journal. The controller observed both caller and owner
 exit with code 2, and its parent observed controller exit with code 2. No
 caller termination, fan-setting write or Auto restoration was exercised.
 
-The original payload and fixed targets remain unchanged. Further execution
-waits for the user to finish the GPU workload and for fresh runtime admission;
-the preparation work does not close applications or relax the thermal gate.
+The original payload and fixed targets remained unchanged. Further execution
+waited for the user to finish the GPU workload and for fresh runtime admission;
+the preparation work did not close applications or relax the thermal gate.
 
 Evidence directory: `artifacts/so6120-guardian-caller-job-repeat-20261107`.
 
