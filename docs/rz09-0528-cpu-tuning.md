@@ -7,7 +7,7 @@ are Curve Optimizer steps, not a voltage reading in millivolts.
 
 The editor is live-only. It shows independently measured running offsets and
 sends voltage-only requests. Mixed per-core readings require an explicit
-choice before Apply. The optional backend must already be installed and
+choice before Apply. The live backend must already be installed and
 running; availability checks and reads do not provision or start its driver.
 
 New saved-setting requests are retired. Existing serialized target values,
@@ -118,7 +118,8 @@ The [developer tools](cpu-validation-tools.md) and
 [enrolled broker](unattended-deployment-broker.md) keep explicit job authority
 separate from installation; deployment does not dispatch a CPU job automatically.
 
-Tracking: [#622](https://github.com/OpenBladeProject/openblade-core/issues/622),
+Current integration: [#887](https://github.com/OpenBladeProject/openblade-core/pull/887).
+Historical tracking: [#622](https://github.com/OpenBladeProject/openblade-core/issues/622),
 product [#623](https://github.com/OpenBladeProject/openblade-core/pull/623),
 validation [#699](https://github.com/OpenBladeProject/openblade-core/pull/699),
 deployment [#700](https://github.com/OpenBladeProject/openblade-core/pull/700),

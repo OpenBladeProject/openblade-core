@@ -4,8 +4,9 @@ These developer commands extend the [Voltage Optimizer product](rz09-0528-cpu-tu
 
 The developer `--cpu-tuning-layout-smoke` harness renders six synthetic states
 at two widths without connecting to the service. It checks editor bounds,
-live-only requests, measured offsets and recovery presentation; screenshots are not hardware
-admission or installed-application proof.
+live-only requests, measured offsets and recovery presentation, plus wrapped
+Russian command labels. Screenshots are not hardware admission or installed
+application proof.
 
 FirmwareSmoke's `cpu-voltage-optimizer` command requires
 `--confirm-target RZ09-0528-CPU-VOLTAGE-OPTIMIZER-SMOKE`, an exact installed
@@ -30,7 +31,7 @@ identity, active-session, full-power, continuity, ownership and readback checks
 remain required. The profile uses the existing transaction and FirmwareSmoke
 command. It neither starts nor provisions the optional AMD driver.
 
-Normal builds admit the captured CO range and retain the legacy saved-journal recovery;
+Normal builds admit the captured CO range and retain legacy saved-journal recovery;
 live PPT remains `ObservedOnly`.
 The product rejects new saved-setting requests. The attended cycle uses
 `LiveNow` only and submits no saved or PPT command. Existing saved-journal
