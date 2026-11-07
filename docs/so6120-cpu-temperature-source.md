@@ -96,13 +96,102 @@ returned bytes and an unchanged inner-result sentinel. The diagnostic stopped;
 neither GET6 nor a temperature GET14 was sent. No fan/profile setting changed.
 Independent namespace inspection confirmed the expected `ipf_lf` device target.
 
-The current installed endpoint therefore has not provided a usable CPU reading.
-The next source task is to reconcile Intel's actual client transport and device
-routing with that failure. No initialization command or alternate IOCTL should
-be guessed. Once that contract is established, a bounded diagnostic can check
-response types, lengths, status, units, elapsed time and variation. A successful
-diagnostic would establish working readings under the observed conditions; it
-would not by itself enable Stop or validate other laptops.
+Follow-up static analysis explains this result. The installed `ipf_umdf2.dll`
+upper filter registers an external device-control callback that accepts only
+`0x80862000`; other codes, including the older kernel IPC `0x120004`, complete
+with `STATUS_NOT_IMPLEMENTED`. This matches the observed Win32 error. Intel's
+own older client helper uses the same open flags and IPC layout as the diagnostic;
+no missing per-handle handshake was found. The filter's accepted external code
+requires event IPC, so it is not an alternate temperature/metadata endpoint.
+Its internal kernel IPC uses a WDF I/O target unavailable through the recovered
+user-mode interface. The reviewed filter SHA-256 is
+`0a876dc65e1f011aa9a1f79f39343abbe2569bc4937f22af58187c9986fcaafc`.
+
+This older endpoint cannot provide the diagnostic's reading through the installed
+filter. Do not remove or bypass that filter, guess an initialization command, or
+use the event endpoint for a temperature request. The separately reviewed public
+client API below successfully reached the running Intel service instead.
+
+## Successful standalone Intel service observation
+
+On 2026-11-07, a separately authorized diagnostic used the existing signed
+`ipfcore.dll` / `ipfipc.dll` public C interface. It completed ten CPU temperature
+reads, one second apart, without installing a component or sending a fan/profile
+command:
+
+| Reading | CPU temperature (C) |
+| --- | ---: |
+| 1 | 70 |
+| 2 | 84 |
+| 3 | 77 |
+| 4 | 83 |
+| 5 | 77 |
+| 6 | 68 |
+| 7 | 73 |
+| 8 | 74 |
+| 9 | 78 |
+| 10 | 76 |
+
+All ten returned ESIF success, temperature type 6 and four bytes. The slowest
+temperature read took 16.3994 ms. The native session disconnected and the worker
+exited successfully, with no timeout. The workload was not controlled or used
+as a calibration reference. These are changing readings from the identified CPU
+participant, not the earlier constant TZRZ source.
+
+The client used the public SDK version `1.0.11402` in the installed
+`GetIpfInterface` version-1 ABI (156 bytes). A passive AppInterface version-4
+observer received the library's actual participant metadata: enabled `TCPU`,
+PCI `8086:B01D`, and the TCPU ACPI scope. It rejected absent, duplicate, removed
+or malformed CPU identity before any temperature query. The only sensor command
+was fixed `execute-primitive TCPU GET_TEMPERATURE D0 255`, with a void request
+and bounded four-byte temperature response. The library retains its ordinary
+participant bookkeeping; its normal lifecycle also subscribes/unsubscribes to
+the logging event without changing log verbosity or thermal settings.
+
+Reviewed client SHA-256 values:
+
+| File | SHA-256 |
+| --- | --- |
+| `ipfcore.dll` | `aee37dd796c076d6c31895e995bc7d5b5e6689bd46772ddee33ad4b7feabcfa3` |
+| `ipfipc.dll` | `cf2eafb2c71a35657f83e1b9e425edd1de52d222bfbfa637ff6255cb001e9113` |
+
+The diagnostic checked Windows signature trust, package binding and registry
+installation path, held the client files against modification, rehashed their
+locked contents, and verified actual loaded module paths before connecting.
+It used an isolated worker with independent controller-lifetime monitoring.
+Offline checks covered ABI/SDK fields, participant lifecycle and error/response
+rejection (17 assertions plus packing); the worker-exit harness also passed.
+
+This establishes a working standalone CPU source on the observed host and
+installed Intel stack. It has **not** been connected to production telemetry or
+Stop, and the correction has not been locally installed. The next implementation
+is a bounded reader shared by telemetry and the surviving Stop owner, with
+explicit unavailable/stale results, cancellation, power/session invalidation and
+native-client lifetime handling. The observed elevated diagnostic does not prove
+that production requires elevation. No other model, future package contract,
+surviving guardian session or lifecycle transition inherits this observation.
+
+## How other Windows monitors obtain temperatures
+
+Online primary-source review on 2026-11-07 found these approaches:
+
+| Approach | Actual source and relevance |
+| --- | --- |
+| `lfreist/hwinfo` | This separate MIT-licensed C++ library can be redistributed with its notices, but has no CPU temperature API at reviewed revision `acdc2eb4`. CPU data covers identification, topology, frequency and utilization; the temperature field is part of GPU status. Its Windows CPU implementation has no AMD thermal-sensor backend. It therefore cannot supply Stop's CPU temperature. [CPU interface](https://github.com/lfreist/hwinfo/blob/acdc2eb4a9109b4ea6bbe207e03d9da33bc16fab/include/hwinfo/cpu.h), [monitoring interface](https://github.com/lfreist/hwinfo/blob/acdc2eb4a9109b4ea6bbe207e03d9da33bc16fab/include/hwinfo/monitoring.h), [Windows CPU implementation](https://github.com/lfreist/hwinfo/blob/acdc2eb4a9109b4ea6bbe207e03d9da33bc16fab/src/windows/cpu.cpp), [license](https://github.com/lfreist/hwinfo/blob/acdc2eb4a9109b4ea6bbe207e03d9da33bc16fab/LICENSE). |
+| LibreHardwareMonitor | The Intel implementation recognizes Panther Lake and reads CPU MSRs through PawnIO. Its AMD Zen implementation reads the SMN temperature register and exposes Tctl/Tdie/CCD sensors. Both require the separate PawnIO kernel driver; a user-mode library reference alone is not the complete solution. At reviewed revision `b4718a62`: [Intel reader](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/b4718a6208ebbcf028cc29f2aea30e58b138e830/LibreHardwareMonitorLib/Hardware/Cpu/IntelCpu.cs), [AMD reader](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/b4718a6208ebbcf028cc29f2aea30e58b138e830/LibreHardwareMonitorLib/Hardware/Cpu/Amd17Cpu.cs), [PawnIO transport](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/b4718a6208ebbcf028cc29f2aea30e58b138e830/LibreHardwareMonitorLib/PawnIo/PawnIo.cs). |
+| Intel Power Gadget | Its Windows API obtains temperature/MSR data through its installed driver. The legacy guide does not establish Core Ultra Series 3 support. [Intel API guide](https://www.intel.com/content/www/us/en/developer/articles/training/using-the-intel-power-gadget-30-api-on-windows.html). |
+| Standard WMI temperature probe | Microsoft says `Win32_TemperatureProbe.CurrentReading` is not populated by current WMI implementations because SMBIOS cannot supply real-time readings. This is distinct from model-specific ACPI zones, whose firmware semantics still need review. [Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-temperatureprobe). |
+| HWiNFO SDK | A separately licensed monitoring DLL intended for integration, including operation without a GUI and automated installation support. Bundling needs the licensor's explicit approval; a normal Pro license does not include this separate SDK. Its redistribution terms and pricing must be agreed before packaging. [SDK](https://www.hwinfo.com/sdk/), [author's clarification](https://www.hwinfo.com/forum/threads/sdk.10694/), [EULA](https://www.hwinfo.com/files/license.pdf). |
+
+The successful existing Intel service route currently avoids those additional
+monitoring and driver dependencies on this laptop. No HWiNFO component has been
+acquired, bundled, installed or invoked.
+
+For AMD support, share the CPU-temperature result and policy contract while
+selecting a reviewed processor-specific provider. The working Intel IPF route
+does not establish an AMD backend. LibreHardwareMonitor is a relevant source
+to evaluate if a new driver becomes acceptable; this research does not add that
+dependency or establish its sensor behavior on an AMD Blade.
 
 ## Alternatives ruled out for now
 
