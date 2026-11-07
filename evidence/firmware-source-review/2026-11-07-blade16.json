@@ -1,0 +1,730 @@
+{
+  "schemaVersion": 1,
+  "reviewDate": "2026-11-07",
+  "sourceCommit": "d49eb99a6175291fbbf5abfa1a0fac1a3e93b08e",
+  "classification": "bounded-static-corroboration",
+  "hardwareActionsPerformed": false,
+  "firmwareCodeExecuted": false,
+  "scope": "Exact images and selected recovered definitions only; no new capability or physical validation.",
+  "models": [
+    {
+      "model": "RZ09-0581",
+      "controlHid": "1532:02E0",
+      "packages": [
+        {
+          "component": "BIOS",
+          "version": "4.01",
+          "article": "https://mysupport.razer.com/app/answers/detail/a_id/20847",
+          "acquisition": "existing local carrier; not re-downloaded in this review",
+          "file": "SO6120_BIOSv0401.exe",
+          "bytes": 9900296,
+          "sha256": "29687c5465c12c2023b6c30f3cd8f818f9c5258ca5d01944d3782c3c9e28b839",
+          "authenticodeStatus": "Valid",
+          "signer": "Razer USA Ltd.",
+          "payload": {
+            "name": "SO6120_BIOSv401.bin",
+            "bytes": 30474368,
+            "sha256": "db08e4cb4ef3121a4b4b5df0a03f7636245240caa3c9e4aee87982db7a9ab77d"
+          }
+        },
+        {
+          "component": "EC",
+          "version": "1.04",
+          "article": "https://mysupport.razer.com/app/answers/detail/a_id/20850",
+          "acquisition": "existing local carrier and extracted image; not re-downloaded in this review",
+          "file": "SO6120_ECv01.04.exe",
+          "bytes": 652560,
+          "sha256": "e6e105ca059b96c7dd0ae0bc2fbc0e259b29250b97f09447044624f2447cdae7",
+          "authenticodeStatus": "Valid",
+          "signer": "Razer USA Ltd.",
+          "payload": {
+            "name": "SO6120_EC_0104.bin",
+            "carrierBlockOffset": "0x44de8",
+            "bytes": 262144,
+            "sha256": "8537e9fd55b7b35504d8d87b0191acc4391b67365b3fe72f6e1029a424c9e707"
+          }
+        }
+      ],
+      "biosDefinitions": {
+        "pfatMainWrapperSha256": "4043cf5f09290a962738963666f63617be2a356ed8e23dec900a6d10b8a099a1",
+        "dsdtFfsGuid": "C118F50D-391D-45F4-B3D3-11BC931AA56D",
+        "dsdtBytes": 226774,
+        "dsdtImageSha256": "66b262d78185d35b33d0d75f398804e866e6d68a1ead73ecb5641d9e75787c07",
+        "retainedLiveDsdtSha256": "76ef85960f17583b332ca450a09120c3ce5e0c9a7d1e37d059a60548040b8767",
+        "thermalZone": "\\_SB.PC00.LPCB.EC0.TZRZ",
+        "tmpAmlNameOffset": "0x370aa",
+        "tmpReturnDeciKelvin": 3182,
+        "tmpApproximateCelsius": 45.05,
+        "source": "BIOS raw DSDT and retained live DSDT both encode the same literal return; tables have different hashes."
+      },
+      "ecDefinitions": {
+        "identityOffset": "0x90",
+        "identity": "ITE8320EC-V01.04",
+        "architecture": "NDS32 (little-endian data, big-endian instructions)",
+        "normalSelectors": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "normalSelectorAdmission": "0x15E46",
+        "manualClamp": "0x15C62..0x15D9C",
+        "minimumLoad": "0x16406..0x16418",
+        "maximumLoad": "0x16432..0x16444",
+        "requestRpmMultiplier": 100,
+        "automaticTargetRpmMultiplier": 50,
+        "belowMinimumException": {
+          "selector": 3,
+          "resultTargetRpm": 0,
+          "branch": "0x15C88..0x15C9E"
+        },
+        "automaticZeroOverride": "0x15030..0x15068 may raise decoded targets to 3000 when RAM0x80B08 or0x80C08 equals1",
+        "factoryTableCaveat": "Validated persistent records may replace image defaults; no active EC records were read.",
+        "factoryTables": [
+          {
+            "boardGroup": 1,
+            "selector": 0,
+            "imageOffset": "0x3b000",
+            "length": 512,
+            "sha256": "88223ec5b599cda5c34d3fb55c9124058741501a1ce0866f1194298178c9d61a",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 1,
+            "selector": 1,
+            "imageOffset": "0x3b200",
+            "length": 512,
+            "sha256": "9f0b2259cfc02683e0471bc9f9a5ad903f5a790447c6f65f32dc167fe49a4455",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 1,
+            "selector": 2,
+            "imageOffset": "0x3b400",
+            "length": 512,
+            "sha256": "9f0b2259cfc02683e0471bc9f9a5ad903f5a790447c6f65f32dc167fe49a4455",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 1,
+            "selector": 3,
+            "imageOffset": "0x3b600",
+            "length": 512,
+            "sha256": "aaf3a19f797d9e6b02af69a21eb995b0960e7876d320d387bd36ce4ced41af3d",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 1,
+            "selector": 4,
+            "imageOffset": "0x3b800",
+            "length": 512,
+            "sha256": "bb7c6753cebc302b5e11629263cde61227c5d5213e6a8c0169d00c268aef35e3",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 1,
+            "selector": 5,
+            "imageOffset": "0x3ba00",
+            "length": 512,
+            "sha256": "ece5e29031edbf6b4347f1413b55ceab510cc629e3c9ab6415a576200b244af7",
+            "stages": 8,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 1,
+            "selector": 6,
+            "imageOffset": "0x3bc00",
+            "length": 512,
+            "sha256": "aaf3a19f797d9e6b02af69a21eb995b0960e7876d320d387bd36ce4ced41af3d",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 1,
+            "selector": 7,
+            "imageOffset": "0x3be00",
+            "length": 512,
+            "sha256": "a3389ba23269eec370500cecae2912a119f1f1f3d7f3d719d5d0680f3ad0e437",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 2,
+            "selector": 0,
+            "imageOffset": "0x3c000",
+            "length": 512,
+            "sha256": "88223ec5b599cda5c34d3fb55c9124058741501a1ce0866f1194298178c9d61a",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 2,
+            "selector": 1,
+            "imageOffset": "0x3c200",
+            "length": 512,
+            "sha256": "9f0b2259cfc02683e0471bc9f9a5ad903f5a790447c6f65f32dc167fe49a4455",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 2,
+            "selector": 2,
+            "imageOffset": "0x3c400",
+            "length": 512,
+            "sha256": "9f0b2259cfc02683e0471bc9f9a5ad903f5a790447c6f65f32dc167fe49a4455",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 2,
+            "selector": 3,
+            "imageOffset": "0x3c600",
+            "length": 512,
+            "sha256": "aaf3a19f797d9e6b02af69a21eb995b0960e7876d320d387bd36ce4ced41af3d",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 2,
+            "selector": 4,
+            "imageOffset": "0x3c800",
+            "length": 512,
+            "sha256": "bb7c6753cebc302b5e11629263cde61227c5d5213e6a8c0169d00c268aef35e3",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 2,
+            "selector": 5,
+            "imageOffset": "0x3ca00",
+            "length": 512,
+            "sha256": "ece5e29031edbf6b4347f1413b55ceab510cc629e3c9ab6415a576200b244af7",
+            "stages": 8,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 2,
+            "selector": 6,
+            "imageOffset": "0x3cc00",
+            "length": 512,
+            "sha256": "aaf3a19f797d9e6b02af69a21eb995b0960e7876d320d387bd36ce4ced41af3d",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 2,
+            "selector": 7,
+            "imageOffset": "0x3ce00",
+            "length": 512,
+            "sha256": "a3389ba23269eec370500cecae2912a119f1f1f3d7f3d719d5d0680f3ad0e437",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 3,
+            "selector": 0,
+            "imageOffset": "0x3d000",
+            "length": 512,
+            "sha256": "6b0a70fbcb64d0c2da836cb86f8d668a4df3c3a356a79ff66295b40bac912fa0",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 3,
+            "selector": 1,
+            "imageOffset": "0x3d200",
+            "length": 512,
+            "sha256": "61a7aff89f4dd1c87c582ba6c4cd67bb52bfed50692ea70437b9447af6ccf8cf",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 3,
+            "selector": 2,
+            "imageOffset": "0x3d400",
+            "length": 512,
+            "sha256": "61a7aff89f4dd1c87c582ba6c4cd67bb52bfed50692ea70437b9447af6ccf8cf",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 3,
+            "selector": 3,
+            "imageOffset": "0x3d600",
+            "length": 512,
+            "sha256": "aaf3a19f797d9e6b02af69a21eb995b0960e7876d320d387bd36ce4ced41af3d",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 3,
+            "selector": 4,
+            "imageOffset": "0x3d800",
+            "length": 512,
+            "sha256": "64240caab231e1ac73144a140bb821080f7544cae4c362274a9d05486d9d6d99",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 3,
+            "selector": 5,
+            "imageOffset": "0x3da00",
+            "length": 512,
+            "sha256": "ece5e29031edbf6b4347f1413b55ceab510cc629e3c9ab6415a576200b244af7",
+            "stages": 8,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 3,
+            "selector": 6,
+            "imageOffset": "0x3dc00",
+            "length": 512,
+            "sha256": "aaf3a19f797d9e6b02af69a21eb995b0960e7876d320d387bd36ce4ced41af3d",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 3,
+            "selector": 7,
+            "imageOffset": "0x3de00",
+            "length": 512,
+            "sha256": "ae3949b9a42fd4261a29d3c384ea16837a2a3e2097cd9f8a456c789400354d01",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 4,
+            "selector": 0,
+            "imageOffset": "0x3e000",
+            "length": 512,
+            "sha256": "4a9ce527f4521654cf560033ebd89fb9a611748b96e79466b960f1d9304f18f0",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 4,
+            "selector": 1,
+            "imageOffset": "0x3e200",
+            "length": 512,
+            "sha256": "53d76776cba53df6b2aaae3a7b482b52cef86abb57738a29c940ceeeab0a8b48",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 4,
+            "selector": 2,
+            "imageOffset": "0x3e400",
+            "length": 512,
+            "sha256": "53d76776cba53df6b2aaae3a7b482b52cef86abb57738a29c940ceeeab0a8b48",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 4,
+            "selector": 3,
+            "imageOffset": "0x3e600",
+            "length": 512,
+            "sha256": "aaf3a19f797d9e6b02af69a21eb995b0960e7876d320d387bd36ce4ced41af3d",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 4,
+            "selector": 4,
+            "imageOffset": "0x3e800",
+            "length": 512,
+            "sha256": "87b368e3a35b14b8b40b0e4ae720a27ecd37e99162d9c341f151e9359839b542",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 4,
+            "selector": 5,
+            "imageOffset": "0x3ea00",
+            "length": 512,
+            "sha256": "ece5e29031edbf6b4347f1413b55ceab510cc629e3c9ab6415a576200b244af7",
+            "stages": 8,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 4,
+            "selector": 6,
+            "imageOffset": "0x3ec00",
+            "length": 512,
+            "sha256": "aaf3a19f797d9e6b02af69a21eb995b0960e7876d320d387bd36ce4ced41af3d",
+            "stages": 10,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          },
+          {
+            "boardGroup": 4,
+            "selector": 7,
+            "imageOffset": "0x3ee00",
+            "length": 512,
+            "sha256": "a3389ba23269eec370500cecae2912a119f1f1f3d7f3d719d5d0680f3ad0e437",
+            "stages": 12,
+            "fanCount": 2,
+            "sensorMask": "0xbf",
+            "firstStageTargetsRpm": [
+              0,
+              0
+            ],
+            "manualMinimumRpm": 2000,
+            "manualMaximumRpm": 5400
+          }
+        ]
+      },
+      "limits": [
+        "Human-readable mode labels require the separately reviewed exact-product vendor protocol; the EC table has numeric selectors only.",
+        "A zero target does not prove physical fan stopping.",
+        "Internal FE/FF branches and generic mailboxes do not establish a supported bounded HID command.",
+        "Battery/keyboard/lighting contracts and GPU electrical rail behavior are not revalidated by this review."
+      ]
+    },
+    {
+      "model": "RZ09-0528",
+      "controlHid": "1532:02C6",
+      "packages": [
+        {
+          "component": "BIOS",
+          "version": "2.02",
+          "article": "https://mysupport.razer.com/app/answers/detail/a_id/15235",
+          "shortUrl": "https://rzr.to/2vxhvx",
+          "downloadUrl": "https://dl.razerzone.com/drivers/RazerBlade16RZ09-0528/SO6110_BIOSv0202.exe",
+          "file": "SO6110_BIOSv0202.exe",
+          "bytes": 6967384,
+          "sha256": "4e39e3f7bc9e7c09bd60d04ade0aa38f63a7d23fd497934ffaa25c4fea7e592f",
+          "authenticodeStatus": "Valid",
+          "signer": "Razer USA Ltd.",
+          "payload": {
+            "name": "SO6110_202.rom",
+            "carrierBlockOffset": "0x95308",
+            "bytes": 33554432,
+            "sha256": "5bbd09cda602e8555b04d7ca2a3a7bcbbdfc929be8a7bc5c81e6c3dfc7cbb2f4"
+          },
+          "updater": {
+            "ssid": "1A58300E",
+            "sku": "RZ09-0528",
+            "configurationCarrierBlockOffset": "0x66fc83"
+          }
+        },
+        {
+          "component": "EC",
+          "version": "1.09",
+          "article": "https://mysupport.razer.com/app/answers/detail/a_id/21226",
+          "shortUrl": "https://rzr.to/58kmn2",
+          "downloadUrl": "https://dl.razerzone.com/drivers/RazerBlade16RZ09-0528/SO6110-ECv0109.exe",
+          "file": "SO6110-ECv0109.exe",
+          "bytes": 9110504,
+          "sha256": "3bf4dbec9555de4f784e9602b2fe982ec439924b946c412f46db4c53a769832b",
+          "authenticodeStatus": "Valid",
+          "signer": "Razer USA Ltd.",
+          "payload": {
+            "name": "SO6110_EC_0109.bin",
+            "carrierBlockOffset": "0x32657f",
+            "bytes": 262144,
+            "sha256": "44dc4e4c92ea4be9def93670a95b2bf859cb648b8dfe393fb5877735debbef5d"
+          },
+          "updater": {
+            "ssid": "1A58300E",
+            "skus": [
+              "RZ09-05285",
+              "RZ09-05286",
+              "RZ09-05287",
+              "RZ09-05288",
+              "RZ09-05289"
+            ],
+            "configurationCarrierBlockOffset": "0x87afc5",
+            "toolConfigCarrierBlockOffset": "0x3356e9"
+          }
+        }
+      ],
+      "biosDefinitions": {
+        "dsdtFfsGuid": "C118F50D-391D-45F4-B3D3-11BC931AA56D",
+        "rawSectionOffset": 0,
+        "dsdtBytes": 40255,
+        "dsdtSha256": "aa91c2da04dd656016958e785ed6f1e2f41ecd222e5d7cca1e906fcc775e6521",
+        "checksumValid": true,
+        "thermalZone": "\\_SB.PCI0.SBRG.EC0.TZRZ",
+        "tmpAmlNameOffset": "0x91bb",
+        "tmpReturnDeciKelvin": 3182,
+        "tmpApproximateCelsius": 45.05,
+        "embeddedControlFields": {
+          "CPUT": "0x56",
+          "CP2T": "0x57",
+          "GPUT": "0x58",
+          "ECVR": {
+            "offset": "0x20",
+            "bits": 32
+          }
+        },
+        "pollingTenthsSeconds": 30,
+        "criticalTripEncodedCelsius": 120,
+        "hotTripEncodedCelsius": 110,
+        "razerAcpiDxe": {
+          "ffsGuid": "48E0B361-F517-41E2-870C-73C84475B52C",
+          "bytes": 7680,
+          "sha256": "396d438cfaa48f03a71fddaecb92ad51c51db0dd4613a4e1873c38b67af8d07a",
+          "entryRva": "0x17ec",
+          "ecDataReadHelperRva": "0x1b50",
+          "selectors": [
+            "0xe8",
+            "0xd0"
+          ],
+          "conclusion": "Bounded recovered helper reads EC data into NVS; no dynamic CPU temperature reader or _TMP patch established."
+        }
+      },
+      "ecDefinitions": {
+        "identityOffset": "0x90",
+        "identity": "RTW--81202-01.09",
+        "boardStringOffset": "0x2d00",
+        "boardString": "RTW81202 PI480",
+        "instructionSetStatus": "Reset-vector bytes are consistent with compressed RISC-V; no complete EC disassembly or normal-control ingress trace performed."
+      },
+      "limits": [
+        "The 0581 NDS32 offsets/tables are not transferred to this distinct image.",
+        "No 0528 EC fan table, manual clamp, battery selector, keyboard-mode, or runtime HID-to-EC chain was established in this bounded review.",
+        "The BIOS thermal-zone path exists, but its literal _TMP cannot establish live CPU temperature.",
+        "Package SKU/SSID cases are updater applicability provenance and do not change runtime host admission."
+      ]
+    }
+  ],
+  "methods": [
+    "SHA-256 and Windows Authenticode over outer carriers; no carrier execution.",
+    "Raw NSIS blocks decompressed with Python standard-library LZMA; offsets are file offsets of the four-byte stored-length field.",
+    "0528 BIOS parsed with existing UEFIExtract NE alpha74; flat short-path extraction completed successfully with a last-VTF-in-compressed-item warning.",
+    "ACPI tables selected by signature, bounded declared length and checksum; exact DSDT disassembled using ACPICA iASL20250807 without evaluating methods.",
+    "0581 factory tables independently redecoded from the pinned EC image; selected retained NDS32 instruction listings inspected.",
+    "0528 RazerAcpiDxe parsed with existing Ghidra12.1.3 x86-64; recovered C is pseudocode, not vendor source."
+  ],
+  "conclusions": [
+    "Retain exact-model runtime support and existing physical-validation records unchanged.",
+    "Firmware images corroborate selected semantics, not complete command admission or physical success.",
+    "Both constant-backed paths are removed by the accompanying shared telemetry fix; no replacement sensor, numeric blacklist or physical-temperature claim. Existing custom-curve null-CPU fallback requests the exact model maximum."
+  ]
+}

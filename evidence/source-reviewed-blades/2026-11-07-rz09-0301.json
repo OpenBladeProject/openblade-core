@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-11-07",
+  "model": {
+    "modelNumber": "RZ09-0301",
+    "productName": "Blade",
+    "usbVendorId": "1532",
+    "usbProductId": "0245",
+    "vendorProductId": 581,
+    "supportBasis": "SourceReviewed",
+    "physicalValidation": false
+  },
+  "identityBasis": [
+    {
+      "url": "https://mysupport.razer.com/app/answers/detail/a_id/1580",
+      "finding": "Razer identifies Mid 2019 Advanced as RZ09-0301."
+    },
+    {
+      "url": "https://gitlab.com/CalcProgrammer1/OpenRGB/-/issues/199",
+      "finding": "Original owner reports Advanced Mid 2019, USB 1532:0245 interface 2. OpenRazer's Mercury label alone does not restrict edition."
+    },
+    {
+      "url": "https://apps.razer.com/synapse/products/581/mw/manifest.json",
+      "sha256": "7F400EF690A7169B0F56A07D6E0EBD016616070096036C9E7EE653F994189203",
+      "finding": "Product 581 explicitly supports editions 0 and 129 (ordinary Advanced and Mercury White); resource PID0245Drv."
+    },
+    {
+      "url": "https://github.com/OpenBladeProject/openblade-core/issues/758",
+      "finding": "Exact model owner report's identity ZIP confirms BIOS-registry SystemProductName=Blade, BIOS1.05, EC1.01. It is a cached block before HID enumeration and does not independently confirm VID/PID or both registry sources."
+    }
+  ],
+  "vendorBuild": 2609301519,
+  "vendorRevision": "3b9a4c059c4b6c9770715f0df2eef07d472cc53c",
+  "commands": {
+    "thermalMode": {
+      "get": "0D/82",
+      "set": "0D/02",
+      "arguments": "[profile=1, CPU=1/GPU=2, preset=0 Balanced or 4 Custom, automatic=0]"
+    },
+    "customCpu": {
+      "get": "0D/87",
+      "set": "0D/07",
+      "arguments": "[profile=1, selector=1, level=0..2]"
+    },
+    "customGpuWattage": {
+      "get": "0D/87",
+      "set": "0D/07",
+      "arguments": "[profile=1, selector=2, level=0..2]",
+      "meaning": "Vendor names byte2 wattage but forwards levels unchanged; no conversion to watts."
+    },
+    "adapter": {
+      "get": "07/8C",
+      "size": 2,
+      "admission": "Fresh OS and independently read firmware power classification must agree before each write."
+    }
+  },
+  "admitted": [
+    "Balanced and Custom on full-power AC",
+    "All nine CPU/GPU Low/Medium/High pairs",
+    "Automatic fan handback without inventing manual targets",
+    "Independent readback and shared write-pause/recovery"
+  ],
+  "notEstablished": [
+    "Manual fixed/curve fan targets: vendor dynamic fan ranges not admitted",
+    "CPU Boost",
+    "Maximum fans",
+    "Turbo/Silent/BatteryBalanced/BatterySaver",
+    "Battery charge limits and temporary full charge",
+    "Lighting and keyboard-driver mode",
+    "Native GPU clocks through BladeNative SetGPUValue",
+    "HyperBoost",
+    "Physical behavior on requester's machine"
+  ],
+  "constraints": [
+    "Keep exact Razer manufacturer and literal Blade product name in both Windows registry sources, with fresh exact1532:0245 descriptor admission.",
+    "Do not use SKU to reject variants; do not require BIOS1.05/EC1.01 as runtime pins.",
+    "Do not infer physical validation from source review or owner's identity report.",
+    "GET third level byte is zero; setters accept status-only ACK only with independent state readback.",
+    "On ambiguous submitted writes pause, reconcile read-only, and never replay.",
+    "Stale copied masterGuide/supportPage URLs in main581 are not identity evidence."
+  ],
+  "sources": [
+    {
+      "url": "https://apps.razer.com/synapse/products/581/mw/main.450b813b36b314f7abf0.js",
+      "sha256": "F7A863CF5E95D94539ABD3F4C29076E1710901B5D02624EFDC0275265C651D7A",
+      "size": 165547
+    },
+    {
+      "url": "https://apps.razer.com/synapse/products/581/mw/6737.f49b9965ecd5cf011e43.js",
+      "sha256": "5B11C5CD3E26BBD74DAC7A98413AB31315DAFEFAD5B783DBF0CF014E6A33D017",
+      "size": 2354604
+    },
+    {
+      "url": "https://apps.razer.com/synapse/products/581/mw/rzDevice25.f668146da6ee1d0b3b6c.js",
+      "sha256": "8459C76B984DDF5894CC7C7E00A40B76EEDE5E32D65DF2F7D6D75A541C36DAC7",
+      "size": 279028
+    },
+    {
+      "url": "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrixBladeWattage.09358e38f5994093ae20.js",
+      "sha256": "EB94694DBB49AE38AD1837AC926D3D78515F9F501B249B68FE48C200250036F5",
+      "size": 2923
+    },
+    {
+      "url": "https://apps.razer.com/synapse/products/581/ui/static/js/main.98cf2efe.js",
+      "sha256": "C29CE6F4E66E5658B9B7FC4443AE27057EFA4C06DF3A96F6C0E70B79E712DB85",
+      "size": 6338321
+    },
+    {
+      "url": "https://github.com/user-attachments/files/33456033/OpenBlade-identity-report.zip",
+      "sha256": "7256FD5E432A1C64FEF50D5E61E69DEDBA124C6F38F87F38A3A1763F4D10BB53",
+      "size": 1056
+    },
+    {
+      "url": "https://raw.githubusercontent.com/openrazer/openrazer/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.h",
+      "sha256": "F9ECB9D39ACB3753BC875F7BD6FBACAEB2D8D48A74DE6F1ECE6F8F59D6C79434",
+      "size": 8773
+    }
+  ],
+  "sourceExcerpts": [
+    {
+      "source": "581-main.450b813b36b314f7abf0.js",
+      "offsetUtf8": 46358,
+      "text": "hasCustomPerformance:!0,hasGPUmode:!0},installData:null,updateData:null,lightingEffects:{canSyncQuickEffect:!1},validDev"
+    },
+    {
+      "source": "581-main.450b813b36b314f7abf0.js",
+      "offsetUtf8": 24651,
+      "text": "getSystemEditionFromSystemSKU:()=>b});var n=o(52849),r=o(93490),i=o(11469),s=o(52262),a=o(97539),c=o(3327),l=o(88558);const E=[0,129],_=[1,3,4,5,6,7,9,11,12,16]"
+    },
+    {
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "offsetUtf8": 278033,
+      "text": "N=new Uint8Array([3,13,135]),C=new Uint8Array([3,13,7]),w=\"Get Thermal Advance Fan Mode\",g=\"Set Thermal Advance Fan Mode\",E=new Uint8Array([3,13,135]),D=new Uint8Array([3,13,7]),_=\"Get Thermal Advance Fan Mode Wattage\",R=\"Set Thermal Advance Fan Mode Wattage\",p=new Uint8Array([3,13,136]),T=\"Get Thermal Fan Current Speed\",L=new Uint8Array([2,13,137]),P=new Uint8Array([2,13,9]),O=\"Get VGA Configure Setting\",V=\"Set VGA "
+    },
+    {
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "offsetUtf8": 7112,
+      "text": "w=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],wattage:t.data[2]})},g=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.K2[1],commandId:i.K2[2],commandDesc:i.ug});const r=new Uint8Array(i.K2[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.K2,i.ug,r);return w(a),a})),E=(t,n,e,r)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||isNaN(n)||isNaN(e)||isNaN(r))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.E9[1],commandId:i.E9[2],commandDesc:i.SS});const a=new Uint8Array(i.E9[0]);a[0]=n,a[1]=e,a[2]=r;const s=yield t.sendCommand(i.E9,i.SS,a);return w(s),s})),D=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.lR[1],commandId:i.lR[2],commandDesc:i.p9});const r=new Uint8Array(i.lR"
+    },
+    {
+      "source": "581-6737.f49b9965ecd5cf011e43.js",
+      "offsetUtf8": 1502577,
+      "text": "static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},51147:(e,t,i)=>{\"use strict\";var n=i(88205),o=i(6949),r=i(49902),a=i(98722),s=i(97128),l=i"
+    },
+    {
+      "source": "581-ui-main.98cf2efe.js",
+      "offsetUtf8": 6121792,
+      "text": "NR,{supportedPerformanceModes:E})}),(0,bt.jsx)(_s,{direction"
+    },
+    {
+      "source": "581-ui-main.98cf2efe.js",
+      "offsetUtf8": 6113217,
+      "text": "min:O?O.cpu.min:0,max:O?O.cpu.max:2,step:1,noTip:!0,midTag:Ke.E_p,boostTag:O?3===O.cpu.max&&Ke.YyC:null,active:_,value:k,changeVal"
+    },
+    {
+      "source": "581-ui-main.98cf2efe.js",
+      "offsetUtf8": 6113541,
+      "text": "min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:Ke.E_p,active:_,value:X,changeV"
+    },
+    {
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "offsetUtf8": 277575,
+      "text": "c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array(["
+    },
+    {
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "offsetUtf8": 13604,
+      "text": "_=new Uint8Array([2,7,140]),R=\"Get Adapter Wattage Level\",p=new Uint8A"
+    },
+    {
+      "source": "581-6737.f49b9965ecd5cf011e43.js",
+      "offsetUtf8": 1502362,
+      "text": "static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{class"
+    }
+  ],
+  "independentReview": "Separate source review confirmed both CPU/GPU 0..2 forwarded unchanged, profile1, no pair restriction in actual581 slider branch. Native DLL GPU effects remain separate.",
+  "softwareVerification": {
+    "focusedProtocolIdentity": "248 passed",
+    "fullProtocolProject": "2913 passed",
+    "fullContractsProject": "658 passed",
+    "hardwareActions": "None"
+  }
+}
