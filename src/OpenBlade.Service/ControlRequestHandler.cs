@@ -169,6 +169,7 @@ public sealed class ControlRequestHandler
         await userRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Volatile.Write(ref userRequestOwner,
                 client.IsInteractive && request is not ShutdownOpenBladeRequest
                     ? new ServiceUserRequestOwner(client, stillControlsSession)

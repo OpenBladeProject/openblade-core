@@ -26,6 +26,12 @@ before publishing Stopped; continued rotation requests Auto, while ambiguity
 preserves the ownership fence. Setup also refuses to replace or remove an active
 guardian and its unfinished records.
 
+The full regression run subsequently exposed an existing shared queue-cancellation
+race outside the guardian path. The request handler now rechecks cancellation
+after acquiring its gate, before changing ownership or dispatching. The existing
+session A-to-B-to-A regression and its deadline remain unchanged. This was a
+Codex validation finding, not part of Claude's frozen review.
+
 Focused regressions cover refusal/release, ambiguous native operations, startup
 timing, coast confirmation, power classification, immutable heartbeats, restart
 fencing, setup preservation and non-overwriting payload assembly. The disconnected
