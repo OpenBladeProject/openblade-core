@@ -1708,4 +1708,64 @@
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>Источник питания изменился. Проверьте текущий профиль и повторите попытку.</value>
   </data>
+  <data name="CPU/GPU curves" xml:space="preserve">
+    <value>Кривые ЦП/ГП</value>
+  </data>
+  <data name="Mirror keyboard" xml:space="preserve">
+    <value>Как на клавиатуре</value>
+  </data>
+  <data name="Cooling-pad control is paused. Refresh status before making another change." xml:space="preserve">
+    <value>Управление подставкой приостановлено. Обновите состояние перед следующим изменением.</value>
+  </data>
+  <data name="Reconnecting. Showing the last confirmed cooling-pad state." xml:space="preserve">
+    <value>Повторное подключение. Показано последнее подтверждённое состояние подставки.</value>
+  </data>
+  <data name="OpenBlade is controlling the cooling pad." xml:space="preserve">
+    <value>OpenBlade управляет охлаждающей подставкой.</value>
+  </data>
+  <data name="Connected. Choose settings and apply them to take control." xml:space="preserve">
+    <value>Подключено. Выберите и примените настройки, чтобы начать управление.</value>
+  </data>
+  <data name="Configured fan target: {0} RPM" xml:space="preserve">
+    <value>Заданная скорость вентилятора: {0} об/мин</value>
+  </data>
+  <data name="Configured fan target unavailable" xml:space="preserve">
+    <value>Заданная скорость вентилятора недоступна</value>
+  </data>
+  <data name="Configured brightness: {0}%" xml:space="preserve">
+    <value>Заданная яркость: {0}%</value>
+  </data>
+  <data name="Configured brightness unavailable" xml:space="preserve">
+    <value>Заданная яркость недоступна</value>
+  </data>
+  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
+    <value>Проверьте скорости вентиляторов, возрастание температур в кривых и шестизначные RGB-коды цветов.</value>
+  </data>
+  <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
+    <value>Изменение настроек подставки заблокировано. Обновите состояние и откройте раздел устранения неполадок.</value>
+  </data>
+  <data name="The cooling-pad change could not be confirmed. Refresh status before continuing." xml:space="preserve">
+    <value>Не удалось подтвердить изменение настроек подставки. Обновите состояние перед продолжением.</value>
+  </data>
+  <data name="Cooling-pad status is unavailable. Showing the last confirmed state." xml:space="preserve">
+    <value>Состояние подставки недоступно. Показано последнее подтверждённое состояние.</value>
+  </data>
+  <data name="Apply new settings, or release control to restore the captured cooling-pad settings." xml:space="preserve">
+    <value>Примените новые настройки или передайте управление, чтобы восстановить исходные настройки подставки.</value>
+  </data>
+  <data name="Keep current" xml:space="preserve">
+    <value>Без изменений</value>
+  </data>
+  <data name="Spectrum" xml:space="preserve">
+    <value>Циклическая смена цветов</value>
+  </data>
+  <data name="CPU" xml:space="preserve">
+    <value>ЦП</value>
+  </data>
+  <data name="GPU" xml:space="preserve">
+    <value>ГП</value>
+  </data>
+  <data name="Both" xml:space="preserve">
+    <value>Оба</value>
+  </data>
 </root>

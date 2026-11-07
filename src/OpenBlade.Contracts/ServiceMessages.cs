@@ -20,6 +20,11 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "operation")]
 [JsonDerivedType(typeof(GetStatusRequest), "getStatus")]
+[JsonDerivedType(typeof(SetCoolingPadSettingsRequest), "setCoolingPadSettings")]
+[JsonDerivedType(typeof(SetCoolingPadDemandLeaseRequest), "setCoolingPadDemandLease")]
+[JsonDerivedType(typeof(RemoveCoolingPadDemandLeaseRequest), "removeCoolingPadDemandLease")]
+[JsonDerivedType(typeof(ReadCoolingPadStatusRequest), "readCoolingPadStatus")]
+[JsonDerivedType(typeof(ReleaseCoolingPadControlRequest), "releaseCoolingPadControl")]
 [JsonDerivedType(typeof(ObserveStateRequest), "observeState")]
 [JsonDerivedType(typeof(SubscribeStatusRequest), "subscribeStatus")]
 [JsonDerivedType(typeof(ExportDiagnosticsRequest), "exportDiagnostics")]
@@ -58,6 +63,21 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(ReportSessionPowerTransitionRequest), "reportSessionPowerTransition")]
 [JsonDerivedType(typeof(ReportApplicationContextRequest), "reportApplicationContext")]
 public abstract record ServiceRequest(int Version, Guid RequestId);
+
+public sealed record SetCoolingPadDemandLeaseRequest(int Version, Guid RequestId, Guid LeaseId, int Rpm, int DurationSeconds)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record RemoveCoolingPadDemandLeaseRequest(int Version, Guid RequestId, Guid LeaseId)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetCoolingPadSettingsRequest(int Version, Guid RequestId, CoolingPadSettings Settings)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ReadCoolingPadStatusRequest(int Version, Guid RequestId)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ReleaseCoolingPadControlRequest(int Version, Guid RequestId)
+    : ServiceRequest(Version, RequestId);
 
 public sealed record GetStatusRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
@@ -460,6 +480,8 @@ public sealed record ServiceStatusSnapshot(
 {
     // Missing values mean no transient-observation exception. Diagnostic text
     // must never be interpreted as a substitute for this typed state.
+    public CoolingPadStatusSnapshot CoolingPad { get; init; } = new();
+
     public DeviceObservationReason ObservationReason { get; init; }
 
     public IReadOnlyList<DeviceSubsystem> UnconfirmedWrites { get; init; } = [];

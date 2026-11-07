@@ -2193,14 +2193,67 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
-        Assert.Equal(12, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
+        Assert.Equal(15, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
-        Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Key=\"SettingsLastSubcardStyle\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"On battery\"", xaml, StringComparison.Ordinal);
+        // Accessory choices and opt-ins use the same single-line neutral role as Custom CPU,
+        // while multi-control forms and command groups keep the hover-free editor role.
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement cpuTitle = LocalizedElement(document, "TextBlock", "MainWindow_TextBlockCPU");
+        XElement cpuRow = cpuTitle.Ancestors().First(element => element.Name.LocalName == "Border");
+        foreach ((string name, string controlType) in new[]
+                 {
+                     ("CoolingPadFanLabel", "ResponsiveChoiceSelector"),
+                     ("CoolingPadLightingLabel", "ResponsiveChoiceSelector"),
+                     ("CoolingPadDemandLabel", "ToggleSwitch"),
+                 })
+        {
+            XElement title = NamedElement(document, "TextBlock", name);
+            XElement row = title.Ancestors().First(element => element.Name.LocalName == "Border");
+            Assert.Equal(Attribute(cpuRow, "Style"), Attribute(row, "Style"));
+            Assert.Equal(Attribute(cpuRow, "Padding"), Attribute(row, "Padding"));
+            Assert.Equal(Attribute(cpuTitle, "Style"), Attribute(title, "Style"));
+            Assert.Equal(Attribute(cpuTitle.Parent!, "VerticalAlignment"), Attribute(title, "VerticalAlignment"));
+            Assert.Equal(Attribute(cpuTitle, "SizeChanged"), Attribute(title, "SizeChanged"));
+            Assert.Equal(Attribute(cpuRow.Elements().Single(), "MinHeight"), Attribute(title.Parent!, "MinHeight"));
+            Assert.Equal("20", Attribute(title.Parent!, "ColumnSpacing"));
+            Assert.Equal("Wrap", Attribute(title, "TextWrapping"));
+            XElement control = Assert.Single(row.Descendants(), element => element.Name.LocalName == controlType);
+            if (controlType == "ToggleSwitch")
+            {
+                Assert.Equal("{StaticResource CompactCardToggleSwitchStyle}", Attribute(control, "Style"));
+                Assert.Equal(Attribute(title, "Text"), Attribute(control, "AutomationProperties.Name"));
+                Assert.Equal("{x:Bind ViewModel.CoolingPad.CanApply, Mode=OneWay}", Attribute(control, "IsEnabled"));
+                Assert.Equal("{x:Bind ViewModel.CoolingPad.AllowDemandApi, Mode=TwoWay}", Attribute(control, "IsOn"));
+                Assert.Equal("{x:Bind ViewModel.CoolingPad.ShowDemandApiOption, Mode=OneWay}", Attribute(row, "Visibility"));
+            }
+            foreach (string property in new[] { "Background", "Height", "Margin", "CornerRadius", "BorderThickness" })
+            {
+                Assert.Null(Attribute(row, property));
+            }
+        }
+        foreach (string name in new[] { "CoolingPadFixedRpm", "CoolingPadCurves", "CoolingPadBrightness" })
+        {
+            XElement control = document.Descendants().Single(element => Attribute(element, "Name") == name);
+            XElement row = control.Ancestors().First(element => element.Name.LocalName == "Border");
+            Assert.Equal("{StaticResource SettingsEditorSubcardStyle}", Attribute(row, "Style"));
+            Assert.Null(Attribute(row, "Background"));
+            Assert.Null(Attribute(row, "SettingsCardPointerVisual.IsEnabled"));
+        }
+        XElement commands = NamedElement(document, "Button", "CoolingPadApply")
+            .Ancestors().First(element => element.Name.LocalName == "Border");
+        XElement fanEditor = document.Descendants().Single(element => Attribute(element, "CardReorder.CardId") == "FixedFanSpeedSlider");
+        Assert.Equal(Attribute(fanEditor, "Style"), Attribute(commands, "Style"));
+        Assert.Null(Attribute(commands, "Padding"));
+        Assert.Null(Attribute(commands, "Background"));
+        Assert.Single(commands.Descendants(), element => element.Name.LocalName == "ContentWrapPanel");
+        Assert.All(commands.Descendants().Where(element => element.Name.LocalName == "Button"),
+            button => Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(button, "Style")));
     }
 
     [Fact]

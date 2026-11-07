@@ -53,6 +53,7 @@ public enum PrimaryNavigationItemKind
     Settings = 4,
     ThxAudio = 5,
     Telemetry = 6,
+    CoolingPad = 7,
 }
 
 public sealed class PrimaryNavigationItemOption
@@ -93,6 +94,18 @@ public static class PrimaryNavigationPreferenceDefaults
         PrimaryNavigationItemKind.Profiles,
         PrimaryNavigationItemKind.Display,
         PrimaryNavigationItemKind.Laptop,
+        PrimaryNavigationItemKind.CoolingPad,
+        PrimaryNavigationItemKind.ThxAudio,
+        PrimaryNavigationItemKind.Lighting,
+        PrimaryNavigationItemKind.Telemetry,
+        PrimaryNavigationItemKind.Settings,
+    ];
+
+    private static IReadOnlyList<PrimaryNavigationItemKind> PreviousTelemetryItems { get; } =
+    [
+        PrimaryNavigationItemKind.Profiles,
+        PrimaryNavigationItemKind.Display,
+        PrimaryNavigationItemKind.Laptop,
         PrimaryNavigationItemKind.ThxAudio,
         PrimaryNavigationItemKind.Lighting,
         PrimaryNavigationItemKind.Telemetry,
@@ -120,7 +133,7 @@ public static class PrimaryNavigationPreferenceDefaults
         // Move installations that still use previous defaults without
         // replacing a navigation order the user customized.
         if (preferences.SequenceEqual(LegacyItems) || preferences.SequenceEqual(PreviousItems)
-            || preferences.SequenceEqual(PreviousAudioItems))
+            || preferences.SequenceEqual(PreviousAudioItems) || preferences.SequenceEqual(PreviousTelemetryItems))
         {
             return Items;
         }

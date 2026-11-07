@@ -19920,7 +19920,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         TimeProvider? timeProvider = null,
         IUserConfigurationRepository? userConfigurationRepository = null,
         ProfileSetValidator? profileValidator = null,
-        LowPowerGate? lowPowerGate = null)
+        LowPowerGate? lowPowerGate = null,
+        ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
+        string? coolingPadStateDirectory = null)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -19932,7 +19934,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             timeProvider: timeProvider,
             userConfigurationRepository: userConfigurationRepository,
             profileValidator: profileValidator,
-            lowPowerGate: lowPowerGate);
+            lowPowerGate: lowPowerGate,
+            coolingPadDeviceProvider: coolingPadDeviceProvider,
+            coolingPadStateDirectory: coolingPadStateDirectory);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             ChargeLimits = new HashSet<int> { 50, 55, 60, 65, 70, 75, 80 },
@@ -31042,7 +31046,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         IDisplayBrightnessHidController? displayBrightnessHidController = null,
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
-        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null)
+        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
+        ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
+        string? coolingPadStateDirectory = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -31141,7 +31147,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 ?? new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
             hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary,
-            laptopControlPendingStore: new LaptopControlPendingStore(Path.Combine(directory, "laptop-control-pending.json")));
+            laptopControlPendingStore: new LaptopControlPendingStore(Path.Combine(directory, "laptop-control-pending.json")),
+            coolingPadDeviceProvider: coolingPadDeviceProvider,
+            coolingPadStateDirectory: coolingPadStateDirectory);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides

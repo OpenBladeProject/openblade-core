@@ -42,6 +42,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly SemaphoreSlim featureIoGate = new(1, 1);
     private readonly object effectSync = new();
+    private RgbColor[]? keyboardMirrorFrame;
+    private bool keyboardMirrorTransitionPending;
     private readonly object lifecycleSync = new();
     private TaskCompletionSource<bool> streamWake = NewStreamWake();
     private CancellationTokenSource? streamCancellation;
@@ -353,6 +355,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         }
 
         await EnterWriteAsync(cancellationToken).ConfigureAwait(false);
+        bool mirrorCommitted = false;
+        lock (effectSync) { keyboardMirrorTransitionPending = true; }
         try
         {
             byte baselineRaw = await QueryBrightnessRawCoreAsync(cancellationToken)
@@ -388,6 +392,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                         lastDeliveredState = settings;
                     }
 
+                    mirrorCommitted = true;
                     return;
                 }
                 catch (BladeWriteException exception) when (brightnessSubmitted && LightingRecoveryWriteGate.IsDeferral(exception))
@@ -551,9 +556,16 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
 
                 throw;
             }
+            mirrorCommitted = true;
         }
         finally
         {
+            lock (effectSync)
+            {
+                keyboardMirrorTransitionPending = false;
+                if (mirrorCommitted) { PublishKeyboardMirrorCore(); }
+                else { KeyboardLightingFrameStream.Clear(this); }
+            }
             operationGate.Release();
         }
     }
@@ -891,6 +903,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                 return null;
             }
             await StopStreamCoreAsync().ConfigureAwait(false);
+            KeyboardLightingFrameStream.Clear(this);
             RazerDeviceMode current = await QueryDeviceModeCoreAsync(cancellationToken)
                 .ConfigureAwait(false);
             if (stillSuspending?.Invoke() == false)
@@ -945,6 +958,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         lock (lifecycleSync)
         {
             closing = true;
+            KeyboardLightingFrameStream.Clear(this);
             return closeTask ??= CloseCoreAsync(restoreDriverMode);
         }
     }
@@ -1402,6 +1416,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         recoveryGuard.ThrowIfRefused(result.Diagnostic);
         if (result.Failure is null)
         {
+            RecordKeyboardMirrorFrame(frame);
             return;
         }
 
@@ -1917,8 +1932,41 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         Exception originalFailure) =>
         new(WriteSubmissionState.Indeterminate, message, originalFailure);
 
-    private void SetOwnership(LightingRendererOwnershipState value) =>
+    private void SetOwnership(LightingRendererOwnershipState value)
+    {
         Volatile.Write(ref ownershipState, (int)value);
+        if (value is LightingRendererOwnershipState.None or LightingRendererOwnershipState.Faulted)
+        {
+            lock (effectSync)
+            {
+                keyboardMirrorFrame = null;
+                KeyboardLightingFrameStream.Clear(this);
+            }
+        }
+    }
+
+    // Observe only complete successful keyboard submissions; this never performs I/O.
+    private void RecordKeyboardMirrorFrame(Pid02E0MatrixFrame frame)
+    {
+        var colors = new RgbColor[Pid02E0MatrixFrame.SlotCount];
+        for (int slot = 0; slot < colors.Length; slot++) { colors[slot] = new RgbColor(frame[slot].Red, frame[slot].Green, frame[slot].Blue); }
+        lock (effectSync)
+        {
+            keyboardMirrorFrame = colors;
+            PublishKeyboardMirrorCore();
+        }
+    }
+
+    // Called with effectSync held. Initial frames wait for their full transition.
+    private void PublishKeyboardMirrorCore()
+    {
+        if (!keyboardMirrorTransitionPending && !closing
+            && OwnershipState is not (LightingRendererOwnershipState.None or LightingRendererOwnershipState.Faulted)
+            && keyboardMirrorFrame is { } colors)
+        {
+            KeyboardLightingFrameStream.Publish(colors, 17, 6, this);
+        }
+    }
 
     private static LightingRendererOwnershipState OwnershipFor(LightingEffect effect) =>
         effect switch

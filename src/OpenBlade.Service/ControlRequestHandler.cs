@@ -177,6 +177,9 @@ public sealed class ControlRequestHandler
             // admission before its first wait, so its writes do not see this
             // request's ingress lease as a competing pending user.
             pendingAdmission?.Dispose();
+            // Gate acquisition can win a concurrent cancellation. Check at the
+            // dispatch boundary after retiring the pending admission lease.
+            cancellationToken.ThrowIfCancellationRequested();
             return await HandleUserRequestAsync(
                 request, client, activateUserConfiguration, stillControlsSession, cancellationToken).ConfigureAwait(false);
         }
@@ -262,6 +265,15 @@ public sealed class ControlRequestHandler
                 observe.EffectiveLiveReadings,
                 client,
                 cancellationToken),
+            SetCoolingPadSettingsRequest set => Result(request.RequestId,
+                await runtime.SetCoolingPadSettingsAsync(set.Settings, client.UserSid, stillControlsActiveLocalSession, cancellationToken)),
+            ReadCoolingPadStatusRequest => await ReadCoolingPadStatusAsync(request.RequestId, client, cancellationToken),
+            ReleaseCoolingPadControlRequest => Result(request.RequestId,
+                await runtime.ReleaseCoolingPadControlAsync(client.UserSid, stillControlsActiveLocalSession, cancellationToken)),
+            SetCoolingPadDemandLeaseRequest lease => Result(request.RequestId,
+                await runtime.SetCoolingPadDemandLeaseAsync(lease, client, stillControlsActiveLocalSession, cancellationToken)),
+            RemoveCoolingPadDemandLeaseRequest lease => Result(request.RequestId,
+                await runtime.RemoveCoolingPadDemandLeaseAsync(lease, client, cancellationToken)),
             UpdateProfilesRequest update => Result(
                 request.RequestId,
                 await runtime.UpdateProfilesAsync(update.Profiles, cancellationToken)),
@@ -506,6 +518,12 @@ public sealed class ControlRequestHandler
             ThermalConvergence = null,
             ControlAccess = access,
         };
+    }
+
+    private async Task<ServiceResponse> ReadCoolingPadStatusAsync(Guid requestId, ServiceClientContext client, CancellationToken token)
+    {
+        await runtime.ReadCoolingPadStatusAsync(client.UserSid, token).ConfigureAwait(false);
+        return Status(requestId, client);
     }
 
     private static ServiceResponse Result(Guid requestId, ControlOperationResult result) => new(
