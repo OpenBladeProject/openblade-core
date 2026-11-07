@@ -2557,6 +2557,61 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public async Task IndependentLighting_BackendTransitionsRefreshBrightnessAndLogoEditors()
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        ServiceStatusSnapshot classic = CreateStatus(true, false, DeviceCapabilities.SafeTargetDefaults());
+        classic = classic with
+        {
+            ConfirmedState = classic.ConfirmedState! with
+            {
+                Lighting = LightingSettingsFactory.SpectrumCycling(22),
+                LogoLighting = LogoLightingMode.Off,
+            },
+        };
+        await client.PublishAndWaitAsync(classic);
+        var notifications = new List<string?>();
+        vm.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+        await client.PublishAndWaitAsync(CreateIndependentLightingStatus(65, LogoLightingMode.Static) with { Revision = 2 });
+        Assert.Equal(65, vm.LightingBrightnessEditor);
+        Assert.Equal(LogoLightingMode.Static, vm.LogoLightingModeEditor);
+        Assert.Contains(nameof(MainViewModel.LightingBrightnessEditor), notifications);
+        Assert.Contains(nameof(MainViewModel.LogoLightingModeEditor), notifications);
+        notifications.Clear();
+        await client.PublishAndWaitAsync(classic with { Revision = 3 });
+        Assert.Equal(22, vm.LightingBrightnessEditor);
+        Assert.Equal(LogoLightingMode.Off, vm.LogoLightingModeEditor);
+        Assert.Contains(nameof(MainViewModel.LightingBrightnessEditor), notifications);
+        Assert.Contains(nameof(MainViewModel.LogoLightingModeEditor), notifications);
+    }
+
+    [Fact]
+    public async Task IndependentLighting_LabEffectControlsRemainAvailableOnlyForClassicBackends()
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        await client.PublishAndWaitAsync(CreateStatus(true, false, DeviceCapabilities.SafeTargetDefaults()));
+        var notifications = new List<string?>();
+        vm.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+        vm.LabFeaturesEnabled = true;
+        Assert.True(vm.ShowLightingEffectLabControls);
+        Assert.Contains(nameof(MainViewModel.ShowLightingEffectLabControls), notifications);
+        notifications.Clear();
+        vm.LabFeaturesEnabled = false;
+        Assert.False(vm.ShowLightingEffectLabControls);
+        Assert.Contains(nameof(MainViewModel.ShowLightingEffectLabControls), notifications);
+        vm.LabFeaturesEnabled = true;
+        await client.PublishAndWaitAsync(CreateIndependentLightingStatus(65, LogoLightingMode.Static) with { Revision = 2 });
+        Assert.False(vm.ShowLightingEffectLabControls);
+        vm.LabFeaturesEnabled = false;
+        vm.LabFeaturesEnabled = true;
+        Assert.False(vm.ShowLightingEffectLabControls);
+    }
+
+    [Fact]
     public void IndependentLighting_ControlsRequireTheirDedicatedCapability()
     {
         LightingSettings requested = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting with

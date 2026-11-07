@@ -4516,7 +4516,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool LabFeaturesEnabled
     {
         get => labFeaturesEnabled;
-        set => SetField(ref labFeaturesEnabled, value);
+        set
+        {
+            if (labFeaturesEnabled == value)
+            {
+                return;
+            }
+            SetField(ref labFeaturesEnabled, value);
+            NotifyComputed(nameof(ShowLightingEffectLabControls), ShowLightingEffectLabControls);
+        }
     }
 
     public IReadOnlyList<ThemePreference> ThemeOptions { get; } =
@@ -9627,8 +9635,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void OnLightingEditorChanged(LightingEditorChange change)
     {
-        Notify(nameof(LightingBrightnessValueText));
-        Notify(nameof(HasLightingBrightnessValue));
+        NotifyComputed(nameof(LightingBrightnessValueText), LightingBrightnessValueText);
+        NotifyComputed(nameof(HasLightingBrightnessValue), HasLightingBrightnessValue);
         if (change.Kind == LightingEditorChangeKind.ParametersChanged)
         {
             NotifyLightingParameterPresentation();

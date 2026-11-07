@@ -1498,8 +1498,12 @@ public sealed class WinUiShellContractTests
             keyboardSection,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Visibility=\"{x:Bind LabFeaturesEnabled, Mode=OneWay}\"",
+            "Visibility=\"{x:Bind ShowLightingEffectLabControls, Mode=OneWay}\"",
             keyboardSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "LabFeaturesEnabled && !UsesIndependentLightingControls",
+            ReadRepositoryFile("src", "OpenBlade.Tray.Core", "MainViewModel.IndependentLighting.cs"),
             StringComparison.Ordinal);
         Assert.Contains(
             "IsEnabled=\"{x:Bind CanControlLighting, Mode=OneWay}\"",

@@ -566,6 +566,54 @@ public sealed class ResumeStateValidationTrackerTests
             result.Message);
     }
 
+    [Theory]
+    [InlineData(50, LogoLightingMode.Static, 70, LogoLightingMode.Static, true)]
+    [InlineData(50, LogoLightingMode.Static, 50, LogoLightingMode.Static, false)]
+    [InlineData(50, LogoLightingMode.Static, null, LogoLightingMode.Breathing, null)]
+    [InlineData(50, LogoLightingMode.Static, 50, null, null)]
+    [InlineData(50, null, 50, LogoLightingMode.Static, false)]
+    [InlineData(50, null, null, LogoLightingMode.Static, null)]
+    public void IndependentLighting_AllBaselineKnownFieldsMustRemainReadableForRetentionOrDrift(
+        int? beforeBrightness, LogoLightingMode? beforeLogo, int? afterBrightness, LogoLightingMode? afterLogo, bool? changed)
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        ConfirmedDeviceState baseline = new(null, null, null, null)
+        {
+            IndependentLighting = new((byte?)beforeBrightness, beforeLogo),
+        };
+        tracker.Capture(PowerSource.PluggedIn, baseline);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        tracker.Observe(PowerSource.PluggedIn, baseline with
+        {
+            IndependentLighting = new((byte?)afterBrightness, afterLogo),
+        });
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(tracker.Complete());
+        Assert.Equal(changed == true ? ControlOperationStatus.Blocked : ControlOperationStatus.Stored, result.Status);
+        Assert.Contains(changed switch
+        {
+            true => "changed control state for Lighting.",
+            false => "retained control state for Lighting.",
+            null => "Lighting was unavailable in at least one sample and was not compared.",
+        }, result.Message);
+    }
+
+    [Fact]
+    public void IndependentLighting_KnownLegacyEffectBecomingUnknownCannotEstablishRetention()
+    {
+        var tracker = new ResumeStateValidationTracker(TimeProvider.System);
+        ConfirmedDeviceState baseline = new(null, null, null, LightingSettingsFactory.Off())
+        {
+            IndependentLighting = new(50, null),
+        };
+        tracker.Capture(PowerSource.PluggedIn, baseline);
+        tracker.Begin(gpuClockOffsetConfirmationInvalidated: false);
+        tracker.Observe(PowerSource.PluggedIn, baseline with { Lighting = null });
+        ResumeStateValidationResult result = Assert.IsType<ResumeStateValidationResult>(tracker.Complete());
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Contains("Lighting was unavailable in at least one sample and was not compared.", result.Message);
+        Assert.DoesNotContain("retained control state", result.Message);
+    }
+
     [Fact]
     public void ComparatorAllowlist_CoversConfirmedState()
     {

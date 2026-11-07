@@ -11,6 +11,7 @@ public sealed partial class MainViewModel
     private LogoLightingMode? independentLogo;
     private PowerSource independentLightingSource;
     private long independentLightingCommitGeneration;
+    private bool presentedIndependentLighting;
     private IReadOnlyList<LogoLightingMode> independentLogoDisplayModes = [];
 
     public bool UsesIndependentLightingControls => Capabilities.SupportsIndependentLightingControls;
@@ -109,15 +110,23 @@ public sealed partial class MainViewModel
 
     private void NotifyIndependentLightingPresentation()
     {
-        Notify(nameof(UsesIndependentLightingControls));
-        Notify(nameof(IsKeyboardEffectSelectionVisible));
-        Notify(nameof(ShowLightingEffectLabControls));
-        Notify(nameof(LightingBrightnessMinimum));
-        Notify(nameof(HasLightingBrightnessValue));
-        Notify(nameof(LightingBrightnessValueText));
-        Notify(nameof(LightingBrightnessEditor));
-        Notify(nameof(LogoLightingModeEditor));
-        Notify(nameof(SelectedLogoLightingModeOption));
+        bool independent = UsesIndependentLightingControls;
+        bool backendChanged = presentedIndependentLighting != independent;
+        presentedIndependentLighting = independent;
+        NotifyComputed(nameof(UsesIndependentLightingControls), independent);
+        NotifyComputed(nameof(IsKeyboardEffectSelectionVisible), IsKeyboardEffectSelectionVisible);
+        NotifyComputed(nameof(ShowLightingEffectLabControls), ShowLightingEffectLabControls);
+        NotifyComputed(nameof(LightingBrightnessMinimum), LightingBrightnessMinimum);
+        NotifyComputed(nameof(HasLightingBrightnessValue), HasLightingBrightnessValue);
+        NotifyComputed(nameof(LightingBrightnessValueText), LightingBrightnessValueText);
+        // Classic editor events already own their value notifications. Refresh
+        // these getters only for independent values or an actual backend switch.
+        if (independent || backendChanged)
+        {
+            NotifyComputed(nameof(LightingBrightnessEditor), LightingBrightnessEditor);
+            NotifyComputed(nameof(LogoLightingModeEditor), LogoLightingModeEditor);
+            NotifyComputed(nameof(SelectedLogoLightingModeOption), SelectedLogoLightingModeOption);
+        }
     }
 
     private void LoadIndependentLightingEditor(

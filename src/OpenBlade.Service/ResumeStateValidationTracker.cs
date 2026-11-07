@@ -333,8 +333,13 @@ internal sealed class ResumeStateValidationTracker
         if (!baseline.UnconfirmedWrites.Contains(DeviceSubsystem.Lighting)
             && !baseline.ConfirmedWrites.Contains(DeviceSubsystem.Lighting)
             && !baseline.LightingRestoredDuringResume
-            && baseline.Confirmed.Lighting is not null
-            && observed.Lighting is not null)
+            // Every independent field known before suspend must remain readable;
+            // a surviving field cannot confirm retention of an unavailable one.
+            && (baseline.Confirmed.Lighting is null || observed.Lighting is not null)
+            && (baseline.Confirmed.IndependentLighting?.Brightness is null || observed.IndependentLighting?.Brightness is not null)
+            && (baseline.Confirmed.IndependentLighting?.LogoMode is null || observed.IndependentLighting?.LogoMode is not null)
+            && (baseline.Confirmed.Lighting is not null && observed.Lighting is not null
+                || baseline.Confirmed.IndependentLighting is { IsWellFormed: true }))
         {
             compared.Add(DeviceSubsystem.Lighting);
         }
@@ -402,7 +407,9 @@ internal sealed class ResumeStateValidationTracker
                 DeviceSubsystem.Fans => baseline.Fans == observed.Fans,
                 DeviceSubsystem.Battery => baseline.Battery == observed.Battery,
                 DeviceSubsystem.Lighting =>
-                    baseline.Lighting == observed.Lighting
+                    CompareWhenBothKnown(baseline.Lighting, observed.Lighting)
+                    && CompareWhenBothKnown(baseline.IndependentLighting?.Brightness, observed.IndependentLighting?.Brightness)
+                    && CompareWhenBothKnown(baseline.IndependentLighting?.LogoMode, observed.IndependentLighting?.LogoMode)
                     && CompareWhenBothKnown(
                         baseline.LogoLighting,
                         observed.LogoLighting),
@@ -437,6 +444,7 @@ internal sealed class ResumeStateValidationTracker
             nameof(ConfirmedDeviceState.Battery),
             nameof(ConfirmedDeviceState.Lighting),
             nameof(ConfirmedDeviceState.LogoLighting),
+            nameof(ConfirmedDeviceState.IndependentLighting),
         };
 
     private static IReadOnlyList<DeviceSubsystem> ResumeComparedSubsystems { get; } =
