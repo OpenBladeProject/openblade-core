@@ -4,7 +4,7 @@
 
 English | [简体中文](zh-CN/experimental-blade-support.md) | [Русский](ru-RU/experimental-blade-support.md)
 
-These thirteen laptop families are officially supported using reviewed exact-model
+These sixteen laptop families are officially supported using reviewed exact-model
 Synapse and upstream sources. OpenBlade recognizes them automatically in both
 stable and pre-release builds. Physical validation is tracked separately for each
 model and feature; source-reviewed support does not claim complete hardware
@@ -13,8 +13,8 @@ support. The limits and remaining experimental features below still apply.
 
 ## Available controls
 
-The earlier five models retain the following controls. The additional 2024/2025
-and 2021/2022 models have separate, narrower contracts below.
+The earlier five models retain the following controls. The additional models
+have separate, narrower contracts below.
 
 | Laptop | Model number | Controls |
 | --- | --- | --- |
@@ -66,6 +66,26 @@ manual, explicitly select Automatic and confirm handback before changing
 performance. Physical validation remains pending. See the
 [2021/2022 source review](source-reviewed-blades-2021-2022.md) for exact identities
 and evidence.
+
+### Additional 2019/2020 models
+
+| Laptop | Model number | Initial controls |
+| --- | --- | --- |
+| Blade 15 Base (2019) | `RZ09-0300` | Balanced, Gaming and Creator on full-power AC, Automatic fans |
+| Blade 15 Advanced (Early 2020) | `RZ09-0330` | Balanced and Custom CPU/GPU Low/Medium/High on full-power AC, Automatic fans |
+| Blade 15 Base (Late 2020) | `RZ09-0351` | Balanced, Gaming and Creator on full-power AC, Automatic fans |
+
+These three models offer Balanced with Automatic fans on battery. AC performance
+changes require a fresh successful adapter-power read and agreement with Windows
+power status. If fans are manual, explicitly select Automatic and confirm
+handback before changing performance. Fixed fans, curves, charge limits, Silent,
+Maximum Fans, lighting, HyperBoost and driver/THX integrations remain unavailable.
+The Advanced model's CPU Boost requires an EC prerequisite that OpenBlade cannot
+yet verify, so its CPU choices stop at High. Gaming on the 2019 Base selects the
+reviewed HID preset; it does not apply Synapse's additional native GPU overclock.
+Physical validation remains pending. See the
+[2019/2020 source review](source-reviewed-blades-2019-2020.md) for evidence and
+reviewed candidates that still lack an exact Windows identity.
 
 The following detailed control notes apply to the earlier five models.
 

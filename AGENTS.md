@@ -187,7 +187,8 @@ The separately admitted source-reviewed profiles are RZ09-0483 (`1532:029F`),
 RZ09-0482 (`1532:029D`), RZ09-0530 (`1532:02C5`), RZ09-0328 (`1532:0255`),
 RZ09-0484 (`1532:02A0`), RZ09-0508 (`1532:02B6`), RZ09-0510 (`1532:02B7`),
 RZ09-0509 (`1532:02B8`), RZ09-0529 (`1532:02C7`), RZ09-0427 (`1532:028C`),
-RZ09-0421 (`1532:028A`), RZ09-0423 (`1532:028B`), and RZ09-0370 (`1532:0270`).
+RZ09-0421 (`1532:028A`), RZ09-0423 (`1532:028B`), RZ09-0370 (`1532:0270`),
+RZ09-0330 (`1532:0253`), RZ09-0351 (`1532:0268`), and RZ09-0300 (`1532:0246`).
 Their available controls are enabled automatically
 when the exact profile is recognized, without a Settings opt-in or release-channel
 gate. See [source-reviewed support](docs/experimental-blade-support.md) for the

@@ -1,6 +1,6 @@
 # Source-reviewed additional Blade models
 
-OpenBlade officially supports the eight exact-model profiles below using reviewed
+OpenBlade officially supports the eleven exact-model profiles below using reviewed
 Synapse definitions. Physical validation is a separate evidence status and remains
 pending for these implementations. Source review does not establish measured fan
 behavior, successful restoration on a laptop, or another model's capabilities.
@@ -78,6 +78,35 @@ See the [2021/2022 source review](source-reviewed-blades-2021-2022.md) and its
 for exact primary sources, full hashes and per-feature decisions. Those sources
 were inspected as inert data; package presence does not establish API or setup
 compatibility.
+
+## 2019/2020 exact identity and initial controls
+
+| Laptop | Exact Windows product name | USB identity | Synapse product | Initial controls |
+| --- | --- | --- | --- | --- |
+| Blade 15 Base (2019), RZ09-0300 | `Blade 15 Mid 2019-Base` | `1532:0246` | 582 | Full-power AC Balanced/Gaming/Creator, Automatic fans; battery Balanced |
+| Blade 15 Advanced (Early 2020), RZ09-0330 | `Blade 15 Advanced Model (Early 2020) - RZ09-033` | `1532:0253` | 595 | Full-power AC Balanced/Custom, CPU/GPU 0–2, Automatic fans; battery Balanced |
+| Blade 15 Base (Late 2020), RZ09-0351 | `Blade 15 Base Model (Late 2020)` | `1532:0268` | 616 | Full-power AC Balanced/Gaming/Creator, Automatic fans; battery Balanced |
+
+All three use query/write profile 1. Balanced is raw 0 on both AC and battery;
+there is no raw-6 DC Balanced authority. The Base models use Gaming raw 1 and
+Creator raw 2, without Custom or Silent. The Advanced model uses Custom raw 4,
+CPU and GPU levels 0–2. CPU Boost raw 3 is observed in its source menu but remains
+unavailable until an exact readable EC prerequisite can be established. The
+vendor's EC update documentation does not supply that runtime read contract.
+
+Each AC preset/level write requires a fresh valid firmware `07/8C` power response
+and native Windows AC agreement. DC permits only Balanced raw 0 and Automatic
+handback. Unsupported, unknown or failed power reads cannot grant writes. An
+existing manual fan state needs explicit confirmed Automatic handback because
+manual target restoration is unestablished. The 2019 Base's HID Gaming preset
+does not grant the vendor native-library GPU overclock side effect.
+
+Fixed fans, curves, charge limits, Maximum Fans, HyperBoost, lighting and driver
+integration are not admitted. Physical validation remains pending. RZ09-0313,
+RZ09-0314 and RZ09-0329 were reviewed as candidates but lack a pinned exact Windows
+product name and remain excluded. No sibling or Studio identity is inferred.
+See the [2019/2020 source review](source-reviewed-blades-2019-2020.md) and its
+[admission manifest](../evidence/source-reviewed-blades/2026-11-07-models-2019-2020.json).
 
 ## Admission and recovery
 
