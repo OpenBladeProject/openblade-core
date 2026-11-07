@@ -478,7 +478,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 && !IsLightingOperationInProgress
                 && CanMutate
                 && HasConfirmedPowerSource
-                && ProfileAdmissionPolicy.LightingSupported(value, CommandCapabilities));
+                && CanSubmitLightingDraft(value));
         SetChargeLimitCommand = CreateCommand(
             SetChargeLimitAsync,
             parameter => parameter switch
@@ -1666,10 +1666,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             == KeyboardLightingControlMode.WindowsDynamicLighting;
 
     public bool IsWindowsDynamicLightingAvailable =>
-        Capabilities.LampArrayLightingAccess is not null;
+        !UsesIndependentLightingControls && Capabilities.LampArrayLightingAccess is not null;
 
     public bool ShowOpenBladeKeyboardLightingControls =>
-        !UseWindowsDynamicLighting;
+        UsesIndependentLightingControls || !UseWindowsDynamicLighting;
 
     public async Task<bool> SetKeyboardLightingControlModeAsync(
         KeyboardLightingControlMode mode,
@@ -2348,12 +2348,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool IsLightingVisible => true;
 
-    public bool HasLightingCapability => AvailableLightingEffects.Count > 0;
+    public bool HasLightingCapability => UsesIndependentLightingControls || AvailableLightingEffects.Count > 0;
 
     public bool CanControlLighting =>
         CanRequestHardwareControl
         && HasLightingCapability
-        && !UseWindowsDynamicLighting;
+        && (UsesIndependentLightingControls || !UseWindowsDynamicLighting);
 
     public bool IsLightingControlUnavailable =>
         !CanControlLighting && !IsCheckingLaptopConnection(latestStatus);
@@ -4009,7 +4009,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ProfilePresentationFactory.FormatThermalProfile(GetPresentedProfile(PowerSource.PluggedIn));
 
     public string PluggedInProfileLightingSummary =>
-        LightingPresentation.FormatLightingProfile(GetPresentedProfile(PowerSource.PluggedIn).Lighting);
+        FormatPresentedLightingProfile(GetPresentedProfile(PowerSource.PluggedIn).Lighting);
 
     public string PluggedInProfileDisplaySummary =>
         ProfilePresentationFactory.FormatDisplayProfile(GetPresentedProfile(PowerSource.PluggedIn).Display);
@@ -4018,7 +4018,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ProfilePresentationFactory.FormatThermalProfile(GetPresentedProfile(PowerSource.Battery));
 
     public string BatteryProfileLightingSummary =>
-        LightingPresentation.FormatLightingProfile(GetPresentedProfile(PowerSource.Battery).Lighting);
+        FormatPresentedLightingProfile(GetPresentedProfile(PowerSource.Battery).Lighting);
 
     public string BatteryProfileDisplaySummary =>
         ProfilePresentationFactory.FormatDisplayProfile(GetPresentedProfile(PowerSource.Battery).Display);
@@ -4027,7 +4027,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ProfilePresentationFactory.FormatThermalProfile(GetPresentedProfile(PowerSource.UsbC));
 
     public string UsbCProfileLightingSummary =>
-        LightingPresentation.FormatLightingProfile(GetPresentedProfile(PowerSource.UsbC).Lighting);
+        FormatPresentedLightingProfile(GetPresentedProfile(PowerSource.UsbC).Lighting);
 
     public string UsbCProfileDisplaySummary =>
         ProfilePresentationFactory.FormatDisplayProfile(GetPresentedProfile(PowerSource.UsbC).Display);
@@ -4138,6 +4138,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         get => lightingEditor.Effect;
         set
         {
+            if (UsesIndependentLightingControls)
+            {
+                return;
+            }
+
             lightingEditor.Effect = value;
             ApplyLightingParameterDefaults();
         }
@@ -4151,7 +4156,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 option => option.Effect == LightingEffectEditor);
         set
         {
-            if (value is not null)
+            if (value is not null && !UsesIndependentLightingControls)
             {
                 lightingEditor.SelectEffect(value.Effect);
                 ApplyLightingParameterDefaults();
@@ -4159,7 +4164,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public bool IsKeyboardEffectUnconfirmed => lightingEditor.IsEffectUnconfirmed;
+    public bool IsKeyboardEffectUnconfirmed => UsesIndependentLightingControls || lightingEditor.IsEffectUnconfirmed;
 
     public string KeyboardEffectDescription => lightingEditor.IsEffectUnconfirmed
         ? TrayText.Get("The active effect was set outside OpenBlade and cannot be read from firmware.")
@@ -4167,8 +4172,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public int LightingBrightnessEditor
     {
-        get => lightingEditor.Brightness;
-        set => lightingEditor.Brightness = value;
+        get => UsesIndependentLightingControls ? independentBrightness ?? 50 : lightingEditor.Brightness;
+        set
+        {
+            if (UsesIndependentLightingControls)
+            {
+                SetIndependentBrightness(value);
+            }
+            else
+            {
+                lightingEditor.Brightness = value;
+            }
+        }
     }
 
     public int LightingRedEditor
@@ -4359,8 +4374,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public LogoLightingMode? LogoLightingModeEditor
     {
-        get => lightingEditor.LogoMode;
-        set => lightingEditor.LogoMode = value;
+        get => UsesIndependentLightingControls ? independentLogo : lightingEditor.LogoMode;
+        set
+        {
+            if (UsesIndependentLightingControls)
+            {
+                SetIndependentLogo(value);
+            }
+            else
+            {
+                lightingEditor.LogoMode = value;
+            }
+        }
     }
 
     public LogoLightingModeOption? SelectedLogoLightingModeOption
@@ -4378,24 +4403,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool IsLogoLightingVisible => AvailableLogoLightingModeOptions.Count > 0;
 
-    public bool LightingShowsBrightness => LightingEffectEditor != LightingEffect.Off;
+    public bool LightingShowsBrightness => UsesIndependentLightingControls || LightingEffectEditor != LightingEffect.Off;
 
     public bool LightingShowsBreathingColorMode =>
-        LightingEffectEditor == LightingEffect.Breathing
-        && LightingBreathingColorModes.Count > 1;
+        !UsesIndependentLightingControls && (LightingEffectEditor == LightingEffect.Breathing
+        && LightingBreathingColorModes.Count > 1);
 
     public bool LightingShowsStarlightColorMode =>
-        LightingEffectEditor == LightingEffect.Starlight;
+        !UsesIndependentLightingControls && (LightingEffectEditor == LightingEffect.Starlight);
 
-    public bool LightingShowsPrimaryColor => lightingEditor.UsesPrimaryColor;
+    public bool LightingShowsPrimaryColor =>
+        !UsesIndependentLightingControls && (lightingEditor.UsesPrimaryColor);
 
     public bool LightingShowsSecondaryColor =>
-        LightingEffectEditor == LightingEffect.Breathing
+        !UsesIndependentLightingControls && (LightingEffectEditor == LightingEffect.Breathing
             && LightingBreathingColorModeEditor == BreathingColorMode.Dual
         || LightingEffectEditor == LightingEffect.Tidal
             && !LightingRandomColorsEditor
         || LightingEffectEditor == LightingEffect.Starlight
-            && LightingStarlightColorModeEditor == StarlightColorMode.Dual;
+            && LightingStarlightColorModeEditor == StarlightColorMode.Dual);
 
     public string LightingPrimaryColorLabel =>
         LightingShowsSecondaryColor
@@ -4408,30 +4434,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : TrayText.Get("Choose the keyboard color.");
 
     public bool LightingShowsReactiveDuration =>
-        LightingEffectEditor == LightingEffect.Reactive;
+        !UsesIndependentLightingControls && (LightingEffectEditor == LightingEffect.Reactive);
 
     public bool LightingShowsStarlightDuration =>
-        LightingEffectEditor == LightingEffect.Starlight;
+        !UsesIndependentLightingControls && (LightingEffectEditor == LightingEffect.Starlight);
 
     public bool LightingShowsRandomColors =>
-        LightingEffectEditor == LightingEffect.Tidal;
+        !UsesIndependentLightingControls && (LightingEffectEditor == LightingEffect.Tidal);
 
     public bool LightingShowsDirection =>
-        LightingEffectEditor == LightingEffect.Tidal
-            || LightingEffectEditor == LightingEffect.Wave && Capabilities.SupportsWaveDirectionSelection;
+        !UsesIndependentLightingControls && (LightingEffectEditor == LightingEffect.Tidal
+            || LightingEffectEditor == LightingEffect.Wave && Capabilities.SupportsWaveDirectionSelection);
 
     public bool LightingShowsRotationDirection =>
-        LightingEffectEditor == LightingEffect.Wheel;
+        !UsesIndependentLightingControls && (LightingEffectEditor == LightingEffect.Wheel);
 
     public bool LightingShowsAmbientAwarenessRegion =>
-        LightingEffectEditor == LightingEffect.AmbientAwareness;
+        !UsesIndependentLightingControls && (LightingEffectEditor == LightingEffect.AmbientAwareness);
 
     public bool LightingShowsAudioMeterControls =>
-        LightingEffectEditor == LightingEffect.AudioMeter;
+        !UsesIndependentLightingControls && (LightingEffectEditor == LightingEffect.AudioMeter);
 
-    public LightingSettings LightingDraft => lightingEditor.ToSettings();
+    public LightingSettings LightingDraft => UsesIndependentLightingControls ? IndependentLightingDraft : lightingEditor.ToSettings();
 
-    public bool IsLightingApplyPending => lightingEditor.IsDirty;
+    public bool IsLightingApplyPending => UsesIndependentLightingControls ? independentLightingDelta is not null : lightingEditor.IsDirty;
 
     public bool LightingTurnOffWithDisplayEditor
     {
@@ -5454,6 +5480,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot status,
         bool checkingLaptopConnection)
     {
+        if (status.Capabilities?.SupportsIndependentLightingControls == true)
+        {
+            ApplyIndependentLightingPresentation(status, checkingLaptopConnection);
+            return;
+        }
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
         lightingEditor.PrepareForPowerSource(status.ActivePowerSource);
         if (!checkingLaptopConnection
@@ -5826,8 +5857,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IReadOnlyList<LightingEffect> presentedLightingEffects =
             AvailableLightingEffects.Count > 0
                 ? AvailableLightingEffects
-                : KnownLightingEffects;
-        if (LightingEffectEditor == LightingEffect.Sequence
+                : capabilities.SupportsIndependentLightingControls ? Array.Empty<LightingEffect>() : KnownLightingEffects;
+        if (!capabilities.SupportsIndependentLightingControls && LightingEffectEditor == LightingEffect.Sequence
             && !presentedLightingEffects.Contains(LightingEffect.Sequence))
         {
             presentedLightingEffects =
@@ -5860,9 +5891,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             .Order()
             .ToArray();
         IReadOnlyList<LogoLightingMode> presentedLogoLightingModes =
-            AvailableLightingEffects.Count == 0 && admittedLogoLightingModes.Length == 0
+            !capabilities.SupportsIndependentLightingControls && AvailableLightingEffects.Count == 0 && admittedLogoLightingModes.Length == 0
                 ? KnownLogoLightingModes
                 : admittedLogoLightingModes;
+        presentedLogoLightingModes = PreserveIndependentLogoPresentation(
+            capabilities, admittedLogoLightingModes, presentedLogoLightingModes);
         IReadOnlyList<LogoLightingModeOption> logoLightingModeOptions =
             StableOptionCollection.ReuseEquivalent(
                 AvailableLogoLightingModeOptions,
@@ -6721,6 +6754,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private async Task SetLightingAsync(object? parameter, CancellationToken token)
     {
         LightingSettings requested = (LightingSettings)parameter!;
+        if (UsesIndependentLightingControls)
+        {
+            await SetIndependentLightingAsync(requested, token);
+            return;
+        }
         PowerSource sourceAtStart = ActivePowerSource;
         long revisionAtStart = latestAcceptedRevision;
         long connectionAtStart = connectionGeneration;
@@ -7024,7 +7062,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             InvalidatePendingLightingHold();
             await ClearOverrideAsync(
                 TrayText.Get("Fragment.Lighting", "lighting"),
-                cancellationToken => serviceClient.SetLightingOverrideAsync(null, cancellationToken),
+                ClearLightingOverrideAsync,
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
         }
@@ -7780,9 +7818,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             InvalidatePendingLightingHold();
 
             restored &= await RunOperationAsync(
-                cancellationToken => serviceClient.SetLightingOverrideAsync(
-                    null,
-                    cancellationToken),
+                ClearLightingOverrideAsync,
                 token);
         }
         return restored;
@@ -8057,6 +8093,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool startUnconfirmedEffectAtDefaultBrightness = false)
     {
         InvalidatePendingLightingHold();
+        if (UsesIndependentLightingControls)
+        {
+            LoadIndependentLightingEditor(value, value.IndependentControls
+                ?? latestStatus?.ConfirmedState?.IndependentLighting);
+            return;
+        }
 
         EnsureImportedSequenceOption(value);
         lightingEditor.Load(value, startUnconfirmedEffectAtDefaultBrightness);
@@ -8365,6 +8407,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             PowerProfile saved = GetProfile(ActivePowerSource);
             LightingSettings current = activeProfileDraft.Lighting ?? LightingDraft;
+            if (UsesIndependentLightingControls)
+            {
+                IndependentLightingSettings? savedControls = saved.Lighting.IndependentControls;
+                IndependentLightingSettings? currentControls = current.IndependentControls;
+                return activeProfileDraft.Lighting is not null
+                    ? savedControls != currentControls
+                    : ConfiguredValueDiffers(savedControls?.Brightness, independentBrightness)
+                        || ConfiguredValueDiffers(savedControls?.LogoMode, independentLogo);
+            }
             bool keyboardDiffers = (activeProfileDraft.Lighting is not null
                     || !IsKeyboardEffectUnconfirmed)
                 && LightingSettingsFactory.NormalizeLegacyOff(
@@ -8402,8 +8453,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     private ActiveProfileDraftValues SaveableProfileValues => new(
-        LogoLightingModeEditor is { } logoMode && Capabilities.LogoLightingModes.Contains(logoMode)
-            ? logoMode : null,
+        !UsesIndependentLightingControls && LogoLightingModeEditor is { } logoMode
+            && Capabilities.LogoLightingModes.Contains(logoMode) ? logoMode : null,
         SupportsStartupAnimation ? StartupAnimationEnabled : null,
         SupportsFunctionKeyPrimary
             && !Capabilities.HostManagedLaptopControls.Contains(OneShotLaptopControl.FunctionKeyPrimary)
@@ -8574,7 +8625,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             savedProfile,
             Profiles.WindowsPowerModes,
             profileName,
-            savedLaptopBehaviorFallback);
+            savedLaptopBehaviorFallback, UsesIndependentLightingControls);
         PowerProfile draft = activeProfileDraft.Source == source
             ? GetActiveProfileDraft() ?? savedProfile
             : savedProfile;
@@ -8588,7 +8639,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             draft,
             PresentedWindowsPowerModes,
             profileName,
-            confirmedLaptopBehavior);
+            confirmedLaptopBehavior, UsesIndependentLightingControls);
         return ProfilePresentationFactory.WithPending(
             saved,
             pending,
@@ -9576,6 +9627,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void OnLightingEditorChanged(LightingEditorChange change)
     {
+        Notify(nameof(LightingBrightnessValueText));
+        Notify(nameof(HasLightingBrightnessValue));
         if (change.Kind == LightingEditorChangeKind.ParametersChanged)
         {
             NotifyLightingParameterPresentation();
@@ -9662,6 +9715,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyLightingParameterPresentation()
     {
+        NotifyIndependentLightingPresentation();
         NotifyComputed(nameof(LightingShowsBrightness), LightingShowsBrightness);
         NotifyComputed(nameof(LightingShowsBreathingColorMode), LightingShowsBreathingColorMode);
         NotifyComputed(nameof(LightingBreathingColorModes), LightingBreathingColorModes);

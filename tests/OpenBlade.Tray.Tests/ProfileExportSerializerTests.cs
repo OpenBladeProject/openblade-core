@@ -8,6 +8,88 @@ namespace OpenBlade.Tray.Tests;
 public sealed class ProfileExportSerializerTests
 {
     [Fact]
+    public void CurrentSchema_RoundTripsPartialIndependentLightingWithoutChangingEffectWrapper()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        LightingSettings lighting = defaults.PluggedIn.Lighting with
+        {
+            IndependentControls = new(42, null),
+        };
+        ProfileSet source = defaults with { PluggedIn = defaults.PluggedIn with { Lighting = lighting } };
+        string json = ProfileExportSerializer.Serialize(source, "1.0.0", DateTimeOffset.UtcNow);
+        Assert.Equal(16, JsonNode.Parse(json)!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(lighting, ProfileExportSerializer.Deserialize(json).PluggedIn.Lighting);
+    }
+
+    [Theory]
+    [InlineData(14)]
+    [InlineData(15)]
+    public void PreviousSchemas_MissingOrNullIndependentLightingRemainsUnmanaged(int schema)
+    {
+        string json = ProfileExportSerializer.Serialize(ProfileDefaults.CreateSafeDefaults(), "1.0.0", DateTimeOffset.UtcNow);
+        JsonNode document = JsonNode.Parse(json)!;
+        document["schemaVersion"] = schema;
+        document["profiles"]!["pluggedIn"]!["lighting"]!.AsObject().Remove("independentControls");
+        ProfileSet imported = ProfileExportSerializer.Deserialize(document.ToJsonString());
+        Assert.Null(imported.PluggedIn.Lighting.IndependentControls);
+        Assert.Null(imported.Battery.Lighting.IndependentControls);
+        Assert.Null(imported.UsbC.Lighting.IndependentControls);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(13)]
+    [InlineData(14)]
+    [InlineData(15)]
+    public void PreviousSchemas_CannotIntroduceIndependentLightingWrites(int schema)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        string json = ProfileExportSerializer.Serialize(defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Lighting = defaults.PluggedIn.Lighting with { IndependentControls = new(null, LogoLightingMode.Off) },
+            },
+        }, "1.0.0", DateTimeOffset.UtcNow);
+        JsonNode document = JsonNode.Parse(json)!;
+        document["schemaVersion"] = schema;
+        Assert.Throws<InvalidDataException>(() => ProfileExportSerializer.Deserialize(document.ToJsonString()));
+    }
+
+    [Fact]
+    public void PreviousSchema_RejectsConfiguredIndependentControlsBeforeDiscardingApplicationOverrides()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var definition = new ApplicationProfileDefinition(Guid.NewGuid(), "Game", @"C:\Games\game.exe",
+            ApplicationActivationMode.WhileRunningAfterActivation, new ApplicationProfileOverrideSet
+            {
+                Battery = new ApplicationPowerProfileOverride
+                {
+                    Lighting = defaults.Battery.Lighting with { IndependentControls = new(60, null) },
+                },
+            });
+        string json = ProfileExportSerializer.Serialize(defaults with { ApplicationProfiles = [definition] },
+            "1.0.0", DateTimeOffset.UtcNow);
+        JsonNode document = JsonNode.Parse(json)!;
+        document["schemaVersion"] = 13;
+        Assert.Throws<InvalidDataException>(() => ProfileExportSerializer.Deserialize(document.ToJsonString()));
+    }
+
+    [Fact]
+    public void CurrentSchema_RejectsEmptyIndependentLightingIntent()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet source = defaults with
+        {
+            Battery = defaults.Battery with
+            {
+                Lighting = defaults.Battery.Lighting with { IndependentControls = new(null, null) },
+            },
+        };
+        Assert.Throws<InvalidDataException>(() => ProfileExportSerializer.Serialize(source, "1.0.0", DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
     public void CurrentSchemaRoundTripsApplicationProfilesAndBrightness()
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
@@ -43,6 +125,7 @@ public sealed class ProfileExportSerializerTests
     [Theory]
     [InlineData(14)]
     [InlineData(15)]
+    [InlineData(16)]
     public void PreviousAndCurrentSchemas_PreserveSettingsAndUseOptionalIndependentAssociations(int schema)
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
@@ -72,7 +155,7 @@ public sealed class ProfileExportSerializerTests
             },
         };
         JsonObject document = JsonNode.Parse(ProfileExportSerializer.Serialize(configured, "1.0.0", DateTimeOffset.UtcNow))!.AsObject();
-        Assert.Equal(15, document["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(ProfileExportSerializer.CurrentSchemaVersion, document["schemaVersion"]!.GetValue<int>());
         document["schemaVersion"] = schema;
         if (schema == 14)
         {

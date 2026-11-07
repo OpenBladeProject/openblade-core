@@ -112,6 +112,11 @@ public interface IServiceClient : IServiceStatusWatcher
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetIndependentLightingOverrideAsync(
+        ManualOverride<IndependentLightingSettings>? value,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked, "Independent lighting controls are unavailable."));
+
     Task<ControlOperationResult> StepKeyboardBrightnessAsync(
         KeyboardBrightnessDirection direction,
         OverrideLifetime lifetime,

@@ -333,6 +333,9 @@ public sealed class ControlRequestHandler
             SetLightingOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetLightingOverrideAsync(set.Value, cancellationToken)),
+            SetIndependentLightingOverrideRequest set => Result(
+                request.RequestId,
+                await runtime.SetIndependentLightingOverrideAsync(set.Value, cancellationToken)),
             StepKeyboardBrightnessRequest step => Result(
                 request.RequestId,
                 await runtime.StepKeyboardBrightnessAsync(

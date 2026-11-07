@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Support Blade 15 Advanced (Mid 2019) RZ09-0301 with Balanced, Custom CPU/GPU Low, Medium and High, and Automatic fan handback. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Support Blade 15 Advanced (Mid 2019) RZ09-0301 with Balanced/Custom performance, Balanced fixed fans and host curves on full-power AC, independent keyboard brightness and logo controls. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Adjust the running CPU's all-core Voltage Optimizer on Blade 16 (2025, RZ09-0528) with the supported AMD driver already running. Off preserves the remembered offset. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
 - Support Blade 15 Base (2019) RZ09-0300, Blade 15 Advanced (Early 2020) RZ09-0330 and Blade 15 Base (Late 2020) RZ09-0351 with reviewed preset controls and Automatic fans. Advanced Custom CPU/GPU levels are bounded to Low/Medium/High; physical validation remains pending. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
 - Support Blade 14 (2024) RZ09-0508, Blade 16 (2024) RZ09-0510, Blade 18 (2024) RZ09-0509 and Blade 18 (2025) RZ09-0529 with reviewed model-specific controls. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
@@ -22,6 +22,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Change directly between Fixed fans and host curves in an admitted preset on source-reviewed backends. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Stop treating constant ACPI values as CPU temperature, so custom fan curves use the existing maximum-speed fallback when no CPU sensor is available. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Preserve cancellation when a queued service request resumes. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
 - Preserve the original diagnostic stage when a CPU read times out. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))

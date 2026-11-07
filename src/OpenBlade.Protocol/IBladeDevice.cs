@@ -103,6 +103,13 @@ public interface IBladeDevice
 
     Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken);
 
+    Task<ConfirmedDeviceState> ReadIndependentLightingStateAsync(
+        IndependentLightingSettings fields, CancellationToken cancellationToken) =>
+        ReadLightingStateAsync(cancellationToken);
+
+    Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken cancellationToken) =>
+        Task.FromException(new CapabilityUnavailableException("Independent lighting controls are unavailable."));
+
     Task SetLightingRefreshRateAsync(
         LightingRefreshRate refreshRate,
         CancellationToken cancellationToken) =>

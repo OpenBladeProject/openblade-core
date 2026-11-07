@@ -93,6 +93,16 @@ public interface IProductionLightingPort : IAsyncDisposable
 
     Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken);
 
+    Task<IndependentLightingSettings?> ReadIndependentLightingAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IndependentLightingSettings?>(null);
+
+    Task<IndependentLightingSettings?> ReadIndependentLightingAsync(
+        IndependentLightingSettings fields, CancellationToken cancellationToken) =>
+        ReadIndependentLightingAsync(cancellationToken);
+
+    Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken cancellationToken) =>
+        Task.FromException(new CapabilityUnavailableException("Independent lighting controls are unavailable."));
+
     Task<LogoLightingMode?> ReadLogoStateAsync(CancellationToken cancellationToken) =>
         Task.FromResult<LogoLightingMode?>(null);
 

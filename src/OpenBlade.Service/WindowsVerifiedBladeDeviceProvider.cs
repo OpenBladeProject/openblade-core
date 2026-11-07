@@ -612,6 +612,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         LampArrayLightingAccess =
                             lighting.Capabilities.LampArrayLightingAccess,
                         LogoLightingModes = lighting.Capabilities.LogoLightingModes,
+                        SupportsIndependentLightingControls = lighting.Capabilities.SupportsIndependentLightingControls,
                         SupportsKeyboardBrightness =
                             lighting.Capabilities.SupportsKeyboardBrightness,
                         SupportsBreathingColorSelection = lighting.Capabilities.SupportsBreathingColorSelection,
@@ -888,6 +889,26 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
+        public async Task<ConfirmedDeviceState> ReadIndependentLightingStateAsync(
+            IndependentLightingSettings fields, CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                IndependentLightingSettings? observed = await lightingSession
+                    .ReadIndependentLightingStateCoreAsync(cancellationToken, fields).ConfigureAwait(false);
+                return new ConfirmedDeviceState(null, null, null, null)
+                {
+                    IndependentLighting = observed,
+                    LogoLighting = observed?.LogoMode,
+                };
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         public async Task<ConfirmedDeviceState> ReadLightingStateAsync(
             CancellationToken cancellationToken)
         {
@@ -906,6 +927,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     Lighting: lighting)
                 {
                     LogoLighting = logo,
+                    IndependentLighting = await lightingSession.ReadIndependentLightingStateCoreAsync(cancellationToken)
+                        .ConfigureAwait(false),
                 };
             }
             finally
@@ -1006,6 +1029,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     CustomPerformance = performanceFan?.CustomPerformance,
                     GpuClockOffsets = gpuOffsets,
                     LogoLighting = logo,
+                    IndependentLighting = await lightingSession.ReadIndependentLightingStateCoreAsync(cancellationToken)
+                        .ConfigureAwait(false),
                 };
                 if (failures.Count == 0)
                 {
@@ -2317,6 +2342,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             LightingSettings value,
             CancellationToken cancellationToken) =>
             lightingSession.SetLightingAsync(value, cancellationToken);
+
+        public Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken token) =>
+            lightingSession.SetIndependentLightingAsync(value, token);
 
         internal void SetRecoveryWriteAdmission(Func<bool> admission) =>
             lightingSession.SetRecoveryWriteAdmission(admission);

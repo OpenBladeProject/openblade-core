@@ -17,16 +17,27 @@ public sealed partial class SourceReviewedBladeModelTests
             ? [PerformancePreset.Balanced, PerformancePreset.Custom]
             : [PerformancePreset.Balanced, PerformancePreset.Gaming, PerformancePreset.Creator];
         Assert.Equal(expected.Order(), capabilities.PerformancePresets.Order());
-        Assert.Equal(new[] { FanMode.Automatic }, capabilities.FanModes);
-        Assert.Null(capabilities.FanSpeedRange);
+        if (product == 0x0245)
+        {
+            Assert.Equal(new[] { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }.Order(), capabilities.FanModes.Order());
+            Assert.Equal(new FanSpeedRange(3700, 5300, 100), capabilities.FanSpeedRange);
+            Assert.Equal(new FanSpeedRange(3700, 5300, 100), capabilities.GetFanSpeedRange(PerformancePreset.Balanced));
+            Assert.Null(capabilities.GetFanSpeedRange(PerformancePreset.Custom));
+            Assert.False(capabilities.SupportsDirectManualFanTransitions);
+        }
+        else
+        {
+            Assert.Equal(new[] { FanMode.Automatic }, capabilities.FanModes);
+            Assert.Null(capabilities.FanSpeedRange);
+        }
         Assert.Empty(capabilities.ChargeLimits);
         Assert.Empty(capabilities.LightingEffects);
-        Assert.Empty(capabilities.LogoLightingModes);
+        Assert.Equal(product == 0x0245 ? 3 : 0, capabilities.LogoLightingModes.Count);
         Assert.Empty(capabilities.OneShotLaptopControls);
         Assert.Empty(capabilities.HostManagedLaptopControls);
         Assert.Null(capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
-        Assert.False(capabilities.SupportsKeyboardBrightness);
+        Assert.Equal(product == 0x0245, capabilities.SupportsKeyboardBrightness);
         Assert.False(capabilities.SupportsUniformLightingFrames);
         if (product is 0x0245 or 0x0253)
         {
@@ -120,8 +131,11 @@ public sealed partial class SourceReviewedBladeModelTests
         }
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.QueryProtectionAsync(default));
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(80, default));
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(4000, 4000, default));
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.ManualCurve, default));
+        if (product != 0x0245)
+        {
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(4000, 4000, default));
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.ManualCurve, default));
+        }
         Assert.Empty(session.Commands);
     }
 

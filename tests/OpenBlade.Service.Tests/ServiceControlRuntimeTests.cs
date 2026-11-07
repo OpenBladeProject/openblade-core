@@ -32055,6 +32055,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public List<string> BatterySetterCalls { get; } = [];
 
         public int LightingSetCalls { get; private set; }
+        public List<IndependentLightingSettings> IndependentLightingWrites { get; } = [];
 
         public List<LightingRefreshRate> LightingRefreshRates { get; } = [];
 
@@ -32273,6 +32274,20 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             AfterReadState?.Invoke();
             AfterReadStateCall?.Invoke(StateReadCalls);
             return Task.FromResult(ConfirmedState);
+        }
+
+        public async Task<ConfirmedDeviceState> ReadIndependentLightingStateAsync(
+            IndependentLightingSettings fields, CancellationToken cancellationToken)
+        {
+            ConfirmedDeviceState state = await ReadStateAsync(cancellationToken);
+            byte? brightness = fields.Brightness.HasValue ? state.IndependentLighting?.Brightness : null;
+            LogoLightingMode? logo = fields.LogoMode.HasValue ? state.IndependentLighting?.LogoMode : null;
+            return state with
+            {
+                Lighting = null,
+                LogoLighting = logo,
+                IndependentLighting = brightness.HasValue || logo.HasValue ? new(brightness, logo) : null,
+            };
         }
 
         public Task<ConfirmedDeviceState> ReadPerformanceFanStateAsync(
@@ -32897,6 +32912,28 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             return Task.CompletedTask;
         }
 
+        public Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            TotalCalls++;
+            IndependentLightingWrites.Add(value);
+            if (LightingFailure is not null)
+            {
+                throw LightingFailure;
+            }
+            if (SuppressConfirmationFor != DeviceSubsystem.Lighting)
+            {
+                ConfirmedState = ConfirmedState with
+                {
+                    IndependentLighting = new(
+                        value.Brightness ?? ConfirmedState.IndependentLighting?.Brightness,
+                        value.LogoMode ?? ConfirmedState.IndependentLighting?.LogoMode),
+                    LogoLighting = value.LogoMode ?? ConfirmedState.LogoLighting,
+                };
+            }
+            AfterSetter?.Invoke(DeviceSubsystem.Lighting);
+            return Task.CompletedTask;
+        }
         public Task SetLightingRefreshRateAsync(
             LightingRefreshRate refreshRate,
             CancellationToken cancellationToken)

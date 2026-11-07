@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 74;
+    public const int ProtocolVersion = 75;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -298,6 +298,10 @@ public static class IpcMessageCodec
                 || set.Value.Value is not null
                     && Enum.IsDefined(set.Value.Lifetime)
                     && LightingSettingsValidation.IsWellFormed(set.Value.Value),
+            SetIndependentLightingOverrideRequest set =>
+                set.Value is null
+                || set.Value.Value is { IsWellFormed: true }
+                    && Enum.IsDefined(set.Value.Lifetime),
             StepKeyboardBrightnessRequest step =>
                 Enum.IsDefined(step.Direction)
                 && Enum.IsDefined(step.Lifetime),
@@ -898,6 +902,7 @@ public static class IpcMessageCodec
                 ChargeLimits = status.Capabilities.ChargeLimits
                     .Where(IsProtocol51BatteryLimit)
                     .ToHashSet(),
+                SupportsIndependentLightingControls = false,
                 CustomPerformance = ProjectProtocol51CustomCapabilities(
                     status.Capabilities.CustomPerformance),
                 LightingEffects = IsProtocol51LightingLayout(
@@ -915,6 +920,7 @@ public static class IpcMessageCodec
             ? null
             : status.ConfirmedState with
             {
+                IndependentLighting = null,
                 Battery = status.ConfirmedState.Battery is
                 { ChargeLimitPercent: int confirmedLimit }
                     && !IsProtocol51BatteryLimit(confirmedLimit)
@@ -929,9 +935,9 @@ public static class IpcMessageCodec
                 Fans = status.ConfirmedState.CustomPerformance?.MaximumFans == true
                     ? null : status.ConfirmedState.Fans,
                 Lighting = status.ConfirmedState.Lighting is { } confirmedLighting
-                    && !IsProtocol51LightingSetting(confirmedLighting)
-                        ? null
-                        : status.ConfirmedState.Lighting,
+                    && IsProtocol51LightingSetting(confirmedLighting)
+                        ? confirmedLighting with { IndependentControls = null }
+                        : null,
             };
 
         return status with
@@ -989,7 +995,7 @@ public static class IpcMessageCodec
                     : null,
             LightingOverride = status.LightingOverride is { Value: { } overrideLighting }
                 && IsProtocol51LightingSetting(overrideLighting)
-                    ? status.LightingOverride
+                    ? status.LightingOverride with { Value = ProjectProtocol51LightingSetting(overrideLighting) }
                     : null,
             ThermalConvergence = null,
             HyperBoostBlockingControllers = null,
@@ -1042,7 +1048,7 @@ public static class IpcMessageCodec
     // in this read-only projection; unrepresentable confirmed lighting stays unknown.
     private static LightingSettings ProjectProtocol51LightingSetting(LightingSettings settings) =>
         IsProtocol51LightingSetting(settings)
-            ? settings
+            ? settings with { IndependentControls = null }
             : LightingSettingsFactory.Off() with { LogoMode = settings.LogoMode };
 
     private static bool ValidThxAudioProfiles(ProfileSet profiles) =>

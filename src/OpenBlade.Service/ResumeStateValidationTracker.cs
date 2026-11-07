@@ -74,6 +74,7 @@ internal sealed class ResumeStateValidationTracker
                 {
                     Lighting = baseline.Confirmed.Lighting,
                     LogoLighting = baseline.Confirmed.LogoLighting,
+                    IndependentLighting = baseline.Confirmed.IndependentLighting,
                 },
             }
             : null;

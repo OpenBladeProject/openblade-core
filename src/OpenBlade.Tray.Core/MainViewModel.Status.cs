@@ -149,6 +149,7 @@ public sealed partial class MainViewModel
             && left.HostManagedLaptopControls.SetEquals(right.HostManagedLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
+            && left.SupportsIndependentLightingControls == right.SupportsIndependentLightingControls
             && left.SupportsBreathingColorSelection == right.SupportsBreathingColorSelection
             && (left.SupportedBreathingColorModes is null
                 ? right.SupportedBreathingColorModes is null
