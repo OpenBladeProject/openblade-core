@@ -24,6 +24,15 @@ internal sealed class PendingWriteConfirmationTracker
     {
         lock (gate)
         {
+            // A later limiter-only operation cannot discharge an earlier
+            // override obligation. Unknown scope metadata remains strict.
+            if (subsystem == DeviceSubsystem.Battery
+                && entries.TryGetValue(subsystem, out PendingWriteConfirmation? previous)
+                && (previous.BatteryConfirmation != BatteryConfirmationScope.PolicyOnly
+                    || pending.BatteryConfirmation != BatteryConfirmationScope.PolicyOnly))
+            {
+                pending = pending with { BatteryConfirmation = BatteryConfirmationScope.All };
+            }
             entries[subsystem] = pending;
         }
     }
@@ -95,10 +104,11 @@ internal sealed record PendingWriteConfirmation(
     bool? HyperBoostActive = null,
     PerformancePreset? HyperBoostBaseMode = null,
     PendingBatteryIntentCommit? BatteryIntentCommit = null,
-    bool GpuClockTuningOnly = false)
+    bool GpuClockTuningOnly = false,
+    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All)
 {
     public WriteConfirmationExpectation Expectation => new(
-        Target, PreWriteState, HyperBoostActive, HyperBoostBaseMode, GpuClockTuningOnly);
+        Target, PreWriteState, HyperBoostActive, HyperBoostBaseMode, GpuClockTuningOnly, BatteryConfirmation);
 
     public bool CanConfirm(PowerSource powerSource, ProfileAutomationState owner) =>
         PowerSource == powerSource

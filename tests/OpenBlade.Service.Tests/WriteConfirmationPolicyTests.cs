@@ -7,6 +7,33 @@ public sealed class WriteConfirmationPolicyTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void Battery_PolicyOnlyConfirmsItsFieldsWithoutInventingOverride(bool enabled)
+    {
+        var expectation = new WriteConfirmationExpectation(
+            Desired() with { Battery = new DesiredBatteryState(BatteryPolicy.Create(75), enabled, false) },
+            Confirmed(), BatteryConfirmation: BatteryConfirmationScope.PolicyOnly);
+        ConfirmedDeviceState observed = Confirmed() with
+        {
+            Battery = new ConfirmedBatteryState(enabled, enabled ? 75 : null, null),
+        };
+        Assert.Equal(PendingConfirmationResult.Match, Match(DeviceSubsystem.Battery, expectation, observed));
+        Assert.Null(observed.Battery.TemporaryFullCharge);
+        if (enabled)
+        {
+            Assert.Equal(PendingConfirmationResult.Mismatch, Match(DeviceSubsystem.Battery, expectation,
+                observed with { Battery = new ConfirmedBatteryState(true, 75, true) }));
+        }
+        Assert.Equal(PendingConfirmationResult.Mismatch, Match(DeviceSubsystem.Battery, expectation,
+            observed with { Battery = new ConfirmedBatteryState(!enabled, enabled ? null : 75, null) }));
+        Assert.Equal(PendingConfirmationResult.Unavailable, Match(DeviceSubsystem.Battery,
+            expectation with { BatteryConfirmation = BatteryConfirmationScope.All }, observed));
+        Assert.Equal(PendingConfirmationResult.Unavailable, Match(DeviceSubsystem.Battery,
+            expectation with { BatteryConfirmation = (BatteryConfirmationScope)99 }, observed));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void Battery_UnknownTemporaryFullChargeKeepsWritePending(bool protectionEnabled)
     {
         var expectation = new WriteConfirmationExpectation(

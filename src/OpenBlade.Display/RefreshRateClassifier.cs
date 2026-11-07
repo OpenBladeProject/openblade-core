@@ -21,7 +21,7 @@ internal static class RefreshRateClassifier
         }
 
         return options.FirstOrDefault(option =>
-            !option.IsDynamic && option.DesktopHertz == virtualRate)?.Key;
+            !option.IsDynamic && option.DesktopHertz == virtualRate && option.MaximumHertz == physical)?.Key;
     }
 
     internal static int Normalize(double hertz)

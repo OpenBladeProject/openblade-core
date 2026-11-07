@@ -488,6 +488,10 @@ public sealed class ProfileAutomationState
                 PerformancePreset.Silent
                 or PerformancePreset.Balanced
                 or PerformancePreset.Performance
+                or PerformancePreset.Turbo
+                or PerformancePreset.MaximumPower
+                or PerformancePreset.Gaming
+                or PerformancePreset.Creator
                 or PerformancePreset.Custom,
             PowerSource.Battery => performance is
                 PerformancePreset.BatterySaver

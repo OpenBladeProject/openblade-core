@@ -161,6 +161,22 @@
       "patterns": ["build/Build-PadlessHyperBoostLifecycleValidation.ps1", "src/OpenBlade.Service/OpenBlade.Service.csproj", "src/OpenBlade.Service/PadlessHyperBoostLifecycleValidationBuild.cs", "src/OpenBlade.Protocol/HyperBoostWithoutCoolingPadEvidence.cs", "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json"]
     },
     {
+      "test": "tests/Build.Tests/CpuVoltageValidationBuild.Tests.ps1",
+      "patterns": [
+        "build/BuildIdentity.ps1",
+        "build/Publish.ps1",
+        "Directory.Build.props"
+      ]
+    },
+    {
+      "test": "tests/Build.Tests/CpuVoltageDeployment.Tests.ps1",
+      "patterns": [
+        "build/development-deployment/Invoke-LocalDevDeployment.ps1",
+        "build/development-deployment/Publish-CpuVoltageValidation.ps1",
+        "build/Publish.ps1"
+      ]
+    },
+    {
       "test": "tests/Build.Tests/ThermalExternalDriftValidationBuild.Tests.ps1",
       "patterns": ["build/Build-ThermalExternalDriftValidation.ps1", "build/Publish.ps1", "build/development-deployment/Invoke-LocalDevDeployment.ps1", "src/OpenBlade.Service/OpenBlade.Service.csproj", "src/OpenBlade.Service/ThermalExternalDriftValidationBuild.cs", "src/OpenBlade.Protocol/ProductionFixtureSource.cs", "src/OpenBlade.Protocol/TrustedFixtureHashRegistry.cs", "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_3_01_BatteryProduction.json"]
     },

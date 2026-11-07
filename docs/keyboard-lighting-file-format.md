@@ -10,7 +10,7 @@ Keyboard lighting file import is experimental. Enable **Lab features** in
 OpenBlade Settings to show the importer on the Lighting page. Turning Labs off
 later hides new imports without disabling an effect that is already active or
 saved in a power profile.
-[Experimental laptop controls](experimental-blade-support.md) turn on automatically,
+[Supported laptop controls](experimental-blade-support.md) turn on automatically,
 independently of Lab features.
 
 The media type is `application/vnd.openblade.keyboard-lighting+json`.

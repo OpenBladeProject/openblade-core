@@ -16,7 +16,12 @@ internal sealed record BatteryOperationPlan(
     bool Supported,
     bool InitiallyMatching,
     BatteryOperation Operation,
-    Func<ConfirmedBatteryState?, bool> Matches);
+    Func<ConfirmedBatteryState?, bool> Matches)
+{
+    internal BatteryConfirmationScope ConfirmationScope =>
+        Operation is BatteryOperation.ChargeLimit or BatteryOperation.ProtectionOff
+            ? BatteryConfirmationScope.PolicyOnly : BatteryConfirmationScope.All;
+}
 
 internal static class BatteryOperationPlanner
 {
@@ -25,14 +30,15 @@ internal static class BatteryOperationPlanner
         DeviceCapabilities capabilities,
         ConfirmedBatteryState? confirmed)
     {
-        if (confirmed?.TemporaryFullCharge is null)
+        if (confirmed is null || confirmed.TemporaryFullCharge is null
+            && (capabilities.SupportsTemporaryFullCharge || desired.TemporaryFullCharge))
         {
             return BlockedBatteryPlan("Battery");
         }
 
         desired = WithoutStaleFullCharge(desired, confirmed);
 
-        if (desired.TemporaryFullCharge != confirmed.TemporaryFullCharge.Value)
+        if (confirmed.TemporaryFullCharge is bool temporary && desired.TemporaryFullCharge != temporary)
         {
             return CreateTemporaryFullChargePlan(
                 desired.TemporaryFullCharge,
@@ -40,7 +46,7 @@ internal static class BatteryOperationPlanner
                 confirmed);
         }
 
-        if (confirmed.TemporaryFullCharge.Value)
+        if (confirmed.TemporaryFullCharge == true)
         {
             return BatteryMatches(desired, confirmed)
                 ? MatchingBatteryPlan("Battery", confirmed)
@@ -65,7 +71,7 @@ internal static class BatteryOperationPlanner
                 confirmed);
         }
 
-        return BatteryMatches(desired, confirmed)
+        return BatteryMatches(desired, confirmed, allowUnmanagedOverride: !capabilities.SupportsTemporaryFullCharge)
             ? MatchingBatteryPlan("Battery", confirmed)
             : BlockedBatteryPlan("Battery");
     }
@@ -79,9 +85,9 @@ internal static class BatteryOperationPlanner
         bool exactPrecondition = confirmed is
         {
             ProtectionEnabled: true,
-            TemporaryFullCharge: false,
             ChargeLimitPercent: int currentLimit,
-        } && capabilities.ChargeLimits.Contains(currentLimit);
+        } && PolicyOperationAdmitted(capabilities, confirmed)
+            && capabilities.ChargeLimits.Contains(currentLimit);
         if (!admitted || !exactPrecondition)
         {
             return BlockedBatteryPlan("Charge limit");
@@ -90,9 +96,8 @@ internal static class BatteryOperationPlanner
         bool Matches(ConfirmedBatteryState? state) => state is
         {
             ProtectionEnabled: true,
-            TemporaryFullCharge: false,
             ChargeLimitPercent: var limit,
-        } && limit == value.ChargeLimitPercent;
+        } && PolicyOperationAdmitted(capabilities, state) && limit == value.ChargeLimitPercent;
         return new BatteryOperationPlan(
             "Charge limit",
             Supported: true,
@@ -107,7 +112,7 @@ internal static class BatteryOperationPlanner
         DeviceCapabilities capabilities,
         ConfirmedBatteryState? confirmed)
     {
-        if (confirmed is { ProtectionEnabled: false, TemporaryFullCharge: false }
+        if (confirmed is { ProtectionEnabled: false } && PolicyOperationAdmitted(capabilities, confirmed)
             && !enabled)
         {
             return MatchingBatteryPlan("Battery protection", confirmed);
@@ -115,8 +120,8 @@ internal static class BatteryOperationPlanner
 
         bool storedLimitAdmitted = capabilities.ChargeLimits.Contains(
             storedPolicy.ChargeLimitPercent);
-        if (enabled && !storedLimitAdmitted
-            || confirmed?.TemporaryFullCharge is not false)
+        if (confirmed is null || enabled && !storedLimitAdmitted
+            || !PolicyOperationAdmitted(capabilities, confirmed))
         {
             return BlockedBatteryPlan("Battery protection");
         }
@@ -141,8 +146,7 @@ internal static class BatteryOperationPlanner
             {
                 ProtectionEnabled: false,
                 ChargeLimitPercent: null,
-                TemporaryFullCharge: false,
-            };
+            } && PolicyOperationAdmitted(capabilities, state);
             return new BatteryOperationPlan(
                 "Battery protection",
                 Supported: true,
@@ -154,9 +158,8 @@ internal static class BatteryOperationPlanner
         bool MatchesOn(ConfirmedBatteryState? state) => state is
         {
             ProtectionEnabled: true,
-            TemporaryFullCharge: false,
             ChargeLimitPercent: var limit,
-        } && limit == storedPolicy.ChargeLimitPercent;
+        } && PolicyOperationAdmitted(capabilities, state) && limit == storedPolicy.ChargeLimitPercent;
         if (MatchesOn(confirmed))
         {
             return MatchingBatteryPlan("Battery protection", confirmed);
@@ -166,7 +169,6 @@ internal static class BatteryOperationPlanner
             {
                 ProtectionEnabled: false,
                 ChargeLimitPercent: null,
-                TemporaryFullCharge: false,
             })
         {
             return BlockedBatteryPlan("Battery protection");
@@ -250,11 +252,19 @@ internal static class BatteryOperationPlanner
         new BatteryOperation.None(),
         _ => false);
 
+    // A limiter-only backend has no override command to coordinate. Its unknown
+    // flag stays unknown; an admitted override backend still needs a real Off read.
+    private static bool PolicyOperationAdmitted(DeviceCapabilities capabilities, ConfirmedBatteryState? state) =>
+        state is not null && (state.TemporaryFullCharge == false
+            || state.TemporaryFullCharge is null && !capabilities.SupportsTemporaryFullCharge);
+
     internal static bool BatteryMatches(
         DesiredBatteryState desired,
-        ConfirmedBatteryState? confirmed) => confirmed is not null
+        ConfirmedBatteryState? confirmed,
+        bool allowUnmanagedOverride = false) => confirmed is not null
         && desired.ProtectionEnabled == confirmed.ProtectionEnabled
         && (!desired.ProtectionEnabled
             || desired.ConfiguredPolicy.ChargeLimitPercent == confirmed.ChargeLimitPercent)
-        && desired.TemporaryFullCharge == confirmed.TemporaryFullCharge;
+        && (desired.TemporaryFullCharge == confirmed.TemporaryFullCharge
+            || allowUnmanagedOverride && !desired.TemporaryFullCharge && confirmed.TemporaryFullCharge is null);
 }

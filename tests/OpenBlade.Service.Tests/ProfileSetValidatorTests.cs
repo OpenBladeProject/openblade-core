@@ -159,6 +159,10 @@ public sealed class ProfileSetValidatorTests
     [InlineData(PerformancePreset.Silent, FanMode.Automatic)]
     [InlineData(PerformancePreset.Balanced, FanMode.Automatic)]
     [InlineData(PerformancePreset.Performance, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Turbo, FanMode.Automatic)]
+    [InlineData(PerformancePreset.MaximumPower, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Gaming, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Creator, FanMode.Automatic)]
     [InlineData(PerformancePreset.Balanced, FanMode.Maximum)]
     [InlineData(PerformancePreset.Silent, FanMode.Fixed)]
     [InlineData(PerformancePreset.Performance, FanMode.ManualCurve)]
@@ -207,6 +211,10 @@ public sealed class ProfileSetValidatorTests
     [InlineData(PerformancePreset.Silent, PowerSource.PluggedIn)]
     [InlineData(PerformancePreset.Balanced, PowerSource.PluggedIn)]
     [InlineData(PerformancePreset.Performance, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.Turbo, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.MaximumPower, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.Gaming, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.Creator, PowerSource.PluggedIn)]
     [InlineData(PerformancePreset.BatterySaver, PowerSource.Battery)]
     [InlineData(PerformancePreset.BatteryBalanced, PowerSource.Battery)]
     public void SourceAwareCombinationValidation_AcceptsCompatiblePreset(
@@ -218,6 +226,28 @@ public sealed class ProfileSetValidatorTests
                 performance,
                 FanMode.Automatic,
                 source);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Turbo)]
+    [InlineData(PerformancePreset.MaximumPower)]
+    [InlineData(PerformancePreset.Gaming)]
+    [InlineData(PerformancePreset.Creator)]
+    public void Validate_PreservesSourceReviewedAcIntentAndRejectsItOnBattery(PerformancePreset performance)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSetValidator validator = ProfileSetValidator.CreateUnverifiedSafeDefaults();
+        validator.Validate(defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Performance = performance },
+        });
+
+        Assert.Throws<InvalidDataException>(() => validator.Validate(defaults with
+        {
+            Battery = defaults.Battery with { Performance = performance },
+        }));
+        Assert.Throws<InvalidDataException>(() => validator.ValidatePerformanceFanCombination(
+            performance, FanMode.Automatic, PowerSource.UsbC));
     }
 
     [Fact]

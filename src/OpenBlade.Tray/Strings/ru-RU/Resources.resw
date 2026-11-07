@@ -2027,13 +2027,13 @@ OpenBlade повторно проверит этот список и остан�
     <value>Проверить текущее состояние</value>
   </data>
   <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Экспериментальная поддержка ноутбука</value>
+    <value>Поддержка ноутбука</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Возобновить экспериментальное управление</value>
+    <value>Возобновить управление ноутбуком</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
-    <value>Возобновить экспериментальное управление</value>
+    <value>Возобновить управление ноутбуком</value>
   </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Помочь добавить поддержку</value>
@@ -2905,4 +2905,11 @@ OpenBlade повторно проверит этот список и остан�
   <data name="GlobalSearch_FansAliases" xml:space="preserve">
     <value>охлаждение обороты RPM</value>
   </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>Оптимизатор напряжения CPU</value></data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Смещение оптимизатора всех ядер</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Выключение использует ноль и сохраняет смещение. Нажмите «Применить», чтобы изменить настройки.</value></data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>Обновить</value></data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>Восстановить прежние значения оптимизатора</value></data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Оптимизатор напряжения CPU</value></data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve"><value>Смещение всех ядер</value></data>
 </root>

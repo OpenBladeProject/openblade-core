@@ -1440,11 +1440,11 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Sign in to an interactive Windows session to change laptop settings.</value>
   </data>
-  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
-    <value>Experimental controls are available on this laptop. Export diagnostics in About to help test them.</value>
+  <data name="This laptop is supported using reviewed sources. Physical validation is tracked separately." xml:space="preserve">
+    <value>This laptop is supported using reviewed sources. Physical validation is tracked separately.</value>
   </data>
-  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
-    <value>Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change.</value>
+  <data name="Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change.</value>
   </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>Laptop not supported</value>
@@ -1708,4 +1708,25 @@ Details: {1}</value>
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>The power source changed. Review the current profile and try again.</value>
   </data>
+  <data name="Turbo" xml:space="preserve">
+    <value>Turbo</value>
+  </data>
+  <data name="Maximum Power" xml:space="preserve">
+    <value>Maximum Power</value>
+  </data>
+  <data name="Gaming" xml:space="preserve">
+    <value>Gaming</value>
+  </data>
+  <data name="Creator" xml:space="preserve">
+    <value>Creator</value>
+  </data>
+  <data name="Apply now" xml:space="preserve"><value>Apply now</value></data>
+  <data name="mixed per-core values" xml:space="preserve"><value>mixed per-core values</value></data>
+  <data name="CPU tuning request failed: {0}" xml:space="preserve"><value>CPU tuning request failed: {0}</value></data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve"><value>Measured running optimizer: unknown.</value></data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve"><value>Measured running optimizer: {0}.</value></data>
+  <data name="Running optimizer changes are unavailable." xml:space="preserve"><value>Running optimizer changes are unavailable.</value></data>
+  <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve"><value>Optimizer recovery is blocked. Refresh to check its status.</value></data>
+  <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve"><value>CPU recovery includes power settings and cannot be restored here.</value></data>
+  <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve"><value>Recovery of earlier saved CPU settings is blocked.</value></data>
 </root>

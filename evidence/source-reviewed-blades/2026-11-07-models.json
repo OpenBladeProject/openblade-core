@@ -1,0 +1,1794 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-11-07",
+  "baseCoreRevision": "f7e6011f5b4784143279d9174268161933e83662",
+  "supportPolicy": "Official source-reviewed support; physical validation is tracked separately. Per-feature admission remains exact-model scoped.",
+  "sourceHandling": "Vendor modules, firmware carriers and extracted scripts were inspected as data, never executed. No hardware validation or installation was performed.",
+  "models": [
+    {
+      "modelNumber": "RZ09-0508",
+      "productName": "Blade 14 - RZ09-0508",
+      "manufacturer": "Razer",
+      "usbIdentity": {
+        "pid": "02B6",
+        "vid": "1532"
+      },
+      "vendorProductId": 694,
+      "supportBasis": "SourceReviewed",
+      "physicalValidation": "Pending",
+      "identityEvidence": [
+        "https://github.com/linuxhw/DMI/blob/57b21bc6fdd863380e99c228c22aafcd1509528c/Notebook/Razer/Blade/Blade%2014%20-%20RZ09-0508/73FF42F4F619",
+        "https://dl.razerzone.com/master-guides/RazerSynapse3/Blade14-00000694-en.pdf"
+      ],
+      "vendorBuild": "2610250000",
+      "vendorRevision": "ac12bc796214b6cab6977f07aeeea0c9ea8e5463",
+      "transport": {
+        "reportId": 0,
+        "claimInterface": 2,
+        "maximumTransactionId": 31,
+        "protocolReportBytes": 90,
+        "nativeFeatureReportBytes": 91
+      },
+      "presets": {
+        "Balanced": 0,
+        "Silent": 5,
+        "Turbo": 1,
+        "Custom": 4,
+        "BatteryBalanced": 6
+      },
+      "customCpuLevels": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "customGpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "maximumFans": true,
+      "thermalQueryProfile": 1,
+      "customQueryProfile": 1,
+      "chargeLimits": [
+        50,
+        55,
+        60,
+        65,
+        70,
+        75,
+        80,
+        100
+      ],
+      "chargeOffValue": 100,
+      "automaticFanHandback": "Typed current-preset 0D/02 with fan flag 0, independently read back; no target write.",
+      "manualBaseline": "Preset and Custom changes require an independently representable/restorable baseline. Until model-specific manual target restoration is admitted, a manual baseline blocks these requests; explicit Automatic handback is available.",
+      "firmwareAdmission": "No general BIOS/EC/MCU floor established by the reviewed ordinary thermal path. Update metadata is not a blanket admission gate.",
+      "observedOnly": [
+        "Fixed manual fans: source advertises dynamic ranges; fresh range/readback implementation is not admitted.",
+        "Lighting: vendor built-in effects and brightness exist, but no lighting mutation backend is admitted for this batch.",
+        "Driver integrations and THX: reviewed in the catalog separately; no runtime/setup admission inherited."
+      ],
+      "notAdmitted": [
+        "HyperBoost",
+        "Manual fan writes",
+        "Fan curves",
+        "Lighting writes",
+        "Startup animation",
+        "Temporary full charge",
+        "Native brightness driver integration",
+        "Razer driver SnapTap/Fn setup",
+        "THX runtime/setup"
+      ],
+      "sources": [
+        {
+          "file": "6737.63910b6756fd6d249dc6.js",
+          "url": "https://apps.razer.com/synapse/products/694/mw/6737.63910b6756fd6d249dc6.js",
+          "bytes": 2354604,
+          "sha256": "488D72368F0EBFB2A4DD80BE68E8C2BAB8020CBBCC65CA786757FEA79507B997"
+        },
+        {
+          "file": "index.html",
+          "url": "https://apps.razer.com/synapse/products/694/mw/index.html",
+          "bytes": 4284,
+          "sha256": "7615C62F110E38DC054C0D1D0C77944F4D709C70F59CFCD11B38C6B9C3557ECE"
+        },
+        {
+          "file": "installer-manifest.json",
+          "url": "https://apps.razer.com/synapse/products/694/mw/installer-manifest.json",
+          "bytes": 4487,
+          "sha256": "49CD8F67927E9D9BB755D6400E88643FF1B33DD63E2D91209C4240970747731A"
+        },
+        {
+          "file": "main.1b1b68e07824e5af9833.js",
+          "url": "https://apps.razer.com/synapse/products/694/mw/main.1b1b68e07824e5af9833.js",
+          "bytes": 173907,
+          "sha256": "F1AEEAFF4BBDB631B4E66BF8B2B6415FB0EADDF24343A146787B091F89AA7BDC"
+        },
+        {
+          "file": "manifest-1.0.3.json",
+          "url": "https://apps.razer.com/synapse/products/694/mw/manifests/manifest-1.0.3.json",
+          "bytes": 8725,
+          "sha256": "547AA702E27CFB1F6CA66137A34D49164F65FB24454AE2E9C4E86BE4D0ADCC72"
+        },
+        {
+          "file": "manifest.json",
+          "url": "https://apps.razer.com/synapse/products/694/mw/manifest.json",
+          "bytes": 12689,
+          "sha256": "951642CEB4EC034694A1100010E07B5C79630AAA2BEB63FF36632B4EFB294903"
+        },
+        {
+          "file": "rzDevice25.06135650b7453937e0e8.js",
+          "url": "https://apps.razer.com/synapse/products/694/mw/rzDevice25.06135650b7453937e0e8.js",
+          "bytes": 279028,
+          "sha256": "0E5BD5C21DD610E5D889F608B2EBB1D80BFC7CA90237FBBC3A292ADBAF06EF90"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade2.f195d8975ab02884ce66.js",
+          "url": "https://apps.razer.com/synapse/products/694/mw/rzDevice25LedMatrixBlade2.f195d8975ab02884ce66.js",
+          "bytes": 20253,
+          "sha256": "2C67D03295574A782387614E2BE285D16976A325A70AF1C4227E054DE83510ED"
+        },
+        {
+          "file": "rzHardwareEventsProtocol25Parser.228ce9a8b3c522c8ad86.js",
+          "url": "https://apps.razer.com/synapse/products/694/mw/rzHardwareEventsProtocol25Parser.228ce9a8b3c522c8ad86.js",
+          "bytes": 9201,
+          "sha256": "3435790A95F702BF91206C1E4CB3C0B1472B58303DE36FC0D8CADCA3C311E935"
+        },
+        {
+          "file": "ui-index.html",
+          "url": "https://apps.razer.com/synapse/products/694/ui/index.html",
+          "bytes": 5028,
+          "sha256": "D3D37F3E19802CD18779BE5DEC3CEBAE0A4A781CD65FD513691AEAE8E68D7FAD"
+        },
+        {
+          "file": "ui-main.415cc878.js",
+          "url": "https://apps.razer.com/synapse/products/694/ui/static/js/main.415cc878.js",
+          "bytes": 7289052,
+          "sha256": "C22750AAD6E54EE86E04B3D7F7D7DA520636293C209734358FC26A744D84F6B1"
+        }
+      ]
+    },
+    {
+      "modelNumber": "RZ09-0510",
+      "productName": "Blade 16 - RZ09-0510",
+      "manufacturer": "Razer",
+      "usbIdentity": {
+        "pid": "02B7",
+        "vid": "1532"
+      },
+      "vendorProductId": 695,
+      "supportBasis": "SourceReviewed",
+      "physicalValidation": "Pending",
+      "identityEvidence": [
+        "https://github.com/linuxhw/DMI/blob/57b21bc6fdd863380e99c228c22aafcd1509528c/Notebook/Razer/Blade/Blade%2016%20-%20RZ09-0510/E8F595BE10A6",
+        "https://dl.razerzone.com/master-guides/RazerSynapse3/Blade16-00000695-en.pdf"
+      ],
+      "vendorBuild": "2610221239",
+      "vendorRevision": "7865676f20b8580713e50261f0eaec160a307f6e",
+      "transport": {
+        "reportId": 0,
+        "claimInterface": 2,
+        "maximumTransactionId": 31,
+        "protocolReportBytes": 90,
+        "nativeFeatureReportBytes": 91
+      },
+      "presets": {
+        "Balanced": 0,
+        "Silent": 5,
+        "Turbo": 1,
+        "Custom": 4,
+        "BatteryBalanced": 6
+      },
+      "customCpuLevels": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "customGpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "maximumFans": true,
+      "thermalQueryProfile": 1,
+      "customQueryProfile": 1,
+      "chargeLimits": [
+        50,
+        55,
+        60,
+        65,
+        70,
+        75,
+        80,
+        100
+      ],
+      "chargeOffValue": 100,
+      "automaticFanHandback": "Typed current-preset 0D/02 with fan flag 0, independently read back; no target write.",
+      "manualBaseline": "Preset and Custom changes require an independently representable/restorable baseline. Until model-specific manual target restoration is admitted, a manual baseline blocks these requests; explicit Automatic handback is available.",
+      "firmwareAdmission": "No general BIOS/EC/MCU floor established by the reviewed ordinary thermal path. Update metadata is not a blanket admission gate.",
+      "observedOnly": [
+        "Fixed manual fans: source advertises dynamic ranges; fresh range/readback implementation is not admitted.",
+        "Lighting: vendor built-in effects and brightness exist, but no lighting mutation backend is admitted for this batch.",
+        "Driver integrations and THX: reviewed in the catalog separately; no runtime/setup admission inherited."
+      ],
+      "notAdmitted": [
+        "HyperBoost",
+        "Manual fan writes",
+        "Fan curves",
+        "Lighting writes",
+        "Startup animation",
+        "Temporary full charge",
+        "Native brightness driver integration",
+        "Razer driver SnapTap/Fn setup",
+        "THX runtime/setup"
+      ],
+      "sources": [
+        {
+          "file": "6737.7ec91e479ef65c194b6c.js",
+          "url": "https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js",
+          "bytes": 2465050,
+          "sha256": "22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA"
+        },
+        {
+          "file": "index.html",
+          "url": "https://apps.razer.com/synapse/products/695/mw/index.html",
+          "bytes": 4284,
+          "sha256": "E6D13E7A1639F218DDD3B2816ECD94D385031CA537DB1FC9B23DFF5B940BE0AE"
+        },
+        {
+          "file": "installer-manifest.json",
+          "url": "https://apps.razer.com/synapse/products/695/mw/installer-manifest.json",
+          "bytes": 4724,
+          "sha256": "2CF1944B448E3BBF6822D6A6332350745B47A2E4264B70D381778B5A77926689"
+        },
+        {
+          "file": "main.27df2e7ddab0b6bc34cc.js",
+          "url": "https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js",
+          "bytes": 175163,
+          "sha256": "A12CD7047CC1CF093DBB458D703BA4D18CFE77110F47391B180EA5B33BA5E379"
+        },
+        {
+          "file": "manifest-1.0.8.json",
+          "url": "https://apps.razer.com/synapse/products/695/mw/manifests/manifest-1.0.8.json",
+          "bytes": 9491,
+          "sha256": "04E83AA6FF16DF1EFD75E2E110196C0BF389BDA4E90C23406EB47EEFD68DA8AE"
+        },
+        {
+          "file": "manifest.json",
+          "url": "https://apps.razer.com/synapse/products/695/mw/manifest.json",
+          "bytes": 14309,
+          "sha256": "8DAF9EC68ADDEE54FEDB09F668126525AE9D774DD56E161373A5558287CBB0A1"
+        },
+        {
+          "file": "rzDevice25.60bfcef58690c8bb715d.js",
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js",
+          "bytes": 277422,
+          "sha256": "2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade2.d7fc499124d26b637274.js",
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrixBlade2.d7fc499124d26b637274.js",
+          "bytes": 20145,
+          "sha256": "EC3F8BCA0656F5BBB0872358ACAC387F7A2DFED42C9F5636D651DF1E85F1FF28"
+        },
+        {
+          "file": "rzHardwareEventsProtocol25Parser.998bc2db18aff8d8c1dd.js",
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzHardwareEventsProtocol25Parser.998bc2db18aff8d8c1dd.js",
+          "bytes": 9186,
+          "sha256": "CE6C01BCDBEB783987F7D33927F4DB1717B9B94311085CA7958488855ABBD1E8"
+        },
+        {
+          "file": "ui-index.html",
+          "url": "https://apps.razer.com/synapse/products/695/ui/index.html",
+          "bytes": 5041,
+          "sha256": "0D2CB4437E4A184B84EB7526830902DC711170ED09E3F46684397964C6A9E4D1"
+        },
+        {
+          "file": "ui-main.65ed4ee5.js",
+          "url": "https://apps.razer.com/synapse/products/695/ui/static/js/main.65ed4ee5.js",
+          "bytes": 7227421,
+          "sha256": "74ECA71816B57B4C9BE3F83D3E5D894F95A2050D88FB2DF4B63A5AFFF5271612"
+        }
+      ]
+    },
+    {
+      "modelNumber": "RZ09-0509",
+      "productName": "Blade 18 - RZ09-0509",
+      "manufacturer": "Razer",
+      "usbIdentity": {
+        "pid": "02B8",
+        "vid": "1532"
+      },
+      "vendorProductId": 696,
+      "supportBasis": "SourceReviewed",
+      "physicalValidation": "Pending",
+      "identityEvidence": [
+        "https://browser.geekbench.com/v6/cpu/10081078",
+        "https://dl.razerzone.com/master-guides/RazerSynapse3/Blade18-00000696-en.pdf"
+      ],
+      "vendorBuild": "2610250003",
+      "vendorRevision": "491934c43476780de3dc0887f36873ae6adc7ddc",
+      "transport": {
+        "reportId": 0,
+        "claimInterface": 2,
+        "maximumTransactionId": 31,
+        "protocolReportBytes": 90,
+        "nativeFeatureReportBytes": 91
+      },
+      "presets": {
+        "Balanced": 0,
+        "Silent": 5,
+        "Turbo": 1,
+        "Custom": 4,
+        "BatteryBalanced": 6
+      },
+      "customCpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "customGpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "maximumFans": true,
+      "thermalQueryProfile": 1,
+      "customQueryProfile": 1,
+      "chargeLimits": [
+        50,
+        55,
+        60,
+        65,
+        70,
+        75,
+        80,
+        100
+      ],
+      "chargeOffValue": 100,
+      "automaticFanHandback": "Typed current-preset 0D/02 with fan flag 0, independently read back; no target write.",
+      "manualBaseline": "Preset and Custom changes require an independently representable/restorable baseline. Until model-specific manual target restoration is admitted, a manual baseline blocks these requests; explicit Automatic handback is available.",
+      "firmwareAdmission": "No general BIOS/EC/MCU floor established by the reviewed ordinary thermal path. Update metadata is not a blanket admission gate.",
+      "observedOnly": [
+        "Fixed manual fans: source advertises dynamic ranges; fresh range/readback implementation is not admitted.",
+        "Lighting: vendor built-in effects and brightness exist, but no lighting mutation backend is admitted for this batch.",
+        "CPU Boost/native overclocking: source UI concepts require separate exact command-value review.",
+        "Driver integrations and THX: reviewed in the catalog separately; no runtime/setup admission inherited."
+      ],
+      "notAdmitted": [
+        "HyperBoost",
+        "Manual fan writes",
+        "Fan curves",
+        "Lighting writes",
+        "Startup animation",
+        "Temporary full charge",
+        "Native brightness driver integration",
+        "Razer driver SnapTap/Fn setup",
+        "THX runtime/setup"
+      ],
+      "sources": [
+        {
+          "file": "432.3433fa4e69bd4867a413.js",
+          "url": "https://apps.razer.com/synapse/products/696/mw/432.3433fa4e69bd4867a413.js",
+          "bytes": 142594,
+          "sha256": "157F4A6C34610A0C41C0AD9F141915DC82FCD42E35E718D77208591AC2915BFC"
+        },
+        {
+          "file": "6737.2463f7361e4d145671a2.js",
+          "url": "https://apps.razer.com/synapse/products/696/mw/6737.2463f7361e4d145671a2.js",
+          "bytes": 2344973,
+          "sha256": "4EF6AFB6402DD50CD6DE07CA96E191F475797903507C82CAE194F0AF63E32ECC"
+        },
+        {
+          "file": "index.html",
+          "url": "https://apps.razer.com/synapse/products/696/mw/index.html",
+          "bytes": 4376,
+          "sha256": "487AF8BACDFA0CCFAE964B80A2D0C9D1DE3A512D8F6C0003FFA69724D8B028D0"
+        },
+        {
+          "file": "installer-manifest.json",
+          "url": "https://apps.razer.com/synapse/products/696/mw/installer-manifest.json",
+          "bytes": 4187,
+          "sha256": "608EF7FC583A1540A9881B75BB6358C8B5E3C49CA8F429570E17C93362E4176E"
+        },
+        {
+          "file": "main.ded18de8aee09a8f8238.js",
+          "url": "https://apps.razer.com/synapse/products/696/mw/main.ded18de8aee09a8f8238.js",
+          "bytes": 175141,
+          "sha256": "1A9CC3E1E8E28BB827AD17A720A03E6C62BA7A37F27774E8FA1B1B8E827E281F"
+        },
+        {
+          "file": "manifest-1.0.2.json",
+          "url": "https://apps.razer.com/synapse/products/696/mw/manifests/manifest-1.0.2.json",
+          "bytes": 9516,
+          "sha256": "9B4C893C598E259AEADA0BF50C097103A57D9AFF01B3A997D2E2E9B3019CC55C"
+        },
+        {
+          "file": "manifest.json",
+          "url": "https://apps.razer.com/synapse/products/696/mw/manifest.json",
+          "bytes": 14481,
+          "sha256": "A4415FDD51534A0FA2027279F70FD8F577B8CEFCACB0AA16938D5166058672B3"
+        },
+        {
+          "file": "onLoad.6e4b10fef47d5f0dfee3.js",
+          "url": "https://apps.razer.com/synapse/products/696/mw/onLoad.6e4b10fef47d5f0dfee3.js",
+          "bytes": 45845,
+          "sha256": "1A82484A30674F3F3FEBC6E4547714ADBD9FDA5FB4D37BBE0B291B84FA9BE6FD"
+        },
+        {
+          "file": "rzDevice25.6339454cb5b2fe587300.js",
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25.6339454cb5b2fe587300.js",
+          "bytes": 277032,
+          "sha256": "8780AA380D11665A2D551174D162C7278404465772219D0530A29B09E297BC81"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade2.4a271d921402284f66f0.js",
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrixBlade2.4a271d921402284f66f0.js",
+          "bytes": 20143,
+          "sha256": "2CF06F137FDC7AFD550D1D6CC8229A37C05CE96D9A9F4223F90E02BC456FF0E5"
+        },
+        {
+          "file": "ui-index.html",
+          "url": "https://apps.razer.com/synapse/products/696/ui/index.html",
+          "bytes": 5042,
+          "sha256": "B21AB27A12BC40FC4995125518BBDBC63CC3A98C1141493625B4C07D42571872"
+        },
+        {
+          "file": "ui-main.cb24c0fc.js",
+          "url": "https://apps.razer.com/synapse/products/696/ui/static/js/main.cb24c0fc.js",
+          "bytes": 7402925,
+          "sha256": "C882F2130FC41DC73EDA31A141BA82F8786B84F45992C490CC0DC5AC3EC28DCD"
+        },
+        {
+          "file": "rzDevice25LedMatrix.9b4ab2e4321a6a556e6f.js",
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrix.9b4ab2e4321a6a556e6f.js",
+          "bytes": 6442,
+          "sha256": "8459713BCE0AA2D8F34A5A7C8382AA56DB65384570C12C02ACDBDD554FED40D6"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade.d8b6805b3fb6452e52ce.js",
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrixBlade.d8b6805b3fb6452e52ce.js",
+          "bytes": 13031,
+          "sha256": "2F26EA7DA86C0504119A4C15C47430048E4C9A581BEB52F85A0847DB264FE4EA"
+        }
+      ]
+    },
+    {
+      "modelNumber": "RZ09-0529",
+      "productName": "Blade 18 - RZ09-0529",
+      "manufacturer": "Razer",
+      "usbIdentity": {
+        "pid": "02C7",
+        "vid": "1532"
+      },
+      "vendorProductId": 711,
+      "supportBasis": "SourceReviewed",
+      "physicalValidation": "Pending",
+      "identityEvidence": [
+        "https://browser.geekbench.com/v6/cpu/18589659",
+        "https://dl.razerzone.com/master-guides/RazerSynapse4/Blade18-00000711-en.pdf"
+      ],
+      "vendorBuild": "2610250006",
+      "vendorRevision": "49ff367e9e49f1129b4f1a3887c36a21bce8bffb",
+      "transport": {
+        "reportId": 0,
+        "claimInterface": 2,
+        "maximumTransactionId": 31,
+        "protocolReportBytes": 90,
+        "nativeFeatureReportBytes": 91
+      },
+      "presets": {
+        "Balanced": 0,
+        "Silent": 5,
+        "Turbo": 1,
+        "Custom": 4,
+        "BatteryBalanced": 6,
+        "MaximumPower": 2,
+        "BatterySaver": 3
+      },
+      "customCpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "customGpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "maximumFans": false,
+      "thermalQueryProfile": 1,
+      "customQueryProfile": 1,
+      "chargeLimits": [
+        50,
+        55,
+        60,
+        65,
+        70,
+        75,
+        80,
+        100
+      ],
+      "chargeOffValue": 100,
+      "automaticFanHandback": "Typed current-preset 0D/02 with fan flag 0, independently read back; no target write.",
+      "manualBaseline": "Preset and Custom changes require an independently representable/restorable baseline. Until model-specific manual target restoration is admitted, a manual baseline blocks these requests; explicit Automatic handback is available.",
+      "firmwareAdmission": "No general BIOS/EC/MCU floor established by the reviewed ordinary thermal path. Update metadata is not a blanket admission gate.",
+      "observedOnly": [
+        "Fixed manual fans: source advertises dynamic ranges; fresh range/readback implementation is not admitted.",
+        "Lighting: vendor built-in effects and brightness exist, but no lighting mutation backend is admitted for this batch.",
+        "CPU Boost/native overclocking: source UI concepts require separate exact command-value review.",
+        "Driver integrations and THX: reviewed in the catalog separately; no runtime/setup admission inherited."
+      ],
+      "notAdmitted": [
+        "HyperBoost",
+        "Manual fan writes",
+        "Fan curves",
+        "Lighting writes",
+        "Startup animation",
+        "Temporary full charge",
+        "Native brightness driver integration",
+        "Razer driver SnapTap/Fn setup",
+        "THX runtime/setup"
+      ],
+      "sources": [
+        {
+          "file": "432.d17afdb773f226d510ab.js",
+          "url": "https://apps.razer.com/synapse/products/711/mw/432.d17afdb773f226d510ab.js",
+          "bytes": 143021,
+          "sha256": "A3F7A986277B7F99F0214237C77EC1237CA3AC83FCF689543D449FDC1BE61C1D"
+        },
+        {
+          "file": "6737.c63928b0e4fd1b7673b4.js",
+          "url": "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js",
+          "bytes": 2457106,
+          "sha256": "3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88"
+        },
+        {
+          "file": "index.html",
+          "url": "https://apps.razer.com/synapse/products/711/mw/index.html",
+          "bytes": 4389,
+          "sha256": "6291217FEC93AAD1585EFBF7E6A690707E2890E4CF6D11017AB176091F491BFB"
+        },
+        {
+          "file": "installer-manifest.json",
+          "url": "https://apps.razer.com/synapse/products/711/mw/installer-manifest.json",
+          "bytes": 8545,
+          "sha256": "41488B2BF36F5ACD1ED9A108B277B29DFC4D6B78867C87ECFB5951EEB5497062"
+        },
+        {
+          "file": "main.1f8e0c604f19af3ea24c.js",
+          "url": "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js",
+          "bytes": 184695,
+          "sha256": "C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E"
+        },
+        {
+          "file": "manifest-1.0.25.json",
+          "url": "https://apps.razer.com/synapse/products/711/mw/manifests/manifest-1.0.25.json",
+          "bytes": 10342,
+          "sha256": "FEA120EAD6FAFA9E7661A27F42A75863F983886C74DA2F9E551367AA58612C16"
+        },
+        {
+          "file": "manifest.json",
+          "url": "https://apps.razer.com/synapse/products/711/mw/manifest.json",
+          "bytes": 15848,
+          "sha256": "9C4350F945886D2C0F4D2969E3C82144FB19F425A0F21836F2C10A2158F76C5D"
+        },
+        {
+          "file": "onLoad.12ab08ae8f50943c50a1.js",
+          "url": "https://apps.razer.com/synapse/products/711/mw/onLoad.12ab08ae8f50943c50a1.js",
+          "bytes": 45704,
+          "sha256": "F83788D9B51E6062EBCB28CB77B3B2724A8E1C447C7A8B762E621B575192A971"
+        },
+        {
+          "file": "rzDevice25.c8da1ead63e6cf002d32.js",
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js",
+          "bytes": 279417,
+          "sha256": "02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade2.d678cb5b99e6382aebe0.js",
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBlade2.d678cb5b99e6382aebe0.js",
+          "bytes": 20251,
+          "sha256": "62356152B59E6D172AF8D07677534EBA0BF9DBFEBA973AFE51BEC8437D031FD8"
+        },
+        {
+          "file": "ui-2321.c26bad69.chunk.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/2321.c26bad69.chunk.js",
+          "bytes": 17373,
+          "sha256": "6D10D0D09A1B3807DC3E3EC4BD1B0375CC54DB81040BB424F8E24DD1A8650ECA"
+        },
+        {
+          "file": "ui-3116.7ceed9c8.chunk.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/3116.7ceed9c8.chunk.js",
+          "bytes": 148603,
+          "sha256": "181B63645024976A10C29D28DBAB1F9CEB4F80A53A6907E68CB786E5B256CD51"
+        },
+        {
+          "file": "ui-3980.22d1262e.chunk.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/3980.22d1262e.chunk.js",
+          "bytes": 18762,
+          "sha256": "8F27D1E45F22F5BCEECC4563D4F3192BC95653E0C00A40C721EC16C01A9936D4"
+        },
+        {
+          "file": "ui-510.31cd4900.chunk.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/510.31cd4900.chunk.js",
+          "bytes": 63923,
+          "sha256": "7EC57CFFB32D3E94697C9748F5CDBF8E02DE924712673E5EF141701280FD6067"
+        },
+        {
+          "file": "ui-8010.085dbead.chunk.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/8010.085dbead.chunk.js",
+          "bytes": 297138,
+          "sha256": "70DF89EACA31405B343AA7F393B7F17FBBA7191F0B8FC7AA9452FF00FFC7ACA8"
+        },
+        {
+          "file": "ui-8158.e5c5b4cd.chunk.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/8158.e5c5b4cd.chunk.js",
+          "bytes": 186908,
+          "sha256": "E997A2994B5DEBFE5B2014FC30DAB38E430AA60FAC9869FBC3F27EBA28AE7617"
+        },
+        {
+          "file": "ui-8254.dba37809.chunk.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/8254.dba37809.chunk.js",
+          "bytes": 8795,
+          "sha256": "1C4F6557005BE724AD637AAB2A2171CA3EB831B47CCD4D806A3E4AE3FE3DF2E0"
+        },
+        {
+          "file": "ui-8506.25bd16ce.chunk.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/8506.25bd16ce.chunk.js",
+          "bytes": 15614,
+          "sha256": "20353BDBF4F730715DF45F767280830CB70016D573A56460107139F46E266BE7"
+        },
+        {
+          "file": "ui-8677.4f14c65f.chunk.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/8677.4f14c65f.chunk.js",
+          "bytes": 1572,
+          "sha256": "A0B3773A9A5A308B1E55E1DD0A85B5DFFD9B2AB5CD943970DDA641B8B2FE103A"
+        },
+        {
+          "file": "ui-892.12b29c32.chunk.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/892.12b29c32.chunk.js",
+          "bytes": 437192,
+          "sha256": "FE1298AD9FAAE66301E76B439311F19393E4A46E1F8C5EB42B65350DA88F9100"
+        },
+        {
+          "file": "ui-9742.aa50375b.chunk.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/9742.aa50375b.chunk.js",
+          "bytes": 117630,
+          "sha256": "06C467C6C5C76345D271390D5D7D5163E23DEAEA5C89858793F9E95BA9F409D9"
+        },
+        {
+          "file": "ui-index.html",
+          "url": "https://apps.razer.com/synapse/products/711/ui/index.html",
+          "bytes": 5041,
+          "sha256": "13C20772623B1EF421827BFB71755491F7C7BEAD4423719910FDB679D75605A7"
+        },
+        {
+          "file": "ui-main.a649ed49.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/main.a649ed49.js",
+          "bytes": 839234,
+          "sha256": "4B42EF4995470865B7D02587B85724247B886BDF2376EB6A78DA38BB9B6CBF99"
+        },
+        {
+          "file": "rzDevice25LedMatrix.69e3b36effe3a85ab0de.js",
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrix.69e3b36effe3a85ab0de.js",
+          "bytes": 6459,
+          "sha256": "65C1FD97AD41460B8AFE33B08C0F8051D990CAF15DCF40D23930583DBC85664F"
+        },
+        {
+          "file": "rzDevice25LedMatrixBlade.1ac7639291bd0bca2295.js",
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBlade.1ac7639291bd0bca2295.js",
+          "bytes": 13097,
+          "sha256": "CFD5529379EDE7C7EE0AA9C82A2726840DBB5B0B718C45024D8B7AD7486B7B85"
+        }
+      ]
+    }
+  ],
+  "initialFiveModelFirmwareReview": {
+    "packages": [
+      {
+        "modelNumber": "RZ09-0328",
+        "variant": "03286-03287-03289",
+        "component": "BIOS",
+        "version": "1.06",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/2652",
+        "publishedDownload": "https://rzr.to/ADa3r",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%E2%80%9D%20Base%20%282020%29%20%7C%20RZ09-0328x/RazerUpdater_v1.1.1.2_DA550-BIOSv0106.exe",
+        "originalFileName": "RazerUpdater_v1.1.1.2_DA550-BIOSv0106.exe",
+        "bytes": 8958488,
+        "sha256": "4c51547f99e13c164b1d0d5ddf1f164b31e6f1e4a98717f21f866ddfeef8b703",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "Dana5_0106_FWUpdate.bin",
+            "bytes": 2965504,
+            "sha256": "b1c0fdee5a5a6961e51b06ebff73dfef003c1d34bfba83bf2e6c9c41ffed69d8"
+          },
+          {
+            "path": "Dana5_0106.bin",
+            "bytes": 16777216,
+            "sha256": "7469c62dc7926e0dbd11064e2b017f2f10c241b9bf30392981a57f997d61639f"
+          },
+          {
+            "path": "FlashAFUWin.bat",
+            "bytes": 473,
+            "sha256": "053ec40618f9d8a23ed9f13a32f4c044ce59fe00e23b7f35642d9c9eea8c6986"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 415,
+            "sha256": "40d72113e7d2aba8a252a5f81af78ccc912865d1892de5d59d1d8ed4ca405b38"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0482",
+        "variant": "standard",
+        "component": "BIOS",
+        "version": "02.00",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/13697",
+        "publishedDownload": "https://rzr.to/tT4YXR",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282023%29%20%7C%20RZ09-0482x/RazerUpdater_v1.1.1.3_PI490-BIOSv02.00.exe",
+        "originalFileName": "RazerUpdater_v1.1.1.3_PI490-BIOSv02.00.exe",
+        "bytes": 5830056,
+        "sha256": "83d3b1c29573f3e0e8f20a8ba1700a43c20ec3590604f162a1d201f4481abd13",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "FlashWin.bat",
+            "bytes": 330,
+            "sha256": "e3feea9e35bc13a592698bc4ce6f0cda510f0a232da3dd7d536b148499bfea55"
+          },
+          {
+            "path": "PI490_200.rom",
+            "bytes": 33554432,
+            "sha256": "9e832d5bc12ffc15a7ff00188d7b1afabc053e1482e412e427a7aaa3b3ed3eb8"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 253,
+            "sha256": "81ba04ee8587a12e22334253b5a3af9c4ff4bcb4f8722bd843223a17fcb61b78"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0482",
+        "variant": "standard",
+        "component": "MCU",
+        "version": "1.04",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/13877",
+        "publishedDownload": "https://rzr.to/s9pBkQ",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282023%29%20%7C%20RZ09-0482x/RazerUpdater_v1.1.1.3_PI490-MCUv010400v2.exe",
+        "originalFileName": "RazerUpdater_v1.1.1.3_PI490-MCUv010400v2.exe",
+        "bytes": 1330264,
+        "sha256": "9653d899701a889f3e533e8e4a6733869ca3b4bc5c66942b6512d3d848c40e51",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "MCURV.bat",
+            "bytes": 40,
+            "sha256": "fc7fb09f6238ac7672bbffcb7c3b21a93111454f35e1c213fbb24761be8f0a87"
+          },
+          {
+            "path": "McuUpdate.bat",
+            "bytes": 81,
+            "sha256": "d82467f1e34387d2cd7afaebdb8d758226f3de06adb925f9a738e30c6bda257e"
+          },
+          {
+            "path": "PI490_keyboard_FW_v1.04.00_20230608.hex",
+            "bytes": 166752,
+            "sha256": "42adb76bcb84203237284ed652955e6cdc1ebfb86de4fedb4b780cdf364be54c"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 285,
+            "sha256": "c7a945eb9437fed734e696ef55ea0f5ed4891dec9b05e7e13b0c8b9476209b76"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0483",
+        "variant": "lamborghini",
+        "component": "BIOS",
+        "version": "1.06",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14666",
+        "publishedDownload": "https://rzr.to/z6z05o",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20Automobili%20Lamborghini%20Edition%20%282023%29%20/SO690_Lamborghini_BIOSv0106.exe",
+        "originalFileName": "SO690_Lamborghini_BIOSv0106.exe",
+        "bytes": 8006512,
+        "sha256": "b0dd869eba7716de5f6322e9eca3dc038973ee4932a75c7524a668be9b1ed3dc",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "FlashWin.bat",
+            "bytes": 452,
+            "sha256": "4d5a8d7bf7e72578ca651d7cbdda1ddf4f8406b476eb59504c5ad2b8fe5ac9a3"
+          },
+          {
+            "path": "SO690_Lamborghini_106.bin",
+            "bytes": 28377088,
+            "sha256": "83a9d9d0100c0c3f0b593fc335d5d3a4534d403c41137545422e0a3370622838"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 253,
+            "sha256": "85ae6f4ad7f325625d3f6a2ad5c52747e8675e45d91ac649f1cee0fb49742346"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0483",
+        "variant": "lamborghini",
+        "component": "EC",
+        "version": "1.01",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/21282",
+        "publishedDownload": "https://rzr.to/9ad7mj",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282023%29%20%7C%20RZ09-0483/S9Lamborghini_EC_0101.exe",
+        "originalFileName": "S9Lamborghini_EC_0101.exe",
+        "bytes": 666472,
+        "sha256": "6f6d2240b401ca117293f8565ecbf41458fb7ec0450351af20564f70214c7d84",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "SO695_LB_EC_01_01.bin",
+            "bytes": 262144,
+            "sha256": "486daab302359085b421c0c68d8092be910930a2ef3912ec39dd8f04c89464b8"
+          },
+          {
+            "path": "ToolConfig.ini",
+            "bytes": 61,
+            "sha256": "a5163edeb5d3ad8d85f7909c6113313514062a4e836f48f3efe3ab668eddcde1"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 336,
+            "sha256": "f465bf861e7e9f0176ff769aad9e56fdb98a161c6afa755dc8195636358edbb7"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0483",
+        "variant": "standard",
+        "component": "BIOS",
+        "version": "2.05",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14222",
+        "publishedDownload": "https://rzr.to/qve34j",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282023%29%20%7C%20RZ09-0483/SO690_BIOSv0205.exe",
+        "originalFileName": "SO690_BIOSv0205.exe",
+        "bytes": 8036744,
+        "sha256": "1aace6ddc728b8bd5365eec76875cd3cc6c73f467f511c9216a9e5ed8f30e591",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "FlashWin.bat",
+            "bytes": 447,
+            "sha256": "a02417f15946c2c1ce41d90d1e7d02c55b7e8bd7536218a2e374abe277b37f94"
+          },
+          {
+            "path": "SO690_205_BIOSME.bin",
+            "bytes": 28377088,
+            "sha256": "37465f6dddf383d1e313621091c91fbc58dbd57a8cd024c9dae0b05b0bcf5e96"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 253,
+            "sha256": "7d48af15d471e8e24f00738164444add302ff29a0ea55564762d2f7ea2634fd9"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0483",
+        "variant": "standard",
+        "component": "EC",
+        "version": "2.01",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14883",
+        "publishedDownload": "https://rzr.to/cys6xk",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282023%29%20%7C%20RZ09-0483/SO690_EC_0201.exe",
+        "originalFileName": "SO690_EC_0201.exe",
+        "bytes": 1503488,
+        "sha256": "a8693bebfcfdd3999f5fce53bc41d77a382d44cb3c368fd928de613488cbab15",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "MCURV.bat",
+            "bytes": 40,
+            "sha256": "ce52060ce5225600874d5f28643d35d8d6bbf9e30f90a2e42fc3a37d4a0400df"
+          },
+          {
+            "path": "McuUpdate.bat",
+            "bytes": 81,
+            "sha256": "4bb769bd78fd214bf0d0473fa68cf0b3db8087c0205b00ad2711b91539596bae"
+          },
+          {
+            "path": "SO690_EC_02_01.bin",
+            "bytes": 262144,
+            "sha256": "cbee52c89db0e9415865867ba053b415e0239bbec56a41ab25a35013370fca3c"
+          },
+          {
+            "path": "SO690_keyboard_FW_v1.06.00_20250205.hex",
+            "bytes": 182171,
+            "sha256": "ea274a6e6b41dde2ac20fb3409ed7bed72b7e0a52f79c0949d4b78f3304c52cf"
+          },
+          {
+            "path": "ToolConfig.ini",
+            "bytes": 58,
+            "sha256": "eb68089b1e0402e8077a1259f6f97f831ac4b6f1c26ce65bf24c70ac39f3d6b2"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 334,
+            "sha256": "4155c67511e0abfc5701910a18415c54907ab15423833b72fc5f12a45a7a9b43"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0483",
+        "variant": "standard",
+        "component": "MCU",
+        "version": "1.06.00",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14883",
+        "publishedDownload": "https://rzr.to/vrkv2o",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282023%29%20%7C%20RZ09-0483/SO690_MCU_010600.exe",
+        "originalFileName": "SO690_MCU_010600.exe",
+        "bytes": 1503488,
+        "sha256": "552518c8ed1f590ea0d58e57de27e2ed0c1985a5b61faece69f984d25aab1935",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "MCURV.bat",
+            "bytes": 40,
+            "sha256": "ce52060ce5225600874d5f28643d35d8d6bbf9e30f90a2e42fc3a37d4a0400df"
+          },
+          {
+            "path": "McuUpdate.bat",
+            "bytes": 81,
+            "sha256": "4bb769bd78fd214bf0d0473fa68cf0b3db8087c0205b00ad2711b91539596bae"
+          },
+          {
+            "path": "SO690_EC_02_01.bin",
+            "bytes": 262144,
+            "sha256": "cbee52c89db0e9415865867ba053b415e0239bbec56a41ab25a35013370fca3c"
+          },
+          {
+            "path": "SO690_keyboard_FW_v1.06.00_20250205.hex",
+            "bytes": 182171,
+            "sha256": "ea274a6e6b41dde2ac20fb3409ed7bed72b7e0a52f79c0949d4b78f3304c52cf"
+          },
+          {
+            "path": "ToolConfig.ini",
+            "bytes": 58,
+            "sha256": "eb68089b1e0402e8077a1259f6f97f831ac4b6f1c26ce65bf24c70ac39f3d6b2"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 327,
+            "sha256": "e0dece5c843f50f19ddf1a7af50fdbbcbb6428405cd6be9e5e669fb9676f71b3"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0484",
+        "variant": "standard",
+        "component": "BIOS",
+        "version": "2.09",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14221",
+        "publishedDownload": "https://rzr.to/1vghvq",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0484/KI890-BIOSv0209.exe",
+        "originalFileName": "KI890-BIOSv0209.exe",
+        "bytes": 8054624,
+        "sha256": "ea6b01417b8b868a60c7f85dc194aaa8e8ec0d117dedaa6f3689ff09fbde9741",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "FlashAFUWin.bat",
+            "bytes": 302,
+            "sha256": "c6c1e8796fd6cca3dc954cc3f10f3c619911f32d595e99eea9f12d35f9477eef"
+          },
+          {
+            "path": "KI890_209_BIOSME.bin",
+            "bytes": 28377088,
+            "sha256": "9d7a6ef09c878a86f77e3fffd49505fdefd552b1f43c6e65d483b1d90b06ef29"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 264,
+            "sha256": "13a365cf90b05f50bc2f515eea8879ae9368d74e52c81ca7077b9062f2f71af7"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0484",
+        "variant": "standard",
+        "component": "EC-MCU",
+        "version": "EC1.07-MCU1.04",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/9740",
+        "publishedDownload": "https://rzr.to/mkbkhx",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0484/RazerUpdater_v1.1.1.3_KI890_EC_0107_MCU_010400_TP_VBIOS_v5%201.exe",
+        "originalFileName": "RazerUpdater_v1.1.1.3_KI890_EC_0107_MCU_010400_TP_VBIOS_v5 1.exe",
+        "bytes": 16927128,
+        "sha256": "6e383e9ea40ac5d45be0dbd38cba9c8f92368317d4ad06ad8da1d411e7edb2d7",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "GEN21_X11_update.bat",
+            "bytes": 112,
+            "sha256": "f622ef60deadeb13b10f0c36e389379ee351543aae5ee9d0416bd9f089f2e5fc"
+          },
+          {
+            "path": "GEN21_X4_update.bat",
+            "bytes": 111,
+            "sha256": "7e221bc67a3f30bb2f531161a3fdd673accc17e51ce147054d7fc46f7ae5f7ce"
+          },
+          {
+            "path": "GEN21_X6_update.bat",
+            "bytes": 111,
+            "sha256": "51def9a313d21c5bc1154875e15ffdea6a6684d739a9feb22ab5b4ce9a21e382"
+          },
+          {
+            "path": "GEN21_X9_update.bat",
+            "bytes": 111,
+            "sha256": "5725ce81da8e430ad6873e615642910ba86ce6db851190b7f507abc11b45da9a"
+          },
+          {
+            "path": "GetTp2Ver.bat",
+            "bytes": 41,
+            "sha256": "425863cbbaaf54a539afced9d58dba689fe90c76b867dd7ec57b6d00e58cc6ce"
+          },
+          {
+            "path": "GetTpVer.bat",
+            "bytes": 50,
+            "sha256": "86d672d3f964ba8ca7c2d54c67c358a8f078e3e688a134e3f567ab8bfa93c3ee"
+          },
+          {
+            "path": "GetVbiosVer.bat",
+            "bytes": 60,
+            "sha256": "0f3973d941d8671e29731be228527f5dbcce6bd4705a65882df8111a9a62df39"
+          },
+          {
+            "path": "GN21_update.bat",
+            "bytes": 111,
+            "sha256": "7e9ed534b23ad7f7092ff183b7ecd45d03bdfa6e5fdb89747d60ef7907f24f06"
+          },
+          {
+            "path": "K9_GN21-X11_gsync_95032B409F_PP.rom",
+            "bytes": 2048000,
+            "sha256": "0965ff53b5c590fa0f9a2444cbb206ebfbe44f21c97ee24c0f6936d5ac0d08e5"
+          },
+          {
+            "path": "K9_GN21-X4_gsync_950716C014_PP.rom",
+            "bytes": 2048000,
+            "sha256": "c257788a4fc98e929eab90b75fa22bccdeb3a9a0022df6b773e9e2ed499f8b77"
+          },
+          {
+            "path": "K9_GN21-X6_gsync_9506154080_PP.rom",
+            "bytes": 2048000,
+            "sha256": "df3fa6a7968e772dad9d62dd4d17d5c6313272c4386eb2c48ed27dea51440008"
+          },
+          {
+            "path": "K9_GN21-X9_gsync_95043C480A_PP.rom",
+            "bytes": 2048000,
+            "sha256": "829148e213c29bb0edc8a186fa0246f4c5acd378cfeb35c4923c007e2d9a009b"
+          },
+          {
+            "path": "KI890_EC_01_07.bin",
+            "bytes": 262144,
+            "sha256": "a1d2e6ebe7de811661d0d61fd9e4ae108f8103fd8d65b1af72996faa1beadde2"
+          },
+          {
+            "path": "KI890_Keyboard_FW_v1.04.00_20230412.hex",
+            "bytes": 166863,
+            "sha256": "2a89c1ff6b856551328afe667bb81b31d55722f83618d27311d5b070f2962c73"
+          },
+          {
+            "path": "MCURV.bat",
+            "bytes": 40,
+            "sha256": "2ae451ba25b48758ec3ce921c8222beed60bca7f29380be72ca435da9d19d63f"
+          },
+          {
+            "path": "McuUpdate.bat",
+            "bytes": 81,
+            "sha256": "2baef79fd065c4bbd4d66403eced970edd8547d9fe09d88eb38e125668fa6660"
+          },
+          {
+            "path": "ToolConfig.ini",
+            "bytes": 58,
+            "sha256": "010e3c4b29b95477318adf07c6a44fa9d29371d03ae0ba925fed9d312e2fc124"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 1721,
+            "sha256": "0be35cbae3757d61f6ab62454ca5efe53aac49edcafb264000cd43590fe43385"
+          },
+          {
+            "path": "UpdateTp.bat",
+            "bytes": 29,
+            "sha256": "71e110d79d560e84ce78c2bd91221fc2ebaa42b1e0a096725886065ea3750c3c"
+          },
+          {
+            "path": "UpdateTp2.bat",
+            "bytes": 59,
+            "sha256": "5488b1e9d6e689bfbbaab852b12d7631e70424e828d0d8079999440c6e9fdada"
+          },
+          {
+            "path": "Elan\\SG899A-36H0_fv0x06.bin",
+            "bytes": 131072,
+            "sha256": "fcc3b227c7545189c0679f32d24435c3aae0ba5010c6600581e1396015a203c2"
+          },
+          {
+            "path": "Elan\\SG899A-36H0_fv0x06.ini",
+            "bytes": 582,
+            "sha256": "ff0719b0958a66f4d8916a43e71b59564b0f774128d19479f47d9aa17fb53b56"
+          },
+          {
+            "path": "Elan\\WinIAP.ini",
+            "bytes": 953,
+            "sha256": "cf3b85437e5e1babe32a5aa6dc62e6b019ba628f7138c583b564d94db0d7ead6"
+          },
+          {
+            "path": "Elan\\smbus\\installSMBus.bat",
+            "bytes": 36,
+            "sha256": "555e5b9e14f5ff01841ead508e58de6758548179e5b75a95903af9740d16e658"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0530",
+        "variant": "standard",
+        "component": "BIOS",
+        "version": "0106",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/20634",
+        "publishedDownload": "https://rzr.to/zxl1v0",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-BIOSv0106.exe",
+        "originalFileName": "PI4110-BIOSv0106.exe",
+        "bytes": 6987592,
+        "sha256": "47dd6c2e29d4fcf2c7ae4d29c0711d25ea722bcf7df0a91b97875f0014767628",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "FlashWin.bat",
+            "bytes": 396,
+            "sha256": "a33b202aca90fa73671243a7164120962f3d2cc779b4d6e4f52f3c721562b12b"
+          },
+          {
+            "path": "PI4110_106.rom",
+            "bytes": 33554432,
+            "sha256": "392748dccf0e08d2dc7c407202c4ce779dcb0bc36f8d5d61374cc5880de2750a"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 261,
+            "sha256": "2fae00cfa78eb00e68b8b238b0bd88b11839148cb423e965af6d0cd4d2616931"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0530",
+        "variant": "standard",
+        "component": "EC",
+        "version": "0103",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/21228",
+        "publishedDownload": "https://rzr.to/3a4kti",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-ECv0103.exe",
+        "originalFileName": "PI4110-ECv0103.exe",
+        "bytes": 1465984,
+        "sha256": "c260bd7596aef0f4a9630aecd47bbf6cc49accfd2a03eb0c9642643aac46b7f8",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "PI4110_EC_0103.bin",
+            "bytes": 262144,
+            "sha256": "aecacca42102c17f4b2731a2ab28ebd92e154d0d997a708e41e7e36d56fc2224"
+          },
+          {
+            "path": "ToolConfig.ini",
+            "bytes": 69,
+            "sha256": "ce5e6d73910ac3d3c93df33ddc3823344dfe5e61cd70a49e733eb4d105e3539a"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 404,
+            "sha256": "dcdeb99482b1041fc8ea67a0a7f5000297427f3ea3a448d8ea1fdcba3b2d735e"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0530",
+        "variant": "standard",
+        "component": "MCU",
+        "version": "01.04.00",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/19901",
+        "publishedDownload": "https://rzr.to/l4diqc",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-MCUv01.04.00.exe",
+        "originalFileName": "PI4110-MCUv01.04.00.exe",
+        "bytes": 1439888,
+        "sha256": "aed7039be5cc4ec3f166a2728b0c1b90839bae72c8a04150056654f64f20581f",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "extractedData": [
+          {
+            "path": "MCURV.bat",
+            "bytes": 40,
+            "sha256": "082cc61d9c191a99af2d296a0b80d63470d791f4f2ca1d2a19b81700b9d13bee"
+          },
+          {
+            "path": "McuUpdate.bat",
+            "bytes": 82,
+            "sha256": "f07c293e5948c85725c3b6ca67b0bca3e87aa2f01acd2c96703d0c84cc85901f"
+          },
+          {
+            "path": "PI4110_keyboard_FW_v1.04.00_20250918.hex",
+            "bytes": 147513,
+            "sha256": "4787f3c382d57c165dd2de099147b678070d0251e0febb5b6cc5a7902048bcd3"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 397,
+            "sha256": "50ac8b1049092f9a213d9252c6cdd4078f407c735491ed0c56b6b59299aa1bf8"
+          }
+        ]
+      }
+    ],
+    "acquiredOn": "2026-11-06",
+    "notes": [
+      "RZ09-0483 standard and Lamborghini BIOS/EC have distinct SSID targets; a shared MCU download URL does not establish Lamborghini applicability.",
+      "No standalone EC updater was listed for RZ09-0328 or RZ09-0482; BIOS-image EC contents were not established.",
+      "RZ09-0484 combined EC/MCU updater also contains touchpad and GPU-specific vBIOS payloads.",
+      "These packages do not establish firmware command handlers or physical application/readback/restoration."
+    ]
+  },
+  "newModelFirmwareReview": {
+    "acquiredOn": "2026-11-07",
+    "packages": [
+      {
+        "modelNumber": "RZ09-0508",
+        "variant": "standard",
+        "component": "Firmware",
+        "publishedVersion": "BIOS1.06",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14881",
+        "publishedDownload": "https://rzr.to/lhc30p",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282024%29%20%7C%20RZ09-0508/RazerUpdater_v1.1.1.3_PI4100-BIOSv01.06.exe",
+        "originalFileName": "RazerUpdater_v1.1.1.3_PI4100-BIOSv01.06.exe",
+        "bytes": 5852096,
+        "sha256": "ec121d3fd773d3d48ca5a6b145315269d21d1ee2fa5114c3eb79fa9538a824b4",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade 14",
+            "SSID": "1A582022",
+            "SKU": "*",
+            "BIOSVER": "1.06",
+            "ECVER": ""
+          }
+        ],
+        "extractedData": [
+          {
+            "path": "FlashWin.bat",
+            "bytes": 331,
+            "sha256": "9e21b5ebd93538f2f20c05c724ead8e0df3c8cc489748064d55ef0f0525fcff3"
+          },
+          {
+            "path": "PI4100_106.rom",
+            "bytes": 33554432,
+            "sha256": "3362ff0f4c4d3010cb0a655e4ce3ae72f273833019462e3ec8a5dbd4baf9d815"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 253,
+            "sha256": "4a0345b4d6e2aea3df8b7e018f410ad017d0d9e817c3a829091696e396f87015"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0509",
+        "variant": "gpu-specific",
+        "component": "BIOS",
+        "publishedVersion": "1.06-or-1.04",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14242",
+        "publishedDownload": "https://rzr.to/o3ee7h",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0509/KI8100-BIOSv0106MB1_v0104MB2.exe",
+        "originalFileName": "KI8100-BIOSv0106MB1_v0104MB2.exe",
+        "bytes": 16168624,
+        "sha256": "a34b83e3b7404040b29c82ae557927a1db2afc522dee1eaf38159e47e57175eb",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade 18",
+            "SSID": "1A58300C",
+            "SKU": "RZ09-0509",
+            "BIOSVER": "1.06",
+            "ECVER": ""
+          },
+          {
+            "case": "Case2",
+            "TNAME": "Razer Blade 18",
+            "SSID": "1A58300B",
+            "SKU": "RZ09-0509",
+            "BIOSVER": "1.04",
+            "ECVER": ""
+          }
+        ],
+        "extractedData": [
+          {
+            "path": "KI8100_106_BIOSME.bin",
+            "bytes": 29425664,
+            "sha256": "790801ff8ccc09606dbd56315968747d1a00919d7dd51a5595c60c8d982d29e4"
+          },
+          {
+            "path": "KI8100MB2_104_BIOSME.bin",
+            "bytes": 29425664,
+            "sha256": "d3c230beac97317100bb5d3cefb6f016959d1c9d2b28452b7479d0b4fdb139b8"
+          },
+          {
+            "path": "MB1.bat",
+            "bytes": 521,
+            "sha256": "71828392dcef9ac4661dbe39470831593480aba19807eef9c52b765aff3fb0a3"
+          },
+          {
+            "path": "MB2.bat",
+            "bytes": 524,
+            "sha256": "efd6c9371dfec574936141c6bf388df2707ef9c03b1b190169ed14cd3d972c13"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 431,
+            "sha256": "36b0307678733358e166dac31807b3b4356e01876f9023df69ddff9daa3bab0c"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0509",
+        "variant": "standard",
+        "component": "EC-MCU",
+        "publishedVersion": "EC1.02-MCU1.01",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14241",
+        "publishedDownload": "https://rzr.to/kmblw5",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0509/RazerUpdater_v1.1.1.3_KI8100_EC_1.02_MCU_010100v2.exe",
+        "originalFileName": "RazerUpdater_v1.1.1.3_KI8100_EC_1.02_MCU_010100v2.exe",
+        "bytes": 1494160,
+        "sha256": "6e06d131e1a77a733fbf5c37e5ba95ccda2e496257a7bb4747b1e274dda74c38",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade 18",
+            "SSID": "1A58300C",
+            "SKU": "*",
+            "BIOSVER": "",
+            "MCUVER": "01.01.00",
+            "ECVER": "1.02"
+          },
+          {
+            "case": "Case2",
+            "TNAME": "Razer Blade 18",
+            "SSID": "1A58300B",
+            "SKU": "*",
+            "BIOSVER": "",
+            "MCUVER": "01.01.00",
+            "ECVER": "1.02"
+          }
+        ],
+        "extractedData": [
+          {
+            "path": "KI8100_EC_0102.bin",
+            "bytes": 262144,
+            "sha256": "1d53c56d56581331c480bd12cb240b5657acc6ad5877711ffea2e4b8d7a073b1"
+          },
+          {
+            "path": "KI8100_keyboard_FW_v1.01.00_20240422.hex",
+            "bytes": 178407,
+            "sha256": "20158e4d7374a21d3a0c57ab44601e34a9796aedd119b21500825828b3fa55f0"
+          },
+          {
+            "path": "MCURV.bat",
+            "bytes": 40,
+            "sha256": "2b1cf443cc43e38e5687850877174aff9c826334ea16cf0c4b18fb49c1a3bd6a"
+          },
+          {
+            "path": "McuUpdate.bat",
+            "bytes": 82,
+            "sha256": "98334add16edc69cbade5187897cc2eb0f12622aa88ad08e4413b23d3081a86b"
+          },
+          {
+            "path": "ToolConfig.ini",
+            "bytes": 58,
+            "sha256": "4a361acefeaf6edd3db11bab9b1c595bdd909dc5695b540f064f063b1fe9f786"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 559,
+            "sha256": "a2dc19c04bdea59b0e288e6144d620443d5ff43aa7e94cc767841ca502b89be7"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0510",
+        "variant": "standard",
+        "component": "BIOS",
+        "publishedVersion": "1.08",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/20774",
+        "publishedDownload": "https://rzr.to/wirs5x",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282024%29%20%7C%20RZ09-0510/SO6100-BIOSv0108.exe",
+        "originalFileName": "SO6100-BIOSv0108.exe",
+        "bytes": 8472408,
+        "sha256": "36b541c764b2730f3a52a2b4e74f9da2715deb08e8d708ac538238ee3d4ce8a2",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade 16",
+            "SSID": "1A58300A",
+            "SKU": "RZ09-0510",
+            "BIOSVER": "1.08",
+            "ECVER": ""
+          }
+        ],
+        "extractedData": [
+          {
+            "path": "FlashWin.bat",
+            "bytes": 448,
+            "sha256": "a722b14bfe3f4d13685b4556aae34a00c17e323ceefad8043ddf613d7ebc5ee8"
+          },
+          {
+            "path": "SO6100_108_BIOSME.bin",
+            "bytes": 29425664,
+            "sha256": "8a0a8dbbdb4475f1e15fcd98031b10e190d9a6e1e5f9d1881edb18a37d7a1b0e"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 261,
+            "sha256": "cd73651a6a1c60d10a998f362380f06aa3e51f0b2f947e6353b9f9c1149c6c0e"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0510",
+        "variant": "standard",
+        "component": "EC-MCU",
+        "publishedVersion": "EC1.02-MCU1.03",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/14884",
+        "publishedDownload": "https://rzr.to/24z35y",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282024%29%20%7C%20RZ09-0510/RazerUpdater_v1.1.1.3_SO6100_EC_0102_MCU_010300_VBIOS.exe",
+        "originalFileName": "RazerUpdater_v1.1.1.3_SO6100_EC_0102_MCU_010300_VBIOS.exe",
+        "bytes": 6946120,
+        "sha256": "2912408c872d57176e42d2da09b68566cecf9b723f51cce4ae4e717a9e98e295",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade 16",
+            "SSID": "1A58300A",
+            "SKU": "RZ09-0510S",
+            "BIOSVER": "",
+            "MCUVER": "01.03.00",
+            "VBVER": "95.06.2F.00.1E",
+            "ECVER": "01.02"
+          },
+          {
+            "case": "Case2",
+            "TNAME": "Razer Blade 16",
+            "SSID": "1A58300A",
+            "SKU": "RZ09-0510T",
+            "BIOSVER": "",
+            "MCUVER": "01.03.00",
+            "VBVER": "95.04.5F.00.39",
+            "ECVER": "01.02"
+          },
+          {
+            "case": "Case3",
+            "TNAME": "Razer Blade 16",
+            "SSID": "1A58300A",
+            "SKU": "RZ09-05102",
+            "BIOSVER": "",
+            "MCUVER": "01.03.00",
+            "VBVER": "95.03.3B.00.2F",
+            "ECVER": "01.02"
+          },
+          {
+            "case": "Case4",
+            "TNAME": "Razer Blade 16",
+            "SSID": "1A58300A",
+            "SKU": "RZ09-05103",
+            "BIOSVER": "",
+            "MCUVER": "01.03.00",
+            "VBVER": "95.03.3B.00.2F",
+            "ECVER": "01.02"
+          }
+        ],
+        "extractedData": [
+          {
+            "path": "GEN21_X11_update.bat",
+            "bytes": 113,
+            "sha256": "3fa82db3fd4e23b0434fa6e9f18a8353f71851bba6e537375e5c45f30ffdd6a0"
+          },
+          {
+            "path": "GEN21_X6_update.bat",
+            "bytes": 112,
+            "sha256": "6e8f341eac305d5343f81c251d71255cd2bbf7d6f6616f7e6b819b00583286ab"
+          },
+          {
+            "path": "GEN21_X9_update.bat",
+            "bytes": 112,
+            "sha256": "eea9cd2269aebb96bbb529ced8fc2fc60694e771c49b7959b53e313cd21151be"
+          },
+          {
+            "path": "GetVbiosVer.bat",
+            "bytes": 60,
+            "sha256": "0f3973d941d8671e29731be228527f5dbcce6bd4705a65882df8111a9a62df39"
+          },
+          {
+            "path": "MCURV.bat",
+            "bytes": 40,
+            "sha256": "d3b10a789aaa9169ed1f15e0069a3bd7dc85bec093cffe6c6184548f72c5768c"
+          },
+          {
+            "path": "McuUpdate.bat",
+            "bytes": 82,
+            "sha256": "4a36e8c39ceb2b22b0addfd97f7ea159477534353026b869424153cee0991fa7"
+          },
+          {
+            "path": "S10_GN21-X11_gsync_95033B002F_PP.rom",
+            "bytes": 2048000,
+            "sha256": "5373100b9396e7dc23bc7c0f6fa18745b2cdc5f5f3caa4826d4eb2c5963aebd8"
+          },
+          {
+            "path": "S10_GN21-X6_gsync_95062F001E_PP.rom",
+            "bytes": 2048000,
+            "sha256": "e2801c6ade3f645176499bb1b931417118b3e9ae0b69aca8247c52f89d5c1fe0"
+          },
+          {
+            "path": "S10_GN21-X9_gsync_95045F0039_PP.rom",
+            "bytes": 2048000,
+            "sha256": "643d1fe18d8b2df22b940d20df64782903aa5ff001a85194237f8c6e4d8ee1df"
+          },
+          {
+            "path": "SO6100_EC_01_02.bin",
+            "bytes": 262144,
+            "sha256": "d2ba85d82e76b594c448eaaa578df0ec2817af5af509d548a54a51a3845e4d43"
+          },
+          {
+            "path": "SO6100_keyboard_FW_v1.03.00_20241101.hex",
+            "bytes": 193078,
+            "sha256": "40a8521909829caa7afcf129366670c66f7ab2170de961c88f1f67ecd0aa5b74"
+          },
+          {
+            "path": "ToolConfig.ini",
+            "bytes": 59,
+            "sha256": "90b7ffcaff3ac1dc592977dd4d8d996a91d13edced67ed3c75aa1d1b2c248668"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 1319,
+            "sha256": "240e0238fe0ebd3c7bad05e036c249d34556ef775b23c617cce0339f40dffe74"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0529",
+        "variant": "standard",
+        "component": "BIOS",
+        "publishedVersion": "4.01",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/19839",
+        "publishedDownload": "https://rzr.to/7eq6e9",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-BIOSv0401.exe",
+        "originalFileName": "KI8110-BIOSv0401.exe",
+        "bytes": 9468152,
+        "sha256": "b000c22be0a10971a812b6fe728125e34ec033c89c06151671ce450314431a1d",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade 18",
+            "SSID": "1A58300F",
+            "SKU": "RZ09-0529",
+            "BIOSVER": "4.01",
+            "ECVER": ""
+          }
+        ],
+        "extractedData": [
+          {
+            "path": "FlashAFU.bat",
+            "bytes": 657,
+            "sha256": "cc55274aacfa533d88186829744dc8f75f0b98cff20a90a9410dfa5fcaf8f366"
+          },
+          {
+            "path": "KI8110_401_BIOSME.bin",
+            "bytes": 29425664,
+            "sha256": "3d6ccdc674b135419843832929ef8844b9ec8035ba8d1aef6e7a8e0075f43072"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 261,
+            "sha256": "618f4428ca6e77fbba6261d24c92d5358d5e5b08f5163ca8f13430fde7196152"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0529",
+        "variant": "standard",
+        "component": "EC",
+        "publishedVersion": "1.06",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/20330",
+        "publishedDownload": "https://rzr.to/j341tb",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-ECv0106.exe",
+        "originalFileName": "KI8110-ECv0106.exe",
+        "bytes": 651520,
+        "sha256": "922f1ae0b9c8bcac3563d9cb884c34e31128f5b51ac8fe75e48c0fcdac30933d",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade 18",
+            "SSID": "1A58300F",
+            "SKU": "RZ09-0529",
+            "BIOSVER": "",
+            "MCUVER": "",
+            "VBVER": "",
+            "ECVER": "01.06"
+          }
+        ],
+        "extractedData": [
+          {
+            "path": "KI8110_EC_0106.bin",
+            "bytes": 262144,
+            "sha256": "1cee6e614bfb086946f691cbc551863d6f697495159d23ede505df49fa47752d"
+          },
+          {
+            "path": "ToolConfig.ini",
+            "bytes": 58,
+            "sha256": "c983ef611ed59dab9340abbfd52efe682b77d79d64813f8eb865c9b986adb92d"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 404,
+            "sha256": "462a4b70d97157a8b16bf80e3de4db22e96fa5e8890bc269c6190042eabdba56"
+          }
+        ]
+      },
+      {
+        "modelNumber": "RZ09-0529",
+        "variant": "standard",
+        "component": "MCU",
+        "publishedVersion": "1.07",
+        "article": "https://mysupport.razer.com/app/answers/detail/a_id/19865",
+        "publishedDownload": "https://rzr.to/7hkcd5",
+        "resolvedDownload": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-MCUv01.07.00.exe",
+        "originalFileName": "KI8110-MCUv01.07.00.exe",
+        "bytes": 1446744,
+        "sha256": "30c06ba3d2d057593bbf3c812249d4edd020d17fc157a8cc7c29264a9e72f9dc",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Razer USA Ltd., O=Razer USA Ltd., L=Irvine, S=California, C=US",
+        "staticUpdaterCases": [
+          {
+            "case": "Case1",
+            "TNAME": "Razer Blade 18",
+            "SSID": "1A58300F",
+            "SKU": "RZ09-0529",
+            "BIOSVER": "",
+            "MCUVER": "01.07.00",
+            "VBVER": "",
+            "ECVER": ""
+          }
+        ],
+        "extractedData": [
+          {
+            "path": "KI8110_keyboard_FW_v1.07.00_20250918.hex",
+            "bytes": 180686,
+            "sha256": "18392850b5e0145cbb689dc941d77fed6d8ba666f71cef9bbdaeccf4987a60e8"
+          },
+          {
+            "path": "MCURV.bat",
+            "bytes": 40,
+            "sha256": "97824efc203db8ba2f971965e7a892fa83628cb912439b15211e5bc4bbc3f98f"
+          },
+          {
+            "path": "McuUpdate.bat",
+            "bytes": 82,
+            "sha256": "44dcb9a6bbae538b74a4137bf3339781a4b1bdf43339a40d4a193016b7295a39"
+          },
+          {
+            "path": "torden.ini",
+            "bytes": 327,
+            "sha256": "0fc2fdc7c46cb94fc89a29ab13d05a9cb9a5b9d9249d888e0beae00441699e38"
+          }
+        ]
+      }
+    ],
+    "notes": [
+      "RZ09-0508 Synapse MCU guide resolves to article14881, which links the same BIOS1.06 carrier as article13930. Static extraction found PI4100_106.rom and no standalone EC/MCU image; contents inside the BIOS image were not analyzed.",
+      "RZ09-0509 BIOS carrier contains distinct SSID1A58300B BIOS1.04 and SSID1A58300C BIOS1.06 images. The official article distinguishes RTX4070 from RTX4080/4090. These are updater targets, not new OpenBlade SKU admission gates.",
+      "RZ09-0510 EC/MCU carrier also contains GPU-specific vBIOS images and separate SKU cases. Published download24z35y is the current direct package; Synapse tiqypg is a guide redirect.",
+      "RZ09-0529 has separate BIOS4.01,EC1.06 and MCU1.07 carriers. No new general firmware minimum is inferred from update availability."
+    ]
+  },
+  "batterySetterAcknowledgement": {
+    "models": [
+      694,
+      695,
+      696,
+      711
+    ],
+    "vendorContract": "The exact command helpers return successful SET status with an optional response payload; the parser populates JSON only when response bytes are present. Echo is not mandatory.",
+    "openBladeContract": "Accept zero bytes or one exact requested byte, then require independent exact raw07/92 confirmation. Any mismatch/uncertain submission pauses writes without setter replay.",
+    "sources": [
+      {
+        "product": 694,
+        "url": "https://apps.razer.com/synapse/products/694/mw/rzDevice25.06135650b7453937e0e8.js",
+        "bytes": 279028,
+        "sha256": "0E5BD5C21DD610E5D889F608B2EBB1D80BFC7CA90237FBBC3A292ADBAF06EF90",
+        "commandAlias": {
+          "start": 12526,
+          "source": "g:()=>V,_U:()=>q,__:()=>F,a1:()=>i,aL:()=>L,bm:()=>y,e9:()=>it,fS:()=>J,g9:()=>rt,h4:()=>S,kn:()=>c,lJ:()=>B,lj:()=>p,lt:()=>I,mK:()=>D,mM:()=>a,mW:()=>g,mc:()=>z,mq:()=>b,nA:()=>G,o_:()=>nt,tF:()=>ct,uI:()=>E,wH:()=>R,wk:()=>o,x5:()=>Y});const o=new"
+        },
+        "command": {
+          "start": 14174,
+          "source": "n\",F=\"Set Indicator Led Configuration\",G=(new Uint8Array([1,7,145]),new Uint8Array([1,7,17]),new Uint8Array([1,7,146])),B=new Uint8Array([1,7,18]),H=\"Get Battery Charge Limiter Control\",K=\"Set Battery Charge Limiter Control\",J=new Uint8Array([3,7,147]),W=new Uint8Array([3,7,19]),Y=\"Get Smart illumination Control\",Q=\"Set Smart il"
+        }
+      },
+      {
+        "product": 695,
+        "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js",
+        "bytes": 277422,
+        "sha256": "2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491",
+        "commandAlias": {
+          "start": 51390,
+          "source": "g:()=>V,_U:()=>q,__:()=>F,a1:()=>i,aL:()=>L,bm:()=>y,e9:()=>it,fS:()=>J,g9:()=>rt,h4:()=>S,kn:()=>c,lJ:()=>B,lj:()=>p,lt:()=>I,mK:()=>D,mM:()=>a,mW:()=>g,mc:()=>z,mq:()=>b,nA:()=>G,o_:()=>nt,tF:()=>ct,uI:()=>E,wH:()=>R,wk:()=>o,x5:()=>Y});const o=new"
+        },
+        "command": {
+          "start": 53038,
+          "source": "n\",F=\"Set Indicator Led Configuration\",G=(new Uint8Array([1,7,145]),new Uint8Array([1,7,17]),new Uint8Array([1,7,146])),B=new Uint8Array([1,7,18]),H=\"Get Battery Charge Limiter Control\",K=\"Set Battery Charge Limiter Control\",J=new Uint8Array([3,7,147]),W=new Uint8Array([3,7,19]),Y=\"Get Smart illumination Control\",Q=\"Set Smart il"
+        }
+      },
+      {
+        "product": 696,
+        "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25.6339454cb5b2fe587300.js",
+        "bytes": 277032,
+        "sha256": "8780AA380D11665A2D551174D162C7278404465772219D0530A29B09E297BC81",
+        "commandAlias": {
+          "start": 51000,
+          "source": "g:()=>V,_U:()=>q,__:()=>F,a1:()=>i,aL:()=>L,bm:()=>y,e9:()=>it,fS:()=>J,g9:()=>rt,h4:()=>S,kn:()=>c,lJ:()=>B,lj:()=>p,lt:()=>I,mK:()=>D,mM:()=>a,mW:()=>g,mc:()=>z,mq:()=>b,nA:()=>G,o_:()=>nt,tF:()=>ct,uI:()=>E,wH:()=>R,wk:()=>o,x5:()=>Y});const o=new"
+        },
+        "command": {
+          "start": 52648,
+          "source": "n\",F=\"Set Indicator Led Configuration\",G=(new Uint8Array([1,7,145]),new Uint8Array([1,7,17]),new Uint8Array([1,7,146])),B=new Uint8Array([1,7,18]),H=\"Get Battery Charge Limiter Control\",K=\"Set Battery Charge Limiter Control\",J=new Uint8Array([3,7,147]),W=new Uint8Array([3,7,19]),Y=\"Get Smart illumination Control\",Q=\"Set Smart il"
+        }
+      },
+      {
+        "product": 711,
+        "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js",
+        "bytes": 279417,
+        "sha256": "02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9",
+        "commandAlias": {
+          "start": 51672,
+          "source": "g:()=>V,_U:()=>q,__:()=>F,a1:()=>i,aL:()=>L,bm:()=>y,e9:()=>it,fS:()=>J,g9:()=>rt,h4:()=>S,kn:()=>c,lJ:()=>B,lj:()=>p,lt:()=>I,mK:()=>D,mM:()=>a,mW:()=>g,mc:()=>z,mq:()=>b,nA:()=>G,o_:()=>nt,tF:()=>ct,uI:()=>E,wH:()=>R,wk:()=>o,x5:()=>Y});const o=new"
+        },
+        "command": {
+          "start": 53320,
+          "source": "n\",F=\"Set Indicator Led Configuration\",G=(new Uint8Array([1,7,145]),new Uint8Array([1,7,17]),new Uint8Array([1,7,146])),B=new Uint8Array([1,7,18]),H=\"Get Battery Charge Limiter Control\",K=\"Set Battery Charge Limiter Control\",J=new Uint8Array([3,7,147]),W=new Uint8Array([3,7,19]),Y=\"Get Smart illumination Control\",Q=\"Set Smart il"
+        }
+      }
+    ]
+  }
+}

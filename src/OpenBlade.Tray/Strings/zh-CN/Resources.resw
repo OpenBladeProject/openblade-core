@@ -2010,13 +2010,13 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>检查当前状态</value>
   </data>
   <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>实验性笔记本支持</value>
+    <value>笔记本支持</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>恢复实验性控制</value>
+    <value>恢复笔记本控制</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
-    <value>恢复实验性控制</value>
+    <value>恢复笔记本控制</value>
   </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>协助添加支持</value>
@@ -2888,4 +2888,11 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="GlobalSearch_FansAliases" xml:space="preserve">
     <value>散热 转速 RPM</value>
   </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>CPU 电压优化器</value></data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>全核心优化偏移</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>关闭时使用零并保留偏移值。选择应用以进行更改。</value></data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>刷新</value></data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>恢复之前的优化器值</value></data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>CPU 电压优化器</value></data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve"><value>全核心偏移</value></data>
 </root>

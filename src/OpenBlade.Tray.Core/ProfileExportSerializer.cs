@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 14;
+    public const int CurrentSchemaVersion = 15;
     public const int MaximumFileSizeBytes = 1024 * 1024;
 
     private static readonly JsonSerializerOptions SerializerOptions =
@@ -84,13 +84,13 @@ public static class ProfileExportSerializer
             11 => DeserializeVersion11(json),
             12 => DeserializeVersion11(json),
             13 => DeserializeVersion11(json),
-            14 => DeserializeCurrentShape(json),
+            14 or 15 => DeserializeCurrentShape(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} is not supported by this version of OpenBlade."),
         };
-        if (schemaVersion < CurrentSchemaVersion)
+        if (schemaVersion < 14)
         {
             profiles = ClearSchema14Settings(profiles);
         }
@@ -272,7 +272,18 @@ public static class ProfileExportSerializer
             profiles.Battery,
             profiles.UsbC,
         ];
-        foreach (PerformancePreset performance in Enum.GetValues<PerformancePreset>())
+        // These legacy schemas stored only the original six association roles.
+        // Keep that migration contract fixed as new per-preset roles are added.
+        PerformancePreset[] legacyAssociationRoles =
+        [
+            PerformancePreset.Silent,
+            PerformancePreset.Balanced,
+            PerformancePreset.Performance,
+            PerformancePreset.BatterySaver,
+            PerformancePreset.BatteryBalanced,
+            PerformancePreset.Custom,
+        ];
+        foreach (PerformancePreset performance in legacyAssociationRoles)
         {
             PowerProfile[] matching = legacyProfiles
                 .Where(profile => profile.Performance == performance)

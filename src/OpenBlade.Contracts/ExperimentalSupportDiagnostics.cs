@@ -26,6 +26,22 @@ public sealed record DiagnosticExperimentalSupport(
 
     public string EvidenceLevel { get; init; } = "UpstreamDerived";
 
+    // Legacy record/file names remain readable by existing diagnostic tools.
+    // Model support does not replace the feature evidence below.
+    public string SupportStatus => SupportBasis == BladeSupportBasis.NotEstablished
+        ? "NotEstablished" : "Supported";
+
+    public BladeSupportBasis SupportBasis => Detected
+        ? RazerBladeModelCatalog.Find(ModelNumber)?.SupportBasis ?? BladeSupportBasis.NotEstablished
+        : BladeSupportBasis.NotEstablished;
+
+    public string PhysicalValidation => SupportBasis switch
+    {
+        BladeSupportBasis.PhysicallyValidated => "Validated",
+        BladeSupportBasis.SourceReviewed => "Pending",
+        _ => "NotEstablished",
+    };
+
     // Additive diagnostic metadata. Older archives omit this list.
     public IReadOnlyList<ExperimentalFeatureEvidence> FeatureEvidence { get; init; } = [];
 

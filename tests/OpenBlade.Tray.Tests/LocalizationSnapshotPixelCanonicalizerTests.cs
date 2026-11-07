@@ -12,6 +12,91 @@ public sealed class LocalizationSnapshotPixelCanonicalizerTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    public void CanonicalizeConvergesRetainedSliderThumbAccentFringe(int rotations)
+    {
+        // 9x9 crop from the two retained CI archives for run 42211379181.
+        // Only the two C pixels at the thumb/track edge differed from white.
+        string[] referenceRows =
+        [
+            "AAAABAAAA",
+            "AAAABAAAC",
+            "AAABBAAAB",
+            "DDDEFAAAF",
+            "DDDGAAAAF",
+            "DDDGAAAAF",
+            "DDDEFAAAF",
+            "AAABBAAAB",
+            "AAAABAAAA",
+        ];
+        string[] actualRows = (string[])referenceRows.Clone();
+        actualRows[4] = "DDDGCAAAF";
+        actualRows[5] = "DDDGCAAAF";
+        byte[] reference = CreateSliderThumbPixels(Rotate(referenceRows, rotations));
+        byte[] actual = CreateSliderThumbPixels(Rotate(actualRows, rotations));
+
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.Canonicalize(reference, 9, 9);
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.Canonicalize(actual, 9, 9);
+
+        Assert.Equal(reference, actual);
+        byte[] once = (byte[])actual.Clone();
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.Canonicalize(actual, 9, 9);
+        Assert.Equal(once, actual);
+    }
+
+    [Fact]
+    public void CanonicalizePreservesNearWhiteDetailWithoutAccentBoundary()
+    {
+        byte[] pixels = CreatePixels(Pad(
+        [
+            "DDWWW",
+            "DDWWW",
+            "DDWWW",
+            "DDWWW",
+            "DDWWW",
+        ]));
+        int index = ((4 * 9) + 4) * 4;
+        pixels[index] = 247;
+        pixels[index + 2] = 247;
+        byte[] original = (byte[])pixels.Clone();
+
+        OpenBlade.Tray.LocalizationSnapshotPixelCanonicalizer.Canonicalize(pixels, 9, 9);
+
+        Assert.Equal(original, pixels);
+    }
+
+    private static byte[] CreateSliderThumbPixels(IReadOnlyList<string> rows)
+    {
+        byte[] pixels = new byte[9 * 9 * 4];
+        for (int y = 0; y < 9; y++)
+        {
+            for (int x = 0; x < 9; x++)
+            {
+                uint rgb = rows[y][x] switch
+                {
+                    'A' => 0xFFFFFF,
+                    'B' => 0xF7F7F7,
+                    'C' => 0xF7FFF7,
+                    'D' => 0x37B707,
+                    'E' => 0x47A727,
+                    'F' => 0xE7F7E7,
+                    'G' => 0x37A707,
+                    _ => throw new InvalidOperationException(),
+                };
+                int index = ((y * 9) + x) * 4;
+                pixels[index] = (byte)rgb;
+                pixels[index + 1] = (byte)(rgb >> 8);
+                pixels[index + 2] = (byte)(rgb >> 16);
+                pixels[index + 3] = 255;
+            }
+        }
+        return pixels;
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
     public void CanonicalizeRepairsRoundedCornerRasterizationNoise(int rotations)
     {
         string[] rows =
