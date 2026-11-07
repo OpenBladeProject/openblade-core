@@ -1692,7 +1692,9 @@ type enum OpenBlade.Contracts.PerformancePreset
   field const OpenBlade.Contracts.PerformancePreset Balanced = 1
   field const OpenBlade.Contracts.PerformancePreset BatteryBalanced = 4
   field const OpenBlade.Contracts.PerformancePreset BatterySaver = 3
+  field const OpenBlade.Contracts.PerformancePreset Creator = 9
   field const OpenBlade.Contracts.PerformancePreset Custom = 5
+  field const OpenBlade.Contracts.PerformancePreset Gaming = 8
   field const OpenBlade.Contracts.PerformancePreset MaximumPower = 7
   field const OpenBlade.Contracts.PerformancePreset Performance = 2
   field const OpenBlade.Contracts.PerformancePreset Silent = 0
@@ -3266,7 +3268,9 @@ type sealed class OpenBlade.Contracts.WindowsPowerModeAssociations
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Balanced()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_BatteryBalanced()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_BatterySaver()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Creator()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Custom()
+  method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Gaming()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_MaximumPower()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Performance()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_Silent()
@@ -3275,7 +3279,9 @@ type sealed class OpenBlade.Contracts.WindowsPowerModeAssociations
   method System.Void set_Balanced(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_BatteryBalanced(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_BatterySaver(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_Creator(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_Custom(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
+  method System.Void set_Gaming(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_MaximumPower(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_Performance(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method System.Void set_Silent(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
@@ -3291,7 +3297,9 @@ type sealed class OpenBlade.Contracts.WindowsPowerModeAssociations
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Balanced { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatteryBalanced { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> BatterySaver { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Creator { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Custom { get; init; }
+  property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Gaming { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> MaximumPower { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Performance { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> Silent { get; init; }

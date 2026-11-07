@@ -10961,6 +10961,14 @@ public sealed partial class MainViewModelTests
             ActivePowerSource = PowerSource.PluggedIn,
             Capabilities = baseline.Capabilities! with
             {
+                // This synthetic HyperBoost fixture admits an explicit preset set;
+                // enum extensions must not grant unrelated firmware modes.
+                PerformancePresets = new HashSet<PerformancePreset>
+                {
+                    PerformancePreset.Silent, PerformancePreset.Balanced, PerformancePreset.Performance,
+                    PerformancePreset.BatterySaver, PerformancePreset.BatteryBalanced, PerformancePreset.Custom,
+                    PerformancePreset.Turbo, PerformancePreset.MaximumPower,
+                },
                 HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
                 HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
                 HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(

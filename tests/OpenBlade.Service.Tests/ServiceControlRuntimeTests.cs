@@ -12741,6 +12741,14 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.FunctionP,
                 CancellationToken.None);
+        ControlOperationResult gaming = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+        ControlOperationResult creator = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.FunctionP,
+                CancellationToken.None);
         ControlOperationResult custom = await context.Runtime
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
@@ -12758,11 +12766,15 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal("The performance button selected Turbo.", turbo.Message);
         Assert.Equal(ControlOperationStatus.Applied, maximumPower.Status);
         Assert.Equal("Fn+P selected Maximum Power.", maximumPower.Message);
+        Assert.Equal(ControlOperationStatus.Applied, gaming.Status);
+        Assert.Equal("The performance button selected Gaming.", gaming.Message);
+        Assert.Equal(ControlOperationStatus.Applied, creator.Status);
+        Assert.Equal("Fn+P selected Creator.", creator.Message);
         Assert.Equal(ControlOperationStatus.Applied, custom.Status);
         Assert.Equal("The performance button selected Custom.", custom.Message);
         Assert.Equal(ControlOperationStatus.Applied, wrapped.Status);
         Assert.Equal("Fn+P selected Balanced.", wrapped.Message);
-        Assert.Equal(6, context.Device.PerformanceSetCalls);
+        Assert.Equal(8, context.Device.PerformanceSetCalls);
         Assert.Equal(
             new PerformanceOverride(
                 PerformancePreset.Balanced,
