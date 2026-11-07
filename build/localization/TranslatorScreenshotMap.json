@@ -25,6 +25,9 @@
     "tray/main-laptop-snap-tap-info.png",
     "tray/snap-tap-information.png",
     "tray/main-lighting.png",
+    "tray/main-labs.png",
+    "tray/main-labs-import-target.png",
+    "tray/main-labs-60hz-target.png",
     "tray/main-profiles.png",
     "tray/main-profiles-applications.png",
     "tray/main-profiles-applications-empty.png",
@@ -122,6 +125,27 @@
     {
       "surface": "tray",
       "match": "key",
+      "pattern": "^MainWindow_Labs",
+      "context": "Labs guide to experimental features.",
+      "screenshots": ["tray/main-labs.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "^MainWindow_(?:ButtonImportKeyboardLightingPreset|TextBlockImportPreset|TextBlockLoadAnOpenBlade|LightingImport_)",
+      "context": "Preset import control on Lighting, linked from Labs.",
+      "screenshots": ["tray/main-labs-import-target.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "^MainWindow_(?:TextBlockSixtyHzLighting|LightingRefreshRateToggleText)",
+      "context": "60 Hz lighting guide and its Lighting control.",
+      "screenshots": ["tray/main-labs.png", "tray/main-labs-60hz-target.png"]
+    },
+    {
+      "surface": "tray",
+      "match": "key",
       "pattern": "(?i)(?:lighting|keyboard|logo|chroma|ambient|audioMeter|spectrum)",
       "context": "Lighting page control, status, or accessibility text.",
       "screenshots": ["tray/main-lighting.png"]
@@ -202,6 +226,13 @@
       "pattern": "(?i)(?:display brightness|^brightness \\{0\\}%$)",
       "context": "Runtime display brightness value or unavailable state.",
       "screenshots": ["tray/main-display-brightness-known.png", "tray/main-display-brightness-unavailable.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": "(?:60 Hz|^Checking keyboard support…$)",
+      "context": "Availability or explanation of the 60 Hz toggle on Lighting.",
+      "screenshots": ["tray/main-labs-60hz-target.png"]
     },
     {
       "surface": "tray-core",

@@ -1,7 +1,10 @@
 #if OPENBLADE_DEVELOPER_HARNESS
 using System.Reflection;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using OpenBlade.Contracts;
 using OpenBlade.Session;
 using Button = Microsoft.UI.Xaml.Controls.Button;
@@ -16,6 +19,51 @@ public sealed partial class MainWindow
 {
     private static readonly DateTimeOffset FeatureSnapshotTime =
         new(2026, 10, 21, 12, 0, 0, TimeSpan.Zero);
+
+    internal void InvokeLabsGuideSnapshot(bool showRefreshRate)
+    {
+        // Snapshot mode skips loading saved preferences; initialize its isolated layout first.
+        ApplyPageLayoutPreferences([]);
+        // Exercise a guide from a user layout that has hidden its destination section.
+        pageSections[CustomizablePageKind.Lighting]
+            .Single(section => section.Kind == PageSectionKind.LightingKeyboard).IsVisible = false;
+        Button guide = showRefreshRate ? LabsLightingRateGuideButton : LabsImportGuideButton;
+        var peer = new ButtonAutomationPeer(guide);
+        if (string.IsNullOrWhiteSpace(peer.GetName()) || peer.GetPattern(PatternInterface.Invoke) is not IInvokeProvider invoke)
+        {
+            throw new InvalidOperationException("The Labs guide requires an accessible navigation action.");
+        }
+
+        invoke.Invoke();
+    }
+
+    internal void VerifyLabsGuideSnapshot(bool showRefreshRate)
+    {
+        Button guide = showRefreshRate ? LabsLightingRateGuideButton : LabsImportGuideButton;
+        if (!ReferenceEquals(MainNavigation.SelectedItem, LightingNavigationItem)
+            || guide.Tag is not string targetName
+            || FindDescendant<Microsoft.UI.Xaml.Controls.Control>(LightingCard, targetName) is not { } target)
+        {
+            throw new InvalidOperationException("The Labs guide did not open its Lighting control.");
+        }
+
+        if (!IsSearchLightingSectionShown(PageSectionKind.LightingKeyboard)
+            || !HasVisibleSearchPath(target, LightingPage.Content))
+        {
+            throw new InvalidOperationException("The Labs guide did not reveal its hidden Keyboard section.");
+        }
+        if (!target.IsEnabled && !ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), LightingNavigationItem))
+        {
+            throw new InvalidOperationException("The disabled Labs destination did not focus Lighting navigation.");
+        }
+
+        Windows.Foundation.Rect bounds = target.TransformToVisual(LightingPage).TransformBounds(
+            new Windows.Foundation.Rect(0, 0, target.ActualWidth, target.ActualHeight));
+        if (bounds.Height <= 0 || bounds.Top < -1 || bounds.Bottom > LightingPage.ViewportHeight + 1)
+        {
+            throw new InvalidOperationException($"The Labs guide target is outside the Lighting viewport: {bounds}.");
+        }
+    }
 
     internal void ShowLocalizationSnapshotFeature(string destination)
     {

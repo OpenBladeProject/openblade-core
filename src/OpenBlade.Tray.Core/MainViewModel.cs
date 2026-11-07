@@ -354,7 +354,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private BatteryPolicy? pendingBatteryPolicy;
     private ThemePreference theme = ThemePreference.FollowWindows;
     private UiLanguagePreference languagePreference = UiLanguagePreference.FollowSystem;
-    private bool labFeaturesEnabled;
     private LiveReadingsCadence liveReadingsRefreshCadence =
         LiveReadingsCadence.EveryTwoSeconds;
     private TrayHoverLabelMode trayHoverLabelMode =
@@ -1575,9 +1574,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && CanControlLighting
         && !UseWindowsDynamicLighting;
 
-    public string LightingRefreshRateAvailabilityText => SupportsSixtyHzLighting
-        ? TrayText.Get("Render supported animated effects at 60 Hz. Uses more CPU and power.")
-        : TrayText.Get("60 Hz lighting is not available for this keyboard.");
+    public string LightingRefreshRateAvailabilityText
+    {
+        get
+        {
+            if (IsReadinessChecking)
+            {
+                return TrayText.Get("Checking keyboard support…");
+            }
+
+            if (!IsConnected || latestStatus?.DeviceVerified != true || !HasLightingCapability)
+            {
+                return TrayText.Get("60 Hz lighting support couldn’t be checked.");
+            }
+
+            if (UseWindowsDynamicLighting)
+            {
+                return TrayText.Get("Windows Dynamic Lighting manages keyboard lighting.");
+            }
+
+            return SupportsSixtyHzLighting
+                ? TrayText.Get("Render supported animated effects at 60 Hz. Uses more CPU and power.")
+                : TrayText.Get("60 Hz lighting is not available for this keyboard.");
+        }
+    }
 
     public bool AllowUntestedFirmware
     {
@@ -1656,6 +1676,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Notify(nameof(LightingControlUnavailableMessage));
                 Notify(nameof(ShowOpenBladeKeyboardLightingControls));
                 Notify(nameof(CanSetLightingRefreshRate));
+                Notify(nameof(LightingRefreshRateAvailabilityText));
                 Notify(nameof(CanReapplyChangedSettings));
             }
         }
@@ -1753,8 +1774,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LightingRefreshRate refreshRate,
         CancellationToken cancellationToken)
     {
-        if (!LabFeaturesEnabled
-            || !Capabilities.SupportedLightingRefreshRates.Contains(refreshRate)
+        if (!Capabilities.SupportedLightingRefreshRates.Contains(refreshRate)
             || !CanControlLighting
             || UseWindowsDynamicLighting)
         {
@@ -3117,7 +3137,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CanControlLighting));
             Notify(nameof(SupportsSixtyHzLighting));
             Notify(nameof(CanSetLightingRefreshRate));
-            Notify(nameof(LightingRefreshRateAvailabilityText));
             NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();
         }
@@ -4510,20 +4529,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             SetField(ref theme, value);
             Notify(nameof(SelectedThemeOption));
-        }
-    }
-
-    public bool LabFeaturesEnabled
-    {
-        get => labFeaturesEnabled;
-        set
-        {
-            if (labFeaturesEnabled == value)
-            {
-                return;
-            }
-            SetField(ref labFeaturesEnabled, value);
-            NotifyComputed(nameof(ShowLightingEffectLabControls), ShowLightingEffectLabControls);
         }
     }
 
@@ -6164,8 +6169,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanImportKeyboardLighting(KeyboardLightingPreset preset)
     {
         ArgumentNullException.ThrowIfNull(preset);
-        return LabFeaturesEnabled
-            && CanControlLighting
+        return CanControlLighting
             && LightingSettingsValidation.IsWellFormed(preset.Lighting)
             && preset.Lighting.LogoMode is null
             && Capabilities.LightingEffects.Contains(preset.Lighting.Effect)
@@ -9299,6 +9303,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(HasLightingCapability), HasLightingCapability);
         NotifyComputed(nameof(CanControlLighting), CanControlLighting);
         NotifyComputed(nameof(CanSetLightingRefreshRate), CanSetLightingRefreshRate);
+        NotifyComputed(nameof(LightingRefreshRateAvailabilityText), LightingRefreshRateAvailabilityText);
         NotifyComputed(nameof(IsLightingControlUnavailable), IsLightingControlUnavailable);
         NotifyComputed(nameof(IsLightingControlUnavailableNoticeVisible), IsLightingControlUnavailableNoticeVisible);
         NotifyComputed(nameof(LightingControlUnavailableMessage), LightingControlUnavailableMessage);

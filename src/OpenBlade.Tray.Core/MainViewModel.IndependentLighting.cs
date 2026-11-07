@@ -16,7 +16,7 @@ public sealed partial class MainViewModel
 
     public bool UsesIndependentLightingControls => Capabilities.SupportsIndependentLightingControls;
     public bool IsKeyboardEffectSelectionVisible => !UsesIndependentLightingControls;
-    public bool ShowLightingEffectLabControls => LabFeaturesEnabled && !UsesIndependentLightingControls;
+    public bool ShowLightingEffectLabControls => !UsesIndependentLightingControls;
     public long LightingCommitGeneration => UsesIndependentLightingControls ? independentLightingCommitGeneration : 0;
     public bool IsLightingCommitCurrent(LightingCommitRequest request) => !UsesIndependentLightingControls
         || independentLightingDelta is not null && request.EditorGeneration == independentLightingCommitGeneration

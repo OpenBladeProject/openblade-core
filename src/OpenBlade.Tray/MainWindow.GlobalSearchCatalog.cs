@@ -16,6 +16,7 @@ public sealed partial class MainWindow
         GlobalSearchResult lighting = Page(LightingNavigationItem, LightingPage, "MainWindow_LightingNavigationItemText.Content");
         GlobalSearchResult audio = Page(ThxAudioNavigationItem, ThxAudioPage, "MainWindow_ThxAudioHeading.Text");
         GlobalSearchResult telemetry = Page(TelemetryNavigationItem, TelemetryPage, "Telemetry_Title.Text");
+        GlobalSearchResult labs = Page(LabsNavigationItem, LabsPage, "MainWindow_LabsTitle.Text");
         GlobalSearchResult settings = Page(SettingsNavigationItem, SettingsPage, "MainWindow_SettingsNavigationItemText.Content");
         GlobalSearchResult about = Page(AboutNavigationItem, AboutPage, "MainWindow_AboutNavigationItemText.Content");
 
@@ -103,6 +104,11 @@ public sealed partial class MainWindow
         Row(telemetry, "Telemetry_Enable.Text", anchor: TelemetryEnabledToggle);
         Section(telemetry, BatteryHistorySection, "BatteryHistory_Report.Header");
 
+        GlobalSearchResult labsKeyboard = Section(labs, LabsKeyboardSection, "MainWindow_TextBlockKeyboard2.Text",
+            exposed: () => ViewModel.ShowLightingEffectLabControls);
+        Row(labsKeyboard, "MainWindow_LabsImportTitle.Text", nameof(LabsImportGuideButton));
+        Row(labsKeyboard, "MainWindow_TextBlockSixtyHzLighting.Text", nameof(LabsLightingRateGuideButton));
+
         GlobalSearchResult behavior = Section(settings, SettingsBehaviorSection, "MainWindow_TextBlockBehavior.Text");
         RowTitle(behavior, ViewModel.ThermalControlPolicyHeading, "ThermalControlPolicySelector",
             exposed: () => ViewModel.IsThermalControlPolicyAvailable);
@@ -110,7 +116,6 @@ public sealed partial class MainWindow
             "MainWindow_TextBlockStartAtSignIn", "MainWindow_TextBlockForceRunOnIncompatibleFirmware",
             "MainWindow_TextBlockOverrideExternalLightingChanges");
         Row(behavior, "MainWindow_TextBlockStartMinimized.Text", "StartMinimizedToggle");
-        Row(behavior, "MainWindow_TextBlockLabFeatures.Text", "LabFeaturesInfoButton");
 
         GlobalSearchResult notifications = Section(settings, SettingsNotificationsSection, "MainWindow_TextBlockNotifications.Text");
         TextRows(notifications, "MainWindow_TextBlockPerformanceChanges", "MainWindow_TextBlockPowerProfileChanges",
