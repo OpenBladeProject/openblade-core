@@ -29,6 +29,10 @@ public sealed class IpcWireShapeManifestTests
         Assert.Contains("property blade18KeyboardLayoutId:System.Byte? member", manifest, StringComparison.Ordinal);
         Assert.Contains("property hostManagedLaptopControls:System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> member", manifest, StringComparison.Ordinal);
         Assert.Contains("property fanSpeedRangesByPerformancePreset:System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset,OpenBlade.Contracts.FanSpeedRange> member", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived setCpuTuning=OpenBlade.Contracts.SetCpuTuningRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived observeCpuTuning=OpenBlade.Contracts.ObserveCpuTuningRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived restoreCpuTuning=OpenBlade.Contracts.RestoreCpuTuningRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("property cpuTuning:OpenBlade.Contracts.CpuTuningStatus", manifest, StringComparison.Ordinal);
         string? expectedHash = OpenBladeIpc.ProtocolVersion switch
         {
             47 => "182C004C3E7FBAFF946EAE2C1CFD6AE86D219A094E9DBC3BEF5A0F800D41F3D1",
@@ -60,6 +64,8 @@ public sealed class IpcWireShapeManifestTests
             72 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
             // Protocol 73 appends Turbo=6/MaximumPower=7/Gaming=8/Creator=9 and their optional Windows power-mode associations.
             73 => "93C291B7F811B3094DED568A375C1AEA9739A2C93A4699A5616018CC35C81A08",
+            // Protocol 74 adds typed live CPU operations to the protocol 73 shape.
+            74 => "6D8B3D1A749E2B3F52F3990AE1383FC2CA052515198F8996B73863581FE3A45A",
             _ => null,
         };
 

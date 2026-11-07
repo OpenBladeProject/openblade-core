@@ -51,6 +51,8 @@ public sealed partial class IpcMessageCodecTests
         Assert.False(root["status"]!["profiles"]!.AsObject().ContainsKey("applicationProfiles"));
         Assert.False(root["status"]!.AsObject().ContainsKey("experimentalSupportSource"));
         Assert.False(root["status"]!.AsObject().ContainsKey("supportBasis"));
+        Assert.NotNull(status.CpuTuning);
+        Assert.False(root["status"]!.AsObject().ContainsKey("cpuTuning"));
     }
 
     [Theory]
@@ -116,7 +118,9 @@ public sealed partial class IpcMessageCodecTests
         var result = new ControlOperationResult(ControlOperationStatus.Applied, "Known result")
         {
             HyperBoostRestoredPerformance = preset,
+            CpuTuning = CreateProtocol51PresetStatus(preset).CpuTuning,
         };
+        Assert.NotNull(result.CpuTuning);
         await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(stream,
             new ServiceResponse(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true, null, null, result),
             CancellationToken.None);
@@ -124,6 +128,7 @@ public sealed partial class IpcMessageCodecTests
         Assert.Equal(representable ? (Frozen51Preset?)(int)preset : null,
             legacy.Result!.HyperBoostRestoredPerformance);
         Assert.Equal("Known result", legacy.Result.Message.GetString());
+        Assert.False(FramedJsonObject(stream)["result"]!.AsObject().ContainsKey("cpuTuning"));
     }
 
     [Theory]
@@ -199,7 +204,7 @@ public sealed partial class IpcMessageCodecTests
             {
                 PluggedIn = new ApplicationPowerProfileOverride { Performance = preset },
             });
-        return baseline with
+        ServiceStatusSnapshot status = baseline with
         {
             WritesBlocked = false,
             Capabilities = baseline.Capabilities! with
@@ -252,7 +257,15 @@ public sealed partial class IpcMessageCodecTests
             PerformanceShortcutPreview = new PerformanceShortcutPreview(Guid.NewGuid(), 1, preset),
             IsExperimentalDevice = true,
             ExperimentalSupportSource = "SourceReviewed",
+            CpuTuning = new(
+                new(65000, 2, 2, new(CpuCurveOptimizerMode.AllCore, -10, [])),
+                new(new(65, 65123, 95001), [new(0, -10), new(1, 5)]),
+                new(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.Available),
+                new(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.MissingDependency),
+                CpuTuningPendingBoot.Requested, false),
         };
+        Assert.True(status.CpuTuning.IsWellFormed);
+        return status;
     }
 
     // Frozen affected-object schema from protocol 51 commit

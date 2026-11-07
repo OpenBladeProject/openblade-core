@@ -659,6 +659,52 @@
                                                                     SelectionChanged="OnWindowsPowerModeChanged" />
                                 </Grid>
                             </Border>
+                            <Border x:Name="CpuTuningCard" Style="{StaticResource SettingsEditorSubcardStyle}"
+                                    DataContext="{Binding CpuTuning}" Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsVisible}">
+                                <StackPanel Spacing="12">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{CustomResource MainWindow_CpuTuningTitle.Text}" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" />
+                                        <ToggleSwitch Grid.Column="1"
+                                                      Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                      IsOn="{Binding CurveEnabled, Mode=TwoWay}" IsEnabled="{Binding CanEditCurve}"
+                                                      AutomationProperties.Name="{CustomResource MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" />
+                                    </Grid>
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="{Binding LiveSummary}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding RecoverySummary}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap"
+                                                   Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding ShowRecoverySummary}" />
+                                        <TextBlock Text="{Binding AvailabilitySummary}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap"
+                                                   Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding ShowAvailabilitySummary}" />
+                                    </StackPanel>
+                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{CustomResource MainWindow_CpuTuningOffsetLabel.Text}" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" />
+                                        <Grid Grid.Column="1" MaxWidth="320" HorizontalAlignment="Stretch" ColumnSpacing="12" VerticalAlignment="Center">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <Slider x:Name="CpuCurveOffsetSlider"
+                                                    Style="{StaticResource InlineCardSliderStyle}" Minimum="-30" Maximum="-1"
+                                                    StepFrequency="1" SmallChange="1" LargeChange="5" SnapsTo="StepValues"
+                                                    Value="{Binding CurveValue, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                                    IsEnabled="{Binding CanEditCurveValue}" AutomationProperties.Name="{CustomResource MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" />
+                                            <TextBlock Grid.Column="1" Style="{StaticResource InlineCardSliderValueStyle}" Text="{Binding CurveValue}" />
+                                        </Grid>
+                                    </Grid>
+                                    <TextBlock Text="{CustomResource MainWindow_CpuTuningUnmanagedHint.Text}"
+                                               Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button HorizontalAlignment="Stretch" Style="{StaticResource AppCommandButtonStyle}" Content="{CustomResource MainWindow_CpuTuningRefresh.Content}" Command="{Binding RefreshCommand}" />
+                                        <Button HorizontalAlignment="Stretch" Style="{StaticResource AppCommandButtonStyle}" Grid.Column="1" Content="{Binding ApplyLabel}" Command="{Binding ApplyCommand}" />
+                                        <Button HorizontalAlignment="Stretch" Style="{StaticResource AppCommandButtonStyle}" Grid.Column="2" Content="{CustomResource MainWindow_CpuTuningRestore.Content}" Command="{Binding RestoreCommand}"
+                                                Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding CanRestore}" />
+                                    </Grid>
+                                    <TextBlock Text="{Binding OperationMessage}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
                             <Border local:CardReorder.CardId="GpuClockTuningToggle" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                     Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsGpuClockTuningVisible}">

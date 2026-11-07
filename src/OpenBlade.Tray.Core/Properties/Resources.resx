@@ -1720,4 +1720,13 @@ Details: {1}</value>
   <data name="Creator" xml:space="preserve">
     <value>Creator</value>
   </data>
+  <data name="Apply now" xml:space="preserve"><value>Apply now</value></data>
+  <data name="mixed per-core values" xml:space="preserve"><value>mixed per-core values</value></data>
+  <data name="CPU tuning request failed: {0}" xml:space="preserve"><value>CPU tuning request failed: {0}</value></data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve"><value>Measured running optimizer: unknown.</value></data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve"><value>Measured running optimizer: {0}.</value></data>
+  <data name="Running optimizer changes are unavailable." xml:space="preserve"><value>Running optimizer changes are unavailable.</value></data>
+  <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve"><value>Optimizer recovery is blocked. Refresh to check its status.</value></data>
+  <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve"><value>CPU recovery includes power settings and cannot be restored here.</value></data>
+  <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve"><value>Recovery of earlier saved CPU settings is blocked.</value></data>
 </root>

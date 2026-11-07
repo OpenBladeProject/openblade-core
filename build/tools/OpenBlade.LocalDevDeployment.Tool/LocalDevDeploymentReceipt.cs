@@ -15,7 +15,10 @@ internal sealed record LocalDevDeploymentReceipt(
     string DevelopmentSigningKeyId,
     string DevelopmentSigningSubjectPublicKeyInfoBase64,
     string BrokerVersion,
-    DateTimeOffset EnrolledAt);
+    DateTimeOffset EnrolledAt)
+{
+    internal bool CpuVoltageValidationEnabled { get; init; }
+}
 
 internal interface ILocalDevDeploymentLayout
 {
@@ -106,7 +109,8 @@ internal static partial class LocalDevDeploymentReceiptCodec
                 ReadString(properties, "developmentSigningKeyId"),
                 ReadString(properties, "developmentSigningSubjectPublicKeyInfoBase64"),
                 ReadString(properties, "brokerVersion"),
-                ReadTimestamp(properties, "enrolledAt"));
+                ReadTimestamp(properties, "enrolledAt"))
+            { CpuVoltageValidationEnabled = properties.TryGetValue("cpuVoltageValidationEnabled", out var enabled) && enabled.GetBoolean() };
             Validate(receipt);
             if (!bytes.SequenceEqual(SerializeCanonical(receipt)))
             {
@@ -148,6 +152,7 @@ internal static partial class LocalDevDeploymentReceiptCodec
                 receipt.EnrolledAt.UtcDateTime.ToString(
                     "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
                     System.Globalization.CultureInfo.InvariantCulture));
+            if (receipt.CpuVoltageValidationEnabled) { writer.WriteBoolean("cpuVoltageValidationEnabled", true); }
             writer.WriteEndObject();
         }
 
@@ -157,6 +162,7 @@ internal static partial class LocalDevDeploymentReceiptCodec
     private static Dictionary<string, JsonElement> ReadExactProperties(JsonElement root)
     {
         HashSet<string> allowed = new(PropertyNames, StringComparer.Ordinal);
+        allowed.Add("cpuVoltageValidationEnabled");
         HashSet<string> exact = new(StringComparer.Ordinal);
         HashSet<string> insensitive = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, JsonElement> values = new(StringComparer.Ordinal);
@@ -172,7 +178,8 @@ internal static partial class LocalDevDeploymentReceiptCodec
             values.Add(property.Name, property.Value);
         }
 
-        if (values.Count != PropertyNames.Length)
+        if (values.Count != PropertyNames.Length + (values.ContainsKey("cpuVoltageValidationEnabled") ? 1 : 0)
+            || PropertyNames.Any(name => !values.ContainsKey(name)))
         {
             throw InvalidReceipt();
         }

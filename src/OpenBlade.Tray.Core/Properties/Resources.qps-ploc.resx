@@ -1810,4 +1810,31 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Creator" xml:space="preserve">
     <value>[!! Créátór ~~~ !!]</value>
   </data>
+  <data name="Apply now" xml:space="preserve">
+    <value>[!! Ápplý nów ~~~ !!]</value>
+  </data>
+  <data name="mixed per-core values" xml:space="preserve">
+    <value>[!! míxéd pér-córé válúés ~~~~~~~ !!]</value>
+  </data>
+  <data name="CPU tuning request failed: {0}" xml:space="preserve">
+    <value>[!! CPÚ túníng réqúést fáíléd: {0} ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve">
+    <value>[!! Méásúréd rúnníng óptímízér: únknówn. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve">
+    <value>[!! Méásúréd rúnníng óptímízér: {0}. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Running optimizer changes are unavailable." xml:space="preserve">
+    <value>[!! Rúnníng óptímízér chángés áré únáváíláblé. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve">
+    <value>[!! Óptímízér récóvérý ís blóckéd. Réfrésh tó chéck íts státús. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve">
+    <value>[!! CPÚ récóvérý ínclúdés pówér séttíngs ánd cánnót bé réstóréd héré. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve">
+    <value>[!! Récóvérý óf éárlíér sávéd CPÚ séttíngs ís blóckéd. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
 </root>
