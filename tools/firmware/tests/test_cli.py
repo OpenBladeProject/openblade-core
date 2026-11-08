@@ -35,7 +35,10 @@ class CliTests(unittest.TestCase):
         status, output, error = self.run_cli("profiles")
         self.assertEqual(status, 0, error)
         profiles = json.loads(output)["profiles"]
-        self.assertEqual({profile["id"] for profile in profiles}, {"so6120-ec-1.04", "so6120-mcu-1.07"})
+        self.assertEqual({profile["id"] for profile in profiles}, {
+            "so6120-ec-1.04", "so6120-mcu-1.07", "so6110-ec-1.09", "so690-ec-2.01",
+            "so695-lb-ec-1.01", "so6100-ec-1.02", "pi4110-ec-1.03", "ch580-ec-1.03",
+            "pi480-ec-1.03", "pi480-ec-1.06", "ch551-ec-1.01"})
 
     def test_inspect_outputs_deterministic_report_and_html(self):
         source_before = self.source.read_bytes()

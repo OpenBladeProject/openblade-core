@@ -1,0 +1,426 @@
+{
+  "schema_version": 1,
+  "id": "pi480-ec-1.06",
+  "label": "PI480 EC 1.06",
+  "model": "RZ09-0427",
+  "component": "EC",
+  "version": "1.06",
+  "architecture": "RV32",
+  "endianness": "little",
+  "image": {
+    "sha256": "2482e6ded196b6378e92ad857cc07b2f9db0b9aa392996172d09548f6cf6ef86",
+    "size": 262144,
+    "base_address": 2147483648
+  },
+  "carriers": [
+    {
+      "sha256": "6dc6495a1bdebf7aea343f2a5f1e82e5565aece7d1fbf50cbd2e450cc18b04ef",
+      "size": 6715752,
+      "format": "nsis-blocks-v1",
+      "block_index": 12,
+      "payload_format": "binary",
+      "payload_sha256": "2482e6ded196b6378e92ad857cc07b2f9db0b9aa392996172d09548f6cf6ef86"
+    }
+  ],
+  "bank_map": {
+    "pointer_table_offset": 134854,
+    "bank_count": 8,
+    "entries_per_bank": 256,
+    "entry_size": 8,
+    "metadata_offset": 0,
+    "metadata_size": 4,
+    "address_offset": 4,
+    "address_size": 4,
+    "byte_order": "little",
+    "access_values": {
+      "1": "read-only",
+      "2": "read-write"
+    }
+  },
+  "annotations": [
+    {
+      "bank": 0,
+      "index": 6,
+      "address": 525027,
+      "width_bits": 8,
+      "name": "Active state",
+      "description": "Bit 0 admits the direct-PWM branch.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 129440,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147557998,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 8,
+      "address": 526358,
+      "width_bits": 8,
+      "name": "Fan 1 tachometer",
+      "description": "Measured fan speed divided by 100.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 129456,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147551438,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 9,
+      "address": 526359,
+      "width_bits": 8,
+      "name": "Fan 2 tachometer",
+      "description": "Measured fan speed divided by 100.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 129464,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147551458,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 10,
+      "address": 526656,
+      "width_bits": 8,
+      "name": "Policy command",
+      "description": "Separate event handler returns without action when this byte is zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "command",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 129472,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147518880,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 11,
+      "address": 526657,
+      "width_bits": 8,
+      "name": "Policy status",
+      "description": "Result of the separate policy-command handler; not mailbox completion.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "status",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 129480,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147518880,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 26,
+      "address": 525151,
+      "width_bits": 8,
+      "name": "Thermal selector",
+      "description": "Values 0..7 enter normal policy. FE selects direct PWM when active and override bit 6 is set.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "selector",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 129600,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147558030,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 54,
+      "address": 525133,
+      "width_bits": 8,
+      "name": "Manual fan flags",
+      "description": "Normal-policy manual state. Direct PWM bypasses normal policy; Auto restoration must independently confirm these flags.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 129824,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147558228,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 176,
+      "address": 15734791,
+      "width_bits": 8,
+      "name": "Fan 1 actual PWM",
+      "description": "PWM hardware duty register, separate from staged request B8.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 130800,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147559340,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 177,
+      "address": 15734787,
+      "width_bits": 8,
+      "name": "Fan 2 actual PWM",
+      "description": "PWM hardware duty register, separate from staged request B9.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 130808,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147559390,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 178,
+      "address": 15734849,
+      "width_bits": 8,
+      "name": "PWM cycle",
+      "description": "Hardware cycle register; bounds valid duty counts.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 130816,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147550576,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 184,
+      "address": 525204,
+      "width_bits": 8,
+      "name": "Fan 1 staged PWM",
+      "description": "Copied unchanged to fan 1 actual PWM in the admitted FE branch, including zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 130864,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147559316,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 185,
+      "address": 525205,
+      "width_bits": 8,
+      "name": "Fan 2 staged PWM",
+      "description": "Copied unchanged to fan 2 actual PWM in the admitted FE branch, including zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 130872,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147559366,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 240,
+      "address": 525349,
+      "width_bits": 8,
+      "name": "Override flags",
+      "description": "Bit6 permits FE direct duty; preserve unrelated bits and require original bits5/6 clear. Restore the captured byte exactly.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "PI480 EC1.06",
+          "address": 131312,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147559298,
+          "label": "Reviewed behavior"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "title": "Exact image, separate physical validation",
+      "description": "Only this hash-pinned EC1.06 image is reviewed; reported EC1.06 is a compatibility condition, not live image attestation. No physical stopping or live recovery is claimed.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "document",
+          "source": "https://mysupport.razer.com/app/answers/detail/a_id/9724",
+          "label": "Official exact-model update"
+        }
+      ]
+    },
+    {
+      "title": "Two configured fan channels",
+      "description": "All32 factory table headers select2fan slots. The first two staged values map directly to actualPWM, including zero. PI480 generic FE also writes two additional slots, while factory count2 target loading explicitly zeroes those extra targets; no extra physical fan identities or new controls are inferred.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147557994,
+          "label": "Policy dispatcher"
+        }
+      ]
+    },
+    {
+      "title": "Selector-first Auto and completion",
+      "description": "Normal selectors0..7 resume feedback independently of permissionbit6; reload/manual state must still be independently observed. Mapped status80 precedes copying; caller clears command after handlerreturn. Preserve descriptor checks, fresh readback and existing ownership/temperature/recovery safeguards.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147555978,
+          "label": "Feedback supervisor"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI480 EC1.06",
+          "address": 2147522162,
+          "label": "Mapped completion caller"
+        }
+      ]
+    }
+  ]
+}

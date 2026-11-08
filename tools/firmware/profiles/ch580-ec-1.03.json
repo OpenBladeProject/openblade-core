@@ -1,0 +1,426 @@
+{
+  "schema_version": 1,
+  "id": "ch580-ec-1.03",
+  "label": "CH580 EC 1.03",
+  "model": "RZ09-0421",
+  "component": "EC",
+  "version": "1.03",
+  "architecture": "NDS32",
+  "endianness": "little-data/big-instruction",
+  "image": {
+    "sha256": "f96a009f65c49e89c76bb0874587472beace315a6cc616bc8da1bde845cb9c1b",
+    "size": 262144,
+    "base_address": 0
+  },
+  "carriers": [
+    {
+      "sha256": "6fcfd96615c514c6cd25944405980b6b39d8a2b0458f8cabce299dac37728118",
+      "size": 1516336,
+      "format": "nsis-blocks-v1",
+      "block_index": 6,
+      "payload_format": "binary",
+      "payload_sha256": "f96a009f65c49e89c76bb0874587472beace315a6cc616bc8da1bde845cb9c1b"
+    }
+  ],
+  "bank_map": {
+    "pointer_table_offset": 181860,
+    "bank_count": 8,
+    "entries_per_bank": 256,
+    "entry_size": 8,
+    "metadata_offset": 0,
+    "metadata_size": 4,
+    "address_offset": 4,
+    "address_size": 4,
+    "byte_order": "little",
+    "access_values": {
+      "1": "read-only",
+      "2": "read-write"
+    }
+  },
+  "annotations": [
+    {
+      "bank": 0,
+      "index": 6,
+      "address": 525027,
+      "width_bits": 8,
+      "name": "Active state",
+      "description": "Bit 0 admits the direct-PWM branch.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 169224,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 84034,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 8,
+      "address": 526358,
+      "width_bits": 8,
+      "name": "Fan 1 tachometer",
+      "description": "Measured fan speed divided by 100.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 169240,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 79260,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 9,
+      "address": 526359,
+      "width_bits": 8,
+      "name": "Fan 2 tachometer",
+      "description": "Measured fan speed divided by 100.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 169248,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 79276,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 10,
+      "address": 526656,
+      "width_bits": 8,
+      "name": "Policy command",
+      "description": "Separate event handler returns without action when this byte is zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "command",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 169256,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 36872,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 11,
+      "address": 526657,
+      "width_bits": 8,
+      "name": "Policy status",
+      "description": "Result of the separate policy-command handler; not mailbox completion.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "status",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 169264,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 36872,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 26,
+      "address": 525151,
+      "width_bits": 8,
+      "name": "Thermal selector",
+      "description": "Values 0..7 enter normal policy. FE selects direct PWM when active and override bit 6 is set.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "selector",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 169384,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 84062,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 54,
+      "address": 525133,
+      "width_bits": 8,
+      "name": "Manual fan flags",
+      "description": "Normal-policy manual state. Direct PWM bypasses normal policy; Auto restoration must independently confirm these flags.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 169608,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 85960,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 176,
+      "address": 15734791,
+      "width_bits": 8,
+      "name": "Fan 1 actual PWM",
+      "description": "PWM hardware duty register, separate from staged request B8.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 170584,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 85194,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 177,
+      "address": 15734787,
+      "width_bits": 8,
+      "name": "Fan 2 actual PWM",
+      "description": "PWM hardware duty register, separate from staged request B9.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 170592,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 85242,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 178,
+      "address": 15734849,
+      "width_bits": 8,
+      "name": "PWM cycle",
+      "description": "Hardware cycle register; bounds valid duty counts.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 170600,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 78302,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 184,
+      "address": 525204,
+      "width_bits": 8,
+      "name": "Fan 1 staged PWM",
+      "description": "Copied unchanged to fan 1 actual PWM in the admitted FE branch, including zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 170648,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 85168,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 185,
+      "address": 525205,
+      "width_bits": 8,
+      "name": "Fan 2 staged PWM",
+      "description": "Copied unchanged to fan 2 actual PWM in the admitted FE branch, including zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 170656,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 85216,
+          "label": "Reviewed behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 240,
+      "address": 525349,
+      "width_bits": 8,
+      "name": "Override flags",
+      "description": "Bit6 permits FE direct duty; preserve unrelated bits and require original bits5/6 clear. Restore the captured byte exactly.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "CH580 EC1.03",
+          "address": 171096,
+          "label": "Exact descriptor file offset"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 85124,
+          "label": "Reviewed behavior"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "title": "Exact image, separate physical validation",
+      "description": "Only this hash-pinned EC1.03 image is reviewed; reported EC1.03 is a compatibility condition, not live image attestation. No physical stopping or live recovery is claimed.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "document",
+          "source": "https://mysupport.razer.com/app/answers/detail/a_id/9727",
+          "label": "Official exact-model update"
+        }
+      ]
+    },
+    {
+      "title": "Two configured fan channels",
+      "description": "All32 factory table headers select2fan slots. The first two staged values map directly to actualPWM, including zero. CH580 FE explicitly contains two PWM outputs.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 84030,
+          "label": "Policy dispatcher"
+        }
+      ]
+    },
+    {
+      "title": "Selector-first Auto and completion",
+      "description": "Normal selectors0..7 resume feedback independently of permissionbit6; reload/manual state must still be independently observed. Mapped status80 precedes copying; caller clears command after handlerreturn. Preserve descriptor checks, fresh readback and existing ownership/temperature/recovery safeguards.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 82520,
+          "label": "Feedback supervisor"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH580 EC1.03",
+          "address": 71040,
+          "label": "Mapped completion caller"
+        }
+      ]
+    }
+  ]
+}

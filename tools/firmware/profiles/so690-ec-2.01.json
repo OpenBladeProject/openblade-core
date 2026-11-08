@@ -1,0 +1,463 @@
+{
+  "schema_version": 1,
+  "id": "so690-ec-2.01",
+  "label": "SO690 EC 2.01 (standard Blade 16)",
+  "model": "RZ09-0483 standard",
+  "component": "EC",
+  "version": "2.01",
+  "architecture": "NDS32",
+  "endianness": "little-data/big-instruction",
+  "image": {
+    "sha256": "cbee52c89db0e9415865867ba053b415e0239bbec56a41ab25a35013370fca3c",
+    "size": 262144,
+    "base_address": 0
+  },
+  "carriers": [
+    {
+      "sha256": "a8693bebfcfdd3999f5fce53bc41d77a382d44cb3c368fd928de613488cbab15",
+      "size": 1503488,
+      "format": "nsis-blocks-v1",
+      "block_index": 11,
+      "payload_format": "binary",
+      "payload_sha256": "cbee52c89db0e9415865867ba053b415e0239bbec56a41ab25a35013370fca3c"
+    }
+  ],
+  "bank_map": {
+    "pointer_table_offset": 182472,
+    "bank_count": 8,
+    "entries_per_bank": 256,
+    "entry_size": 8,
+    "metadata_offset": 0,
+    "metadata_size": 4,
+    "address_offset": 4,
+    "address_size": 4,
+    "byte_order": "little",
+    "access_values": {
+      "1": "read-only",
+      "2": "read-write"
+    }
+  },
+  "annotations": [
+    {
+      "bank": 0,
+      "index": 6,
+      "address": 525027,
+      "width_bits": 8,
+      "name": "Active state",
+      "description": "Bit 0 admits the direct-PWM branch.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 169908,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 85280,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 8,
+      "address": 526358,
+      "width_bits": 8,
+      "name": "Fan 1 tachometer",
+      "description": "Measured fan speed divided by 100.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 169924,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 80464,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 9,
+      "address": 526359,
+      "width_bits": 8,
+      "name": "Fan 2 tachometer",
+      "description": "Measured fan speed divided by 100.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 169932,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 80464,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 10,
+      "address": 526656,
+      "width_bits": 8,
+      "name": "Policy command",
+      "description": "Separate event handler returns without action when this byte is zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "command",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 169940,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 36872,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 11,
+      "address": 526657,
+      "width_bits": 8,
+      "name": "Policy status",
+      "description": "Result of the separate policy-command handler; not mailbox completion.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "status",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 169948,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 36872,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 26,
+      "address": 525151,
+      "width_bits": 8,
+      "name": "Thermal selector",
+      "description": "Values 0..7 enter normal policy. FE selects direct PWM when active and override bit 6 is set.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "selector",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 170068,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 85308,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 54,
+      "address": 525133,
+      "width_bits": 8,
+      "name": "Manual fan flags",
+      "description": "Normal-policy manual state. Direct PWM bypasses normal policy; Auto restoration must independently confirm these flags.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 170292,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 85372,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 176,
+      "address": 15734791,
+      "width_bits": 8,
+      "name": "Fan 1 actual PWM",
+      "description": "PWM hardware duty register, separate from staged request B8.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 171268,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 86418,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 177,
+      "address": 15734787,
+      "width_bits": 8,
+      "name": "Fan 2 actual PWM",
+      "description": "PWM hardware duty register, separate from staged request B9.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 171276,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 86462,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 178,
+      "address": 15734849,
+      "width_bits": 8,
+      "name": "PWM cycle",
+      "description": "Hardware cycle register; bounds valid duty counts.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 171284,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 171284,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 184,
+      "address": 525204,
+      "width_bits": 8,
+      "name": "Fan 1 staged PWM",
+      "description": "Copied unchanged to fan 1 actual PWM in the admitted FE branch, including zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 171332,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 86422,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 185,
+      "address": 525205,
+      "width_bits": 8,
+      "name": "Fan 2 staged PWM",
+      "description": "Copied unchanged to fan 2 actual PWM in the admitted FE branch, including zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 171340,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 86470,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 240,
+      "address": 525349,
+      "width_bits": 8,
+      "name": "Override flags",
+      "description": "Bit 6 permits FE direct PWM and also suppresses a normal policy contributor. Preserve unrelated bits and restore ownership exactly.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 171780,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 86376,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "title": "Independent standard-model image",
+      "description": "This profile describes only the hash-pinned standard SO690 EC 2.01. The Lamborghini SO695 image is separate. No physical fan-stop result is claimed.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "document",
+          "source": "https://mysupport.razer.com/app/answers/detail/a_id/14883",
+          "label": "Official EC update"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 20644,
+          "label": "ROM pointer initialization"
+        }
+      ]
+    },
+    {
+      "title": "Direct zero duty",
+      "description": "Active bit 0 and F0 bit 6 gate selector FE. B8/B9 are copied without a lower clamp to F01807/F01803. Requested zero and actual zero do not alone prove mechanically stopped fans; tach readback remains separate.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 85276,
+          "label": "Policy dispatcher"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 86376,
+          "label": "Direct PWM branch"
+        }
+      ]
+    },
+    {
+      "title": "Mailbox completion",
+      "description": "Mapped A0 reads and A1 writes use bank/index/count at F02290..92. Status 80 is set before the loop. The caller clears command F02293 after the handler returns; status alone is insufficient. Read-only descriptors ignore writes.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 8252,
+          "label": "Mapped mailbox handler"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 73000,
+          "label": "Handler return and command clear"
+        }
+      ]
+    },
+    {
+      "title": "Auto handback and residual ownership",
+      "description": "Restoring the captured normal selector leaves FE. Preserve the prior manual flags, override bits and staging bytes; confirm independently. There is no host-loss fan lease. Source mapping alone does not establish exclusive mailbox ownership or authorize live writes.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 85324,
+          "label": "Normal-selector admission"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 86584,
+          "label": "Normal policy reload"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO690 EC 2.01 firmware",
+          "address": 69908,
+          "label": "Override policy side effect"
+        }
+      ]
+    }
+  ]
+}

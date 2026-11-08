@@ -6,12 +6,25 @@ installation, service, driver, network connection or Ghidra installation is
 needed to inspect the supported images. The tool never opens a device, executes
 an updater or writes firmware.
 
-The first profiles cover the exact RZ09-0581 SO6120 EC 1.04 and MCU 1.07 images
+Profiles cover the exact RZ09-0581 SO6120 EC 1.04 and MCU 1.07 images
 reviewed in [the register investigation](../../docs/so6120-ec-register-semantics.md).
 The EC profile decodes all eight banks (2,048 entries) and 32 factory thermal
 tables. Reviewed annotations identify 28 entries, including the bank selector
 in each bank. The MCU profile documents 16 reviewed internal fields. These are
 offline analysis profiles, not additions to OpenBlade's supported-device catalog.
+
+Additional profiles decode independently reviewed eight-bank maps and fan registers:
+
+- [RZ09-0528 SO6110 EC 1.09](../../docs/fan-stop-so6110-source-review.md).
+- [RZ09-0483 SO690 EC 2.01](../../docs/fan-stop-so690-source-review.md).
+- [RZ09-0483 Lamborghini SO695 EC 1.01](../../docs/fan-stop-so695-source-review.md), including its board identifier.
+- [RZ09-0510 SO6100 EC 1.02](../../docs/fan-stop-so6100-source-review.md).
+- [RZ09-0530 PI4110 EC 1.03](../../docs/fan-stop-pi4110-source-review.md).
+- [RZ09-0421 CH580 EC 1.03](../../docs/fan-stop-ch580-source-review.md).
+- [RZ09-0427 PI480 EC 1.03 and 1.06](../../docs/fan-stop-pi480-source-review.md).
+- [RZ09-0330 CH551 EC 1.01](../../docs/fan-stop-ch551-source-review.md).
+
+Their thermal-table formats are not inferred from SO6120.
 
 ## Run it
 
@@ -64,7 +77,7 @@ annotations. The tool does not discover arbitrary firmware functions, recover
 original vendor source or turn a decompiler guess into a confirmed meaning.
 
 Evidence labels distinguish `firmware-confirmed`, `inferred`,
-`physically-verified` and `unknown`. Both shipped profiles use static firmware
+`physically-verified` and `unknown`. The shipped profiles use static firmware
 evidence; the reports do not claim live physical validation. Mapped read-write
 access is a descriptor attribute, not permission or a safe command contract.
 Unclassified entries remain visible, including unresolved metadata values.

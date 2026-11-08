@@ -1,0 +1,438 @@
+{
+  "schema_version": 1,
+  "id": "so6100-ec-1.02",
+  "label": "SO6100 EC 1.02 (Blade 16 2024)",
+  "model": "RZ09-0510",
+  "component": "EC",
+  "version": "1.02",
+  "architecture": "NDS32",
+  "endianness": "little-data/big-instruction",
+  "image": {
+    "sha256": "d2ba85d82e76b594c448eaaa578df0ec2817af5af509d548a54a51a3845e4d43",
+    "size": 262144,
+    "base_address": 0
+  },
+  "carriers": [
+    {
+      "sha256": "2912408c872d57176e42d2da09b68566cecf9b723f51cce4ae4e717a9e98e295",
+      "size": 6946120,
+      "format": "nsis-blocks-v1",
+      "block_index": 18,
+      "payload_format": "binary",
+      "payload_sha256": "d2ba85d82e76b594c448eaaa578df0ec2817af5af509d548a54a51a3845e4d43"
+    }
+  ],
+  "bank_map": {
+    "pointer_table_offset": 183144,
+    "bank_count": 8,
+    "entries_per_bank": 256,
+    "entry_size": 8,
+    "metadata_offset": 0,
+    "metadata_size": 4,
+    "address_offset": 4,
+    "address_size": 4,
+    "byte_order": "little",
+    "access_values": {
+      "1": "read-only",
+      "2": "read-write"
+    }
+  },
+  "annotations": [
+    {
+      "bank": 0,
+      "index": 6,
+      "address": 525027,
+      "width_bits": 8,
+      "name": "Active state",
+      "description": "Bit 0 admits the direct-PWM branch.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 170580,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 85698,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 8,
+      "address": 526358,
+      "width_bits": 8,
+      "name": "Fan 1 tachometer",
+      "description": "Measured fan speed divided by 100.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 170596,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 80898,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 9,
+      "address": 526359,
+      "width_bits": 8,
+      "name": "Fan 2 tachometer",
+      "description": "Measured fan speed divided by 100.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 170604,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 80910,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 10,
+      "address": 526656,
+      "width_bits": 8,
+      "name": "Policy command",
+      "description": "Separate event handler returns without action when this byte is zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "command",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 170612,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 36872,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 11,
+      "address": 526657,
+      "width_bits": 8,
+      "name": "Policy status",
+      "description": "Result of the separate policy-command handler; not mailbox completion.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "status",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 170620,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 36872,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 26,
+      "address": 525151,
+      "width_bits": 8,
+      "name": "Thermal selector",
+      "description": "Values 0..7 enter normal policy. FE selects direct PWM when active and override bit 6 is set.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "selector",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 170740,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 85726,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 54,
+      "address": 525133,
+      "width_bits": 8,
+      "name": "Manual fan flags",
+      "description": "Normal-policy manual state. Direct PWM bypasses normal policy; Auto restoration must independently confirm these flags.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 170964,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 87692,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 176,
+      "address": 15734791,
+      "width_bits": 8,
+      "name": "Fan 1 actual PWM",
+      "description": "PWM hardware duty register, separate from staged request B8.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 171940,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 86874,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 177,
+      "address": 15734787,
+      "width_bits": 8,
+      "name": "Fan 2 actual PWM",
+      "description": "PWM hardware duty register, separate from staged request B9.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 171948,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 86922,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 178,
+      "address": 15734849,
+      "width_bits": 8,
+      "name": "PWM cycle",
+      "description": "Hardware cycle register; bounds valid duty counts.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 171956,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 79882,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 184,
+      "address": 525204,
+      "width_bits": 8,
+      "name": "Fan 1 staged PWM",
+      "description": "Copied unchanged to fan 1 actual PWM in the admitted FE branch, including zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 172004,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 86848,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 185,
+      "address": 525205,
+      "width_bits": 8,
+      "name": "Fan 2 staged PWM",
+      "description": "Copied unchanged to fan 2 actual PWM in the admitted FE branch, including zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 172012,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 86896,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 240,
+      "address": 525349,
+      "width_bits": 8,
+      "name": "Override flags",
+      "description": "Bit 6 permits FE direct PWM and also suppresses a normal policy contributor. Preserve unrelated bits and restore ownership exactly.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 172452,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC 1.02 firmware",
+          "address": 86794,
+          "label": "Reviewed firmware behavior"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "title": "Independent exact-model image",
+      "description": "Hash-pinned SO6100 EC 1.02 matches RZ09-0510 updater ToolConfig SSID300A and HID1532:02B7. No physical validation is claimed.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "document",
+          "source": "https://mysupport.razer.com/app/answers/detail/a_id/14884",
+          "label": "Official update"
+        }
+      ]
+    },
+    {
+      "title": "Two-channel direct zero and selector-first Auto",
+      "description": "Active bit0 and F0 bit6 gate FE; B8/B9 copy unchanged to actual F01807/F01803, including zero. All32 factory table headers specify2fan slots. Restoring captured normal selector0..7 leaves FE; feedback supervisor skips only FE, independently of F0 bit6. Preserve unrelated bits and require fresh selector,manual,policy and hardware readback.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC1.02",
+          "address": 85694,
+          "label": "Policy dispatcher"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC1.02",
+          "address": 86794,
+          "label": "Direct duty"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC1.02",
+          "address": 84184,
+          "label": "Feedback supervisor"
+        }
+      ]
+    },
+    {
+      "title": "Host completion and residual ownership",
+      "description": "Host300/301 maps90..94/A0. Status80 is set before mapped copy;11EB4 clears command only after203Creturns. No host-loss cooling lease or universal mailbox exclusion is established. Use existing guarded ownership, fresh readback and recovery.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC1.02",
+          "address": 8252,
+          "label": "Mapped handler"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6100 EC1.02",
+          "address": 73396,
+          "label": "Completion caller"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,485 @@
+{
+  "schema_version": 1,
+  "id": "pi4110-ec-1.03",
+  "label": "PI4110 EC 1.03",
+  "model": "RZ09-0530",
+  "component": "EC",
+  "version": "1.03",
+  "architecture": "RISC-V RV32 with compressed instructions",
+  "endianness": "little",
+  "image": {
+    "sha256": "aecacca42102c17f4b2731a2ab28ebd92e154d0d997a708e41e7e36d56fc2224",
+    "size": 262144,
+    "base_address": 2147483648
+  },
+  "carriers": [
+    {
+      "sha256": "c260bd7596aef0f4a9630aecd47bbf6cc49accfd2a03eb0c9642643aac46b7f8",
+      "size": 1465984,
+      "format": "nsis-blocks-v1",
+      "block_index": 7,
+      "payload_format": "binary",
+      "payload_sha256": "aecacca42102c17f4b2731a2ab28ebd92e154d0d997a708e41e7e36d56fc2224"
+    }
+  ],
+  "bank_map": {
+    "pointer_table_offset": 145846,
+    "bank_count": 8,
+    "entries_per_bank": 256,
+    "entry_size": 8,
+    "metadata_offset": 0,
+    "metadata_size": 4,
+    "address_offset": 4,
+    "address_size": 4,
+    "byte_order": "little",
+    "access_values": {
+      "1": "read-only",
+      "2": "read-write"
+    }
+  },
+  "annotations": [
+    {
+      "bank": 0,
+      "index": 6,
+      "address": 544483,
+      "width_bits": 8,
+      "name": "Active state",
+      "category": "state",
+      "description": "Bit 0 gates policy and feedback.",
+      "access": "read-only",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147520866,
+          "label": "Active state"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 8,
+      "address": 526358,
+      "width_bits": 8,
+      "name": "Fan 1 tachometer",
+      "category": "fan",
+      "description": "Measured-speed accumulator divided by 100; not requested speed.",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147513728,
+          "label": "Fan 1 tachometer"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 9,
+      "address": 526359,
+      "width_bits": 8,
+      "name": "Fan 2 tachometer",
+      "category": "fan",
+      "description": "Measured-speed accumulator divided by 100; not requested speed.",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147513748,
+          "label": "Fan 2 tachometer"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 10,
+      "address": 526656,
+      "width_bits": 8,
+      "name": "Policy command",
+      "category": "state",
+      "description": "Separate policy request; zero denotes idle. Not mailbox command 93.",
+      "access": "read-write",
+      "units": "command",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147540384,
+          "label": "Policy command"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 11,
+      "address": 526657,
+      "width_bits": 8,
+      "name": "Policy status",
+      "category": "state",
+      "description": "Status 4 follows evaluation, not settled PWM or proof of Automatic.",
+      "access": "read-only",
+      "units": "status",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147547736,
+          "label": "Policy status"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 26,
+      "address": 525151,
+      "width_bits": 8,
+      "name": "Thermal selector",
+      "category": "fan",
+      "description": "Normal selectors 0..7; FE direct duty and FF target path are distinct.",
+      "access": "read-write",
+      "units": "selector",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147520902,
+          "label": "Thermal selector"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 54,
+      "address": 525133,
+      "width_bits": 8,
+      "name": "Manual fan flags",
+      "category": "fan",
+      "description": "Bit 0 selects ordinary manual handling. Auto handback must observe zero.",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147520958,
+          "label": "Manual fan flags"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 176,
+      "address": 15734791,
+      "width_bits": 8,
+      "name": "Actual fan 1 PWM",
+      "category": "fan",
+      "description": "Actual peripheral PWM byte; distinct from staged B8 and measured 08.",
+      "access": "read-only",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147522332,
+          "label": "Actual fan 1 PWM"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 177,
+      "address": 15734787,
+      "width_bits": 8,
+      "name": "Actual fan 2 PWM",
+      "category": "fan",
+      "description": "Actual peripheral PWM byte; distinct from staged B9 and measured 09.",
+      "access": "read-only",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147522382,
+          "label": "Actual fan 2 PWM"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 178,
+      "address": 15734849,
+      "width_bits": 8,
+      "name": "PWM cycle",
+      "category": "fan",
+      "description": "Initialization writes 183; bound runtime requests against the live cycle.",
+      "access": "read-only",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147512852,
+          "label": "PWM cycle"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 184,
+      "address": 525204,
+      "width_bits": 8,
+      "name": "Staged fan 1 duty",
+      "category": "fan",
+      "description": "Permitted FE copies this byte unchanged, including zero.",
+      "access": "read-write",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147522332,
+          "label": "Staged fan 1 duty"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 185,
+      "address": 525205,
+      "width_bits": 8,
+      "name": "Staged fan 2 duty",
+      "category": "fan",
+      "description": "Permitted FE copies this byte unchanged, including zero.",
+      "access": "read-write",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147522382,
+          "label": "Staged fan 2 duty"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 240,
+      "address": 525349,
+      "width_bits": 8,
+      "name": "Override flags",
+      "category": "state",
+      "description": "Bit 6 permits FE/FF. Bit 5 suppresses sensor updates. Preserve all other bits.",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147522290,
+          "label": "Override flags"
+        }
+      ],
+      "bits": [
+        {
+          "bit": 6,
+          "name": "Direct-duty permission",
+          "description": "Required by FE; do not clear before restoring the captured normal selector.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "PI4110 EC 1.03 firmware",
+              "address": 2147522294,
+              "label": "Direct-duty permission"
+            }
+          ]
+        },
+        {
+          "bit": 5,
+          "name": "Sensor override",
+          "description": "Suppresses sensor-update paths; baseline requires this bit clear.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "PI4110 EC 1.03 firmware",
+              "address": 2147533042,
+              "label": "Sensor override"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "title": "Mapped completion requires command clear",
+      "description": "Status 80 is stored before copying. Caller clears F02293 after handler return. Require command zero, status, matching descriptor and a separately published fresh readback; no universal ownership is implied.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147570010,
+          "label": "Early status"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147570180,
+          "label": "Mapped byte store"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147544072,
+          "label": "Handler call"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147544080,
+          "label": "Command clear"
+        }
+      ]
+    },
+    {
+      "title": "Selector-first Auto restoration",
+      "description": "Normal feedback skips FE but does not require permission clear. Restore captured normal selector, independently observe manual zero and policy idle, then restore owned override and inactive staging bytes.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147520906,
+          "label": "FE dispatch"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147518872,
+          "label": "Feedback FE exclusion"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147522478,
+          "label": "Permission-absent fallback to zero"
+        }
+      ]
+    },
+    {
+      "title": "Two configured fans and four generic slots",
+      "description": "All 32 factory records at 3B000..3EE00 encode two fan targets. Loader publishes header low three bits; decoder zeros unused targets. Generic FE also contains two extra peripheral slots; their presence is not evidence of additional physical fans.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147514394,
+          "label": "Factory seeder"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147519062,
+          "label": "Configured fan count"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147514966,
+          "label": "Stage decoder"
+        }
+      ]
+    },
+    {
+      "title": "Requested zero differs from measured stop",
+      "description": "FE copies raw zero and normal feedback also stores zero. Actual PWM zero, coarse tachometer zero and mechanical stop remain separate observations.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147522332,
+          "label": "First direct store"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147522382,
+          "label": "Second direct store"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147517074,
+          "label": "Normal zero store"
+        },
+        {
+          "kind": "instruction",
+          "source": "PI4110 EC 1.03 firmware",
+          "address": 2147513740,
+          "label": "Measured speed division"
+        }
+      ]
+    }
+  ]
+}
