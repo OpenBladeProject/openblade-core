@@ -5,6 +5,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../OpenBlade.Contracts/OpenBlade.Contracts.csproj" />
     <InternalsVisibleTo Include="OpenBlade.Core.Native.Tests" />
   </ItemGroup>
 </Project>

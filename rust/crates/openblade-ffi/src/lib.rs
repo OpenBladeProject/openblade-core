@@ -279,3 +279,8 @@ fn panic_injection() {
 
 #[cfg(test)]
 mod tests;
+
+// Additive policy surface; existing codec exports and negotiation stay frozen.
+pub mod policy;
+#[cfg(test)]
+mod policy_tests;

@@ -47,7 +47,13 @@ try {
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = '[dev-dependencies]'; After = "[[bin]]`nname = 'unexpected'`npath = 'src/lib.rs'`n`n[dev-dependencies]"; Error = 'Unreviewed target*' },
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = '[dev-dependencies]'; After = "[[test]]`nname = 'unexpected'`npath = 'src/lib.rs'`n`n[dev-dependencies]"; Error = 'Unreviewed target*' },
         @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = 'openblade-types.workspace = true'; After = "openblade-types.workspace = true`nopenblade-protocol.workspace = true"; Error = 'Production dependency boundary changed*' },
-        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = 'openblade-types.workspace = true'; After = "openblade-types.workspace = true`n`n[dev-dependencies]`nserde_json = '=1.0.149'"; Error = 'Unreviewed dependency kind*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = '[dev-dependencies]'; After = '[build-dependencies]'; Error = 'Unreviewed dependency kind*' },
+        @{ Path = 'crates/openblade-domain/src/lib.rs'; Before = '#![no_std]'; After = ''; Error = 'The portable crate must retain no_std*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = 'name = "openblade-domain"'; After = "name = 'openblade-domain'`nautotests = false"; Error = 'Reviewed integration tests are missing*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = '=1.0.149'; After = '^1.0.149'; Error = 'Unreviewed dependency kind*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = "features = ['derive']"; After = "features = ['derive', 'rc']"; Error = 'Unreviewed fixture-reader features*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = "serde_json = '=1.0.149'"; After = ''; Error = 'Fixture-reader dev dependencies changed*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = '[dev-dependencies]'; After = "[[test]]`nname = 'unexpected'`npath = 'src/lib.rs'`n`n[dev-dependencies]"; Error = 'Unreviewed target*' },
         @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[dependencies]`nserde_json = '=1.0.149'`n`n[lints]"; Error = 'Unreviewed dependency kind*' }
     )
     # Protect all three inner crates, rather than only the first member.

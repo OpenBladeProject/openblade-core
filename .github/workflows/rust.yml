@@ -113,7 +113,7 @@ jobs:
       - name: Build
         run: cargo build --locked --workspace --all-targets --target ${{ matrix.target }}
 
-      - name: Test workspace and all 29 canonical report cases
+      - name: Test workspace and all 43 canonical report and profile cases
         run: cargo test --locked --workspace --all-targets --target ${{ matrix.target }}
 
       - name: Clippy

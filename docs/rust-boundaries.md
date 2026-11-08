@@ -3,7 +3,9 @@
 This contract was pinned in stage 1. Stages 2 and 3 added the workspace and pure
 report codec. Stage 4 implements the codec C ABI and a separate developer-only
 .NET binding with real cross-language tests. Stage 5 packages a dormant Windows
-x64 DLL and adds an explicit developer shadow comparison. Production C# behavior
+x64 DLL and adds an explicit developer shadow comparison. Stage 6 adds a dormant
+profile policy projection and its separately negotiated additive ABI. Production
+C# behavior
 is unchanged; product loading and runtime handoff remain later stages. See
 [the workspace guide](../rust/README.md) for developer commands.
 
@@ -65,7 +67,7 @@ The frozen codec declarations are in the [C header](../rust/crates/openblade-ffi
 Rust, C and C# tests verify their natural record sizes and offsets on each native
 CI target. The stateless synchronous exports encode reports and validate responses.
 They perform no I/O and retain no handles, callbacks, tasks, policy state or caller
-memory. Profile merging remains a later, separately reviewed extension.
+memory. The additive stage 6 policy extension is specified below.
 
 Use C linkage and the C calling convention (`extern "C"` / C# `Cdecl`). Export
 `ob_abi_version()` returning `uint32_t` value `0x00010000` for ABI 1.0. Every work
@@ -84,7 +86,7 @@ Use these representation rules:
   capacities are `uint32_t` byte counts. Never expose Rust enums, `bool`,
   `usize`, managed objects, platform `long`, strings or collections directly.
 - Boolean values are `uint8_t` 0/1. Optional fields have a separate `uint8_t`
-  presence flag, also 0/1. Reject other flags and unknown enum values at the ABI
+  presence flag, also 0/1. Reject other flags and unknown wire enum values at the ABI
   adapter; absence remains distinct from `false`, zero and an empty string.
 - Strings use a borrowed `const uint8_t*` plus explicit length, strict UTF-8,
   without a terminator. Binary slices use the same pointer/length convention.
@@ -102,15 +104,8 @@ Use these representation rules:
   validation adds a response slice and optional expected payload length.
   Encoding returns exactly 90 protocol bytes, excluding Windows' report-ID
   prefix. Validation returns a copied payload of at most 80 bytes.
-- The future profile helper (not exported in stage 4) will take a required baseline
-  and optional override with
-  explicit presence for each projected field, including fan-control/display
-  objects. Its v1 slice contains performance, legacy fan mode, fan-control mode
-  and fixed RPM, display keys/HDR/brightness, and gaming-mode enabled. Curves
-  remain host-owned unchanged values; this slice can select the existing
-  default curve when legacy fan settings require it. Strings remain opaque keys,
-  not OS lookups. The exact record layout and host reconstruction of untouched
-  fields must be reviewed with the first binding, against the shared fixtures.
+- The profile helper takes only the bounded scalar/key projection documented below.
+  Curves and all other profile values remain host-owned.
 
 Outputs are caller-owned. A variable result is returned as an output byte buffer,
 its capacity, and `uint32_t* written_or_required`; profile string results use
@@ -209,7 +204,7 @@ are distinct from the canonical C# exact-destination-span error contract: a
 ## Shared parity baseline
 
 [The fixture contract](../tests/Fixtures/Parity/README.md) defines the exact JSON
-consumed by C# and the stage 3 Rust report tests. Rust profile tests remain stage 6.
+consumed by C# and the Rust report/profile tests. Stage 6 consumes all 14 profile cases.
 It pins the reviewed source revision and independent expected values. These are
 synthetic software vectors, separate from production capture/admission evidence.
 Existing tests remain in place.
@@ -293,3 +288,74 @@ that revision, fixes supported issues, and verifies the affected checks. Record
 the findings disposition and resulting head in the stage's PR. Attribute the
 review to the revision Claude actually inspected; a later fix commit does not
 inherit that review. This requirement applies to the Rust migration stages.
+
+## Dormant profile projection (stage 6)
+
+`openblade-domain::apply` and `apply_display` implement only the decoded merge
+slice. They remain allocation-free `no_std` with borrowed UTF-8 keys; no alloc or
+production registry dependency is added. The domain fixture reader uses the same
+pinned test-only serde dependencies as protocol. Both readers consume the single
+14-case corpus without regenerating expectations.
+
+The additive exports `ob_policy_abi_version`, `ob_v1_apply_profile` and
+`ob_v1_apply_display` negotiate policy v1 (`0x00010000`) independently. Existing
+codec exports, records, exact version checks and callers stay compatible. Codec
+loading does not require policy exports. The C header freezes all policy fields:
+
+| Record | Size / alignment | Offsets |
+| --- | --- | --- |
+| `ObOptionalI32V1` | 8 / 4 | value 0; presence 4; reserved bytes 5 |
+| `ObOptionalUtf8V1` | 12 / 4 | offset 0; byte length 4; presence 8; reserved bytes 9 |
+| `ObDisplayProjectionV1` | 44 / 4 | size 0; refresh key 4; HDR 16; color key 24; brightness 36 |
+| `ObProfileProjectionV1` | 88 / 4 | size 0; performance 4; fans 12; fan mode 20; RPM 24; fan presence 28; display presence 29; reserved 30; gaming 32; display 40; fan source 84 |
+
+Each call borrows one input key buffer; offsets/lengths select strict UTF-8
+ranges. Empty keys have presence 1 and length 0, distinct from absent keys.
+Output keys concatenate refresh then color into a caller buffer, with offsets
+relative to that output. No terminators, pointers or collections are returned.
+Flags are exactly 0/1 and reserved bytes zero. Absent scalar/key payloads and
+absent nested objects are ignored. Required input/result sizes are exact; result
+records need only a readable size prefix until admitted. There is no pointer
+provenance validation. All writable ranges are disjoint from each other and
+inputs, including result, error and length slots.
+
+Admission order is error-record size, ABI version, written pointer, result size,
+baseline record, input key buffer, baseline fields, optional override, then
+output capacity. Errors/query leave result records and key bytes untouched;
+written is required length for insufficient capacity and zero for other errors.
+A zero-length result succeeds with null/zero key capacity. Publication happens
+only after all fallible checks and private panic injection. The existing error
+record/categories and panic containment apply. Malformed UTF-8 maps to invalid
+argument detail 4; out-of-range/overflow key slices to detail 2; invalid flags or
+legacy synthesized fan mode to detail 3. Baseline absence maps to detail 5.
+
+Policy integers are scalar enum payloads, not a new validation boundary. Unknown
+performance and inherited fan values, contradictory fan fields, empty/control/
+long keys and brightness 101..255 survive as they do in C#. Only legacy fan
+synthesis rejects undefined fans 0..3, matching `FromLegacy`'s constructor.
+Direct native callers may supply other signed brightness/fan-control scalars;
+they grant no host admission. The managed adapter accepts only values representable
+by the existing typed host records. The next activation stage must preserve host
+validation and exception order: map missing baseline to `ArgumentNullException`
+for `baseline`, and failed legacy synthesis to `ArgumentOutOfRangeException` for
+`mode`. Do not turn wire parsing into whole-profile validation.
+
+`NativeProfilePolicy` is a separate developer-only loader with a platform-light
+Contracts reference. It reconstructs from `baseline with`, retaining all fields
+outside this slice. Fan source 0/1/2/3 selects none, the exact baseline object,
+the exact override object, or the existing host legacy defaults. Arbitrary CPU/
+GPU curves and their higher-temperature policy therefore stay host-owned.
+CustomPerformance, GpuClockTuning, Lighting and GamingModeKeyPolicy keep their
+existing host-side override branches. A null application override returns the
+same baseline object; a present override retains the existing unconfigured
+display/behavior behavior. The direct display API requires a nonnull baseline;
+the unused C# null-baseline short-circuit quirks are outside this ABI contract.
+
+Real C# tests link the unchanged C# merge helper as their oracle, consume all 14
+canonical cases and verify complete profile equality plus preservation sentinels.
+C/Rust/C# layout, UTF-8, optional, buffer, error and lifetime checks execute on
+Windows x64, Linux x64, Intel macOS and ARM macOS through native CI. These are
+software checks. Product solution/project references, callers, IPC, saved
+schemas, service ownership, hardware admission and product version remain
+unchanged at 0.56.1. Runtime activation is stage 7; there is no production fallback
+or native selection in this stage.
