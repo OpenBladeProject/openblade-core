@@ -1,0 +1,94 @@
+name: Rust
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust.yml'
+      - 'tests/Fixtures/Parity/**'
+      - 'docs/rust-boundaries.md'
+      - '.editorconfig'
+      - '.gitattributes'
+      - 'LICENSE'
+  # No base-branch filter: migration PRs can be stacked before reaching main.
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust.yml'
+      - 'tests/Fixtures/Parity/**'
+      - 'docs/rust-boundaries.md'
+      - '.editorconfig'
+      - '.gitattributes'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workspace:
+    name: Rust (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: macos-15
+            target: aarch64-apple-darwin
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: rust
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Install pinned toolchain
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Rustup reads the toolchain, profile and components from the TOML file.
+          rustup toolchain install --no-self-update
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = rustc -vV
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version
+          if ($version -notcontains 'host: ${{ matrix.target }}') {
+            throw 'The runner must execute the selected target natively.'
+          }
+          cargo --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Check workspace boundaries
+        run: ./Check-Workspace.ps1
+
+      - name: Test workspace guard
+        run: ./Test-WorkspaceCheck.ps1
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Build
+        run: cargo build --locked --workspace --all-targets --target ${{ matrix.target }}
+
+      - name: Test
+        run: cargo test --locked --workspace --all-targets --target ${{ matrix.target }}
+
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings

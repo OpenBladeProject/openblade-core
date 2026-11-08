@@ -63,3 +63,6 @@ src/OpenBlade.Tray/Assets/Brand/TrayStatus/*
 # Keep benchmark measurements in the linked evidence archive.
 /build/benchmarks/*/results/*.json
 /build/benchmarks/*/results/*.csv
+
+# Experimental Rust workspace build output.
+/rust/target/

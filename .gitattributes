@@ -17,3 +17,5 @@ src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.*.svg text eol=lf
 
 # Preserve upstream whitespace and exact bytes covered by the source manifest.
 third_party/LibreHardwareMonitor/** -text -whitespace
+# Rust tooling uses LF on every platform.
+rust/** text eol=lf
