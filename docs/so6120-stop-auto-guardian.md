@@ -336,6 +336,32 @@ cutoff 65 C, was restored exactly. Final readings were CPU 54 C and fans
 installed Stop/Auto round trip in USB-C Balanced under that policy; five seconds
 describes the host dwell, not a hard physical exposure bound.
 
+The subsequent CPU 45 C average / 80 C cutoff trial retained the five-second
+window to exercise thermal exit at idle. Its first attempt conclusively refused
+before any EC command at CPU 81 C, then restored all settings. After a cooler
+read-only baseline, the unchanged runner's second attempt confirmed Stopped and
+returned to Auto without a client Auto request. Independent released Auto and
+exact original settings restoration passed. The protected owner result records
+`SafetyCondition`, not `ThermalThreshold`; rolling-average exit remains unproven.
+
+The completed command journal's 991-record hash chain verified. The final coast
+snapshot took 2.89 seconds, after the explicit one-second wait. Continuation
+temperature sampling shares that serialized worker, but rejects uncovered gaps
+over two seconds. This readback therefore prevents compliant sample continuity
+and explains a concrete premature-exit path. The run did not retain the exact
+safety predicate, so additional invalid-sample or admission failures cannot be
+excluded. Held-Stop power reads and power-transition verification share the same
+scheduling problem. The correction must give OS-only thermal sampling an
+independent bounded lifetime and a single policy owner, while keeping native
+commands serialized and preserving actual sample freshness and gap rejection.
+Resetting history or extending freshness limits would hide missing observations.
+
+The test runner also encountered a transient Inactive snapshot before released
+Automatic. It safely obtained release proof during later reconciliation and
+restored settings, but its primary observation loop ended too early to retain
+the terminal message. This is a test-reporting limitation, not thermal-exit
+validation. The frozen runner and original evidence remain preserved.
+
 Guardian termination, an unknown outer-job termination, a native call that
 never returns, sleep/resume and OS failure do not have a demonstrated
 independent cooling fallback. A fenced owner retains its native resources;
