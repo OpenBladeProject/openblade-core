@@ -4127,6 +4127,16 @@ public sealed class WinUiShellContractTests
             Assert.Null(expander.Attribute("Collapsed"));
         });
         Assert.Single(owner.Descendants(), element => (string?)element.Attribute(x + "Name") == "ResumeAutomaticFanStopButton");
+        foreach (string sensor in new[] { "Cpu", "Gpu" })
+        {
+            XElement cutoff = Assert.Single(owner.Descendants(), element =>
+                (string?)element.Attribute(x + "Name") == $"FanStop{sensor}ImmediateCutoffEditor");
+            Assert.Equal($"{{Binding FanStop{sensor}ImmediateCutoff, Mode=TwoWay}}", (string?)cutoff.Attribute("Value"));
+            Assert.Equal("10", (string?)cutoff.Attribute("Minimum"));
+            Assert.Equal("100", (string?)cutoff.Attribute("Maximum"));
+            Assert.Contains(cutoff.Ancestors(), element => (string?)element.Attribute("Visibility") == "{x:Bind IsCustomFanStopEnd, Mode=OneWay}");
+            Assert.Contains(cutoff.Attributes(), attribute => attribute.Name.LocalName == "AutomationProperties.Name");
+        }
         Assert.All(owner.Descendants().Where(element => element.Name.LocalName == "NumberBox"), number =>
         {
             XElement editor = number.Ancestors().First(element => element.Name.LocalName == "Border");

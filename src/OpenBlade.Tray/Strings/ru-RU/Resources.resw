@@ -2899,16 +2899,16 @@ OpenBlade повторно проверит этот список и остан�
     <value>Свои условия</value>
   </data>
   <data name="FanStop_CpuEnd.Text" xml:space="preserve">
-    <value>Порог CPU (°C)</value>
+    <value>Средний порог CPU (°C)</value>
   </data>
   <data name="FanStop_GpuEnd.Text" xml:space="preserve">
-    <value>Порог GPU (°C)</value>
+    <value>Средний порог GPU (°C)</value>
   </data>
   <data name="FanStop_ExitDelay.Text" xml:space="preserve">
-    <value>Время выше порога (секунды)</value>
+    <value>Окно усреднения (секунды)</value>
   </data>
   <data name="FanStop_CustomDescription.Text" xml:space="preserve">
-    <value>Возврат в автоматический режим, если любая температура держится выше своего порога указанное время. Условия безопасности могут завершить остановку раньше.</value>
+    <value>Возврат в Авто, если средневзвешенная по времени температура за полное окно выше своего порога или текущая температура выше порога немедленного завершения. При совпадении порогов превышение температуры немедленно завершает остановку. Условия безопасности могут завершить остановку раньше.</value>
   </data>
   <data name="FanStop_EnableAutomatic.Text" xml:space="preserve">
     <value>Останавливать после охлаждения</value>
@@ -2932,7 +2932,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Автоматическая остановка</value>
   </data>
   <data name="FanStop_CpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Порог CPU (°C)</value>
+    <value>Средний порог CPU (°C)</value>
   </data>
   <data name="FanStop_CpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>CPU ниже (°C)</value>
@@ -2950,15 +2950,27 @@ OpenBlade повторно проверит этот список и остан�
     <value>Время ниже обоих порогов (секунды)</value>
   </data>
   <data name="FanStop_ExitDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Время выше порога (секунды)</value>
+    <value>Окно усреднения (секунды)</value>
   </data>
   <data name="FanStop_GpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Порог GPU (°C)</value>
+    <value>Средний порог GPU (°C)</value>
   </data>
   <data name="FanStop_GpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>GPU ниже (°C)</value>
   </data>
   <data name="FanStop_UnsavedSettings.Text" xml:space="preserve">
     <value>Настройки остановки не сохранены</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.Text" xml:space="preserve">
+    <value>Немедленный порог CPU (°C)</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Немедленный порог CPU (°C)</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.Text" xml:space="preserve">
+    <value>Немедленный порог GPU (°C)</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Немедленный порог GPU (°C)</value>
   </data>
 </root>

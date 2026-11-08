@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(76, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(77, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(16 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);

@@ -796,7 +796,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
                 "preferences": {
                   "thermalControlPolicy": {{(int)ThermalControlPolicy.Strict}},
                   "thermalPolicyUpgradeDisclosure": {{(int)ThermalPolicyUpgradeDisclosureState.Acknowledged}},
-                  "fanStopSettings": {}
+                  "fanStopSettings": { "cpuImmediateCutoffCelsius": 65, "gpuImmediateCutoffCelsius": 65 }
                 }
               }
               """);
@@ -1641,6 +1641,8 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             EndMode = FanStopEndMode.Custom,
             CpuLimitCelsius = 61,
             GpuLimitCelsius = 64,
+            CpuImmediateCutoffCelsius = 71,
+            GpuImmediateCutoffCelsius = 79,
             SecondsAboveLimit = 11,
             AutomaticEnabled = true,
             SecondsBelowLimits = 40,
@@ -1650,6 +1652,71 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         await store.SaveConfigurationAsync(initial.Profiles, initial.Preferences with { FanStopSettings = settings }, CancellationToken.None);
 
         Assert.Equal(settings, (await CreateStore(paths).LoadAsync(CancellationToken.None)).Preferences.FanStopSettings);
+    }
+
+    [Theory]
+    [InlineData(55, 65, 65, 75)]
+    [InlineData(95, 100, 100, 100)]
+    public async Task LoadAsync_ContinuousStopPolicyMigratesWithoutChangingSelectedIntent(
+        int cpu, int gpu, int expectedCpuCutoff, int expectedGpuCutoff)
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
+        const int previousSchema = 24;
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(previousSchema, ProfileDefaults.CreateSafeDefaults()), options);
+        var selected = new FanStopSettings
+        {
+            EndMode = FanStopEndMode.Custom,
+            CpuLimitCelsius = cpu,
+            GpuLimitCelsius = gpu,
+            SecondsAboveLimit = 17,
+            AutomaticEnabled = true,
+            SecondsBelowLimits = 42,
+        };
+        var preferences = JsonSerializer.SerializeToNode(
+            new BatteryAutomationPreferences { FanStopSettings = selected }, options)!.AsObject();
+        var stop = preferences["fanStopSettings"]!.AsObject();
+        stop.Remove("cpuImmediateCutoffCelsius");
+        stop.Remove("gpuImmediateCutoffCelsius");
+        byte[] preferenceBytes = JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = previousSchema, preferences }, options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferenceBytes);
+        await File.WriteAllBytesAsync(paths.Marker, JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(previousSchema, Hash(profiles), Hash(preferenceBytes)), options));
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(CancellationToken.None);
+        Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+        var expected = selected with
+        {
+            CpuImmediateCutoffCelsius = expectedCpuCutoff,
+            GpuImmediateCutoffCelsius = expectedGpuCutoff,
+        };
+        Assert.Equal(expected, loaded.Preferences.FanStopSettings);
+        Assert.Equal(expected, (await CreateStore(paths).LoadAsync(CancellationToken.None)).Preferences.FanStopSettings);
+    }
+
+    [Theory]
+    [InlineData("cpuImmediateCutoffCelsius")]
+    [InlineData("gpuImmediateCutoffCelsius")]
+    public async Task LoadAsync_CurrentStopPolicyCannotSilentlyDefaultMissingCutoff(string missing)
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(ProfileStore.CurrentSchemaVersion, ProfileDefaults.CreateSafeDefaults()), options);
+        var preferences = JsonSerializer.SerializeToNode(new BatteryAutomationPreferences(), options)!.AsObject();
+        preferences["fanStopSettings"]!.AsObject().Remove(missing);
+        byte[] preferenceBytes = JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = ProfileStore.CurrentSchemaVersion, preferences }, options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferenceBytes);
+        await File.WriteAllBytesAsync(paths.Marker, JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(ProfileStore.CurrentSchemaVersion, Hash(profiles), Hash(preferenceBytes)), options));
+
+        BatteryConfiguration loaded = await CreateStore(paths).LoadAsync(CancellationToken.None);
+        Assert.NotEqual(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
     }
 
     private BatteryConfigurationStore CreateStore(Paths paths) =>

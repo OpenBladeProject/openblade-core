@@ -13,7 +13,8 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 24;
+    internal const int CurrentSchemaVersion = 25;
+    internal const int FanStopRollingAverageSchemaVersion = 25;
     internal const int FanStopSettingsSchemaVersion = 24;
     internal const int AutomaticExperimentalSupportSchemaVersion = 19;
     internal const int ExperimentalFeaturesConsentSchemaVersion = 17;

@@ -13,6 +13,8 @@ public sealed class FanStopSettingsTests
         Assert.Equal(50, settings.AutomaticCpuBelowCelsius);
         Assert.Equal(50, settings.AutomaticGpuBelowCelsius);
         Assert.Equal(30, settings.SecondsBelowLimits);
+        Assert.Equal(65, settings.CpuImmediateCutoffCelsius);
+        Assert.Equal(65, settings.GpuImmediateCutoffCelsius);
         Assert.True(FanStopSettings.IsWellFormed(settings));
     }
 
@@ -24,6 +26,8 @@ public sealed class FanStopSettingsTests
             EndMode = FanStopEndMode.Custom,
             CpuLimitCelsius = 65,
             GpuLimitCelsius = 67,
+            CpuImmediateCutoffCelsius = 75,
+            GpuImmediateCutoffCelsius = 77,
             SecondsAboveLimit = 11,
             AutomaticEnabled = true,
         };
@@ -70,6 +74,10 @@ public sealed class FanStopSettingsTests
             new() { EndMode = (FanStopEndMode)99 },
             new() { CpuLimitCelsius = 101 },
             new() { GpuLimitCelsius = 9 },
+            new() { CpuImmediateCutoffCelsius = 54 },
+            new() { GpuImmediateCutoffCelsius = 54 },
+            new() { CpuImmediateCutoffCelsius = 101 },
+            new() { GpuImmediateCutoffCelsius = 9 },
             new() { SecondsAboveLimit = 0 },
             new() { SecondsBelowLimits = int.MaxValue },
             new() { AutomaticEnabled = true, AutomaticCpuBelowCelsius = 55 },
@@ -81,5 +89,20 @@ public sealed class FanStopSettingsTests
                 new SetFanStopSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), settings), default));
             Assert.Equal(0, stream.Length);
         }
+    }
+
+    [Fact]
+    public void EqualCutoffIsValidWithoutChangingSelectedLimits()
+    {
+        var settings = new FanStopSettings
+        {
+            EndMode = FanStopEndMode.Custom,
+            CpuLimitCelsius = 100,
+            GpuLimitCelsius = 99,
+            CpuImmediateCutoffCelsius = 100,
+            GpuImmediateCutoffCelsius = 99,
+        };
+        Assert.True(FanStopSettings.IsWellFormed(settings));
+        Assert.False(FanStopSettings.IsWellFormed(settings with { GpuImmediateCutoffCelsius = 98 }));
     }
 }

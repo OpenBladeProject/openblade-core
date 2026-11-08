@@ -1745,8 +1745,8 @@ Details: {1}</value>
   <data name="Returning to Auto" xml:space="preserve">
     <value>Returning to Auto</value>
   </data>
-  <data name="Custom: CPU {0} °C / GPU {1} °C for {2} s" xml:space="preserve">
-    <value>Custom: CPU {0} °C / GPU {1} °C for {2} s</value>
+  <data name="Custom: {2} s average CPU {0} °C / GPU {1} °C; immediate CPU {3} °C / GPU {4} °C" xml:space="preserve">
+    <value>Custom: {2} s average CPU {0} °C / GPU {1} °C; immediate CPU {3} °C / GPU {4} °C</value>
   </data>
   <data name="Auto: use the existing conservative end conditions." xml:space="preserve">
     <value>Auto: use the existing conservative end conditions.</value>
@@ -1760,8 +1760,8 @@ Details: {1}</value>
   <data name="Higher temperature limits allow the laptop to stay hotter before cooling restarts." xml:space="preserve">
     <value>Higher temperature limits allow the laptop to stay hotter before cooling restarts.</value>
   </data>
-  <data name="A longer delay keeps the fans stopped while temperatures remain above the limit." xml:space="preserve">
-    <value>A longer delay keeps the fans stopped while temperatures remain above the limit.</value>
+  <data name="A longer averaging window responds more slowly to rising temperatures. Immediate cutoffs still apply." xml:space="preserve">
+    <value>A longer averaging window responds more slowly to rising temperatures. Immediate cutoffs still apply.</value>
   </data>
   <data name="The CPU start limit must be below the CPU end limit." xml:space="preserve">
     <value>The CPU start limit must be below the CPU end limit.</value>
@@ -1769,7 +1769,10 @@ Details: {1}</value>
   <data name="The GPU start limit must be below the GPU end limit." xml:space="preserve">
     <value>The GPU start limit must be below the GPU end limit.</value>
   </data>
-  <data name="Use whole temperatures from 10 to 100 °C, an end delay from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding end limits." xml:space="preserve">
-    <value>Use whole temperatures from 10 to 100 °C, an end delay from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding end limits.</value>
+  <data name="Use whole temperatures from 10 to 100 °C, an averaging window from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding average limits." xml:space="preserve">
+    <value>Use whole temperatures from 10 to 100 °C, an averaging window from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding average limits.</value>
+  </data>
+  <data name="Each immediate cutoff must be at least its corresponding average limit." xml:space="preserve">
+    <value>Each immediate cutoff must be at least its corresponding average limit.</value>
   </data>
 </root>

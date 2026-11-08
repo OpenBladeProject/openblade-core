@@ -23,6 +23,35 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task FanStopSettings_CutoffsStayIndependentAndInvalidDraftDoesNotMoveOtherValues()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var vm = new MainViewModel(client, dispatcher);
+        await vm.StartAsync();
+        var status = CreateFanStopStatus(new(State: FanStopState.Inactive,
+            UnavailableReason: FanStopUnavailableReason.None, CanStop: true));
+        await PushAsync(client, dispatcher, status);
+        vm.FanStopEndModeIndex = 1;
+        Assert.False(vm.HasFanStopTemperatureWarning);
+        vm.FanStopCpuImmediateCutoff = 54;
+        vm.FanStopGpuImmediateCutoff = 75;
+        Assert.Contains("at least", vm.FanStopSettingsError);
+        await vm.ApplyFanStopSettingsAsync(CancellationToken.None);
+        Assert.Null(client.LastFanStopSettings);
+        await PushAsync(client, dispatcher, status with { Revision = status.Revision + 1 });
+        Assert.Equal(54, vm.FanStopCpuImmediateCutoff);
+        Assert.Equal(75, vm.FanStopGpuImmediateCutoff);
+        Assert.Equal(55, vm.FanStopCpuLimit);
+        vm.FanStopCpuImmediateCutoff = 55; // equality is intentionally valid
+        Assert.False(vm.HasFanStopSettingsError);
+        await vm.ApplyFanStopSettingsAsync(CancellationToken.None);
+        Assert.NotNull(client.LastFanStopSettings);
+        Assert.Equal(55, client.LastFanStopSettings.CpuImmediateCutoffCelsius);
+        Assert.Equal(75, client.LastFanStopSettings.GpuImmediateCutoffCelsius);
+    }
+
+    [Fact]
     public async Task FanStopSettings_InvalidStartLimitsStayInDraftWithoutSubmitting()
     {
         var client = new FakeServiceClient();

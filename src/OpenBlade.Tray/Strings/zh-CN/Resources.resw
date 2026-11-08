@@ -2882,16 +2882,16 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>自定义</value>
   </data>
   <data name="FanStop_CpuEnd.Text" xml:space="preserve">
-    <value>CPU 温度上限 (°C)</value>
+    <value>CPU 平均温度阈值 (°C)</value>
   </data>
   <data name="FanStop_GpuEnd.Text" xml:space="preserve">
-    <value>GPU 温度上限 (°C)</value>
+    <value>GPU 平均温度阈值 (°C)</value>
   </data>
   <data name="FanStop_ExitDelay.Text" xml:space="preserve">
-    <value>超过上限的持续时间（秒）</value>
+    <value>平均窗口（秒）</value>
   </data>
   <data name="FanStop_CustomDescription.Text" xml:space="preserve">
-    <value>任一温度持续超过其上限达到所设时间后，恢复自动控制。安全条件可能会提前结束停转。</value>
+    <value>任一温度在完整窗口内的时间加权平均值超过阈值，或当前温度超过其即时上限时，恢复自动模式。两个阈值相同时，该传感器会即时触发。安全条件可能提前结束停转。</value>
   </data>
   <data name="FanStop_EnableAutomatic.Text" xml:space="preserve">
     <value>冷却后自动停转</value>
@@ -2915,7 +2915,7 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>自动停转</value>
   </data>
   <data name="FanStop_CpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>CPU 温度上限 (°C)</value>
+    <value>CPU 平均温度阈值 (°C)</value>
   </data>
   <data name="FanStop_CpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>CPU 低于 (°C)</value>
@@ -2933,15 +2933,27 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>同时低于两个阈值的持续时间（秒）</value>
   </data>
   <data name="FanStop_ExitDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>超过上限的持续时间（秒）</value>
+    <value>平均窗口（秒）</value>
   </data>
   <data name="FanStop_GpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>GPU 温度上限 (°C)</value>
+    <value>GPU 平均温度阈值 (°C)</value>
   </data>
   <data name="FanStop_GpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>GPU 低于 (°C)</value>
   </data>
   <data name="FanStop_UnsavedSettings.Text" xml:space="preserve">
     <value>停转设置尚未保存</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.Text" xml:space="preserve">
+    <value>CPU 即时温度上限 (°C)</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU 即时温度上限 (°C)</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.Text" xml:space="preserve">
+    <value>GPU 即时温度上限 (°C)</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU 即时温度上限 (°C)</value>
   </data>
 </root>

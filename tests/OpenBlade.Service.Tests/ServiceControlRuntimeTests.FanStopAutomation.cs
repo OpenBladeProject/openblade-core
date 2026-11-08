@@ -330,13 +330,23 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(1, owner.StartCalls);
     }
 
-    [Fact]
-    public async Task AutomaticFanStopOwnedPolicyChangeRequestsAutoWithoutMutatingCapturedPolicy()
+    [Theory]
+    [InlineData("average")]
+    [InlineData("cpu-cutoff")]
+    [InlineData("gpu-cutoff")]
+    [InlineData("window")]
+    public async Task AutomaticFanStopOwnedPolicyChangeRequestsAutoWithoutMutatingCapturedPolicy(string field)
     {
         FanStopSettings original = AutomaticCustomSettings();
         var (context, owner, clock, _) = await CreateAutomaticFanStopContextAsync(original);
         await SampleAutomaticFanStopAsync(context, clock, 3);
-        FanStopSettings changed = original with { CpuLimitCelsius = 65 };
+        FanStopSettings changed = field switch
+        {
+            "cpu-cutoff" => original with { CpuImmediateCutoffCelsius = 75 },
+            "gpu-cutoff" => original with { GpuImmediateCutoffCelsius = 75 },
+            "window" => original with { SecondsAboveLimit = 10 },
+            _ => original with { CpuLimitCelsius = 65 },
+        };
         await SaveAutomaticFanStopSettingsAsync(context, changed);
         Assert.Equal(1, owner.AutoCalls);
         Assert.Equal(1, owner.StartCalls);

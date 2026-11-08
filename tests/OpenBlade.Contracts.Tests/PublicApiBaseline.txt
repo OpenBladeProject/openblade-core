@@ -1118,15 +1118,19 @@ type sealed class OpenBlade.Contracts.FanStopSettings
   method System.Boolean get_AutomaticEnabled()
   method System.Int32 get_AutomaticCpuBelowCelsius()
   method System.Int32 get_AutomaticGpuBelowCelsius()
+  method System.Int32 get_CpuImmediateCutoffCelsius()
   method System.Int32 get_CpuLimitCelsius()
+  method System.Int32 get_GpuImmediateCutoffCelsius()
   method System.Int32 get_GpuLimitCelsius()
   method System.Int32 get_SecondsAboveLimit()
   method System.Int32 get_SecondsBelowLimits()
   method System.Void set_AutomaticCpuBelowCelsius(System.Int32 value)
   method System.Void set_AutomaticEnabled(System.Boolean value)
   method System.Void set_AutomaticGpuBelowCelsius(System.Int32 value)
+  method System.Void set_CpuImmediateCutoffCelsius(System.Int32 value)
   method System.Void set_CpuLimitCelsius(System.Int32 value)
   method System.Void set_EndMode(OpenBlade.Contracts.FanStopEndMode value)
+  method System.Void set_GpuImmediateCutoffCelsius(System.Int32 value)
   method System.Void set_GpuLimitCelsius(System.Int32 value)
   method System.Void set_SecondsAboveLimit(System.Int32 value)
   method System.Void set_SecondsBelowLimits(System.Int32 value)
@@ -1143,7 +1147,9 @@ type sealed class OpenBlade.Contracts.FanStopSettings
   property System.Boolean AutomaticEnabled { get; init; }
   property System.Int32 AutomaticCpuBelowCelsius { get; init; }
   property System.Int32 AutomaticGpuBelowCelsius { get; init; }
+  property System.Int32 CpuImmediateCutoffCelsius { get; init; }
   property System.Int32 CpuLimitCelsius { get; init; }
+  property System.Int32 GpuImmediateCutoffCelsius { get; init; }
   property System.Int32 GpuLimitCelsius { get; init; }
   property System.Int32 SecondsAboveLimit { get; init; }
   property System.Int32 SecondsBelowLimits { get; init; }
@@ -1795,7 +1801,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 76
+  field const System.Int32 ProtocolVersion = 77
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

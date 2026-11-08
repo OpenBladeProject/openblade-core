@@ -72,7 +72,7 @@ public sealed class FanStopThermalPolicyTests
     }
 
     [Fact]
-    public void EachSensorNeedsItsOwnContinuousDurationAndEqualityResetsIt()
+    public void BriefReturnToLimitDoesNotResetHotRollingAverage()
     {
         var clock = new Clock();
         var policy = new FanStopThermalPolicy(Custom, clock);
@@ -82,20 +82,15 @@ public sealed class FanStopThermalPolicyTests
             clock.Advance(1);
             Assert.True(policy.Observe(second == 4 ? 55 : 56, second >= 3 ? 56 : 40, false, false, TimeSpan.Zero));
         }
-        // CPU's four-second excursion did not transfer to GPU's two seconds.
-        clock.Advance(1);
-        Assert.True(policy.Observe(56, 56, false, false, TimeSpan.Zero));
-        clock.Advance(1);
-        Assert.True(policy.Observe(56, 56, false, false, TimeSpan.Zero));
-        clock.Advance(1);
-        Assert.True(policy.Observe(56, 56, false, false, TimeSpan.Zero));
+        // Four seconds at 56 and one at 55 still average above 55. The former
+        // continuous timer incorrectly discarded this heat at the equality dip.
         clock.Advance(1);
         Assert.False(policy.Observe(56, 56, false, false, TimeSpan.Zero));
         Assert.Equal(FanStopEndReason.ThermalThreshold, policy.EndReason);
     }
 
     [Fact]
-    public void CommandSamplesCannotResetAdvanceOrBypassContinuationTimers()
+    public void CommandSamplesCannotResetAdvanceOrBypassContinuationWindows()
     {
         var clock = new Clock();
         var policy = new FanStopThermalPolicy(Custom, clock);
@@ -125,7 +120,7 @@ public sealed class FanStopThermalPolicyTests
     }
 
     [Fact]
-    public void MissingContinuityEndsStopAndDevicePowerDownResetsGpuTimer()
+    public void MissingContinuityEndsStopAndDevicePowerDownResetsGpuWindow()
     {
         var clock = new Clock();
         var policy = new FanStopThermalPolicy(Custom, clock);
@@ -153,7 +148,7 @@ public sealed class FanStopThermalPolicyTests
     }
 
     [Fact]
-    public void FreshReadCannotCreditARealUncoveredGapToTheHotTimer()
+    public void FreshReadCannotCreditARealUncoveredGapToTheAverage()
     {
         var clock = new Clock();
         var policy = new FanStopThermalPolicy(Custom, clock);
@@ -178,11 +173,121 @@ public sealed class FanStopThermalPolicyTests
         Assert.False(policy.Observe(40, 40, false, false, TimeSpan.Zero));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void IndependentRawCutoffEndsImmediatelyBeforeWindowFills(bool cpuHot)
+    {
+        var settings = Custom with { CpuImmediateCutoffCelsius = 70, GpuImmediateCutoffCelsius = 75 };
+        var policy = new FanStopThermalPolicy(settings, new Clock());
+        Assert.True(policy.Observe(70, 75, false, false, TimeSpan.Zero)); // equality is allowed
+        Assert.False(policy.Observe(cpuHot ? 71 : 40, cpuHot ? 40 : 76, false, false, TimeSpan.Zero));
+        Assert.Equal(FanStopEndReason.ThermalThreshold, policy.EndReason);
+        var command = new FanStopThermalPolicy(settings, new Clock());
+        Assert.False(command.AdmitsCommand(cpuHot ? 71 : 40, cpuHot ? 40 : 76, false, false, TimeSpan.Zero));
+        Assert.Equal(FanStopEndReason.ThermalThreshold, command.EndReason);
+    }
+
+    [Fact]
+    public void IrregularSamplesAreWeightedByElapsedTimeAndTrimmedAtWindowBoundary()
+    {
+        var clock = new Clock();
+        var policy = new FanStopThermalPolicy(Custom with { SecondsAboveLimit = 2 }, clock);
+        Assert.True(policy.Observe(40, 40, false, false, TimeSpan.Zero));
+        clock.Advance(1.5);
+        Assert.True(policy.Observe(64, 40, false, false, TimeSpan.Zero));
+        for (int i = 0; i < 5; i++)
+        {
+            clock.Advance(.1);
+            Assert.True(policy.Observe(64, 40, false, false, TimeSpan.Zero));
+        }
+        // Sample-count averaging would already exceed 55; elapsed average is 46.
+        clock.Advance(.5);
+        Assert.True(policy.Observe(64, 40, false, false, TimeSpan.Zero)); // average 52
+        clock.Advance(.5);
+        Assert.False(policy.Observe(40, 40, false, false, TimeSpan.Zero)); // average 58
+        Assert.Equal(FanStopEndReason.ThermalThreshold, policy.EndReason);
+    }
+
+    [Fact]
+    public void FullWindowIsRequiredAndSensorHeatCannotBeCombined()
+    {
+        var clock = new Clock();
+        var policy = new FanStopThermalPolicy(Custom with { SecondsAboveLimit = 2 }, clock);
+        Assert.True(policy.Observe(64, 40, false, false, TimeSpan.Zero));
+        clock.Advance(1);
+        Assert.True(policy.Observe(40, 64, false, false, TimeSpan.Zero));
+        clock.Advance(1);
+        Assert.True(policy.Observe(40, 64, false, false, TimeSpan.Zero)); // each average 52
+        clock.Advance(.5);
+        Assert.False(policy.Observe(40, 64, false, false, TimeSpan.Zero)); // GPU average 58
+    }
+
+    [Fact]
+    public void ExplicitD3ResetsOnlyGpuHistoryAndWakeRequiresAFullWindow()
+    {
+        var clock = new Clock();
+        var policy = new FanStopThermalPolicy(Custom with { SecondsAboveLimit = 2 }, clock);
+        Assert.True(policy.Observe(40, 64, false, false, TimeSpan.Zero));
+        clock.Advance(1);
+        Assert.True(policy.Observe(40, null, true, true, TimeSpan.Zero));
+        clock.Advance(1);
+        Assert.True(policy.Observe(40, 64, false, false, TimeSpan.Zero));
+        clock.Advance(1);
+        Assert.True(policy.Observe(40, 64, false, false, TimeSpan.Zero));
+        clock.Advance(1);
+        Assert.False(policy.Observe(40, 64, false, false, TimeSpan.Zero));
+
+        clock = new Clock();
+        policy = new FanStopThermalPolicy(Custom with { SecondsAboveLimit = 2 }, clock);
+        Assert.True(policy.Observe(64, 40, false, false, TimeSpan.Zero));
+        clock.Advance(1);
+        Assert.True(policy.Observe(64, null, true, true, TimeSpan.Zero));
+        clock.Advance(1);
+        Assert.False(policy.Observe(64, null, true, true, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void BackwardClockEndsStopWithoutRearmingAndRapidSamplingIsBounded()
+    {
+        var clock = new Clock();
+        var policy = new FanStopThermalPolicy(Custom, clock);
+        Assert.True(policy.Observe(40, 40, false, false, TimeSpan.Zero));
+        clock.Advance(-1);
+        Assert.False(policy.Observe(40, 40, false, false, TimeSpan.Zero));
+        Assert.Equal(FanStopEndReason.SafetyCondition, policy.EndReason);
+        clock = new Clock();
+        policy = new FanStopThermalPolicy(Custom with { SecondsAboveLimit = 300 }, clock);
+        for (int i = 0; i <= 4096; i++)
+        {
+            Assert.True(policy.Observe(40 + i % 2, 40, false, false, TimeSpan.Zero));
+            clock.Advance(.001);
+        }
+        Assert.False(policy.Observe(40, 40, false, false, TimeSpan.Zero));
+        Assert.Equal(FanStopEndReason.SafetyCondition, policy.EndReason);
+    }
+
+    [Theory]
+    [InlineData(3, false)]
+    [InlineData(-1, false)]
+    [InlineData(3, true)]
+    [InlineData(-1, true)]
+    public void HotReadingCannotReclassifyMissingOrBackwardContinuityAsThermalCompletion(int elapsed, bool command)
+    {
+        var clock = new Clock();
+        var policy = new FanStopThermalPolicy(Custom, clock);
+        Assert.True(policy.Observe(40, 40, false, false, TimeSpan.Zero));
+        clock.Advance(elapsed);
+        Assert.False(command ? policy.AdmitsCommand(100, 100, false, false, TimeSpan.Zero)
+            : policy.Observe(100, 100, false, false, TimeSpan.Zero));
+        Assert.Equal(FanStopEndReason.SafetyCondition, policy.EndReason);
+    }
+
     private sealed class Clock : TimeProvider
     {
         private long now = 1;
         public override long TimestampFrequency => TimeSpan.TicksPerSecond;
         public override long GetTimestamp() => now;
-        internal void Advance(int seconds) => now += TimeSpan.FromSeconds(seconds).Ticks;
+        internal void Advance(double seconds) => now += TimeSpan.FromSeconds(seconds).Ticks;
     }
 }

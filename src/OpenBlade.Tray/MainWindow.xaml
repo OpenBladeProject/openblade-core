@@ -988,12 +988,38 @@
                                                     <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
                                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                                         <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
+                                                            <TextBlock Text="{CustomResource FanStop_CpuImmediateCutoff.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <NumberBox x:Name="FanStopCpuImmediateCutoffEditor" Grid.Column="1" Width="120" Minimum="10" Maximum="100" SmallChange="1" LargeChange="5"
+                                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                   AutomationProperties.Name="{CustomResource FanStop_CpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                                   Value="{Binding FanStopCpuImmediateCutoff, Mode=TwoWay}" LostFocus="OnFanStopSettingsLostFocus" />
+                                                    </Grid>
+
+                                                </Border>
+                                                <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
                                                             <TextBlock Text="{CustomResource FanStop_GpuEnd.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                                         </StackPanel>
                                                         <NumberBox x:Name="FanStopGpuLimitEditor" Grid.Column="1" Width="120" Minimum="10" Maximum="100" SmallChange="1" LargeChange="5"
                                                                    SpinButtonPlacementMode="Compact" VerticalAlignment="Center" VerticalContentAlignment="Center"
                                                                    AutomationProperties.Name="{CustomResource FanStop_GpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
                                                                    Value="{Binding FanStopGpuLimit, Mode=TwoWay}" LostFocus="OnFanStopSettingsLostFocus" />
+                                                    </Grid>
+
+                                                </Border>
+                                                <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
+                                                            <TextBlock Text="{CustomResource FanStop_GpuImmediateCutoff.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <NumberBox x:Name="FanStopGpuImmediateCutoffEditor" Grid.Column="1" Width="120" Minimum="10" Maximum="100" SmallChange="1" LargeChange="5"
+                                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                   AutomationProperties.Name="{CustomResource FanStop_GpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                                   Value="{Binding FanStopGpuImmediateCutoff, Mode=TwoWay}" LostFocus="OnFanStopSettingsLostFocus" />
                                                     </Grid>
 
                                                 </Border>

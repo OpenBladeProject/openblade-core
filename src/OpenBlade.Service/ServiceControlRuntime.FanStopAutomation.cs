@@ -92,7 +92,9 @@ public sealed partial class ServiceControlRuntime
             FanStopSettings previous = preferences.FanStopSettings;
             if (previous == settings) { return new(ControlOperationStatus.Stored, "Fan Stop settings are already saved."); }
             bool thermalChanged = previous.EndMode != settings.EndMode || previous.CpuLimitCelsius != settings.CpuLimitCelsius
-                || previous.GpuLimitCelsius != settings.GpuLimitCelsius || previous.SecondsAboveLimit != settings.SecondsAboveLimit;
+                || previous.GpuLimitCelsius != settings.GpuLimitCelsius || previous.SecondsAboveLimit != settings.SecondsAboveLimit
+                || previous.CpuImmediateCutoffCelsius != settings.CpuImmediateCutoffCelsius
+                || previous.GpuImmediateCutoffCelsius != settings.GpuImmediateCutoffCelsius;
             if (thermalChanged && fanStopController.BlocksOrdinaryThermalWrites)
             {
                 // The native owner's policy is immutable. Finish its verified

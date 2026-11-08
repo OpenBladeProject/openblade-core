@@ -2903,16 +2903,16 @@ OpenBlade did not retry any stop request.</value>
     <value>Custom</value>
   </data>
   <data name="FanStop_CpuEnd.Text" xml:space="preserve">
-    <value>CPU limit (°C)</value>
+    <value>CPU average limit (°C)</value>
   </data>
   <data name="FanStop_GpuEnd.Text" xml:space="preserve">
-    <value>GPU limit (°C)</value>
+    <value>GPU average limit (°C)</value>
   </data>
   <data name="FanStop_ExitDelay.Text" xml:space="preserve">
-    <value>Time above limit (seconds)</value>
+    <value>Averaging window (seconds)</value>
   </data>
   <data name="FanStop_CustomDescription.Text" xml:space="preserve">
-    <value>Return to Auto when either temperature stays above its limit for the chosen time. Safety conditions can end Stop sooner.</value>
+    <value>Return to Auto when either time-weighted average over a full window is above its limit, or a current temperature is above its immediate cutoff. If a sensor’s limits are equal, exceeding that limit ends Stop immediately. Safety conditions can end Stop sooner.</value>
   </data>
   <data name="FanStop_EnableAutomatic.Text" xml:space="preserve">
     <value>Stop automatically when cool</value>
@@ -2936,7 +2936,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Automatic Stop</value>
   </data>
   <data name="FanStop_CpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>CPU limit (°C)</value>
+    <value>CPU average limit (°C)</value>
   </data>
   <data name="FanStop_CpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>CPU below (°C)</value>
@@ -2954,15 +2954,27 @@ OpenBlade did not retry any stop request.</value>
     <value>Time below both limits (seconds)</value>
   </data>
   <data name="FanStop_ExitDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Time above limit (seconds)</value>
+    <value>Averaging window (seconds)</value>
   </data>
   <data name="FanStop_GpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>GPU limit (°C)</value>
+    <value>GPU average limit (°C)</value>
   </data>
   <data name="FanStop_GpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>GPU below (°C)</value>
   </data>
   <data name="FanStop_UnsavedSettings.Text" xml:space="preserve">
     <value>Unsaved Stop settings</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.Text" xml:space="preserve">
+    <value>CPU immediate cutoff (°C)</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU immediate cutoff (°C)</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.Text" xml:space="preserve">
+    <value>GPU immediate cutoff (°C)</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU immediate cutoff (°C)</value>
   </data>
 </root>

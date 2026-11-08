@@ -2903,16 +2903,16 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Cústóm ~~~ !!]</value>
   </data>
   <data name="FanStop_CpuEnd.Text" xml:space="preserve">
-    <value>[!! CPÚ límít (°C) ~~~~ !!]</value>
+    <value>[!! CPÚ ávérágé límít (°C) ~~~~~~ !!]</value>
   </data>
   <data name="FanStop_GpuEnd.Text" xml:space="preserve">
-    <value>[!! GPÚ límít (°C) ~~~~ !!]</value>
+    <value>[!! GPÚ ávérágé límít (°C) ~~~~~~ !!]</value>
   </data>
   <data name="FanStop_ExitDelay.Text" xml:space="preserve">
-    <value>[!! Tímé ábóvé límít (sécónds) ~~~~~~~~ !!]</value>
+    <value>[!! Ávérágíng wíndów (sécónds) ~~~~~~~~ !!]</value>
   </data>
   <data name="FanStop_CustomDescription.Text" xml:space="preserve">
-    <value>[!! Rétúrn tó Áútó whén éíthér témpérátúré stáýs ábóvé íts límít fór thé chósén tímé. Sáfétý cóndítíóns cán énd Stóp sóónér. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+    <value>[!! Rétúrn tó Áútó whén éíthér tímé-wéíghtéd ávérágé óvér á fúll wíndów ís ábóvé íts límít, ór á cúrrént témpérátúré ís ábóvé íts ímmédíáté cútóff. Íf á sénsór’s límíts áré éqúál, éxcéédíng thát límít énds Stóp ímmédíátélý. Sáfétý cóndítíóns cán énd Stóp sóónér. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="FanStop_EnableAutomatic.Text" xml:space="preserve">
     <value>[!! Stóp áútómátícállý whén cóól ~~~~~~~~~ !!]</value>
@@ -2936,7 +2936,7 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Áútómátíc Stóp ~~~~~ !!]</value>
   </data>
   <data name="FanStop_CpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! CPÚ límít (°C) ~~~~ !!]</value>
+    <value>[!! CPÚ ávérágé límít (°C) ~~~~~~ !!]</value>
   </data>
   <data name="FanStop_CpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! CPÚ bélów (°C) ~~~~ !!]</value>
@@ -2954,15 +2954,27 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Tímé bélów bóth límíts (sécónds) ~~~~~~~~~~ !!]</value>
   </data>
   <data name="FanStop_ExitDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Tímé ábóvé límít (sécónds) ~~~~~~~~ !!]</value>
+    <value>[!! Ávérágíng wíndów (sécónds) ~~~~~~~~ !!]</value>
   </data>
   <data name="FanStop_GpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! GPÚ límít (°C) ~~~~ !!]</value>
+    <value>[!! GPÚ ávérágé límít (°C) ~~~~~~ !!]</value>
   </data>
   <data name="FanStop_GpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! GPÚ bélów (°C) ~~~~ !!]</value>
   </data>
   <data name="FanStop_UnsavedSettings.Text" xml:space="preserve">
     <value>[!! Únsávéd Stóp séttíngs ~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.Text" xml:space="preserve">
+    <value>[!! CPÚ ímmédíáté cútóff (°C) ~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! CPÚ ímmédíáté cútóff (°C) ~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.Text" xml:space="preserve">
+    <value>[!! GPÚ ímmédíáté cútóff (°C) ~~~~~~~ !!]</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! GPÚ ímmédíáté cútóff (°C) ~~~~~~~ !!]</value>
   </data>
 </root>

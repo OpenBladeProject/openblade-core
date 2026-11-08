@@ -22,6 +22,9 @@ public sealed class TrayTextTests
             "Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto.",
             "Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds.",
             "Fan stop is unavailable because its safety guardian is not ready.",
+            "Custom: {2} s average CPU {0} °C / GPU {1} °C; immediate CPU {3} °C / GPU {4} °C",
+            "Each immediate cutoff must be at least its corresponding average limit.",
+            "A longer averaging window responds more slowly to rising temperatures. Immediate cutoffs still apply.",
         ];
         foreach (string key in keys)
         {

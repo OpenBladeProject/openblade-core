@@ -8,6 +8,7 @@ public sealed partial class MainViewModel
     private int fanStopEndModeIndex;
     private bool synchronizingFanStopSettings;
     private double fanStopCpuLimit = 55, fanStopGpuLimit = 55, fanStopExitSeconds = 5;
+    private double fanStopCpuImmediateCutoff = 65, fanStopGpuImmediateCutoff = 65;
     private bool automaticFanStopEnabled;
     private double automaticFanStopCpuLimit = 50, automaticFanStopGpuLimit = 50, automaticFanStopSeconds = 30;
 
@@ -56,6 +57,26 @@ public sealed partial class MainViewModel
             {
                 NotifyFanStopSettingsPresentation();
             }
+        }
+    }
+
+    public double FanStopCpuImmediateCutoff
+    {
+        get => fanStopCpuImmediateCutoff;
+        set
+        {
+            if (SetFanStopDraftField(ref fanStopCpuImmediateCutoff, value))
+            { NotifyFanStopSettingsPresentation(); }
+        }
+    }
+
+    public double FanStopGpuImmediateCutoff
+    {
+        get => fanStopGpuImmediateCutoff;
+        set
+        {
+            if (SetFanStopDraftField(ref fanStopGpuImmediateCutoff, value))
+            { NotifyFanStopSettingsPresentation(); }
         }
     }
 
@@ -120,7 +141,9 @@ public sealed partial class MainViewModel
         {
             FanStopSettings saved = CurrentFanStopStatus.Settings;
             return saved.EndMode == FanStopEndMode.Custom
-                ? TrayText.Format("Custom: CPU {0} °C / GPU {1} °C for {2} s", saved.CpuLimitCelsius, saved.GpuLimitCelsius, saved.SecondsAboveLimit)
+                ? TrayText.Format("Custom: {2} s average CPU {0} °C / GPU {1} °C; immediate CPU {3} °C / GPU {4} °C",
+                    saved.CpuLimitCelsius, saved.GpuLimitCelsius, saved.SecondsAboveLimit,
+                    saved.CpuImmediateCutoffCelsius, saved.GpuImmediateCutoffCelsius)
                 : TrayText.Get("Auto: use the existing conservative end conditions.");
         }
     }
@@ -132,14 +155,16 @@ public sealed partial class MainViewModel
     public string FanStopTemperatureWarning => IsCustomFanStopEnd && (FanStopCpuLimit > FanStopSettings.TemperatureWarningCelsius || FanStopGpuLimit > FanStopSettings.TemperatureWarningCelsius)
         ? TrayText.Get("Higher temperature limits allow the laptop to stay hotter before cooling restarts.") : string.Empty;
     public string FanStopDelayWarning => IsCustomFanStopEnd && FanStopExitSeconds > FanStopSettings.DurationWarningSeconds
-        ? TrayText.Get("A longer delay keeps the fans stopped while temperatures remain above the limit.") : string.Empty;
+        ? TrayText.Get("A longer averaging window responds more slowly to rising temperatures. Immediate cutoffs still apply.") : string.Empty;
     public string AutomaticFanStopCpuError => AutomaticFanStopEnabled
         && AutomaticFanStopCpuLimit >= (IsCustomFanStopEnd ? FanStopCpuLimit : 55)
         ? TrayText.Get("The CPU start limit must be below the CPU end limit.") : string.Empty;
     public string AutomaticFanStopGpuError => AutomaticFanStopEnabled && IsCustomFanStopEnd && AutomaticFanStopGpuLimit >= FanStopGpuLimit
         ? TrayText.Get("The GPU start limit must be below the GPU end limit.") : string.Empty;
-    public string FanStopSettingsError => TryGetFanStopSettings(out _) ? string.Empty
-        : TrayText.Get("Use whole temperatures from 10 to 100 °C, an end delay from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding end limits.");
+    public string FanStopSettingsError => FanStopCpuImmediateCutoff < FanStopCpuLimit || FanStopGpuImmediateCutoff < FanStopGpuLimit
+        ? TrayText.Get("Each immediate cutoff must be at least its corresponding average limit.")
+        : TryGetFanStopSettings(out _) ? string.Empty
+        : TrayText.Get("Use whole temperatures from 10 to 100 °C, an averaging window from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding average limits.");
     public bool HasFanStopTemperatureWarning => FanStopTemperatureWarning.Length != 0;
     public bool HasFanStopDelayWarning => FanStopDelayWarning.Length != 0;
     public bool HasAutomaticFanStopCpuError => AutomaticFanStopCpuError.Length != 0;
@@ -159,7 +184,8 @@ public sealed partial class MainViewModel
     private bool TryGetFanStopSettings(out FanStopSettings settings)
     {
         settings = FanStopSettings.Default;
-        double[] values = [FanStopCpuLimit, FanStopGpuLimit, FanStopExitSeconds, AutomaticFanStopCpuLimit, AutomaticFanStopGpuLimit, AutomaticFanStopSeconds];
+        double[] values = [FanStopCpuLimit, FanStopGpuLimit, FanStopCpuImmediateCutoff, FanStopGpuImmediateCutoff,
+            FanStopExitSeconds, AutomaticFanStopCpuLimit, AutomaticFanStopGpuLimit, AutomaticFanStopSeconds];
         if (values.Any(value => !double.IsFinite(value) || value != Math.Truncate(value) || value < 0 || value > int.MaxValue))
         {
             return false;
@@ -169,6 +195,8 @@ public sealed partial class MainViewModel
             EndMode = IsCustomFanStopEnd ? FanStopEndMode.Custom : FanStopEndMode.Auto,
             CpuLimitCelsius = (int)FanStopCpuLimit,
             GpuLimitCelsius = (int)FanStopGpuLimit,
+            CpuImmediateCutoffCelsius = (int)FanStopCpuImmediateCutoff,
+            GpuImmediateCutoffCelsius = (int)FanStopGpuImmediateCutoff,
             SecondsAboveLimit = (int)FanStopExitSeconds,
             AutomaticEnabled = AutomaticFanStopEnabled,
             AutomaticCpuBelowCelsius = (int)AutomaticFanStopCpuLimit,
@@ -251,6 +279,8 @@ public sealed partial class MainViewModel
             FanStopEndModeIndex = settings.EndMode == FanStopEndMode.Custom ? 1 : 0;
             FanStopCpuLimit = settings.CpuLimitCelsius;
             FanStopGpuLimit = settings.GpuLimitCelsius;
+            FanStopCpuImmediateCutoff = settings.CpuImmediateCutoffCelsius;
+            FanStopGpuImmediateCutoff = settings.GpuImmediateCutoffCelsius;
             FanStopExitSeconds = settings.SecondsAboveLimit;
             AutomaticFanStopEnabled = settings.AutomaticEnabled;
             AutomaticFanStopCpuLimit = settings.AutomaticCpuBelowCelsius;

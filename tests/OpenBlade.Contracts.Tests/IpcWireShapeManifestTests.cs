@@ -68,6 +68,8 @@ public sealed class IpcWireShapeManifestTests
             75 => "1874A6AF68CE588911929DFAC00A5B2742718349C2B33146C3B8C1C9FC37D814",
             // Protocol 76 adds Stop policies, typed settings/resume requests, and automation status.
             76 => "48E804C7D6043AE74592F7C8D158F9EFEE8CDE8BE356FAA3581B29DB4F85267A",
+            // Protocol 77 adds independent CPU/GPU immediate cutoffs for Custom rolling averages.
+            77 => "93000A79AC01843AC4D79DCCBF91271BF6609083B4D36B484A36A9588C28D41A",
             72 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
             _ => null,
         };

@@ -762,7 +762,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(76, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(77, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -806,7 +806,7 @@ public sealed class IpcMessageCodecTests
                 }),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(76, json["version"]!.GetValue<int>());
+        Assert.Equal(77, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
@@ -841,7 +841,7 @@ public sealed class IpcMessageCodecTests
             await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
         Assert.True(roundTrip.Status.Capabilities!.SupportsManualFansOnLimitedPower);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(76, json["version"]!.GetValue<int>());
+        Assert.Equal(77, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsManualFansOnLimitedPower"));
@@ -1416,7 +1416,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(76, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(77, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -2112,6 +2112,7 @@ public sealed class IpcMessageCodecTests
     [InlineData(71)]
     [InlineData(74)]
     [InlineData(75)]
+    [InlineData(76)]
     public async Task WriteRequestAsync_RejectsPriorProtocols(int previousProtocolVersion)
     {
         using MemoryStream stream = new();
@@ -2124,7 +2125,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(76, exception.ExpectedVersion);
+        Assert.Equal(77, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2137,6 +2138,7 @@ public sealed class IpcMessageCodecTests
     [InlineData(71)]
     [InlineData(74)]
     [InlineData(75)]
+    [InlineData(76)]
     public async Task ReadRequestAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         using MemoryStream stream = FrameJson(
@@ -2147,7 +2149,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(76, exception.ExpectedVersion);
+        Assert.Equal(77, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2160,6 +2162,7 @@ public sealed class IpcMessageCodecTests
     [InlineData(71)]
     [InlineData(74)]
     [InlineData(75)]
+    [InlineData(76)]
     public async Task ReadServerFrameAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         Guid requestId = Guid.NewGuid();
@@ -2182,7 +2185,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(76, exception.ExpectedVersion);
+        Assert.Equal(77, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 

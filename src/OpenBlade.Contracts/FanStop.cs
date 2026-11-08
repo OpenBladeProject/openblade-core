@@ -29,6 +29,10 @@ public sealed record FanStopSettings
     public FanStopEndMode EndMode { get; init; } = FanStopEndMode.Auto;
     public int CpuLimitCelsius { get; init; } = 55;
     public int GpuLimitCelsius { get; init; } = 55;
+    public int CpuImmediateCutoffCelsius { get; init; } = 65;
+    public int GpuImmediateCutoffCelsius { get; init; } = 65;
+    // Retain the serialized name when migrating the former continuous timer.
+    // Custom now uses this duration as its trailing, time-weighted window.
     public int SecondsAboveLimit { get; init; } = 5;
     public bool AutomaticEnabled { get; init; }
     public int AutomaticCpuBelowCelsius { get; init; } = 50;
@@ -40,6 +44,9 @@ public sealed record FanStopSettings
     public static bool IsWellFormed(FanStopSettings? value) => value is not null
         && Enum.IsDefined(value.EndMode)
         && ValidTemperature(value.CpuLimitCelsius) && ValidTemperature(value.GpuLimitCelsius)
+        && ValidTemperature(value.CpuImmediateCutoffCelsius) && ValidTemperature(value.GpuImmediateCutoffCelsius)
+        && value.CpuImmediateCutoffCelsius >= value.CpuLimitCelsius
+        && value.GpuImmediateCutoffCelsius >= value.GpuLimitCelsius
         && ValidTemperature(value.AutomaticCpuBelowCelsius) && ValidTemperature(value.AutomaticGpuBelowCelsius)
         && value.SecondsAboveLimit is >= 1 and <= MaximumSecondsAboveLimit
         && value.SecondsBelowLimits is >= 1 and <= MaximumSecondsBelowLimits

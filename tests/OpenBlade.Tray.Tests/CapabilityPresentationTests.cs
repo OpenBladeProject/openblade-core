@@ -701,7 +701,7 @@ public sealed class CapabilityPresentationTests
                 && element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate"))
             .ToArray();
 
-        Assert.Equal(23, compactRows.Length);
+        Assert.Equal(25, compactRows.Length);
         Assert.All(compactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -762,9 +762,11 @@ public sealed class CapabilityPresentationTests
                 "Maximum fans",
                 "Fans",
                 "Stop fans",
-                "CPU limit (°C)",
-                "GPU limit (°C)",
-                "Time above limit (seconds)",
+                "CPU average limit (°C)",
+                "CPU immediate cutoff (°C)",
+                "GPU average limit (°C)",
+                "GPU immediate cutoff (°C)",
+                "Averaging window (seconds)",
                 "Stop automatically when cool",
                 "CPU below (°C)",
                 "GPU below (°C)",
