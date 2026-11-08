@@ -46,12 +46,10 @@ public static class PawnIoRuntimeAdmission
             }
             try
             {
-                const int maximumConfigBytes = 16384;
-                nint buffer = Marshal.AllocHGlobal(maximumConfigBytes);
+                nint buffer = ReadServiceConfigurationBuffer(
+                    (nint target, int size, out int needed) => QueryServiceConfig(service, target, size, out needed));
                 try
                 {
-                    if (!QueryServiceConfig(service, buffer, maximumConfigBytes, out _))
-                    { throw new Win32Exception(Marshal.GetLastWin32Error()); }
                     ServiceConfig config = Marshal.PtrToStructure<ServiceConfig>(buffer);
                     if (config.ServiceType != 1 || config.StartType != 3)
                     { throw new InvalidDataException("PawnIO is not the expected demand-start kernel service."); }
@@ -80,6 +78,33 @@ public static class PawnIoRuntimeAdmission
             finally { CloseServiceHandle(service); }
         }
         finally { CloseServiceHandle(manager); }
+    }
+
+    internal delegate bool ServiceConfigurationQuery(nint buffer, int size, out int needed);
+
+    internal static nint ReadServiceConfigurationBuffer(ServiceConfigurationQuery query)
+    {
+        // QueryServiceConfigW permits at most 8 KiB. A larger fixed buffer is
+        // rejected by the Windows RPC stub (1783), before any data is returned.
+        // Follow the documented size probe and keep its result independently bounded.
+        bool unexpectedlySucceeded = query(0, 0, out int needed);
+        int error = Marshal.GetLastPInvokeError();
+        if (unexpectedlySucceeded || error != 122)
+        { throw new Win32Exception(unexpectedlySucceeded ? 13 : error); }
+        if (needed < Marshal.SizeOf<ServiceConfig>() || needed > 8192)
+        { throw new InvalidDataException("PawnIO service configuration size is outside the Windows API contract."); }
+        nint buffer = Marshal.AllocHGlobal(needed);
+        try
+        {
+            if (!query(buffer, needed, out _))
+            { throw new Win32Exception(Marshal.GetLastPInvokeError()); }
+            return buffer;
+        }
+        catch
+        {
+            Marshal.FreeHGlobal(buffer);
+            throw;
+        }
     }
 
     internal static string NormalizeDriverPath(string imagePath, string windows)
