@@ -31,7 +31,16 @@ try {
     function Get-FileHash { param($LiteralPath, $Algorithm) @{ Hash = $(if ($script:badHash) { 'bad' } else { (Get-OpenBladePawnIoPrerequisite).Sha256 }) } }
     function Get-AuthenticodeSignature { param($LiteralPath) @{ Status = [Management.Automation.SignatureStatus]::Valid;
         SignerCertificate = @{ Subject = $(if ($script:badSigner) { 'other publisher' } else { (Get-OpenBladePawnIoPrerequisite).Publisher }) } } }
-    function Invoke-WebRequest { param($Uri, $OutFile) $script:downloads++; [IO.File]::WriteAllText($OutFile, 'fake installer bytes') }
+    function Invoke-WebRequest {
+        param($Uri, $OutFile, [switch]$UseBasicParsing, $TimeoutSec, $Headers)
+        if ($Uri -ne 'https://api.github.com/repos/namazso/PawnIO.Setup/releases/assets/374375077' -or
+            $Headers.Accept -ne 'application/octet-stream' -or $Headers['X-GitHub-Api-Version'] -ne '2022-11-28' -or
+            -not $UseBasicParsing -or $TimeoutSec -ne 60) {
+            throw 'PawnIO acquisition did not request the exact official binary asset with a bounded download.'
+        }
+        $script:downloads++
+        [IO.File]::WriteAllText($OutFile, 'fake installer bytes')
+    }
     $cache = Join-Path $root 'cache'
     [void](Copy-OpenBladePawnIoPrerequisite -DestinationDirectory (Join-Path $root 'download1') -CacheDirectory $cache)
     [void](Copy-OpenBladePawnIoPrerequisite -DestinationDirectory (Join-Path $root 'download2') -CacheDirectory $cache)

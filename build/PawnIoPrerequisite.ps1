@@ -5,7 +5,9 @@ function Get-OpenBladePawnIoPrerequisite {
     return [pscustomobject]@{
         Version = '2.2.0'
         FileName = 'PawnIO_setup.exe'
-        Uri = 'https://github.com/namazso/PawnIO.Setup/releases/download/2.2.0/PawnIO_setup.exe'
+        # The release download route can return 504 before redirecting. This is
+        # the same immutable official 2.2.0 asset, requested as binary content.
+        Uri = 'https://api.github.com/repos/namazso/PawnIO.Setup/releases/assets/374375077'
         Sha256 = '1F519A22E47187F70A1379A48CA604981C4FCF694F4E65B734AAA74A9FBA3032'
         Publisher = 'E=admin@namazso.eu, CN=namazso.eu, O=namazso, L=Debrecen, C=HU'
     }
@@ -44,7 +46,10 @@ function Copy-OpenBladePawnIoPrerequisite {
             [void][IO.Directory]::CreateDirectory($entry)
             $download = Join-Path $entry ([Guid]::NewGuid().ToString('N') + '.download')
             try {
-                Invoke-WebRequest -Uri $pin.Uri -OutFile $download
+                Invoke-WebRequest -Uri $pin.Uri -OutFile $download -UseBasicParsing -TimeoutSec 60 -Headers @{
+                    Accept = 'application/octet-stream'
+                    'X-GitHub-Api-Version' = '2022-11-28'
+                }
                 Assert-OpenBladePawnIoPrerequisite $download
                 if ([IO.File]::Exists($cached)) { [IO.File]::Replace($download, $cached, [NullString]::Value) }
                 else { [IO.File]::Move($download, $cached) }
