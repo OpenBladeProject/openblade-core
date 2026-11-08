@@ -7,6 +7,12 @@ This review expands the package and embedded-image investigation; it does not
 admit a firmware command, select an EC version, or change runtime support.
 Physical validation is a separate status and was not attempted.
 
+The subsequent [BIOS host-interface trace](fan-stop-missing-model-host-interfaces.md)
+resolves EC-init and fan-looking AML labels to partial transports or placeholders.
+The [PI490 MCU trace](fan-stop-pi490-mcu-bridge-review.md) establishes its own
+ordinary fan/mode bridge and unsupported named duty command. Neither follow-up
+identifies the missing complete EC Stop/Auto contract.
+
 All vendor executables, libraries, drivers and scripts were treated as inert
 data. No updater, vendor assembly, driver, ACPI method or hardware interface was
 executed. Only offline archive and firmware parsers ran. Downloads and analysis

@@ -6,12 +6,20 @@ Within the modeled event/ownership assumptions, it detects erasure of the mapped
 phase without retrying: D0's first zero is an internal milestone, and its value
 stays provisional until the mapped phase completes.
 
-The readback issue remains unresolved for runtime admission. Exact IT8320
+The readback issue remains unresolved for runtime admission. Applicable ITE
 hardware-trigger semantics and completeness of the asynchronous status-writer
 analysis are unverified. The ordering models do not establish those premises,
 exclude foreign port clients, or prove real port-boundary behavior. Three-channel
 ownership, restoration, typed implementation and software failure tests are also
 missing. No hardware, updater, driver or installation was executed for this review.
+
+The [trigger/writer follow-up](fan-stop-it8320-trigger-investigation.md) expands
+the scheduling model and store inventory. It distinguishes fresh-status data
+validity from a lost later Auto publication, and corrects the premise that an
+`ITE8320EC` image header alone identifies exact silicon. The [alternate BRAM3
+reader review](fan-stop-bram3-readback-review.md) resolves all four programmed
+302/303 bases but identifies conditional descriptor sharing. Both remain
+research candidates, with their specific ownership obligations open.
 
 ## Exact inputs and reproducibility
 
@@ -180,15 +188,16 @@ If the A0 publication was erased, its pending zero callback may remain; the
 failed compound operation fences all later commands, so there is no permitted
 later write for that callback to erase.
 
-All four images identify themselves as `ITE8320EC` at file offset `90`.
+All four images carry the firmware-family string `ITE8320EC` at file offset
+`90`; this alone does not identify the installed silicon or revision.
 The public [Chromium EC ITE register header at commit 82d2822](https://chromium.googlesource.com/chromiumos/platform/ec/+/82d2822/chip/it83xx/registers.h)
 independently defines general-control base `F02000`, BRAM base `F02200` and
 I2BRAM interrupt 71, but omits general-control offsets `19/1B`. It therefore
 does not close the hardware-trigger assumption. The downloaded local header's
 SHA-256 is `e8251895319613e672f12d010aa5d8dea287d0ceee53f6d7a438348708029ec6`.
-No exact-chip public definition of those two registers was located in the
-bounded primary-source search. A returned IT82302 datasheet was not used to
-infer IT8320 behavior.
+No independently applicable definition of those two registers was located in
+the bounded primary-source search. A returned IT82302 datasheet was not used to
+infer their meaning without a chip-family/revision binding.
 
 The extraction inventories every literal status-offset store and its recovered
 function ancestry. All recovered literal-offset `F02294` writers are in `203C` or synchronous
@@ -262,14 +271,17 @@ command publication `0059..006F`, poll `0074..008A`, result `008C..009D`.
 The class initializer assigns **302/303**, not 300/301. Exact KI8100 extracted
 components did not contain that method name. These definitions establish a
 concrete alternate source lead; they do not establish active vendor use of
-this method or independently settle all four models' host-port mapping.
+this method. The [subsequent exact-image review](fan-stop-bram3-readback-review.md)
+now establishes programmed 302/303 bases on all four images, including KI8100.
+It also identifies descriptor sharing with ordinary callbacks; the original
+single-clear observation does not establish complete transaction ownership.
 It remains a separately reviewed alternative, not an automatic fallback after
 a failed compound D0 read. Neither generic legacy write command 91 nor its
 storage/update families are part of the proposed reader.
 
 ## Implementation admission still required
 
-- First establish the exact IT8320 `F02019`/`F0201B` event semantics and close
+- First establish applicable ITE `F02019`/`F0201B` event semantics and close
   the asynchronous-writer evidence gap, or use a separately established read
   route. The finite models alone cannot satisfy either requirement.
 - Expose only the exact-model fixed third-duty read. Keep raw addresses, D1
