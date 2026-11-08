@@ -50,10 +50,10 @@ try {
     [IO.File]::WriteAllBytes($fixture, $image)
     Assert-NativeThrows { Get-OpenBladeNativePeInfo $fixture } '*unreviewed runtime dependency*'
     [Text.Encoding]::ASCII.GetBytes("KERNEL32.dll`0").CopyTo($image, 576)
-    Set-FixtureInteger $image 360 0x1000
+    Set-FixtureInteger $image 368 0x1000
     [IO.File]::WriteAllBytes($fixture, $image)
     Assert-NativeThrows { Get-OpenBladeNativePeInfo $fixture } '*delay imports*'
-    Set-FixtureInteger $image 360 0
+    Set-FixtureInteger $image 368 0
     Set-FixtureInteger $image 524 ([uint32]::MaxValue)
     [IO.File]::WriteAllBytes($fixture, $image)
     Assert-NativeThrows { Get-OpenBladeNativePeInfo $fixture } '*Invalid native PE RVA*'

@@ -83,7 +83,7 @@ function Get-OpenBladeNativePeInfo {
     }
     if (-not $terminated -or $imports.Count -eq 0) { throw 'Invalid native import termination.' }
     # Delay-load dependencies are not part of the reviewed standalone contract.
-    if ([BitConverter]::ToUInt32($bytes, $optional + 208) -ne 0) { throw 'Native delay imports are not admitted.' }
+    if ([BitConverter]::ToUInt32($bytes, $optional + 216) -ne 0) { throw 'Native delay imports are not admitted.' }
     return [pscustomobject]@{ Machine = 'x64'; Imports = @($imports | Sort-Object -Unique) }
 }
 
