@@ -39,8 +39,8 @@ public static class ProductNativeRuntime
                 : OperatingSystem.IsMacOS() ? "libopenblade_ffi.dylib" : "libopenblade_ffi.so";
             string? target = CurrentTarget();
             if (target is null) { throw new NativeComponentException(100); }
-            string expectedVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!
-                .InformationalVersion.Split('+')[0];
+            string expectedVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                .InformationalVersion.Split('+')[0] ?? throw new NativeComponentException(107);
             string hash = manifest.GetProperty("sha256").GetString() ?? "";
             if (manifest.GetProperty("schemaVersion").GetInt32() != 1
                 || manifest.GetProperty("abiVersion").GetString() != "0x00010000"

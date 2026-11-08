@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
@@ -7,7 +8,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.NativeFailureProbe;
 
-// Each scenario runs in a fresh process. Disposing the real product codec is an
+// Each scenario runs in a fresh process. Disposing a real product helper is an
 // existing lifetime-failure seam, not a product fallback or test-selected DLL.
 // All HID handles and I/O are inert test doubles, as in the Protocol unit tests.
 internal static class Program
@@ -16,12 +17,75 @@ internal static class Program
 
     private static async Task Main(string[] args)
     {
-        if (args is not [var scenario] || scenario is not ("batch-encode" or "query-validate"))
+        if (args is not [var scenario] || scenario is not ("batch-encode" or "query-validate" or "policy-failure"))
         {
-            throw new ArgumentException("Choose batch-encode or query-validate.");
+            throw new ArgumentException("Choose batch-encode, query-validate or policy-failure.");
         }
         ProductNativeRuntime.EnsureAvailable();
+        if (scenario == "policy-failure")
+        {
+            RunPolicyFailure();
+            return;
+        }
         await RunAsync(scenario);
+    }
+
+    private static void RunPolicyFailure()
+    {
+        // Reflection reaches only the pure internal helper. Service.Program,
+        // dependency injection and hardware/session ownership are never started.
+        Type resolution = typeof(OpenBlade.Service.ProfileAutomationState).Assembly
+            .GetType("OpenBlade.Service.ApplicationProfileResolution", throwOnError: true)!;
+        MethodInfo method = resolution.GetMethod("Apply", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var apply = method.CreateDelegate<Func<PowerProfile, ApplicationPowerProfileOverride?, PowerProfile>>();
+        PowerProfile baseline = ProfileDefaults.CreateSafeDefaults().PluggedIn;
+        ProductNativeRuntime.Policy.Dispose();
+
+        Require(ReferenceEquals(baseline, apply(baseline, null)),
+            "Null override must retain the baseline without touching native policy.");
+        var invalidLegacy = new ApplicationPowerProfileOverride { Fans = (FanMode)999 };
+        ArgumentOutOfRangeException expected = Expect<ArgumentOutOfRangeException>(
+            () => FanControlSettings.FromLegacy((FanMode)999));
+        ArgumentOutOfRangeException legacy = Expect<ArgumentOutOfRangeException>(
+            () => apply(baseline, invalidLegacy));
+        Require(legacy.ParamName == "mode" && legacy.ParamName == expected.ParamName
+            && Equals(legacy.ActualValue, expected.ActualValue) && legacy.Message == expected.Message,
+            "Invalid legacy fan mode lost its original host exception before native admission.");
+
+        PowerProfile? published = null;
+        NativeComponentException failure = Expect<NativeComponentException>(
+            () => published = apply(baseline, new()));
+        Require(published is null, "A failed native policy operation published a profile.");
+        Require(failure.Category == (int)NativeBoundaryErrorKind.Disposed,
+            "Native policy lifetime failure lost its typed category.");
+        Require(failure.InnerException is null
+            && !failure.Message.Contains((char)92) && !failure.Message.Contains('/')
+            && !failure.Message.Contains(AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase),
+            "Native policy failure exposed a filesystem path.");
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            scenario = "policy-failure",
+            passed = true,
+            nullOverridePreserved = true,
+            legacyException = legacy.GetType().Name,
+            legacy.ParamName,
+            failure = failure.GetType().Name,
+            failure.Category,
+            profilePublished = published is not null,
+        }));
+    }
+
+    private static T Expect<T>(Action operation) where T : Exception
+    {
+        try
+        {
+            operation();
+        }
+        catch (T exception)
+        {
+            return exception;
+        }
+        throw new InvalidOperationException($"Expected {typeof(T).Name}.");
     }
 
     private static async Task RunAsync(string scenario)

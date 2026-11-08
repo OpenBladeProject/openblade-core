@@ -1,5 +1,5 @@
-using OpenBlade.FirmwareSmoke;
 using OpenBlade.Core.Native;
+using OpenBlade.FirmwareSmoke;
 
 try { ProductNativeRuntime.EnsureAvailable(); }
 catch (NativeComponentException exception)

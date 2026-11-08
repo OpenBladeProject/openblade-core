@@ -199,9 +199,16 @@ SHA-256. The loader uses the application base directory, verifies the file befor
 loading, and retains its file lease and modules through process exit so shutdown
 cleanup can still encode handback commands. Failures have bounded numeric,
 path-free diagnostics and require repair/rebuild. No legacy product fallback or
-command replay is provided.
+command replay is provided. Unrecoverable policy failures propagate through service
+background supervision, receive a fixed critical diagnostic/nonzero exit status,
+and retain bounded shutdown cleanup.
 
 The managed report and profile implementations frozen at predecessor
 `69f66ba673c0523c0521b09b286a7d09f8137488` live only in tests. Canonical fixture
 expectations and provenance remain unchanged. These independent oracles continue
 to check the activated path; they do not constitute physical validation.
+
+On Windows, `rust/Test-ProductionActivation.ps1` runs three isolated offline
+processes against the real admitted component. They verify a codec failure after
+a mocked SET in the batch and response paths, and policy failure with preserved
+null/legacy validation branches. All HID handles and I/O are inert test doubles.

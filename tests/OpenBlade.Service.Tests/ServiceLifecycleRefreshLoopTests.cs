@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -342,6 +343,30 @@ public sealed class ServiceLifecycleRefreshLoopTests
         Assert.Equal(1, runtime.MaximumConcurrentRefreshes);
     }
 
+    [Fact]
+    public async Task NativeFailure_PropagatesWithoutProcessingTheNextNotification()
+    {
+        var expected = new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
+        var source = new FakeLifecycleEventSource();
+        var runtime = new RecordingRuntime(failFirstRefresh: false) { FirstRefreshFailure = expected };
+        var loop = new ServiceLifecycleRefreshLoop(
+            runtime,
+            source,
+            new LowPowerGate(),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        source.Publish(ServiceLifecycleTrigger.PowerChanged);
+        source.Publish(ServiceLifecycleTrigger.DeviceArrived);
+
+        NativeComponentException actual = await Assert.ThrowsAsync<NativeComponentException>(() =>
+            loop.RunAsync(cancellation.Token));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(1, runtime.PowerSourceChangeCount);
+        Assert.Equal(0, runtime.ObserveCount);
+        Assert.Equal(0, runtime.LightingRestoreCount);
+    }
+
     private sealed class FakeLifecycleEventSource : IServiceLifecycleEventSource
     {
         private readonly Channel<ServiceLifecycleTrigger> notifications =
@@ -381,6 +406,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
 
     private sealed class RecordingRuntime(bool failFirstRefresh) : IServiceControlRuntime
     {
+        public Exception? FirstRefreshFailure { get; init; }
         private int concurrentRefreshes;
         private int controllerPresenceRefreshCount;
         private int observeCount;
@@ -528,6 +554,10 @@ public sealed class ServiceLifecycleRefreshLoopTests
             try
             {
                 await Task.Yield();
+                if (current == 1 && FirstRefreshFailure is not null)
+                {
+                    throw FirstRefreshFailure;
+                }
                 if (current == 1 && failFirstRefresh)
                 {
                     throw new IOException("transient refresh failure");

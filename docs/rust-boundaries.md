@@ -400,7 +400,10 @@ Startup uses a fixed application-base path and a manifest embedded in the manage
 native assembly. Admission checks product identity, architecture, ABI and the
 exact native hash before loading. The process retains the file lease and loaded
 modules through shutdown cleanup. Missing, incompatible and altered components
-produce bounded redacted failures. Release signing precedes the managed hash
+produce bounded redacted failures. Unrecoverable background policy errors receive
+a fixed critical diagnostic and nonzero process status before bounded shutdown
+cleanup; observation/lifecycle loops do not retry those errors. Release signing
+precedes the managed hash
 binding; ordinary developer builds create their own manifest from current inputs.
 
 Protocol is shared by Service, Capture and FirmwareSmoke; the native reference

@@ -1,5 +1,5 @@
-using OpenBlade.Core.Native;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 
 namespace OpenBlade.Protocol;
 

@@ -15,18 +15,15 @@ internal static class ApplicationProfileResolution
             return baseline;
         }
 
+        // This is the original host constructor validation, not whole-profile
+        // normalization. Preserve its error before entering the native boundary.
+        if (value.FanControl is null && value.Fans is FanMode mode && !Enum.IsDefined(mode))
+        {
+            _ = FanControlSettings.FromLegacy(mode);
+        }
         NativeProfileResult result = ProductNativeRuntime.Policy.Apply(baseline, value);
         if (result.Error is not null)
         {
-            // Preserve the legacy constructor's exception and parameter name only
-            // for its original synthesis branch; inherited raw enums stay opaque.
-            if (result.Error.Kind == NativeBoundaryErrorKind.InvalidArgument
-                && result.Error.Detail == 3
-                && value.FanControl is null && value.Fans is FanMode mode
-                && !Enum.IsDefined(mode))
-            {
-                _ = FanControlSettings.FromLegacy(mode);
-            }
             throw new NativeComponentException(result.Error);
         }
         return result.Profile ?? throw new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
