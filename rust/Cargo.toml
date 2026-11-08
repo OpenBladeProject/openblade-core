@@ -1,0 +1,23 @@
+[workspace]
+members = [
+    "crates/openblade-types",
+    "crates/openblade-protocol",
+    "crates/openblade-domain",
+    "crates/openblade-ffi",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "GPL-3.0-or-later"
+publish = false
+
+[workspace.dependencies]
+openblade-types = { path = "crates/openblade-types" }
+openblade-protocol = { path = "crates/openblade-protocol" }
+openblade-domain = { path = "crates/openblade-domain" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

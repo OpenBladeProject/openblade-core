@@ -68,3 +68,6 @@ end_of_line = lf
 # Shared visual-test launcher is also compiled by Windows PowerShell (C# 5).
 [tests/OpenBlade.Testing/WindowsVisualTestDesktop.cs]
 dotnet_diagnostic.IDE0161.severity = none
+
+[rust/**]
+end_of_line = lf

@@ -14,3 +14,6 @@ tests/Fixtures/Parity/**/*.json text eol=lf
 # Legacy sanitized evidence is hash-bound. Preserve the imported Git blob bytes.
 evidence/legacy-captures/**/*.json text eol=lf
 src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.*.svg text eol=lf
+
+# Rust tooling uses LF on every platform.
+rust/** text eol=lf
