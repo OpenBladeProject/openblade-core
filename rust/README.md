@@ -17,6 +17,7 @@ cargo test --locked --workspace --all-targets
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 pwsh -NoProfile -File ./Check-Workspace.ps1
+pwsh -NoProfile -File ./Test-WorkspaceCheck.ps1
 ```
 
 `rust-toolchain.toml` selects Rust **1.99.1**, rustfmt and clippy. This stable
@@ -29,8 +30,10 @@ of the Windows product version. Licensing follows the repository's
 `GPL-3.0-or-later` policy. Commit `Cargo.lock`; there are no registry dependencies.
 
 The [reviewed boundaries](../docs/rust-boundaries.md) define the inward graph:
-protocol and domain depend on types; FFI depends on all three. The metadata
-check rejects extra packages, changed dependency edges and non-library targets.
+protocol and domain depend on types; FFI depends on all three. The workspace
+check rejects extra packages, changed dependency edges, non-library targets,
+MSRV drift and removal of the unsafe/no_std policies. It resolves its directory
+independently of the caller. Guard regression tests use disposable workspace copies.
 The three inner crates use `no_std`, and all crates inherit a compiler-enforced
 unsafe-code prohibition. Platform APIs and hardware access remain host work.
 

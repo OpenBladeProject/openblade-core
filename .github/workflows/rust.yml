@@ -63,10 +63,8 @@ jobs:
       - name: Install pinned toolchain
         run: |
           $ErrorActionPreference = 'Stop'
-          $pin = Select-String -Path rust-toolchain.toml -Pattern '^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$'
-          if (@($pin).Count -ne 1) { throw 'Expected one exact stable toolchain pin.' }
-          $toolchain = $pin.Matches[0].Groups[1].Value
-          rustup toolchain install $toolchain --profile minimal --component rustfmt --component clippy
+          # Rustup reads the toolchain, profile and components from the TOML file.
+          rustup toolchain install --no-self-update
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $version = rustc -vV
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -79,6 +77,9 @@ jobs:
 
       - name: Check workspace boundaries
         run: ./Check-Workspace.ps1
+
+      - name: Test workspace guard
+        run: ./Test-WorkspaceCheck.ps1
 
       - name: Check formatting
         run: cargo fmt --all --check
