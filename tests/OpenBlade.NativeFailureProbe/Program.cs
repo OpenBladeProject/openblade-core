@@ -5,6 +5,7 @@ using Microsoft.Win32.SafeHandles;
 using OpenBlade.Contracts;
 using OpenBlade.Core.Native;
 using OpenBlade.Protocol;
+using OpenBlade.Service;
 
 namespace OpenBlade.NativeFailureProbe;
 
