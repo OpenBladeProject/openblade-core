@@ -295,3 +295,8 @@ mod tests;
 pub mod policy;
 #[cfg(test)]
 mod policy_tests;
+
+pub mod automation;
+
+#[cfg(test)]
+mod automation_tests;

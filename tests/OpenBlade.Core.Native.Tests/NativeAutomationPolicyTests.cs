@@ -1,0 +1,225 @@
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using OpenBlade.Contracts;
+using OpenBlade.Testing;
+
+namespace OpenBlade.Core.Native.Tests;
+
+public sealed class NativeAutomationPolicyTests
+{
+    private static NativeAutomationPolicy Load()
+    {
+        string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_LIBRARY")
+            ?? throw new InvalidOperationException("Actual native artifact is required.");
+        NativeAutomationLoadResult loaded = NativeAutomationPolicy.Load(path);
+        Assert.True(loaded.IsSuccess, loaded.Error?.ToString());
+        return loaded.Policy!;
+    }
+
+    [Fact]
+    public void CanonicalTokensMatchFixturesAndIndependentFrozenManagedDecisions()
+    {
+        using NativeAutomationPolicy policy = Load();
+        foreach (AutomationCase row in AutomationParityFixture.Read())
+        {
+            NativeAutomationResult actual = row.Operation == 0
+                ? policy.SelectPerformance(row.Temporary, row.Persistent, row.Application)
+                : policy.SelectLighting(row.Profile, row.Confirmed, row.Temporary,
+                    row.Persistent, row.ExternalUnknown, row.Application);
+            Assert.True(actual.IsSuccess, actual.Error?.ToString());
+            Assert.Equal(row.Origin, (uint)actual.Selection!.Value.Origin);
+            Assert.Equal(row.Provenance, (uint)actual.Selection.Value.Source);
+            VerifyFrozenBaseline(policy, row);
+        }
+    }
+
+    [Fact]
+    public void AllPresenceCombinationsPreserveOriginalValuesAndNullOverrideContents()
+    {
+        using NativeAutomationPolicy policy = Load();
+        for (int flags = 0; flags < 64; flags++)
+        {
+            var row = new AutomationCase
+            {
+                Id = "exhaustive",
+                Operation = 1,
+                Profile = (flags & 1) != 0,
+                Confirmed = (flags & 2) != 0,
+                Temporary = (flags & 4) != 0,
+                Persistent = (flags & 8) != 0,
+                ExternalUnknown = (flags & 16) != 0,
+                Application = (flags & 32) != 0,
+                Origin = 0,
+                Provenance = 0,
+            };
+            VerifyFrozenBaseline(policy, row);
+            VerifyFrozenBaseline(policy, row, nullOverrideContents: true);
+            VerifyFrozenBaseline(policy, row with { Operation = 0 });
+        }
+    }
+
+    private static void VerifyFrozenBaseline(NativeAutomationPolicy policy, AutomationCase row,
+        bool nullOverrideContents = false)
+    {
+        SettingValueSource profileSource = row.Application
+            ? SettingValueSource.ApplicationProfile : SettingValueSource.PowerProfile;
+        if (row.Operation == 0)
+        {
+            // Zero and unsupported scalar values are data, not ABI enums.
+            var temporary = row.Temporary ? new PerformanceOverride((PerformancePreset)999,
+                OverrideLifetime.UntilPowerSourceChange) : null;
+            var persistent = row.Persistent ? new PerformanceOverride((PerformancePreset)(-1),
+                OverrideLifetime.Persistent) : null;
+            ResolvedSetting<PerformancePreset> expected = ManagedAutomationPolicyBaseline.ResolvePerformance(
+                (PerformancePreset)0, temporary, persistent, profileSource);
+            NativeAutomationSelection token = policy.SelectPerformance(
+                temporary is not null, persistent is not null, row.Application).Selection!.Value;
+            PerformancePreset value = token.Origin switch
+            {
+                AutomationValueOrigin.Profile => (PerformancePreset)0,
+                AutomationValueOrigin.Temporary => temporary!.Value,
+                AutomationValueOrigin.Persistent => persistent!.Value,
+                _ => throw new InvalidOperationException("Invalid performance token."),
+            };
+            Assert.Equal(expected, new(value, token.Source));
+            return;
+        }
+
+        LightingSettings basis = LightingSettingsFactory.Static(new(17, 0, 255), 0);
+        // Equal records with distinct identities must remain the selected original object.
+        LightingSettings? profileLighting = row.Profile ? basis with { } : null;
+        LightingSettings? observed = row.Confirmed ? basis with { } : null;
+        var temporaryLighting = row.Temporary ? new ManualOverride<LightingSettings>(
+            nullOverrideContents ? null! : basis with { }, OverrideLifetime.UntilPowerSourceChange) : null;
+        var persistentLighting = row.Persistent ? new ManualOverride<LightingSettings>(
+            nullOverrideContents ? null! : basis with { }, OverrideLifetime.Persistent) : null;
+        PowerProfile profile = ProfileDefaults.CreateSafeDefaults().PluggedIn with { Lighting = profileLighting! };
+        var confirmed = new ConfirmedDeviceState(null, null, null, observed);
+        ResolvedSetting<LightingSettings> baseline = ManagedAutomationPolicyBaseline.ResolveLighting(
+            profile, confirmed, row.Application,
+            row.ExternalUnknown ? PowerSource.ExternalUnknown : PowerSource.PluggedIn,
+            temporaryLighting, persistentLighting);
+        NativeAutomationSelection selection = policy.SelectLighting(profileLighting is not null,
+            observed is not null, temporaryLighting is not null, persistentLighting is not null,
+            row.ExternalUnknown, row.Application).Selection!.Value;
+        LightingSettings? selected = selection.Origin switch
+        {
+            AutomationValueOrigin.Profile => profileLighting,
+            AutomationValueOrigin.Confirmed => observed ?? profileLighting,
+            AutomationValueOrigin.Temporary => temporaryLighting!.Value,
+            AutomationValueOrigin.Persistent => persistentLighting!.Value,
+            _ => throw new InvalidOperationException("Invalid lighting token."),
+        };
+        Assert.Equal(baseline.Source, selection.Source);
+        Assert.Same(baseline.Value, selected);
+    }
+
+    [Fact]
+    public unsafe void LayoutsAndRawFailurePublicationAreBounded()
+    {
+        Assert.True(NativeAutomationPolicy.LayoutsMatch());
+        Assert.Equal(16, Marshal.SizeOf<NativeAutomationRequest>());
+        Assert.Equal(12, Marshal.SizeOf<NativeAutomationRecord>());
+        using NativeAutomationPolicy policy = Load();
+        NativeAutomationRequest request = new() { StructSize = 16, Operation = 1, HasProfile = 1 };
+        NativeAutomationRecord result = new() { StructSize = 12, Origin = 99, Provenance = 98 };
+        NativeErrorRecord error = NativeErrorRecord.Create();
+        uint written = 999;
+        uint status = policy.RawSelect(2, null, &result, &written, &error);
+        Assert.Equal(1u, status);
+        Assert.Equal(0u, written);
+        Assert.Equal(99u, result.Origin);
+        request.Reserved1 = 1;
+        status = policy.RawSelect(NativeAutomationPolicy.AutomationAbiVersion,
+            &request, &result, &written, &error);
+        Assert.Equal(2u, status);
+        Assert.Equal(3u, error.Detail);
+        Assert.Equal(99u, result.Origin);
+        request.Reserved1 = 0;
+        request.HasTemporary = 2;
+        Assert.Equal(2u, policy.RawSelect(NativeAutomationPolicy.AutomationAbiVersion,
+            &request, &result, &written, &error));
+        Assert.Equal(99u, result.Origin);
+        request.HasTemporary = 0;
+        Assert.Equal(0u, policy.RawSelect(NativeAutomationPolicy.AutomationAbiVersion,
+            &request, &result, &written, &error));
+        Assert.Equal(0u, written);
+        Assert.Equal(0u, result.Origin);
+        Assert.Equal(1u, result.Provenance);
+    }
+
+    [Fact]
+    public void IndependentLoaderNeedsNoCodecOrProfileExports()
+    {
+        string path = Environment.GetEnvironmentVariable("OPENBLADE_AUTOMATION_ONLY_LIBRARY")
+            ?? throw new InvalidOperationException("Automation-only fixture is required.");
+        NativeAutomationLoadResult result = NativeAutomationPolicy.Load(path);
+        Assert.True(result.IsSuccess, result.Error?.ToString());
+        result.Policy!.Dispose();
+        Assert.Equal(NativeBoundaryErrorKind.MissingExport, NativeProfilePolicy.Load(path).Error!.Kind);
+        Assert.Equal(NativeBoundaryErrorKind.MissingExport, NativeReportCodec.Load(path).Error!.Kind);
+        string policyPath = Environment.GetEnvironmentVariable("OPENBLADE_POLICY_ONLY_LIBRARY")!;
+        Assert.Equal(NativeBoundaryErrorKind.MissingExport, NativeAutomationPolicy.Load(policyPath).Error!.Kind);
+    }
+
+    [Fact]
+    public async Task ConcurrentCallsAndDisposalRetainSafeModuleLifetime()
+    {
+        NativeAutomationPolicy policy = Load();
+        using (NativeAutomationPolicy independent = Load())
+        {
+            Assert.True(independent.SelectPerformance(true, true, true).IsSuccess);
+        }
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() =>
+        {
+            for (int i = 0; i < 20; i++)
+            {
+                NativeAutomationResult result = policy.SelectPerformance(true, true, true);
+                Assert.True(result.IsSuccess, result.Error?.ToString());
+                Assert.Equal(new NativeAutomationSelection(AutomationValueOrigin.Persistent,
+                    SettingValueSource.PersistentOverride), result.Selection);
+            }
+        })));
+        Task[] calls = Enumerable.Range(0, 8).Select(_ => Task.Run(() =>
+        {
+            for (int i = 0; i < 100; i++)
+            {
+                NativeAutomationResult result = policy.SelectLighting(true, true, true, true, true, true);
+                if (result.IsSuccess)
+                {
+                    Assert.Equal(new NativeAutomationSelection(AutomationValueOrigin.Confirmed,
+                        SettingValueSource.ConfirmedFirmwareState), result.Selection);
+                }
+                else
+                {
+                    Assert.Equal(NativeBoundaryErrorKind.Disposed, result.Error!.Kind);
+                }
+            }
+        })).ToArray();
+        policy.Dispose();
+        await Task.WhenAll(calls);
+        Assert.Equal(NativeBoundaryErrorKind.Disposed, policy.SelectPerformance(false, false, false).Error!.Kind);
+        policy.Dispose();
+    }
+
+    [Fact]
+    public void MalformedFixturesFailClosed()
+    {
+        string json = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Parity", "automation-policy.json"));
+        foreach (string invalid in new[]
+        {
+            json.Replace("\"schemaVersion\": 1", "\"schemaVersion\": 2", StringComparison.Ordinal),
+            json.Replace("automation-selection", "unknown", StringComparison.Ordinal),
+            json.Replace(AutomationParityFixture.Revision, "unknown", StringComparison.Ordinal),
+            json.Replace("\"operation\":0", "\"operation\":9", StringComparison.Ordinal),
+            json.Replace("\"profile\":true", "\"profile\":\"true\"", StringComparison.Ordinal),
+            json.Replace("\"profile\":true", "\"profile\":true,\"profile\":false", StringComparison.Ordinal),
+            json.Replace("\"profile\":true,", "", StringComparison.Ordinal),
+            json.Replace("\"origin\":0", "\"origin\":0,\"extra\":0", StringComparison.Ordinal),
+            json.Replace("performance-application", "performance-power", StringComparison.Ordinal),
+        })
+        {
+            Assert.ThrowsAny<JsonException>(() => AutomationParityFixture.Parse(invalid));
+        }
+    }
+}

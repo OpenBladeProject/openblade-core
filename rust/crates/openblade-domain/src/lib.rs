@@ -129,3 +129,5 @@ pub fn apply_display<'a>(
         brightness_percent: value.brightness_percent.or(baseline.brightness_percent),
     }
 }
+
+pub mod automation;

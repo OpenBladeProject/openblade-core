@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 $previousLibrary = $env:OPENBLADE_NATIVE_LIBRARY
 $previousPolicyLibrary = $env:OPENBLADE_POLICY_ONLY_LIBRARY
+$previousAutomationLibrary = $env:OPENBLADE_AUTOMATION_ONLY_LIBRARY
 Push-Location $PSScriptRoot
 try {
     $version = rustc -vV
@@ -88,6 +89,20 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Policy-only loader fixture build failed.' }
     $env:OPENBLADE_POLICY_ONLY_LIBRARY = [IO.Path]::GetFullPath($fixtureLibrary)
 
+    $automationDirectory = Join-Path $output 'automation-only'
+    New-Item -ItemType Directory -Path $automationDirectory -Force | Out-Null
+    $automationLibrary = Join-Path $automationDirectory (Split-Path -Leaf $library)
+    $automationSource = Join-Path $PSScriptRoot 'tests/automation_only.c'
+    if ($IsWindows) {
+        & cl.exe /nologo /std:c11 /W4 /WX /LD "/I$headerDirectory" $automationSource "/Fo$(Join-Path $automationDirectory 'automation_only.obj')" "/Fe$automationLibrary" /link "/IMPLIB:$(Join-Path $automationDirectory 'automation_only.lib')" /EXPORT:ob_automation_abi_version /EXPORT:ob_v1_select_automation
+    } elseif ($IsMacOS) {
+        & cc -std=c11 -Wall -Wextra -Werror -dynamiclib "-I$headerDirectory" $automationSource -o $automationLibrary
+    } else {
+        & cc -std=c11 -Wall -Wextra -Werror -shared -fPIC "-I$headerDirectory" $automationSource -o $automationLibrary
+    }
+    if ($LASTEXITCODE -ne 0) { throw 'Automation-only loader fixture build failed.' }
+    $env:OPENBLADE_AUTOMATION_ONLY_LIBRARY = [IO.Path]::GetFullPath($automationLibrary)
+
     $env:OPENBLADE_NATIVE_LIBRARY = [IO.Path]::GetFullPath($library)
     dotnet test (Join-Path $repository 'OpenBlade.Native.slnx') --configuration Release
     if ($LASTEXITCODE -ne 0) { throw '.NET/native integration tests failed.' }
@@ -96,5 +111,6 @@ try {
 finally {
     $env:OPENBLADE_NATIVE_LIBRARY = $previousLibrary
     $env:OPENBLADE_POLICY_ONLY_LIBRARY = $previousPolicyLibrary
+    $env:OPENBLADE_AUTOMATION_ONLY_LIBRARY = $previousAutomationLibrary
     Pop-Location
 }
