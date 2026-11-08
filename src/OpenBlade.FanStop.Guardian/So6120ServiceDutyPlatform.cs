@@ -64,6 +64,7 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
     internal PowerSource ObservedPowerSource => observedPowerSource;
     internal bool NativeOperationUnresolved => powerUnresolved;
     internal FanStopEndReason EndReason { get; private set; }
+    internal string? EntryAdmissionRefusal { get; private set; }
 
     internal void BeginOwnedStop() => ownedStopStarted = true;
 
@@ -268,18 +269,44 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
 
     internal bool RefreshEntryAdmission()
     {
+        // Diagnostics belong to this invocation. An early prerequisite failure
+        // must not publish the successful Acquire sample as its own evidence.
+        EntryAdmissionRefusal = null;
+        latestThermalReading = default;
+        latestThermalAge = default;
+        latestThermalCanceled = false;
+        string stage = "EntryVolatile";
         try
         {
-            if (!ReadContinuationAdmission())
+            if (!ReadContinuationAdmission(recordEntryRefusal: true))
             { return false; }
+            stage = "EntrySession";
             So6120SessionMetadata current = So6120WindowsSupervisedMetadata.ReadSessionMetadata();
             // The already-completed typed power read can be reused briefly.
             // Fresh OS session/AC-line checks remain necessary before every A1;
             // changed/unknown AC state invalidates this cached entry scope.
-            if (!PowerObservationFresh() || current.AcLineStatus != 1) { ReadPowerSource(); }
-            return observedPowerSource == PowerSource.UsbC && RefreshTemperature();
+            if (!PowerObservationFresh() || current.AcLineStatus != 1)
+            {
+                stage = "EntryPowerRead";
+                ReadPowerSource();
+            }
+            if (observedPowerSource != PowerSource.UsbC)
+            { return RefuseEntry($"stage=EntryPower; observedPower={observedPowerSource}; acLine={current.AcLineStatus}; thermalSample=not-attempted"); }
+            stage = "EntryThermal";
+            if (RefreshTemperature()) { return true; }
+            return RefuseEntry($"stage=EntryThermal; {So6120ServiceInitialAdmissionDiagnostics.ThermalRefusal(settings, latestThermalReading, latestThermalAge, latestThermalCanceled)}");
         }
-        catch { thermalSafe = false; return false; }
+        catch (Exception error)
+        {
+            thermalSafe = false;
+            return RefuseEntry($"stage={stage}; outcome={error.GetType().Name}; hresult=0x{error.HResult:X8}; thermalSample={(stage == "EntryThermal" ? "unavailable" : "not-attempted")}");
+        }
+    }
+
+    private bool RefuseEntry(string detail)
+    {
+        EntryAdmissionRefusal = detail[..Math.Min(detail.Length, 640)];
+        return false;
     }
 
     internal bool CachedEntryAdmission()
@@ -307,18 +334,25 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
         return false;
     }
 
-    private bool ReadContinuationAdmission()
+    private bool ReadContinuationAdmission(bool recordEntryRefusal = false)
     {
         var current = So6120WindowsSupervisedMetadata.CaptureServiceVolatile(clock);
         bool sessionAdmitted = ActiveSession(current.Session) && !current.Session.Interactive && current.Session.ProcessSession == 0;
         if (ownedStopStarted && !sessionAdmitted) { EndReason = FanStopEndReason.SessionChanged; }
-        return current.StartedTimestamp <= current.CompletedTimestamp
-            && clock.GetElapsedTime(current.StartedTimestamp) <= So6120ServiceContinuationMonitor.MaximumSampleAge
+        TimeSpan? metadataAge = null;
+        bool? originalServiceMatched = null;
+        bool admitted = current.StartedTimestamp <= current.CompletedTimestamp
+            && (metadataAge = clock.GetElapsedTime(current.StartedTimestamp)).Value <= So6120ServiceContinuationMonitor.MaximumSampleAge
             && sessionAdmitted
             && current.Session.AcLineStatus is 0 or 1 && current.DetectedControllers.Count == 0
             && current.OpenBladeStatus == ServiceControllerStatus.Running
             && current.OpenBladeWriterPids.Count == 1 && current.OpenBladeWriterPids[0] == servicePid
-            && OriginalServiceStillRunning();
+            && (originalServiceMatched = OriginalServiceStillRunning()).Value;
+        if (!admitted && recordEntryRefusal)
+        {
+            RefuseEntry(FormattableString.Invariant($"stage=EntryVolatile; chronological={current.StartedTimestamp <= current.CompletedTimestamp}; metadataAgeMs={metadataAge?.TotalMilliseconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "not-observed"}; sessionAdmitted={sessionAdmitted}; acLine={current.Session.AcLineStatus}; controllerCount={current.DetectedControllers.Count}; serviceStatus={current.OpenBladeStatus}; writerCount={current.OpenBladeWriterPids.Count}; originalWriterPresent={current.OpenBladeWriterPids.Contains(servicePid)}; serviceIdentity={originalServiceMatched?.ToString() ?? "not-checked"}; thermalSample=not-attempted"));
+        }
+        return admitted;
     }
 
     private bool OriginalServiceStillRunning()
@@ -355,7 +389,7 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
         }
         // Full entry remains strict before every zero command. Once owned,
         // command freshness checks may observe Custom heat without bypassing or
-        // resetting the independent continuation timers. Auto cleanup does not
+        // resetting the independent continuation windows. Auto cleanup does not
         // call these Stop-entry hooks.
         thermalSafe = ownedStopStarted
             ? thermalPolicy.AdmitsCommand(reading.CpuCelsius, reading.GpuCelsius, reading.GpuInactive,

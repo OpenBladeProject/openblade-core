@@ -224,7 +224,10 @@ internal static class Program
             So6120DutyResult entry = session.EnterStopped(stop);
             stopped = entry.Success && entry.DirectEntryConfirmed;
             if (entry.CommandsFenced || entry.CleanupCheckpoint is null)
-            { throw new InvalidDataException($"Stop entry did not establish an owned cleanup checkpoint ({entry.Failure})."); }
+            {
+                string detail = acquisition.EntryAdmissionRefusal is { } refusal ? $" {refusal}" : "";
+                throw new InvalidDataException($"Stop entry did not establish an owned cleanup checkpoint ({entry.Failure}).{detail}");
+            }
             if (stopped)
             {
                 acquisition.BeginOwnedStop();
