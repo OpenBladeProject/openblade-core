@@ -46,7 +46,19 @@ internal static class WindowsSetupPlatformTestFactory
                 DotNetRuntimeAdmission: dotNetRuntimeAdmission ?? AcceptingDotNetRuntimeAdmission.Instance,
                 SetupExecutablePath: setupExecutablePath,
                 CurrentUserSid: currentUserSid,
-                GuardianQuiescenceGuard: guardianQuiescenceGuard));
+                // Unit fixtures must not consult installed guardian records or
+                // enumerate real helpers. Guardian behavior tests inject their
+                // own guard with controlled paths and process observations.
+                GuardianQuiescenceGuard: guardianQuiescenceGuard ?? AcceptingGuardianQuiescenceGuard.Instance));
+
+    private sealed class AcceptingGuardianQuiescenceGuard : ISetupGuardianQuiescenceGuard
+    {
+        internal static AcceptingGuardianQuiescenceGuard Instance { get; } = new();
+
+        public void EnsureClear()
+        {
+        }
+    }
 
     private sealed class AcceptingDotNetRuntimeAdmission : IDotNetRuntimeAdmission
     {

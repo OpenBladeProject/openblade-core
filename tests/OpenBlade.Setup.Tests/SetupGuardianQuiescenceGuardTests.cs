@@ -93,7 +93,8 @@ public sealed class SetupGuardianQuiescenceGuardTests
             string pending = Path.Combine(paths.MachineDataDirectory, "FanStopGuardian", "pending.json");
             File.WriteAllText(payload, "fake payload");
             File.WriteAllText(pending, "unresolved");
-            var platform = WindowsSetupPlatformTestFactory.Create(paths: paths);
+            var platform = WindowsSetupPlatformTestFactory.Create(paths: paths,
+                guardianQuiescenceGuard: new SetupGuardianQuiescenceGuard(paths, new Processes([]), File.GetAttributes));
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => platform.RemoveBinariesAsync(CancellationToken.None));
             await Assert.ThrowsAsync<InvalidOperationException>(() => platform.RemoveDataAsync(CancellationToken.None));
