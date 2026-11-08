@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add Stop/Auto for Blade 14 RZ09-0427/0530, Blade 15 RZ09-0330/0421 and Blade 16 RZ09-0483/0510/0528 on reviewed EC versions, including the Lamborghini variant. ([#901](https://github.com/OSSBlade/openblade-core/pull/901))
+
 ## [0.57.1-nightly.109] - 2026-11-08
 
 ### Added
