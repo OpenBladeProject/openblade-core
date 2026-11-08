@@ -29,6 +29,9 @@
 
   <ItemGroup>
     <Compile Include="..\OpenBlade.Testing\AsyncTest.cs" Link="AsyncTest.cs" />
+    <Compile Include="..\OpenBlade.Testing\ParityFixture.cs" Link="ParityFixture.cs" />
+    <None Include="..\Fixtures\Parity\v1\razer-report.json"
+          Link="Parity\razer-report.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\OpenBlade.Testing\PublicApiSurface.cs" Link="PublicApiSurface.cs" />
     <None Include="PublicApiBaseline.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\Blade18ObserverRequests.json" CopyToOutputDirectory="PreserveNewest" />
@@ -80,4 +83,11 @@
     <ProjectReference Include="..\..\src\OpenBlade.Protocol\OpenBlade.Protocol.csproj" />
   </ItemGroup>
 
+  <!-- Native shadow comparison is an explicit developer-only PURE entrypoint. -->
+  <ItemGroup Condition="'$(OpenBladeNativeShadow)' != 'true'">
+    <Compile Remove="NativeShadowComparisonTests.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(OpenBladeNativeShadow)' == 'true'">
+    <ProjectReference Include="..\..\src\OpenBlade.Core.Native\OpenBlade.Core.Native.csproj" />
+  </ItemGroup>
 </Project>

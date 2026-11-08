@@ -175,6 +175,7 @@ function Write-OpenBladeStoreReadinessReport {
         # Admit only its exact payload location, never a same-named nested binary.
         $isSourceBuilt = $relativePath -ceq 'payload\LibreHardwareMonitorLib.dll'
         $isFirstParty = $isSourceBuilt -or ($relativePath -eq 'OpenBlade-Setup.exe') -or
+            ($relativePath -ceq 'payload\openblade_ffi.dll') -or
             ($relativePath -match '^(?:[^\\]+\\)*OpenBlade\.[^\\]+\.(?:dll|exe)$')
 
         if (($status -ne 'Valid') -and ($status -ne 'NotSigned')) {

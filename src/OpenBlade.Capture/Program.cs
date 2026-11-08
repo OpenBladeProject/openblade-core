@@ -1,5 +1,6 @@
 using OpenBlade.Capture;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
@@ -7,6 +8,13 @@ using OpenBlade.Service;
 if (args.Length > 0 && WindowsBatteryObservationCommand.Recognizes(args[0]))
 {
     return await WindowsBatteryObservationCommand.RunAsync(args);
+}
+
+try { ProductNativeRuntime.EnsureAvailable(); }
+catch (NativeComponentException exception)
+{
+    Console.Error.WriteLine(exception.Message);
+    return 1;
 }
 
 if (args.Length > 0 && args[0] == CpuVoltageSessionCommand.HostName)

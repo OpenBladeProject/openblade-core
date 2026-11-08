@@ -56,12 +56,18 @@ dotnet_naming_style.camel_case.capitalization = camel_case
 [src/OpenBlade.Protocol/*.cs]
 end_of_line = lf
 
-[src/OpenBlade.Contracts/{AmbientLightingFrame,DeviceState,Lighting,Profiles,ReactiveKeyPulse}.cs]
+[src/OpenBlade.Contracts/{AmbientLightingFrame,DeviceState,IpcMessageCodec,Lighting,Profiles,ReactiveKeyPulse}.cs]
 end_of_line = lf
 
 [evidence/legacy-captures/**/*.json]
 end_of_line = lf
 
+[tests/Fixtures/Parity/**/*.json]
+end_of_line = lf
+
 # Shared visual-test launcher is also compiled by Windows PowerShell (C# 5).
 [tests/OpenBlade.Testing/WindowsVisualTestDesktop.cs]
 dotnet_diagnostic.IDE0161.severity = none
+
+[rust/**]
+end_of_line = lf

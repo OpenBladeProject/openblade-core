@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- Reuse the existing test friend identity; do not widen product access. -->
+    <AssemblyName>OpenBlade.Protocol.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/OpenBlade.Protocol/OpenBlade.Protocol.csproj" />
+    <ProjectReference Include="../../src/OpenBlade.Service/OpenBlade.Service.csproj" />
+  </ItemGroup>
+</Project>

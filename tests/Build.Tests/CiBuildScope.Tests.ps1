@@ -298,6 +298,14 @@ Assert-Equal $false $testMetadata.RunInstaller 'Test metadata must not publish t
 Assert-Equal 0 @($testMetadata.ContractTests).Count 'Test metadata must not select unrelated contracts.'
 Assert-Equal 0 @($testMetadata.PublishProjects).Count 'Test metadata must not publish product binaries.'
 
+foreach ($nativeInput in @(
+        'src/OpenBlade.Core.Native/ProductNativeRuntime.cs',
+        'src/OpenBlade.Core.Native/OpenBlade.Core.Native.csproj')) {
+    $nativeInstaller = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($nativeInput)
+    Assert-Equal $true $nativeInstaller.RunInstaller `
+        'Native admission and manifest wiring changes require actual installer payload validation.'
+}
+
 $serviceMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
     'src/OpenBlade.Service/OpenBlade.Service.csproj')
 Assert-Equal 'full' $serviceMetadata.Mode 'Production metadata must keep exhaustive validation.'

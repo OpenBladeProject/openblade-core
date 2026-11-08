@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 
 namespace OpenBlade.Protocol;
 
@@ -437,12 +438,23 @@ internal sealed class WindowsRazerHidSession :
                     continue;
                 }
 
-                HidSessionResult<ReadOnlyMemory<byte>> result =
-                    item.BatchCommands is { } batch
+                HidSessionResult<ReadOnlyMemory<byte>> result;
+                try
+                {
+                    result = item.BatchCommands is { } batch
                         ? await ExecuteSetBatchClaimedAsync(
                             item,
                             batch).ConfigureAwait(false)
                         : await ExecuteClaimedAsync(item).ConfigureAwait(false);
+                }
+                catch (NativeComponentException exception)
+                {
+                    // A codec failure may occur after a SET or within a batch. Never
+                    // replay or try a managed fallback; retire ownership and complete
+                    // the claimed item as uncertain before draining queued work.
+                    DiagnosticTrace.TraceException(nameof(WindowsRazerHidSession), "NativeCodec", exception);
+                    result = PartialSetBatchFailure(HidSessionFailureKind.NativeIoFailure);
+                }
                 item.Complete(result);
 
                 lock (sync)

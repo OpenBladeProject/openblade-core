@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpenBlade.Core.Native/OpenBlade.Core.Native.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenBlade.Core.Native.Tests/OpenBlade.Core.Native.Tests.csproj" />
+  </Folder>
+</Solution>

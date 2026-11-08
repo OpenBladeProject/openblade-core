@@ -76,6 +76,7 @@ try {
     New-Item -ItemType Directory -Path $nestedFirstPartyDirectory -Force | Out-Null
     Copy-Item -LiteralPath $unsignedFixture `
         -Destination (Join-Path $nestedFirstPartyDirectory 'OpenBlade.Native.dll')
+    Copy-Item -LiteralPath $unsignedFixture -Destination (Join-Path $payload 'openblade_ffi.dll')
     Copy-Item -LiteralPath $unsignedFixture -Destination $installer
 
     $report = Write-OpenBladeStoreReadinessReport `
@@ -87,9 +88,9 @@ try {
     Assert-True (-not $report.signingComplete) 'Signing must remain visibly incomplete.'
     Assert-True (-not $report.readyForPartnerCenterSubmission) `
         'A local report must not claim that external submission is complete.'
-    Assert-True ($report.signatureSummary.portableExecutableCount -eq 4) `
+    Assert-True ($report.signatureSummary.portableExecutableCount -eq 5) `
         'Every fixture PE must be inventoried.'
-    Assert-True ($report.signatureSummary.unsignedFirstPartyCount -eq 4) `
+    Assert-True ($report.signatureSummary.unsignedFirstPartyCount -eq 5) `
         'Every unsigned first-party fixture must be reported.'
     Assert-True (
         $report.storeContract.privacyPolicyUrl -eq

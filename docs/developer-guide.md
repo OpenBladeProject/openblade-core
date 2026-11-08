@@ -7,6 +7,9 @@ before changing hardware, IPC, setup, or process boundaries.
 For bounded refactor priorities and autonomous delivery criteria, see the
 [maintainability roadmap](maintainability-roadmap.md).
 
+For the proposed portable core and its shared test baseline, see
+[Rust migration boundaries](rust-boundaries.md).
+
 ## Architecture
 
 ```mermaid
@@ -276,7 +279,10 @@ records model identities, command limits, and pinned source provenance.
 
 ## Build and test
 
-You need Windows 11 x64 and the .NET 10 SDK.
+You need Windows 11 x64, the .NET 10 SDK, rustup with the toolchain pinned in
+`rust/rust-toolchain.toml`, and Visual Studio C++ x64 Build Tools with a Windows
+SDK. Add Cargo's bin directory to `PATH`. Ordinary .NET builds now compile and
+copy the required native core; see [Rust development](../rust/README.md).
 
 ```powershell
 dotnet restore OpenBlade.slnx -p:NuGetAudit=false
@@ -484,7 +490,7 @@ animations use a bounded, exact-model logical-key projection on the validated
 RZ09-0581/RZ09-0528 layouts and the source-reviewed RZ09-0484 layout. Unsupported
 colored cells are reported, and per-key KeyboardExtended files are rejected
 instead of cropped. Open **Labs** in the sidebar and choose **Import a lighting
-preset** to jump to the importer under **Lighting → Keyboard**. The versioned
+preset** to jump to the importer under **Lighting â†’ Keyboard**. The versioned
 format, schema, compatibility rules, and example are in
 [`keyboard-lighting-file-format.md`](keyboard-lighting-file-format.md).
 
@@ -517,6 +523,6 @@ pseudo-localization review workflow are in [localization.md](localization.md).
 
 The opt-in A/D priority feature offers Windows-hook and Razer-driver input
 methods. Users choose the method separately for SnapTap and the function row.
-One supervised current-user driver helper owns the selected A/D and F1–F12 hook
+One supervised current-user driver helper owns the selected A/D and F1â€“F12 hook
 set. See [keyboard input methods](keyboard-input-backends.md) for selection and
 [SnapTap](snap-tap.md) for driver setup, admission, ownership and recovery.

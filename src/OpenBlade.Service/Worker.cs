@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 
 namespace OpenBlade.Service;
 
@@ -21,7 +22,6 @@ public sealed class Worker(
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        bool startupCompleted = false;
         var startupCoordinator = new ServiceStartupCoordinator(
             profileBootstrapper,
             overrideStore,
@@ -31,29 +31,37 @@ public sealed class Worker(
             logger);
         return RunWithShutdownCleanupAsync(
             token => RunAfterSuccessfulStartupAsync(
-                async innerToken =>
-                {
-                    startupCompleted = await startupCoordinator
-                        .InitializeAsync(innerToken).ConfigureAwait(false);
-                    return startupCompleted;
-                },
+                startupCoordinator.InitializeAsync,
                 RunBackgroundAsync,
                 token),
             (intentionalStop, token) => PrepareForShutdownAsync(
-                startupCompleted,
+                startupCoordinator.RuntimeInitialized,
                 intentionalStop,
                 token),
-            stoppingToken);
+            stoppingToken,
+            exception =>
+            {
+                logger.LogCritical("{NativeComponentFailure}", exception.Message);
+                Environment.ExitCode = 1;
+            });
     }
 
     internal static async Task RunWithShutdownCleanupAsync(
         Func<CancellationToken, Task> runAsync,
         Func<bool, CancellationToken, Task> cleanupAsync,
-        CancellationToken stoppingToken)
+        CancellationToken stoppingToken,
+        Action<NativeComponentException>? reportNativeFailure = null)
     {
         try
         {
             await runAsync(stoppingToken).ConfigureAwait(false);
+        }
+        catch (NativeComponentException exception)
+        {
+            // BackgroundService failures do not reliably escape host.Run(). Report
+            // before cleanup, then let normal supervision stop all producers.
+            reportNativeFailure?.Invoke(exception);
+            throw;
         }
         finally
         {
@@ -97,6 +105,7 @@ public sealed class Worker(
                 .RunAsync(token),
             token => new ServicePeriodicObservationLoop(runtime, lowPowerGate, logger)
                 .RunAsync(token),
+            powerTransitions.WaitForNativeFailureAsync,
             runtime.RunThermalConvergenceAsync,
             token => new ServiceCoolingPadLoop(runtime, logger).RunAsync(token),
             token => new ServiceFanCurveLoop(runtime, logger).RunAsync(token),
@@ -109,12 +118,12 @@ public sealed class Worker(
     }
 
     private async Task PrepareForShutdownAsync(
-        bool startupCompleted,
+        bool runtimeInitialized,
         bool intentionalStop,
         CancellationToken cancellationToken)
     {
         bool? clearRunMarker = await PrepareHardwareAndShouldClearRunMarkerAsync(
-            startupCompleted,
+            runtimeInitialized,
             intentionalStop,
             runtime.PrepareForShutdownAsync,
             logger,
@@ -155,16 +164,16 @@ public sealed class Worker(
     }
 
     internal static async Task<bool?> PrepareHardwareAndShouldClearRunMarkerAsync(
-        bool startupCompleted,
+        bool runtimeInitialized,
         bool intentionalStop,
         Func<CancellationToken, Task<ControlOperationResult>> prepareHardwareAsync,
         ILogger logger,
         CancellationToken cancellationToken)
     {
-        if (!startupCompleted)
+        if (!runtimeInitialized)
         {
             logger.LogInformation(
-                "Service startup did not complete; hardware cleanup and run-marker deletion were skipped.");
+                "Service runtime was not initialized; hardware cleanup and run-marker deletion were skipped.");
             return null;
         }
 

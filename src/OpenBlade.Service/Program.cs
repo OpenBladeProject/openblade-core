@@ -1,13 +1,25 @@
 using System.Diagnostics;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+builder.Services.AddWindowsService(options => options.ServiceName = "OpenBlade Service");
+try { ProductNativeRuntime.EnsureAvailable(); }
+catch (NativeComponentException exception)
+{
+    // Build only the logging/lifetime host on failure: no hardware providers,
+    // runtime, worker or power/session monitors have been registered yet.
+    using IHost failedHost = builder.Build();
+    failedHost.Services.GetRequiredService<ILoggerFactory>().CreateLogger("OpenBlade.Native")
+        .LogCritical("{NativeComponentFailure}", exception.Message);
+    Environment.ExitCode = 1;
+    return;
+}
 string machineDataDirectory = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
     "OpenBlade");
-builder.Services.AddWindowsService(options => options.ServiceName = "OpenBlade Service");
 builder.Services.AddSingleton(provider => new BatteryConfigurationStore(
     Path.Combine(machineDataDirectory, "profiles.json"),
     Path.Combine(machineDataDirectory, "battery-preferences.json"),
@@ -49,6 +61,12 @@ Trace.Listeners.Add(diagnosticTraceListener);
 try
 {
     host.Run();
+}
+catch (NativeComponentException exception)
+{
+    host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("OpenBlade.Native")
+        .LogCritical("{NativeComponentFailure}", exception.Message);
+    Environment.ExitCode = 1;
 }
 finally
 {
