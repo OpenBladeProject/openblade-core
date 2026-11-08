@@ -151,6 +151,21 @@ try {
             -RequireSignatures | Out-Null
     } 'Store submission requires signatures'
 
+    $sourceBuilt = Join-Path $payload 'LibreHardwareMonitorLib.dll'
+    Copy-Item -LiteralPath $unsignedFixture -Destination $sourceBuilt
+    $sourceBuiltReport = Write-OpenBladeStoreReadinessReport -Bundle $bundle -Installer $installer -ReportPath $reportPath
+    Assert-True (-not $sourceBuiltReport.signingComplete) 'A local source-built DLL must remain visibly unsigned.'
+    Assert-True ($sourceBuiltReport.signatureSummary.unsignedThirdPartyCount -eq 0) 'The locally compiled reviewed fork is a maintainer signing output.'
+    Assert-Throws {
+        Write-OpenBladeStoreReadinessReport -Bundle $bundle -Installer $installer -ReportPath $reportPath -RequireSignatures | Out-Null
+    } 'Store submission requires signatures'
+    $nestedSourceName = Join-Path $nestedFirstPartyDirectory 'LibreHardwareMonitorLib.dll'
+    Copy-Item -LiteralPath $unsignedFixture -Destination $nestedSourceName
+    Assert-Throws {
+        Write-OpenBladeStoreReadinessReport -Bundle $bundle -Installer $installer -ReportPath $reportPath | Out-Null
+    } 'Third-party portable executables are unsigned'
+    Remove-Item -LiteralPath $nestedSourceName
+
     $thirdParty = Join-Path $nestedFirstPartyDirectory 'Unexpected.Dependency.dll'
     Copy-Item -LiteralPath $unsignedFixture -Destination $thirdParty
     Assert-Throws {

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.ComponentModel;
 using OpenBlade.Platform;
 
 namespace OpenBlade.Setup;
@@ -12,23 +13,29 @@ public interface IPawnIoPrerequisite
 
 internal interface IPawnIoSetupOperations
 {
-    PawnIoInstallation? Inspect(CancellationToken cancellationToken);
-    Task<int> InstallAsync(string installer, CancellationToken cancellationToken);
+    PawnIoSetupInspection Inspect(CancellationToken cancellationToken);
+    Task<PawnIoInstallResult> InstallAsync(string installer, CancellationToken cancellationToken);
 }
+
+internal sealed record PawnIoSetupInspection(PawnIoInstallation? Installation, bool RebootPending = false);
+internal sealed record PawnIoInstallResult(int ExitCode, PawnIoInstallation? VerifiedInstallation);
 
 /// <summary>The shared full-install route, including broker installs. Never removes shared PawnIO.</summary>
 internal sealed class PawnIoPrerequisite(IPawnIoSetupOperations operations) : IPawnIoPrerequisite
 {
     public async Task<bool> EnsureAsync(string stagedPayloadDirectory, CancellationToken cancellationToken)
     {
-        if (operations.Inspect(cancellationToken) is { } installed)
+        PawnIoSetupInspection inspection = operations.Inspect(cancellationToken);
+        if (inspection.RebootPending) { return true; }
+        if (inspection.Installation is { } installed)
         {
             Trace.TraceInformation("PawnIO prerequisite: reused trusted installed driver; running={0}.", installed.Started);
             // Never reinstall a stopped shared driver or declare it sensor-ready.
             // PnP may finish starting the existing signed package after restart.
             return !installed.Started;
         }
-        int exitCode = await operations.InstallAsync(Path.Combine(stagedPayloadDirectory, "PawnIO_setup.exe"), cancellationToken);
+        PawnIoInstallResult result = await operations.InstallAsync(Path.Combine(stagedPayloadDirectory, "PawnIO_setup.exe"), cancellationToken);
+        int exitCode = result.ExitCode;
         Trace.TraceInformation("PawnIO prerequisite: official installer exit code {0}.", exitCode);
         if (exitCode == 3010)
         {
@@ -38,7 +45,7 @@ internal sealed class PawnIoPrerequisite(IPawnIoSetupOperations operations) : IP
         }
         if (exitCode != 0)
         { throw new InvalidOperationException($"PawnIO installation failed (exit code {exitCode}); no alternate installation was attempted."); }
-        if (operations.Inspect(cancellationToken) is not { } readback)
+        if (result.VerifiedInstallation is not { } readback)
         { throw new InvalidOperationException("PawnIO installer exited successfully but independent driver binding readback is missing."); }
         return !readback.Started;
     }
@@ -54,14 +61,28 @@ internal sealed class WindowsPawnIoSetupOperations(SetupPaths paths) : IPawnIoSe
     private string JournalDirectory => Path.Combine(paths.MachineDataRoot, "OpenBlade.PawnIOSetup");
     private string JournalPath => Path.Combine(JournalDirectory, "install-intent.json");
 
-    public PawnIoInstallation? Inspect(CancellationToken cancellationToken)
+    public PawnIoSetupInspection Inspect(CancellationToken cancellationToken)
     {
         if (File.Exists(JournalPath))
-        { throw new InvalidOperationException("A previous PawnIO installation has an unresolved durable intent. Preserve its setup diagnostics and reconcile the installed state before retrying."); }
-        return PawnIoRuntimeAdmission.Inspect(cancellationToken);
+        {
+            EnsureNoReparsePoints(JournalPath);
+            using FileStream file = File.Open(JournalPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (file.Length is < 1 or > 16384) { throw new InvalidDataException("PawnIO journal length is invalid."); }
+            PawnIoInstallJournal journal = JsonSerializer.Deserialize<PawnIoInstallJournal>(file)
+                ?? throw new InvalidDataException("PawnIO journal is invalid.");
+            journal.Validate();
+            long uptime = Environment.TickCount64;
+            PawnIoRecordedProcessState process = PawnIoJournalRecovery.InspectProcess(journal);
+            PawnIoSetupInspection result = PawnIoJournalRecovery.Reconcile(journal, uptime, process,
+                () => PawnIoRuntimeAdmission.Inspect(cancellationToken), out bool clear);
+            file.Dispose();
+            if (clear) { File.Delete(JournalPath); }
+            return result;
+        }
+        return new(PawnIoRuntimeAdmission.Inspect(cancellationToken));
     }
 
-    public async Task<int> InstallAsync(string installer, CancellationToken cancellationToken)
+    public async Task<PawnIoInstallResult> InstallAsync(string installer, CancellationToken cancellationToken)
     {
         // The transaction has already copied this payload into Program Files. Lock
         // the exact verified bytes through child exit; never execute an uninstall
@@ -78,60 +99,65 @@ internal sealed class WindowsPawnIoSetupOperations(SetupPaths paths) : IPawnIoSe
         await new WindowsMachineDataDirectorySecurity().ProtectAsync(JournalDirectory, cancellationToken);
         EnsureNoReparsePoints(JournalDirectory);
         cancellationToken.ThrowIfCancellationRequested();
+        PawnIoInstallJournal intent = new(2, InstallerSha256, "SubmissionIntent",
+            Environment.TickCount64, installer, null, null, null);
         using (FileStream journal = new(JournalPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
         {
-            JsonSerializer.Serialize(journal, new
-            {
-                SchemaVersion = 1,
-                Component = "PawnIO",
-                Version = "2.2.0",
-                Sha256 = InstallerSha256,
-                Stage = "SubmissionIntent",
-                StartedAt = DateTimeOffset.UtcNow
-            });
+            JsonSerializer.Serialize(journal, intent);
             journal.Flush(flushToDisk: true);
         }
         ProcessStartInfo plan = CreateProcessPlan(installer);
         // Once submission may have happened, cancellation/timeout never retries or
         // kills the vendor installer. The durable marker blocks a second submission.
-        using Process process = Process.Start(plan)
-            ?? throw new InvalidOperationException("PawnIO installer process creation returned no process; submission is unresolved.");
-        RecordObservedProcess(process.Id, null);
-        using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(5));
-        try { await process.WaitForExitAsync(timeout.Token); }
-        catch (OperationCanceledException error)
-        { throw new InvalidOperationException("PawnIO installer exit was not observed within five minutes. Submission remains unresolved; no retry was attempted.", error); }
-        int exitCode = process.ExitCode;
-        RecordObservedProcess(process.Id, exitCode);
-        if (exitCode is 0 or 3010)
+        Process process;
+        try
         {
-            // Independent readback is mandatory except when the official installer
-            // explicitly reports reboot required. Keep the marker on any ambiguity.
-            if (exitCode == 0 && PawnIoRuntimeAdmission.Inspect(CancellationToken.None) is null)
-            { throw new InvalidOperationException("PawnIO successful exit had no independently bound driver."); }
-            File.Delete(JournalPath);
+            process = Process.Start(plan)
+                ?? throw new InvalidOperationException("PawnIO installer process creation returned no process; submission is unresolved.");
         }
-        return exitCode;
+        catch (Win32Exception error) when (PawnIoJournalRecovery.IsKnownNoProcessCreated(error.NativeErrorCode))
+        {
+            RecordJournal(intent with { Stage = "NoProcessCreated", ExitCode = error.NativeErrorCode });
+            throw;
+        }
+        using (process)
+        {
+            PawnIoInstallJournal running = intent with
+            {
+                Stage = "ProcessStarted",
+                ProcessId = process.Id,
+                ProcessCreatedAt = process.StartTime.ToUniversalTime()
+            };
+            RecordJournal(running);
+            using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(5));
+            try { await process.WaitForExitAsync(timeout.Token); }
+            catch (OperationCanceledException error)
+            { throw new InvalidOperationException("PawnIO installer exit was not observed within five minutes. Submission remains unresolved; no retry was attempted.", error); }
+            int exitCode = process.ExitCode;
+            RecordJournal(running with { Stage = "ExitObserved", ExitCode = exitCode });
+            if (exitCode == 0)
+            {
+                // Independent readback is mandatory except when the official installer
+                // explicitly reports reboot required. Keep the marker on any ambiguity.
+                PawnIoInstallation readback = PawnIoRuntimeAdmission.Inspect(CancellationToken.None)
+                    ?? throw new InvalidOperationException("PawnIO successful exit had no independently bound driver.");
+                File.Delete(JournalPath);
+                return new(exitCode, readback);
+            }
+            // Keep observed failure/reboot evidence. A later user-initiated setup can
+            // reconcile it read-only, and must never resubmit an uncertain install.
+            return new(exitCode, null);
+        }
     }
 
-    private void RecordObservedProcess(int processId, int? exitCode)
+    private void RecordJournal(PawnIoInstallJournal state)
     {
         string temporary = Path.Combine(JournalDirectory, Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
             using (FileStream journal = new(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
             {
-                JsonSerializer.Serialize(journal, new
-                {
-                    SchemaVersion = 1,
-                    Component = "PawnIO",
-                    Version = "2.2.0",
-                    Sha256 = InstallerSha256,
-                    Stage = exitCode.HasValue ? "ExitObserved" : "ProcessStarted",
-                    ProcessId = processId,
-                    ExitCode = exitCode,
-                    ObservedAt = DateTimeOffset.UtcNow
-                });
+                JsonSerializer.Serialize(journal, state);
                 journal.Flush(flushToDisk: true);
             }
             File.Replace(temporary, JournalPath, null);

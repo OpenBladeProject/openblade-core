@@ -211,7 +211,7 @@ internal static class Program
                 $"service:{reservation.ServicePid}:{reservation.ServiceStartUtcTicks}");
             acquisition = So6120ServiceDutyPlatform.Acquire(identity, reservation.ServicePid,
                 reservation.ServiceStartUtcTicks, () => store.ReadReservation(operation) == reservation,
-                So6120ServiceDutyPlatform.CreateTemperatureSource(), reservation.Settings);
+                So6120ServiceDutyPlatform.CreateTemperatureSource(), reservation.Settings, stop);
             stop.ThrowIfCancellationRequested();
             PowerSource power = acquisition.ReadPowerSource();
             if (power != PowerSource.UsbC)

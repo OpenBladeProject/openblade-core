@@ -11,6 +11,7 @@ internal sealed class WindowsCpuTemperatureChild : ICpuTemperatureChild
     private readonly CpuTemperatureWorkerJob job;
     private readonly SafeProcessHandle processHandle;
     private readonly Exception? startupFailure;
+    private readonly Task exited;
 
     private WindowsCpuTemperatureChild(Process process, CpuTemperatureWorkerJob job,
         SafeProcessHandle processHandle, Exception? startupFailure)
@@ -18,7 +19,27 @@ internal sealed class WindowsCpuTemperatureChild : ICpuTemperatureChild
         this.process = process;
         this.job = job;
         this.processHandle = processHandle;
-        this.startupFailure = startupFailure;
+        // Register once on the background startup path. Callers only retrieve
+        // this retained observation; querying it never starts a synchronous join.
+        exited = RegisterExitObservation(() => process.WaitForExitAsync(), out Exception? registrationFailure);
+        this.startupFailure = startupFailure ?? registrationFailure;
+    }
+
+    internal static Task RegisterExitObservation(Func<Task> register, out Exception? registrationFailure)
+    {
+        try
+        {
+            registrationFailure = null;
+            return register();
+        }
+        catch (Exception exception)
+        {
+            // The process/job/handle must still be returned to the reader. A
+            // faulted observation retains its fence; never retry registration
+            // or let this constructor escape through the factory-failure path.
+            registrationFailure = exception;
+            return Task.FromException(exception);
+        }
     }
 
     internal static ICpuTemperatureChild Start()
@@ -65,7 +86,7 @@ internal sealed class WindowsCpuTemperatureChild : ICpuTemperatureChild
     {
         if (startupFailure is not null)
         {
-            throw new InvalidOperationException("The CPU sensor worker was not assigned to its lifetime owner.", startupFailure);
+            throw new InvalidOperationException("The CPU sensor worker lifetime initialization failed.", startupFailure);
         }
         await process.StandardInput.BaseStream.WriteAsync(request, cancellationToken).ConfigureAwait(false);
         await process.StandardInput.BaseStream.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -73,6 +94,8 @@ internal sealed class WindowsCpuTemperatureChild : ICpuTemperatureChild
         await process.StandardOutput.BaseStream.ReadExactlyAsync(reply, cancellationToken).ConfigureAwait(false);
         return reply;
     }
+
+    public bool HasExited => process.HasExited;
 
     public void RequestStop()
     {
@@ -82,7 +105,7 @@ internal sealed class WindowsCpuTemperatureChild : ICpuTemperatureChild
         _ = TerminateProcess(processHandle, 1);
     }
 
-    public Task WaitForExitAsync() => process.WaitForExitAsync();
+    public Task WaitForExitAsync() => exited;
 
     public void Dispose()
     {

@@ -8,6 +8,23 @@ public sealed class WindowsCpuTemperatureReaderTests
 {
     private static readonly TimeSpan TestDeadline = TimeSpan.FromMilliseconds(100);
 
+    [Fact]
+    public async Task SynchronousExitRegistrationFailureIsRetainedWithoutRetryOrSuccessfulExit()
+    {
+        var failure = new IOException("Exit registration failed");
+        int registrations = 0;
+        Task observation = WindowsCpuTemperatureChild.RegisterExitObservation(() =>
+        {
+            registrations++;
+            throw failure;
+        }, out Exception? startupFailure);
+        Assert.Same(failure, startupFailure);
+        Assert.True(observation.IsFaulted);
+        Assert.False(observation.IsCompletedSuccessfully);
+        Assert.Same(failure, await Assert.ThrowsAsync<IOException>(() => observation));
+        Assert.Equal(1, registrations);
+    }
+
     [Theory]
     [InlineData(10_000, 10)]
     [InlineData(62_001, 63)]
@@ -59,7 +76,8 @@ public sealed class WindowsCpuTemperatureReaderTests
         Assert.Equal(63, await reader.ReadAsync());
         Assert.Null(await reader.ReadAsync());
         Assert.Equal(1, starts);
-        Assert.Equal([1L, 2L], child.Requests);
+        Assert.Equal([2L, 3L], child.Requests);
+        Assert.False(child.Stopped.Task.IsCompleted);
     }
 
     [Fact]
@@ -112,7 +130,7 @@ public sealed class WindowsCpuTemperatureReaderTests
         Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(2));
         await child.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(3));
         Assert.False(never.Task.IsCompleted);
-        never.SetResult(CpuTemperatureProtocol.EncodeReply(1, 60_000));
+        never.SetResult(CpuTemperatureProtocol.EncodeReply(2, 60_000));
     }
 
     [Fact]
@@ -164,6 +182,7 @@ public sealed class WindowsCpuTemperatureReaderTests
         {
             Exchange = _ => Task.FromResult(Array.Empty<byte>()),
             Exit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            ConfirmExitOnStop = false,
         };
         int starts = 0;
         using var reader = Create(() => { starts++; return child; });
@@ -194,7 +213,7 @@ public sealed class WindowsCpuTemperatureReaderTests
         }
         Assert.Equal(60, result);
         Assert.Equal(2, starts);
-        Assert.Equal([2L], second.Requests);
+        Assert.Equal([4L], second.Requests);
     }
 
     [Fact]
@@ -204,13 +223,13 @@ public sealed class WindowsCpuTemperatureReaderTests
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var child = new FakeChild();
         int starts = 0;
-        using var reader = Create(() =>
+        using var reader = new WindowsCpuTemperatureReader(() =>
         {
             Interlocked.Increment(ref starts);
             entered.SetResult();
             release.Wait();
             return child;
-        });
+        }, TestDeadline, TimeSpan.FromMilliseconds(40), TestDeadline, TimeSpan.Zero);
         Task<int?> reading = reader.ReadAsync().AsTask();
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
         try
@@ -231,6 +250,7 @@ public sealed class WindowsCpuTemperatureReaderTests
         {
             Exchange = _ => new TaskCompletionSource<byte[]>().Task,
             Exit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            ConfirmExitOnStop = false,
         };
         var reader = Create(() => child, TimeSpan.FromSeconds(5));
         Task<int?> reading = reader.ReadAsync().AsTask();
@@ -259,12 +279,338 @@ public sealed class WindowsCpuTemperatureReaderTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queued);
         Assert.False(child.Stopped.Task.IsCompleted);
         Assert.Single(child.Requests);
-        result.SetResult(CpuTemperatureProtocol.EncodeReply(1, 60_000));
+        result.SetResult(CpuTemperatureProtocol.EncodeReply(2, 60_000));
         Assert.Equal(60, await first);
     }
 
+    [Fact]
+    public async Task AShortenedColdSampleTimeoutDoesNotCauseAPerpetualColdStartKillLoop()
+    {
+        FakeChild MakeChild() => new()
+        {
+            Warmup = async request =>
+            {
+                await Task.Delay(80);
+                return CpuTemperatureProtocol.EncodeReadyReply(BinaryPrimitives.ReadInt64LittleEndian(request));
+            },
+            Exchange = async request => { await Task.Delay(250); return Reply(request, 60_000); },
+        };
+        var first = MakeChild();
+        var second = MakeChild();
+        int starts = 0;
+        using var reader = new WindowsCpuTemperatureReader(() => ++starts == 1 ? first : second,
+            TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(20), TimeSpan.FromSeconds(2), TimeSpan.Zero);
+        Assert.Null(await reader.ReadAsync());
+        await first.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        // The replacement completes readiness but preserves the next call's full
+        // budget after the first cold request demonstrated a shortened-budget failure.
+        for (int attempt = 0; attempt < 20 && starts < 2; attempt++)
+        {
+            Assert.Null(await reader.ReadAsync());
+            if (starts < 2) { await Task.Delay(5); }
+        }
+        Assert.Equal(2, starts);
+        Assert.Empty(second.Requests);
+        Assert.Equal(60, await reader.ReadAsync());
+        Assert.False(second.Stopped.Task.IsCompleted);
+    }
+
+    [Fact]
+    public async Task PreparationAllowsSlowColdStartupBeforeTheFirstFreshAdmissionRead()
+    {
+        var child = new FakeChild
+        {
+            Warmup = async request =>
+            {
+                await Task.Delay(150);
+                return CpuTemperatureProtocol.EncodeReadyReply(BinaryPrimitives.ReadInt64LittleEndian(request));
+            },
+            Exchange = async request => { await Task.Delay(50); return Reply(request, 60_000); },
+        };
+        using var reader = new WindowsCpuTemperatureReader(() => child, TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(20), TimeSpan.FromSeconds(2), TimeSpan.Zero);
+        Assert.True(await reader.PrepareAsync());
+        Assert.Empty(child.Requests);
+        Assert.Equal(60, await reader.ReadAsync());
+        Assert.Single(child.Requests);
+    }
+
+    [Fact]
+    public async Task SlowReadinessDoesNotDispatchASampleWithAShortenedDeadline()
+    {
+        var child = new FakeChild
+        {
+            Warmup = async request =>
+            {
+                await Task.Delay(140);
+                return CpuTemperatureProtocol.EncodeReadyReply(BinaryPrimitives.ReadInt64LittleEndian(request));
+            },
+            Exchange = async request => { await Task.Delay(90); return Reply(request, 60_000); },
+        };
+        using var reader = new WindowsCpuTemperatureReader(() => child, TimeSpan.FromMilliseconds(200),
+            TimeSpan.FromMilliseconds(20), TimeSpan.FromSeconds(2), TimeSpan.Zero);
+        Assert.Null(await reader.ReadAsync());
+        Assert.Empty(child.Requests);
+        Assert.False(child.Stopped.Task.IsCompleted);
+        Assert.Equal(60, await reader.ReadAsync());
+    }
+
+    [Fact]
+    public async Task PreparationCancellationIsObservableAndDisposalStopsTheOwnedWarmup()
+    {
+        var ready = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var child = new FakeChild { Warmup = _ => ready.Task };
+        using var reader = Create(() => child);
+        using var cancellation = new CancellationTokenSource();
+        Task<bool> preparation = reader.PrepareAsync(cancellation.Token).AsTask();
+        await child.WarmupEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => preparation);
+        reader.Dispose();
+        await child.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Empty(child.Requests);
+        ready.SetResult(CpuTemperatureProtocol.EncodeReadyReply(1));
+    }
+
+    [Fact]
+    public async Task TerminalStartupFailureReturnsFalseFromPreparation()
+    {
+        var child = new FakeChild
+        {
+            Warmup = request => Task.FromResult(
+                CpuTemperatureProtocol.EncodeTerminalReply(BinaryPrimitives.ReadInt64LittleEndian(request))),
+        };
+        using var reader = Create(() => child);
+        Assert.False(await reader.PrepareAsync());
+        await child.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Empty(child.Requests);
+    }
+
+    [Fact]
+    public async Task SlowColdInitializationSurvivesCallerDeadlinesAndRequestsAFreshSampleAfterReady()
+    {
+        var ready = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        long readinessSequence = 0;
+        var child = new FakeChild
+        {
+            Warmup = request =>
+            {
+                readinessSequence = BinaryPrimitives.ReadInt64LittleEndian(request);
+                return ready.Task;
+            },
+        };
+        int starts = 0;
+        using var reader = new WindowsCpuTemperatureReader(() => { starts++; return child; },
+            TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(20), TimeSpan.FromSeconds(2), TimeSpan.Zero);
+        var elapsed = Stopwatch.StartNew();
+        Assert.Null(await reader.ReadAsync());
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(1));
+        Assert.Null(await reader.ReadAsync());
+        Assert.Equal(1, starts);
+        Assert.Empty(child.Requests);
+        Assert.False(child.Stopped.Task.IsCompleted);
+        ready.SetResult(CpuTemperatureProtocol.EncodeReadyReply(readinessSequence));
+        Assert.Equal(60, await ReadUntilAvailable(reader));
+        Assert.Equal([2L], child.Requests);
+    }
+
+    [Fact]
+    public async Task CallerCancellationDuringWarmupLeavesIndependentInitializationOwned()
+    {
+        var ready = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var child = new FakeChild { Warmup = _ => ready.Task };
+        using var reader = Create(() => child, TimeSpan.FromSeconds(3));
+        using var cancellation = new CancellationTokenSource();
+        Task<int?> first = reader.ReadAsync(cancellation.Token).AsTask();
+        await child.WarmupEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        Assert.False(child.Stopped.Task.IsCompleted);
+        ready.SetResult(CpuTemperatureProtocol.EncodeReadyReply(1));
+        Assert.Equal(60, await ReadUntilAvailable(reader));
+    }
+
+    [Fact]
+    public async Task ATemperatureFromWarmupIsRejectedRatherThanPublished()
+    {
+        var child = new FakeChild { Warmup = request => Task.FromResult(Reply(request, 40_000)) };
+        using var reader = Create(() => child);
+        Assert.Null(await reader.ReadAsync());
+        await child.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Empty(child.Requests);
+    }
+
+    [Fact]
+    public async Task ExitConfirmedAfterTheJoinDeadlineAllowsRecoveryWithoutOverlappingWorkers()
+    {
+        var first = new FakeChild
+        {
+            Exchange = _ => Task.FromResult(Array.Empty<byte>()),
+            ConfirmExitOnStop = false,
+        };
+        var second = new FakeChild();
+        int starts = 0;
+        using var reader = Create(() => ++starts == 1 ? first : second);
+        Assert.Null(await reader.ReadAsync());
+        await first.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.Delay(100);
+        Assert.Null(await reader.ReadAsync());
+        Assert.Equal(1, starts);
+        Assert.False(first.Disposed.Task.IsCompleted);
+        first.Exit.SetResult();
+        await first.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(60, await ReadUntilAvailable(reader));
+        Assert.Equal(2, starts);
+    }
+
+    [Fact]
+    public async Task TerminalUnavailableStopsImmediatelyRatherThanWaitingForABrokenPipe()
+    {
+        var child = new FakeChild
+        {
+            Exchange = request => Task.FromResult(
+                CpuTemperatureProtocol.EncodeTerminalReply(BinaryPrimitives.ReadInt64LittleEndian(request))),
+        };
+        using var reader = Create(() => child);
+        Assert.Null(await reader.ReadAsync());
+        await child.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Single(child.Requests);
+    }
+
+    [Fact]
+    public async Task IdleWorkerExitIsObservedBeforeAnotherPipeRequest()
+    {
+        var first = new FakeChild();
+        var second = new FakeChild();
+        int starts = 0;
+        using var reader = Create(() => ++starts == 1 ? first : second);
+        Assert.Equal(60, await reader.ReadAsync());
+        first.Exit.SetResult();
+        Assert.Null(await reader.ReadAsync());
+        Assert.Single(first.Requests);
+        await first.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(60, await ReadUntilAvailable(reader));
+        Assert.Equal(2, starts);
+    }
+
+    [Fact]
+    public async Task FailedExitObservationKeepsTheLeaseAndItsHandleFenced()
+    {
+        var child = new FakeChild { ConfirmExitOnStop = false };
+        int starts = 0;
+        using var reader = Create(() => { starts++; return child; });
+        Assert.Equal(60, await reader.ReadAsync());
+        child.Exit.SetException(new IOException("Exit observation failed"));
+        Assert.Null(await reader.ReadAsync());
+        await child.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Null(await reader.ReadAsync());
+        Assert.Equal(1, starts);
+        Assert.False(child.Disposed.Task.IsCompleted);
+    }
+
+    [Fact]
+    public async Task RepeatedUnavailableReadingsBackOffWithoutReturningThePreviousValue()
+    {
+        var clock = new TestClock();
+        int samples = 0;
+        var child = new FakeChild
+        {
+            Exchange = request => Task.FromResult(Reply(request, ++samples is 1 or 5 ? 60_000 : null)),
+        };
+        using var reader = new WindowsCpuTemperatureReader(() => child, TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(20), retryBaseDelay: TimeSpan.FromSeconds(1), clock: clock);
+        Assert.Equal(60, await reader.ReadAsync());
+        Assert.Null(await reader.ReadAsync());
+        Assert.Null(await reader.ReadAsync());
+        Assert.Null(await reader.ReadAsync());
+        Assert.Equal(3, samples);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Null(await reader.ReadAsync());
+        Assert.Equal(4, samples);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Null(await reader.ReadAsync());
+        Assert.Equal(4, samples);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(60, await reader.ReadAsync());
+        Assert.Equal(5, samples);
+    }
+
+    [Fact]
+    public async Task RepeatedStartupFailuresBackOffWithoutLaunchingAnotherWorker()
+    {
+        var clock = new TestClock();
+        int starts = 0;
+        using var reader = new WindowsCpuTemperatureReader(() =>
+        {
+            Interlocked.Increment(ref starts);
+            throw new IOException("Driver is unavailable");
+        }, TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(20),
+            retryBaseDelay: TimeSpan.FromSeconds(1), clock: clock);
+        Assert.Null(await reader.ReadAsync());
+        for (int attempt = 0; attempt < 30 && starts < 2; attempt++)
+        {
+            Assert.Null(await reader.ReadAsync());
+            await Task.Delay(5);
+        }
+        Assert.Equal(2, starts);
+        for (int attempt = 0; attempt < 5; attempt++) { Assert.Null(await reader.ReadAsync()); }
+        Assert.Equal(2, starts);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        for (int attempt = 0; attempt < 30 && starts < 3; attempt++)
+        {
+            Assert.Null(await reader.ReadAsync());
+            await Task.Delay(5);
+        }
+        Assert.Equal(3, starts);
+    }
+
+    [Fact]
+    public async Task RepeatedTimedAndCancelledQueuedReadsDoNotLeakTheSemaphorePermit()
+    {
+        int starts = 0;
+        using var reader = new WindowsCpuTemperatureReader(() =>
+        {
+            Interlocked.Increment(ref starts);
+            return new FakeChild
+            {
+                Exchange = async request => { await Task.Delay(15); return Reply(request, 60_000); },
+            };
+        }, TimeSpan.FromMilliseconds(35), TimeSpan.FromMilliseconds(10), retryBaseDelay: TimeSpan.Zero);
+        for (int round = 0; round < 4; round++)
+        {
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(30));
+            Task[] calls = Enumerable.Range(0, 12).Select(async index =>
+            {
+                try { await reader.ReadAsync(index % 2 == 0 ? cancellation.Token : CancellationToken.None); }
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+            }).ToArray();
+            await Task.WhenAll(calls).WaitAsync(TimeSpan.FromSeconds(3));
+        }
+        Assert.Equal(60, await ReadUntilAvailable(reader));
+        Assert.True(starts >= 1);
+    }
+
+    private static async Task<int?> ReadUntilAvailable(WindowsCpuTemperatureReader reader)
+    {
+        for (int attempt = 0; attempt < 50; attempt++)
+        {
+            int? value = await reader.ReadAsync();
+            if (value.HasValue) { return value; }
+            await Task.Delay(5);
+        }
+        return null;
+    }
+
+    private sealed class TestClock : TimeProvider
+    {
+        private long timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => Interlocked.Read(ref timestamp);
+        internal void Advance(TimeSpan elapsed) => Interlocked.Add(ref timestamp, elapsed.Ticks);
+    }
+
     private static WindowsCpuTemperatureReader Create(Func<ICpuTemperatureChild> factory, TimeSpan? deadline = null) =>
-        new(factory, deadline ?? TestDeadline, TimeSpan.FromMilliseconds(40));
+        new(factory, deadline ?? TestDeadline, TimeSpan.FromMilliseconds(40), retryBaseDelay: TimeSpan.Zero);
 
     private static byte[] Reply(byte[] request, int? temperature)
     {
@@ -275,21 +621,36 @@ public sealed class WindowsCpuTemperatureReaderTests
     private sealed class FakeChild : ICpuTemperatureChild
     {
         internal Func<byte[], Task<byte[]>> Exchange { get; set; } = request => Task.FromResult(Reply(request, 60_000));
+        internal Func<byte[], Task<byte[]>> Warmup { get; set; } = request => Task.FromResult(
+            CpuTemperatureProtocol.EncodeReadyReply(BinaryPrimitives.ReadInt64LittleEndian(request)));
+        internal TaskCompletionSource WarmupEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal List<long> Requests { get; } = [];
         internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Stopped { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Disposed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal TaskCompletionSource? Exit { get; set; }
+        internal TaskCompletionSource Exit { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool HasExited => Exit.Task.IsCompletedSuccessfully;
 
         public Task<byte[]> ExchangeAsync(byte[] request, CancellationToken cancellationToken)
         {
+            if (!WarmupEntered.Task.IsCompleted)
+            {
+                WarmupEntered.TrySetResult();
+                return Warmup(request);
+            }
             Requests.Add(BinaryPrimitives.ReadInt64LittleEndian(request));
             Entered.TrySetResult();
             return Exchange(request);
         }
 
-        public void RequestStop() => Stopped.TrySetResult();
-        public Task WaitForExitAsync() => Exit?.Task ?? Task.CompletedTask;
+        internal bool ConfirmExitOnStop { get; set; } = true;
+        public void RequestStop()
+        {
+            Stopped.TrySetResult();
+            if (ConfirmExitOnStop) { Exit.TrySetResult(); }
+        }
+        public Task WaitForExitAsync() => Exit.Task;
         public void Dispose() => Disposed.TrySetResult();
     }
 

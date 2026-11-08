@@ -68,9 +68,10 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
 
     internal static So6120ServiceDutyPlatform Acquire(So6120JournalIdentity identity, int servicePid,
         long serviceStartUtcTicks, Func<bool> ownershipStillDelegated, IFanTemperatureSource temperatureSource,
-        FanStopSettings settings)
+        FanStopSettings settings, CancellationToken cancellationToken)
     {
         RequireSystemSession();
+        cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(ownershipStillDelegated);
         ArgumentNullException.ThrowIfNull(temperatureSource);
@@ -102,9 +103,16 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
             // device or HID command is opened, so they cannot fabricate an
             // uncertain Stop transaction on an idle or already-hot laptop.
             if (!owner.ActiveSession(metadata) || metadata.OpenBladeStatus != ServiceControllerStatus.Running
-                || metadata.OpenBladeWriterPids.Count != 1 || metadata.OpenBladeWriterPids[0] != servicePid
+                || metadata.OpenBladeWriterPids.Count != 1 || metadata.OpenBladeWriterPids[0] != servicePid)
+            { throw new InvalidOperationException("Initial command-free Stop admission refused."); }
+            // A guardian has a new sensor worker on every activation. Prepare it
+            // before the first one-shot admission read, while no fan handle or
+            // command exists. Cold readiness never substitutes for a fresh sample.
+            if (!temperatureSource.PrepareAsync(cancellationToken).AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(10), cancellationToken).GetAwaiter().GetResult()
                 || !owner.RefreshTemperature())
             { throw new InvalidOperationException("Initial command-free Stop admission refused."); }
+            cancellationToken.ThrowIfCancellationRequested();
             owner.driverPin = So6120NativeAcquisition.PinDriverFile(metadata.Driver);
             owner.RequireAdmission(owner.ReadMetadata());
             handle = So6120NativeAcquisition.OpenDevice();

@@ -19,6 +19,12 @@ and end an owned Stop immediately. This integration still requires physical
 validation; no earlier Intel diagnostic or EC fan experiment validates the new
 reader. See [CPU temperature source](so6120-cpu-temperature-source.md).
 
+Each new guardian prepares the CPU helper under a separate ten-second startup
+deadline after host/session admission and before opening the fan-control
+interface. It then takes a fresh safety reading with the ordinary sample-age
+limit. Readiness alone never authorizes Stop, and canceled/failed preparation
+cannot submit a fan command.
+
 ## Duration and transitions
 
 There is no fixed Stop dwell timer. Selecting Auto, making an explicit

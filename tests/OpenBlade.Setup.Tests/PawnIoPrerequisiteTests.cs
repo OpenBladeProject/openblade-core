@@ -25,7 +25,7 @@ public sealed class PawnIoPrerequisiteTests
         FakeOperations operations = new() { ExitCode = code, InstalledState = Trusted() };
         Assert.Equal(reboot, await new PawnIoPrerequisite(operations).EnsureAsync("staging", default));
         Assert.Equal(1, operations.Installs);
-        Assert.Equal(code == 3010 ? 1 : 2, operations.Inspections);
+        Assert.Equal(1, operations.Inspections);
     }
 
     [Fact]
@@ -50,6 +50,15 @@ public sealed class PawnIoPrerequisiteTests
         FakeOperations operations = new() { ExitCode = 3010 };
         Assert.True(await new PawnIoPrerequisite(operations).EnsureAsync("staging", default));
         Assert.Null(operations.State);
+        Assert.Equal(1, operations.Inspections);
+    }
+
+    [Fact]
+    public async Task DurableRebootPendingInspectionDoesNotSubmitAnotherInstaller()
+    {
+        FakeOperations operations = new() { RebootPending = true };
+        Assert.True(await new PawnIoPrerequisite(operations).EnsureAsync("staging", default));
+        Assert.Equal(0, operations.Installs);
         Assert.Equal(1, operations.Inspections);
     }
 
@@ -87,19 +96,20 @@ public sealed class PawnIoPrerequisiteTests
         public PawnIoInstallation? InstalledState { get; init; }
         public int ExitCode { get; init; }
         public Exception? InspectError { get; init; }
+        public bool RebootPending { get; init; }
         public int Installs { get; private set; }
         public int Inspections { get; private set; }
-        public PawnIoInstallation? Inspect(CancellationToken cancellationToken)
+        public PawnIoSetupInspection Inspect(CancellationToken cancellationToken)
         {
             Inspections++;
             if (InspectError is not null) { throw InspectError; }
-            return State;
+            return new(State, RebootPending);
         }
-        public Task<int> InstallAsync(string installer, CancellationToken cancellationToken)
+        public Task<PawnIoInstallResult> InstallAsync(string installer, CancellationToken cancellationToken)
         {
             Installs++;
             State = InstalledState;
-            return Task.FromResult(ExitCode);
+            return Task.FromResult(new PawnIoInstallResult(ExitCode, InstalledState));
         }
     }
 }

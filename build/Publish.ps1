@@ -296,7 +296,8 @@ try {
         foreach ($file in Get-ChildItem -LiteralPath $stagingBundle -Recurse -File |
             Where-Object {
                 ($_.Extension -in @('.exe', '.dll')) -and
-                $_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal)
+                ($_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal) -or
+                    $_.FullName -ceq (Join-Path $payload 'LibreHardwareMonitorLib.dll'))
             }) {
             Invoke-OpenBladeSigning -Path $file.FullName -ResolvedSignTool $resolvedSignTool
         }

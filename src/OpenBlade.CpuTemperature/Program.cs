@@ -36,7 +36,19 @@ internal static class CpuTemperatureWorker
             {
                 using var idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 idle.CancelAfter(IdleTimeout);
-                try { await input.ReadExactlyAsync(request, idle.Token).ConfigureAwait(false); }
+                // Redirected Windows console streams can perform synchronous reads
+                // that ignore cancellation. Bound our wait independently, and exit
+                // after timeout rather than starting another overlapping reader.
+                Task read = Task.Run(async () =>
+                    await input.ReadExactlyAsync(request, idle.Token).ConfigureAwait(false));
+                _ = read.ContinueWith(completed => _ = completed.Exception,
+                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted
+                    | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                try
+                {
+                    await read.WaitAsync(idle.Token).ConfigureAwait(false);
+                    idle.Token.ThrowIfCancellationRequested();
+                }
                 catch (EndOfStreamException) { return 0; }
                 catch (OperationCanceledException) { return 0; }
                 if (!CpuTemperatureProtocol.TryDecodeRequest(request, out long sequence)
@@ -48,13 +60,23 @@ internal static class CpuTemperatureWorker
                 {
                     // No driver/library operation occurs before a request. The
                     // parent sends that request only after assigning our job.
-                    if (session is null) { verifyDriver(); session = createSession(); }
+                    if (session is null)
+                    {
+                        verifyDriver();
+                        session = createSession();
+                        // Readiness never carries a temperature. The parent must issue
+                        // a new request after cold initialization to obtain a fresh sample.
+                        await output.WriteAsync(CpuTemperatureProtocol.EncodeReadyReply(sequence),
+                            cancellationToken).ConfigureAwait(false);
+                        await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
                     value = session.ReadMilliCelsius();
                 }
                 catch (Exception)
                 {
                     // No partial or prior sensor value can survive a failed read.
-                    await output.WriteAsync(CpuTemperatureProtocol.EncodeReply(sequence, null),
+                    await output.WriteAsync(CpuTemperatureProtocol.EncodeTerminalReply(sequence),
                         cancellationToken).ConfigureAwait(false);
                     await output.FlushAsync(cancellationToken).ConfigureAwait(false);
                     return 4;

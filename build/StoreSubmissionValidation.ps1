@@ -170,7 +170,11 @@ function Write-OpenBladeStoreReadinessReport {
         else {
             $signature.SignerCertificate.Subject
         }
-        $isFirstParty = ($relativePath -eq 'OpenBlade-Setup.exe') -or
+        # The patched LHM fork is compiled from reviewed corresponding source in
+        # this tree. OpenBlade signs that output; attribution remains in notices.
+        # Admit only its exact payload location, never a same-named nested binary.
+        $isSourceBuilt = $relativePath -ceq 'payload\LibreHardwareMonitorLib.dll'
+        $isFirstParty = $isSourceBuilt -or ($relativePath -eq 'OpenBlade-Setup.exe') -or
             ($relativePath -match '^(?:[^\\]+\\)*OpenBlade\.[^\\]+\.(?:dll|exe)$')
 
         if (($status -ne 'Valid') -and ($status -ne 'NotSigned')) {
@@ -185,6 +189,7 @@ function Write-OpenBladeStoreReadinessReport {
                 status = $status
                 publisher = $publisher
                 firstParty = $isFirstParty
+                sourceBuilt = $isSourceBuilt
             })
     }
 

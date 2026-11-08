@@ -92,6 +92,7 @@ function Add-CpuTemperaturePublishPayload {
 
 function Add-CpuTemperatureLicensePayload {
     param([Parameter(Mandatory)][string]$Repository, [Parameter(Mandatory)][string]$Payload)
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
     Copy-Item -LiteralPath (Join-Path $Repository 'build\third-party\PawnIO-NOTICE.txt') -Destination $Payload
     $source = Join-Path $Repository 'third_party\LibreHardwareMonitor'
     if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw 'The reviewed LibreHardwareMonitor corresponding source is missing.' }

@@ -86,6 +86,10 @@ public static class FanCurveCalculator
 
 public interface IFanTemperatureSource
 {
+    // Optional cold initialization, before a one-shot safety measurement.
+    // Readiness is never a temperature or permission to change fan control.
+    ValueTask<bool> PrepareAsync(CancellationToken cancellationToken) => ValueTask.FromResult(true);
+
     ValueTask<FanTemperatureReadings> ReadAsync(CancellationToken cancellationToken);
 
     // Stop temperature policy needs device-power evidence, not workload absence.
@@ -200,6 +204,7 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
 
     private readonly IGpuActivitySource gpuActivitySource;
     private readonly Func<CancellationToken, ValueTask<int?>> cpuTemperatureReader;
+    private readonly Func<CancellationToken, ValueTask<bool>> cpuTemperaturePrepare;
     private readonly IDisposable? cpuTemperatureOwner;
     private readonly IGpuTemperatureSession gpuTemperature;
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -229,7 +234,8 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
             cpuTemperature.ReadAsync,
             gpuTemperature,
             timeProvider,
-            cpuTemperatureOwner: cpuTemperature)
+            cpuTemperatureOwner: cpuTemperature,
+            cpuTemperaturePrepare: cpuTemperature.PrepareAsync)
     {
     }
 
@@ -265,12 +271,14 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         IGpuTemperatureSession gpuTemperature,
         TimeProvider timeProvider,
         IDisposable? cpuTemperatureOwner = null,
-        Func<FanStopGpuPowerState>? gpuPowerState = null)
+        Func<FanStopGpuPowerState>? gpuPowerState = null,
+        Func<CancellationToken, ValueTask<bool>>? cpuTemperaturePrepare = null)
     {
         this.gpuActivitySource = gpuActivitySource
             ?? throw new ArgumentNullException(nameof(gpuActivitySource));
         this.cpuTemperatureReader = cpuTemperatureReader
             ?? throw new ArgumentNullException(nameof(cpuTemperatureReader));
+        this.cpuTemperaturePrepare = cpuTemperaturePrepare ?? (_ => ValueTask.FromResult(true));
         this.gpuTemperature = gpuTemperature
             ?? throw new ArgumentNullException(nameof(gpuTemperature));
         ArgumentNullException.ThrowIfNull(timeProvider);
@@ -282,6 +290,13 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
             this,
             Timeout.InfiniteTimeSpan,
             Timeout.InfiniteTimeSpan);
+    }
+
+    public ValueTask<bool> PrepareAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(disposed, this);
+        return cpuTemperaturePrepare(cancellationToken);
     }
 
     public ValueTask<FanTemperatureReadings> ReadAsync(

@@ -65,13 +65,18 @@ public sealed class CpuTemperatureTests
     public async Task ReadFailureEmitsUnavailableAndClosesWithoutReusingSuccess()
     {
         var session = new FakeSession { FailAfter = 1 };
-        byte[] requests = [.. CpuTemperatureProtocol.EncodeRequest(1), .. CpuTemperatureProtocol.EncodeRequest(2)];
+        byte[] requests = [.. CpuTemperatureProtocol.EncodeRequest(1), .. CpuTemperatureProtocol.EncodeRequest(2),
+            .. CpuTemperatureProtocol.EncodeRequest(3)];
         using var output = new MemoryStream();
         Assert.Equal(4, await CpuTemperatureWorker.RunAsync(new MemoryStream(requests), output, () => session, () => { }));
         byte[] replies = output.ToArray();
-        Assert.True(CpuTemperatureProtocol.TryDecodeReply(replies.AsSpan(0, 20), 1, out int? first));
+        Assert.True(CpuTemperatureProtocol.TryDecodeReply(replies.AsSpan(0, 20), 1, out _, out CpuTemperatureReplyStatus readiness));
+        Assert.Equal(CpuTemperatureReplyStatus.Ready, readiness);
+        Assert.True(CpuTemperatureProtocol.TryDecodeReply(replies.AsSpan(20, 20), 2, out int? first));
         Assert.Equal(46, first);
-        Assert.True(CpuTemperatureProtocol.TryDecodeReply(replies.AsSpan(20, 20), 2, out int? second));
+        Assert.True(CpuTemperatureProtocol.TryDecodeReply(replies.AsSpan(40, 20), 3, out int? second,
+            out CpuTemperatureReplyStatus terminal));
+        Assert.Equal(CpuTemperatureReplyStatus.TerminalUnavailable, terminal);
         Assert.Null(second);
         Assert.True(session.Disposed);
     }
@@ -85,8 +90,61 @@ public sealed class CpuTemperatureTests
             output, () => { opened++; return new FakeSession(); }, () => throw new IOException("Untrusted driver"));
         Assert.Equal(4, result);
         Assert.Equal(0, opened);
-        Assert.True(CpuTemperatureProtocol.TryDecodeReply(output.ToArray(), 1, out int? temperature));
+        Assert.True(CpuTemperatureProtocol.TryDecodeReply(output.ToArray(), 1, out int? temperature,
+            out CpuTemperatureReplyStatus terminal));
+        Assert.Equal(CpuTemperatureReplyStatus.TerminalUnavailable, terminal);
         Assert.Null(temperature);
+    }
+
+    [Fact]
+    public async Task FirstRequestInitializesWithoutSamplingAndNextRequestReadsFresh()
+    {
+        var session = new FakeSession();
+        using var output = new MemoryStream();
+        Assert.Equal(0, await CpuTemperatureWorker.RunAsync(
+            new MemoryStream(CpuTemperatureProtocol.EncodeRequest(1)), output, () => session, () => { }));
+        Assert.Equal(0, session.Reads);
+        Assert.True(CpuTemperatureProtocol.TryDecodeReply(output.ToArray(), 1, out int? value,
+            out CpuTemperatureReplyStatus status));
+        Assert.Equal(CpuTemperatureReplyStatus.Ready, status);
+        Assert.Null(value);
+        Assert.True(session.Disposed);
+    }
+
+    [Fact]
+    public async Task UncancellableInputCannotPreventWorkerExitOrStartALateSensor()
+    {
+        using var input = new UncancellableInput();
+        using var output = new MemoryStream();
+        using var cancellation = new CancellationTokenSource();
+        int opened = 0;
+        Task<int> worker = CpuTemperatureWorker.RunAsync(input, output,
+            () => { Interlocked.Increment(ref opened); return new FakeSession(); }, () => { }, cancellation.Token);
+        await input.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        Assert.Equal(0, await worker.WaitAsync(TimeSpan.FromSeconds(2)));
+        input.Release.TrySetResult();
+        await input.Completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(0, opened);
+        Assert.Empty(output.ToArray());
+        Assert.Equal(1, input.ReadCount);
+    }
+
+    private sealed class UncancellableInput : MemoryStream
+    {
+        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Completed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal int ReadCount { get; private set; }
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            ReadCount++;
+            Entered.TrySetResult();
+            await Release.Task;
+            CpuTemperatureProtocol.EncodeRequest(1).CopyTo(buffer);
+            Completed.TrySetResult();
+            return CpuTemperatureProtocol.RequestLength;
+        }
     }
 
     private static CpuThermalChannel Package(float? value) => new(CpuThermalChannelKind.IntelPackage, value, 100, 1);
@@ -96,6 +154,7 @@ public sealed class CpuTemperatureTests
         public int FailAfter { get; init; } = int.MaxValue;
         public bool Disposed { get; private set; }
         private int reads;
+        public int Reads => reads;
         public int? ReadMilliCelsius() => ++reads > FailAfter ? throw new IOException("failed") : 45123;
         public void Dispose() => Disposed = true;
     }

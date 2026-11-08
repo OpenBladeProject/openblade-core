@@ -29,9 +29,13 @@ remain unavailable; installing PawnIO does not guarantee processor coverage.
 `OpenBlade.CpuTemperature.exe` owns the native session. Its parent assigns an
 unnamed kill-on-close Windows Job before sending the first sample request.
 Requests and replies use private redirected streams, fixed-size frames and
-monotonic sequence matching. Each read has a one-second deadline including
-startup; timeout or malformed output poisons that worker. A replacement cannot
-start until its predecessor's exit is confirmed. The helper exits after ten
+monotonic sequence matching. Callers have a one-second deadline. Background
+initialization has its own bounded readiness handshake and cannot publish a
+temperature; after readiness, a new request obtains the measurement. Timeout or
+malformed sample output poisons that worker. A replacement cannot start until
+its predecessor's exit is confirmed, including late exit after the initial
+cleanup wait. Persistent failures delay retries instead of continually spawning
+workers. The helper independently bounds its input wait and exits after ten
 seconds without requests. Service and guardian never execute sensor IOCTLs in
 their own processes, so a blocked sensor cannot block their Auto handoff.
 
@@ -49,6 +53,27 @@ installed or physically validated on the laptop. The prior IPF readings below
 do not validate this provider. CPU reader coverage is shared across admitted
 Blade profiles; it does not add fan-control support to another model. Stop's
 existing exact-device and mode admission remains unchanged.
+
+## Independent review
+
+Claude Opus 5.5 completed a restricted read-only review of the frozen initial
+implementation on 2026-11-07 (review ID
+`7df9e8dada4641739f1efdaf86674ffe`, evidence SHA-256
+`e1e2ea6524860bd6f907cfe654884f1271bc916ac88529da92a2b4f4fb066f8d`).
+The review covered the new reader/helper and the modified service, installer,
+broker and packaging integration points. It did not run code or establish
+physical sensor correctness.
+
+Eight findings were accepted: separate cold initialization from sample deadlines;
+reconcile completed installer journals; distinguish terminal worker failure;
+allow recovery after a confirmed late worker exit; avoid an abandoned semaphore
+wait; independently bound redirected input; delay retries after repeated failure;
+and reuse the install operation's independent readback. Regression tests cover
+these paths without invoking a sensor or installer. The proposed shared
+diagnostics refactor was declined: it identifies duplicated maintenance logic,
+not a failing behavior, and would widen this change into unrelated PDH/NVML
+observers. CPU diagnostics already suppress repeated states and isolate throwing
+trace listeners from telemetry results.
 
 ## Imported correction
 

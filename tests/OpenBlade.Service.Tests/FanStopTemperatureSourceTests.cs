@@ -6,6 +6,42 @@ namespace OpenBlade.Service.Tests;
 public sealed class FanStopTemperatureSourceTests
 {
     [Fact]
+    public async Task ColdPreparationDoesNotSampleOrReplaceTheFirstFreshSafetyRead()
+    {
+        bool ready = false;
+        int samples = 0;
+        var gpu = new Gpu();
+        using var source = new SafeWindowsFanTemperatureSource(new Inactive(),
+            _ =>
+            {
+                Assert.True(ready);
+                samples++;
+                return ValueTask.FromResult<int?>(45);
+            }, gpu, TimeProvider.System,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredDown,
+            cpuTemperaturePrepare: _ => { ready = true; return ValueTask.FromResult(true); });
+        Assert.True(await source.PrepareAsync(default));
+        Assert.Equal(0, samples);
+        Assert.Equal(0, gpu.Reads);
+        Assert.Equal(45, (await source.ReadForFanStopAsync(default)).CpuCelsius);
+        Assert.Equal(1, samples);
+    }
+
+    [Fact]
+    public async Task FailedColdPreparationCannotBecomeAValidSafetyReading()
+    {
+        using var source = new SafeWindowsFanTemperatureSource(new Inactive(),
+            _ => ValueTask.FromResult<int?>(null), new Gpu(), TimeProvider.System,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredDown,
+            cpuTemperaturePrepare: _ => ValueTask.FromResult(false));
+        Assert.False(await source.PrepareAsync(default));
+        Assert.Null((await source.ReadForFanStopAsync(default)).CpuCelsius);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => source.PrepareAsync(cancellation.Token).AsTask());
+    }
+
+    [Fact]
     public async Task TelemetryAndStopConsumeTheSameFreshCpuReader()
     {
         int calls = 0;
