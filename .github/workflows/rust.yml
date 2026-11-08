@@ -75,6 +75,9 @@ jobs:
           cargo --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Fetch locked test-only dependencies
+        run: cargo fetch --locked
+
       - name: Check workspace boundaries
         run: ./Check-Workspace.ps1
 
@@ -87,7 +90,7 @@ jobs:
       - name: Build
         run: cargo build --locked --workspace --all-targets --target ${{ matrix.target }}
 
-      - name: Test
+      - name: Test workspace and all 29 canonical report cases
         run: cargo test --locked --workspace --all-targets --target ${{ matrix.target }}
 
       - name: Clippy

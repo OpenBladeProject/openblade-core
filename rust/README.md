@@ -1,9 +1,9 @@
 # Rust workspace
 
-Phase 2 adds buildable crate boundaries and native CI. The Windows product
-continues to use C#; its build, installer and release payload do not consume this
-workspace. These crates contain no algorithms, tests or C exports yet. The FFI
-crate builds as an ordinary Rust library, with no native DLL artifact.
+Stage 3 implements pure report creation, encoding, checksum and response
+validation. The Windows product continues to use C#; its build, installer and
+release payload do not consume this workspace. The FFI crate remains an ordinary
+Rust library without C exports or a native DLL artifact.
 
 ## Develop
 
@@ -12,6 +12,7 @@ Install [rustup](https://rustup.rs/) and the platform's native C/C++ linker
 on Linux). From `rust/`, run:
 
 ```text
+cargo fetch --locked
 cargo build --locked --workspace --all-targets
 cargo test --locked --workspace --all-targets
 cargo fmt --all --check
@@ -23,24 +24,48 @@ pwsh -NoProfile -File ./Test-WorkspaceCheck.ps1
 `rust-toolchain.toml` selects Rust **1.99.1**, rustfmt and clippy. This stable
 release was verified against the [official release announcement](https://blog.rust-lang.org/2026/10/15/Rust-1.99.1/)
 and [stable manifest](https://static.rust-lang.org/dist/channel-rust-stable.toml)
-on November 7, 2026. The edition is 2024 and the initial MSRV equals the tested
-pin; no older compiler compatibility is claimed. Update the pin and workspace
-`rust-version` together. `0.0.0` identifies unpublished scaffolding independently
-of the Windows product version. Licensing follows the repository's
-`GPL-3.0-or-later` policy. Commit `Cargo.lock`; there are no registry dependencies.
+on November 7, 2026. The edition is 2024 and the MSRV equals the tested pin;
+no older compiler compatibility is claimed. Update both together. `0.0.0`
+identifies these unpublished migration crates independently of the Windows
+product version. Licensing follows `GPL-3.0-or-later`.
 
-The [reviewed boundaries](../docs/rust-boundaries.md) define the inward graph:
-protocol and domain depend on types; FFI depends on all three. The workspace
-check rejects extra packages, changed dependency edges, non-library targets,
-MSRV drift and removal of the unsafe/no_std policies. It resolves its directory
-independently of the caller. Guard regression tests use disposable workspace copies.
-The three inner crates use `no_std`, and all crates inherit a compiler-enforced
-unsafe-code prohibition. Platform APIs and hardware access remain host work.
+Commit `Cargo.lock`. Only the protocol integration tests use registry roots:
+exact `serde` 1.0.228 with derive and `serde_json` 1.0.149, plus their locked
+parsing/proc-macro dependency closure. These established parsers provide strict
+typed JSON and duplicate-field rejection without adding a handwritten parser.
+Production libraries have only inward local dependencies. The workspace guard
+checks the four libraries, reviewed test targets/dependencies, MSRV and compiler
+policies independently of the caller's directory. Its regression tests use
+disposable workspace copies. Inner crates retain `no_std`; all crates inherit
+`unsafe_code = "forbid"`.
+
+## Report API
+
+`openblade-types` defines encoding errors and explicit protocol-validation
+numbers 0 through 8 matching C# diagnostics. `openblade-protocol` provides:
+
+- `RazerReport::create`: copies a payload of at most 80 bytes into bounded storage.
+- `encode` / `encode_into`, and static `encode_report`: produce exactly 90
+  protocol bytes, excluding the OS report-ID prefix. Span encoders require an
+  exact-length destination and leave it unchanged on error. Static encoding
+  checks the payload size before the destination size.
+- `calculate_checksum`: checks envelope length before XOR over offsets 2..=87.
+- `validate_response`: checks length, checksum, transaction, command class,
+  command ID, successful status and payload length in C# order. It returns an
+  owned `ReportPayload`; the optional expected length remains signed to preserve
+  rejection of negative C# contract lengths. Like C#, it accepts reserved bytes
+  and the trailing byte when the checked fields are coherent.
+
+The safe API uses ordinary Rust values and bounded arrays, with no allocation,
+I/O, transaction allocation or hardware session. It neither admits firmware
+commands nor performs model checks; those remain host responsibilities.
+The [reviewed boundaries](../docs/rust-boundaries.md) define the ownership graph.
+No ABI, IPC or saved schema changes accompany this stage.
 
 ## Validation scope
 
-[The Rust workflow](../.github/workflows/rust.yml) runs build, tests, formatting,
-strict clippy and the metadata boundary check on these native runners:
+[Native CI](../.github/workflows/rust.yml) runs locked builds/tests, formatting,
+strict clippy and guard regression on these native runners:
 
 | Runner | Target |
 | --- | --- |
@@ -49,18 +74,18 @@ strict clippy and the metadata boundary check on these native runners:
 | macOS 15 Intel | `x86_64-apple-darwin` |
 | macOS 15 ARM64 | `aarch64-apple-darwin` |
 
-Runner labels follow [GitHub's hosted-runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
-An explicit host check ensures the target is executed natively. Windows ARM64,
-Linux ARM64, musl, 32-bit and other targets are not validated in this phase.
-The empty crates intentionally run zero behavioral tests; green CI establishes
-workspace/toolchain portability, not protocol parity, OS integration or hardware
-support. This workflow publishes no artifacts and accepts stacked pull requests.
-The existing Windows CI keeps its conservative full-validation fallback for
-unknown paths, including Rust; no .NET or packaging gate is bypassed.
+Each lane reads the same canonical
+[parity JSON](../tests/Fixtures/Parity/README.md) through `include_str!` from the
+repository, without copied or regenerated expectations: 9 encoding and 20
+response cases. Strict-reader negative tests reject malformed schema/provenance,
+unknown/duplicate/missing fields and IDs, numeric strings and noncanonical hex.
+Deterministic property tests exercise payload/destination bounds, copied
+ownership, all combinations of envelope faults, signed lengths, checksum byte
+coverage and a 20,000-input malformed corpus. These software checks establish
+codec parity and portability; physical validation remains separate.
 
-PR3 will implement the pure helpers and consume the single canonical
-[parity fixture set](../tests/Fixtures/Parity/README.md) (43 C# baseline vectors:
-9 encoding, 20 response and 14 profile cases).
-Do not copy or regenerate those fixtures here. C ABI implementation, C# native
-loading, runtime selection and later OS adapters remain separate stages. Product
-SemVer, IPC versions and saved schemas are unchanged by this scaffold.
+The 14 profile vectors await stage 6. C ABI implementation, C# loading, runtime
+selection, packaging and OS adapters remain later stages. Windows ARM64, Linux
+ARM64, musl and 32-bit targets are unvalidated. CI publishes no artifacts and
+accepts stacked PRs. Existing Windows CI retains its conservative full-validation
+fallback for Rust changes.

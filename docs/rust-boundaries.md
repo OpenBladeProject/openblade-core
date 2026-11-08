@@ -1,12 +1,13 @@
 # Shared Rust core boundaries
 
-This is the design contract for the first migration stage. It adds portable
-parity tests while keeping production C# behavior unchanged. There is no Cargo
-workspace, native loading, or runtime handoff in this stage.
+This contract was pinned in stage 1. Stage 2 added the Cargo workspace; stage 3
+implements the pure report codec and consumes the 29 canonical report vectors.
+Production C# behavior is unchanged. Native loading and runtime handoff remain
+later stages. See [the workspace guide](../rust/README.md) for the current API.
 
 ## Ownership and dependencies
 
-The future `rust/` Cargo workspace has four initial crates:
+The `rust/` Cargo workspace has four initial crates:
 
 | Crate | Owns | Depends on |
 | --- | --- | --- |
@@ -163,9 +164,10 @@ Do not pass existing serialized profiles through FFI as an implicit new ABI.
 ## Shared parity baseline
 
 [The fixture contract](../tests/Fixtures/Parity/README.md) defines the exact JSON
-consumed by C# now and by Rust later. It pins the reviewed source revision and
-independent expected values. These are synthetic software vectors, separate from
-production capture/admission evidence. Existing tests remain in place.
+consumed by C# and the stage 3 Rust report tests. Rust profile tests remain stage 6.
+It pins the reviewed source revision and independent expected values. These are
+synthetic software vectors, separate from production capture/admission evidence.
+Existing tests remain in place.
 
 Later stages must run both readers against these same files before replacing a
 helper. Full profile validation, application selection, override lifetimes,
