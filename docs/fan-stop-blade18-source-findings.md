@@ -3,10 +3,10 @@
 Reviewed 2026-11-08. RZ09-0423, RZ09-0484, RZ09-0509 and RZ09-0529 each have an exact
 source-confirmed FE direct-duty path for three PWM channels. Zero is copied
 without a minimum clamp. The follow-up [readback review](fan-stop-blade18-readback-resolution.md)
-resolves the known early-clear race with a bounded compound observation.
-Stop remains unavailable because that reader and complete three-channel
-ownership, journal and Auto restoration are not implemented. Physical testing
-does not replace those software requirements.
+proposes a conditional compound observation. Its event-trigger and writer
+assumptions remain unverified, so the readback gap is still open. Stop also
+requires a typed reader and complete three-channel ownership, journal and Auto
+restoration. Physical testing does not replace the missing source or software work.
 
 ## Exact inputs
 
@@ -65,12 +65,13 @@ following command could be cleared prematurely. This differs from the
 existing mapped A0/A1 completion contract. Neither status 80 nor a guessed delay
 establishes a drain; raw count errors can also return 80 without copying.
 
-The [bounded read/completion contract](fan-stop-blade18-readback-resolution.md)
+The [conditional readback design](fan-stop-blade18-readback-resolution.md)
 keeps the D0 result provisional until one fresh-status mapped read completes.
-An erased fence fails the compound observation without retry. Complete
-three-channel ownership and failure/recovery coverage remain implementation
-requirements. The existing thermal, power, session, controller and uncertainty
-gates remain applicable. Physical fan-stop and live recovery are untested.
+The model detects an erased fence without retry under stated assumptions;
+exact event-trigger semantics and asynchronous-writer completeness remain
+unverified. These gaps precede typed implementation, three-channel ownership
+and failure/recovery coverage. The existing thermal, power, session, controller
+and uncertainty gates remain applicable. Physical fan-stop and live recovery are untested.
 
 The DI780 carrier also includes the same managed flasher hash
 `3de34bf3f5e57e0c11e76f45b773642ae3816f4a645040cf3b0602dcd30e79ed`

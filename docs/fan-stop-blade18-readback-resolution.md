@@ -1,18 +1,17 @@
-# Blade 17/18 third-duty read: a bounded completion barrier
+# Blade 17/18 third-duty read: a conditional completion-fence design
 
-Reviewed 2026-11-08 against the four exact images below. The D0 early-clear
-problem has a source-backed, fail-closed solution: treat the fixed D0 read and
-one fresh-status mapped read as **one compound observation**. D0's first zero
-is an internal milestone. Its value becomes a completed observation only when
-the mapped phase has independently completed. A lost mapped phase fails the
-compound operation; it is never retried.
+Reviewed 2026-11-08 against the four exact images below. A proposed design treats
+the fixed D0 read and one fresh-status mapped read as **one compound observation**.
+Within the modeled event/ownership assumptions, it detects erasure of the mapped
+phase without retrying: D0's first zero is an internal milestone, and its value
+stays provisional until the mapped phase completes.
 
-This resolves the additional outstanding D0 wrapper clear under the existing
-isolated, stable mailbox contract. It does not establish universal exclusion
-of firmware/OS/third-party port clients, guarantee delivery of every hardware
-notification, or supply a cooling lease. Three-channel ownership, restoration,
-typed implementation and software failure tests remain separate work. No
-hardware, updater, driver or installation was executed for this review.
+The readback issue remains unresolved for runtime admission. Exact IT8320
+hardware-trigger semantics and completeness of the asynchronous status-writer
+analysis are unverified. The ordering models do not establish those premises,
+exclude foreign port clients, or prove real port-boundary behavior. Three-channel
+ownership, restoration, typed implementation and software failure tests are also
+missing. No hardware, updater, driver or installation was executed for this review.
 
 ## Exact inputs and reproducibility
 
@@ -73,7 +72,7 @@ Thus saving the provisional result and preparing the mapped descriptor cannot
 be corrupted by the remaining D0 instructions. The command publication itself
 can still be erased by the remaining clear; that is what the barrier detects.
 
-## One compound observation
+## Proposed compound observation, conditional on the premises below
 
 Retain the existing exact-device, firmware-source, controller, session, power,
 ownership, intact-port-result and deadline admission. Serialize the entire
@@ -114,14 +113,15 @@ already used for first/second duty. All 2,048 descriptors per image were
 checked; none points to actual third PWM `F01808`, command `F02293` or status
 `F02294`. No staged-duty alias was promoted to actual duty.
 
-## Why the fresh status closes this particular race
+## Why fresh status detects the modeled tail race
 
-After the D0 inner clear, the old invocation cannot set status again. A reset
-status can become `80` from the fixed A0 phase only after the event dispatcher
+After the D0 inner clear, the recovered old invocation cannot set status again.
+Assuming the documented event source, exclusive writer and no hidden asynchronous
+status writer, a reset status can become `80` from the fixed A0 phase only after the event dispatcher
 has returned from the old wrapper and begun the new handler. Mapped A0 sets
 status before copying, but leaves command nonzero until its wrapper clears it
-after the copy. Therefore **fresh status 80 plus command zero** establishes both
-that the old D0 wrapper finished and that the mapped read finished. Status 80
+after the copy. Under those premises, **fresh status 80 plus command zero**
+establishes that the old D0 wrapper and the mapped read finished. Status 80
 alone, first zero alone, repeated zero or any guessed elapsed delay does not.
 
 If D0's trailing clear erases A0, a pending event can still call the handler
@@ -141,9 +141,9 @@ opcode and sole-writer/invariant checks; `00/80` is not a general owner token.
 
 ## Dispatch, IRQ acknowledgment and other status writers
 
-Both raw and mapped commands run through the same nonreentrant main-loop event
-callback. The pending flag is cleared before invoking its function pointer;
-the ISR only sets that flag and acknowledges the interrupt.
+The recovered raw and mapped paths use the same serialized main-loop event
+callback. Its pending flag is cleared before invoking the function pointer;
+the reviewed ISR only sets that flag and acknowledges the interrupt.
 
 | Model | IRQ pending setter | Event table / slot 13 | Callback / wrapper | Scheduler table load |
 |---|---|---|---|---|
@@ -157,17 +157,20 @@ For example, KI8110 main loop `3084` calls dispatcher `1CAF2`; it clears
 one to `8000D`, ORs acknowledgment bit 7 at `F01124` and bit 4 at `F0201B`,
 then returns. It does not call `203C`, write command or write status. The
 initialization immediately before each wrapper sets `F02019=93`,
-`F0201B=31`, enables `F01125` bit 7, and clears the command. This is the exact
-source's command-trigger setup; no new host acknowledgment write is required.
+`F0201B=31`, enables `F01125` bit 7, and clears the command. These writes identify
+the configuration to investigate; they do not independently establish which
+host or EC-local accesses generate an event. No additional host acknowledgment
+write is justified from this evidence.
 
 The software pending byte coalesces repeated notifications while already one.
 It is not a request counter. This review does not turn those configuration
 bytes into a datasheet-level guarantee against every possible duplicate or
 delayed hardware notification. An unrelated later empty callback could still
 execute an unconditional wrapper clear, an underlying primary-mailbox
-limitation also relevant to ordinary mapped operations. The new barrier proves
-the *known outstanding D0 invocation* has finished; it does not claim a universal
-hardware queue drain or relax the existing stable isolated-transaction boundary.
+limitation also relevant to ordinary mapped operations. The conditional model
+detects the known outstanding tail under its event assumptions. It does not
+prove those assumptions, drain a hardware event queue, or establish an admitted
+transaction boundary for these four models.
 
 The modeled successful sequence assumes the configured host command publication
 is the event source: D0's event is consumed before D0 executes, A0's event is
@@ -190,10 +193,26 @@ infer IT8320 behavior.
 The extraction inventories every literal status-offset store and its recovered
 function ancestry. All recovered literal-offset `F02294` writers are in `203C` or synchronous
 descendants reached by its other opcodes. There is no independent asynchronous
-status writer among these recovered paths. DI780's additional `1352C`, `13670`
+status writer among these recovered paths. This literal-offset inventory is
+not exhaustive evidence about indirect or computed stores; absence of another
+asynchronous writer remains a required, unverified premise. DI780's additional `1352C`, `13670`
 and `13780` families enter through `13794`, itself called from `203C`. The
 apparently asynchronous halfword stores at `F740 / FF04 / 10606 / 108A8` use
-base `80000`, so write **RAM 80294**, not mailbox `F02294`. Initialization's
+base `80000`, so write **RAM 80294**, not mailbox `F02294`. The missing prologue
+context from the first review pack is pinned here:
+
+| Model | Base-load offset | Zero-load offset | Halfword-store offset |
+|---|---|---|---|
+|0423|`F718`|`F73A`|`F740`|
+|0484|`FEDC`|`FEFE`|`FF04`|
+|0509|`105DE`|`10600`|`10606`|
+|0529|`10880`|`108A2`|`108A8`|
+
+Each base load has bytes `46 60 00 80` (`sethi s0,80`, giving `80000`);
+each zero load is `84 00` (`movi55 a0,0`); each store is `12 03 01 4A`
+(`shi a0,[s0+294]`). The intervening instructions preserve `s0`, so these
+specific stores target RAM `80294` with zero. This settles their base without
+establishing completeness of all firmware writers. Initialization's
 bulk mailbox clear writes zero and cannot forge fresh status 80. Computed
 arbitrary D1 or foreign-host stores are excluded by the typed ownership scope,
 not by pretending the firmware lacks those capabilities.
@@ -214,6 +233,11 @@ foreign host writes or arbitrary extra hardware notifications. The parent
 investigation independently models the barrier and the no-status-reset
 negative control. Runtime implementation still needs failure handling for
 each real port boundary and must retain the complete compound provenance.
+
+An independent Claude review found the earlier "resolved" conclusion too
+strong. The current conclusion is a coherent conditional design with no modeled
+premature acceptance, pending exact trigger-source and writer-completeness
+evidence. Missing EC-source conclusions for the other seven models are separate.
 
 ## Alternative legacy one-byte reader
 
@@ -245,6 +269,9 @@ storage/update families are part of the proposed reader.
 
 ## Implementation admission still required
 
+- First establish the exact IT8320 `F02019`/`F0201B` event semantics and close
+  the asynchronous-writer evidence gap, or use a separately established read
+  route. The finite models alone cannot satisfy either requirement.
 - Expose only the exact-model fixed third-duty read. Keep raw addresses, D1
   and the alternate 302/303 transport outside production admission.
 - Serialize and journal both publications as one observation. Preserve the

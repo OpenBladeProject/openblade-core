@@ -20,10 +20,10 @@ separately; the new models do not inherit RZ09-0581's physical results.
 | Blade 14 RZ09-0530 | [Source reviewed](fan-stop-pi4110-source-review.md), PI4110 EC 1.03 | Shared two-fan backend with its own exact contract. |
 | Blade 15 RZ09-0421 | [Source reviewed](fan-stop-ch580-source-review.md), CH580 EC 1.03 | Shared two-fan backend with its own exact contract. |
 | Blade 14 RZ09-0427 | [Source reviewed](fan-stop-pi480-source-review.md), PI480 EC 1.03 and 1.06 | Separate reviewed version entries share the two-fan backend. |
-| Blade 18 RZ09-0484 | [Three-channel zero duty](fan-stop-blade18-source-findings.md) and [bounded readback contract](fan-stop-blade18-readback-resolution.md), KI890 EC 1.07 | Implement the compound reader and extend ownership, journal, guardian and Auto restoration to all three channels. |
-| Blade 18 RZ09-0509 | Same source-backed control and readback contract, independently reviewed for KI8100 EC 1.02 | Same three-channel implementation and recovery work. |
-| Blade 18 RZ09-0529 | Same source-backed control and readback contract, independently reviewed for KI8110 EC 1.06 | Same three-channel implementation and recovery work. Absence of a Maximum Fans command says nothing about fan count. |
-| Blade 17 RZ09-0423 | Same source-backed control and readback contract, independently reviewed for DI780 EC 1.05 | Same three-channel implementation and recovery work. |
+| Blade 18 RZ09-0484 | [Three-channel zero duty](fan-stop-blade18-source-findings.md) and [conditional readback design](fan-stop-blade18-readback-resolution.md), KI890 EC 1.07 | Verify hardware-trigger and asynchronous-writer assumptions, then implement the typed reader and three-channel ownership, journal, guardian and Auto restoration. |
+| Blade 18 RZ09-0509 | Same source-backed control and conditional readback design, independently examined for KI8100 EC 1.02 | Same unresolved readback evidence and three-channel software work. |
+| Blade 18 RZ09-0529 | Same source-backed control and conditional readback design, independently examined for KI8110 EC 1.06 | Same unresolved readback evidence and three-channel software work. Absence of a Maximum Fans command says nothing about fan count. |
+| Blade 17 RZ09-0423 | Same source-backed control and conditional readback design, independently examined for DI780 EC 1.05 | Same unresolved readback evidence and three-channel software work. |
 | Blade 14 RZ09-0482 | No exact Stop contract yet | [BIOS 2.00 and MCU 1.04.00 inspected](fan-stop-blade14-missing-ec-evidence.md). No EC payload identified in the complete package, UEFI and AMD PSP inventories; an exact EC source is still needed. |
 | Blade 14 RZ09-0508 | No exact Stop contract yet | [BIOS 1.06 inspected](fan-stop-blade14-missing-ec-evidence.md), including its UEFI and AMD PSP contents. No EC payload identified. |
 | Blade 15 Base RZ09-0328 | No exact Stop contract yet | [Signed DA550 BIOS 1.06 inspected](fan-stop-blade15-missing-ec-evidence.md), including the full package and UEFI tree. EC image and control path remain unidentified. |
@@ -33,11 +33,12 @@ separately; the new models do not inherit RZ09-0581's physical results.
 | Blade 15 Advanced RZ09-0301 | No exact Stop contract yet | [Signed C3 BIOS 1.04 and 1.02 recovered and inspected](fan-stop-blade15-missing-ec-evidence.md); no EC payload identified. Its 3,700-RPM manual minimum neither proves nor rules out direct PWM stop. |
 | Blade 15 Base RZ09-0300 | No exact Stop contract yet | [Signed D3 BIOS 1.03 recovered and inspected](fan-stop-blade15-missing-ec-evidence.md), including both exact Base 2019 variants. No EC payload identified. |
 
-For the models with additional channels, the raw read's two clears are now
-handled by a [source-reviewed compound observation](fan-stop-blade18-readback-resolution.md):
-save the provisional third duty, reset status, then require one mapped read to
-complete with fresh success. The proof includes the erased-command zero handler
-and serialized dispatch. Runtime support still needs that typed reader, complete
+For the models with additional channels, a [conditional compound-read design](fan-stop-blade18-readback-resolution.md)
+saves provisional third duty, resets status and requires one mapped read to
+complete with fresh success. Its finite models include an erased-command zero
+handler and serialized dispatch, but do not verify hardware event generation,
+exclude foreign clients or establish all asynchronous status writers. The
+readback gap therefore remains open, ahead of typed implementation, complete
 three-channel ownership and software failure/recovery coverage.
 
 For the other seven models, six have signed BIOS packages inspected through

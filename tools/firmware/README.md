@@ -26,7 +26,7 @@ Additional profiles decode independently reviewed eight-bank maps and fan regist
 
 Their thermal-table formats are not inferred from SO6120.
 
-Further investigations cover the [Blade 17/18 bounded readback contract](../../docs/fan-stop-blade18-readback-resolution.md)
+Further investigations cover the [Blade 17/18 conditional readback design](../../docs/fan-stop-blade18-readback-resolution.md)
 and missing EC evidence for [Blade 14](../../docs/fan-stop-blade14-missing-ec-evidence.md)
 and [Blade 15](../../docs/fan-stop-blade15-missing-ec-evidence.md). The
 [coverage matrix](../../docs/fan-stop-model-coverage.md) distinguishes implemented
