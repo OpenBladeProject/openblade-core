@@ -167,6 +167,36 @@ jobs:
           -m:1
           --verbosity minimal
 
+      - name: Prepare test temporary storage
+        shell: pwsh
+        run: |
+          # Guardian fixtures keep the real write-through journal. Use the
+          # runner's job storage instead of the Windows user-profile temp disk.
+          $ErrorActionPreference = 'Stop'
+          $testTemp = Join-Path $env:RUNNER_TEMP 'openblade-tests'
+          New-Item -ItemType Directory -Path $testTemp -Force | Out-Null
+          foreach ($root in @([IO.Path]::GetTempPath(), $testTemp)) {
+            $path = Join-Path $root ('openblade-flush-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+            $stream = $null
+            try {
+              $stream = [IO.FileStream]::new($path, [IO.FileMode]::CreateNew,
+                [IO.FileAccess]::Write, [IO.FileShare]::None, 4096, [IO.FileOptions]::WriteThrough)
+              $buffer = [byte[]]::new(4096)
+              $timer = [Diagnostics.Stopwatch]::StartNew()
+              for ($i = 0; $i -lt 32; $i++) {
+                $stream.Write($buffer, 0, $buffer.Length)
+                $stream.Flush($true)
+              }
+              $timer.Stop()
+              Write-Host "Journal storage: root=$root; records=32; elapsedMs=$($timer.ElapsedMilliseconds)"
+            } finally {
+              if ($null -ne $stream) { $stream.Dispose() }
+              if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
+            }
+          }
+          "TEMP=$testTemp" >> $env:GITHUB_ENV
+          "TMP=$testTemp" >> $env:GITHUB_ENV
+
       - name: Test
         if: inputs.validation-mode == 'full'
         run: >-
