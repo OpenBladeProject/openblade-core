@@ -7,6 +7,9 @@ before changing hardware, IPC, setup, or process boundaries.
 For bounded refactor priorities and autonomous delivery criteria, see the
 [maintainability roadmap](maintainability-roadmap.md).
 
+For the proposed portable core and its shared test baseline, see
+[Rust migration boundaries](rust-boundaries.md).
+
 ## Architecture
 
 ```mermaid
