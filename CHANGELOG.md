@@ -22,7 +22,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Include a dormant, source-verified native codec in Windows packages and compare it with C# through an explicit developer test path. Product controls continue to use C#. ([#895](https://github.com/OpenBladeProject/openblade-core/pull/895))
+- Use a source-verified Rust component for reports and selected profile merges. The Windows UI and service remain C#. ([#895](https://github.com/OpenBladeProject/openblade-core/pull/895), [#897](https://github.com/OpenBladeProject/openblade-core/pull/897))
 - Shorten the README support section in English, Chinese and Russian, with model details in the support guide. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Document exact BIOS/EC source findings for Blade 16 RZ09-0581 and RZ09-0528. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Open Labs from the sidebar to learn about experimental features and jump to their controls. A beaker marks experimental controls on the Lighting page. ([#885](https://github.com/OpenBladeProject/openblade-core/pull/885))
