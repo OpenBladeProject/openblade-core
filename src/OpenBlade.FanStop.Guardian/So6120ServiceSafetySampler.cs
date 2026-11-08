@@ -18,7 +18,7 @@ internal sealed record So6120ServiceSafetySnapshot(long Revision, long Admission
 internal sealed class So6120ServiceSafetySampler : IDisposable
 {
     internal static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
-    internal static readonly TimeSpan MaximumSampleAge = TimeSpan.FromSeconds(2);
+    internal static readonly TimeSpan MaximumSampleAge = FanStopThermalPolicy.MaximumSampleAge;
     private readonly IFanTemperatureSource source;
     private readonly FanStopSettings settings;
     private readonly TimeProvider clock;
@@ -53,8 +53,11 @@ internal sealed class So6120ServiceSafetySampler : IDisposable
 
     internal async Task<So6120ServiceSafetySnapshot> WaitForInitialAsync(CancellationToken token = default)
     {
+        token.ThrowIfCancellationRequested();
         try { await initial.Task.WaitAsync(MaximumSampleAge, clock, token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception) { End(FanStopEndReason.SafetyCondition, "Initial safety observation did not complete within its bound."); }
+        token.ThrowIfCancellationRequested();
         return ReadFresh();
     }
 
@@ -67,6 +70,8 @@ internal sealed class So6120ServiceSafetySampler : IDisposable
         catch (ObjectDisposedException) { return ReadFresh(); }
         // An in-flight entry sample remains an entry sample. Its elapsed time
         // cannot seed either rolling window after this ownership handoff.
+        // Bound the entire handoff, including any outstanding entry read; slow
+        // handoff refuses continuation and reaches the same guarded Auto path.
         try { await ownedInitial.Task.WaitAsync(MaximumSampleAge, clock).ConfigureAwait(false); }
         catch (Exception) { End(FanStopEndReason.SafetyCondition, "First owned safety observation did not complete within its bound."); }
         return ReadFresh();
@@ -79,6 +84,9 @@ internal sealed class So6120ServiceSafetySampler : IDisposable
             So6120ServiceSafetySnapshot current = Current;
             if (current.EndReason != FanStopEndReason.None) { return current; }
             TimeSpan age = clock.GetElapsedTime(current.AdmissionStarted);
+            // An individually valid read does not extend the previous proof.
+            // Serialized reads over one second may outlast its two-second age;
+            // pending evidence cannot retain Stop through that actual expiry.
             if (Volatile.Read(ref disposed) == 0 && current.Revision != 0 && current.Admitted
                 && age >= TimeSpan.Zero && age <= MaximumSampleAge) { return current; }
             var failed = current with
@@ -111,8 +119,8 @@ internal sealed class So6120ServiceSafetySampler : IDisposable
             {
                 bool forOwnedStop = Volatile.Read(ref owned) != 0;
                 long started = clock.GetTimestamp();
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
-                deadline.CancelAfter(MaximumSampleAge);
+                using var sampleTimeout = new CancellationTokenSource(MaximumSampleAge, clock);
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop.Token, sampleTimeout.Token);
                 // Even a synchronously blocked OS reader stays off the native
                 // command owner. There is at most one outstanding observation.
                 Task<Observation> pending = Task.Run(async () =>

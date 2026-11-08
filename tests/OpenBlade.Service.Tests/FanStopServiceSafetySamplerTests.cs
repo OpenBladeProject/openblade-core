@@ -80,6 +80,107 @@ public sealed class FanStopServiceSafetySamplerTests
     }
 
     [Fact]
+    public async Task ValidLongReadsCannotExtendThePreviousProofThroughItsRealExpiry()
+    {
+        var clock = new Clock();
+        var ticks = Channel.CreateUnbounded<bool>();
+        var source = new Source
+        {
+            ReadOverride = () =>
+            {
+                clock.Advance(TimeSpan.FromMilliseconds(1200));
+                return ValueTask.FromResult(new FanTemperatureReadings(50, null, true, true));
+            },
+        };
+        using var sampler = new So6120ServiceSafetySampler(source, Custom, clock, () => new(true),
+            async token => { await ticks.Reader.ReadAsync(token); });
+        var finish = new TaskCompletionSource<FanTemperatureReadings>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            Assert.True((await sampler.WaitForInitialAsync()).Admitted);
+            var begin = sampler.BeginOwnedStopAsync();
+            ticks.Writer.TryWrite(true);
+            Assert.True((await begin.WaitAsync(TimeSpan.FromSeconds(3))).Admitted);
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            source.ReadOverride = () => { started.TrySetResult(); return new(finish.Task); };
+            ticks.Writer.TryWrite(true);
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            clock.Advance(TimeSpan.FromMilliseconds(801));
+            // The previous read was valid at 1.2s, but its proof is now 2.001s
+            // old. A pending replacement read grants no additional authority.
+            Assert.Equal(FanStopEndReason.SafetyCondition, sampler.ReadFresh().EndReason);
+            Assert.False(source.Disposed);
+            Assert.Equal(1, source.MaximumConcurrentReads);
+        }
+        finally
+        {
+            finish.TrySetResult(new(50, null, true, true));
+            sampler.Dispose();
+            await sampler.Completion.WaitAsync(TimeSpan.FromSeconds(3));
+        }
+        Assert.False(source.DisposedDuringRead);
+    }
+
+    [Fact]
+    public async Task InitialCallerCancellationRemainsObservableWithoutInventingASafetyFailure()
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource<FanTemperatureReadings>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new Source { ReadOverride = () => { started.TrySetResult(); return new(finish.Task); } };
+        using var sampler = new So6120ServiceSafetySampler(source, Custom, TimeProvider.System, () => new(true));
+        using var cancellation = new CancellationTokenSource();
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            Task<So6120ServiceSafetySnapshot> initial = sampler.WaitForInitialAsync(cancellation.Token);
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => initial);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sampler.WaitForInitialAsync(cancellation.Token));
+            Assert.Equal(FanStopEndReason.None, sampler.Current.EndReason);
+            sampler.Dispose();
+            Assert.False(source.Disposed);
+        }
+        finally
+        {
+            finish.TrySetResult(new(50, null, true, true));
+            sampler.Dispose();
+            await sampler.Completion.WaitAsync(TimeSpan.FromSeconds(3));
+        }
+        Assert.False(source.DisposedDuringRead);
+    }
+
+    [Fact]
+    public async Task AcquisitionDeadlineUsesInjectedTimeInsteadOfElapsedWallTime()
+    {
+        var clock = new TimerClock();
+        var started = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource<FanTemperatureReadings>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new Source { ObserveToken = token => started.TrySetResult(token), ReadOverride = () => new(finish.Task) };
+        using var sampler = new So6120ServiceSafetySampler(source, Custom, clock, () => new(true));
+        try
+        {
+            Task<So6120ServiceSafetySnapshot> initial = sampler.WaitForInitialAsync();
+            CancellationToken sampleToken = await started.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            // Deliberately exceed the old system-clock CancelAfter while the
+            // injected monotonic clock has not advanced at all.
+            await Task.Delay(TimeSpan.FromMilliseconds(2200));
+            Assert.False(sampleToken.IsCancellationRequested);
+            Assert.Equal(FanStopEndReason.None, sampler.Current.EndReason);
+            clock.Advance(TimeSpan.FromSeconds(2));
+            Assert.True(sampleToken.IsCancellationRequested);
+            Assert.False((await initial.WaitAsync(TimeSpan.FromSeconds(3))).Admitted);
+            Assert.False(source.Disposed);
+        }
+        finally
+        {
+            finish.TrySetResult(new(50, null, true, true));
+            sampler.Dispose();
+            await sampler.Completion.WaitAsync(TimeSpan.FromSeconds(3));
+        }
+        Assert.False(source.DisposedDuringRead);
+    }
+
+    [Fact]
     public async Task EntryAndRepeatedCommandProofReadsCannotCreditTheOwnedAverage()
     {
         using var fixture = new Fixture(Custom with { CpuLimitCelsius = 45 });
@@ -335,6 +436,7 @@ public sealed class FanStopServiceSafetySamplerTests
     {
         internal FanTemperatureReadings Reading = new(50, null, true, true);
         internal Func<ValueTask<FanTemperatureReadings>>? ReadOverride;
+        internal Action<CancellationToken>? ObserveToken;
         internal Exception? Failure;
         internal int Reads;
         internal int MaximumConcurrentReads;
@@ -349,6 +451,7 @@ public sealed class FanStopServiceSafetySamplerTests
             Interlocked.Increment(ref Reads);
             try
             {
+                ObserveToken?.Invoke(cancellationToken);
                 if (Failure is not null) { throw Failure; }
                 return ReadOverride is { } read ? await read() : Reading;
             }
@@ -359,6 +462,54 @@ public sealed class FanStopServiceSafetySamplerTests
         {
             DisposedDuringRead |= Volatile.Read(ref active) != 0;
             Disposed = true;
+        }
+    }
+
+    private sealed class TimerClock : TimeProvider
+    {
+        private readonly object sync = new();
+        private readonly List<Timer> timers = [];
+        private long timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => Interlocked.Read(ref timestamp);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = new Timer(this, callback, state);
+            lock (sync) { timers.Add(timer); timer.Change(dueTime, period); }
+            return timer;
+        }
+
+        internal void Advance(TimeSpan elapsed)
+        {
+            Timer[] due;
+            lock (sync)
+            {
+                timestamp += elapsed.Ticks;
+                due = timers.Where(timer => timer.Due is long at && at <= timestamp).ToArray();
+                foreach (Timer timer in due) { timer.Due = null; }
+            }
+            foreach (Timer timer in due) { timer.Fire(); }
+        }
+
+        private sealed class Timer(TimerClock owner, TimerCallback callback, object? state) : ITimer
+        {
+            internal long? Due;
+            private bool disposed;
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                lock (owner.sync)
+                {
+                    if (disposed) { return false; }
+                    Assert.Equal(Timeout.InfiniteTimeSpan, period);
+                    Due = dueTime == Timeout.InfiniteTimeSpan ? null : owner.timestamp + dueTime.Ticks;
+                    return true;
+                }
+            }
+
+            internal void Fire() { if (!disposed) { callback(state); } }
+            public void Dispose() { lock (owner.sync) { disposed = true; Due = null; } }
+            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
         }
     }
 }

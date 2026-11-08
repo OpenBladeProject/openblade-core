@@ -59,8 +59,81 @@ internal sealed class So6120ServicePowerReadException(Exception inner)
     internal bool NativeOperationUnresolved => true;
 }
 
+internal sealed record So6120ServicePowerReadResult(PowerSource Source, string? AdmissionRefusal = null)
+{
+    internal bool QueryNotAttempted => AdmissionRefusal is not null;
+}
+
+// Runs only on the native owner's serialized worker, between resolved commands.
+// It never retries a power query or treats an unresolved query as cleanup authority.
+internal sealed class So6120ServiceOwnedPowerMonitor(PowerSource initial,
+    Func<PowerSource> readPower, Func<bool> continuation, Func<bool> verifyOwnedStopped)
+{
+    private bool ended;
+    internal PowerSource Current { get; private set; } = initial;
+    internal FanStopEndReason EndReason { get; private set; }
+
+    // The caller must perform its existing mandatory ownership observation
+    // immediately after a successful coast boundary, including a lower source.
+    internal bool BeforeCoastObservation() => Refresh(verificationFollows: true);
+
+    internal bool BeforeHeldStop() => Refresh(verificationFollows: false);
+
+    private bool Refresh(bool verificationFollows)
+    {
+        if (ended) { return false; }
+        try
+        {
+            bool admitted = RefreshCore(verificationFollows);
+            ended = !admitted;
+            return admitted;
+        }
+        catch { ended = true; throw; }
+    }
+
+    private bool RefreshCore(bool verificationFollows)
+    {
+        if (!continuation()) { return false; }
+        PowerSource next = readPower();
+        if (!continuation()) { return false; }
+        FanStopPowerTransition transition = FanStopPowerTransitionPolicy.Evaluate(Current, next);
+        if (transition == FanStopPowerTransition.Automatic)
+        { EndReason = FanStopEndReason.PowerChanged; return false; }
+        Current = next;
+        if (transition == FanStopPowerTransition.VerifyOwnedStop && !verificationFollows)
+        {
+            if (!verifyOwnedStopped() || !continuation()) { return false; }
+            // The verification itself can take seconds. Recheck power before
+            // publishing held Stop, without recursively adding verification.
+            PowerSource after = readPower();
+            if (!continuation()) { return false; }
+            if (FanStopPowerTransitionPolicy.Evaluate(Current, after) != FanStopPowerTransition.Continue)
+            { EndReason = FanStopEndReason.PowerChanged; return false; }
+            Current = after;
+        }
+        return true;
+    }
+}
+
 internal static class So6120ServicePowerReadPolicy
 {
+    internal static async Task<So6120ServicePowerReadResult> ReadAdmittedAsync(
+        Action requireAdmission, Func<Task<PowerSource>> query)
+    {
+        try { requireAdmission(); }
+        catch (Exception exception)
+        {
+            // No native query callback has been entered. End Stop admission,
+            // then let the same owner attempt its normally guarded Auto path.
+            // This is no authority to bypass a controller or ownership refusal.
+            return new(PowerSource.ExternalUnknown,
+                $"Adapter-query admission refused before native submission ({exception.GetType().Name}).");
+        }
+        // Once entered, query failures retain their existing ambiguity meaning.
+        // Never turn them into a clean refusal or invoke the callback again.
+        return new(await query().ConfigureAwait(false));
+    }
+
     internal static PowerSource Classify(AdapterPowerState state) => state switch
     {
         AdapterPowerState.Battery => PowerSource.Battery,

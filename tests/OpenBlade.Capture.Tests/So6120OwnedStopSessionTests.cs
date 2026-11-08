@@ -137,6 +137,58 @@ public sealed class So6120OwnedStopSessionTests
     }
 
     [Fact]
+    public void CoastPowerLossAfterWaitStopsBeforeTheNextNativeReadAndAllowsGuardedAuto()
+    {
+        using var fixture = new So6120DirectDutySessionTests.Fixture(PerformancePreset.Balanced, 0, zeroDuty: true);
+        using var session = Create(fixture);
+        Assert.True(session.EnterStopped().Success);
+        int calls = fixture.Port.Calls, boundaries = 0;
+        bool powerAdmitted = true;
+        var result = session.ObserveStoppedCoast(wait: (_, _) => powerAdmitted = false,
+            beforeObservation: () => { boundaries++; return powerAdmitted; });
+        Assert.Equal(So6120StopCoastResult.AutomaticRequired, result);
+        Assert.Equal(1, boundaries);
+        Assert.Equal(calls, fixture.Port.Calls);
+        Assert.True(session.ReturnToAutomatic().Success);
+    }
+
+    [Fact]
+    public void CommandFreeCoastRefusalNeverBypassesFreshAutoControllerAdmission()
+    {
+        using var fixture = new So6120DirectDutySessionTests.Fixture(PerformancePreset.Balanced, 0, zeroDuty: true);
+        using var session = Create(fixture);
+        Assert.True(session.EnterStopped().Success);
+        Assert.Equal(So6120StopCoastResult.AutomaticRequired,
+            session.ObserveStoppedCoast(wait: (_, _) => { }, beforeObservation: static () => false));
+        fixture.Source.Modify = evidence => evidence with
+        {
+            Metadata = evidence.Metadata with { DetectedControllers = ["Competing controller"] },
+        };
+        int calls = fixture.Port.Calls;
+        var result = session.ReturnToAutomatic();
+        Assert.False(result.Success);
+        Assert.True(result.CommandsFenced);
+        Assert.Equal(calls, fixture.Port.Calls);
+        Assert.Throws<InvalidOperationException>(() => session.ReturnToAutomatic());
+        Assert.Equal(calls, fixture.Port.Calls);
+    }
+
+    [Fact]
+    public void AdmittedCoastBoundaryStillPerformsExactlyItsMandatoryOwnershipObservation()
+    {
+        using var fixture = new So6120DirectDutySessionTests.Fixture(PerformancePreset.Balanced, 0, zeroDuty: true);
+        using var session = Create(fixture);
+        Assert.True(session.EnterStopped().Success);
+        int before = fixture.Port.Publications.Count, boundaries = 0;
+        var result = session.ObserveStoppedCoast(wait: (_, _) => { },
+            beforeObservation: () => { boundaries++; return true; });
+        Assert.Equal(So6120StopCoastResult.Stopped, result);
+        Assert.Equal(1, boundaries);
+        Assert.Equal(13, fixture.Port.Publications.Count - before);
+        Assert.True(session.ReturnToAutomatic().Success);
+    }
+
+    [Fact]
     public void AmbiguousCoastObservationDoesNotAttemptAnotherCommand()
     {
         using var fixture = new So6120DirectDutySessionTests.Fixture(PerformancePreset.Balanced, 0, zeroDuty: true);

@@ -38,18 +38,6 @@ internal sealed class FanStopThermalPolicy
         return assessment == FanStopEndReason.None;
     }
 
-    // Command reads enforce freshness and the immediate cutoffs, but cannot
-    // change the continuation samples or give an averaging window extra credit.
-    internal bool AdmitsCommand(int? cpu, int? gpu, bool gpuInactive, bool gpuPoweredDown,
-        TimeSpan sampleAge, bool canceled = false)
-    {
-        if (ended != FanStopEndReason.None) { return false; }
-        FanStopEndReason assessment = Assess(cpu, gpu, gpuInactive, gpuPoweredDown, sampleAge, canceled, out var decision);
-        if (assessment == FanStopEndReason.SafetyCondition || !HasContinuity(clock.GetTimestamp(), sampleAge))
-        { return End(FanStopEndReason.SafetyCondition); }
-        return assessment == FanStopEndReason.None || End(assessment, decision);
-    }
-
     internal bool Observe(int? cpu, int? gpu, bool gpuInactive, bool gpuPoweredDown,
         TimeSpan sampleAge, bool canceled = false)
     {

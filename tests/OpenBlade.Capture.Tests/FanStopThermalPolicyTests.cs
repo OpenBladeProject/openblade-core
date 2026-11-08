@@ -18,7 +18,7 @@ public sealed class FanStopThermalPolicyTests
         Assert.False(policy.AdmitsEntry(null, null, true, true, TimeSpan.Zero));
         Assert.False(policy.Observe(null, null, true, true, TimeSpan.Zero));
         Assert.Equal(FanStopEndReason.SafetyCondition, policy.EndReason);
-        Assert.False(policy.AdmitsCommand(45, null, true, true, TimeSpan.Zero));
+        Assert.False(policy.Observe(45, null, true, true, TimeSpan.Zero));
     }
 
     [Theory]
@@ -98,7 +98,7 @@ public sealed class FanStopThermalPolicyTests
     }
 
     [Fact]
-    public void CommandSamplesCannotResetAdvanceOrBypassContinuationWindows()
+    public void EntrySamplesCannotResetAdvanceOrBypassContinuationWindows()
     {
         var clock = new Clock();
         var policy = new FanStopThermalPolicy(Custom, clock);
@@ -106,11 +106,10 @@ public sealed class FanStopThermalPolicyTests
         for (int second = 1; second <= 5; second++)
         {
             clock.Advance(1);
-            Assert.True(policy.AdmitsCommand(40, 40, false, false, TimeSpan.Zero));
             Assert.True(policy.AdmitsEntry(56, 40, false, false, TimeSpan.Zero));
             Assert.Equal(second < 5, policy.Observe(56, 40, false, false, TimeSpan.Zero));
         }
-        Assert.False(policy.AdmitsCommand(40, 40, false, false, TimeSpan.Zero));
+        Assert.False(policy.Observe(40, 40, false, false, TimeSpan.Zero));
     }
 
     [Theory]
@@ -173,10 +172,10 @@ public sealed class FanStopThermalPolicyTests
     }
 
     [Fact]
-    public void FaultDuringFreshCommandAdmissionEndsContinuationWithoutResettingItsAuthority()
+    public void InvalidSampleEndsContinuationWithoutResettingItsAuthority()
     {
         var policy = new FanStopThermalPolicy(Custom, new Clock());
-        Assert.False(policy.AdmitsCommand(40, null, false, false, TimeSpan.Zero));
+        Assert.False(policy.Observe(40, null, false, false, TimeSpan.Zero));
         Assert.Equal(FanStopEndReason.SafetyCondition, policy.EndReason);
         Assert.False(policy.Observe(40, 40, false, false, TimeSpan.Zero));
     }
@@ -198,10 +197,6 @@ public sealed class FanStopThermalPolicyTests
         Assert.Equal(cpuHot ? null : new FanStopThermalTrigger(76, 75), trigger.Gpu);
         Assert.False(policy.Observe(40, 40, false, false, TimeSpan.Zero));
         Assert.Same(trigger, policy.TerminalThermalDecision);
-        var command = new FanStopThermalPolicy(settings, new Clock());
-        Assert.False(command.AdmitsCommand(cpuHot ? 71 : 40, cpuHot ? 40 : 76, false, false, TimeSpan.Zero));
-        Assert.Equal(FanStopEndReason.ThermalThreshold, command.EndReason);
-        Assert.Equal(trigger, command.TerminalThermalDecision);
     }
 
     [Fact]
@@ -338,18 +333,15 @@ public sealed class FanStopThermalPolicyTests
     }
 
     [Theory]
-    [InlineData(3, false)]
-    [InlineData(-1, false)]
-    [InlineData(3, true)]
-    [InlineData(-1, true)]
-    public void HotReadingCannotReclassifyMissingOrBackwardContinuityAsThermalCompletion(int elapsed, bool command)
+    [InlineData(3)]
+    [InlineData(-1)]
+    public void HotReadingCannotReclassifyMissingOrBackwardContinuityAsThermalCompletion(int elapsed)
     {
         var clock = new Clock();
         var policy = new FanStopThermalPolicy(Custom, clock);
         Assert.True(policy.Observe(40, 40, false, false, TimeSpan.Zero));
         clock.Advance(elapsed);
-        Assert.False(command ? policy.AdmitsCommand(100, 100, false, false, TimeSpan.Zero)
-            : policy.Observe(100, 100, false, false, TimeSpan.Zero));
+        Assert.False(policy.Observe(100, 100, false, false, TimeSpan.Zero));
         Assert.Equal(FanStopEndReason.SafetyCondition, policy.EndReason);
         Assert.Null(policy.TerminalThermalDecision);
     }

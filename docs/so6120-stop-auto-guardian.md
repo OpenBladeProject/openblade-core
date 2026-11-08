@@ -116,6 +116,17 @@ installed trial below identifies the policy build it exercised.
 External power is classified by the existing typed adapter query in the owner,
 serialized outside mailbox transactions. Windows external-power indication by
 itself cannot distinguish USB-C from the full-power adapter.
+The owner refreshes this query between coast observations and before publishing
+held Stopped. Held polling follows the actual query timestamp. A lower-power
+change during coast uses the next mandatory control observation as its ownership
+proof. A change discovered before held publication requires its own verified
+control observation and a final stable power read. Thermal monitoring continues
+through these serialized operations.
+
+A conclusively refused query that never entered native submission ends Stop
+through the normal same-owner Auto path. Auto still requires fresh identity,
+controller and ownership admission; a persistent refusal remains fenced.
+Failures after entering the query keep their unresolved-native meaning.
 
 | Change while Stop is owned | Action |
 | --- | --- |

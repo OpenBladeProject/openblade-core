@@ -51,6 +51,7 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
     internal ISo6120SessionAdmissionPolicy AdmissionPolicy => this;
     internal So6120NativeCloseEvidence CloseEvidence { get; private set; } = null!;
     internal PowerSource ObservedPowerSource => observedPowerSource;
+    internal bool PowerObservationDue => !PowerObservationFresh();
     internal bool NativeOperationUnresolved => powerUnresolved;
     internal FanStopEndReason EndReason => safetySampler?.Current.EndReason ?? FanStopEndReason.None;
     internal FanStopThermalDecision? TerminalThermalDecision =>
@@ -371,13 +372,25 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
     // unknown value returns ExternalUnknown and permits same-owner Auto cleanup.
     internal PowerSource ReadPowerSource()
     {
-        RequireAdmission(ReadMetadata());
+        So6120ServicePowerReadResult result = So6120ServicePowerReadPolicy.ReadAdmittedAsync(
+            () => RequireAdmission(ReadMetadata()), ReadAdmittedPowerSourceAsync).GetAwaiter().GetResult();
+        if (result.QueryNotAttempted)
+        {
+            powerTimestamp = null;
+            observedPowerSource = PowerSource.ExternalUnknown;
+            safetySampler?.End(FanStopEndReason.SafetyCondition, result.AdmissionRefusal!);
+        }
+        return result.Source;
+    }
+
+    private async Task<PowerSource> ReadAdmittedPowerSourceAsync()
+    {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         try
         {
             long started = clock.GetTimestamp();
-            observedPowerSource = So6120ServicePowerReadPolicy.ReadAsync(ReadAdapterPowerStateAsync, deadline.Token)
-                .GetAwaiter().GetResult();
+            observedPowerSource = await So6120ServicePowerReadPolicy.ReadAsync(ReadAdapterPowerStateAsync, deadline.Token)
+                .ConfigureAwait(false);
             powerTimestamp = started;
             return observedPowerSource;
         }

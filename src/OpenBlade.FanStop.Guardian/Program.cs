@@ -233,44 +233,53 @@ internal static class Program
             if (stopped)
             {
                 acquisition.BeginOwnedStop();
-                So6120StopCoastResult coast = session.ObserveStoppedCoast(stop);
+                So6120DirectDutySession ownedSession = session;
+                var powerMonitor = new So6120ServiceOwnedPowerMonitor(power,
+                    acquisition.ReadPowerSource, acquisition.ContinueStopAdmission, () =>
+                    {
+                        var verification = ownedSession.VerifyOwnedStop();
+                        if (verification.Disposition != So6120DutyIoDisposition.Confirmed)
+                        { throw new InvalidDataException("Power change altered owned fan state."); }
+                        if (verification.Observation?.Snapshot is not { Tach1: 0, Tach2: 0 })
+                        { stoppedObserved = false; return false; }
+                        return acquisition.ContinueStopAdmission();
+                    });
+                So6120StopCoastResult coast = session.ObserveStoppedCoast(stop,
+                    beforeObservation: powerMonitor.BeforeCoastObservation);
+                // Record the completed native observation before the next power
+                // query can fail. Recovery must retain established Stop history.
+                progress.RecordCoast(coast, acquisition.EndReason, acquisition.TerminalThermalDecision);
+                if (coast == So6120StopCoastResult.Stopped) { stoppedObserved = true; }
+                if (coast == So6120StopCoastResult.Unresolved)
+                { throw new InvalidDataException("Stopped-fan coast observation is unresolved."); }
                 // Preserve the completed tach-zero observation as history, but
                 // never publish held Stop after the independent sampler ended
                 // admission during a slow native coast read.
-                bool retainStopped = coast == So6120StopCoastResult.Stopped && acquisition.ContinueStopAdmission();
-                progress.RecordCoast(coast, acquisition.EndReason, acquisition.TerminalThermalDecision);
-                if (coast == So6120StopCoastResult.Unresolved)
-                { throw new InvalidDataException("Stopped-fan coast observation is unresolved."); }
-                if (coast == So6120StopCoastResult.Stopped) { stoppedObserved = true; }
+                bool retainStopped = coast == So6120StopCoastResult.Stopped
+                    && acquisition.ContinueStopAdmission() && powerMonitor.BeforeHeldStop();
+                if (powerMonitor.EndReason != FanStopEndReason.None) { endReason = powerMonitor.EndReason; }
                 if (retainStopped)
                 {
+                    power = powerMonitor.Current;
                     publish(Status(FanStopGuardianPhase.Stopped) with
                     {
                         ConfirmedState = FanStopObservedState.Stopped,
                         ObservedPowerSource = power,
                     });
-                    long lastPowerRead = TimeProvider.System.GetTimestamp();
                     while (!stop.IsCancellationRequested && !service.HasExited && session.ContinueStopAdmitted())
                     {
-                        if (TimeProvider.System.GetElapsedTime(lastPowerRead) >= TimeSpan.FromSeconds(2))
+                        // Query age is anchored to the actual read start. Coast
+                        // publication must not restart a stale observation's clock.
+                        if (acquisition.PowerObservationDue)
                         {
-                            PowerSource next = acquisition.ReadPowerSource();
-                            lastPowerRead = TimeProvider.System.GetTimestamp();
-                            if (!acquisition.ContinueStopAdmission()) { break; }
-                            FanStopPowerTransition transition = FanStopPowerTransitionPolicy.Evaluate(power, next);
-                            if (transition == FanStopPowerTransition.Automatic)
-                            { endReason = FanStopEndReason.PowerChanged; break; }
-                            if (transition == FanStopPowerTransition.VerifyOwnedStop)
+                            if (!powerMonitor.BeforeHeldStop())
                             {
-                                // A lower-power transition retains the existing
-                                // override only after a complete fresh control read.
-                                var verification = session.VerifyOwnedStop();
-                                if (verification.Disposition != So6120DutyIoDisposition.Confirmed)
-                                { throw new InvalidDataException("Power change altered owned fan state."); }
-                                if (verification.Observation?.Snapshot is not { Tach1: 0, Tach2: 0 })
-                                { stoppedObserved = false; break; }
-                                if (!acquisition.ContinueStopAdmission()) { break; }
-                                power = next;
+                                if (powerMonitor.EndReason != FanStopEndReason.None) { endReason = powerMonitor.EndReason; }
+                                break;
+                            }
+                            if (power != powerMonitor.Current)
+                            {
+                                power = powerMonitor.Current;
                                 publish(Status(FanStopGuardianPhase.Stopped) with
                                 {
                                     ConfirmedState = FanStopObservedState.Stopped,

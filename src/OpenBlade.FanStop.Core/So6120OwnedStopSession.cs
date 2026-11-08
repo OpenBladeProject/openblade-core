@@ -83,7 +83,7 @@ internal sealed partial class So6120DirectDutySession
     // At most four complete observations while tachometers coast down. No
     // unbounded A0 polling; zero PWM alone is not a stopped-fan observation.
     internal So6120StopCoastResult ObserveStoppedCoast(CancellationToken cancellationToken = default,
-        Action<TimeSpan, CancellationToken>? wait = null)
+        Action<TimeSpan, CancellationToken>? wait = null, Func<bool>? beforeObservation = null)
     {
         wait ??= static (delay, token) => token.WaitHandle.WaitOne(delay);
         for (int attempt = 0; attempt < 4; attempt++)
@@ -92,6 +92,11 @@ internal sealed partial class So6120DirectDutySession
             { return So6120StopCoastResult.AutomaticRequired; }
             wait(TimeSpan.FromSeconds(1), cancellationToken);
             if (cancellationToken.IsCancellationRequested) { return So6120StopCoastResult.AutomaticRequired; }
+            // The owner refreshes typed power between resolved native operations.
+            // A lower-power transition uses the mandatory observation below as
+            // its independent ownership proof, rather than adding another read.
+            if (beforeObservation?.Invoke() == false || !ContinueStopAdmitted())
+            { return So6120StopCoastResult.AutomaticRequired; }
             var observed = VerifyOwnedStop();
             if (observed.Disposition != So6120DutyIoDisposition.Confirmed || observed.Observation is null)
             { return So6120StopCoastResult.Unresolved; }

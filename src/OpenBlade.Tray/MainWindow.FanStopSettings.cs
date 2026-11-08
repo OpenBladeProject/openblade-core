@@ -49,7 +49,7 @@ public sealed partial class MainWindow
 
     private async void OnResumeAutomaticFanStop(object sender, RoutedEventArgs args)
     {
-        if (localizationSnapshotMode || Volatile.Read(ref disposed) != 0)
+        if (ViewModel is null || localizationSnapshotMode || Volatile.Read(ref disposed) != 0)
         {
             return;
         }

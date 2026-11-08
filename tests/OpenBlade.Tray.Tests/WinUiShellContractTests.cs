@@ -2258,7 +2258,6 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Windows power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsEmphasizedSubcardStyle}\""));
         Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEmphasizedSubcardStyle}\""));
-        Assert.Equal(15, CountOccurrences(xaml, "Style=\"{StaticResource SettingsNeutralSubcardStyle}\""));
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastNeutralSubcardStyle}\""));
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastEditorSubcardStyle}\""));
         Assert.DoesNotContain("x:Key=\"SettingsSubcardStyle\"", xaml, StringComparison.Ordinal);
@@ -2271,6 +2270,27 @@ public sealed class WinUiShellContractTests
         XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
         XElement cpuTitle = LocalizedElement(document, "TextBlock", "MainWindow_TextBlockCPU");
         XElement cpuRow = cpuTitle.Ancestors().First(element => element.Name.LocalName == "Border");
+        foreach (string name in new[] { "FanStopToggle", "AutomaticFanStopToggle" })
+        {
+            XElement row = NamedElement(document, "ToggleSwitch", name)
+                .Ancestors().First(element => element.Name.LocalName == "Border");
+            Assert.Equal(Attribute(cpuRow, "Style"), Attribute(row, "Style"));
+            Assert.Null(Attribute(row, "Background"));
+            Assert.Null(Attribute(row, "SettingsCardPointerVisual.IsEnabled"));
+        }
+        foreach (string name in new[]
+                 {
+                     "FanStopCpuLimitEditor", "FanStopCpuImmediateCutoffEditor",
+                     "FanStopGpuLimitEditor", "FanStopGpuImmediateCutoffEditor", "FanStopExitSecondsEditor",
+                     "AutomaticFanStopCpuLimitEditor", "AutomaticFanStopGpuLimitEditor", "AutomaticFanStopSecondsEditor",
+                 })
+        {
+            XElement row = NamedElement(document, "NumberBox", name)
+                .Ancestors().First(element => element.Name.LocalName == "Border");
+            Assert.Equal("{StaticResource SettingsEditorSubcardStyle}", Attribute(row, "Style"));
+            Assert.Null(Attribute(row, "Background"));
+            Assert.Null(Attribute(row, "SettingsCardPointerVisual.IsEnabled"));
+        }
         foreach ((string name, string controlType) in new[]
                  {
                      ("CoolingPadFanLabel", "ResponsiveChoiceSelector"),
