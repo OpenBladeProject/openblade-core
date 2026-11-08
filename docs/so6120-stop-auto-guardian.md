@@ -293,6 +293,19 @@ refusal reporting and restoration path, not successful fan stop or a stopped
 dwell. This run's thermal refusal does not reconstruct the earlier run's missing
 fresh-entry predicate.
 
+The `fc54c108` diagnostic build was installed through the broker as LocalDev
+`65535.417.48238.46106`, with all 372 installed files and running component
+generations verified. Its authorized Custom CPU 65 C trial passed preflight at
+54/57/54 C. The guardian's next fresh entry check recorded
+`thermalRule=ImmediateCutoff; cpuC=73; cpuLimitC=65`, with a 164.5 ms sample age
+and confirmed GPU D3. It refused before any EC command, retained the measured
+reason in the receipt and subsequent status, and conclusively released the
+unused owner. The fans remained Automatic; no Auto command was needed. Exact
+original settings were restored and matched independently. Final readings were
+CPU 52 C and fans 2200/2100 RPM, with no blocked or unconfirmed writes. This
+confirms the new trigger diagnostics and settings restoration, not a stopped
+interval or Auto restoration after a fan write.
+
 Guardian termination, an unknown outer-job termination, a native call that
 never returns, sleep/resume and OS failure do not have a demonstrated
 independent cooling fallback. A fenced owner retains its native resources;
