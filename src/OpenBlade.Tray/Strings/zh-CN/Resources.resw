@@ -500,15 +500,6 @@
   <data name="MainWindow_ItemsControlTrayDashboardStatusItems.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>托盘仪表板状态项</value>
   </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>关于实验功能</value>
-  </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>关于实验功能</value>
-  </data>
-  <data name="MainWindow_LabFeaturesToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>启用实验功能</value>
-  </data>
   <data name="MainWindow_LaptopLogoModeSelectorText.AccessibleName" xml:space="preserve">
     <value>笔记本电脑徽标灯光</value>
   </data>
@@ -1085,9 +1076,6 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_TextBlockCPU.Text" xml:space="preserve">
     <value>CPU</value>
   </data>
-  <data name="MainWindow_TextBlockCurrentLabFeatures.Text" xml:space="preserve">
-    <value>当前实验功能</value>
-  </data>
   <data name="MainWindow_TextBlockCustomColor.Text" xml:space="preserve">
     <value>自定义颜色</value>
   </data>
@@ -1217,9 +1205,6 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_TextBlockHDR2.Text" xml:space="preserve">
     <value>HDR</value>
   </data>
-  <data name="MainWindow_TextBlockImportOblightAndRazerChromaFiles.Text" xml:space="preserve">
-    <value>导入 .oblight 和 Razer .chroma 文件。</value>
-  </data>
   <data name="MainWindow_TextBlockImportPreset.Text" xml:space="preserve">
     <value>导入预设</value>
   </data>
@@ -1256,14 +1241,23 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
     <value>键盘灯光</value>
   </data>
-  <data name="MainWindow_TextBlockKeyboardLightingPresetImport.Text" xml:space="preserve">
-    <value>导入键盘灯光预设</value>
+  <data name="MainWindow_LabsNavigationItem.Content" xml:space="preserve">
+    <value>实验室</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeatures.Text" xml:space="preserve">
-    <value>实验功能</value>
+  <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
+    <value>实验室</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
-    <value>实验功能可能会变更或移除。</value>
+  <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
+    <value>探索 OpenBlade 的实验性功能。</value>
+  </data>
+  <data name="MainWindow_LabsImportTitle.Text" xml:space="preserve">
+    <value>导入灯光预设</value>
+  </data>
+  <data name="MainWindow_LabsImportDescription.Text" xml:space="preserve">
+    <value>加载 OpenBlade 或 Razer Chroma 文件，在应用前查看灯效，并将其保存到当前电源配置。</value>
+  </data>
+  <data name="MainWindow_LabsLightingRateDescription.Text" xml:space="preserve">
+    <value>让支持的键盘灯光动画更流畅，同时增加 CPU 占用和耗电量。</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>笔记本电脑</value>
@@ -1445,9 +1439,6 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_TextBlockReleaseNotes.Text" xml:space="preserve">
     <value>发行说明</value>
   </data>
-  <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
-    <value>在经验证兼容的键盘上更流畅地呈现支持的灯光效果。</value>
-  </data>
   <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
     <value>报告问题</value>
   </data>
@@ -1501,9 +1492,6 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="MainWindow_TextBlockShutDownOpenBlade.Text" xml:space="preserve">
     <value>关闭 OpenBlade</value>
-  </data>
-  <data name="MainWindow_TextBlockSixtyHzKeyboardLighting.Text" xml:space="preserve">
-    <value>60 Hz 键盘灯光</value>
   </data>
   <data name="MainWindow_TextBlockSixtyHzLighting.Text" xml:space="preserve">
     <value>60 Hz 灯光</value>
@@ -1585,9 +1573,6 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="MainWindow_TextBlockTroubleshooting.Text" xml:space="preserve">
     <value>故障排除</value>
-  </data>
-  <data name="MainWindow_TextBlockTurnOnExperimentalFeatures.Text" xml:space="preserve">
-    <value>开启实验功能。</value>
   </data>
   <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
     <value>未保存</value>
@@ -2010,13 +1995,13 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
     <value>检查当前状态</value>
   </data>
   <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>实验性笔记本支持</value>
+    <value>笔记本支持</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>恢复实验性控制</value>
+    <value>恢复笔记本控制</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
-    <value>恢复实验性控制</value>
+    <value>恢复笔记本控制</value>
   </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>协助添加支持</value>
@@ -2955,5 +2940,123 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="FanStop_GpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>GPU 即时温度上限 (°C)</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
+    <value>使用 Razer 驱动可更改 F1–F12 的默认行为。Windows 钩子保留默认 Fn 快捷键。</value>
+  </data>
+  <data name="GlobalSearchBox.PlaceholderText" xml:space="preserve">
+    <value>搜索页面和设置</value>
+  </data>
+  <data name="GlobalSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>搜索页面和设置</value>
+  </data>
+  <data name="GlobalSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>搜索页面和设置</value>
+  </data>
+  <data name="GlobalSearch_NoResults" xml:space="preserve">
+    <value>未找到匹配的页面或设置</value>
+  </data>
+  <data name="GlobalSearch_BatteryAliases" xml:space="preserve">
+    <value>充电上限 电池健康度</value>
+  </data>
+  <data name="GlobalSearch_SnapTapAliases" xml:space="preserve">
+    <value>A/D SOCD 急停 反向急停</value>
+  </data>
+  <data name="GlobalSearch_UpdateChannelAliases" xml:space="preserve">
+    <value>Nightly 每夜构建 稳定版 发行版</value>
+  </data>
+  <data name="GlobalSearch_BrightnessAliases" xml:space="preserve">
+    <value>屏幕背光</value>
+  </data>
+  <data name="GlobalSearch_FansAliases" xml:space="preserve">
+    <value>散热 转速 RPM</value>
+  </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>CPU 电压优化器</value></data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>全核心优化偏移</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>关闭时使用零并保留偏移值。选择应用以进行更改。</value></data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>刷新</value></data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>恢复之前的优化器值</value></data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>CPU 电压优化器</value></data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve"><value>全核心偏移</value></data>
+  <data name="MainWindow_CoolingPadApplyHelpText.Text" xml:space="preserve">
+    <value>“应用”将在本次会话中开始控制。“释放控制”会恢复接管前读取的底座设置。</value>
+  </data>
+  <data name="MainWindow_CoolingPadApplyText.Content" xml:space="preserve">
+    <value>应用</value>
+  </data>
+  <data name="MainWindow_CoolingPadBrightnessText.Header" xml:space="preserve">
+    <value>设定亮度 (%)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCpuCurveText.Text" xml:space="preserve">
+    <value>CPU</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveHelpText.Text" xml:space="preserve">
+    <value>温度须递增，目标转速不得降低，步长为 50 RPM。选择“两者”时采用较高的目标转速。</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveRpmText.Header" xml:space="preserve">
+    <value>目标 (RPM)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveTemperatureText.Header" xml:space="preserve">
+    <value>温度 (°C)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurvesText.Header" xml:space="preserve">
+    <value>CPU/GPU 曲线</value>
+  </data>
+  <data name="MainWindow_CoolingPadExperimentalText.Text" xml:space="preserve">
+    <value>基于源代码的实验性支持 · Razer RC21-0230</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanLabelText.Text" xml:space="preserve">
+    <value>风扇</value>
+  </data>
+  <data name="MainWindow_CoolingPadFixedRpmText.Header" xml:space="preserve">
+    <value>目标风扇转速 (RPM)</value>
+  </data>
+  <data name="MainWindow_CoolingPadGpuCurveText.Text" xml:space="preserve">
+    <value>GPU</value>
+  </data>
+  <data name="MainWindow_CoolingPadHeadingText.Text" xml:space="preserve">
+    <value>散热底座</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingLabelText.Text" xml:space="preserve">
+    <value>灯光</value>
+  </data>
+  <data name="MainWindow_CoolingPadPrimaryColorText.Header" xml:space="preserve">
+    <value>颜色（RGB 十六进制）</value>
+  </data>
+  <data name="MainWindow_CoolingPadRefreshText.Content" xml:space="preserve">
+    <value>刷新状态</value>
+  </data>
+  <data name="MainWindow_CoolingPadReleaseText.Content" xml:space="preserve">
+    <value>释放控制</value>
+  </data>
+  <data name="MainWindow_CoolingPadSecondaryColorText.Header" xml:space="preserve">
+    <value>呼吸效果的第二种颜色（RGB 十六进制）</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionLabel.Text" xml:space="preserve">
+    <value>方向</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceLabel.Text" xml:space="preserve">
+    <value>温度来源</value>
+  </data>
+  <data name="MainWindow_CoolingPadNavigationItemText.Content" xml:space="preserve">
+    <value>散热底座</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanSelectorText.AccessibleName" xml:space="preserve">
+    <value>散热底座风扇模式</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingSelectorText.AccessibleName" xml:space="preserve">
+    <value>散热底座灯光效果</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceText.AccessibleName" xml:space="preserve">
+    <value>散热底座温度来源</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionText.AccessibleName" xml:space="preserve">
+    <value>散热底座波浪方向</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandLabelText.Text" xml:space="preserve">
+    <value>允许应用请求加强散热</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>允许应用请求加强散热</value>
   </data>
 </root>

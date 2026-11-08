@@ -6,7 +6,8 @@ namespace OpenBlade.Service;
 internal static class ServiceStatusSnapshotComparer
 {
     internal static bool Equivalent(ServiceStatusSnapshot left, ServiceStatusSnapshot right) =>
-        left.DeviceVerified == right.DeviceVerified
+        left.CoolingPad == right.CoolingPad
+        && left.DeviceVerified == right.DeviceVerified
         && left.WritesBlocked == right.WritesBlocked
         && left.PotentialControllers.SequenceEqual(
             right.PotentialControllers,
@@ -26,6 +27,8 @@ internal static class ServiceStatusSnapshotComparer
         && left.UnconfirmedWrites.SequenceEqual(right.UnconfirmedWrites)
         && left.HyperBoostRestorePending == right.HyperBoostRestorePending
         && left.UnsupportedLaptop == right.UnsupportedLaptop
+
+        && CpuTuningEqual(left.CpuTuning, right.CpuTuning)
         && ThermalConvergenceEqual(
             left.ThermalConvergence,
             right.ThermalConvergence)
@@ -108,6 +111,7 @@ internal static class ServiceStatusSnapshotComparer
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
             && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
             && left.LampArrayLightingAccess == right.LampArrayLightingAccess
+            && left.SupportsIndependentLightingControls == right.SupportsIndependentLightingControls
             && left.ObservedPowerSourceBehaviors.SequenceEqual(
                 right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)
@@ -153,6 +157,28 @@ internal static class ServiceStatusSnapshotComparer
         IReadOnlySet<T>? left,
         IReadOnlySet<T>? right) =>
         left is null ? right is null : right is not null && left.SetEquals(right);
+
+    private static bool CpuTuningEqual(CpuTuningStatus? left, CpuTuningStatus? right) =>
+        ReferenceEquals(left, right)
+        || (left is not null && right is not null
+            && left.Firmware == right.Firmware && left.Live == right.Live
+            && left.PendingBoot == right.PendingBoot && left.RestorePending == right.RestorePending
+            && left.FirmwareRecovery == right.FirmwareRecovery && left.LiveRecovery == right.LiveRecovery
+            && SavedCpuEqual(left.SavedConfiguration, right.SavedConfiguration)
+            && (ReferenceEquals(left.LiveState, right.LiveState)
+                || (left.LiveState is { } liveLeft && right.LiveState is { } liveRight
+                    && liveLeft.PowerLimits == liveRight.PowerLimits
+                    && liveLeft.CoreValues.SequenceEqual(liveRight.CoreValues))));
+
+    private static bool SavedCpuEqual(CpuSavedConfiguration? left, CpuSavedConfiguration? right) =>
+        ReferenceEquals(left, right)
+        || (left is not null && right is not null
+            && left.PowerLimitMilliwatts == right.PowerLimitMilliwatts
+            && left.Policy == right.Policy && left.PowerMode == right.PowerMode
+            && (ReferenceEquals(left.CurveOptimizer, right.CurveOptimizer)
+                || (left.CurveOptimizer is { } curveLeft && right.CurveOptimizer is { } curveRight
+                    && curveLeft.Mode == curveRight.Mode && curveLeft.AllCoreValue == curveRight.AllCoreValue
+                    && curveLeft.CoreValues.SequenceEqual(curveRight.CoreValues))));
 
     private static bool CustomPerformanceCapabilitiesEqual(
         CustomPerformanceCapabilities? left,

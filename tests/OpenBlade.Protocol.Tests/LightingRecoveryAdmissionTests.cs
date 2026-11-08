@@ -184,13 +184,35 @@ public sealed partial class ProductionLightingPortTests
     {
         var session = new LightingSession(initialBrightness: 0xFF);
         var clock = new ManualTimeProvider();
+        var firstTimerScheduled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        clock.TimerScheduled = () => firstTimerScheduled.TrySetResult();
         await using IProductionLightingPort port = CreateOwnedRendererReadPort(session, clock, true);
         bool admitted = true;
         Assert.IsAssignableFrom<ILightingRecoveryWriteAdmission>(port).SetRecoveryWriteAdmission(() => admitted);
         await port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(100), default);
-        session.BeforeStreamSubmission = row => { if (row == refusedRow) { admitted = false; } };
+        // Advance only after the stream has armed its first virtual deadline.
+        // Real-time watchdogs detect a hang; they do not decide frame readiness.
+        await firstTimerScheduled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task stream = Assert.IsAssignableFrom<Task>(typeof(Rz090528BrightnessLightingPort)
+            .GetField("streamTask", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(port));
+        var nextTimerScheduled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        clock.TimerScheduled = () => nextTimerScheduled.TrySetResult();
+        var refusalReached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        session.BeforeStreamSubmission = row =>
+        {
+            if (row == refusedRow)
+            {
+                admitted = false;
+                refusalReached.TrySetResult();
+            }
+        };
         clock.Advance(TimeSpan.FromSeconds(1));
-        await Task.Delay(50);
+        await refusalReached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        // Row zero defers the unsent frame and arms another deadline. A later
+        // row faults the stream; await that catch/publication before inspecting it.
+        await (refusedRow == 0 ? nextTimerScheduled.Task : stream)
+            .WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.False(admitted);
         Assert.Equal(refusedRow, session.SubmittedCommands.Count);

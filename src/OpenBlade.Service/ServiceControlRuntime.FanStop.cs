@@ -477,7 +477,12 @@ public sealed partial class ServiceControlRuntime
             }
             finally { operationGate.Release(); }
         }
+        // Owned Auto has its own potentially longer budget. The independent
+        // accessory still needs its bounded handback after laptop cleanup;
+        // the earlier keyboard token may already have expired.
+        ControlOperationResult? pad = await ReleaseCoolingPadForLifecycleAsync(
+            allowLowPower: true, CancellationToken.None).ConfigureAwait(false);
         return CombineDisplayBrightnessCleanup(brightness,
-            CombineShutdownCleanupResults(hyperBoostResult, null, null, fan, keyboard));
+            CombineShutdownCleanupResults(hyperBoostResult, pad, null, fan, keyboard));
     }
 }

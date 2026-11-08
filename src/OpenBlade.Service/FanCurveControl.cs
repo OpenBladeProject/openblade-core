@@ -487,7 +487,8 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         // PDH read of either path cannot establish CPU temperature. Keep the
         // shared source list empty until a dynamic sensor contract is reviewed;
         // do not substitute another zone or blacklist a legitimate 45 C value.
-        // Provenance: docs/so6120-cpu-temperature-source.md.
+        // Provenance: docs/bios-ec-source-validation.md and
+        // docs/so6120-cpu-temperature-source.md.
         internal static IReadOnlyList<string> RazerEcCounterPaths { get; } = [];
         private const uint PdhFormatDouble = 0x00000200;
         private const uint PdhStatusValidData = 0x00000000;

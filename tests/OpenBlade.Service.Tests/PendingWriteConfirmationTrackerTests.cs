@@ -81,6 +81,26 @@ public sealed class PendingWriteConfirmationTrackerTests
             DeviceSubsystem.Battery, Confirmed() with { Battery = null }, PowerSource.Battery, owner, null));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(99)]
+    public void BatteryReplacement_CannotNarrowPriorOverrideObligation(int previousScope)
+    {
+        var tracker = new PendingWriteConfirmationTracker();
+        tracker.Set(DeviceSubsystem.Battery, Pending() with { BatteryConfirmation = (BatteryConfirmationScope)previousScope });
+        tracker.Set(DeviceSubsystem.Battery, Pending() with
+        {
+            BatteryConfirmation = BatteryConfirmationScope.PolicyOnly,
+        });
+
+        PendingWriteConfirmation pending = Assert.Single(tracker.Snapshot()).Value;
+        Assert.Equal(BatteryConfirmationScope.All, pending.BatteryConfirmation);
+        Assert.Equal(PendingConfirmationResult.Unavailable, pending.Match(
+            DeviceSubsystem.Battery,
+            Confirmed() with { Battery = new ConfirmedBatteryState(true, 80, null) },
+            PowerSource.PluggedIn, Owner(), null));
+    }
+
     private static ProfileAutomationState Owner() => new(
         ProfileDefaults.CreateSafeDefaults(), new BatteryAutomationPreferences(), PowerSource.PluggedIn);
 

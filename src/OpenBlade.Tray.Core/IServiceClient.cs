@@ -39,6 +39,12 @@ public interface IServiceClient : IServiceStatusWatcher
 
     Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token);
 
+    Task<ServiceStatusSnapshot> ReadCoolingPadStatusAsync(CancellationToken token) => GetStatusAsync(token);
+    Task<ControlOperationResult> SetCoolingPadSettingsAsync(CoolingPadSettings settings, CancellationToken token) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling-pad control is unavailable."));
+    Task<ControlOperationResult> ReleaseCoolingPadControlAsync(CancellationToken token) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling-pad control is unavailable."));
+
     Task<ServiceStatusSnapshot> ObserveStateAsync(
         bool includeLiveReadings,
         CancellationToken cancellationToken);
@@ -63,6 +69,17 @@ public interface IServiceClient : IServiceStatusWatcher
         PerformanceOverride? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target,
+        CpuTuningSettings settings, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU tuning is unavailable."));
+
+    Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU tuning inspection is unavailable."));
+
+    Task<ControlOperationResult> RestoreCpuTuningAsync(CpuTuningTarget target,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU tuning restoration is unavailable."));
     Task<ControlOperationResult> SetGpuClockTuningAsync(
         GpuClockTuningSettings value,
         OverrideLifetime lifetime,
@@ -112,6 +129,11 @@ public interface IServiceClient : IServiceStatusWatcher
     Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
+
+    Task<ControlOperationResult> SetIndependentLightingOverrideAsync(
+        ManualOverride<IndependentLightingSettings>? value,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked, "Independent lighting controls are unavailable."));
 
     Task<ControlOperationResult> StepKeyboardBrightnessAsync(
         KeyboardBrightnessDirection direction,

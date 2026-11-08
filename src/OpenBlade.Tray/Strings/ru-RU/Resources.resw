@@ -511,15 +511,6 @@
   <data name="MainWindow_ItemsControlTrayDashboardStatusItems.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Элементы состояния панели в области уведомлений</value>
   </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>О функциях Lab</value>
-  </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>О функциях Lab</value>
-  </data>
-  <data name="MainWindow_LabFeaturesToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Включить экспериментальные функции Lab</value>
-  </data>
   <data name="MainWindow_LaptopLogoModeSelectorText.AccessibleName" xml:space="preserve">
     <value>Подсветка логотипа ноутбука</value>
   </data>
@@ -1102,9 +1093,6 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_TextBlockCPU.Text" xml:space="preserve">
     <value>CPU</value>
   </data>
-  <data name="MainWindow_TextBlockCurrentLabFeatures.Text" xml:space="preserve">
-    <value>Текущие функции Lab</value>
-  </data>
   <data name="MainWindow_TextBlockCustomColor.Text" xml:space="preserve">
     <value>Пользовательский цвет</value>
   </data>
@@ -1234,9 +1222,6 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_TextBlockHDR2.Text" xml:space="preserve">
     <value>HDR</value>
   </data>
-  <data name="MainWindow_TextBlockImportOblightAndRazerChromaFiles.Text" xml:space="preserve">
-    <value>Импортируйте файлы .oblight и Razer .chroma.</value>
-  </data>
   <data name="MainWindow_TextBlockImportPreset.Text" xml:space="preserve">
     <value>Импорт предустановки</value>
   </data>
@@ -1273,14 +1258,23 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
     <value>Подсветка клавиатуры</value>
   </data>
-  <data name="MainWindow_TextBlockKeyboardLightingPresetImport.Text" xml:space="preserve">
-    <value>Импорт предустановки подсветки клавиатуры</value>
+  <data name="MainWindow_LabsNavigationItem.Content" xml:space="preserve">
+    <value>Лаборатория</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeatures.Text" xml:space="preserve">
-    <value>Функции Lab</value>
+  <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
+    <value>Лаборатория</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
-    <value>Функции Lab могут быть изменены или удалены.</value>
+  <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
+    <value>Знакомьтесь с экспериментальными функциями OpenBlade.</value>
+  </data>
+  <data name="MainWindow_LabsImportTitle.Text" xml:space="preserve">
+    <value>Импорт пресета подсветки</value>
+  </data>
+  <data name="MainWindow_LabsImportDescription.Text" xml:space="preserve">
+    <value>Загрузите файл OpenBlade или Razer Chroma, проверьте эффект перед применением и сохраните его в активном профиле питания.</value>
+  </data>
+  <data name="MainWindow_LabsLightingRateDescription.Text" xml:space="preserve">
+    <value>Поддерживаемые анимации подсветки клавиатуры становятся плавнее. Это повышает нагрузку на процессор и расход энергии.</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>Ноутбук</value>
@@ -1462,9 +1456,6 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_TextBlockReleaseNotes.Text" xml:space="preserve">
     <value>Примечания к выпуску</value>
   </data>
-  <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
-    <value>Плавнее воспроизводить поддерживаемые эффекты на проверенных клавиатурах.</value>
-  </data>
   <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
     <value>Сообщить о проблеме</value>
   </data>
@@ -1518,9 +1509,6 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_TextBlockShutDownOpenBlade.Text" xml:space="preserve">
     <value>Завершить работу OpenBlade</value>
-  </data>
-  <data name="MainWindow_TextBlockSixtyHzKeyboardLighting.Text" xml:space="preserve">
-    <value>Подсветка клавиатуры 60 Гц</value>
   </data>
   <data name="MainWindow_TextBlockSixtyHzLighting.Text" xml:space="preserve">
     <value>Подсветка 60 Гц</value>
@@ -1602,9 +1590,6 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_TextBlockTroubleshooting.Text" xml:space="preserve">
     <value>Устранение неполадок</value>
-  </data>
-  <data name="MainWindow_TextBlockTurnOnExperimentalFeatures.Text" xml:space="preserve">
-    <value>Включить экспериментальные функции.</value>
   </data>
   <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
     <value>Не сохранено</value>
@@ -2027,13 +2012,13 @@ OpenBlade повторно проверит этот список и остан�
     <value>Проверить текущее состояние</value>
   </data>
   <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Экспериментальная поддержка ноутбука</value>
+    <value>Поддержка ноутбука</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Возобновить экспериментальное управление</value>
+    <value>Возобновить управление ноутбуком</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
-    <value>Возобновить экспериментальное управление</value>
+    <value>Возобновить управление ноутбуком</value>
   </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Помочь добавить поддержку</value>
@@ -2972,5 +2957,123 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="FanStop_GpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Немедленный порог GPU (°C)</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
+    <value>Используйте драйвер Razer, чтобы изменить поведение клавиш F1–F12. Перехват Windows сохраняет стандартные сочетания с Fn.</value>
+  </data>
+  <data name="GlobalSearchBox.PlaceholderText" xml:space="preserve">
+    <value>Поиск по страницам и настройкам</value>
+  </data>
+  <data name="GlobalSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Поиск по страницам и настройкам</value>
+  </data>
+  <data name="GlobalSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Поиск по страницам и настройкам</value>
+  </data>
+  <data name="GlobalSearch_NoResults" xml:space="preserve">
+    <value>Подходящих страниц и настроек нет</value>
+  </data>
+  <data name="GlobalSearch_BatteryAliases" xml:space="preserve">
+    <value>лимит заряда состояние аккумулятора</value>
+  </data>
+  <data name="GlobalSearch_SnapTapAliases" xml:space="preserve">
+    <value>A/D SOCD контрстрейф</value>
+  </data>
+  <data name="GlobalSearch_UpdateChannelAliases" xml:space="preserve">
+    <value>Nightly ночные сборки стабильные выпуски</value>
+  </data>
+  <data name="GlobalSearch_BrightnessAliases" xml:space="preserve">
+    <value>подсветка экрана</value>
+  </data>
+  <data name="GlobalSearch_FansAliases" xml:space="preserve">
+    <value>охлаждение обороты RPM</value>
+  </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>Оптимизатор напряжения CPU</value></data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Смещение оптимизатора всех ядер</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Выключение использует ноль и сохраняет смещение. Нажмите «Применить», чтобы изменить настройки.</value></data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>Обновить</value></data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>Восстановить прежние значения оптимизатора</value></data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Оптимизатор напряжения CPU</value></data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve"><value>Смещение всех ядер</value></data>
+  <data name="MainWindow_CoolingPadApplyHelpText.Text" xml:space="preserve">
+    <value>«Применить» включает управление до конца сеанса. «Передать управление» восстанавливает исходные настройки подставки.</value>
+  </data>
+  <data name="MainWindow_CoolingPadApplyText.Content" xml:space="preserve">
+    <value>Применить</value>
+  </data>
+  <data name="MainWindow_CoolingPadBrightnessText.Header" xml:space="preserve">
+    <value>Выбранная яркость (%)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCpuCurveText.Text" xml:space="preserve">
+    <value>ЦП</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveHelpText.Text" xml:space="preserve">
+    <value>Температуры должны возрастать, а заданная скорость — не убывать и изменяться с шагом 50 об/мин. Если выбраны оба датчика, используется более высокая скорость.</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveRpmText.Header" xml:space="preserve">
+    <value>Заданная скорость (об/мин)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveTemperatureText.Header" xml:space="preserve">
+    <value>Температура (°C)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurvesText.Header" xml:space="preserve">
+    <value>Кривые ЦП/ГП</value>
+  </data>
+  <data name="MainWindow_CoolingPadExperimentalText.Text" xml:space="preserve">
+    <value>Экспериментальная поддержка на основе исходного кода · Razer RC21-0230</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanLabelText.Text" xml:space="preserve">
+    <value>Вентилятор</value>
+  </data>
+  <data name="MainWindow_CoolingPadFixedRpmText.Header" xml:space="preserve">
+    <value>Выбранная скорость вентилятора (об/мин)</value>
+  </data>
+  <data name="MainWindow_CoolingPadGpuCurveText.Text" xml:space="preserve">
+    <value>ГП</value>
+  </data>
+  <data name="MainWindow_CoolingPadHeadingText.Text" xml:space="preserve">
+    <value>Охлаждающая подставка</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingLabelText.Text" xml:space="preserve">
+    <value>Подсветка</value>
+  </data>
+  <data name="MainWindow_CoolingPadPrimaryColorText.Header" xml:space="preserve">
+    <value>Цвет (RGB-код)</value>
+  </data>
+  <data name="MainWindow_CoolingPadRefreshText.Content" xml:space="preserve">
+    <value>Обновить состояние</value>
+  </data>
+  <data name="MainWindow_CoolingPadReleaseText.Content" xml:space="preserve">
+    <value>Передать управление</value>
+  </data>
+  <data name="MainWindow_CoolingPadSecondaryColorText.Header" xml:space="preserve">
+    <value>Второй цвет эффекта «Дыхание» (RGB-код)</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionLabel.Text" xml:space="preserve">
+    <value>Направление</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceLabel.Text" xml:space="preserve">
+    <value>Источник температуры</value>
+  </data>
+  <data name="MainWindow_CoolingPadNavigationItemText.Content" xml:space="preserve">
+    <value>Охлаждающая подставка</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanSelectorText.AccessibleName" xml:space="preserve">
+    <value>Режим вентилятора охлаждающей подставки</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingSelectorText.AccessibleName" xml:space="preserve">
+    <value>Эффект подсветки охлаждающей подставки</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceText.AccessibleName" xml:space="preserve">
+    <value>Датчик температуры для охлаждающей подставки</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionText.AccessibleName" xml:space="preserve">
+    <value>Направление волны подсветки охлаждающей подставки</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandLabelText.Text" xml:space="preserve">
+    <value>Разрешить приложениям запрашивать усиленное охлаждение</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Разрешить приложениям запрашивать усиленное охлаждение</value>
   </data>
 </root>

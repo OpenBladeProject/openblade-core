@@ -34,6 +34,10 @@ public sealed class IpcWireShapeManifestTests
         Assert.Contains("derived resumeAutomaticFanStop=OpenBlade.Contracts.ResumeAutomaticFanStopRequest", manifest, StringComparison.Ordinal);
         Assert.Contains("property settings:OpenBlade.Contracts.FanStopSettings required", manifest, StringComparison.Ordinal);
         Assert.Contains("property fanStopStatus:OpenBlade.Contracts.FanStopStatus member", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived setCpuTuning=OpenBlade.Contracts.SetCpuTuningRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived observeCpuTuning=OpenBlade.Contracts.ObserveCpuTuningRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived restoreCpuTuning=OpenBlade.Contracts.RestoreCpuTuningRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("property cpuTuning:OpenBlade.Contracts.CpuTuningStatus", manifest, StringComparison.Ordinal);
         string? expectedHash = OpenBladeIpc.ProtocolVersion switch
         {
             47 => "182C004C3E7FBAFF946EAE2C1CFD6AE86D219A094E9DBC3BEF5A0F800D41F3D1",
@@ -62,15 +66,17 @@ public sealed class IpcWireShapeManifestTests
             70 => "8832DA678DB56557D44A0E18B1E1FFED5C309B0FFE9E2C292AFF835605BA7BCE",
             71 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
             // Protocol 72 changes only the diagnostic-response transport bound; the JSON shape is unchanged.
-            73 => "5B4568285F1ED8B41EF30E4C75AAC002B4C70CB96272F543ABFC46533191D094",
-            74 => "3A7F0F0E543BA35C9702F1F28081547A9FA2A1F166D3E6EC4AE7116A394B9113",
-            // Protocol 75 appends pending fan-stop states and the guardian-unavailable reason.
-            75 => "1874A6AF68CE588911929DFAC00A5B2742718349C2B33146C3B8C1C9FC37D814",
-            // Protocol 76 adds Stop policies, typed settings/resume requests, and automation status.
-            76 => "48E804C7D6043AE74592F7C8D158F9EFEE8CDE8BE356FAA3581B29DB4F85267A",
-            // Protocol 77 adds independent CPU/GPU immediate cutoffs for Custom rolling averages.
-            77 => "93000A79AC01843AC4D79DCCBF91271BF6609083B4D36B484A36A9588C28D41A",
             72 => "CD9937FF17832D938965E17CB09F0A07451306925DFEFC1DC0CB28ABD12E1F44",
+            // Protocol 73 appends Turbo=6/MaximumPower=7/Gaming=8/Creator=9 and their optional Windows power-mode associations.
+            73 => "93C291B7F811B3094DED568A375C1AEA9739A2C93A4699A5616018CC35C81A08",
+            // Protocol 74 adds typed live CPU operations to the protocol 73 shape.
+            74 => "6D8B3D1A749E2B3F52F3990AE1383FC2CA052515198F8996B73863581FE3A45A",
+            // Protocol 75 adds optional independent lighting intent/readback and a bounded typed request.
+            75 => "646E0ADEA4D0038513194BFF2D6157AD3D329ACC0CF0A7D9DD2E784977437FFD",
+            // Protocol 76 adds source-backed cooling-pad operations and status.
+            76 => "6259E2AF01F7E0351B5B9D98846046F14345DEFB0BA173DBEC8E7FB5577EB8DD",
+            // Protocol 78 combines main CPU/cooling-pad/lighting contracts with Fan Stop policies.
+            78 => "14F86C7DF2AB4C48E745B97A30D859835582B25A1DD149E570555FCDC73A4DF7",
             _ => null,
         };
 

@@ -52,6 +52,8 @@ public sealed class ProfileValidationPolicy
 
     public IReadOnlySet<LightingEffect> SupportedLightingEffects { get; }
 
+    public bool SupportsIndependentLightingControls { get; init; }
+
     public CustomPerformanceCapabilities? CustomPerformance { get; }
 
     public FanSpeedRange? FanSpeedRange { get; }
@@ -83,6 +85,10 @@ public sealed class ProfileValidationPolicy
             new(PerformancePreset.Balanced, FanMode.Automatic),
             new(PerformancePreset.Silent, FanMode.Automatic),
             new(PerformancePreset.Performance, FanMode.Automatic),
+            new(PerformancePreset.Turbo, FanMode.Automatic),
+            new(PerformancePreset.MaximumPower, FanMode.Automatic),
+            new(PerformancePreset.Gaming, FanMode.Automatic),
+            new(PerformancePreset.Creator, FanMode.Automatic),
             new(PerformancePreset.Custom, FanMode.Automatic),
             new(PerformancePreset.Balanced, FanMode.Maximum),
             new(PerformancePreset.Balanced, FanMode.Fixed),
@@ -137,7 +143,10 @@ public sealed class ProfileValidationPolicy
             lightingCapabilities.SupportsBreathingColorSelection,
             lightingCapabilities.SupportsWaveDirectionSelection,
             lightingCapabilities.SupportedBreathingColorModes,
-            batteryCapabilities.FanSpeedRangesByPerformancePreset);
+            batteryCapabilities.FanSpeedRangesByPerformancePreset)
+        {
+            SupportsIndependentLightingControls = lightingCapabilities.SupportsIndependentLightingControls,
+        };
     }
 }
 
@@ -217,7 +226,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 
         if (preferences.LastKnownLighting is { } lighting)
         {
-            ValidateLighting(lighting, "last-known");
+            ValidateLighting(lighting, "last-known", allowStoredIndependentIntent: true);
         }
     }
 
@@ -277,7 +286,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} profile is invalid: {exception.Message}");
         }
 
-        ValidateLighting(profile.Lighting, name);
+        ValidateLighting(profile.Lighting, name, allowStoredIndependentIntent: !validateCustomCapabilities);
         ValidateCustomPerformance(profile, name, validateCustomCapabilities);
         ValidateGpuClockTuning(profile, name, source);
         ValidateFanControl(profile, name);
@@ -318,6 +327,10 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
                 PerformancePreset.Silent
                 or PerformancePreset.Balanced
                 or PerformancePreset.Performance
+                or PerformancePreset.Turbo
+                or PerformancePreset.MaximumPower
+                or PerformancePreset.Gaming
+                or PerformancePreset.Creator
                 or PerformancePreset.Custom,
             PowerSource.Battery => performance is
                 PerformancePreset.BatterySaver
@@ -444,7 +457,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
     }
 
-    private void ValidateLighting(LightingSettings? lighting, string name)
+    private void ValidateLighting(LightingSettings? lighting, string name, bool allowStoredIndependentIntent = false)
     {
         if (lighting is null)
         {
@@ -456,6 +469,20 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} lighting effect is undefined.");
         }
 
+        if (validationPolicy.SupportsIndependentLightingControls || allowStoredIndependentIntent && lighting.IndependentControls is not null)
+        {
+            // Preserve the well-formed saved effect as unmanaged intent. This
+            // capability applies only the independently opted-in nullable fields.
+            if (!LightingSettingsValidation.IsWellFormed(lighting))
+            {
+                throw Invalid($"The {name} independent lighting settings are invalid.");
+            }
+            return;
+        }
+        if (lighting.IndependentControls is not null)
+        {
+            throw Invalid($"The {name} independent lighting controls are unavailable.");
+        }
         if (!validationPolicy.SupportedLightingEffects.Contains(lighting.Effect))
         {
             throw Invalid($"The {name} lighting effect is not supported by the active validation policy.");

@@ -594,7 +594,48 @@ public sealed class ControlRequestHandlerTests
         Assert.Null(response.Result);
     }
 
-    private sealed class RecordingRuntime : IServiceControlRuntime
+    [Fact]
+    public async Task HandleAsync_CancellationAtAcquiredAdmissionBoundaryCannotDispatchAndReleasesGate()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var runtime = new CancelingAdmissionRuntime(cancellation);
+        var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => handler.HandleAsync(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), cancellation.Token));
+
+        Assert.Equal(0, runtime.ActivationCalls);
+        Assert.Empty(runtime.Calls);
+        ServiceResponse later = await handler.HandleAsync(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), CancellationToken.None);
+        Assert.True(later.Success);
+        Assert.Equal(1, runtime.ActivationCalls);
+    }
+
+    private sealed class CancelingAdmissionRuntime(CancellationTokenSource cancellation)
+        : RecordingRuntime, IServiceUserAdmission
+    {
+        public IDisposable BeginUserAdmission(ServiceClientContext client, Func<bool> stillControlsSession,
+            ServiceUserRequestOwner? requestOwner) => new CancelingAdmissionLease(cancellation);
+
+        public bool TryReadCurrentUserStatus(SecurityIdentifier userSid, Func<bool> stillControlsSession,
+            out ServiceStatusSnapshot? snapshot)
+        {
+            snapshot = null;
+            return false;
+        }
+
+        private sealed class CancelingAdmissionLease(CancellationTokenSource cancellation) : IDisposable
+        {
+            private int disposed;
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref disposed, 1) == 0) { cancellation.Cancel(); }
+            }
+        }
+    }
+
+    private class RecordingRuntime : IServiceControlRuntime
     {
         private long revision;
 

@@ -61,7 +61,6 @@ public sealed record UiPreferences(
     string? LastNotifiedReleaseTag = null,
     string? LastNotifiedFirmwareSignature = null,
     TrayDashboardPreference? TrayDashboard = null,
-    bool LabFeaturesEnabled = false,
     UiLanguagePreference Language = UiLanguagePreference.FollowSystem,
     bool ThxAudioIntegrationEnabled = false,
     bool SnapTapEnabled = false,
@@ -120,7 +119,6 @@ public sealed record UiPreferences(
         LastNotifiedReleaseTag: null,
         LastNotifiedFirmwareSignature: null,
         TrayDashboard: TrayDashboardPreferenceDefaults.Preference,
-        LabFeaturesEnabled: false,
         Language: UiLanguagePreference.FollowSystem,
         TelemetryEnabled: false);
 
@@ -204,7 +202,12 @@ public sealed class UiPreferenceStore
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
-        Converters = { new KeyboardInputBackendJsonConverter(), new JsonStringEnumConverter() },
+        Converters =
+        {
+            new KeyboardInputBackendJsonConverter(),
+            new PrimaryNavigationItemJsonConverter(),
+            new JsonStringEnumConverter(),
+        },
         WriteIndented = true,
     };
 
@@ -731,6 +734,37 @@ public sealed class UiPreferenceStore
         }
 
         return false;
+    }
+
+    private sealed class PrimaryNavigationItemJsonConverter : JsonConverter<PrimaryNavigationItemKind>
+    {
+        private static readonly JsonConverter<PrimaryNavigationItemKind> Reader =
+            (JsonConverter<PrimaryNavigationItemKind>)new JsonStringEnumConverter<PrimaryNavigationItemKind>()
+                .CreateConverter(typeof(PrimaryNavigationItemKind), JsonSerializerOptions.Default);
+
+        public override PrimaryNavigationItemKind Read(
+            ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                string name = reader.GetString()!.Trim();
+                if (name.Length > 0
+                    && (char.IsLetter(name[0]) || name[0] == '_')
+                    && name.All(character => char.IsLetterOrDigit(character) || character == '_')
+                    && !Enum.TryParse<PrimaryNavigationItemKind>(name, ignoreCase: true, out _))
+                {
+                    // Navigation normalization drops undefined IDs while preserving the known order.
+                    return (PrimaryNavigationItemKind)(-1);
+                }
+            }
+
+            return Reader.Read(ref reader, typeToConvert, options);
+        }
+
+        public override void Write(
+            Utf8JsonWriter writer, PrimaryNavigationItemKind value, JsonSerializerOptions options) =>
+            // Older builds can skip an unknown numeric ID after loading the preferences.
+            writer.WriteNumberValue((int)value);
     }
 
     private static void TryDeleteTemporary(string temporaryPath)

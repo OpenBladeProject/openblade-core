@@ -12,6 +12,10 @@ public sealed class PerformanceShortcutNotificationSignalTests
     [InlineData(PerformancePreset.BatterySaver)]
     [InlineData(PerformancePreset.BatteryBalanced)]
     [InlineData(PerformancePreset.Custom)]
+    [InlineData(PerformancePreset.Turbo)]
+    [InlineData(PerformancePreset.MaximumPower)]
+    [InlineData(PerformancePreset.Gaming)]
+    [InlineData(PerformancePreset.Creator)]
     public void CurrentModeSignal_RoundTrips(PerformancePreset preset)
     {
         var expected = new PerformanceShortcutNotificationSignal(

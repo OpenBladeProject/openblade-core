@@ -389,7 +389,7 @@ internal static class SnapTapDriverSupervisor
 
     internal static KeyboardDriverFeatures AdmitFeatures(KeyboardDriverFeatures features, RazerSnapTapDriverProfile profile)
     {
-        if (features.HasFlag(KeyboardDriverFeatures.FunctionRow) && profile.ProductId is not ("02E0" or "02C6"))
+        if (features.HasFlag(KeyboardDriverFeatures.FunctionRow) && profile.ProductId is not ("02E0" or "02C6" or "02A0"))
         {
             FunctionRowBackendStatusStore.Write(new(SnapTapRuntimeState.UnsupportedModel, DateTimeOffset.UtcNow,
                 Environment.ProcessId, profile.ProductName, true,

@@ -84,6 +84,7 @@ public partial class App
 {
     private const string XamlStartupSmokeArgument = "--xaml-startup-smoke";
     private const string CaptionThemeSmokeArgument = "--caption-theme-smoke";
+    private const string CpuTuningLayoutSmokeArgument = "--cpu-tuning-layout-smoke";
     private const string ResponsivePageHeaderSmokeArgument =
         "--responsive-page-header-smoke";
     private const string ResponsiveChoiceSelectorSmokeArgument =
@@ -132,6 +133,11 @@ public partial class App
             return true;
         }
 
+        if (commandLineArguments is [_, CpuTuningLayoutSmokeArgument])
+        {
+            _ = RunCpuTuningLayoutSmokeAsync();
+            return true;
+        }
         bool pseudoLocalizationRequested = string.Equals(
             Environment.GetEnvironmentVariable("OPENBLADE_PSEUDO_LOCALIZATION"),
             "1",
@@ -659,6 +665,10 @@ public partial class App
         string? localizationLanguage)
     {
         string? reportPath = null;
+        string? requestedPage = Environment.GetEnvironmentVariable(
+            LocalizationSnapshotPageVariable);
+        bool captureGlobalSearch = requestedPage is "global-search" or "global-search-compact";
+        bool compactGlobalSearch = requestedPage == "global-search-compact";
         MainWindow? snapshotMainWindow = null;
         TrayDashboardWindow? snapshotDashboardWindow = null;
         try
@@ -700,12 +710,10 @@ public partial class App
                 "display",
                 "settings",
                 "settings-appearance",
-                "settings-experimental",
+                "labs",
                 "about",
                 "whats-new",
             };
-            string? requestedPage = Environment.GetEnvironmentVariable(
-                LocalizationSnapshotPageVariable);
             bool captureNarrowProfiles = string.Equals(
                 requestedPage,
                 "profiles-narrow",
@@ -722,7 +730,9 @@ public partial class App
                 or "telemetry-expired" or "telemetry-retention"
                 or "telemetry-recording" or "telemetry-replay";
             bool captureBatteryReport = requestedPage?.StartsWith("telemetry-battery-report", StringComparison.Ordinal) == true;
-            bool captureFeatureSnapshot = captureBatteryReport || captureTelemetryVariant || requestedPage is
+            bool captureCoolingPad = requestedPage?.StartsWith("cooling-pad-", StringComparison.Ordinal) == true;
+            bool captureLabsTarget = requestedPage is "labs-import-target" or "labs-60hz-target";
+            bool captureFeatureSnapshot = captureCoolingPad || captureBatteryReport || captureTelemetryVariant || requestedPage is
                 "profiles-applications" or "profiles-applications-empty"
                 or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                 or "profiles-application-discovery-empty" or "telemetry-empty" or "telemetry-disabled"
@@ -769,8 +779,10 @@ public partial class App
                 && !captureFanStop && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
                 && !captureProfilesVariant
                 && !captureFeatureSnapshot
+                && !captureLabsTarget
                 && !captureSnapTap
                 && !captureDischargeSettings
+                && !captureGlobalSearch
                 && !string.Equals(
                     requestedPage,
                     "tray-dashboard",
@@ -780,7 +792,7 @@ public partial class App
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
             IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
-                || captureDischargeSettings || captureFanStop
+                || captureDischargeSettings || captureFanStop || captureLabsTarget || captureGlobalSearch
                 ? [requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
@@ -810,6 +822,14 @@ public partial class App
                                 StringComparison.Ordinal)
                                 ? new Windows.Graphics.SizeInt32(1600, 900)
                                 : new Windows.Graphics.SizeInt32(1120, 820);
+                    if (captureCoolingPad && destination.EndsWith("-wide", StringComparison.Ordinal))
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(1600, 900);
+                    }
+                    if (captureCoolingPad && destination.EndsWith("-narrow", StringComparison.Ordinal))
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
+                    }
                     if (destination is "profiles-applications"
                         or "profiles-applications-empty"
                         or "profiles-application-editor")
@@ -839,6 +859,13 @@ public partial class App
                     {
                         snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
                     }
+                    if (captureGlobalSearch)
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(
+                            (int)Math.Ceiling((compactGlobalSearch ? 800 : 1120)
+                                * snapshotMainWindow.XamlRoot.RasterizationScale),
+                            (int)Math.Ceiling(820 * snapshotMainWindow.XamlRoot.RasterizationScale));
+                    }
                     if (captureSnapTap && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(
                         "OPENBLADE_LOCALIZATION_SNAPSHOT_KEYBOARD_INPUTS")))
                     {
@@ -858,7 +885,9 @@ public partial class App
                     await WaitForSnapshotLayoutAsync();
                     string navigationDestination = destination switch
                     {
-                        "settings-appearance" or "settings-experimental" or "settings-notifications" => "settings",
+                        "settings-appearance" or "settings-notifications"
+                            or "global-search" or "global-search-compact" => "settings",
+                        "labs-import-target" or "labs-60hz-target" => "labs",
                         "profiles-applications" or "profiles-applications-empty"
                             or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                             or "profiles-application-discovery-empty" => "profiles",
@@ -867,6 +896,7 @@ public partial class App
                         "fan-stop" => "home",
 
                         "display-brightness-known" or "display-brightness-unavailable" => "display",
+                        _ when captureCoolingPad => "home",
                         _ when captureSnapTap => "laptop",
                         _ when destination.StartsWith("thx-audio", StringComparison.Ordinal) => "thx-audio",
                         _ when captureProfilesVariant => "profiles",
@@ -874,6 +904,13 @@ public partial class App
                     };
                     snapshotMainWindow.SelectLocalizationSnapshotPage(navigationDestination);
                     await WaitForSnapshotLayoutAsync();
+                    if (captureLabsTarget)
+                    {
+                        bool showRefreshRate = destination == "labs-60hz-target";
+                        snapshotMainWindow.InvokeLabsGuideSnapshot(showRefreshRate);
+                        await WaitForSnapshotLayoutAsync();
+                        snapshotMainWindow.VerifyLabsGuideSnapshot(showRefreshRate);
+                    }
                     if (string.Equals(
                         destination,
                         "settings-appearance",
@@ -887,16 +924,18 @@ public partial class App
                         await snapshotMainWindow.ShowLocalizationSnapshotThxAudioAsync(destination);
                         await WaitForSnapshotLayoutAsync();
                     }
-                    if (destination == "laptop" && Environment.GetEnvironmentVariable(
-                        "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE")?.StartsWith(
-                            "one-shot-", StringComparison.Ordinal) == true)
+                    string? controlSnapshot = Environment.GetEnvironmentVariable(
+                        "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE");
+                    if (destination == "laptop" && (controlSnapshot?.StartsWith(
+                            "one-shot-", StringComparison.Ordinal) == true
+                        || controlSnapshot == "blade18-function-row"))
                     {
                         snapshotMainWindow.ShowLocalizationSnapshotOneShotControls();
                         await WaitForSnapshotLayoutAsync();
                     }
-                    if (destination == "settings-experimental")
+                    if (captureCoolingPad)
                     {
-                        snapshotMainWindow.ShowLocalizationSnapshotExperimentalControls();
+                        snapshotMainWindow.ShowCoolingPadSnapshot(destination["cooling-pad-".Length..]);
                         await WaitForSnapshotLayoutAsync();
                     }
                     if (captureSnapTap)
@@ -904,7 +943,14 @@ public partial class App
                         snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing, driverSetupState);
                         await WaitForSnapshotLayoutAsync();
                     }
-                    if (captureFeatureSnapshot || destination == "telemetry")
+                    if (captureGlobalSearch)
+                    {
+                        snapshotMainWindow.ShowGlobalSearchSnapshot(compactGlobalSearch);
+                        await WaitForSnapshotLayoutAsync();
+                        snapshotMainWindow.SetGlobalSearchSnapshotQuery("nightly", compactGlobalSearch);
+                        await WaitForSnapshotLayoutAsync();
+                    }
+                    if ((captureFeatureSnapshot && !captureCoolingPad) || destination == "telemetry")
                     {
                         if (destination == "display-brightness-unavailable")
                         {
@@ -1020,6 +1066,17 @@ public partial class App
                             await SaveSnapshotAsync(
                                 snapshotMainWindow.Content,
                                 Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+                        }
+                        if (captureGlobalSearch)
+                        {
+                            FrameworkElement results = snapshotMainWindow.GetGlobalSearchSnapshotResults()
+                                ?? throw new InvalidOperationException(
+                                    "The global search results popup was not available for capture.");
+                            string resultsName = compactGlobalSearch
+                                ? "global-search-results-compact.png"
+                                : "global-search-results.png";
+                            await SaveSnapshotAsync(results, Path.Combine(resolvedDirectory, resultsName));
+                            await snapshotMainWindow.VerifyGlobalSearchSnapshotNavigationAsync(compactGlobalSearch);
                         }
                     }
                 }
@@ -1707,6 +1764,11 @@ public partial class App
             ApplyDirectFanStopSnapshotState(window, state);
             return;
         }
+        if (state is "source-reviewed-presets" or "source-reviewed-base")
+        {
+            ApplySourceReviewedPresetsSnapshotState(window, legacyBase: state == "source-reviewed-base");
+            return;
+        }
         if (state == "experimental-custom")
         {
             ApplyExperimentalCustomSnapshotState(window);
@@ -1722,14 +1784,20 @@ public partial class App
             ApplyExperimentalBatterySnapshotState(window, state == "blade18-battery-off");
             return;
         }
+        if (state is "rz0301-lighting-unknown" or "rz0301-lighting-populated" or "rz0301-lighting-paused")
+        {
+            ApplyRz0301IndependentLightingSnapshotState(window,
+                populated: state != "rz0301-lighting-unknown", paused: state == "rz0301-lighting-paused");
+            return;
+        }
         if (state is "blade18-breathing" or "blade18-wave")
         {
             ApplyExperimentalLightingSnapshotState(window, state == "blade18-wave");
             return;
         }
         if (state is not ("read-failure" or "battery" or "unsupported"
-            or "direct-manual" or "battery-drift" or "keyboard"
-            or "one-shot-unavailable" or "one-shot-checking" or "one-shot-confirmed"))
+            or "direct-manual" or "battery-drift" or "keyboard" or "labs-lighting"
+            or "one-shot-unavailable" or "one-shot-checking" or "one-shot-confirmed" or "blade18-function-row"))
         {
             throw new InvalidOperationException("Unknown control availability snapshot state.");
         }
@@ -1738,20 +1806,31 @@ public partial class App
         // the real UI with synthetic observations and perform no device access.
         bool oneShot = state.StartsWith("one-shot-", StringComparison.Ordinal);
         bool oneShotConfirmed = state == "one-shot-confirmed";
-        bool keyboard = state == "keyboard" || oneShot;
+        bool hostFunctionRow = state == "blade18-function-row";
+        bool keyboard = state == "keyboard" || oneShot || hostFunctionRow;
         bool directManual = state == "direct-manual";
         bool driftedBattery = state == "battery-drift";
         bool fullPower = directManual || driftedBattery || keyboard;
         bool unsupported = state == "unsupported";
         bool blocked = state == "read-failure" || unsupported;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        if (hostFunctionRow)
+        {
+            profiles = profiles with
+            {
+                PluggedIn = profiles.PluggedIn with
+                {
+                    LaptopBehavior = new(null, FunctionKeyPrimaryMode.MultimediaKeys, null),
+                },
+            };
+        }
         ServiceStatusSnapshot status = new(
             1, !unsupported, blocked, [], null, [], "Control availability snapshot",
             unsupported
                 ? DeviceCapabilities.Unavailable()
                 : DeviceCapabilities.SafeTargetDefaults() with
                 {
-                    OneShotLaptopControls = oneShot
+                    OneShotLaptopControls = hostFunctionRow ? [] : oneShot
                         ? new HashSet<OneShotLaptopControl>
                         {
                             OneShotLaptopControl.StartupAnimation,
@@ -1765,6 +1844,11 @@ public partial class App
                                 OneShotLaptopControl.GamingMode,
                             }
                             : new HashSet<OneShotLaptopControl>(),
+                    HostManagedLaptopControls = hostFunctionRow
+                        ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.FunctionKeyPrimary } : [],
+                    SupportedLightingRefreshRates = state == "labs-lighting"
+                        ? new HashSet<LightingRefreshRate> { LightingRefreshRate.ThirtyHz, LightingRefreshRate.SixtyHz }
+                        : new HashSet<LightingRefreshRate>(),
                     SupportsDirectManualFanTransitions = directManual,
                     ChargeLimits = driftedBattery
                         ? new HashSet<int> { 70, 80 }
@@ -1788,13 +1872,15 @@ public partial class App
             null, null, null, null, false)
         {
             UnsupportedLaptop = unsupported,
+            IsExperimentalDevice = hostFunctionRow,
+            ExperimentalSupportSource = hostFunctionRow ? "SynapseSourceBacked" : null,
             ObservationReason = state == "one-shot-checking"
                 ? DeviceObservationReason.RefreshingControls : DeviceObservationReason.None,
             StartupAnimationEnabled = oneShotConfirmed ? true : null,
-            FunctionKeyPrimary = keyboard && (!oneShot || oneShotConfirmed)
+            FunctionKeyPrimary = keyboard && !hostFunctionRow && (!oneShot || oneShotConfirmed)
                 ? FunctionKeyPrimaryMode.FunctionKeys : null,
             GamingModeEnabled = keyboard && (!oneShot || oneShotConfirmed) ? false : null,
-            KeyboardDriverModeActive = keyboard ? true : null,
+            KeyboardDriverModeActive = keyboard && !hostFunctionRow ? true : null,
         };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
             "ApplyStatus",
@@ -1836,6 +1922,83 @@ public partial class App
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Dashboard presentation hook was not found.");
         refreshCards.Invoke(window, null);
+    }
+
+    private static void ApplySourceReviewedPresetsSnapshotState(MainWindow window, bool legacyBase = false)
+    {
+        // Disconnected RZ09-0529 / 711 or RZ09-0300 / 582 fixture. Match the
+        // reviewed production capability set; this never connects to the service.
+        CustomPerformanceLevel[] levels =
+            [CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium, CustomPerformanceLevel.High];
+        var combinations = new HashSet<CustomPerformanceCombination>();
+        foreach (CustomPerformanceLevel cpu in levels)
+        {
+            foreach (CustomPerformanceLevel gpu in levels)
+            {
+                combinations.Add(new(cpu, gpu));
+            }
+        }
+        var capabilities = new DeviceCapabilities(
+            legacyBase ? new HashSet<PerformancePreset>
+            { PerformancePreset.Balanced, PerformancePreset.Gaming, PerformancePreset.Creator }
+            : new HashSet<PerformancePreset>
+            {
+                PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Turbo,
+                PerformancePreset.MaximumPower, PerformancePreset.Custom,
+                PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver,
+            },
+            new HashSet<FanMode> { FanMode.Automatic },
+            new HashSet<LightingEffect>(),
+            legacyBase ? new HashSet<int>() : Enumerable.Range(10, 7).Select(value => value * 5).Append(100).ToHashSet(),
+            SupportsBatteryProtectionOff: !legacyBase,
+            SupportsTemporaryFullCharge: false)
+        {
+            CustomPerformance = legacyBase ? null : new(combinations) { SupportsMaximumFans = false },
+            SupportsBreathingColorSelection = false,
+            SupportsWaveDirectionSelection = false,
+        };
+        PerformancePreset selected = legacyBase ? PerformancePreset.Creator : PerformancePreset.MaximumPower;
+        PerformancePreset[] expected = legacyBase
+            ? [PerformancePreset.Balanced, PerformancePreset.Gaming, PerformancePreset.Creator]
+            : [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Turbo,
+                PerformancePreset.MaximumPower, PerformancePreset.Custom];
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Performance = selected },
+            WindowsPowerModes = profiles.WindowsPowerModes with
+            {
+                Turbo = WindowsPowerMode.BestPerformance,
+                MaximumPower = WindowsPowerMode.Balanced,
+                Gaming = WindowsPowerMode.BestPerformance,
+                Creator = WindowsPowerMode.Balanced,
+            },
+        };
+        var status = new ServiceStatusSnapshot(
+            1, true, false, [], null, [],
+            legacyBase ? "Source-reviewed RZ09-0300 preset preview" : "Source-reviewed RZ09-0529 preset preview", capabilities,
+            new ConfirmedDeviceState(selected, FanMode.Automatic,
+                legacyBase ? null : new ConfirmedBatteryState(true, 80, null), null), profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(selected, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
+            PowerSource.PluggedIn, null, null, null, null, false)
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalSupportSource = legacyBase ? "SynapseSourceBacked:RZ09-0300:582" : "SynapseSourceBacked:RZ09-0529:711",
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        applyStatus.Invoke(window.ViewModel, [status, false]);
+        if (!window.ViewModel.AvailablePluggedInPerformanceOptions.Select(option => option.Value).SequenceEqual(
+                expected))
+        {
+            throw new InvalidOperationException("The source-reviewed preset preview is incomplete.");
+        }
     }
 
     private static void ApplyExperimentalCustomSnapshotState(MainWindow window)
@@ -2056,6 +2219,71 @@ public partial class App
             "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("Status presentation hook was not found.");
         applyStatus.Invoke(window.ViewModel, [status, false]);
+    }
+
+    private static void ApplyRz0301IndependentLightingSnapshotState(
+        MainWindow window, bool populated, bool paused)
+    {
+        // Synthetic observations only. Snapshot windows never start the service
+        // client or native integration, and this fixture cannot access hardware.
+        IndependentLightingSettings? controls = populated ? new(65, LogoLightingMode.Static) : null;
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        LightingSettings lighting = profiles.PluggedIn.Lighting with { IndependentControls = controls };
+        profiles = profiles with { PluggedIn = profiles.PluggedIn with { Lighting = lighting } };
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            FanModes = new HashSet<FanMode> { FanMode.Automatic },
+            LightingEffects = new HashSet<LightingEffect>(),
+            SupportsKeyboardBrightness = true,
+            SupportsIndependentLightingControls = true,
+            LogoLightingModes = new HashSet<LogoLightingMode>
+                { LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing },
+        };
+        ServiceStatusSnapshot status = new(
+            1, true, paused, [], null, [], "Source-reviewed RZ09-0301 independent lighting preview",
+            capabilities,
+            new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, null, null)
+            { IndependentLighting = controls }, profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, false, false)),
+            PowerSource.PluggedIn, null, null, null, null, false)
+        {
+            IsExperimentalDevice = true,
+            AllowExperimentalFeatures = true,
+            ExperimentalSupportSource = "SynapseSourceBacked:RZ09-0301:581",
+            ExperimentalWritesPaused = paused,
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        if (paused)
+        {
+            applyStatus.Invoke(window.ViewModel, [status with
+            {
+                WritesBlocked = false, ExperimentalWritesPaused = false,
+            }, false]);
+            status = status with
+            {
+                Revision = 2,
+                Capabilities = capabilities with
+                {
+                    SupportsKeyboardBrightness = false,
+                    LogoLightingModes = new HashSet<LogoLightingMode>(),
+                },
+            };
+        }
+        applyStatus.Invoke(window.ViewModel, [status, false]);
+        if (window.ViewModel.LightingBrightnessValueText != (populated ? "65" : "—")
+            || window.ViewModel.SelectedLogoLightingModeOption?.Mode != controls?.LogoMode
+            || window.ViewModel.IsKeyboardEffectSelectionVisible
+            || window.ViewModel.IsLightingApplyPending || window.ViewModel.CanControlLighting == paused)
+        {
+            throw new InvalidOperationException("The independent lighting preview state is incomplete.");
+        }
     }
 
     private static void ApplyExperimentalLightingSnapshotState(MainWindow window, bool wave)

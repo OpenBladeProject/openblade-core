@@ -12,9 +12,10 @@
   <ItemGroup>
     <AssemblyMetadata Include="OpenBladePadlessHyperBoostLifecycleValidation"
                       Value="$(OpenBladePadlessHyperBoostLifecycleValidation)" />
+    <AssemblyMetadata Include="OpenBladeCpuVoltageValidation" Value="$(OpenBladeCpuVoltageValidation)" />
     <AssemblyMetadata Include="OpenBladeValidationSourceRevision"
                       Value="$(SourceRevision)"
-                      Condition="'$(OpenBladePadlessHyperBoostLifecycleValidation)' == 'true' or '$(OpenBladeThermalExternalDriftValidation)' == 'true'" />
+                      Condition="'$(OpenBladePadlessHyperBoostLifecycleValidation)' == 'true' or '$(OpenBladeThermalExternalDriftValidation)' == 'true' or '$(OpenBladeCpuVoltageValidation)' == 'true'" />
     <AssemblyMetadata Include="OpenBladeThermalExternalDriftValidation"
                       Value="$(OpenBladeThermalExternalDriftValidation)" />
   </ItemGroup>
@@ -24,6 +25,13 @@
           Condition="'$(OpenBladePadlessHyperBoostLifecycleValidation)' == 'true'">
     <Error Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(SourceRevision)', '^[0-9a-fA-F]{40}$')) != 'True'"
            Text="Pad-less HyperBoost lifecycle validation builds require SourceRevision to be the exact 40-character commit SHA." />
+  </Target>
+
+  <Target Name="ValidateCpuVoltageValidationBuild"
+          BeforeTargets="CoreCompile"
+          Condition="'$(OpenBladeCpuVoltageValidation)' == 'true'">
+    <Error Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(SourceRevision)', '^[0-9a-fA-F]{40}$')) != 'True'"
+           Text="CPU voltage validation builds require SourceRevision to be the exact 40-character commit SHA." />
   </Target>
 
   <Target Name="ValidateThermalExternalDriftValidationBuild"
@@ -37,6 +45,7 @@
     <FrameworkReference Update="Microsoft.NETCore.App" RuntimeFrameworkVersion="$(OpenBladeMinimumDotNetRuntimeVersion)" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
+    <PackageReference Include="System.Management" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />

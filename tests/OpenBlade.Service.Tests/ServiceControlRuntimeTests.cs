@@ -12733,6 +12733,22 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.FunctionP,
                 CancellationToken.None);
+        ControlOperationResult turbo = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+        ControlOperationResult maximumPower = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.FunctionP,
+                CancellationToken.None);
+        ControlOperationResult gaming = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+        ControlOperationResult creator = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.FunctionP,
+                CancellationToken.None);
         ControlOperationResult custom = await context.Runtime
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
@@ -12746,11 +12762,19 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal("The performance button selected Silent.", dedicated.Message);
         Assert.Equal(ControlOperationStatus.Applied, functionP.Status);
         Assert.Equal("Fn+P selected Performance.", functionP.Message);
+        Assert.Equal(ControlOperationStatus.Applied, turbo.Status);
+        Assert.Equal("The performance button selected Turbo.", turbo.Message);
+        Assert.Equal(ControlOperationStatus.Applied, maximumPower.Status);
+        Assert.Equal("Fn+P selected Maximum Power.", maximumPower.Message);
+        Assert.Equal(ControlOperationStatus.Applied, gaming.Status);
+        Assert.Equal("The performance button selected Gaming.", gaming.Message);
+        Assert.Equal(ControlOperationStatus.Applied, creator.Status);
+        Assert.Equal("Fn+P selected Creator.", creator.Message);
         Assert.Equal(ControlOperationStatus.Applied, custom.Status);
         Assert.Equal("The performance button selected Custom.", custom.Message);
         Assert.Equal(ControlOperationStatus.Applied, wrapped.Status);
         Assert.Equal("Fn+P selected Balanced.", wrapped.Message);
-        Assert.Equal(4, context.Device.PerformanceSetCalls);
+        Assert.Equal(8, context.Device.PerformanceSetCalls);
         Assert.Equal(
             new PerformanceOverride(
                 PerformancePreset.Balanced,
@@ -12877,13 +12901,13 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(
-            "The performance button selected Custom.",
+            "The performance button selected Turbo.",
             result.Message);
         Assert.Equal(
-            PerformancePreset.Custom,
+            PerformancePreset.Turbo,
             context.Runtime.GetStatus().ConfirmedState!.Performance);
         Assert.Equal(
-            PerformancePreset.Custom,
+            PerformancePreset.Turbo,
             context.Runtime.GetStatus().PerformanceOverride!.Value);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
     }
@@ -19920,7 +19944,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         TimeProvider? timeProvider = null,
         IUserConfigurationRepository? userConfigurationRepository = null,
         ProfileSetValidator? profileValidator = null,
-        LowPowerGate? lowPowerGate = null)
+        LowPowerGate? lowPowerGate = null,
+        ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
+        string? coolingPadStateDirectory = null)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -19932,7 +19958,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             timeProvider: timeProvider,
             userConfigurationRepository: userConfigurationRepository,
             profileValidator: profileValidator,
-            lowPowerGate: lowPowerGate);
+            lowPowerGate: lowPowerGate,
+            coolingPadDeviceProvider: coolingPadDeviceProvider,
+            coolingPadStateDirectory: coolingPadStateDirectory);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             ChargeLimits = new HashSet<int> { 50, 55, 60, 65, 70, 75, 80 },
@@ -31046,7 +31074,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
         Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
         Func<PowerSource>? batterySaverFanStopPowerReader = null,
-        IFanStopBackend? fanStopBackend = null)
+        IFanStopBackend? fanStopBackend = null,
+        ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
+        string? coolingPadStateDirectory = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -31147,7 +31177,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary,
             laptopControlPendingStore: new LaptopControlPendingStore(Path.Combine(directory, "laptop-control-pending.json")),
             batterySaverFanStopPowerReader: batterySaverFanStopPowerReader ?? (() => telemetry.Current.PowerSource),
-            fanStopBackend: fanStopBackend);
+            fanStopBackend: fanStopBackend,
+            coolingPadDeviceProvider: coolingPadDeviceProvider,
+            coolingPadStateDirectory: coolingPadStateDirectory);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -32058,6 +32090,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public List<string> BatterySetterCalls { get; } = [];
 
         public int LightingSetCalls { get; private set; }
+        public List<IndependentLightingSettings> IndependentLightingWrites { get; } = [];
 
         public List<LightingRefreshRate> LightingRefreshRates { get; } = [];
 
@@ -32276,6 +32309,20 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             AfterReadState?.Invoke();
             AfterReadStateCall?.Invoke(StateReadCalls);
             return Task.FromResult(ConfirmedState);
+        }
+
+        public async Task<ConfirmedDeviceState> ReadIndependentLightingStateAsync(
+            IndependentLightingSettings fields, CancellationToken cancellationToken)
+        {
+            ConfirmedDeviceState state = await ReadStateAsync(cancellationToken);
+            byte? brightness = fields.Brightness.HasValue ? state.IndependentLighting?.Brightness : null;
+            LogoLightingMode? logo = fields.LogoMode.HasValue ? state.IndependentLighting?.LogoMode : null;
+            return state with
+            {
+                Lighting = null,
+                LogoLighting = logo,
+                IndependentLighting = brightness.HasValue || logo.HasValue ? new(brightness, logo) : null,
+            };
         }
 
         public Task<ConfirmedDeviceState> ReadPerformanceFanStateAsync(
@@ -32900,6 +32947,28 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             return Task.CompletedTask;
         }
 
+        public Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            TotalCalls++;
+            IndependentLightingWrites.Add(value);
+            if (LightingFailure is not null)
+            {
+                throw LightingFailure;
+            }
+            if (SuppressConfirmationFor != DeviceSubsystem.Lighting)
+            {
+                ConfirmedState = ConfirmedState with
+                {
+                    IndependentLighting = new(
+                        value.Brightness ?? ConfirmedState.IndependentLighting?.Brightness,
+                        value.LogoMode ?? ConfirmedState.IndependentLighting?.LogoMode),
+                    LogoLighting = value.LogoMode ?? ConfirmedState.LogoLighting,
+                };
+            }
+            AfterSetter?.Invoke(DeviceSubsystem.Lighting);
+            return Task.CompletedTask;
+        }
         public Task SetLightingRefreshRateAsync(
             LightingRefreshRate refreshRate,
             CancellationToken cancellationToken)

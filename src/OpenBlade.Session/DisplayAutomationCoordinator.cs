@@ -479,6 +479,14 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
                     }
                 }
             }
+            bool refreshBaselineMissing = string.IsNullOrWhiteSpace(baseline?.CurrentRefreshKey);
+            bool refreshRestoreBlocked = refreshBaselineMissing && owned.RefreshRate;
+            if (refreshBaselineMissing && target.ApplicationSettings is { RefreshRateKey: not null } application)
+            {
+                // An application can only take ownership of a refresh rate it can restore.
+                target = target with { ApplicationSettings = application with { RefreshRateKey = null } };
+            }
+
             owned = owned.Include(target.ApplicationSettings);
             DisplayProfileSettings settings = MergeDisplayTarget(target, baseline, owned);
             bool admitted;
@@ -533,6 +541,15 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
 
                 await retryDelay(TransitionRetryDelay, ownedCancellation.Token)
                     .ConfigureAwait(false);
+            }
+
+            if (result!.Succeeded && refreshRestoreBlocked)
+            {
+                // Retain an older checkpoint that claimed ownership without a restorable rate.
+                result = new SessionDisplayExecutionResult(
+                    SessionDisplayOperationStatus.Blocked,
+                    "The application's previous refresh rate could not be restored because its baseline is unknown.",
+                    result.State);
             }
 
             lock (sync)
@@ -752,9 +769,10 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
     {
         DisplayProfileSettings baseSettings = target.BaseSettings;
         DisplayProfileSettings? application = target.ApplicationSettings;
+        string? baselineRefresh = baseline?.CurrentRefreshKey;
         return new DisplayProfileSettings(
             application?.RefreshRateKey ?? (owned.RefreshRate
-                ? baseline?.CurrentRefreshKey
+                ? (string.IsNullOrWhiteSpace(baselineRefresh) ? null : baselineRefresh)
                 : baseSettings.RefreshRateKey),
             application?.HdrEnabled ?? (owned.Hdr
                 ? baseline?.HdrEnabled

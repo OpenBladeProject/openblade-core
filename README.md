@@ -30,16 +30,27 @@ OpenBlade requires Windows 11 x64, version 24H2 or later.
 | --- | --- |
 | Razer Blade 16 (2026) | `RZ09-0581` |
 | Razer Blade 16 (2025) | `RZ09-0528` |
-| Razer Blade 14 (2025), experimental | `RZ09-0530` |
-| Razer Blade 16 (2023), experimental | `RZ09-0483` |
-| Razer Blade 14 (2023), experimental | `RZ09-0482` |
-| Razer Blade 18 (2023), experimental | `RZ09-0484` |
-| Razer Blade 15 Base (Early 2020), experimental | `RZ09-0328` |
+| Razer Blade 18 (2025) | `RZ09-0529` |
+| Razer Blade 14 (2025) | `RZ09-0530` |
+| Razer Blade 14 (2024) | `RZ09-0508` |
+| Razer Blade 16 (2024) | `RZ09-0510` |
+| Razer Blade 18 (2024) | `RZ09-0509` |
+| Razer Blade 16 (2023) | `RZ09-0483` |
+| Razer Blade 14 (2023) | `RZ09-0482` |
+| Razer Blade 18 (2023) | `RZ09-0484` |
+| Razer Blade 14 (2022) | `RZ09-0427` |
+| Razer Blade 15 (2022) | `RZ09-0421` |
+| Razer Blade 17 (2022) | `RZ09-0423` |
+| Razer Blade 14 (2021) | `RZ09-0370` |
+| Razer Blade 15 Base (Early 2020) | `RZ09-0328` |
+| Razer Blade 15 Advanced (Early 2020) | `RZ09-0330` |
+| Razer Blade 15 Base (Late 2020) | `RZ09-0351` |
+| Razer Blade 15 Advanced (Mid 2019) | `RZ09-0301` |
+| Razer Blade 15 Base (2019) | `RZ09-0300` |
 
-Available controls vary by model. OpenBlade automatically enables
-available controls on experimental models. See the [user guide](https://github.com/OSSBlade/openblade-docs)
-for compatibility and [Experimental support](docs/experimental-blade-support.md)
-for model features and testing instructions.
+OpenBlade shows the controls available on your model. See the
+[user guide](https://github.com/OSSBlade/openblade-docs) for compatibility and the
+[model support guide](docs/experimental-blade-support.md) for features and testing details.
 
 On an unlisted Razer laptop, select **Help add support** in OpenBlade. Save the
 identity report, then follow the
@@ -51,6 +62,8 @@ to collect and submit evidence for your model.
 - Power modes, automatic or fixed fan speeds, custom fan curves, and NVIDIA GPU
   clock offsets.
 - HyperBoost on full-power AC, with or without the Razer cooling pad.
+- [Razer Laptop Cooling Pad](docs/cooling-pad.md) fan targets, temperature curves,
+  lighting and keyboard lighting sync, with experimental support based on reviewed sources.
 - Charge limits, battery health, and separate settings for each
   power source.
 - [Application profiles](docs/application-profiles.md) for exact game or app executables,

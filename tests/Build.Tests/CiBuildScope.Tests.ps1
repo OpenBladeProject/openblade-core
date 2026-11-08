@@ -355,6 +355,16 @@ foreach ($lowFanInput in @(
         'Low-fan workflow and installed-state contracts must run their restoration safety checks.'
 }
 
+foreach ($cpuContractInput in @(
+        @{ Path = 'build/development-deployment/Publish-CpuVoltageValidation.ps1'; Test = 'tests/Build.Tests/CpuVoltageDeployment.Tests.ps1' },
+        @{ Path = 'build/development-deployment/Invoke-LocalDevDeployment.ps1'; Test = 'tests/Build.Tests/CpuVoltageDeployment.Tests.ps1' },
+        @{ Path = 'build/Publish.ps1'; Test = 'tests/Build.Tests/CpuVoltageValidationBuild.Tests.ps1' },
+        @{ Path = 'build/BuildIdentity.ps1'; Test = 'tests/Build.Tests/CpuVoltageValidationBuild.Tests.ps1' })) {
+    $cpuPlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($cpuContractInput.Path)
+    Assert-Equal 'affected' $cpuPlan.Mode 'CPU packaging inputs must have explicit affected coverage.'
+    Assert-Contains $cpuPlan.ContractTests $cpuContractInput.Test 'CPU source changes must select their contract suite.'
+}
+
 foreach ($legacyThxInput in @(
         'build/Export-LegacyThxBindingEvidence.ps1',
         'tests/Build.Tests/LegacyThxBindingEvidence.Tests.ps1',

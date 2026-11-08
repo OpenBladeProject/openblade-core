@@ -38,6 +38,40 @@ public sealed partial class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
+    public async Task Blade18WindowsHookKeepsDefaultShortcutsWithoutReportingAPause()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var statuses = new ConcurrentQueue<SnapTapRuntimeStatus>();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory, new(
+            ExecuteBlade18FnShortcutAsync: (_, _) => Task.CompletedTask,
+            ReadFunctionRowBackend: () => KeyboardInputBackend.WindowsHook,
+            PublishFunctionRowStatus: statuses.Enqueue));
+        using var cancel = new CancellationTokenSource();
+        Task run = loop.RunAsync(cancel.Token);
+        try
+        {
+            ServiceStatusSnapshot admitted = Status(LightingRendererOwnershipState.Static) with
+            {
+                Firmware = new FirmwareVersions("2.09", "1", "Unavailable", "Unavailable", "RZ09-0484"),
+                KeyboardDriverModeActive = null,
+            };
+            client.Publish(admitted);
+            await WaitUntilAsync(() => statuses.LastOrDefault()?.State == SnapTapRuntimeState.Off);
+            Assert.Equal(KeyboardInputBackend.WindowsHook, statuses.Last().Backend);
+            Assert.True(factory.Last!.IsBlade18FnInputAdmitted());
+
+            client.Publish(admitted with { Revision = 2, ControlAccess = SessionControlAccess.InactiveSession });
+            await WaitUntilAsync(() => statuses.LastOrDefault()?.State == SnapTapRuntimeState.Paused);
+        }
+        finally
+        {
+            cancel.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+        }
+    }
+
+    [Fact]
     public async Task ConcurrentBackendStatusRefreshesSerializeTheStatusSink()
     {
         var client = new WatchClient();

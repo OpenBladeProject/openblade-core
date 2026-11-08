@@ -511,15 +511,6 @@ Répórtéd fáílúrés:
   <data name="MainWindow_ItemsControlTrayDashboardStatusItems.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Tráý dáshbóárd státús ítéms ~~~~~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Ábóút Láb féátúrés ~~~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>[!! Ábóút Láb féátúrés ~~~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_LabFeaturesToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Énáblé Láb éxpéríméntál féátúrés ~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_LaptopLogoModeSelectorText.AccessibleName" xml:space="preserve">
     <value>[!! Láptóp lógó líghtíng ~~~~~~~ !!]</value>
   </data>
@@ -1102,9 +1093,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockCPU.Text" xml:space="preserve">
     <value>[!! CPÚ ~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockCurrentLabFeatures.Text" xml:space="preserve">
-    <value>[!! Cúrrént Láb féátúrés ~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_TextBlockCustomColor.Text" xml:space="preserve">
     <value>[!! Cústóm cólór ~~~~ !!]</value>
   </data>
@@ -1234,9 +1222,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockHDR2.Text" xml:space="preserve">
     <value>[!! HDR ~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockImportOblightAndRazerChromaFiles.Text" xml:space="preserve">
-    <value>[!! Ímpórt .óblíght ánd Razer .chrómá fílés. ~~~~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_TextBlockImportPreset.Text" xml:space="preserve">
     <value>[!! Ímpórt prését ~~~~~ !!]</value>
   </data>
@@ -1270,14 +1255,23 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
     <value>[!! Kéýbóárd líghtíng ~~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockKeyboardLightingPresetImport.Text" xml:space="preserve">
-    <value>[!! Kéýbóárd líghtíng prését ímpórt ~~~~~~~~~~ !!]</value>
+  <data name="MainWindow_LabsNavigationItem.Content" xml:space="preserve">
+    <value>[!! Lábs ~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeatures.Text" xml:space="preserve">
-    <value>[!! Láb féátúrés ~~~~ !!]</value>
+  <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
+    <value>[!! Lábs ~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
-    <value>[!! Láb féátúrés máý chángé ór bé rémóvéd. ~~~~~~~~~~~ !!]</value>
+  <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
+    <value>[!! Éxplóré éxpéríméntál OpenBlade féátúrés. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LabsImportTitle.Text" xml:space="preserve">
+    <value>[!! Ímpórt á líghtíng prését ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LabsImportDescription.Text" xml:space="preserve">
+    <value>[!! Lóád án OpenBlade ór Razer Chrómá fílé, révíéw thé éfféct béfóré ápplýíng ít, ánd sávé ít tó ýóúr áctívé pówér prófílé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_LabsLightingRateDescription.Text" xml:space="preserve">
+    <value>[!! Máké súppórtéd kéýbóárd ánímátíóns smóóthér át thé cóst óf móré CPÚ ánd pówér. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>[!! Láptóp ~~~ !!]</value>
@@ -1459,9 +1453,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockReleaseNotes.Text" xml:space="preserve">
     <value>[!! Réléásé nótés ~~~~~ !!]</value>
   </data>
-  <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
-    <value>[!! Réndér súppórtéd éffécts móré smóóthlý ón ádmíttéd kéýbóárds. ~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
     <value>[!! Répórt á próblém ~~~~~ !!]</value>
   </data>
@@ -1515,9 +1506,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockShutDownOpenBlade.Text" xml:space="preserve">
     <value>[!! Shút dówn OpenBlade ~~~ !!]</value>
-  </data>
-  <data name="MainWindow_TextBlockSixtyHzKeyboardLighting.Text" xml:space="preserve">
-    <value>[!! 60 Hz kéýbóárd líghtíng ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockSixtyHzLighting.Text" xml:space="preserve">
     <value>[!! 60 Hz líghtíng ~~~~ !!]</value>
@@ -1599,9 +1587,6 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockTroubleshooting.Text" xml:space="preserve">
     <value>[!! Tróúbléshóótíng ~~~~~~ !!]</value>
-  </data>
-  <data name="MainWindow_TextBlockTurnOnExperimentalFeatures.Text" xml:space="preserve">
-    <value>[!! Túrn ón éxpéríméntál féátúrés. ~~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
     <value>[!! Únsávéd ~~~ !!]</value>
@@ -2027,13 +2012,13 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
     <value>[!! Chéck cúrrént státé ~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Éxpéríméntál láptóp súppórt ~~~~~~~~~ !!]</value>
+    <value>[!! Láptóp súppórt ~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>[!! Résúmé éxpéríméntál cóntróls ~~~~~~~~~~ !!]</value>
+    <value>[!! Résúmé láptóp cóntróls ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
-    <value>[!! Résúmé éxpéríméntál cóntróls ~~~~~~~~~~ !!]</value>
+    <value>[!! Résúmé láptóp cóntróls ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Hélp ádd súppórt ~~~~~ !!]</value>
@@ -2976,5 +2961,137 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="FanStop_GpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! GPÚ ímmédíáté cútóff (°C) ~~~~~~~ !!]</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
+    <value>[!! Úsé Razer drívér tó chángé F1–F12 béhávíór. Windows hóók kééps thé défáúlt Fn shórtcúts. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearchBox.PlaceholderText" xml:space="preserve">
+    <value>[!! Séárch págés ánd séttíngs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Séárch págés ánd séttíngs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Séárch págés ánd séttíngs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_NoResults" xml:space="preserve">
+    <value>[!! Nó mátchíng págés ór séttíngs ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_BatteryAliases" xml:space="preserve">
+    <value>[!! chárgé límít báttérý héálth ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_SnapTapAliases" xml:space="preserve">
+    <value>[!! Á/D SÓCD cóúntér-stráfé ~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_UpdateChannelAliases" xml:space="preserve">
+    <value>[!! níghtlý stáblé réléásés ~~~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_BrightnessAliases" xml:space="preserve">
+    <value>[!! scréén bácklíght ~~~~~~ !!]</value>
+  </data>
+  <data name="GlobalSearch_FansAliases" xml:space="preserve">
+    <value>[!! cóólíng RPM ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve">
+    <value>[!! CPÚ Vóltágé Óptímízér ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Áll-córé óptímízér óffsét ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve">
+    <value>[!! Óff úsés zéró ánd kééps ýóúr óffsét. Chóósé Ápplý tó máké chángés. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve">
+    <value>[!! Réfrésh ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve">
+    <value>[!! Réstóré príór óptímízér ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! CPÚ Vóltágé Óptímízér ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve">
+    <value>[!! Áll-córé óffsét ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadApplyHelpText.Text" xml:space="preserve">
+    <value>[!! Ápplý stárts cóntról fór thís séssíón. Réléásé réstórés thé cáptúréd pád séttíngs. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadApplyText.Content" xml:space="preserve">
+    <value>[!! Ápplý ~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadBrightnessText.Header" xml:space="preserve">
+    <value>[!! Réqúéstéd bríghtnéss (%) ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCpuCurveText.Text" xml:space="preserve">
+    <value>[!! CPÚ ~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveHelpText.Text" xml:space="preserve">
+    <value>[!! Úsé íncréásíng témpérátúrés ánd nóndécréásíng tárgéts ín 50 RPM stéps. Bóth úsés thé híghér tárgét. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveRpmText.Header" xml:space="preserve">
+    <value>[!! Tárgét (RPM) ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveTemperatureText.Header" xml:space="preserve">
+    <value>[!! Témpérátúré (°C) ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurvesText.Header" xml:space="preserve">
+    <value>[!! CPÚ/GPÚ cúrvés ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadExperimentalText.Text" xml:space="preserve">
+    <value>[!! Sóúrcé-báckéd éxpéríméntál · Razer RC21-0230 ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanLabelText.Text" xml:space="preserve">
+    <value>[!! Fán ~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadFixedRpmText.Header" xml:space="preserve">
+    <value>[!! Réqúéstéd fán tárgét (RPM) ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadGpuCurveText.Text" xml:space="preserve">
+    <value>[!! GPÚ ~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadHeadingText.Text" xml:space="preserve">
+    <value>[!! Cóólíng pád ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingLabelText.Text" xml:space="preserve">
+    <value>[!! Líghtíng ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadPrimaryColorText.Header" xml:space="preserve">
+    <value>[!! Cólór (RGB héx) ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadRefreshText.Content" xml:space="preserve">
+    <value>[!! Réfrésh státús ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadReleaseText.Content" xml:space="preserve">
+    <value>[!! Réléásé cóntról ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadSecondaryColorText.Header" xml:space="preserve">
+    <value>[!! Sécónd bréáthíng cólór (RGB héx) ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionLabel.Text" xml:space="preserve">
+    <value>[!! Díréctíón ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceLabel.Text" xml:space="preserve">
+    <value>[!! Témpérátúré sóúrcé ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadNavigationItemText.Content" xml:space="preserve">
+    <value>[!! Cóólíng pád ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanSelectorText.AccessibleName" xml:space="preserve">
+    <value>[!! Cóólíng-pád fán módé ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingSelectorText.AccessibleName" xml:space="preserve">
+    <value>[!! Cóólíng-pád líghtíng éfféct ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceText.AccessibleName" xml:space="preserve">
+    <value>[!! Cóólíng-pád témpérátúré sóúrcé ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionText.AccessibleName" xml:space="preserve">
+    <value>[!! Cóólíng-pád wávé díréctíón ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandLabelText.Text" xml:space="preserve">
+    <value>[!! Állów ápps tó réqúést móré cóólíng ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Állów ápps tó réqúést móré cóólíng ~~~~~~~~~~~ !!]</value>
   </data>
 </root>

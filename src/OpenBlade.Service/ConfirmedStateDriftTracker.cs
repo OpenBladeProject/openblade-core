@@ -14,6 +14,8 @@ public sealed class ConfirmedStateDriftTracker
     private ConfirmedBatteryState? battery;
     private bool? temporaryFullCharge;
     private LightingSettings? lighting;
+    private byte? independentBrightness;
+    private LogoLightingMode? independentLogo;
     private readonly Func<bool>? retireCompletedTemporaryFullCharge;
 
     public ConfirmedStateDriftTracker(Func<bool>? retireCompletedTemporaryFullCharge = null) =>
@@ -35,6 +37,8 @@ public sealed class ConfirmedStateDriftTracker
         ObserveValue(state.Fans, ref fans, DeviceSubsystem.Fans);
         ObserveBattery(state.Battery);
         ObserveValue(state.Lighting, ref lighting, DeviceSubsystem.Lighting);
+        ObserveValue(state.IndependentLighting?.Brightness, ref independentBrightness, DeviceSubsystem.Lighting);
+        ObserveValue(state.IndependentLighting?.LogoMode, ref independentLogo, DeviceSubsystem.Lighting);
     }
 
     public void ConfirmIntentional(DeviceSubsystem subsystem, bool matched)

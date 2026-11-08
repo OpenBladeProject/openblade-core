@@ -17,12 +17,18 @@ internal sealed partial class ExperimentalBladePort
         0x029F => new(2000, 5000, 100),
         0x029D => new(2200, 5000, 100),
         0x02A0 => new(2200, 3800, 100),
+        // Exact product 581 declares this Balanced envelope and a 100-RPM
+        // slider. Fresh current-preset 0D/83 metadata further bounds every
+        // target read and write; the source fallback alone never admits a write.
+        0x0245 => new(3700, 5300, 100),
         _ => null,
     };
 
     internal static FanSpeedRange? GetExperimentalFanRange(
         ExperimentalBladeModel model,
-        PerformancePreset performance) => model.ProductId == 0x02A0
+        PerformancePreset performance) => model.ProductId == 0x0245
+            ? performance == PerformancePreset.Balanced ? GetExperimentalFanRange(model) : null
+            : model.ProductId == 0x02A0
             ? performance switch
             {
                 PerformancePreset.Balanced => new(2200, 3800, 100),
@@ -39,7 +45,12 @@ internal sealed partial class ExperimentalBladePort
                     [PerformancePreset.Balanced] = new(2200, 3800, 100),
                     [PerformancePreset.Silent] = new(3700, 5300, 100),
                 }
-                : new Dictionary<PerformancePreset, FanSpeedRange>();
+                : model.ProductId == 0x0245
+                    ? new Dictionary<PerformancePreset, FanSpeedRange>
+                    {
+                        [PerformancePreset.Balanced] = new(3700, 5300, 100),
+                    }
+                    : new Dictionary<PerformancePreset, FanSpeedRange>();
 
     private static bool SupportsExperimentalFanTarget(
         ExperimentalBladeModel model,
@@ -67,7 +78,11 @@ internal sealed partial class ExperimentalBladePort
         // Product 672 uses class 1 for its target register; 0D/81 is the
         // pinned base source's getter for the observed class-1 0D/01 setters.
         // This query is source-backed, not present in the Observer recording.
-        byte profile = model.ProductId == 0x02A0 ? (byte)1 : (byte)0;
+        if (UsesDynamicExperimentalFanRange(model))
+        {
+            exactRange = await ReadDynamicExperimentalFanRangeAsync(cancellationToken).ConfigureAwait(false);
+        }
+        byte profile = model.ThermalPolicy?.QueryProfile ?? (model.ProductId == 0x02A0 ? (byte)1 : (byte)0);
         ReadOnlyMemory<byte> first = await ExchangeAsync("FanTargets", 0x0D, 0x81,
             [profile, 1, 0], false, cancellationToken).ConfigureAwait(false);
         ReadOnlyMemory<byte> second = await ExchangeAsync("FanTargets", 0x0D, 0x81,
@@ -102,20 +117,21 @@ internal sealed partial class ExperimentalBladePort
             // A curve enters the same source-backed Balanced manual mode at its
             // safest admitted target. The existing service curve loop owns later
             // target-only updates and never needs a new firmware command.
-            FanMode.ManualCurve when model.ProductId == 0x02A0 =>
-                StartBlade18ManualCurveAsync(cancellationToken),
+            FanMode.ManualCurve when model.ProductId is 0x02A0 or 0x0245 =>
+                StartBalancedManualCurveAsync(cancellationToken),
             _ => Unavailable(),
         };
     }
 
-    private Task StartBlade18ManualCurveAsync(CancellationToken cancellationToken)
+    private Task StartBalancedManualCurveAsync(CancellationToken cancellationToken)
     {
         FanSpeedRange range = GetExperimentalFanRange(model)
             ?? throw new CapabilityUnavailableException("The exact model has no admitted fan range.");
         return SetExperimentalFansAsync(
             (range.MaximumRpm, range.MaximumRpm),
             cancellationToken,
-            requiredPerformance: PerformancePreset.Balanced);
+            requiredPerformance: PerformancePreset.Balanced,
+            useDynamicMaximum: UsesDynamicExperimentalFanRange(model));
     }
 
     public Task SetFanTargetsAsync(int fan1Rpm, int fan2Rpm, CancellationToken cancellationToken) =>
@@ -124,10 +140,12 @@ internal sealed partial class ExperimentalBladePort
     private async Task SetExperimentalFansAsync(
         (int First, int Second)? targets,
         CancellationToken cancellationToken,
-        PerformancePreset? requiredPerformance = null)
+        PerformancePreset? requiredPerformance = null,
+        bool useDynamicMaximum = false)
     {
         FanSpeedRange? range = GetExperimentalFanRange(model);
-        if (range is null || targets is { } requested
+        if (range is null && !(model.ThermalPolicy is not null && targets is null)
+            || targets is { } requested
             && (!SupportsExperimentalFanTarget(model, requested.First)
                 || !SupportsExperimentalFanTarget(model, requested.Second)))
         {
@@ -140,9 +158,13 @@ internal sealed partial class ExperimentalBladePort
             PowerSource source = capturePowerSource();
             bool SourceUnchanged() => capturePowerSource() == source;
             RequireWriteAdmission(fanMode: targets.HasValue ? FanMode.Fixed : FanMode.Automatic);
-            ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
+            ProductionPerformanceFanState baseline = await ReadPerformanceAsync(
+                cancellationToken, readManualTargets: targets.HasValue).ConfigureAwait(false);
             if (baseline.HyperBoostActive || baseline.Performance is not (PerformancePreset.Balanced
-                or PerformancePreset.Performance or PerformancePreset.Silent or PerformancePreset.Custom))
+                or PerformancePreset.Performance or PerformancePreset.Silent or PerformancePreset.Custom
+                or PerformancePreset.Turbo or PerformancePreset.MaximumPower
+                or PerformancePreset.Gaming or PerformancePreset.Creator
+                or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "Fan changes require a supported, confirmed performance mode.");
@@ -156,11 +178,12 @@ internal sealed partial class ExperimentalBladePort
             }
             // Product 672 exposes one scalar slider for Balanced and Silent and
             // writes it to both zones. Custom manual remains source-disabled.
-            if (model.ProductId == 0x02A0 && targets.HasValue
-                && baseline.Performance is not (PerformancePreset.Balanced or PerformancePreset.Silent))
+            if (GetExperimentalFanRangesByPerformancePreset(model).Count > 0 && targets.HasValue
+                && (baseline.Performance is not { } selectedPreset
+                    || GetExperimentalFanRange(model, selectedPreset) is null))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                    "Fixed fan targets on this model require Balanced or Silent mode.");
+                    "This performance preset has no admitted manual fan range.");
             }
             FanSpeedRange? activeRange = baseline.Performance is { } performance
                 ? GetExperimentalFanRange(model, performance)
@@ -173,6 +196,18 @@ internal sealed partial class ExperimentalBladePort
                 throw new CapabilityUnavailableException(
                     "The fan request is outside the active performance preset's admitted range.");
             }
+            if (targets is { } dynamicTargets && UsesDynamicExperimentalFanRange(model))
+            {
+                FanSpeedRange dynamicRange = await ReadDynamicExperimentalFanRangeAsync(cancellationToken).ConfigureAwait(false);
+                if (useDynamicMaximum)
+                {
+                    targets = (dynamicRange.MaximumRpm, dynamicRange.MaximumRpm);
+                }
+                else if (!dynamicRange.Supports(dynamicTargets.First) || !dynamicRange.Supports(dynamicTargets.Second))
+                {
+                    throw new CapabilityUnavailableException("The target is outside the freshly reported firmware fan range.");
+                }
+            }
             // Preserve ordinary mode and Custom levels instead of resetting to
             // Balanced just because the original Synapse capture started there.
             // The shared maximum-fan bit can be observed outside Custom; a preset
@@ -184,13 +219,18 @@ internal sealed partial class ExperimentalBladePort
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "Turn off maximum fans in Custom before selecting fixed fan targets.");
             }
-            (int First, int Second) saved = await ReadFanTargetsAsync(
+            // Automatic handback changes only the mode flag. Target-free profiles
+            // do not query or invent a baseline; admitted manual target paths retain
+            // independently read values so an untouched zone is never guessed.
+            bool readTargets = targets.HasValue;
+            (int First, int Second) saved = !readTargets ? default : await ReadFanTargetsAsync(
                 cancellationToken,
                 targets.HasValue && baseline.Fans == FanMode.Fixed
                     ? activeRange
                     : null).ConfigureAwait(false);
             policy.Record("Fans", "Baseline", "Confirmed", requested: targets?.ToString() ?? "Automatic",
-                confirmed: $"{baseline.Performance}/{baseline.Fans};Fan1TargetRpm={saved.First};Fan2TargetRpm={saved.Second}");
+                confirmed: !readTargets ? $"{baseline.Performance}/{baseline.Fans};Targets=NotQueried"
+                    : $"{baseline.Performance}/{baseline.Fans};Fan1TargetRpm={saved.First};Fan2TargetRpm={saved.Second}");
             if (targets is null && baseline.Fans == FanMode.Automatic
                 || targets == saved && baseline.Fans == FanMode.Fixed)
             {
@@ -201,18 +241,31 @@ internal sealed partial class ExperimentalBladePort
                 // Products 671/669 use DC Balanced raw 6; preserve their battery mode.
                 PerformancePreset.Balanced => SupportsExperimentalHyperBoost(model)
                     && source == PowerSource.Battery ? (byte)6 : (byte)0,
+                PerformancePreset.Gaming when model.ThermalPolicy?.SupportsGaming == true => 1,
+                PerformancePreset.Creator when model.ThermalPolicy?.SupportsCreator == true => 2,
+                PerformancePreset.Turbo when model.ThermalPolicy?.SupportsTurbo == true => 1,
+                PerformancePreset.MaximumPower when model.ThermalPolicy?.SupportsMaximumPower == true => 2,
+                PerformancePreset.BatterySaver when model.ThermalPolicy?.SupportsBatterySaver == true => 3,
+                PerformancePreset.BatteryBalanced when model.ThermalPolicy?.SupportsBalancedDc == true => 6,
                 PerformancePreset.Performance => 2,
                 PerformancePreset.Silent => 5,
                 PerformancePreset.Custom => 4,
                 _ => throw new IOException("Unrepresentable fan baseline."),
             };
             bool acceptsStatusOnlyAck = UsesSourceBackedSetAckContract(model);
+            byte baselineFlag = baseline.Fans == FanMode.Fixed ? (byte)1 : (byte)0;
+            byte requestedFlag = targets.HasValue ? (byte)1 : (byte)0;
             if (baseline.Fans != (targets.HasValue ? FanMode.Fixed : FanMode.Automatic))
             {
                 foreach (byte zone in new byte[] { 1, 2 })
                 {
                     RequireWriteAdmission(fanMode: targets.HasValue ? FanMode.Fixed : FanMode.Automatic);
-                    await ExchangeAsync("Fans", 0x0D, 0x02, [1, zone, mode, targets.HasValue ? (byte)1 : (byte)0],
+                    await RequirePresetRangedFanStateAsync(mode,
+                        zone == 1 ? baselineFlag : requestedFlag,
+                        baselineFlag,
+                        zone == 2 ? requestedFlag : null,
+                        cancellationToken).ConfigureAwait(false);
+                    await ExchangeAsync("Fans", 0x0D, 0x02, [1, zone, mode, requestedFlag],
                         true, cancellationToken,
                         variableResponse: acceptsStatusOnlyAck,
                         payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 4 : null,
@@ -225,7 +278,8 @@ internal sealed partial class ExperimentalBladePort
                 // this staged transition; final readback remains exact.
                 ProductionPerformanceFanState entered = await ReadPerformanceAsync(
                     cancellationToken,
-                    allowTransitionalFanTargets: true).ConfigureAwait(false);
+                    allowTransitionalFanTargets: true,
+                    readManualTargets: targets.HasValue).ConfigureAwait(false);
                 if (entered.Performance != baseline.Performance
                     || entered.CustomPerformance != baseline.CustomPerformance
                     || entered.Fans != (targets.HasValue ? FanMode.Fixed : FanMode.Automatic))
@@ -239,6 +293,12 @@ internal sealed partial class ExperimentalBladePort
                 {
                     int rpm = zone == 1 ? target.First : target.Second;
                     RequireWriteAdmission(fanMode: FanMode.Fixed);
+                    if (UsesDynamicExperimentalFanRange(model)
+                        && !(await ReadDynamicExperimentalFanRangeAsync(cancellationToken).ConfigureAwait(false)).Supports(rpm))
+                    {
+                        throw new CapabilityUnavailableException("The target is outside the freshly reported firmware fan range.");
+                    }
+                    await RequirePresetRangedFanStateAsync(mode, 1, 1, null, cancellationToken).ConfigureAwait(false);
                     await ExchangeAsync("FanTargets", 0x0D, 0x01, [1, zone, checked((byte)(rpm / 100))],
                         true, cancellationToken,
                         variableResponse: acceptsStatusOnlyAck,
@@ -256,7 +316,8 @@ internal sealed partial class ExperimentalBladePort
                     }
                 }
             }
-            ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
+            ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(
+                cancellationToken, readManualTargets: targets.HasValue).ConfigureAwait(false);
             if (confirmed.Performance != baseline.Performance
                 || confirmed.CustomPerformance != baseline.CustomPerformance
                 || confirmed.Fans != (targets.HasValue ? FanMode.Fixed : FanMode.Automatic))
@@ -275,4 +336,26 @@ internal sealed partial class ExperimentalBladePort
             operationGate.Release();
         }
     }
+    private async Task RequirePresetRangedFanStateAsync(
+        byte mode, byte firstFlag, byte secondFlag, byte? propagatedSecondFlag,
+        CancellationToken cancellationToken)
+    {
+        if (GetExperimentalFanRangesByPerformancePreset(model).Count == 0)
+        {
+            return;
+        }
+        // Range metadata has no preset identity. Recheck the paired mode/flags
+        // after reading it, immediately before each admitted setter. During a
+        // flag transition only our first write may have propagated to zone two.
+        (ReadOnlyMemory<byte> first, ReadOnlyMemory<byte> second) =
+            await ReadPerformanceSelectorsAsync(cancellationToken).ConfigureAwait(false);
+        if (first.Span[2] != mode || second.Span[2] != mode
+            || first.Span[3] != firstFlag
+            || second.Span[3] != secondFlag && second.Span[3] != propagatedSecondFlag)
+        {
+            throw ContentRejected("The performance preset or manual fan state changed before submission.",
+                DeviceStateQuery.PerformanceAndFans, first.Span, second.Span);
+        }
+    }
+
 }

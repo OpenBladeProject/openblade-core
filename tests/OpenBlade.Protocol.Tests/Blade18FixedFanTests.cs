@@ -169,6 +169,40 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.True(policy.WritesAllowed);
     }
 
+    [Theory]
+    [InlineData(0x02A0, PerformancePreset.Balanced, 0, 30, 38)]
+    [InlineData(0x02A0, PerformancePreset.Silent, 5, 37, 53)]
+    [InlineData(0x029F, PerformancePreset.Balanced, 0, 30, 50)]
+    [InlineData(0x029D, PerformancePreset.Silent, 5, 30, 50)]
+    public async Task SamePerformanceWithFixedFans_ConfirmsStateWithoutSubmittingWrites(
+        int pid, PerformancePreset performance, byte mode, byte firstTarget, byte secondTarget)
+    {
+        var session = new Session
+        {
+            Mode = mode,
+            Fan = 1,
+            FirstTarget = firstTarget,
+            SecondTarget = secondTarget,
+        };
+        var policy = new ExperimentalFeaturesPolicy(Model(pid));
+        await using var port = Create(pid, session, policy);
+
+        await port.SetPerformanceAsync(performance, CancellationToken.None);
+
+        Assert.Empty(session.Writes);
+        Assert.Equal(mode, session.Mode);
+        Assert.Equal(1, session.Fan);
+        Assert.Equal(firstTarget, session.FirstTarget);
+        Assert.Equal(secondTarget, session.SecondTarget);
+        Assert.True(policy.WritesAllowed);
+        Assert.Equal(new byte[] { 0x82, 0x82, 0x81, 0x81 },
+            session.Commands.Select(command => command.CommandId));
+        Assert.Contains(policy.Snapshot().Observations, observation =>
+            observation.Operation == "Performance"
+            && observation.Stage == "Baseline"
+            && observation.ConfirmedValue == $"{performance}/Fixed");
+    }
+
     [Fact]
     public async Task Blade18PerformanceSetters_DoNotCarryFixedFansIntoAnotherPreset()
     {

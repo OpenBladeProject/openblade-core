@@ -156,6 +156,9 @@
   <data name="60 Hz lighting is not available for this keyboard." xml:space="preserve">
     <value>Подсветка с частотой 60 Гц недоступна для этой клавиатуры.</value>
   </data>
+  <data name="60 Hz lighting support couldn’t be checked." xml:space="preserve">
+    <value>Не удалось проверить поддержку подсветки с частотой 60 Гц.</value>
+  </data>
   <data name="A shortcut must include a non-modifier key." xml:space="preserve">
     <value>Сочетание клавиш должно включать клавишу, не являющуюся модификатором.</value>
   </data>
@@ -314,6 +317,9 @@
   </data>
   <data name="Check status" xml:space="preserve">
     <value>Проверить состояние</value>
+  </data>
+  <data name="Checking keyboard support…" xml:space="preserve">
+    <value>Проверяем возможности клавиатуры…</value>
   </data>
   <data name="Checking" xml:space="preserve">
     <value>Проверка</value>
@@ -691,7 +697,7 @@
     <value>Сохраняет текущий параметр Windows.</value>
   </data>
   <data name="Used whenever {0} is selected. {1}" xml:space="preserve">
-    <value>Используется при выборе {0}. {1}</value>
+    <value>Используется в режиме «{0}». {1}</value>
   </data>
   <data name="Leaves the Windows setting unchanged whenever {0} is selected." xml:space="preserve">
     <value>Оставляет параметр Windows без изменений при выборе {0}.</value>
@@ -1440,11 +1446,11 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Войдите в интерактивный сеанс Windows, чтобы изменить настройки ноутбука.</value>
   </data>
-  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
-    <value>На этом ноутбуке доступны экспериментальные элементы управления. Экспортируйте диагностику в разделе «О программе», чтобы помочь с их тестированием.</value>
+  <data name="This laptop is supported using reviewed sources. Physical validation is tracked separately." xml:space="preserve">
+    <value>Этот ноутбук поддерживается на основе проверенных источников. Проверка на реальном устройстве учитывается отдельно.</value>
   </data>
-  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
-    <value>Экспериментальная запись приостановлена, поскольку OpenBlade не смог подтвердить изменение. Проверьте текущее состояние, затем возобновите экспериментальное управление. OpenBlade не станет повторять предыдущее изменение.</value>
+  <data name="Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>Управление ноутбуком приостановлено, поскольку OpenBlade не смог подтвердить изменение. Проверьте текущее состояние, затем возобновите управление ноутбуком. OpenBlade не станет повторять предыдущее изменение.</value>
   </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>Ноутбук не поддерживается</value>
@@ -1774,5 +1780,86 @@
   </data>
   <data name="Each immediate cutoff must be at least its corresponding average limit." xml:space="preserve">
     <value>Каждый порог немедленного завершения должен быть не ниже соответствующего среднего порога.</value>
+  </data>
+  <data name="Turbo" xml:space="preserve">
+    <value>Турбо</value>
+  </data>
+  <data name="Maximum Power" xml:space="preserve">
+    <value>Максимальная мощность</value>
+  </data>
+  <data name="Gaming" xml:space="preserve">
+    <value>Игровой</value>
+  </data>
+  <data name="Creator" xml:space="preserve">
+    <value>Творческий</value>
+  </data>
+  <data name="Apply now" xml:space="preserve"><value>Применить сейчас</value></data>
+  <data name="mixed per-core values" xml:space="preserve"><value>значения различаются по ядрам</value></data>
+  <data name="CPU tuning request failed: {0}" xml:space="preserve"><value>Не удалось выполнить запрос настройки CPU: {0}</value></data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve"><value>Измеренный текущий оптимизатор: неизвестен.</value></data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve"><value>Измеренный текущий оптимизатор: {0}.</value></data>
+  <data name="Running optimizer changes are unavailable." xml:space="preserve"><value>Изменение текущего оптимизатора недоступно.</value></data>
+  <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve"><value>Восстановление оптимизатора заблокировано. Обновите, чтобы проверить состояние.</value></data>
+  <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve"><value>Восстановление CPU включает параметры мощности и недоступно здесь.</value></data>
+  <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve"><value>Восстановление ранее сохранённых настроек CPU заблокировано.</value></data>
+  <data name="CPU/GPU curves" xml:space="preserve">
+    <value>Кривые ЦП/ГП</value>
+  </data>
+  <data name="Mirror keyboard" xml:space="preserve">
+    <value>Как на клавиатуре</value>
+  </data>
+  <data name="Cooling-pad control is paused. Refresh status before making another change." xml:space="preserve">
+    <value>Управление подставкой приостановлено. Обновите состояние перед следующим изменением.</value>
+  </data>
+  <data name="Reconnecting. Showing the last confirmed cooling-pad state." xml:space="preserve">
+    <value>Повторное подключение. Показано последнее подтверждённое состояние подставки.</value>
+  </data>
+  <data name="OpenBlade is controlling the cooling pad." xml:space="preserve">
+    <value>OpenBlade управляет охлаждающей подставкой.</value>
+  </data>
+  <data name="Connected. Choose settings and apply them to take control." xml:space="preserve">
+    <value>Подключено. Выберите и примените настройки, чтобы начать управление.</value>
+  </data>
+  <data name="Configured fan target: {0} RPM" xml:space="preserve">
+    <value>Заданная скорость вентилятора: {0} об/мин</value>
+  </data>
+  <data name="Configured fan target unavailable" xml:space="preserve">
+    <value>Заданная скорость вентилятора недоступна</value>
+  </data>
+  <data name="Configured brightness: {0}%" xml:space="preserve">
+    <value>Заданная яркость: {0}%</value>
+  </data>
+  <data name="Configured brightness unavailable" xml:space="preserve">
+    <value>Заданная яркость недоступна</value>
+  </data>
+  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
+    <value>Проверьте скорости вентиляторов, возрастание температур в кривых и шестизначные RGB-коды цветов.</value>
+  </data>
+  <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
+    <value>Изменение настроек подставки заблокировано. Обновите состояние и откройте раздел устранения неполадок.</value>
+  </data>
+  <data name="The cooling-pad change could not be confirmed. Refresh status before continuing." xml:space="preserve">
+    <value>Не удалось подтвердить изменение настроек подставки. Обновите состояние перед продолжением.</value>
+  </data>
+  <data name="Cooling-pad status is unavailable. Showing the last confirmed state." xml:space="preserve">
+    <value>Состояние подставки недоступно. Показано последнее подтверждённое состояние.</value>
+  </data>
+  <data name="Apply new settings, or release control to restore the captured cooling-pad settings." xml:space="preserve">
+    <value>Примените новые настройки или передайте управление, чтобы восстановить исходные настройки подставки.</value>
+  </data>
+  <data name="Keep current" xml:space="preserve">
+    <value>Без изменений</value>
+  </data>
+  <data name="Spectrum" xml:space="preserve">
+    <value>Циклическая смена цветов</value>
+  </data>
+  <data name="CPU" xml:space="preserve">
+    <value>ЦП</value>
+  </data>
+  <data name="GPU" xml:space="preserve">
+    <value>ГП</value>
+  </data>
+  <data name="Both" xml:space="preserve">
+    <value>Оба</value>
   </data>
 </root>

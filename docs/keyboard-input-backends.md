@@ -14,11 +14,13 @@ read failures preserve the last confirmed choices.
 | Windows hook | Uses OpenBlade's current-user input handling without a Razer driver. SnapTap applies to A/D across keyboards. Some games use keyboard input paths that bypass or interfere with hook-based remapping. |
 | Razer driver | Uses the exact laptop's trusted installed keyboard filter and shared control driver. It can consume the original key before forwarding it to Windows. Driver setup remains an explicit user action. |
 
-The function-row driver path currently requires the existing exact-model Fn
-semantics for RZ09-0581 and RZ09-0528. It is source-backed experimental on both
-models until its own physical validation is complete. The other models retain
-their existing function-row capabilities; choosing a backend does not grant a
-new model capability.
+Function-row driver handling is available on RZ09-0581, RZ09-0528 and
+RZ09-0484. It is source-backed experimental until each model's own physical
+validation is complete. Blade 18 uses its separate Fn decoder and host input
+handling; it does not require a firmware Driver-mode change. Choose **Razer
+driver** to change Blade 18's primary function-row behavior. Its Windows-hook
+selection retains the existing default Fn shortcuts. Other models keep their
+existing function-row capabilities.
 
 One driver supervisor and worker own all selected driver keys, including both
 features when requested. RzCommon stores hook records per device and delivers

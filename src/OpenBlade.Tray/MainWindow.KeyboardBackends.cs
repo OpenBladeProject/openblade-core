@@ -12,6 +12,7 @@ public sealed partial class MainWindow
     private readonly Dictionary<FrameworkElement, FunctionRowBackendControls> functionRowBackendControls = [];
     private sealed record FunctionRowBackendControls(
         ResponsiveChoiceSelector Selector,
+        TextBlock Description,
         TextBlock Status,
         XamlButton InstallDriver);
     private sealed record KeyboardBackendOption(KeyboardInputBackend Value, string Label);
@@ -45,8 +46,10 @@ public sealed partial class MainWindow
     private void OnFunctionRowBackendLoaded(object sender, RoutedEventArgs args)
     {
         var row = (FrameworkElement)sender;
+        var description = (TextBlock)row.FindName("KeyboardBackend_FunctionRowDescription");
         functionRowBackendControls[row] = new(
             (ResponsiveChoiceSelector)row.FindName("FunctionRowBackendSelector"),
+            description,
             (TextBlock)row.FindName("FunctionRowBackendStatusText"),
             (XamlButton)row.FindName("FunctionRowInstallDriverButton"));
         InitializeKeyboardBackendSelectors();
@@ -124,6 +127,10 @@ public sealed partial class MainWindow
         SnapTapBackendSelector.IsEnabled = !snapTapDriverInstalling;
         SnapTapRuntimeStatus? status = localizationSnapshotMode ? null
             : SelectedBackendStatus(FunctionRowBackendStatusStore.Read(), functionRowBackend);
+        string descriptionText = ViewModel.Capabilities.HostManagedLaptopControls.Contains(
+            OpenBlade.Contracts.OneShotLaptopControl.FunctionKeyPrimary)
+            ? LocalizedResources.Get("KeyboardBackend_FunctionRowRequiresDriver", "Use Razer driver to change F1–F12 behavior. Windows hook keeps the default Fn shortcuts.")
+            : LocalizedResources.Get("KeyboardBackend_FunctionRowDescription.Text", "Try Razer driver first. If it doesn’t work, switch to Windows hook (some games may trigger extra function-key actions).");
         string statusText = snapTapDriverInstalling && functionRowBackend == KeyboardInputBackend.RazerDriver
             ? LocalizedResources.Get("SnapTap_Driver_Installing", "Installing driver…")
             : snapTapDriverInstallOutcome is { } outcome && functionRowBackend == KeyboardInputBackend.RazerDriver
@@ -149,6 +156,7 @@ public sealed partial class MainWindow
         foreach (FunctionRowBackendControls controls in functionRowBackendControls.Values)
         {
             controls.Selector.IsEnabled = !snapTapDriverInstalling;
+            controls.Description.Text = descriptionText;
             controls.Status.Text = statusText;
             controls.Status.Visibility = string.IsNullOrEmpty(statusText)
                 ? Visibility.Collapsed : Visibility.Visible;

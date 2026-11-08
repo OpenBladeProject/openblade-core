@@ -236,6 +236,11 @@ public sealed record DeviceCapabilities(
 
     public bool SupportsKeyboardBrightness { get; init; }
 
+    // Independent fields have their own typed path and do not imply that an
+    // effect or RGB restoration baseline can be read. Older frames default off.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool SupportsIndependentLightingControls { get; init; }
+
     // Older/full implementations support the complete parameter pickers by default.
     public bool SupportsBreathingColorSelection { get; init; } = true;
 
@@ -455,6 +460,9 @@ public sealed record ConfirmedDeviceState(
     public GpuClockOffsetCapabilities? GpuClockOffsets { get; init; }
 
     public LogoLightingMode? LogoLighting { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IndependentLightingSettings? IndependentLighting { get; init; }
 }
 
 public sealed record GpuClockOffsetRange(

@@ -231,6 +231,7 @@ internal sealed partial class ExperimentalBladePort
         recoveryGuard.ThrowIfRefused(result.Diagnostic);
         if (result.Failure is null)
         {
+            RecordKeyboardMirrorFrame(frame.Slots, Blade18LightingFrame.Columns, Blade18LightingFrame.Rows);
             return;
         }
         bool knownNotApplied = result.Diagnostic?.Phase != HidSessionFailurePhase.SetCompletion

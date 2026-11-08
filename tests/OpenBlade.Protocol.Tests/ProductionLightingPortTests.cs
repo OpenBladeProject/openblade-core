@@ -3913,6 +3913,7 @@ public sealed partial class ProductionLightingPortTests
     {
         private DateTimeOffset now = DateTimeOffset.UnixEpoch;
         private readonly List<Timer> timers = [];
+        internal Action? TimerScheduled { get; set; }
 
         public override DateTimeOffset GetUtcNow() => now;
 
@@ -3928,6 +3929,7 @@ public sealed partial class ProductionLightingPortTests
         {
             var timer = new Timer(this, callback, state, now + dueTime);
             timers.Add(timer);
+            TimerScheduled?.Invoke();
             return timer;
         }
 

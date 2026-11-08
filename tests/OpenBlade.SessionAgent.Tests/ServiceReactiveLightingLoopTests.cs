@@ -1218,6 +1218,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
         private readonly Func<SpecialKeySlot, bool> isSpecialKeyInputAdmitted;
         private readonly Action<Blade18FnShortcut> publishBlade18FnShortcut;
         private readonly Func<bool> isBlade18FnInputAdmitted;
+        private readonly Func<bool> isBlade18DriverFunctionRowAdmitted;
         private readonly Action resetFunctionRowInput;
 
         public RecordingSource(ReactiveKeyboardSourceOptions options)
@@ -1237,6 +1238,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
             isSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted;
             publishBlade18FnShortcut = options.PublishBlade18FnShortcut;
             isBlade18FnInputAdmitted = options.IsBlade18FnInputAdmitted;
+            isBlade18DriverFunctionRowAdmitted = options.IsBlade18DriverFunctionRowAdmitted;
             resetFunctionRowInput = options.ResetFunctionRowInput;
         }
 
@@ -1290,6 +1292,8 @@ public sealed partial class ServiceReactiveLightingLoopTests
             publishBlade18FnShortcut(shortcut);
 
         public bool IsBlade18FnInputAdmitted() => isBlade18FnInputAdmitted();
+
+        public bool IsBlade18DriverFunctionRowAdmitted() => isBlade18DriverFunctionRowAdmitted();
 
         public void ResetFunctionRowInput() => resetFunctionRowInput();
 

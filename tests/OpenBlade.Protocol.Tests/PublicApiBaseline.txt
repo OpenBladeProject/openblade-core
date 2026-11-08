@@ -148,8 +148,146 @@ type sealed class OpenBlade.Protocol.ControllerPresenceObservation
   property System.Collections.Generic.IReadOnlyList<System.String> HyperBoostBlockingControllers { get; init; }
   property System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers { get; init; }
   property System.String DetectionWarning { get; init; }
+type sealed class OpenBlade.Protocol.CoolingPadControllerLease
+  interface System.IDisposable
+  ctor ()
+  method System.Boolean EnsureServiceOwnership()
+  method System.IDisposable Acquire()
+  method System.Threading.Tasks.Task<System.Boolean> EnsureServiceOwnershipAsync(System.Threading.CancellationToken token)
+  method virtual System.Void Dispose()
+type enum OpenBlade.Protocol.CoolingPadDeviceMode
+  field System.Int32 value__
+  field const OpenBlade.Protocol.CoolingPadDeviceMode Driver = 3
+  field const OpenBlade.Protocol.CoolingPadDeviceMode Normal = 0
+type sealed class OpenBlade.Protocol.CoolingPadDeviceSnapshot
+  interface System.IEquatable<OpenBlade.Protocol.CoolingPadDeviceSnapshot>
+  ctor (System.String Identity, System.Nullable<OpenBlade.Contracts.CoolingPadFanMode> FanMode = null, System.Nullable<System.Int32> TargetRpm = null, System.Nullable<System.Int32> BrightnessPercent = null, System.Nullable<OpenBlade.Contracts.CoolingPadLightingMode> LightingMode = null, OpenBlade.Contracts.CoolingPadSettings LightingSettings = null)
+  method OpenBlade.Contracts.CoolingPadSettings get_LightingSettings()
+  method OpenBlade.Protocol.CoolingPadDeviceSnapshot <Clone>$()
+  method OpenBlade.Protocol.CoolingPadFanConfiguration get_FanConfiguration()
+  method OpenBlade.Protocol.CoolingPadLightingConfiguration get_ActiveLightingConfiguration()
+  method OpenBlade.Protocol.CoolingPadLightingConfiguration get_LightingConfiguration()
+  method System.Nullable<OpenBlade.Contracts.CoolingPadFanMode> get_FanMode()
+  method System.Nullable<OpenBlade.Contracts.CoolingPadLightingMode> get_LightingMode()
+  method System.Nullable<OpenBlade.Protocol.CoolingPadDeviceMode> get_DeviceMode()
+  method System.Nullable<System.Byte> get_BrightnessRaw()
+  method System.Nullable<System.Int32> get_BrightnessPercent()
+  method System.Nullable<System.Int32> get_TargetRpm()
+  method System.String get_Identity()
+  method System.Void Deconstruct(out System.String Identity, out System.Nullable<OpenBlade.Contracts.CoolingPadFanMode> FanMode, out System.Nullable<System.Int32> TargetRpm, out System.Nullable<System.Int32> BrightnessPercent, out System.Nullable<OpenBlade.Contracts.CoolingPadLightingMode> LightingMode, out OpenBlade.Contracts.CoolingPadSettings LightingSettings)
+  method System.Void set_ActiveLightingConfiguration(OpenBlade.Protocol.CoolingPadLightingConfiguration value)
+  method System.Void set_BrightnessPercent(System.Nullable<System.Int32> value)
+  method System.Void set_BrightnessRaw(System.Nullable<System.Byte> value)
+  method System.Void set_DeviceMode(System.Nullable<OpenBlade.Protocol.CoolingPadDeviceMode> value)
+  method System.Void set_FanConfiguration(OpenBlade.Protocol.CoolingPadFanConfiguration value)
+  method System.Void set_FanMode(System.Nullable<OpenBlade.Contracts.CoolingPadFanMode> value)
+  method System.Void set_Identity(System.String value)
+  method System.Void set_LightingConfiguration(OpenBlade.Protocol.CoolingPadLightingConfiguration value)
+  method System.Void set_LightingMode(System.Nullable<OpenBlade.Contracts.CoolingPadLightingMode> value)
+  method System.Void set_LightingSettings(OpenBlade.Contracts.CoolingPadSettings value)
+  method System.Void set_TargetRpm(System.Nullable<System.Int32> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.CoolingPadDeviceSnapshot left, OpenBlade.Protocol.CoolingPadDeviceSnapshot right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.CoolingPadDeviceSnapshot left, OpenBlade.Protocol.CoolingPadDeviceSnapshot right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.CoolingPadDeviceSnapshot other)
+  property OpenBlade.Contracts.CoolingPadSettings LightingSettings { get; init; }
+  property OpenBlade.Protocol.CoolingPadFanConfiguration FanConfiguration { get; init; }
+  property OpenBlade.Protocol.CoolingPadLightingConfiguration ActiveLightingConfiguration { get; init; }
+  property OpenBlade.Protocol.CoolingPadLightingConfiguration LightingConfiguration { get; init; }
+  property System.Nullable<OpenBlade.Contracts.CoolingPadFanMode> FanMode { get; init; }
+  property System.Nullable<OpenBlade.Contracts.CoolingPadLightingMode> LightingMode { get; init; }
+  property System.Nullable<OpenBlade.Protocol.CoolingPadDeviceMode> DeviceMode { get; init; }
+  property System.Nullable<System.Byte> BrightnessRaw { get; init; }
+  property System.Nullable<System.Int32> BrightnessPercent { get; init; }
+  property System.Nullable<System.Int32> TargetRpm { get; init; }
+  property System.String Identity { get; init; }
 type static class OpenBlade.Protocol.CoolingPadDiscoveryFactory
   method static OpenBlade.Protocol.ICoolingPadDiscoverySource CreateWindows()
+type sealed class OpenBlade.Protocol.CoolingPadFanConfiguration
+  interface System.IEquatable<OpenBlade.Protocol.CoolingPadFanConfiguration>
+  ctor (OpenBlade.Protocol.CoolingPadFanOwnership Ownership, OpenBlade.Protocol.CoolingPadFanPreset Preset, System.Int32 ConfiguredRpm)
+  method OpenBlade.Protocol.CoolingPadFanConfiguration <Clone>$()
+  method OpenBlade.Protocol.CoolingPadFanOwnership get_Ownership()
+  method OpenBlade.Protocol.CoolingPadFanPreset get_Preset()
+  method System.Int32 get_ConfiguredRpm()
+  method System.Void Deconstruct(out OpenBlade.Protocol.CoolingPadFanOwnership Ownership, out OpenBlade.Protocol.CoolingPadFanPreset Preset, out System.Int32 ConfiguredRpm)
+  method System.Void set_ConfiguredRpm(System.Int32 value)
+  method System.Void set_Ownership(OpenBlade.Protocol.CoolingPadFanOwnership value)
+  method System.Void set_Preset(OpenBlade.Protocol.CoolingPadFanPreset value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.CoolingPadFanConfiguration left, OpenBlade.Protocol.CoolingPadFanConfiguration right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.CoolingPadFanConfiguration left, OpenBlade.Protocol.CoolingPadFanConfiguration right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.CoolingPadFanConfiguration other)
+  property OpenBlade.Protocol.CoolingPadFanOwnership Ownership { get; init; }
+  property OpenBlade.Protocol.CoolingPadFanPreset Preset { get; init; }
+  property System.Int32 ConfiguredRpm { get; init; }
+type enum OpenBlade.Protocol.CoolingPadFanOwnership
+  field System.Int32 value__
+  field const OpenBlade.Protocol.CoolingPadFanOwnership Firmware = 0
+  field const OpenBlade.Protocol.CoolingPadFanOwnership Synapse = 1
+type enum OpenBlade.Protocol.CoolingPadFanPreset
+  field System.Int32 value__
+  field const OpenBlade.Protocol.CoolingPadFanPreset Balanced = 4
+  field const OpenBlade.Protocol.CoolingPadFanPreset High = 2
+  field const OpenBlade.Protocol.CoolingPadFanPreset Low = 0
+  field const OpenBlade.Protocol.CoolingPadFanPreset Medium = 1
+  field const OpenBlade.Protocol.CoolingPadFanPreset Off = 6
+  field const OpenBlade.Protocol.CoolingPadFanPreset Performance = 5
+  field const OpenBlade.Protocol.CoolingPadFanPreset Quiet = 3
+type sealed class OpenBlade.Protocol.CoolingPadLightingConfiguration
+  interface System.IEquatable<OpenBlade.Protocol.CoolingPadLightingConfiguration>
+  ctor (System.Byte profile, System.Byte region, System.Byte effect, System.Byte flags, System.Byte rate, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadColor> colors)
+  method OpenBlade.Protocol.CoolingPadLightingConfiguration <Clone>$()
+  method System.Byte get_Effect()
+  method System.Byte get_Flags()
+  method System.Byte get_Profile()
+  method System.Byte get_Rate()
+  method System.Byte get_Region()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadColor> get_Colors()
+  method System.Void set_Colors(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadColor> value)
+  method System.Void set_Effect(System.Byte value)
+  method System.Void set_Flags(System.Byte value)
+  method System.Void set_Profile(System.Byte value)
+  method System.Void set_Rate(System.Byte value)
+  method System.Void set_Region(System.Byte value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.CoolingPadLightingConfiguration left, OpenBlade.Protocol.CoolingPadLightingConfiguration right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.CoolingPadLightingConfiguration left, OpenBlade.Protocol.CoolingPadLightingConfiguration right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.CoolingPadLightingConfiguration other)
+  property System.Byte Effect { get; init; }
+  property System.Byte Flags { get; init; }
+  property System.Byte Profile { get; init; }
+  property System.Byte Rate { get; init; }
+  property System.Byte Region { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadColor> Colors { get; init; }
+type sealed class OpenBlade.Protocol.CoolingPadMirrorFrame
+  interface System.IEquatable<OpenBlade.Protocol.CoolingPadMirrorFrame>
+  ctor (System.Int64 Sequence, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadColor> Colors)
+  method OpenBlade.Protocol.CoolingPadMirrorFrame <Clone>$()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadColor> get_Colors()
+  method System.Int64 get_Sequence()
+  method System.Void Deconstruct(out System.Int64 Sequence, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadColor> Colors)
+  method System.Void set_Colors(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadColor> value)
+  method System.Void set_Sequence(System.Int64 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.CoolingPadMirrorFrame left, OpenBlade.Protocol.CoolingPadMirrorFrame right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.CoolingPadMirrorFrame left, OpenBlade.Protocol.CoolingPadMirrorFrame right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.CoolingPadMirrorFrame other)
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadColor> Colors { get; init; }
+  property System.Int64 Sequence { get; init; }
+type sealed class OpenBlade.Protocol.CoolingPadOperationException
+  base System.IO.IOException
+  ctor (System.String message, System.Boolean submissionUnknown)
+  method System.Boolean get_SubmissionUnknown()
+  property System.Boolean SubmissionUnknown { get; }
 type enum OpenBlade.Protocol.DriverModeRestoreOutcome
   field System.Int32 value__
   field const OpenBlade.Protocol.DriverModeRestoreOutcome Failed = 4
@@ -358,7 +496,9 @@ type interface OpenBlade.Protocol.IBladeDevice
   method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task PushUniformLightingFrameAsync(OpenBlade.Contracts.UniformLightingFrame frame, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, OpenBlade.Contracts.PerformancePreset baseMode, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetIndependentLightingAsync(OpenBlade.Contracts.IndependentLightingSettings value, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task SetLightingRefreshRateAsync(OpenBlade.Contracts.LightingRefreshRate refreshRate, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.ConfirmedDeviceState> ReadIndependentLightingStateAsync(OpenBlade.Contracts.IndependentLightingSettings fields, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.ConfirmedDeviceState> ReadLightingStateAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.ConfirmedDeviceState> ReadPerformanceFanStateAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> ReadLightingRendererOwnershipAsync(System.Threading.CancellationToken cancellationToken)
@@ -372,6 +512,18 @@ type interface OpenBlade.Protocol.IBladeDevice
   method virtual System.Threading.Tasks.Task<System.String> ReadMcuVersionAsync(System.Threading.CancellationToken cancellationToken)
 type interface OpenBlade.Protocol.IControllerPresenceMonitor
   method abstract OpenBlade.Protocol.ControllerPresenceObservation Observe()
+type interface OpenBlade.Protocol.ICoolingPadDevice
+  interface System.IAsyncDisposable
+  method abstract System.String get_Identity()
+  method abstract System.Threading.Tasks.Task PushMirrorFrameAsync(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadColor> colors, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task RestoreAsync(OpenBlade.Protocol.CoolingPadDeviceSnapshot baseline, System.Boolean restoreFan, System.Boolean restoreLighting, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetFanAsync(OpenBlade.Contracts.CoolingPadFanMode mode, System.Nullable<System.Int32> rpm, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetLightingAsync(OpenBlade.Contracts.CoolingPadSettings settings, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadDeviceSnapshot> ReadSnapshotAsync(System.Threading.CancellationToken cancellationToken)
+  property System.String Identity { get; }
+type interface OpenBlade.Protocol.ICoolingPadDeviceProvider
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.ICoolingPadDevice> OpenAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual OpenBlade.Contracts.CoolingPadConnectionState ObserveConnection()
 type interface OpenBlade.Protocol.ICoolingPadDiscoverySource
   method abstract OpenBlade.Contracts.CoolingPadConnectionState Observe()
 type interface OpenBlade.Protocol.IFanRpmQueryPort
@@ -448,7 +600,10 @@ type interface OpenBlade.Protocol.IProductionLightingPort
   method virtual OpenBlade.Protocol.DriverModeRestoreOutcome get_DriverModeRestoreOutcome()
   method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task PushUniformLightingFrameAsync(OpenBlade.Contracts.UniformLightingFrame frame, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetIndependentLightingAsync(OpenBlade.Contracts.IndependentLightingSettings value, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task SetLightingRefreshRateAsync(OpenBlade.Contracts.LightingRefreshRate refreshRate, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.IndependentLightingSettings> ReadIndependentLightingAsync(OpenBlade.Contracts.IndependentLightingSettings fields, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.IndependentLightingSettings> ReadIndependentLightingAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> InvalidateForLowPowerAsync()
   method virtual System.Threading.Tasks.Task<OpenBlade.Protocol.LightingLowPowerOffResult> TurnOffForLowPowerAsync(System.Func<System.Boolean> stillSuspending, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Boolean> DisposeWithinCleanupDeadlineAsync()
@@ -490,6 +645,9 @@ type interface OpenBlade.Protocol.ITemporaryFullChargeValidationRunFactory
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.ITemporaryFullChargeValidationPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
 type interface OpenBlade.Protocol.IWindowsServiceSource
   method abstract System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.WindowsServiceSnapshot> GetServices()
+type static class OpenBlade.Protocol.KeyboardLightingFrameStream
+  method static OpenBlade.Protocol.CoolingPadMirrorFrame get_Latest()
+  property OpenBlade.Protocol.CoolingPadMirrorFrame Latest { get; }
 type sealed class OpenBlade.Protocol.LightingBrightnessReading
   interface System.IEquatable<OpenBlade.Protocol.LightingBrightnessReading>
   ctor (System.Int32 RawValue)
@@ -755,6 +913,11 @@ type sealed class OpenBlade.Protocol.WindowsControllerPresenceMonitor
   interface OpenBlade.Protocol.IControllerPresenceMonitor
   ctor (OpenBlade.Protocol.IRunningProcessSource processSource, OpenBlade.Protocol.IWindowsServiceSource serviceSource)
   method virtual OpenBlade.Protocol.ControllerPresenceObservation Observe()
+type sealed class OpenBlade.Protocol.WindowsCoolingPadDeviceProvider
+  interface OpenBlade.Protocol.ICoolingPadDeviceProvider
+  ctor ()
+  method virtual OpenBlade.Contracts.CoolingPadConnectionState ObserveConnection()
+  method virtual System.Threading.Tasks.Task<OpenBlade.Protocol.ICoolingPadDevice> OpenAsync(System.Threading.CancellationToken cancellationToken)
 type sealed class OpenBlade.Protocol.WindowsHardwareAccessGuard
   interface OpenBlade.Protocol.IHardwareAccessGuard
   ctor (OpenBlade.Protocol.IControllerPresenceMonitor monitor)
