@@ -59,7 +59,8 @@ The existing Windows CI keeps its conservative full-validation fallback for
 unknown paths, including Rust; no .NET or packaging gate is bypassed.
 
 PR3 will implement the pure helpers and consume the single canonical
-[parity fixture set](../tests/Fixtures/Parity/README.md) (40 C# baseline vectors).
+[parity fixture set](../tests/Fixtures/Parity/README.md) (43 C# baseline vectors:
+9 encoding, 20 response and 14 profile cases).
 Do not copy or regenerate those fixtures here. C ABI implementation, C# native
 loading, runtime selection and later OS adapters remain separate stages. Product
 SemVer, IPC versions and saved schemas are unchanged by this scaffold.
