@@ -10,6 +10,8 @@ extern "C" {
 #define OB_CALL
 #endif
 #define OB_ABI_VERSION UINT32_C(0x00010000)
+/* Optional additive policy contract; codec 1.0 negotiation is unchanged. */
+#define OB_POLICY_ABI_VERSION UINT32_C(0x00010000)
 /* Natural C layout, never packed. Sizes/alignment: request 8/4, options 12/4,
  * error 16/4. All struct_size fields must equal these exact sizes. */
 typedef struct ObReportRequestV1 {
@@ -77,6 +79,80 @@ uint32_t OB_CALL ob_v1_validate_response(uint32_t abi_version,
     const ObReportRequestV1 *request, const uint8_t *payload,
     uint32_t payload_length, const uint8_t *response, uint32_t response_length,
     const ObValidationOptionsV1 *options, uint8_t *output, uint32_t capacity,
+    uint32_t *written_or_required, ObErrorV1 *error);
+/* Policy records use natural alignment 4, no native pointers. Optional scalar
+ * records have size 8; UTF-8 references size 12; display size 44; profile size 88.
+ * Every present flag is exactly 0 or 1; all reserved fields are zero. Absent
+ * scalar/reference payloads are ignored. Absent nested objects are ignored,
+ * including their nested size prefixes. Present nested records require exact size.
+ * UTF-8 offsets/lengths refer to the shared keys input or the output_keys result.
+ * Null and empty keys differ; keys are opaque strict UTF-8, not OS lookups. */
+typedef struct ObOptionalI32V1 {
+    int32_t value; /* 0; present booleans require 0 or 1 */
+    uint8_t present; /* 4 */
+    uint8_t reserved[3]; /* 5 */
+} ObOptionalI32V1;
+typedef struct ObOptionalUtf8V1 {
+    uint32_t offset; /* 0 */
+    uint32_t length; /* 4, bytes, no terminator */
+    uint8_t present; /* 8 */
+    uint8_t reserved[3]; /* 9 */
+} ObOptionalUtf8V1;
+typedef struct ObDisplayProjectionV1 {
+    uint32_t struct_size; /* 0, exactly 44 */
+    ObOptionalUtf8V1 refresh_rate_key; /* 4 */
+    ObOptionalI32V1 hdr_enabled; /* 16 */
+    ObOptionalUtf8V1 color_profile_key; /* 24 */
+    ObOptionalI32V1 brightness_percent; /* 36 */
+} ObDisplayProjectionV1;
+typedef struct ObProfileProjectionV1 {
+    uint32_t struct_size; /* 0, exactly 88 */
+    ObOptionalI32V1 performance; /* 4; baseline required */
+    ObOptionalI32V1 fans; /* 12; baseline required */
+    int32_t fan_mode; /* 20, ignored unless has_fan_control */
+    int32_t fixed_speed_rpm; /* 24, ignored unless has_fan_control */
+    uint8_t has_fan_control; /* 28 */
+    uint8_t has_display; /* 29 */
+    uint8_t reserved[2]; /* 30 */
+    ObOptionalI32V1 gaming_mode_enabled; /* 32 */
+    ObDisplayProjectionV1 display; /* 40 */
+    uint32_t fan_control_source; /* 84; input zero; result: none 0,
+                                   baseline 1, override 2, legacy default 3 */
+} ObProfileProjectionV1;
+/* Additive pure policy exports have independent negotiation. Existing codec
+ * clients need neither resolve these symbols nor change their version checks.
+ * Scalar performance/fan mode/RPM/brightness values are merge data, not native
+ * enums or a whole-profile validation boundary. Unknown values pass through,
+ * except legacy fan synthesis admits only modes 0..3 (invalid-argument detail 3).
+ * Host validation order, custom curves and all fields outside this projection
+ * remain host-owned. Contradictory fan fields are deliberately preserved.
+ *
+ * The shared memory, disjointness, lifetime and panic rules above also apply.
+ * baseline/result/written_or_required are required; override_value and error
+ * are optional. result requires an accessible size prefix and an exact-size
+ * writable record on success; set result.struct_size before calling.
+ * Admission precedence: error size, policy ABI version, written pointer, result
+ * size, baseline input, override input, then output pointer/capacity. All input
+ * validation precedes publication. Invalid UTF-8 is detail 4; out-of-bounds or
+ * overflowing UTF-8 references are detail 2. A missing baseline is detail 5.
+ * No result record or output bytes change on any failure, including a capacity
+ * query. written is exact required bytes on insufficient capacity, otherwise
+ * zero on failure. Success publishes the result and only its output key bytes;
+ * refresh key bytes precede color key bytes, without terminators. Empty results
+ * succeed with null output_keys/capacity zero. Calls retain no memory or state.
+ */
+uint32_t OB_CALL ob_policy_abi_version(void);
+uint32_t OB_CALL ob_v1_apply_profile(uint32_t abi_version,
+    const ObProfileProjectionV1 *baseline,
+    const ObProfileProjectionV1 *override_value,
+    const uint8_t *keys, uint32_t keys_length,
+    ObProfileProjectionV1 *result, uint8_t *output_keys, uint32_t capacity,
+    uint32_t *written_or_required, ObErrorV1 *error);
+uint32_t OB_CALL ob_v1_apply_display(uint32_t abi_version,
+    const ObDisplayProjectionV1 *baseline,
+    const ObDisplayProjectionV1 *override_value,
+    const uint8_t *keys, uint32_t keys_length,
+    ObDisplayProjectionV1 *result, uint8_t *output_keys, uint32_t capacity,
     uint32_t *written_or_required, ObErrorV1 *error);
 #ifdef __cplusplus
 }

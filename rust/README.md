@@ -1,6 +1,7 @@
 # Rust workspace
 
-Stage 5 packages a dormant Windows x64 codec DLL and an explicit developer shadow
+Stage 6 adds dormant profile merge exports and C# mapping to the packaged Windows
+DLL. Stage 5 established the codec payload and explicit developer shadow
 comparison. The Windows product continues to use C#; ordinary .NET builds and
 tests remain independent of Rust. Explicit release packaging builds Rust.
 
@@ -28,7 +29,7 @@ no older compiler compatibility is claimed. Update both together. `0.0.0`
 identifies these unpublished migration crates independently of the Windows
 product version. Licensing follows `GPL-3.0-or-later`.
 
-Commit `Cargo.lock`. Only the protocol integration tests use registry roots:
+Commit `Cargo.lock`. Only the protocol and domain integration tests use registry roots:
 exact `serde` 1.0.228 with derive and `serde_json` 1.0.149, plus their locked
 parsing/proc-macro dependency closure. These established parsers provide strict
 typed JSON and duplicate-field rejection without adding a handwritten parser.
@@ -86,7 +87,8 @@ ownership, all combinations of envelope faults, signed lengths, checksum byte
 coverage and a 20,000-input malformed corpus. These software checks establish
 codec parity and portability; physical validation remains separate.
 
-The 14 profile vectors await stage 6. Production loading, runtime selection
+All 14 profile vectors run through Rust and the real native C# policy wrapper.
+Production loading, runtime selection
 and OS adapters remain later stages. Windows ARM64, Linux
 ARM64, musl and 32-bit targets are unvalidated. CI publishes no artifacts and
 accepts stacked PRs. Existing Windows CI retains its conservative full-validation
@@ -111,7 +113,7 @@ It builds the actual native library, compiles and runs the C header smoke test,
 and runs `OpenBlade.Native.slnx`. Native tests require an absolute
 `OPENBLADE_NATIVE_LIBRARY` path and fail if it is absent or unloadable. The four
 native CI lanes run the same path. They test record layouts, all 29 canonical
-report cases, native buffer/error contracts, output integrity, concurrent calls
+report cases, all 14 profile cases and preservation sentinels, native buffer/error contracts, output integrity, concurrent calls
 and module disposal. The two canonical destination-length cases concern the
 existing exact-span C# API; the ABI separately admits any capacity at least 90.
 The Rust boundary tests trigger private test-only panics through the real work
@@ -120,7 +122,9 @@ Caught payloads are deliberately forgotten to avoid a second unwind across C.
 The process panic hook is unchanged and may emit diagnostics.
 
 To run only .NET tests after explicitly building Rust, set
-`OPENBLADE_NATIVE_LIBRARY` to the normalized absolute artifact path and run:
+`OPENBLADE_NATIVE_LIBRARY` to the normalized absolute Rust artifact path and
+`OPENBLADE_POLICY_ONLY_LIBRARY` to the same platform filename in its `policy-only/`
+subfolder (built by `Test-NativeInterop.ps1`), then run:
 
 ```text
 dotnet test OpenBlade.Native.slnx -c Release
@@ -158,3 +162,11 @@ fixtures. It performs no device discovery or hardware I/O. Packaging runs it
 against the new Release DLL, then verifies the final signed/unsigned artifact
 and exercises real payload tampering checks. The separate four-platform ABI
 lanes continue to test their native developer artifacts.
+
+## Profile API
+
+The allocation-free domain merge and separately negotiated additive policy ABI
+are documented in [the stage 6 contract](../docs/rust-boundaries.md#dormant-profile-projection-stage-6).
+Use NativeProfilePolicy explicitly with a developer artifact. C# retains full
+profile validation and all production paths. Codec v1 loading remains independent
+of policy exports. No IPC, saved schema, hardware command or product behavior changes.

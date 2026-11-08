@@ -42,14 +42,18 @@ try {
         'openblade-domain' = @('openblade-types')
         'openblade-ffi' = @('openblade-domain', 'openblade-protocol', 'openblade-types')
     }
-    # Only the protocol fixture reader may introduce registry roots, through dev
+    # Only the report and profile fixture readers introduce registry roots, through dev
     # dependencies. Cargo.lock pins this reviewed parsing/proc-macro closure.
     $expectedDevDependencies = @{ serde = '=1.0.228'; serde_json = '=1.0.149' }
     $allowedExternal = @(
         'serde', 'serde_core', 'serde_derive', 'serde_json', 'itoa', 'memchr', 'zmij',
         'proc-macro2', 'quote', 'syn', 'unicode-ident'
     )
-    $expectedTests = @('report_parity', 'report_properties')
+    $fixtureReaderPackages = @('openblade-protocol', 'openblade-domain')
+    $expectedTests = @{
+        'openblade-protocol' = @('report_parity', 'report_properties')
+        'openblade-domain' = @('profile_policy')
+    }
 
     $metadataJson = cargo metadata --locked --offline --format-version 1
     if ($LASTEXITCODE -ne 0) { throw 'Cargo metadata failed (run cargo fetch --locked first).' }
@@ -107,7 +111,7 @@ try {
             if ($null -eq $dependency.kind -and $null -ne $dependency.PSObject.Properties['path'] -and $null -eq $dependency.source) {
                 $normal += $dependency.name
             }
-            elseif ($package.name -ceq 'openblade-protocol' -and $dependency.kind -ceq 'dev' -and
+            elseif ($package.name -cin $fixtureReaderPackages -and $dependency.kind -ceq 'dev' -and
                 $null -eq $dependency.PSObject.Properties['path'] -and
                 $dependency.source -ceq 'registry+https://github.com/rust-lang/crates.io-index' -and
                 $expectedDevDependencies.ContainsKey($dependency.name) -and
@@ -128,7 +132,7 @@ try {
         if ((@($normal | Sort-Object) -join ',') -cne $expected) {
             throw "Production dependency boundary changed for $($package.name): $($normal -join ',')"
         }
-        $expectedDev = if ($package.name -ceq 'openblade-protocol') {
+        $expectedDev = if ($package.name -cin $fixtureReaderPackages) {
             @($expectedDevDependencies.Keys | Sort-Object) -join ','
         } else { '' }
         if ((@($dev | Sort-Object) -join ',') -cne $expectedDev) {
@@ -137,15 +141,17 @@ try {
         $tests = @()
         foreach ($target in $package.targets) {
             if ($target -eq $libraries[0]) { continue }
-            if ($package.name -cne 'openblade-protocol' -or
+            if (-not $expectedTests.ContainsKey($package.name) -or
                 ($target.kind -join ',') -cne 'test' -or
                 ($target.crate_types -join ',') -cne 'bin' -or
-                $target.name -cnotin $expectedTests) {
+                $target.name -cnotin $expectedTests[$package.name]) {
                 throw "Unreviewed target: $($package.name)/$($target.name)"
             }
             $tests += $target.name
         }
-        $expectedTestNames = if ($package.name -ceq 'openblade-protocol') { $expectedTests -join ',' } else { '' }
+        $expectedTestNames = if ($expectedTests.ContainsKey($package.name)) {
+            @($expectedTests[$package.name] | Sort-Object) -join ','
+        } else { '' }
         if ((@($tests | Sort-Object) -join ',') -cne $expectedTestNames) {
             throw "Reviewed integration tests are missing: $($package.name)"
         }

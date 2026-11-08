@@ -5,6 +5,7 @@ Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 $previousLibrary = $env:OPENBLADE_NATIVE_LIBRARY
+$previousPolicyLibrary = $env:OPENBLADE_POLICY_ONLY_LIBRARY
 Push-Location $PSScriptRoot
 try {
     $version = rustc -vV
@@ -71,6 +72,22 @@ try {
     & $smoke
     if ($LASTEXITCODE -ne 0) { throw 'C header/native ABI smoke failed.' }
 
+    # A separate, test-only C library proves policy loading needs no codec exports.
+    # It never supplies parity results and is never included in product packaging.
+    $fixtureDirectory = Join-Path $output 'policy-only'
+    New-Item -ItemType Directory -Path $fixtureDirectory -Force | Out-Null
+    $fixtureLibrary = Join-Path $fixtureDirectory (Split-Path -Leaf $library)
+    $fixtureSource = Join-Path $PSScriptRoot 'tests/policy_only.c'
+    if ($IsWindows) {
+        & cl.exe /nologo /std:c11 /W4 /WX /LD "/I$headerDirectory" $fixtureSource "/Fo$(Join-Path $fixtureDirectory 'policy_only.obj')" "/Fe$fixtureLibrary" /link "/IMPLIB:$(Join-Path $fixtureDirectory 'policy_only.lib')" /EXPORT:ob_policy_abi_version /EXPORT:ob_v1_apply_profile /EXPORT:ob_v1_apply_display
+    } elseif ($IsMacOS) {
+        & cc -std=c11 -Wall -Wextra -Werror -dynamiclib "-I$headerDirectory" $fixtureSource -o $fixtureLibrary
+    } else {
+        & cc -std=c11 -Wall -Wextra -Werror -shared -fPIC "-I$headerDirectory" $fixtureSource -o $fixtureLibrary
+    }
+    if ($LASTEXITCODE -ne 0) { throw 'Policy-only loader fixture build failed.' }
+    $env:OPENBLADE_POLICY_ONLY_LIBRARY = [IO.Path]::GetFullPath($fixtureLibrary)
+
     $env:OPENBLADE_NATIVE_LIBRARY = [IO.Path]::GetFullPath($library)
     dotnet test (Join-Path $repository 'OpenBlade.Native.slnx') --configuration Release
     if ($LASTEXITCODE -ne 0) { throw '.NET/native integration tests failed.' }
@@ -78,5 +95,6 @@ try {
 }
 finally {
     $env:OPENBLADE_NATIVE_LIBRARY = $previousLibrary
+    $env:OPENBLADE_POLICY_ONLY_LIBRARY = $previousPolicyLibrary
     Pop-Location
 }
