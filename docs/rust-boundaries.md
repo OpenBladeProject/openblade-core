@@ -1,8 +1,9 @@
 # Shared Rust core boundaries
 
-This is the design contract for the first migration stage. It adds portable
-parity tests while keeping production C# behavior unchanged. There is no Cargo
-workspace, native loading, or runtime handoff in this stage.
+This contract was pinned in stage 1. Stage 2 added the Cargo workspace; stage 3
+implements the pure report codec and consumes the 29 canonical report vectors.
+Production C# behavior is unchanged. Native loading and runtime handoff remain
+later stages. See [the workspace guide](../rust/README.md) for the current API.
 
 ## Ownership and dependencies
 

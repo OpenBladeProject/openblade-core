@@ -22,7 +22,7 @@ try {
 
     Push-Location $probe
     try {
-        $metadataJson = cargo metadata --locked --offline --format-version 1
+        $metadataJson = cargo metadata --locked --offline --no-deps --format-version 1
         if ($LASTEXITCODE -ne 0) { throw 'Test workspace metadata failed.' }
         $testedVersion = (($metadataJson -join "`n") | ConvertFrom-Json).packages[0].rust_version
     }
@@ -32,20 +32,39 @@ try {
         @{ Path = 'Cargo.toml'; Before = 'rust-version = "' + $testedVersion + '"'; After = 'rust-version = "1.85.0"'; Error = 'MSRV must equal*' },
         @{ Path = 'Cargo.toml'; Before = 'unsafe_code = "forbid"'; After = 'unsafe_code = "allow"'; Error = 'Required workspace.lints.rust policy*' },
         @{ Path = 'crates/openblade-types/Cargo.toml'; Before = "[lints]`nworkspace = true"; After = ''; Error = 'Required lints policy*' },
-        @{ Path = 'crates/openblade-types/src/lib.rs'; Before = '#![no_std]'; After = ''; Error = 'The portable crate must retain no_std*' }
+        @{ Path = 'crates/openblade-types/src/lib.rs'; Before = '#![no_std]'; After = ''; Error = 'The portable crate must retain no_std*' },
+        @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = '[dev-dependencies]'; After = '[build-dependencies]'; Error = 'Unreviewed dependency kind*' },
+        @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = 'name = "openblade-protocol"'; After = "name = 'openblade-protocol'`nautotests = false"; Error = 'Reviewed integration tests are missing*' },
+        @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[lib]`ncrate-type = ['cdylib']`n`n[lints]"; Error = 'Exactly one ordinary Rust library is required*' },
+        @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = '=1.0.149'; After = '^1.0.149'; Error = 'Unreviewed dependency kind*' },
+        @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = '[dev-dependencies]'; After = "[[bin]]`nname = 'unexpected'`npath = 'src/lib.rs'`n`n[dev-dependencies]"; Error = 'Unreviewed target*' },
+        @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = '[dev-dependencies]'; After = "[[test]]`nname = 'unexpected'`npath = 'src/lib.rs'`n`n[dev-dependencies]"; Error = 'Unreviewed target*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = 'openblade-types.workspace = true'; After = "openblade-types.workspace = true`nopenblade-protocol.workspace = true"; Error = 'Production dependency boundary changed*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = 'openblade-types.workspace = true'; After = "openblade-types.workspace = true`n`n[dev-dependencies]`nserde_json = '=1.0.149'"; Error = 'Unreviewed dependency kind*' },
+        @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[dependencies]`nserde_json = '=1.0.149'`n`n[lints]"; Error = 'Unreviewed dependency kind*' }
     )
     foreach ($case in $cases) {
         $path = Join-Path $probe $case.Path
         $saved = [IO.File]::ReadAllText($path)
         if (-not $saved.Contains($case.Before)) { throw "Negative test input not found: $($case.Path)" }
         [IO.File]::WriteAllText($path, $saved.Replace($case.Before, $case.After), [Text.UTF8Encoding]::new($false))
+        $savedLock = [IO.File]::ReadAllText((Join-Path $probe 'Cargo.lock'))
+        Push-Location $probe
+        try {
+            cargo generate-lockfile --offline
+            if ($LASTEXITCODE -ne 0) { throw 'Negative test lockfile generation failed.' }
+        }
+        finally { Pop-Location }
         $rejected = $false
         try { & (Join-Path $probe 'Check-Workspace.ps1') }
         catch {
             if ($_.Exception.Message -notlike $case.Error) { throw }
             $rejected = $true
         }
-        finally { [IO.File]::WriteAllText($path, $saved, [Text.UTF8Encoding]::new($false)) }
+        finally {
+            [IO.File]::WriteAllText($path, $saved, [Text.UTF8Encoding]::new($false))
+            [IO.File]::WriteAllText((Join-Path $probe 'Cargo.lock'), $savedLock, [Text.UTF8Encoding]::new($false))
+        }
         if (-not $rejected) { throw "Workspace policy drift was accepted: $($case.Path)" }
     }
 
@@ -74,7 +93,7 @@ try {
         & (Join-Path $probe 'Check-Workspace.ps1')
     }
     finally { Pop-Location }
-    Write-Output 'Workspace guard tests passed: root invocation, policy drift, MSRV and commented manifest/toolchain TOML.'
+    Write-Output 'Workspace guard tests passed: caller location, compiler policies, MSRV, production/dev boundaries, test targets and equivalent TOML.'
 }
 finally {
     # Only remove the unique directory this invocation created under temporary storage.
