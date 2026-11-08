@@ -270,6 +270,23 @@ release proof. Failed Auto cleanup remains a failed result even after an earlier
 confirmed Stop. No thermal threshold, freshness rule or hardware sequence changes
 as part of this correction.
 
+The corrected `8c869310` build was installed through the fixed broker as LocalDev
+`65535.417.48217.64084`; all 372 installed files and the running component
+generations matched. A separately authorized Custom CPU 65 C repeat preserved
+GPU 55 C, the five-second averaging window and both 65 C immediate cutoffs.
+After CPU preflight readings of 55/60/57 C, the owner reached coast-down but
+returned Auto for `ThermalThreshold` before confirming stopped tachometers.
+The Stop receipt correctly reported Blocked and retained that reason through
+cleanup. The receipt does not identify the sensor or immediate-versus-average
+branch, so neither is asserted as the specific trigger. Earlier preflight
+samples ranged from 54 to 76 C; those are context, not the guardian's cutoff
+sample. One Auto signal, independent released readback and exact original
+settings restoration all completed. Final readings were CPU 61 C and fans
+2500/2200 RPM, with no blocked or unconfirmed writes. This verifies the corrected
+refusal reporting and restoration path, not successful fan stop or a stopped
+dwell. This run's thermal refusal does not reconstruct the earlier run's missing
+fresh-entry predicate.
+
 Guardian termination, an unknown outer-job termination, a native call that
 never returns, sleep/resume and OS failure do not have a demonstrated
 independent cooling fallback. A fenced owner retains its native resources;
