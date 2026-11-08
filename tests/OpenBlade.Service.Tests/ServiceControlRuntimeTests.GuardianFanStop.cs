@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -145,6 +146,61 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(1, client.AutoCalls);
         Assert.Equal(1, context.Device.DriverModeReleaseCalls);
         Assert.Equal(FanStopState.Automatic, context.Runtime.GetStatus().FanStopStatus.State);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GuardianShutdownRestoresCoolingPadAfterOwnedAutoAndRetainsPadFailure(bool failPadRestore)
+    {
+        var client = new GuardianFanStopBackendTests.Client();
+        var pad = new LifecyclePad();
+        var baseline = await pad.ReadSnapshotAsync(default);
+        var user = new System.Security.Principal.SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        var repository = new RecordingUserConfigurationRepository(
+            new Dictionary<string, ProfileSet> { [user.Value] = ProfileDefaults.CreateSafeDefaults() }, directory);
+        TestContext context = CreateContext(true,
+            userConfigurationRepository: repository,
+            fanStopBackend: new GuardianFanStopBackend(client),
+            coolingPadDeviceProvider: new LifecyclePadProvider(pad));
+        context.Device.Capabilities = context.Device.Capabilities with { HasFanStopTrialEvidence = true };
+        await context.Runtime.ObserveAsync(default);
+        await context.Runtime.ActivateUserAsync(user, () => true, default);
+        ControlOperationResult applied = await context.Runtime.SetCoolingPadSettingsAsync(
+            new CoolingPadSettings { FanMode = CoolingPadFanMode.Fixed, FixedRpm = 1500 }, user, () => true, default);
+        Assert.Equal(ControlOperationStatus.Applied, applied.Status);
+        Assert.True(context.Runtime.GetStatus().CoolingPad.Active);
+        ControlOperationResult stopped = await context.Runtime.SetFanStopModeAsync(FanStopMode.Stop, () => true, default);
+        Assert.Equal(ControlOperationStatus.Applied, stopped.Status);
+        Assert.Equal(FanStopState.Stopped, context.Runtime.GetStatus().FanStopStatus.State);
+        pad.Restore = token =>
+        {
+            // The independent accessory must wait for confirmed laptop Auto and
+            // native ownership release, then restore even on the guardian path.
+            Assert.Equal(1, client.AutoCalls);
+            Assert.Equal(1, context.Provider.GuardianLease.Disposals);
+            Assert.Equal(FanStopState.Automatic, context.Runtime.GetStatus().FanStopStatus.State);
+            if (failPadRestore)
+            {
+                throw new CoolingPadOperationException("Synthetic pad restoration failure.", true);
+            }
+            return Task.CompletedTask;
+        };
+
+        ControlOperationResult result = await context.Runtime.PrepareForShutdownAsync(default);
+
+        Assert.Equal(1, client.AutoCalls);
+        Assert.Equal(1, context.Provider.GuardianLease.Disposals);
+        Assert.Equal(FanStopState.Automatic, context.Runtime.GetStatus().FanStopStatus.State);
+        Assert.Equal(1, pad.RestoreCalls);
+        Assert.False(context.Runtime.GetStatus().CoolingPad.Active);
+        Assert.Equal(failPadRestore, context.Runtime.GetStatus().CoolingPad.RecoveryRequired);
+        Assert.Equal(failPadRestore, context.Runtime.GetStatus().CoolingPad.WritesPaused);
+        Assert.Equal(failPadRestore ? ControlOperationStatus.Failed : ControlOperationStatus.Applied, result.Status);
+        if (!failPadRestore)
+        {
+            Assert.Equal(baseline, await pad.ReadSnapshotAsync(default));
+        }
     }
 
     [Fact]

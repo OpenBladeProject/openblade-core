@@ -1,6 +1,6 @@
 using OpenBlade.Contracts;
-using OpenBlade.Service;
 using OpenBlade.Protocol;
+using OpenBlade.Service;
 using static OpenBlade.Service.Tests.VerifiedBladeProviderFixture;
 
 namespace OpenBlade.Service.Tests;

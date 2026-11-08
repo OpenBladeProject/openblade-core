@@ -1,7 +1,15 @@
-#Requires -Version 7.2
+#Requires -Version 5.1
 [CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'
+# CI invokes build contracts from Windows PowerShell. This offline fixture uses
+# the archive helper's .NET 6 APIs, so run it in the helper's required host.
+if ($PSVersionTable.PSVersion -lt [Version]'7.2') {
+    $pwsh = Get-Command pwsh.exe -CommandType Application -ErrorAction Stop
+    & $pwsh.Source -NoLogo -NoProfile -File $PSCommandPath
+    if ($LASTEXITCODE -ne 0) { throw "Archive contract tests failed in PowerShell 7 (exit $LASTEXITCODE)." }
+    return
+}
 $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repository 'build/So6120CompletedAttemptArchive.ps1')
 $root = Join-Path ([IO.Path]::GetTempPath()) ('OpenBlade.ArchiveTest.' + [Guid]::NewGuid().ToString('N'))

@@ -84,32 +84,3 @@ internal static class So6120ServicePowerReadPolicy
         catch (Exception exception) { throw new So6120ServicePowerReadException(exception); }
     }
 }
-
-// This cache grants no command authority. Every actual command still performs
-// the independent full admission in ISo6120SessionEvidenceSource.Capture.
-internal sealed class So6120ServiceContinuationMonitor(Func<bool> observe, TimeProvider clock)
-{
-    internal static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
-    internal static readonly TimeSpan MaximumSampleAge = TimeSpan.FromSeconds(2);
-    private long? started;
-    private bool admitted;
-    internal bool SampleFresh { get; private set; }
-
-    internal bool Observe()
-    {
-        if (started is long previous && clock.GetElapsedTime(previous) is var elapsed
-            && elapsed >= TimeSpan.Zero && elapsed < PollInterval) { return admitted; }
-        started = clock.GetTimestamp();
-        admitted = false;
-        SampleFresh = false;
-        try
-        {
-            bool result = observe();
-            TimeSpan age = clock.GetElapsedTime(started.Value);
-            SampleFresh = age >= TimeSpan.Zero && age <= MaximumSampleAge;
-            admitted = result && SampleFresh;
-        }
-        catch { admitted = false; }
-        return admitted;
-    }
-}

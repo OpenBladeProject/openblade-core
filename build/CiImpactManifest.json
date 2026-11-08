@@ -157,6 +157,18 @@
       "patterns": ["build/BuildIdentity.ps1"]
     },
     {
+      "test": "tests/Build.Tests/FanStopGuardianPayload.Tests.ps1",
+      "patterns": ["build/PublishPayloadValidation.ps1", "build/Publish.ps1", "src/OpenBlade.FanStop.Guardian/OpenBlade.FanStop.Guardian.csproj"]
+    },
+    {
+      "test": "tests/Build.Tests/PawnIoPrerequisite.Tests.ps1",
+      "patterns": ["build/PawnIoPrerequisite.ps1", "build/Publish.ps1", "build/third-party/PawnIO-NOTICE.txt", "src/OpenBlade.CpuTemperature/OpenBlade.CpuTemperature.csproj", "third_party/LibreHardwareMonitor/*"]
+    },
+    {
+      "test": "tests/Build.Tests/So6120CompletedAttemptArchive.Tests.ps1",
+      "patterns": ["build/So6120CompletedAttemptArchive.ps1", "build/Archive-So6120CompletedDeveloperAttempt.ps1"]
+    },
+    {
       "test": "tests/Build.Tests/LowFanValidationInstalledState.Tests.ps1",
       "patterns": ["build/LowFanValidationInstalledState.ps1", "build/Invoke-BatterySaverLowFanValidation.ps1", "build/Invoke-SilentLowFanValidation.ps1", "src/OpenBlade.Contracts/Overrides.cs", "src/OpenBlade.Contracts/ServiceMessages.cs", "src/OpenBlade.Contracts/Profiles.cs", "src/OpenBlade.Contracts/DeviceState.cs", "src/OpenBlade.Service/ServiceControlRuntime.cs", "src/OpenBlade.Tray.Core/ServiceClient.cs"]
     },

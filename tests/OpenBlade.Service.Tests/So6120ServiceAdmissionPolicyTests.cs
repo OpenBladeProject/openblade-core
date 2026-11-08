@@ -38,36 +38,6 @@ public sealed class So6120ServiceAdmissionPolicyTests
         Assert.Same(cause, failure.InnerException);
     }
 
-    [Fact]
-    public void ContinuousMonitorSamplesAtMostOncePerSecondAndSeesNewControllerLoss()
-    {
-        var clock = new Clock();
-        int observations = 0;
-        bool clear = true;
-        var monitor = new So6120ServiceContinuationMonitor(() => { observations++; return clear; }, clock);
-        Assert.True(monitor.Observe());
-        for (int index = 0; index < 100; index++) { Assert.True(monitor.Observe()); }
-        Assert.Equal(1, observations);
-        clear = false;
-        clock.Advance(TimeSpan.FromSeconds(1));
-        Assert.False(monitor.Observe());
-        Assert.Equal(2, observations);
-    }
-
-    [Fact]
-    public void SlowOrFailedContinuousObservationCannotRetainStop()
-    {
-        var clock = new Clock();
-        var slow = new So6120ServiceContinuationMonitor(() =>
-        {
-            clock.Advance(TimeSpan.FromMilliseconds(2001));
-            return true;
-        }, clock);
-        Assert.False(slow.Observe());
-        var failed = new So6120ServiceContinuationMonitor(() => throw new IOException(), clock);
-        Assert.False(failed.Observe());
-    }
-
     [Theory]
     [InlineData(10, true, 0, false, true)]
     [InlineData(55, true, 2000, false, true)]
@@ -85,11 +55,4 @@ public sealed class So6120ServiceAdmissionPolicyTests
             TimeSpan.FromMilliseconds(milliseconds), canceled));
     }
 
-    private sealed class Clock : TimeProvider
-    {
-        private long timestamp;
-        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
-        public override long GetTimestamp() => timestamp;
-        internal void Advance(TimeSpan elapsed) => timestamp += elapsed.Ticks;
-    }
 }

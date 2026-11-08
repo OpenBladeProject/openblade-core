@@ -234,12 +234,16 @@ internal static class Program
             {
                 acquisition.BeginOwnedStop();
                 So6120StopCoastResult coast = session.ObserveStoppedCoast(stop);
+                // Preserve the completed tach-zero observation as history, but
+                // never publish held Stop after the independent sampler ended
+                // admission during a slow native coast read.
+                bool retainStopped = coast == So6120StopCoastResult.Stopped && acquisition.ContinueStopAdmission();
                 progress.RecordCoast(coast, acquisition.EndReason, acquisition.TerminalThermalDecision);
                 if (coast == So6120StopCoastResult.Unresolved)
                 { throw new InvalidDataException("Stopped-fan coast observation is unresolved."); }
-                if (coast == So6120StopCoastResult.Stopped)
+                if (coast == So6120StopCoastResult.Stopped) { stoppedObserved = true; }
+                if (retainStopped)
                 {
-                    stoppedObserved = true;
                     publish(Status(FanStopGuardianPhase.Stopped) with
                     {
                         ConfirmedState = FanStopObservedState.Stopped,
@@ -252,6 +256,7 @@ internal static class Program
                         {
                             PowerSource next = acquisition.ReadPowerSource();
                             lastPowerRead = TimeProvider.System.GetTimestamp();
+                            if (!acquisition.ContinueStopAdmission()) { break; }
                             FanStopPowerTransition transition = FanStopPowerTransitionPolicy.Evaluate(power, next);
                             if (transition == FanStopPowerTransition.Automatic)
                             { endReason = FanStopEndReason.PowerChanged; break; }
@@ -264,6 +269,7 @@ internal static class Program
                                 { throw new InvalidDataException("Power change altered owned fan state."); }
                                 if (verification.Observation?.Snapshot is not { Tach1: 0, Tach2: 0 })
                                 { stoppedObserved = false; break; }
+                                if (!acquisition.ContinueStopAdmission()) { break; }
                                 power = next;
                                 publish(Status(FanStopGuardianPhase.Stopped) with
                                 {
@@ -307,6 +313,7 @@ internal static class Program
         }
         catch (Exception error)
         {
+            acquisition?.StopMonitoring();
             So6120SessionCommandEvidence? commands = session?.CommandEvidence ?? retainedCommandEvidence;
             if (error is not So6120ServiceNativeReleaseException
                 && acquisition?.NativeOperationUnresolved != true

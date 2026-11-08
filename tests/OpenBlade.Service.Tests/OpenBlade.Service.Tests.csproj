@@ -21,6 +21,8 @@
     <ProjectReference Include="..\..\src\OpenBlade.FanStop.Core\OpenBlade.FanStop.Core.csproj" />
     <Compile Include="..\..\src\OpenBlade.FanStop.Guardian\So6120ServiceAdmissionPolicies.cs"
              Link="So6120ServiceAdmissionPolicies.cs" />
+    <Compile Include="..\..\src\OpenBlade.FanStop.Guardian\So6120ServiceSafetySampler.cs"
+             Link="So6120ServiceSafetySampler.cs" />
   </ItemGroup>
 
 </Project>

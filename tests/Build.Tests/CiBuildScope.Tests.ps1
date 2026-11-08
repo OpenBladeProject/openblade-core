@@ -338,7 +338,29 @@ $actualContracts = @(Get-ChildItem -LiteralPath (Join-Path $repository 'tests\Bu
     } | Sort-Object)
 $contractDifference = @(Compare-Object $declaredContracts $actualContracts)
 if ($contractDifference.Count -ne 0) {
-    throw "Every build-contract suite must have an explicit input rule: $($contractDifference -join ', ')"
+    throw "Every build-contract suite must have an explicit input rule: $((@($contractDifference | ForEach-Object { "$($_.SideIndicator) $($_.InputObject)" })) -join ', ')"
+}
+
+foreach ($contractInput in @(
+        @{ Path = 'build/PublishPayloadValidation.ps1'; Test = 'FanStopGuardianPayload' },
+        @{ Path = 'build/Publish.ps1'; Test = 'FanStopGuardianPayload' },
+        @{ Path = 'src/OpenBlade.FanStop.Guardian/OpenBlade.FanStop.Guardian.csproj'; Test = 'FanStopGuardianPayload' },
+        @{ Path = 'build/PawnIoPrerequisite.ps1'; Test = 'PawnIoPrerequisite' },
+        @{ Path = 'build/Publish.ps1'; Test = 'PawnIoPrerequisite' },
+        @{ Path = 'build/third-party/PawnIO-NOTICE.txt'; Test = 'PawnIoPrerequisite' },
+        @{ Path = 'src/OpenBlade.CpuTemperature/OpenBlade.CpuTemperature.csproj'; Test = 'PawnIoPrerequisite' },
+        @{ Path = 'third_party/LibreHardwareMonitor/LICENSE'; Test = 'PawnIoPrerequisite' },
+        @{ Path = 'build/So6120CompletedAttemptArchive.ps1'; Test = 'So6120CompletedAttemptArchive' },
+        @{ Path = 'build/Archive-So6120CompletedDeveloperAttempt.ps1'; Test = 'So6120CompletedAttemptArchive' })) {
+    $contractPlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($contractInput.Path)
+    if ($contractInput.Path.EndsWith('.csproj', [StringComparison]::OrdinalIgnoreCase)) {
+        Assert-Equal 'full' $contractPlan.Mode 'Production project metadata must retain exhaustive contract coverage.'
+    } else {
+        Assert-Equal 'affected' $contractPlan.Mode 'Payload and archive inputs must have explicit affected coverage.'
+        Assert-Contains $contractPlan.ContractTests `
+            "tests/Build.Tests/$($contractInput.Test).Tests.ps1" `
+            "Input '$($contractInput.Path)' must select its payload or archive contract suite."
+    }
 }
 
 foreach ($lowFanInput in @(

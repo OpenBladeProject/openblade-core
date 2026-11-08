@@ -1,7 +1,7 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
-using System.ComponentModel;
 using OpenBlade.Platform;
 
 namespace OpenBlade.Setup;

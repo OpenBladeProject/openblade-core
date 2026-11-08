@@ -173,8 +173,16 @@ after bounded coast checks. Continued coasting requests Auto; ambiguous reads
 remain fenced. This is EC-indicated stop, not an independent mechanical sensor.
 
 Startup allows ten seconds for the first authenticated heartbeat, followed by
-the normal five-second lease. The continuous monitor samples cheap session,
-controller and thermal inputs once per second. Each native command still checks
+the normal five-second lease. An independent OS-only worker samples session,
+controller and thermal inputs on a one-second target cadence. It owns the
+temperature source and rolling policy; native commands consume immutable,
+timestamped admission proofs. Slow coast, power and transition reads cannot
+block this sampling. Acquisition and proof age remain bounded to two seconds,
+and genuine gaps still end Stop. Entry samples never credit a rolling window;
+ownership starts with a new observation. The first terminal reason is retained.
+Disposal cancels sampling without blocking native Auto cleanup, and releases
+the temperature source only after its outstanding read finishes.
+Each native command still checks
 fresh host, HID, controller, ownership and driver-service admission. Only the
 boot-reported EC version and bytes of the already verified, write/delete-pinned
 driver file are reused. Service heartbeats use an immutable status snapshot and
@@ -346,12 +354,12 @@ exact original settings restoration passed. The protected owner result records
 
 The completed command journal's 991-record hash chain verified. The final coast
 snapshot took 2.89 seconds, after the explicit one-second wait. Continuation
-temperature sampling shares that serialized worker, but rejects uncovered gaps
+temperature sampling in that build shared the serialized worker, but rejected uncovered gaps
 over two seconds. This readback therefore prevents compliant sample continuity
 and explains a concrete premature-exit path. The run did not retain the exact
 safety predicate, so additional invalid-sample or admission failures cannot be
 excluded. Held-Stop power reads and power-transition verification share the same
-scheduling problem. The correction must give OS-only thermal sampling an
+scheduling problem. The subsequent correction gives OS-only thermal sampling an
 independent bounded lifetime and a single policy owner, while keeping native
 commands serialized and preserving actual sample freshness and gap rejection.
 Resetting history or extending freshness limits would hide missing observations.

@@ -1,6 +1,6 @@
-using OpenBlade.Contracts;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
