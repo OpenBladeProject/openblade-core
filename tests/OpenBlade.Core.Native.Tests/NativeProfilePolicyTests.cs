@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
-using OpenBlade.Service;
 using OpenBlade.Testing;
 
 namespace OpenBlade.Core.Native.Tests;
@@ -41,7 +40,7 @@ public sealed unsafe class NativeProfilePolicyTests
 
     [Theory]
     [MemberData(nameof(Cases))]
-    public void CanonicalProjectionMatchesFixtureAndCurrentCSharp(string id)
+    public void CanonicalProjectionMatchesFixtureAndFrozenManagedBaseline(string id)
     {
         using NativeProfilePolicy policy = Load();
         JsonElement row = ParityFixture.Row("profile-policy.json", "application-profile-merge", "cases", id);
@@ -69,11 +68,11 @@ public sealed unsafe class NativeProfilePolicyTests
             Assert.Equal("baseline-null", expectedError);
             Assert.Equal(NativeBoundaryErrorKind.InvalidArgument, actual.Error!.Kind);
             Assert.Equal(5u, actual.Error.Detail);
-            Assert.Throws<ArgumentNullException>(() => ApplicationProfileResolution.Apply(baseline!, value));
+            Assert.Throws<ArgumentNullException>(() => ManagedProfilePolicyBaseline.Apply(baseline!, value));
             return;
         }
         Assert.True(actual.IsSuccess, actual.Error?.ToString());
-        Assert.Equal(ApplicationProfileResolution.Apply(baseline!, value), actual.Profile);
+        Assert.Equal(ManagedProfilePolicyBaseline.Apply(baseline!, value), actual.Profile);
         Projection expected = row.GetProperty("expected").Deserialize<Projection>(Options)!;
         Assert.Equal(expected, Project(actual.Profile!));
         if (value is null)
@@ -86,7 +85,7 @@ public sealed unsafe class NativeProfilePolicyTests
             NativeDisplayResult display = policy.ApplyDisplay(displayBasis, value.Display);
             Assert.True(display.IsSuccess, display.Error?.ToString());
             Assert.Equal(expected.Display, display.Display);
-            Assert.Equal(ApplicationProfileResolution.ApplyDisplay(displayBasis, value.Display), display.Display);
+            Assert.Equal(ManagedProfilePolicyBaseline.ApplyDisplay(displayBasis, value.Display), display.Display);
         }
     }
 
@@ -126,7 +125,7 @@ public sealed unsafe class NativeProfilePolicyTests
         NativeProfileResult result = policy.Apply(baseline, value);
         Assert.True(result.IsSuccess, result.Error?.ToString());
         PowerProfile actual = result.Profile!;
-        Assert.Equal(ApplicationProfileResolution.Apply(baseline, value), actual);
+        Assert.Equal(ManagedProfilePolicyBaseline.Apply(baseline, value), actual);
         Assert.Same(value.CustomPerformance ?? baseline.CustomPerformance, actual.CustomPerformance);
         Assert.Same(value.GpuClockTuning ?? baseline.GpuClockTuning, actual.GpuClockTuning);
         Assert.Same(value.Lighting ?? baseline.Lighting, actual.Lighting);
@@ -169,22 +168,55 @@ public sealed unsafe class NativeProfilePolicyTests
         {
             NativeProfileResult result = policy.Apply(baseline, value);
             Assert.True(result.IsSuccess, result.Error?.ToString());
-            Assert.Equal(ApplicationProfileResolution.Apply(baseline, value), result.Profile);
+            Assert.Equal(ManagedProfilePolicyBaseline.Apply(baseline, value), result.Profile);
         }
         var invalidLegacy = new ApplicationPowerProfileOverride { Fans = (FanMode)999 };
-        Assert.Equal("mode", Assert.Throws<ArgumentOutOfRangeException>(() => ApplicationProfileResolution.Apply(baseline, invalidLegacy)).ParamName);
+        Assert.Equal("mode", Assert.Throws<ArgumentOutOfRangeException>(() => ManagedProfilePolicyBaseline.Apply(baseline, invalidLegacy)).ParamName);
         NativeProfileResult failure = policy.Apply(baseline, invalidLegacy);
         Assert.Equal(NativeBoundaryErrorKind.InvalidArgument, failure.Error!.Kind);
         Assert.Equal(3u, failure.Error.Detail);
     }
 
-    [Fact]
-    public void UnpairedSurrogatesFailStrictEncodingWithoutSubstitution()
+    public static IEnumerable<object[]> OpaqueKeys()
+    {
+        // Runtime data avoids attribute metadata's UTF-8 serialization.
+        yield return [new string((char)0xD800, 1), new string((char)0xDC00, 1)];
+        yield return ["same", "SAME"];
+        yield return ["", "\0"];
+        yield return ["色\U0001F680", "\uD800x\uDC00"];
+        yield return [new string('x', 100_000), new string('y', 100_000)];
+        yield return [new string(['a', 'b']), new string(['a', 'b'])];
+    }
+
+    [Theory]
+    [MemberData(nameof(OpaqueKeys))]
+    public void SourceTokensPreserveExactOpaqueHostKeys(string baselineKey, string overrideKey)
     {
         using NativeProfilePolicy policy = Load();
-        NativeDisplayResult result = policy.ApplyDisplay(new("\uD800", null, null), DisplayProfileSettings.Unconfigured());
-        Assert.Equal(NativeBoundaryErrorKind.InvalidArgument, result.Error!.Kind);
-        Assert.Equal(4u, result.Error.Detail);
+        var baseline = new DisplayProfileSettings(baselineKey, true, overrideKey);
+        var value = new DisplayProfileSettings(overrideKey, false, baselineKey);
+        NativeDisplayResult result = policy.ApplyDisplay(baseline, value);
+        Assert.True(result.IsSuccess, result.Error?.ToString());
+        Assert.Equal(ManagedProfilePolicyBaseline.ApplyDisplay(baseline, value), result.Display);
+        Assert.Same(overrideKey, result.Display!.RefreshRateKey);
+        Assert.Same(baselineKey, result.Display.ColorProfileKey);
+        PowerProfile profile = ProfileDefaults.CreateSafeDefaults().PluggedIn with { Display = baseline };
+        foreach (var replacement in new ApplicationPowerProfileOverride[]
+        {
+            new(), new() { Display = value },
+            new() { Display = new(null, null, "") },
+        })
+        {
+            NativeProfileResult merged = policy.Apply(profile, replacement);
+            Assert.True(merged.IsSuccess, merged.Error?.ToString());
+            Assert.Equal(ManagedProfilePolicyBaseline.Apply(profile, replacement), merged.Profile);
+            if (replacement.Display is null)
+            {
+                Assert.Same(baseline, merged.Profile!.Display);
+            }
+            Assert.Same(replacement.Display?.RefreshRateKey ?? baseline.RefreshRateKey, merged.Profile!.Display!.RefreshRateKey);
+            Assert.Same(replacement.Display?.ColorProfileKey ?? baseline.ColorProfileKey, merged.Profile.Display.ColorProfileKey);
+        }
     }
 
     [Fact]
@@ -216,9 +248,9 @@ public sealed unsafe class NativeProfilePolicyTests
         NativeDisplayResult missingDisplay = policy.ApplyDisplay(null, display);
         Assert.Equal(NativeBoundaryErrorKind.InvalidArgument, missingDisplay.Error!.Kind);
         Assert.Equal(5u, missingDisplay.Error.Detail);
-        Assert.Same(ApplicationProfileResolution.Apply(baseline, null), policy.Apply(baseline, null).Profile);
-        Assert.Same(ApplicationProfileResolution.ApplyDisplay(display, null), policy.ApplyDisplay(display, null).Display);
-        Assert.Equal(4u, policy.Apply(baseline, new()).Error!.Detail);
+        Assert.Same(ManagedProfilePolicyBaseline.Apply(baseline, null), policy.Apply(baseline, null).Profile);
+        Assert.Same(ManagedProfilePolicyBaseline.ApplyDisplay(display, null), policy.ApplyDisplay(display, null).Display);
+        Assert.Equal(ManagedProfilePolicyBaseline.Apply(baseline, new()), policy.Apply(baseline, new()).Profile);
         policy.Dispose();
         Assert.Equal(NativeBoundaryErrorKind.Disposed, policy.Apply(baseline, null).Error!.Kind);
         Assert.Equal(NativeBoundaryErrorKind.Disposed, policy.ApplyDisplay(display, null).Error!.Kind);

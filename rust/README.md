@@ -1,15 +1,17 @@
 # Rust workspace
 
-Stage 6 adds dormant profile merge exports and C# mapping to the packaged Windows
-DLL. Stage 5 established the codec payload and explicit developer shadow
-comparison. The Windows product continues to use C#; ordinary .NET builds and
-tests remain independent of Rust. Explicit release packaging builds Rust.
+Stage 7 uses the Rust report codec and decoded profile merge policy from the
+retained C# Windows host. The required native component is built with ordinary
+.NET builds and tests, and packaged with the coordinated product payload.
+Hardware ownership, admission, IPC and saved schemas remain in the host.
 
 ## Develop
 
 Install [rustup](https://rustup.rs/) and the platform's native C/C++ linker
 (MSVC Build Tools on Windows, Xcode Command Line Tools on macOS, or a C toolchain
-on Linux). From `rust/`, run:
+on Linux). Windows builds require the x64 C++ tools and a Windows SDK.
+Ordinary Windows builds use Windows PowerShell 5.1; native CI also uses
+PowerShell 7. Add rustup's Cargo bin directory to `PATH`. From `rust/`, run:
 
 ```text
 cargo fetch --locked
@@ -170,3 +172,36 @@ are documented in [the stage 6 contract](../docs/rust-boundaries.md#dormant-prof
 Use NativeProfilePolicy explicitly with a developer artifact. C# retains full
 profile validation and all production paths. Codec v1 loading remains independent
 of policy exports. No IPC, saved schema, hardware command or product behavior changes.
+
+## Production activation
+
+`OpenBlade.Protocol.RazerReport` delegates its pure encoding and validation to
+`ProductNativeRuntime.Codec`. C# retains the exact 90-byte destination contract,
+validation exceptions and messages. The host still owns the report-ID prefix,
+transaction IDs, payload callbacks, batches and cancellation. Span encoding uses
+bounded stack storage and publishes only a complete successful result.
+
+`ApplicationProfileResolution` uses the selected Rust merge policy. Host-only
+fields, fan curves and original key strings remain host objects. At most four
+one-byte source tokens cross the UTF-8 ABI; this preserves arbitrary legacy
+UTF-16 strings, including unpaired surrogates, without fallback or truncation.
+
+Ordinary builds run `build/Build-NativeDevelopment.ps1` through the native
+project. The output is local to that project's `obj/native/<configuration>`.
+Release publication supplies the independently verified staged payload instead;
+it signs the native DLL before compiling the managed hash binding. The native
+project embeds the build manifest and copies the library transitively to each
+consumer. A missing compiler, linker, library or manifest fails the build.
+
+At startup Service, Capture and FirmwareSmoke admit the fixed native component
+before device work. The assembly-embedded manifest binds target, version, ABI and
+SHA-256. The loader uses the application base directory, verifies the file before
+loading, and retains its file lease and modules through process exit so shutdown
+cleanup can still encode handback commands. Failures have bounded numeric,
+path-free diagnostics and require repair/rebuild. No legacy product fallback or
+command replay is provided.
+
+The managed report and profile implementations frozen at predecessor
+`69f66ba673c0523c0521b09b286a7d09f8137488` live only in tests. Canonical fixture
+expectations and provenance remain unchanged. These independent oracles continue
+to check the activated path; they do not constitute physical validation.

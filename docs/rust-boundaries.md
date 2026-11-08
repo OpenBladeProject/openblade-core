@@ -373,3 +373,46 @@ results still run against the actual Rust library. Native workflow path filters
 include Contracts and the linked authoritative C# merge helper. Contracts codec
 checkout/analyzer LF policies agree so this newly cross-platform build compiles
 unchanged canonical source on Windows, Linux and macOS.
+## Active codec and selected profile merge (stage 7)
+
+The C# Windows host now calls the proven codec and profile merge through the
+mandatory packaged native component. The codec and policy ABI versions remain
+v1. Product version 0.56.1, both IPC protocols and persisted schemas are unchanged:
+this is a behavior-preserving internal refactor. The stage is stacked on exact
+predecessor `69f66ba673c0523c0521b09b286a7d09f8137488`.
+
+`RazerReport` preserves its copied request payload, exact 90-byte destinations,
+payload-before-destination argument errors, response validation order, protocol
+numeric categories and messages. The native capacity contract is projected to
+that exact host contract. The report-ID prefix, transaction allocation,
+command-specific payload callbacks and batch SET sequencing remain outside the
+codec. Native boundary failures retire the serialized session and drain queued
+work; a failure after possible submission never selects a fallback or replays.
+
+The profile adapter sends one-byte source tokens instead of user key text.
+Selection returns the exact original host string, preserving empty, control,
+long and unpaired-surrogate UTF-16 keys and equal/different source occurrences.
+No key equality semantics are introduced. Fan curves and non-projected fields
+remain host-owned; null override identity, display null branches and legacy fan
+constructor exceptions retain their managed behavior.
+
+Startup uses a fixed application-base path and a manifest embedded in the managed
+native assembly. Admission checks product identity, architecture, ABI and the
+exact native hash before loading. The process retains the file lease and loaded
+modules through shutdown cleanup. Missing, incompatible and altered components
+produce bounded redacted failures. Release signing precedes the managed hash
+binding; ordinary developer builds create their own manifest from current inputs.
+
+Protocol is shared by Service, Capture and FirmwareSmoke; the native reference
+and payload follow those graphs. Startup gates precede hardware work. The existing
+fresh identity, capability, controller, power, session, ownership and readback
+checks, journals and handback remain host code. The capture-backed lighting
+semantic manifest still checks its command/geometry/layout/known-answer contract;
+source edits alone do not change that contract. No firmware command or model
+capability is added, and no installation or physical validation is claimed.
+
+Test-only frozen managed baselines preserve an independent oracle after the
+switch. The original canonical fixtures are retained. Native interop runs on all
+four existing host targets; affected Windows integration and package tests check
+the coordinated payload and failure paths. See [native development](../rust/README.md)
+for the new ordinary build requirements.
