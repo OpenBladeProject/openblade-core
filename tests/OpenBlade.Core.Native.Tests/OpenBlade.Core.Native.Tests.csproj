@@ -10,9 +10,12 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <Using Include="Xunit" />
     <ProjectReference Include="../../src/OpenBlade.Core.Native/OpenBlade.Core.Native.csproj" />
+    <Compile Include="../OpenBlade.Testing/AutomationParityFixture.cs" Link="AutomationParityFixture.cs" />
+    <Compile Include="../OpenBlade.Testing/ManagedAutomationPolicyBaseline.cs" Link="ManagedAutomationPolicyBaseline.cs" />
     <Compile Include="../OpenBlade.Testing/ManagedProfilePolicyBaseline.cs" Link="ManagedProfilePolicyBaseline.cs" />
     <Compile Include="../OpenBlade.Testing/ParityFixture.cs" Link="ParityFixture.cs" />
     <Compile Include="../OpenBlade.Protocol.Tests/ParityFixtureTests.cs" Link="ParityFixtureTests.cs" />
+    <None Include="../Fixtures/Parity/v1/automation-policy.json" Link="Parity/automation-policy.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/Parity/v1/profile-policy.json" Link="Parity/profile-policy.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/Parity/v1/razer-report.json" Link="Parity/razer-report.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
