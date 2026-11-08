@@ -1,9 +1,8 @@
 # Rust workspace
 
-Stage 3 implements pure report creation, encoding, checksum and response
-validation. The Windows product continues to use C#; its build, installer and
-release payload do not consume this workspace. The FFI crate remains an ordinary
-Rust library without C exports or a native DLL artifact.
+Stage 4 adds a versioned C codec ABI and a developer-only net10.0 wrapper to the
+pure report codec. The Windows product continues to use C#; its ordinary build,
+installer and release payload remain independent of Rust.
 
 ## Develop
 
@@ -36,8 +35,10 @@ typed JSON and duplicate-field rejection without adding a handwritten parser.
 Production libraries have only inward local dependencies. The workspace guard
 checks the four libraries, reviewed test targets/dependencies, MSRV and compiler
 policies independently of the caller's directory. Its regression tests use
-disposable workspace copies. Inner crates retain `no_std`; all crates inherit
-`unsafe_code = "forbid"`.
+disposable workspace copies. Inner crates retain `no_std` and inherit `unsafe_code = "forbid"`. Only the FFI
+crate permits the documented pointer/export boundary, with unsafe operations
+explicitly marked and `unsafe_op_in_unsafe_fn` denied. Both dev and release
+profiles retain unwind panic handling; aborts and process faults are not caught.
 
 ## Report API
 
@@ -60,7 +61,7 @@ The safe API uses ordinary Rust values and bounded arrays, with no allocation,
 I/O, transaction allocation or hardware session. It neither admits firmware
 commands nor performs model checks; those remain host responsibilities.
 The [reviewed boundaries](../docs/rust-boundaries.md) define the ownership graph.
-No ABI, IPC or saved schema changes accompany this stage.
+Service IPC, Session Agent IPC and saved schemas remain unchanged.
 
 ## Validation scope
 
@@ -84,8 +85,52 @@ ownership, all combinations of envelope faults, signed lengths, checksum byte
 coverage and a 20,000-input malformed corpus. These software checks establish
 codec parity and portability; physical validation remains separate.
 
-The 14 profile vectors await stage 6. C ABI implementation, C# loading, runtime
-selection, packaging and OS adapters remain later stages. Windows ARM64, Linux
+The 14 profile vectors await stage 6. Production loading, runtime selection,
+packaging and OS adapters remain later stages. Windows ARM64, Linux
 ARM64, musl and 32-bit targets are unvalidated. CI publishes no artifacts and
 accepts stacked PRs. Existing Windows CI retains its conservative full-validation
 fallback for Rust changes.
+
+## Developer C ABI and .NET interop
+
+The [reviewed C header](crates/openblade-ffi/include/openblade.h) freezes ABI
+`0x00010000` and the `ob_abi_version`, `ob_v1_encode_report` and
+`ob_v1_validate_response` exports. `openblade-ffi` emits `rlib`, `cdylib` and
+`staticlib` from the safe codec. Records use natural 4-byte alignment, explicit
+sizes and fixed-width values; borrowed buffers never transfer ownership. Read
+[the boundary contract](../docs/rust-boundaries.md#codec-c-abi-v1) before binding it.
+
+Run the explicit developer test path from the repository root:
+
+```powershell
+pwsh -NoProfile -File rust/Test-NativeInterop.ps1
+```
+
+It builds the actual native library, compiles and runs the C header smoke test,
+and runs `OpenBlade.Native.slnx`. Native tests require an absolute
+`OPENBLADE_NATIVE_LIBRARY` path and fail if it is absent or unloadable. The four
+native CI lanes run the same path. They test record layouts, all 29 canonical
+report cases, native buffer/error contracts, output integrity, concurrent calls
+and module disposal. The two canonical destination-length cases concern the
+existing exact-span C# API; the ABI separately admits any capacity at least 90.
+The Rust boundary tests trigger private test-only panics through the real work
+exports; no production panic hook exists.
+
+To run only .NET tests after explicitly building Rust, set
+`OPENBLADE_NATIVE_LIBRARY` to the normalized absolute artifact path and run:
+
+```text
+dotnet test OpenBlade.Native.slnx -c Release
+```
+
+Debug artifact filenames are `openblade_ffi.dll`, `libopenblade_ffi.so`, and
+`libopenblade_ffi.dylib` below `rust/target/<native-target>/debug/`. The C# wrapper
+uses explicit Cdecl function pointers with SafeHandle lifetime references so
+independent module instances and concurrent disposal are safe. It checks the
+exact ABI, managed record layout and every returned status/error/length before
+exposing owned output. It has no reference to the Windows-only Protocol assembly
+and returns typed boundary errors for a later production host adapter.
+
+The developer solution is separate from `OpenBlade.slnx`; ordinary product builds
+do not invoke Cargo or load a Rust module. These tests establish software ABI
+parity on their runners and do not establish physical hardware validation.

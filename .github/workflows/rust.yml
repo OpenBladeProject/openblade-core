@@ -6,6 +6,15 @@ on:
       - main
     paths:
       - 'rust/**'
+      - 'src/OpenBlade.Core.Native/**'
+      - 'tests/OpenBlade.Core.Native.Tests/**'
+      - 'tests/OpenBlade.Protocol.Tests/ParityFixtureTests.cs'
+      - 'tests/OpenBlade.Testing/**'
+      - 'OpenBlade.Native.slnx'
+      - 'global.json'
+      - 'Directory.*'
+      - 'NuGet.Config'
+      - 'nuget.config'
       - '.github/workflows/rust.yml'
       - 'tests/Fixtures/Parity/**'
       - 'docs/rust-boundaries.md'
@@ -17,6 +26,15 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'rust/**'
+      - 'src/OpenBlade.Core.Native/**'
+      - 'tests/OpenBlade.Core.Native.Tests/**'
+      - 'tests/OpenBlade.Protocol.Tests/ParityFixtureTests.cs'
+      - 'tests/OpenBlade.Testing/**'
+      - 'OpenBlade.Native.slnx'
+      - 'global.json'
+      - 'Directory.*'
+      - 'NuGet.Config'
+      - 'nuget.config'
       - '.github/workflows/rust.yml'
       - 'tests/Fixtures/Parity/**'
       - 'docs/rust-boundaries.md'
@@ -36,7 +54,7 @@ jobs:
   workspace:
     name: Rust (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -59,6 +77,11 @@ jobs:
         with:
           persist-credentials: false
           submodules: false
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
 
       - name: Install pinned toolchain
         run: |
@@ -95,3 +118,6 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
+
+      - name: Build native libraries and execute C and .NET interop
+        run: ./Test-NativeInterop.ps1 -Target ${{ matrix.target }}

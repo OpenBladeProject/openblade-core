@@ -29,13 +29,17 @@ try {
     finally { Pop-Location }
 
     $cases = @(
+        @{ Path = 'Cargo.toml'; Before = '[profile.dev]'; After = '[profile.custom]'; Error = 'Required profile.dev policy*' },
+        @{ Path = 'Cargo.toml'; Before = 'panic = "unwind"'; After = 'panic = "abort"'; Error = 'Required profile.* policy*' },
+        @{ Path = 'crates/openblade-ffi/Cargo.toml'; Before = 'unsafe_op_in_unsafe_fn = "deny"'; After = 'unsafe_op_in_unsafe_fn = "allow"'; Error = 'Required lints.rust policy*' },
+        @{ Path = 'crates/openblade-ffi/Cargo.toml'; Before = 'unsafe_op_in_unsafe_fn = "deny"'; After = ''; Error = 'Required lints.rust policy*' },
         @{ Path = 'Cargo.toml'; Before = 'rust-version = "' + $testedVersion + '"'; After = 'rust-version = "1.85.0"'; Error = 'MSRV must equal*' },
         @{ Path = 'Cargo.toml'; Before = 'unsafe_code = "forbid"'; After = 'unsafe_code = "allow"'; Error = 'Required workspace.lints.rust policy*' },
         @{ Path = 'crates/openblade-types/Cargo.toml'; Before = "[lints]`nworkspace = true"; After = ''; Error = 'Required lints policy*' },
         @{ Path = 'crates/openblade-types/src/lib.rs'; Before = '#![no_std]'; After = ''; Error = 'The portable crate must retain no_std*' },
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = '[dev-dependencies]'; After = '[build-dependencies]'; Error = 'Unreviewed dependency kind*' },
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = 'name = "openblade-protocol"'; After = "name = 'openblade-protocol'`nautotests = false"; Error = 'Reviewed integration tests are missing*' },
-        @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[lib]`ncrate-type = ['cdylib']`n`n[lints]"; Error = 'Exactly one ordinary Rust library is required*' },
+        @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[lib]`ncrate-type = ['cdylib']`n`n[lints]"; Error = 'Reviewed library outputs are required*' },
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = '=1.0.149'; After = '^1.0.149'; Error = 'Unreviewed dependency kind*' },
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = "features = ['derive']"; After = "features = ['derive', 'rc']"; Error = 'Unreviewed fixture-reader features*' },
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = "serde_json = '=1.0.149'"; After = "serde_json = { version = '=1.0.149', default-features = false }"; Error = 'Unreviewed dependency kind*' },
@@ -46,6 +50,20 @@ try {
         @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = 'openblade-types.workspace = true'; After = "openblade-types.workspace = true`n`n[dev-dependencies]`nserde_json = '=1.0.149'"; Error = 'Unreviewed dependency kind*' },
         @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[dependencies]`nserde_json = '=1.0.149'`n`n[lints]"; Error = 'Unreviewed dependency kind*' }
     )
+    # Protect all three inner crates, rather than only the first member.
+    foreach ($crate in @('openblade-protocol', 'openblade-domain')) {
+        $cases += @{ Path = "crates/$crate/Cargo.toml"; Before = "[lints]`nworkspace = true"; After = ''; Error = 'Required lints policy*' }
+    }
+    $ffiManifest = [IO.File]::ReadAllText((Join-Path $probe 'crates/openblade-ffi/Cargo.toml'))
+    $crateOutputLine = [regex]::Match($ffiManifest, '(?m)^crate-type\s*=.*$').Value
+    if (-not $crateOutputLine) { throw 'FFI crate output declaration not found.' }
+    $cases += @{ Path = 'crates/openblade-ffi/Cargo.toml'; Before = $crateOutputLine; After = 'crate-type = ["rlib", "cdylib"]'; Error = 'Reviewed library outputs are required*' }
+    $cases += @{ Path = 'crates/openblade-ffi/Cargo.toml'; Before = $crateOutputLine; After = 'crate-type = ["rlib", "cdylib", "staticlib", "lib"]'; Error = 'Reviewed library outputs are required*' }
+    $cases += @{ Path = 'crates/openblade-ffi/Cargo.toml'; Before = '[lib]'; After = "[[bin]]`nname = 'unexpected'`npath = 'src/lib.rs'`n`n[lib]"; Error = 'Unreviewed target*' }
+    $workspaceManifest = [IO.File]::ReadAllText((Join-Path $probe 'Cargo.toml'))
+    $releaseProfile = [regex]::Match($workspaceManifest, '(?m)^\[profile\.release\]\r?\n[^\[]*').Value
+    if (-not $releaseProfile.Contains('panic = "unwind"')) { throw 'Release panic policy not found.' }
+    $cases += @{ Path = 'Cargo.toml'; Before = $releaseProfile; After = $releaseProfile.Replace('panic = "unwind"', 'panic = "abort"'); Error = 'Required profile.release policy*' }
     foreach ($case in $cases) {
         $path = Join-Path $probe $case.Path
         $saved = [IO.File]::ReadAllText($path)
@@ -108,7 +126,9 @@ try {
         @{ Path = 'crates/openblade-types/Cargo.toml'; Header = '[lints]' },
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Header = '[lints]' },
         @{ Path = 'crates/openblade-domain/Cargo.toml'; Header = '[lints]' },
-        @{ Path = 'crates/openblade-ffi/Cargo.toml'; Header = '[lints]' }
+        @{ Path = 'crates/openblade-ffi/Cargo.toml'; Header = '[lints.rust]' },
+        @{ Path = 'Cargo.toml'; Header = '[profile.dev]' },
+        @{ Path = 'Cargo.toml'; Header = '[profile.release]' }
     )) {
         $path = Join-Path $probe $entry.Path
         $text = [IO.File]::ReadAllText($path).Replace($entry.Header, $entry.Header + ' # retain workspace policies')

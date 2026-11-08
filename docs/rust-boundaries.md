@@ -1,9 +1,10 @@
 # Shared Rust core boundaries
 
-This contract was pinned in stage 1. Stage 2 added the Cargo workspace; stage 3
-implements the pure report codec and consumes the 29 canonical report vectors.
-Production C# behavior is unchanged. Native loading and runtime handoff remain
-later stages. See [the workspace guide](../rust/README.md) for the current API.
+This contract was pinned in stage 1. Stages 2 and 3 added the workspace and pure
+report codec. Stage 4 implements the codec C ABI and a separate developer-only
+.NET binding with real cross-language tests. Production C# behavior is unchanged;
+product loading, packaging and runtime handoff remain later stages. See
+[the workspace guide](../rust/README.md) for developer commands.
 
 ## Ownership and dependencies
 
@@ -57,19 +58,18 @@ not a blanket prerequisite for official source-reviewed support. Porting a codec
 or consuming a synthetic fixture establishes neither model support nor a
 hardware result.
 
-## Proposed C ABI v1
+## Codec C ABI v1
 
-This contract is a proposal for the later implementation PR, not an exported API
-in this PR. The first binding must provide the reviewed header, matching Rust/C#
-layout tests and native failure tests before production use. Initial calls are
-stateless, synchronous helpers: encode a report, validate a response, and merge
-the bounded profile slice. They perform no I/O and retain no handles, callbacks,
-tasks, global policy state or caller memory.
+The frozen codec declarations are in the [C header](../rust/crates/openblade-ffi/include/openblade.h).
+Rust, C and C# tests verify their natural record sizes and offsets on each native
+CI target. The stateless synchronous exports encode reports and validate responses.
+They perform no I/O and retain no handles, callbacks, tasks, policy state or caller
+memory. Profile merging remains a later, separately reviewed extension.
 
 Use C linkage and the C calling convention (`extern "C"` / C# `Cdecl`). Export
 `ob_abi_version()` returning `uint32_t` value `0x00010000` for ABI 1.0. Every work
 export has a versioned name (`ob_v1_encode_report`,
-`ob_v1_validate_response`, `ob_v1_merge_profile_slice`) and an initial
+`ob_v1_validate_response`) and an initial
 `uint32_t abi_version` argument. Require an exact supported version before
 reading operation inputs. A missing export, wrong architecture, incompatible
 version or layout fails the helper admission with a visible diagnostic before
@@ -88,7 +88,8 @@ Use these representation rules:
 - Strings use a borrowed `const uint8_t*` plus explicit length, strict UTF-8,
   without a terminator. Binary slices use the same pointer/length convention.
   A null pointer is valid only for a zero-length slice. No input/output overlap;
-  the caller guarantees valid accessible pointers for each declared range.
+  immutable inputs may share storage; writable ranges must be disjoint from all
+  other ranges. The caller guarantees accessible pointers for each declared range.
   Rust cannot validate arbitrary pointer provenance.
 - Boundary records use natural C alignment, fixed declaration order and a
   leading `uint32_t struct_size`. Each version freezes field offsets, size,
@@ -100,7 +101,7 @@ Use these representation rules:
   validation adds a response slice and optional expected payload length.
   Encoding returns exactly 90 protocol bytes, excluding Windows' report-ID
   prefix. Validation returns a copied payload of at most 80 bytes.
-- The profile helper takes a required baseline and optional override with
+- The future profile helper (not exported in stage 4) will take a required baseline and optional override with
   explicit presence for each projected field, including fan-control/display
   objects. Its v1 slice contains performance, legacy fan mode, fan-control mode
   and fixed RPM, display keys/HDR/brightness, and gaming-mode enabled. Curves
@@ -117,7 +118,7 @@ required byte count, and change no result bytes. Success writes only the result
 range and reports its length. Other failures write no result bytes and set the
 length to zero. Input and output borrows end when the call returns; Rust never
 allocates a pointer that C# must free, and never retains a pinned managed buffer.
-Hosts copy any result needed after releasing their pins.
+The .NET wrapper returns owned copies after calls complete.
 
 Every work export returns a `uint32_t` status and fills an optional caller-owned
 error record with `uint32_t` fields `struct_size`, `category`, `detail`,
@@ -138,12 +139,12 @@ Protocol details retain `ReportId=0`, `EnvelopeLength=1`, `Checksum=2`,
 `TransactionMismatch=3`, `CommandClassMismatch=4`, `CommandIdMismatch=5`,
 `Status=6`, `PayloadLength=7`, `PayloadValidator=8`. The pure report validator
 emits only 1 through 7; report ID and semantic payload checks remain outside it.
-C# maps category/detail to its existing exception/result taxonomy, preserving
+A later production host adapter will map category/detail to the existing taxonomy, preserving
 validation failure and submission state. A pure-helper failure never means a
 hardware command was submitted, and cannot reinterpret an earlier ambiguous
 submission as safe to retry. Fixture `payload-too-large` maps to invalid-argument
 detail 1; `destination-length` maps to detail 2 for the current C# exact-span
-API; `baseline-null` maps to detail 5. The future ABI's capacity-based output
+API; `baseline-null` maps to detail 5. The codec ABI's capacity-based output
 buffer rule is separately tested and does not change C#'s exact-span contract.
 
 Contain panics inside every work export with an unwind-catching boundary;
@@ -160,6 +161,44 @@ ABI versions, parity-fixture schemas, product SemVer, service IPC, Session Agent
 IPC, exported profiles and durable journals are independent contracts. Keep
 ordinary IPC/profile/journal schemas, numeric meanings and migrations unchanged.
 Do not pass existing serialized profiles through FFI as an implicit new ABI.
+
+### Frozen records and loading
+
+| Record | Size / alignment | Fields in offset order |
+| --- | --- | --- |
+| `ObReportRequestV1` | 8 / 4 | `struct_size` u32 at 0; transaction/class/ID/reserved bytes at 4/5/6/7 |
+| `ObValidationOptionsV1` | 12 / 4 | `struct_size` u32 at 0; signed expected length i32 at 4; presence byte at 8; three reserved-zero bytes at 9 |
+| `ObErrorV1` | 16 / 4 | `struct_size`, category, detail, required length u32 at 0/4/8/12 |
+
+The request and validation-options records are required. An absent expected length
+ignores the stored signed value; presence must be exactly 0 or 1. All reserved
+bytes must be zero. Pointer/length pairs remain separate parameters, so no native
+pointer width is embedded in a record. Lengths/capacities are u32 byte counts.
+Output pointers are never returned. Error-record size is checked before ABI
+version, and ABI version before operation records. A valid supplied length slot
+is set to zero on all failures except insufficient capacity. Invalid error-record
+size leaves that error record untouched. See the header for full precedence and
+pointer preconditions; no ABI can validate arbitrary pointer provenance.
+
+`OpenBlade.Core.Native` targets plain `net10.0` and has no Protocol or Windows
+assembly dependency. It loads only a normalized absolute path with the platform's
+exact library filename, checks process architecture, all managed layouts, exports
+and exact ABI version, and returns typed boundary/loader errors. Explicit Cdecl
+function pointers allow independent module instances; a SafeHandle reference
+covers every native call so concurrent disposal cannot unload executing code.
+It validates native status/error consistency and result bounds before exposing
+owned bytes. This is a developer trust boundary, not artifact authenticity or
+production activation policy. Stage 5 must separately review acquisition,
+packaging, architecture selection and trusted production loading.
+
+`OpenBlade.Native.slnx` and `rust/Test-NativeInterop.ps1` are explicit developer
+paths. The ordinary product solution does not reference these projects or build
+Rust. Tests require `OPENBLADE_NATIVE_LIBRARY` to name the actual built artifact;
+a missing artifact fails. Rust unit tests inject a panic privately in the same
+exported work boundary; production libraries expose no panic/test entrypoint.
+C header smoke tests link and call the real shared library. ABI capacity tests
+are distinct from the canonical C# exact-destination-span error contract: a
+91-byte ABI output capacity succeeds and writes only 90 bytes.
 
 ## Shared parity baseline
 
