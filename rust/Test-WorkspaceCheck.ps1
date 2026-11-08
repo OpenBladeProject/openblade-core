@@ -49,6 +49,20 @@ try {
         if (-not $rejected) { throw "Workspace policy drift was accepted: $($case.Path)" }
     }
 
+    # Header comments must end at their newline, leaving assignments in the body.
+    foreach ($entry in @(
+        @{ Path = 'Cargo.toml'; Header = '[workspace.lints.rust]' },
+        @{ Path = 'crates/openblade-types/Cargo.toml'; Header = '[lints]' },
+        @{ Path = 'crates/openblade-protocol/Cargo.toml'; Header = '[lints]' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Header = '[lints]' },
+        @{ Path = 'crates/openblade-ffi/Cargo.toml'; Header = '[lints]' }
+    )) {
+        $path = Join-Path $probe $entry.Path
+        $text = [IO.File]::ReadAllText($path).Replace($entry.Header, $entry.Header + ' # retain workspace policies')
+        [IO.File]::WriteAllText($path, $text, [Text.UTF8Encoding]::new($false))
+    }
+    & (Join-Path $probe 'Check-Workspace.ps1')
+
     # Equivalent TOML spelling must be handled by rustup rather than a YAML regex.
     $toolchain = Join-Path $probe 'rust-toolchain.toml'
     $text = [IO.File]::ReadAllText($toolchain).Replace('channel = "' + $testedVersion + '"', "channel   = '$testedVersion' # exact stable release")
@@ -60,7 +74,7 @@ try {
         & (Join-Path $probe 'Check-Workspace.ps1')
     }
     finally { Pop-Location }
-    Write-Output 'Workspace guard tests passed: root invocation, policy drift, MSRV and equivalent toolchain TOML.'
+    Write-Output 'Workspace guard tests passed: root invocation, policy drift, MSRV and commented manifest/toolchain TOML.'
 }
 finally {
     # Only remove the unique directory this invocation created under temporary storage.

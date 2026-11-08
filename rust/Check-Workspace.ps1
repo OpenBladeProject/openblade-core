@@ -9,7 +9,7 @@ function Assert-ManifestSetting {
     param([string]$Path, [string]$Section, [string]$Assignment)
 
     $text = Get-Content -LiteralPath $Path -Raw
-    $sectionPattern = '(?ms)^\s*\[' + [regex]::Escape($Section) + '\][^\S\r\n]*(?:#.*)?\r?\n(?<body>.*?)(?=^\s*\[|\z)'
+    $sectionPattern = '(?ms)^\s*\[' + [regex]::Escape($Section) + '\][^\S\r\n]*(?:#[^\r\n]*)?\r?\n(?<body>.*?)(?=^\s*\[|\z)'
     $body = [regex]::Match($text, $sectionPattern).Groups['body'].Value
     if ($body -notmatch $Assignment) {
         throw "Required $Section policy is missing from $Path."
@@ -26,7 +26,7 @@ try {
     }
     $testedVersion = $Matches[1]
     Assert-ManifestSetting 'Cargo.toml' 'workspace.lints.rust' `
-        '(?m)^\s*unsafe_code\s*=\s*["'']forbid["'']\s*(?:#.*)?$'
+        '(?m)^\s*unsafe_code\s*=\s*["'']forbid["'']\s*(?:#[^\r\n]*)?$'
 
     $expectedDependencies = @{
         'openblade-types' = @()
@@ -49,7 +49,7 @@ try {
             throw "MSRV must equal the tested toolchain $testedVersion`: $($package.name)"
         }
         Assert-ManifestSetting $package.manifest_path 'lints' `
-            '(?m)^\s*workspace\s*=\s*true\s*(?:#.*)?$'
+            '(?m)^\s*workspace\s*=\s*true\s*(?:#[^\r\n]*)?$'
         if ($package.name -ne 'openblade-ffi') {
             $source = Get-Content -LiteralPath $package.targets[0].src_path -Raw
             if ($source -notmatch '(?m)^\s*#!\[no_std\]\s*$') {
