@@ -15,6 +15,8 @@
     "build/Run-AffectedCi.ps1"
   ],
   "fullInstallerPatterns": [
+    "rust/*",
+    "build/NativePayload.ps1",
     "build/installer/*",
     "build/BuildIdentity.ps1",
     "build/identity/*",
@@ -148,6 +150,10 @@
     }
   ],
   "contractRules": [
+    {
+      "test": "tests/Build.Tests/NativePayload.Tests.ps1",
+      "patterns": ["build/NativePayload.ps1", "build/Publish.ps1", "rust/*", ".github/workflows/build.yml", ".github/workflows/ci.yml", ".github/workflows/pr-version.yml"]
+    },
     {
       "test": "tests/Build.Tests/AffectedCiRunner.Tests.ps1",
       "patterns": ["build/Run-AffectedCi.ps1"]

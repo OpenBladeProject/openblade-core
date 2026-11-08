@@ -2,8 +2,9 @@
 
 This contract was pinned in stage 1. Stages 2 and 3 added the workspace and pure
 report codec. Stage 4 implements the codec C ABI and a separate developer-only
-.NET binding with real cross-language tests. Production C# behavior is unchanged;
-product loading, packaging and runtime handoff remain later stages. See
+.NET binding with real cross-language tests. Stage 5 packages a dormant Windows
+x64 DLL and adds an explicit developer shadow comparison. Production C# behavior
+is unchanged; product loading and runtime handoff remain later stages. See
 [the workspace guide](../rust/README.md) for developer commands.
 
 ## Ownership and dependencies
@@ -193,8 +194,8 @@ function pointers allow independent module instances; a SafeHandle reference
 covers every native call so concurrent disposal cannot unload executing code.
 It validates native status/error consistency and result bounds before exposing
 owned bytes. This is a developer trust boundary, not artifact authenticity or
-production activation policy. Stage 5 must separately review acquisition,
-packaging, architecture selection and trusted production loading.
+production activation policy. The packaging contract below covers artifact
+provenance; trusted production loading remains a later reviewed decision.
 
 `OpenBlade.Native.slnx` and `rust/Test-NativeInterop.ps1` are explicit developer
 paths. The ordinary product solution does not reference these projects or build
@@ -218,6 +219,71 @@ helper. Full profile validation, application selection, override lifetimes,
 hardware admission, transport outcomes, ownership, durable recovery and
 platform behavior need their existing tests plus the focused parity tests for
 the slice actually migrated. This PR does not start those later stages.
+
+## Dormant Windows packaging (stage 5)
+
+`build/Publish.ps1` builds the first-party `openblade_ffi.dll` for
+`x86_64-pc-windows-msvc` from this checkout's committed source with Rust 1.99.1,
+the locked Cargo graph and the selected x64 MSVC/Windows SDK tools. Ordinary
+`dotnet build` and `dotnet test OpenBlade.slnx` remain independent of Rust.
+Release packaging needs rustup, the pinned toolchain, `cargo fetch --locked`
+and MSVC Build Tools with the Windows SDK; hosted installer CI prepares the pin.
+The DLL statically links the CRT and admits only its reviewed Windows system
+imports. It adds no installed runtime prerequisite. Both Rust profiles retain
+unwind containment. No vendor code or new firmware capability is included.
+
+The payload contains the DLL, `OpenBlade.Native.provenance.json` and
+`OpenBlade.Native.NOTICE.txt`. PE file versions follow the existing stable,
+Nightly and LocalDev build identity. Provenance records the full source revision,
+canonical Git blob identities for source inputs, exact compiler output,
+MSVC/SDK versions, linker/resource-compiler hashes,
+target, flags, imports, ABI, notice hash and both unsigned and final DLL hashes.
+Source identities use Git's canonical blobs so LF/CRLF checkout conversion does
+not change them; fresh dirty/untracked-input checks still guard compilation.
+Path remapping and `/Brepro` remove checkout-dependent debug paths and PE link
+timestamps. Reproducing an unsigned DLL also requires the recorded MSVC/SDK and
+Rust toolchain; Authenticode timestamped bytes are intentionally separate.
+The notice includes OpenBlade's GPL text and the pinned standard-library notices.
+
+Packaging refuses dirty or untracked native inputs and a mismatching supplied
+source revision. It builds into this checkout's `artifacts/` staging directory,
+never a sibling worktree's output. It inspects PE architecture/imports without
+loading code, verifies version/source/hash/notice identity, and rejects unexpected
+CRT or delay-loaded dependencies. The observed imports are `kernel32.dll`,
+`ntdll.dll` and `api-ms-win-core-synch-l1-2-0.dll`; the last is a
+[Windows API-set contract present since Windows 10](https://learn.microsoft.com/en-us/uwp/win32-and-com/win32-apis),
+within the existing Windows 11 minimum. [Static CRT linkage](https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes)
+is selected explicitly. Release builds reject external Cargo configuration,
+clear compiler wrappers/profile overrides and select the recorded linker.
+Existing optional Authenticode signing covers
+the native DLL before Burn embeds it; provenance is then updated to its final
+hash and signature trust is checked. The original unsigned hash is retained
+independently across signing; unsigned artifacts must match both hash fields.
+Unsigned development/release preflights
+retain the existing visibly incomplete signing status. No new trust root exists.
+
+Setup's existing complete-file hash manifest, staged readback, atomic replacement
+and rollback carry these three dormant files with the rest of the payload.
+The real Burn layout and upgrade-identity probe run unchanged. Stacked PRs run
+the same .NET build/contracts/installer gates as PRs to `main`.
+
+Service and Capture directly consume Protocol; FirmwareSmoke references Protocol
+and performs hardware work through typed service IPC. Adding a native dependency
+to Protocol would affect all three publish graphs. Stage 5 adds none: installed
+Service, Session Agent, Tray and developer Capture/FirmwareSmoke do not reference
+the native wrapper or load the DLL. A later runtime handoff must explicitly
+coordinate these consumers and deployment failure handling. The service retains
+all device ownership, per-write checks, submission outcomes and durable recovery.
+
+`rust/Compare-Shadow.ps1 -LibraryPath <absolute-openblade_ffi.dll>` runs a bounded
+Windows x64 developer test path. It enables only the conditional
+`OpenBladeNativeShadow=true` test reference/source and compares the actual C#
+`RazerReport` results with Rust over all 29 canonical report vectors. It compares
+bytes, copied payloads and numeric error taxonomy without opening a transport or
+making an extra hardware call. C# remains authoritative. Exact-span destination
+errors are compared through an explicit 90-byte projection because ABI capacity
+and C# destination-length contracts differ. Default solution builds exclude the
+shadow source/reference; no product flag, IPC field or saved schema is added.
 
 ## Migration stage reviews
 
