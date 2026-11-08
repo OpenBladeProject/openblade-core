@@ -1,11 +1,12 @@
-# Blade 17/18 Stop: three channels and a completion gap
+# Blade 17/18 Stop: three channels and readback requirements
 
 Reviewed 2026-11-08. RZ09-0423, RZ09-0484, RZ09-0509 and RZ09-0529 each have an exact
 source-confirmed FE direct-duty path for three PWM channels. Zero is copied
-without a minimum clamp. Stop remains unavailable because the current
-coordinator owns two channels and the candidate third-duty read has a distinct
-completion race that has not been resolved. This is a concrete transport and
-ownership gap; physical testing is not a substitute for resolving it.
+without a minimum clamp. The follow-up [readback review](fan-stop-blade18-readback-resolution.md)
+resolves the known early-clear race with a bounded compound observation.
+Stop remains unavailable because that reader and complete three-channel
+ownership, journal and Auto restoration are not implemented. Physical testing
+does not replace those software requirements.
 
 ## Exact inputs
 
@@ -48,7 +49,7 @@ and 8044E. A three-channel coordinator must capture, stage, verify and restore
 all three duties, preserve unrelated override bits, and carry the third
 channel through tach coast, journal, guardian and recovery.
 
-## Candidate read and unresolved completion
+## Candidate read and the original completion race
 
 The Blade 18 EC mailbox supports D0 at 208A..20CC; DI780 uses the equivalent
 209A..20DC path: little-endian address bytes 9C..9F,
@@ -64,10 +65,12 @@ following command could be cleared prematurely. This differs from the
 existing mapped A0/A1 completion contract. Neither status 80 nor a guessed delay
 establishes a drain; raw count errors can also return 80 without copying.
 
-Admission needs a separately reviewed bounded read/completion contract and
-complete three-channel ownership. The existing thermal, power, session,
-controller and uncertainty gates remain applicable. No physical fan-stop or
-live recovery result is claimed.
+The [bounded read/completion contract](fan-stop-blade18-readback-resolution.md)
+keeps the D0 result provisional until one fresh-status mapped read completes.
+An erased fence fails the compound observation without retry. Complete
+three-channel ownership and failure/recovery coverage remain implementation
+requirements. The existing thermal, power, session, controller and uncertainty
+gates remain applicable. Physical fan-stop and live recovery are untested.
 
 The DI780 carrier also includes the same managed flasher hash
 `3de34bf3f5e57e0c11e76f45b773642ae3816f4a645040cf3b0602dcd30e79ed`
