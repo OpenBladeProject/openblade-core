@@ -4,7 +4,7 @@ using OpenBlade.Testing;
 
 namespace OpenBlade.Protocol.Tests;
 
-// Explicit developer-only PURE comparison. C# remains authoritative; no transport or device is used.
+// Independent frozen managed oracle versus Rust; no transport or device is used.
 public sealed class NativeShadowComparisonTests
 {
     public static IEnumerable<object[]> EncodingCases() =>
@@ -22,7 +22,7 @@ public sealed class NativeShadowComparisonTests
 
     [Theory]
     [MemberData(nameof(EncodingCases))]
-    public void NativeEncodingMatchesCurrentCSharp(string id)
+    public void NativeEncodingMatchesManagedBaseline(string id)
     {
         using NativeReportCodec codec = Load();
         JsonElement row = ParityFixture.Row("razer-report.json", "razer-report", "encoding", id);
@@ -33,7 +33,7 @@ public sealed class NativeShadowComparisonTests
         byte[] payload = ParityFixture.Hex(request.GetProperty("payloadHex"));
         byte[] destination = Enumerable.Repeat((byte)0xA5, row.GetProperty("destinationLength").GetInt32()).ToArray();
         Exception? managedError = Record.Exception(() =>
-            RazerReport.Encode(transaction, commandClass, commandId, payload, destination));
+            ManagedReportBaseline.Encode(transaction, commandClass, commandId, payload, destination));
         NativeCodecResult native = codec.Encode(transaction, commandClass, commandId, payload);
         string? expectedError = row.GetProperty("expectedError").GetString();
 
@@ -62,8 +62,8 @@ public sealed class NativeShadowComparisonTests
             // Bounded compatibility projection: C# requires an exact 90-byte span,
             // whereas the native allocating wrapper always supplies capacity 90.
             // This does NOT assert that the raw native capacity API rejects 91.
-            destination = new byte[RazerReport.ReportLength];
-            RazerReport.Encode(transaction, commandClass, commandId, payload, destination);
+            destination = new byte[ManagedReportBaseline.ReportLength];
+            ManagedReportBaseline.Encode(transaction, commandClass, commandId, payload, destination);
         }
         else
         {
@@ -71,12 +71,12 @@ public sealed class NativeShadowComparisonTests
             Assert.Equal(ParityFixture.Hex(row.GetProperty("expectedReportHex")), destination);
         }
         Assert.Equal(destination, native.Output);
-        Assert.Equal(RazerReport.Create(transaction, commandClass, commandId, payload).Encode(), native.Output);
+        Assert.Equal(ManagedReportBaseline.Create(transaction, commandClass, commandId, payload).Encode(), native.Output);
     }
 
     [Theory]
     [MemberData(nameof(ResponseCases))]
-    public void NativeResponseMatchesCurrentCSharpTaxonomy(string id)
+    public void NativeResponseMatchesManagedBaselineTaxonomy(string id)
     {
         using NativeReportCodec codec = Load();
         JsonElement row = ParityFixture.Row("razer-report.json", "razer-report", "responses", id);
@@ -89,7 +89,7 @@ public sealed class NativeShadowComparisonTests
         byte[] originalResponse = response.ToArray();
         int? expectedLength = row.GetProperty("expectedPayloadLength").ValueKind == JsonValueKind.Null
             ? null : row.GetProperty("expectedPayloadLength").GetInt32();
-        RazerReport report = RazerReport.Create(transaction, commandClass, commandId, payload);
+        ManagedReportBaseline report = ManagedReportBaseline.Create(transaction, commandClass, commandId, payload);
         byte[]? managedOutput = null;
         Exception? managedError = Record.Exception(() =>
             { managedOutput = report.ValidateResponse(response, expectedLength).ToArray(); });

@@ -113,7 +113,7 @@ try {
     [IO.File]::AppendAllText($properties, 'changed')
     Assert-NativeThrows { Get-OpenBladeNativeInputs -Repository $sourceFixture } '*Commit native build inputs*'
 
-    foreach ($path in @('rust/crates/openblade-ffi/src/lib.rs', 'build/NativePayload.ps1')) {
+    foreach ($path in @('rust/crates/openblade-ffi/src/lib.rs', 'build/NativePayload.ps1', 'build/Build-NativeDevelopment.ps1', 'build/Prepare-NativeToolchain.ps1')) {
         $plan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($path)
         if (-not $plan.RunInstaller) { throw "$path must select real .NET installer validation." }
     }

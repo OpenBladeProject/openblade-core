@@ -1,7 +1,7 @@
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
-# Packaging only. No product project references or loads this dormant library.
+# The production component uses this stricter committed-input release recipe.
 $script:OpenBladeNativeFileName = 'openblade_ffi.dll'
 $script:OpenBladeNativeManifestName = 'OpenBlade.Native.provenance.json'
 
@@ -234,7 +234,7 @@ BEGIN
  BEGIN
   BLOCK "040904b0"
   BEGIN
-   VALUE "FileDescription", "OpenBlade dormant native codec\0"
+   VALUE "FileDescription", "OpenBlade native core\0"
    VALUE "FileVersion", "$($BuildIdentity.FileVersion)\0"
    VALUE "ProductVersion", "$($BuildIdentity.InformationalVersion)\0"
    VALUE "OriginalFilename", "openblade_ffi.dll\0"

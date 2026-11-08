@@ -220,11 +220,19 @@ if ($signingEnabled) {
 try {
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
 
-    # Explicit release packaging builds Rust; ordinary .NET builds stay independent.
-    # This first-party DLL is dormant until a later reviewed runtime handoff.
+    # Sign the native component before compiling its hash into Core.Native.
     $nativeOutput = Join-Path $stagingRoot 'native'
     Build-OpenBladeNativePayload -Repository $repository -Output $nativeOutput -BuildIdentity $buildIdentity
     $nativeUnsignedSha256 = (Get-FileHash -LiteralPath (Join-Path $nativeOutput 'openblade_ffi.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($signingEnabled) {
+        Invoke-OpenBladeSigning -Path (Join-Path $nativeOutput 'openblade_ffi.dll') -ResolvedSignTool $resolvedSignTool
+        Update-OpenBladeNativePayloadHash -Payload $nativeOutput
+    }
+    Assert-OpenBladeNativePayload -Payload $nativeOutput -Repository $repository `
+        -BuildIdentity $buildIdentity -ExpectedUnsignedSha256 $nativeUnsignedSha256 -RequireSignature:$signingEnabled
+    $nativeBuildArguments = @("--property:OpenBladeNativePayloadDirectory=$nativeOutput", '--property:OpenBladeNativeDevelopmentBuild=false')
+    $installedPublishArguments += $nativeBuildArguments
+    $productionPublishArguments += $nativeBuildArguments
     foreach ($nativeFile in @('openblade_ffi.dll', 'OpenBlade.Native.provenance.json', 'OpenBlade.Native.NOTICE.txt')) {
         Copy-Item -LiteralPath (Join-Path $nativeOutput $nativeFile) -Destination (Join-Path $payload $nativeFile)
     }
@@ -326,7 +334,7 @@ try {
         foreach ($file in Get-ChildItem -LiteralPath $stagingBundle -Recurse -File |
             Where-Object {
                 ($_.Extension -in @('.exe', '.dll')) -and
-                ($_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal) -or $_.Name -ceq 'openblade_ffi.dll')
+                $_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal)
             }) {
             Invoke-OpenBladeSigning -Path $file.FullName -ResolvedSignTool $resolvedSignTool
         }
