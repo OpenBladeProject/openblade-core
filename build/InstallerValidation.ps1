@@ -500,6 +500,14 @@ function Assert-OpenBladeInstallerBundle {
             }
             $relative = $file.FullName.Substring($publishedPayloadPrefix.Length)
             [void]$expectedPaths.Add("payload\$relative")
+            # Check actual embedded bytes, including dormant native provenance,
+            # rather than relying on the Burn manifest's file names alone.
+            $embeddedFile = Join-Path $payloadOutput "WixAttachedContainer\payload\$relative"
+            if (-not (Test-Path -LiteralPath $embeddedFile -PathType Leaf) -or
+                (Get-FileHash -LiteralPath $embeddedFile -Algorithm SHA256).Hash -cne
+                (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash) {
+                throw "Embedded installer payload differs from its published source: $relative"
+            }
         }
 
         if (-not $actualPaths.SetEquals($expectedPaths)) {

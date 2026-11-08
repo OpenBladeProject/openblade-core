@@ -90,9 +90,20 @@ try {
             Assert-NativeThrows { Assert-OpenBladeNativePayload -Payload $copy -Repository $repository -BuildIdentity $identity } '*does not match*'
         }
         [IO.File]::WriteAllBytes($manifestPath, $original)
+        $changed = [Text.Encoding]::UTF8.GetString($original) | ConvertFrom-Json
+        $changed.inputs[0].sha256 = '0' * 64
+        [IO.File]::WriteAllText($manifestPath, ($changed | ConvertTo-Json -Depth 8))
+        Assert-NativeThrows { Assert-OpenBladeNativePayload -Payload $copy -Repository $repository -BuildIdentity $identity } '*source provenance does not match*'
+        [IO.File]::WriteAllBytes($manifestPath, $original)
         $notice = Join-Path $copy 'OpenBlade.Native.NOTICE.txt'
         [IO.File]::AppendAllText($notice, 'tampered')
         Assert-NativeThrows { Assert-OpenBladeNativePayload -Payload $copy -Repository $repository -BuildIdentity $identity } '*notice hash*'
+        Copy-Item -LiteralPath (Join-Path $Payload 'OpenBlade.Native.NOTICE.txt') -Destination $notice -Force
+        $library = Join-Path $copy 'openblade_ffi.dll'
+        $libraryBytes = [IO.File]::ReadAllBytes($library)
+        $libraryBytes[$libraryBytes.Length - 1] = $libraryBytes[$libraryBytes.Length - 1] -bxor 1
+        [IO.File]::WriteAllBytes($library, $libraryBytes)
+        Assert-NativeThrows { Assert-OpenBladeNativePayload -Payload $copy -Repository $repository -BuildIdentity $identity } '*does not match*'
     }
     Write-Host 'Native packaging contracts passed (PE architecture, imports, source/hash/notice admission, stacked CI).'
 }

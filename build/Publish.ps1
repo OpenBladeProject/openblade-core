@@ -317,6 +317,9 @@ try {
         -DestinationDirectory $stagingPrerequisites)
     $embedDotNetRuntime = if ($OfflineInstaller) { 'yes' } else { 'no' }
 
+    # Confirm the copied build artifact before signing may legitimately alter it.
+    # Updating the final hash must never bless an unexpected pre-sign replacement.
+    Assert-OpenBladeNativePayload -Payload $payload -Repository $repository -BuildIdentity $buildIdentity
     if ($signingEnabled) {
         foreach ($file in Get-ChildItem -LiteralPath $stagingBundle -Recurse -File |
             Where-Object {

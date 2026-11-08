@@ -265,6 +265,7 @@ Rust standard library: MIT OR Apache-2.0; notices follow (from the pinned toolch
             target = 'x86_64-pc-windows-msvc'; productVersion = $BuildIdentity.Version; fileVersion = $BuildIdentity.FileVersion
             sourceRevision = $head; compiler = @($compiler); linkerVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($linker).FileVersion
             linkerSha256 = $linkerHash; resourceCompilerSha256 = (Get-FileHash $resourceCompiler -Algorithm SHA256).Hash.ToLowerInvariant()
+            msvcVersion = $env:VCToolsVersion.TrimEnd('\'); windowsSdkVersion = $env:WindowsSDKVersion.TrimEnd('\')
             staticCrt = $true; panic = 'unwind'
             # Record reproducible arguments without a developer's absolute paths.
             flags = @('-C target-feature=+crt-static', '-C link-arg=/Brepro', '--remap-path-prefix=<repository>=/openblade', '-C link-arg=<generated-version-resource>')
