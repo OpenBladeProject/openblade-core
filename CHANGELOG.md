@@ -14,7 +14,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Fix CPU temperatures stuck at 45°C. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879), [#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
-- Improve fan-state detection, refusal reporting and supervised-test recovery. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Improve fan-state detection, thermal-exit details and supervised-test recovery. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Reduce memory growth when changing app language by sharing localized resource lookups across the main window and quick controls. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Avoid native event-argument memory growth when closing main and quick-controls windows to the tray. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Preserve window size limits while reducing memory growth during language changes. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))

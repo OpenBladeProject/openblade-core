@@ -64,6 +64,8 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
     internal PowerSource ObservedPowerSource => observedPowerSource;
     internal bool NativeOperationUnresolved => powerUnresolved;
     internal FanStopEndReason EndReason { get; private set; }
+    internal FanStopThermalDecision? TerminalThermalDecision =>
+        EndReason == FanStopEndReason.ThermalThreshold ? thermalPolicy.TerminalThermalDecision : null;
     internal string? EntryAdmissionRefusal { get; private set; }
 
     internal void BeginOwnedStop() => ownedStopStarted = true;
@@ -149,7 +151,7 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
             if (!thermalAdmitted)
             {
                 throw new InvalidOperationException(So6120ServiceInitialAdmissionDiagnostics.ThermalRefusal(settings,
-                    owner.latestThermalReading, owner.latestThermalAge, owner.latestThermalCanceled));
+                    owner.latestThermalReading, owner.latestThermalAge, owner.latestThermalCanceled, owner.thermalPolicy.EntryThermalDecision));
             }
             cancellationToken.ThrowIfCancellationRequested();
             owner.driverPin = So6120NativeAcquisition.PinDriverFile(metadata.Driver);
@@ -294,7 +296,7 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
             { return RefuseEntry($"stage=EntryPower; observedPower={observedPowerSource}; acLine={current.AcLineStatus}; thermalSample=not-attempted"); }
             stage = "EntryThermal";
             if (RefreshTemperature()) { return true; }
-            return RefuseEntry($"stage=EntryThermal; {So6120ServiceInitialAdmissionDiagnostics.ThermalRefusal(settings, latestThermalReading, latestThermalAge, latestThermalCanceled)}");
+            return RefuseEntry($"stage=EntryThermal; {So6120ServiceInitialAdmissionDiagnostics.ThermalRefusal(settings, latestThermalReading, latestThermalAge, latestThermalCanceled, thermalPolicy.EntryThermalDecision)}");
         }
         catch (Exception error)
         {

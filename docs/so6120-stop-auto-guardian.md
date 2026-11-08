@@ -49,6 +49,12 @@ by its actual elapsed duration; rapid sampling cannot outweigh a longer
 interval. Confirmed GPU D3 clears only the GPU window. On wake, the GPU starts
 a fresh full window while its immediate cutoff remains active.
 
+Thermal exit diagnostics retain the triggering CPU or GPU reading, the limit
+and whether an immediate cutoff or rolling average caused Auto. Average triggers
+include their covered window. The decision is recorded from the sample used by
+the guardian and survives coast-down and Auto cleanup; later service telemetry
+does not replace it. Entry refusals record their own instantaneous comparison.
+
 The Stop card has independently foldable End Stop and Automatic Stop sections.
 Custom warns for average limits above 60 C or an averaging window above ten seconds. Input bounds are
 10-100 C and 1-300 seconds; they are parsing bounds, not independently validated

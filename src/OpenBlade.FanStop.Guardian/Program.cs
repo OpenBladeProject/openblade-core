@@ -234,7 +234,7 @@ internal static class Program
             {
                 acquisition.BeginOwnedStop();
                 So6120StopCoastResult coast = session.ObserveStoppedCoast(stop);
-                progress.RecordCoast(coast, acquisition.EndReason);
+                progress.RecordCoast(coast, acquisition.EndReason, acquisition.TerminalThermalDecision);
                 if (coast == So6120StopCoastResult.Unresolved)
                 { throw new InvalidDataException("Stopped-fan coast observation is unresolved."); }
                 if (coast == So6120StopCoastResult.Stopped)
@@ -279,6 +279,7 @@ internal static class Program
             if (stop.IsCancellationRequested || service.HasExited) { endReason = FanStopEndReason.CallerRequest; }
             else if (endReason == FanStopEndReason.None)
             { endReason = acquisition.EndReason == FanStopEndReason.None ? FanStopEndReason.SafetyCondition : acquisition.EndReason; }
+            progress.RecordThermalExit(endReason, acquisition.TerminalThermalDecision);
             publish(Status(FanStopGuardianPhase.ReturningToAutomatic, progress.ReturningReason)
                 with
             { CommandPending = true, ConfirmedState = stoppedObserved ? FanStopObservedState.Stopped : FanStopObservedState.Unknown });
@@ -294,7 +295,7 @@ internal static class Program
             var inspection = So6120DirectDutyJournal.Inspect(store.RunRoot(operation));
             if (!inspection.Complete || inspection.Corrupt || inspection.Fenced || inspection.UnresolvedWork)
             { throw new InvalidDataException("Guardian journal is not complete."); }
-            PublishTerminal(Status(FanStopGuardianPhase.Completed, progress.IncompleteReason) with
+            PublishTerminal(Status(FanStopGuardianPhase.Completed, progress.CompletionReason) with
             {
                 ConfirmedState = FanStopObservedState.Automatic,
                 AutoConfirmed = true,
@@ -331,7 +332,7 @@ internal static class Program
                 catch (Exception) { }
             }
             string failure = $"Owned fan session needs read-only reconciliation ({error.GetType().Name}): {error.Message}";
-            publish(Status(FanStopGuardianPhase.RecoveryRequired) with
+            publish(Status(FanStopGuardianPhase.RecoveryRequired, progress.CompletionReason) with
             {
                 Unresolved = true,
                 Failure = failure[..Math.Min(failure.Length, 1024)]

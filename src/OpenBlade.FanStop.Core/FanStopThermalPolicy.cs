@@ -21,16 +21,24 @@ internal sealed class FanStopThermalPolicy
     }
 
     internal FanStopEndReason EndReason => ended;
+    internal FanStopThermalDecision? TerminalThermalDecision { get; private set; }
+    internal FanStopThermalDecision? EntryThermalDecision { get; private set; }
 
     internal static bool IsValidSample(int? cpu, int? gpu, bool gpuPoweredDown,
         TimeSpan age, bool canceled = false) => !canceled && age >= TimeSpan.Zero && age <= MaximumSampleAge
         && cpu is >= 10 and <= 125 && (gpuPoweredDown || gpu is >= 10 and <= 125);
 
     internal bool AdmitsEntry(int? cpu, int? gpu, bool gpuInactive, bool gpuPoweredDown,
-        TimeSpan sampleAge, bool canceled = false) =>
-        Assess(cpu, gpu, gpuInactive, gpuPoweredDown, sampleAge, canceled) == FanStopEndReason.None
-        && (settings.EndMode == FanStopEndMode.Auto
-            || cpu <= settings.CpuLimitCelsius && (gpuPoweredDown || gpu <= settings.GpuLimitCelsius));
+        TimeSpan sampleAge, bool canceled = false)
+    {
+        FanStopEndReason assessment = Assess(cpu, gpu, gpuInactive, gpuPoweredDown, sampleAge, canceled, out var decision);
+        EntryThermalDecision = decision;
+        if (assessment != FanStopEndReason.None) { return false; }
+        if (settings.EndMode == FanStopEndMode.Auto) { return true; }
+        EntryThermalDecision = RawDecision("EntryLimit", cpu, gpu, gpuPoweredDown,
+            settings.CpuLimitCelsius, settings.GpuLimitCelsius);
+        return EntryThermalDecision is null;
+    }
 
     // Command reads enforce freshness and the immediate cutoffs, but cannot
     // change the continuation samples or give an averaging window extra credit.
@@ -38,10 +46,10 @@ internal sealed class FanStopThermalPolicy
         TimeSpan sampleAge, bool canceled = false)
     {
         if (ended != FanStopEndReason.None) { return false; }
-        FanStopEndReason assessment = Assess(cpu, gpu, gpuInactive, gpuPoweredDown, sampleAge, canceled);
+        FanStopEndReason assessment = Assess(cpu, gpu, gpuInactive, gpuPoweredDown, sampleAge, canceled, out var decision);
         if (assessment == FanStopEndReason.SafetyCondition || !HasContinuity(clock.GetTimestamp(), sampleAge))
         { return End(FanStopEndReason.SafetyCondition); }
-        return assessment == FanStopEndReason.None || End(assessment);
+        return assessment == FanStopEndReason.None || End(assessment, decision);
     }
 
     internal bool Observe(int? cpu, int? gpu, bool gpuInactive, bool gpuPoweredDown,
@@ -51,10 +59,10 @@ internal sealed class FanStopThermalPolicy
         long now = clock.GetTimestamp();
         // Continuity faults take priority even when this reading is hot: a
         // thermal completion may rearm automatic entry, a missing interval may not.
-        FanStopEndReason assessment = Assess(cpu, gpu, gpuInactive, gpuPoweredDown, sampleAge, canceled);
+        FanStopEndReason assessment = Assess(cpu, gpu, gpuInactive, gpuPoweredDown, sampleAge, canceled, out var decision);
         if (assessment == FanStopEndReason.SafetyCondition || !HasContinuity(now, sampleAge))
         { return End(FanStopEndReason.SafetyCondition); }
-        if (assessment != FanStopEndReason.None) { return End(assessment); }
+        if (assessment != FanStopEndReason.None) { return End(assessment, decision); }
         if (settings.EndMode == FanStopEndMode.Auto) { return true; }
         long elapsed = previousSample is long last ? clock.GetElapsedTime(last, now).Ticks : 0;
         previousSample = now;
@@ -69,7 +77,11 @@ internal sealed class FanStopThermalPolicy
         { return End(FanStopEndReason.SafetyCondition); }
         if (cpuWindow.IsAbove(settings.CpuLimitCelsius, duration)
             || !gpuPoweredDown && gpuWindow.IsAbove(settings.GpuLimitCelsius, duration))
-        { return End(FanStopEndReason.ThermalThreshold); }
+        {
+            return End(FanStopEndReason.ThermalThreshold, new("RollingAverage",
+                cpuWindow.Trigger(settings.CpuLimitCelsius, duration),
+                gpuPoweredDown ? null : gpuWindow.Trigger(settings.GpuLimitCelsius, duration), duration, duration));
+        }
         return true;
     }
 
@@ -86,8 +98,9 @@ internal sealed class FanStopThermalPolicy
     }
 
     private FanStopEndReason Assess(int? cpu, int? gpu, bool gpuInactive, bool gpuPoweredDown,
-        TimeSpan age, bool canceled)
+        TimeSpan age, bool canceled, out FanStopThermalDecision? decision)
     {
+        decision = null;
         if (canceled || age < TimeSpan.Zero || age > MaximumSampleAge || cpu is not (>= 10 and <= 125))
         { return FanStopEndReason.SafetyCondition; }
         if (settings.EndMode == FanStopEndMode.Auto)
@@ -95,18 +108,28 @@ internal sealed class FanStopThermalPolicy
             // Preserve the original CPU-zone/inactive-GPU policy exactly. GPU
             // workload/activity is a safety exit and cannot rearm automation.
             if (!gpuInactive) { return FanStopEndReason.SafetyCondition; }
-            return cpu > 55 ? FanStopEndReason.ThermalThreshold : FanStopEndReason.None;
+            decision = RawDecision("AutoCpuLimit", cpu, null, true, 55, 0);
+            return decision is not null ? FanStopEndReason.ThermalThreshold : FanStopEndReason.None;
         }
         if (!gpuPoweredDown && gpu is not (>= 10 and <= 125))
         { return FanStopEndReason.SafetyCondition; }
-        return cpu > settings.CpuImmediateCutoffCelsius
-            || !gpuPoweredDown && gpu > settings.GpuImmediateCutoffCelsius
-            ? FanStopEndReason.ThermalThreshold : FanStopEndReason.None;
+        decision = RawDecision("ImmediateCutoff", cpu, gpu, gpuPoweredDown,
+            settings.CpuImmediateCutoffCelsius, settings.GpuImmediateCutoffCelsius);
+        return decision is not null ? FanStopEndReason.ThermalThreshold : FanStopEndReason.None;
     }
 
-    private bool End(FanStopEndReason reason)
+    private static FanStopThermalDecision? RawDecision(string rule, int? cpu, int? gpu, bool gpuPoweredDown,
+        int cpuLimit, int gpuLimit)
+    {
+        FanStopThermalTrigger? cpuTrigger = cpu > cpuLimit ? new(cpu!.Value, cpuLimit) : null;
+        FanStopThermalTrigger? gpuTrigger = !gpuPoweredDown && gpu > gpuLimit ? new(gpu!.Value, gpuLimit) : null;
+        return cpuTrigger is null && gpuTrigger is null ? null : new(rule, cpuTrigger, gpuTrigger);
+    }
+
+    private bool End(FanStopEndReason reason, FanStopThermalDecision? decision = null)
     {
         ended = reason;
+        TerminalThermalDecision = reason == FanStopEndReason.ThermalThreshold ? decision : null;
         cpuWindow.Clear();
         gpuWindow.Clear();
         return false;
@@ -151,6 +174,8 @@ internal sealed class FanStopThermalPolicy
         }
 
         internal bool IsAbove(int limit, long duration) => coverage == duration && weightedTicks > duration * limit;
+        internal FanStopThermalTrigger? Trigger(int limit, long duration) => IsAbove(limit, duration)
+            ? new((decimal)weightedTicks / coverage, limit) : null;
 
         internal void Clear()
         {
@@ -159,4 +184,15 @@ internal sealed class FanStopThermalPolicy
             coverage = weightedTicks = 0;
         }
     }
+}
+
+internal sealed record FanStopThermalTrigger(decimal Celsius, int LimitCelsius);
+
+// At most two sensors, captured at the actual decision before rolling history is cleared.
+internal sealed record FanStopThermalDecision(string Rule, FanStopThermalTrigger? Cpu,
+    FanStopThermalTrigger? Gpu, long WindowTicks = 0, long CoverageTicks = 0)
+{
+    internal string Diagnostic => FormattableString.Invariant($"thermalRule={Rule}; {Sensor("cpu", Cpu)}{Sensor("gpu", Gpu)}windowSeconds={(decimal)WindowTicks / TimeSpan.TicksPerSecond:0.#######}; coverageSeconds={(decimal)CoverageTicks / TimeSpan.TicksPerSecond:0.#######}");
+    private static string Sensor(string name, FanStopThermalTrigger? trigger) => trigger is null ? ""
+        : FormattableString.Invariant($"{name}C={trigger.Celsius:G29}; {name}LimitC={trigger.LimitCelsius}; ");
 }

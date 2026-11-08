@@ -181,11 +181,19 @@ public sealed class FanStopThermalPolicyTests
         var settings = Custom with { CpuImmediateCutoffCelsius = 70, GpuImmediateCutoffCelsius = 75 };
         var policy = new FanStopThermalPolicy(settings, new Clock());
         Assert.True(policy.Observe(70, 75, false, false, TimeSpan.Zero)); // equality is allowed
+        Assert.Null(policy.TerminalThermalDecision);
         Assert.False(policy.Observe(cpuHot ? 71 : 40, cpuHot ? 40 : 76, false, false, TimeSpan.Zero));
         Assert.Equal(FanStopEndReason.ThermalThreshold, policy.EndReason);
+        var trigger = policy.TerminalThermalDecision!;
+        Assert.Equal("ImmediateCutoff", trigger.Rule);
+        Assert.Equal(cpuHot ? new FanStopThermalTrigger(71, 70) : null, trigger.Cpu);
+        Assert.Equal(cpuHot ? null : new FanStopThermalTrigger(76, 75), trigger.Gpu);
+        Assert.False(policy.Observe(40, 40, false, false, TimeSpan.Zero));
+        Assert.Same(trigger, policy.TerminalThermalDecision);
         var command = new FanStopThermalPolicy(settings, new Clock());
         Assert.False(command.AdmitsCommand(cpuHot ? 71 : 40, cpuHot ? 40 : 76, false, false, TimeSpan.Zero));
         Assert.Equal(FanStopEndReason.ThermalThreshold, command.EndReason);
+        Assert.Equal(trigger, command.TerminalThermalDecision);
     }
 
     [Fact]
@@ -207,6 +215,9 @@ public sealed class FanStopThermalPolicyTests
         clock.Advance(.5);
         Assert.False(policy.Observe(40, 40, false, false, TimeSpan.Zero)); // average 58
         Assert.Equal(FanStopEndReason.ThermalThreshold, policy.EndReason);
+        Assert.Equal(new FanStopThermalTrigger(58, 55), policy.TerminalThermalDecision!.Cpu);
+        Assert.Null(policy.TerminalThermalDecision.Gpu);
+        Assert.Contains("thermalRule=RollingAverage; cpuC=58; cpuLimitC=55; windowSeconds=2; coverageSeconds=2", policy.TerminalThermalDecision.Diagnostic);
     }
 
     [Fact]
@@ -221,6 +232,8 @@ public sealed class FanStopThermalPolicyTests
         Assert.True(policy.Observe(40, 64, false, false, TimeSpan.Zero)); // each average 52
         clock.Advance(.5);
         Assert.False(policy.Observe(40, 64, false, false, TimeSpan.Zero)); // GPU average 58
+        Assert.Null(policy.TerminalThermalDecision!.Cpu);
+        Assert.Equal(new FanStopThermalTrigger(58, 55), policy.TerminalThermalDecision.Gpu);
     }
 
     [Fact]
@@ -265,6 +278,36 @@ public sealed class FanStopThermalPolicyTests
         }
         Assert.False(policy.Observe(40, 40, false, false, TimeSpan.Zero));
         Assert.Equal(FanStopEndReason.SafetyCondition, policy.EndReason);
+        Assert.Null(policy.TerminalThermalDecision);
+    }
+
+    [Fact]
+    public void EntryReportsBothSensorsWithoutEndingPolicyAndResetsOnSafetyOrCoolSample()
+    {
+        var policy = new FanStopThermalPolicy(Custom, new Clock());
+        Assert.False(policy.AdmitsEntry(60, 61, false, false, TimeSpan.Zero));
+        Assert.Equal("EntryLimit", policy.EntryThermalDecision!.Rule);
+        Assert.Equal(new FanStopThermalTrigger(60, 55), policy.EntryThermalDecision.Cpu);
+        Assert.Equal(new FanStopThermalTrigger(61, 55), policy.EntryThermalDecision.Gpu);
+        Assert.Equal(FanStopEndReason.None, policy.EndReason);
+        Assert.Null(policy.TerminalThermalDecision);
+        Assert.False(policy.AdmitsEntry(100, null, false, false, TimeSpan.Zero));
+        Assert.Null(policy.EntryThermalDecision);
+        Assert.True(policy.AdmitsEntry(55, 55, false, false, TimeSpan.Zero));
+        Assert.Null(policy.EntryThermalDecision);
+    }
+
+    [Fact]
+    public void AutoReportsFixedCpuLimitAndSafetyDoesNotPublishHeat()
+    {
+        var policy = new FanStopThermalPolicy(FanStopSettings.Default, new Clock());
+        Assert.False(policy.AdmitsEntry(56, null, true, false, TimeSpan.Zero));
+        Assert.Equal("AutoCpuLimit", policy.EntryThermalDecision!.Rule);
+        Assert.False(policy.Observe(56, null, true, false, TimeSpan.Zero));
+        Assert.Equal(new FanStopThermalTrigger(56, 55), policy.TerminalThermalDecision!.Cpu);
+        var safety = new FanStopThermalPolicy(FanStopSettings.Default, new Clock());
+        Assert.False(safety.Observe(56, null, false, false, TimeSpan.Zero));
+        Assert.Null(safety.TerminalThermalDecision);
     }
 
     [Theory]
@@ -281,6 +324,7 @@ public sealed class FanStopThermalPolicyTests
         Assert.False(command ? policy.AdmitsCommand(100, 100, false, false, TimeSpan.Zero)
             : policy.Observe(100, 100, false, false, TimeSpan.Zero));
         Assert.Equal(FanStopEndReason.SafetyCondition, policy.EndReason);
+        Assert.Null(policy.TerminalThermalDecision);
     }
 
     private sealed class Clock : TimeProvider

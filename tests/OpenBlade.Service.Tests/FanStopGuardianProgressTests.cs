@@ -7,6 +7,47 @@ namespace OpenBlade.Service.Tests;
 public sealed class FanStopGuardianProgressTests
 {
     [Fact]
+    public void InitialAndPartialEntryRetainActualThermalDecisionInInvariantFormat()
+    {
+        var policy = new FanStopThermalPolicy(FanStopSettings.Default with { EndMode = FanStopEndMode.Custom }, TimeProvider.System);
+        Assert.False(policy.AdmitsEntry(60, 61, false, false, TimeSpan.Zero));
+        string refusal = So6120ServiceInitialAdmissionDiagnostics.ThermalRefusal(
+            FanStopSettings.Default with { EndMode = FanStopEndMode.Custom },
+            new(60, 61, false), TimeSpan.Zero, false, policy.EntryThermalDecision);
+        var progress = new So6120ServiceStopProgress();
+        progress.RecordEntryFailure(So6120DutyFailure.NotSubmitted, refusal);
+        Assert.Contains("thermalRule=EntryLimit; cpuC=60; cpuLimitC=55; gpuC=61; gpuLimitC=55", refusal);
+        Assert.Contains(refusal, progress.CompletionReason!);
+        Assert.True(refusal.Length < 640);
+        Assert.Equal(FanStopEndReason.None, policy.EndReason);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ThermalExitSurvivesCoastOrConfirmedStopAndCleanup(bool coastCompleted)
+    {
+        var progress = new So6120ServiceStopProgress();
+        var decision = new FanStopThermalDecision("RollingAverage", new(65.5m, 65), new(66, 65),
+            TimeSpan.FromSeconds(5).Ticks, TimeSpan.FromSeconds(5).Ticks);
+        progress.RecordCoast(coastCompleted ? So6120StopCoastResult.Stopped : So6120StopCoastResult.AutomaticRequired,
+            coastCompleted ? FanStopEndReason.None : FanStopEndReason.ThermalThreshold,
+            coastCompleted ? null : decision);
+        progress.RecordThermalExit(FanStopEndReason.ThermalThreshold, decision);
+        string first = progress.ReturningReason;
+        progress.RecordThermalExit(FanStopEndReason.SafetyCondition, null);
+        progress.RecordThermalExit(FanStopEndReason.ThermalThreshold, new("ImmediateCutoff", new(90, 75), null));
+
+        Assert.Equal(coastCompleted, progress.StopConfirmed);
+        Assert.Equal(first, progress.CompletionReason);
+        Assert.Contains("cpuC=65.5; cpuLimitC=65", first);
+        Assert.Contains("gpuC=66; gpuLimitC=65", first);
+        Assert.Contains("coverageSeconds=5", first);
+        Assert.DoesNotContain("ImmediateCutoff", first);
+        Assert.True(first.Length < 900);
+    }
+
+    [Fact]
     public void PartialEntryKeepsItsActualRefusalThroughAutomaticCleanup()
     {
         var progress = new So6120ServiceStopProgress();

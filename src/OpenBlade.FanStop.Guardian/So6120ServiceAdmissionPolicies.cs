@@ -9,8 +9,8 @@ internal static class So6120ServiceInitialAdmissionDiagnostics
         $"Initial command-free Stop admission refused (stage={stage}; {detail}).";
 
     internal static string ThermalRefusal(FanStopSettings settings, FanTemperatureReadings reading,
-        TimeSpan age, bool canceled) => Refusal("ThermalEntry",
-            FormattableString.Invariant($"mode={settings.EndMode}; cpuC={Value(reading.CpuCelsius)}; gpuC={Value(reading.GpuCelsius)}; gpuInactive={reading.GpuInactive}; gpuPoweredDown={reading.GpuPoweredDown}; sampleAgeMs={Math.Clamp(age.TotalMilliseconds, -1, 60000):F1}; sampleCanceled={canceled}; cpuEntryLimitC={(settings.EndMode == FanStopEndMode.Auto ? 55 : settings.CpuLimitCelsius)}; gpuEntryLimitC={(settings.EndMode == FanStopEndMode.Custom ? Value(settings.GpuLimitCelsius) : "inactive-required")}; maxSampleAgeMs=2000"));
+        TimeSpan age, bool canceled, FanStopThermalDecision? decision = null) => Refusal("ThermalEntry",
+            FormattableString.Invariant($"{(decision is null ? "" : decision.Diagnostic + "; ")}mode={settings.EndMode}; cpuC={Value(reading.CpuCelsius)}; gpuC={Value(reading.GpuCelsius)}; gpuInactive={reading.GpuInactive}; gpuPoweredDown={reading.GpuPoweredDown}; sampleAgeMs={Math.Clamp(age.TotalMilliseconds, -1, 60000):F1}; sampleCanceled={canceled}; cpuEntryLimitC={(settings.EndMode == FanStopEndMode.Auto ? 55 : settings.CpuLimitCelsius)}; gpuEntryLimitC={(settings.EndMode == FanStopEndMode.Custom ? Value(settings.GpuLimitCelsius) : "inactive-required")}; maxSampleAgeMs=2000"));
 
     private static string Value(int? value) => value?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unavailable";
 }
@@ -22,7 +22,15 @@ internal sealed class So6120ServiceStopProgress
 {
     internal bool StopConfirmed { get; private set; }
     internal string? IncompleteReason { get; private set; }
-    internal string ReturningReason => IncompleteReason ?? "Auto requested or continuation admission ended.";
+    internal string? ThermalReason { get; private set; }
+    internal string? CompletionReason => IncompleteReason ?? ThermalReason;
+    internal string ReturningReason => CompletionReason ?? "Auto requested or continuation admission ended.";
+
+    internal void RecordThermalExit(FanStopEndReason endReason, FanStopThermalDecision? decision)
+    {
+        if (endReason == FanStopEndReason.ThermalThreshold && decision is not null)
+        { ThermalReason ??= $"Stop ended (endReason={endReason}; {decision.Diagnostic})."; }
+    }
 
     internal void RecordEntryFailure(So6120DutyFailure failure, string? admissionDetail)
     {
@@ -31,12 +39,16 @@ internal sealed class So6120ServiceStopProgress
         IncompleteReason ??= reason[..Math.Min(reason.Length, 900)];
     }
 
-    internal void RecordCoast(So6120StopCoastResult coast, FanStopEndReason endReason)
+    internal void RecordCoast(So6120StopCoastResult coast, FanStopEndReason endReason,
+        FanStopThermalDecision? decision = null)
     {
+        RecordThermalExit(endReason, decision);
         if (coast == So6120StopCoastResult.Stopped) { StopConfirmed = true; }
         else if (!StopConfirmed)
         {
-            IncompleteReason ??= $"Stopped fans were not confirmed during coast-down ({coast}; endReason={endReason}).";
+            string thermalDetail = endReason == FanStopEndReason.ThermalThreshold && decision is not null
+                ? "; " + decision.Diagnostic : "";
+            IncompleteReason ??= $"Stopped fans were not confirmed during coast-down ({coast}; endReason={endReason}{thermalDetail}).";
         }
     }
 }
