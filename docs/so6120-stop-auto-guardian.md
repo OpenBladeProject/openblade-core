@@ -381,6 +381,29 @@ restored settings, but its primary observation loop ended too early to retain
 the terminal message. This is a test-reporting limitation, not thermal-exit
 validation. The frozen runner and original evidence remain preserved.
 
+## Independent sampler installed validation (2026-11-08 UTC)
+
+The broker-installed `a9e97f70` build passed an idle USB-C Balanced trial on
+RZ09-0581 after independent comparison of all 372 packaged files with the
+installation. The trial temporarily selected a 45 C CPU rolling-average limit
+and 80 C immediate cutoff, preserving the GPU limits and five-second window.
+Fresh preflight CPU readings were 51, 50 and 70 C.
+
+The guardian confirmed Stopped, then autonomously returned to Auto with the
+retained decision `RollingAverage; cpuC=51.19197356; cpuLimitC=45;
+windowSeconds=5; coverageSeconds=5`. The client sent no Auto request. Independent
+released-Auto readback passed and all ten original settings were restored
+exactly, including the CPU 55 C average limit and 65 C cutoff. Across 361 saved
+status snapshots there were no blocked or unconfirmed writes, RecoveryRequired
+states or competing-controller warnings.
+
+Host observations place autonomous return about 28.6 seconds after dispatch
+and completed settings restoration about 54.6 seconds after dispatch. These
+include entry and cleanup; they do not establish an exact physical stopped
+duration. This resolves the earlier trial's unproven thermal-exit result without
+extending physical validation to sustained Stop, automatic entry, sleep/resume
+or actual power-source transitions.
+
 Guardian termination, an unknown outer-job termination, a native call that
 never returns, sleep/resume and OS failure do not have a demonstrated
 independent cooling fallback. A fenced owner retains its native resources;
