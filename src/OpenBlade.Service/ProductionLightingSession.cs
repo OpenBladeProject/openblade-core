@@ -11,7 +11,7 @@ namespace OpenBlade.Service;
 /// Renderer pulses and frames for an already owned renderer deliberately bypass
 /// that gate and rely on the port's writer synchronization.
 /// </summary>
-internal sealed class ProductionLightingSession
+internal sealed partial class ProductionLightingSession
 {
     private readonly IProductionLightingPortFactory lightingFactory;
     private readonly ILogger<WindowsVerifiedBladeDeviceProvider>? logger;

@@ -13,7 +13,7 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 22;
+    internal const int CurrentSchemaVersion = 24;
     internal const int AutomaticExperimentalSupportSchemaVersion = 19;
     internal const int ExperimentalFeaturesConsentSchemaVersion = 17;
     internal const int ExperimentalFeaturesConsentPredecessorSchemaVersion = 16;
@@ -199,6 +199,10 @@ public sealed class ProfileStore
                 "The profile document is missing Windows power mode associations.");
         }
 
+        if (schemaVersion < 24)
+        {
+            RejectIndependentControlsInLegacySchema(parsed.RootElement);
+        }
         ProfileSet profiles;
         if (schemaVersion is >= ObsoleteSupportedSchemaVersion and <= CurrentSchemaVersion)
         {
@@ -235,7 +239,7 @@ public sealed class ProfileStore
                 migrated |= normalized != profiles;
                 profiles = normalized;
             }
-            if (schemaVersion < CurrentSchemaVersion)
+            if (schemaVersion < 22)
             {
                 profiles = ClearSchema22Settings(profiles);
             }
@@ -279,6 +283,30 @@ public sealed class ProfileStore
         }
         validator.ValidateStoredCustomIntent(profiles);
         return profiles;
+    }
+
+    // Older documents have no opt-in for independent firmware writes. Omitted or
+    // null fields migrate unchanged; a new control under an old schema is invalid.
+    private static void RejectIndependentControlsInLegacySchema(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "independentControls", StringComparison.OrdinalIgnoreCase) && property.Value.ValueKind != JsonValueKind.Null)
+                {
+                    throw new InvalidDataException("Independent lighting controls require profile schema 24.");
+                }
+                RejectIndependentControlsInLegacySchema(property.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement child in element.EnumerateArray())
+            {
+                RejectIndependentControlsInLegacySchema(child);
+            }
+        }
     }
 
     private static ProfileSet ClearSchema22Settings(ProfileSet profiles) => profiles with
@@ -417,7 +445,18 @@ public sealed class ProfileStore
             profiles.Battery,
             profiles.UsbC,
         ];
-        foreach (PerformancePreset performance in Enum.GetValues<PerformancePreset>())
+        // These legacy schemas stored only the original six association roles.
+        // Keep that migration contract fixed as new per-preset roles are added.
+        PerformancePreset[] legacyAssociationRoles =
+        [
+            PerformancePreset.Silent,
+            PerformancePreset.Balanced,
+            PerformancePreset.Performance,
+            PerformancePreset.BatterySaver,
+            PerformancePreset.BatteryBalanced,
+            PerformancePreset.Custom,
+        ];
+        foreach (PerformancePreset performance in legacyAssociationRoles)
         {
             PowerProfile[] matching = legacyProfiles
                 .Where(profile => profile.Performance == performance)

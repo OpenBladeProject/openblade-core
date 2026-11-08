@@ -62,8 +62,9 @@ Exact-identity exports continue to preserve their original bytes.
 The service retains up to 2,048 entries and 4 MiB of text, with retention,
 eviction and truncation counters in the ZIP's service-history.json. Diagnostic
 ZIP responses have a dedicated 16 MiB archive / 24 MiB framed-response limit;
-ordinary requests, status and subscriptions retain their 64 KiB limit. This is
-IPC protocol 72 and requires a coordinated product update.
+ordinary requests, status and subscriptions retain their 64 KiB limit. These
+transport limits were introduced with IPC protocol 72 and require a coordinated
+product update.
 
 ## Reviewed boundaries
 

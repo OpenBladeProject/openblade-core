@@ -146,6 +146,11 @@ public sealed class CoolingPadViewModelTests
         XElement navigation = document.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "CoolingPadNavigationItem");
         Assert.Contains(page, section.Ancestors());
         Assert.DoesNotContain(laptop, section.Ancestors());
+        string search = File.ReadAllText(Path.Combine(CanonicalLocalizedXaml.RepositoryRoot(), "src", "OpenBlade.Tray", "MainWindow.GlobalSearchCatalog.cs"));
+        Assert.Contains("Page(CoolingPadNavigationItem, CoolingPadPage", search, StringComparison.Ordinal);
+        Assert.Contains("anchor: CoolingPadCurves, exposed: () => ViewModel.CoolingPad.ShowCurves", search, StringComparison.Ordinal);
+        string snapshots = File.ReadAllText(Path.Combine(CanonicalLocalizedXaml.RepositoryRoot(), "src", "OpenBlade.Tray", "MainWindow.CoolingPadSnapshots.cs"));
+        Assert.Contains("Confirmed absence must remove cached cooling-pad search results.", snapshots, StringComparison.Ordinal);
         Assert.Equal("cooling-pad", (string?)navigation.Attribute("Tag"));
         Assert.Equal("{x:Bind ViewModel.CoolingPad.IsVisible, Mode=OneWay}", (string?)navigation.Attribute("Visibility"));
         Assert.DoesNotContain(PageLayoutPreferenceDefaults.Layouts.SelectMany(layout => layout.Sections),

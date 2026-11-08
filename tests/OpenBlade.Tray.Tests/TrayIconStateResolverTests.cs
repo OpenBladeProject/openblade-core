@@ -21,6 +21,10 @@ public sealed class TrayIconStateResolverTests
     [InlineData(PerformancePreset.Silent)]
     [InlineData(PerformancePreset.Performance)]
     [InlineData(PerformancePreset.Custom)]
+    [InlineData(PerformancePreset.Turbo)]
+    [InlineData(PerformancePreset.MaximumPower)]
+    [InlineData(PerformancePreset.Gaming)]
+    [InlineData(PerformancePreset.Creator)]
     public void ConfirmedHyperBoostOverridesItsUnderlyingAcMode(PerformancePreset performance)
     {
         Assert.Equal(TrayIconState.AcHyperBoost,
@@ -50,6 +54,10 @@ public sealed class TrayIconStateResolverTests
             { PowerSource.PluggedIn, PerformancePreset.Balanced, TrayIconState.AcBalanced },
             { PowerSource.PluggedIn, PerformancePreset.Silent, TrayIconState.AcSilent },
             { PowerSource.PluggedIn, PerformancePreset.Performance, TrayIconState.AcPerformance },
+            { PowerSource.PluggedIn, PerformancePreset.Turbo, TrayIconState.AcPerformance },
+            { PowerSource.PluggedIn, PerformancePreset.MaximumPower, TrayIconState.AcPerformance },
+            { PowerSource.PluggedIn, PerformancePreset.Gaming, TrayIconState.AcPerformance },
+            { PowerSource.PluggedIn, PerformancePreset.Creator, TrayIconState.AcPerformance },
             { PowerSource.PluggedIn, PerformancePreset.Custom, TrayIconState.AcCustom },
             { PowerSource.UsbC, PerformancePreset.Balanced, TrayIconState.UsbCBalanced },
             { PowerSource.Battery, PerformancePreset.Balanced, TrayIconState.BatteryBalanced },
@@ -80,6 +88,10 @@ public sealed class TrayIconStateResolverTests
     [InlineData(true, true, PowerSource.PluggedIn, null)]
     [InlineData(true, true, PowerSource.UsbC, PerformancePreset.Performance)]
     [InlineData(true, true, PowerSource.Battery, PerformancePreset.Performance)]
+    [InlineData(true, true, PowerSource.Battery, PerformancePreset.Turbo)]
+    [InlineData(true, true, PowerSource.UsbC, PerformancePreset.MaximumPower)]
+    [InlineData(true, true, PowerSource.Battery, PerformancePreset.Gaming)]
+    [InlineData(true, true, PowerSource.UsbC, PerformancePreset.Creator)]
     public void UnavailableOrInconsistentStateUsesGenericError(
         bool isConnected,
         bool deviceVerified,

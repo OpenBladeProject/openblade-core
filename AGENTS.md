@@ -162,18 +162,20 @@ remaining uncertainty.
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
 architecture admits capabilities only for an exact product name and HID
 identity. Physically validated capabilities use sanitized, reviewed capture
-evidence. Experimental capabilities use separately reviewed, pinned upstream
-model and command definitions; they remain experimental until physical
-validation is complete. Host admission verifies the Razer manufacturer and
+evidence. Source-reviewed capabilities use separately reviewed, pinned vendor
+or upstream model and command definitions. Both are officially supported;
+physical validation is tracked separately and must not be inferred from source
+review. Individual unfinished controls and separately experimental integrations
+retain their own evidence and access limits. Host admission verifies the Razer manufacturer and
 exact product name in both Windows registry sources; SKU is diagnostic metadata
 and must not reject a variant of an admitted product. Developer validation may
 pin a SKU for reproducibility. Hardware-specific backends retain their own
 device and driver checks.
 Captured BIOS versions are provenance by default; a capability may impose a
 firmware restriction only through an explicit reviewed admission rule. No
-shipped capability pins an exact BIOS version. Experimental HyperBoost on
+shipped capability pins an exact BIOS version. Source-reviewed HyperBoost on
 RZ09-0482 and RZ09-0483 enforces the separately reviewed minimum MCU versions
-listed in [experimental support](docs/experimental-blade-support.md).
+listed in [source-reviewed support](docs/experimental-blade-support.md).
 Never copy a command from another model, expose raw firmware commands, or
 weaken exact-device checks to make a feature appear supported.
 
@@ -181,16 +183,20 @@ Physically validated support is exact-device scoped: the Razer Blade 16
 RZ09-0581 (`1532:02E0`) and RZ09-0528 (`1532:02C6`). Neither model's
 device-specific assumptions may be copied to another.
 
-The separately admitted experimental profiles are RZ09-0483 (`1532:029F`),
+The separately admitted source-reviewed profiles are RZ09-0483 (`1532:029F`),
 RZ09-0482 (`1532:029D`), RZ09-0530 (`1532:02C5`), RZ09-0328 (`1532:0255`),
-and RZ09-0484 (`1532:02A0`). Their available controls are enabled automatically
+RZ09-0484 (`1532:02A0`), RZ09-0508 (`1532:02B6`), RZ09-0510 (`1532:02B7`),
+RZ09-0509 (`1532:02B8`), RZ09-0529 (`1532:02C7`), RZ09-0427 (`1532:028C`),
+RZ09-0421 (`1532:028A`), RZ09-0423 (`1532:028B`), RZ09-0370 (`1532:0270`),
+RZ09-0330 (`1532:0253`), RZ09-0351 (`1532:0268`), RZ09-0301 (`1532:0245`), and RZ09-0300 (`1532:0246`).
+Their available controls are enabled automatically
 when the exact profile is recognized, without a Settings opt-in or release-channel
-gate. See [experimental support](docs/experimental-blade-support.md) for the
+gate. See [source-reviewed support](docs/experimental-blade-support.md) for the
 bounded capabilities, upstream provenance, write-pause recovery, and tester
 reports. These profiles do not inherit another model's backends, drivers, or
 physical-validation status.
 
-## Source-backed experimental admission
+## Source-reviewed model admission
 
 When adding a supported model, review every entry in the blade-driver-catalog
 applicability ledger against exact-model vendor evidence. Update its reviewed
@@ -200,26 +206,29 @@ not establish applicability of a complete driver stack. The coverage tests
 compare the ledger with `RazerBladeModelCatalog.All` so a new model cannot skip
 this review. Catalog applicability does not grant runtime hardware admission.
 
-Physical validation is the promotion gate for validated support, not a
-prerequisite for releasing a separately implemented experimental control for
-community testing. The maintainer need not own every experimental laptop.
-Review and pin the exact model's vendor or upstream command definitions, expose
-its experimental provenance in capabilities and diagnostics, and document what
-users still need to test. Do not claim another model's physical results.
+Official source-reviewed support requires the exact model's reviewed and pinned
+vendor or upstream command definitions, bounded typed implementation, and
+software failure/recovery verification. Physical validation is a separate
+evidence status, not a prerequisite for that support classification. The
+maintainer need not own every supported laptop. Expose the source basis and
+physical-validation status separately in model metadata and diagnostics, retain
+per-feature evidence, and document remaining tests. A firmware download or
+matching image name alone does not establish command semantics or applicability.
+Do not claim another model's physical results.
 
 When an exact model's reviewed HyperBoost implementation uses the same typed
 thermal commands with or without a cooling pad, those commands may be offered
-on both paths experimentally. Record padless use as source-backed extrapolation
+on both source-reviewed paths. Record padless use as source-backed extrapolation
 until community validation is reviewed. Do not fabricate a pad connection or
 issue additional accessory-status writes to emulate one. Preserve any concrete
 firmware prerequisites established by the exact model's source.
 
 Keep fresh exact-device, controller, power, session and ownership admission,
 independent readback, durable restoration, and stop-on-ambiguity behavior on
-every experimental path. Software tests must cover failure and recovery before
+every source-reviewed path. Software tests must cover failure and recovery before
 release. Physical-validation manifests belonging to the separately validated
 backends remain required for those backends; they do not automatically gate
-source-backed experimental backends. New or unknown commands still require
+source-reviewed backends. New or unknown commands still require
 separate exact-model source review. This policy authorizes no development-time
 hardware writes, installations, or unattended sleep/resume tests.
 
@@ -489,6 +498,11 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    validated. This exception admits no other laptop or API contract family. Keep
    standalone native/audio validation separate from simulated tests; see
    [THX audio](docs/thx-audio.md).
+   CPU Voltage Optimizer on RZ09-0528 is live-only through its reviewed,
+   signed, already installed AMD stack. Availability checks and reads must not
+   provision or start a driver. New saved-setting requests are retired; retain
+   saved observations and exact-original journal recovery for compatibility.
+   Firmware shadows must never substitute for measured running offsets.
 7. Prefer one shared implementation or presentation primitive over
    page-specific fixes. When a bug can affect every picker, card, or firmware
    field, fix the shared layer and add a regression test there.
@@ -654,8 +668,10 @@ unrelated worktrees and checkout changes.
 6. For WinUI changes, build `OpenBlade.Tray` and inspect the rendered app when
    interactive access is available. XAML contract tests do not prove visual
    quality.
-7. For hardware changes, complete the relevant physical validation before
-   marking support production-ready, following Hardware and capture safety.
+7. For hardware changes, establish exact-model source evidence and software
+   failure/recovery coverage before claiming source-reviewed support. Claim
+   physical validation only after the relevant on-device checks are complete,
+   following Hardware and capture safety. Keep those two statuses separate.
 8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes. Every
    new or materially changed changelog bullet must include a Markdown link to
    its implementing pull request, using

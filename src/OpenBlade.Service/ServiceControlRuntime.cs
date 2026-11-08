@@ -35,6 +35,18 @@ public interface IServiceControlRuntime
     Task<ControlOperationResult> RemoveCoolingPadDemandLeaseAsync(RemoveCoolingPadDemandLeaseRequest request, ServiceClientContext client, CancellationToken token) => Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling pad control is unavailable."));
     Task MaintainCoolingPadAsync(CancellationToken token) => Task.CompletedTask;
 
+    Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU observation is unavailable."));
+
+    Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target, CpuTuningSettings settings,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU writes are not admitted."));
+
+    Task<ControlOperationResult> RestoreCpuTuningAsync(CpuTuningTarget target,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU restoration is unavailable."));
+
     Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() => null;
 
     DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics() =>
@@ -192,6 +204,11 @@ public interface IServiceControlRuntime
     Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
+
+    Task<ControlOperationResult> SetIndependentLightingOverrideAsync(
+        ManualOverride<IndependentLightingSettings>? value,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked, "Independent lighting controls are unavailable."));
 
     Task<ControlOperationResult> StepKeyboardBrightnessAsync(
         KeyboardBrightnessDirection direction,
@@ -507,6 +524,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private readonly LowPowerGate lowPowerGate;
     private readonly IFirmwareVersionSource firmwareVersionSource;
     private readonly IDisplayBrightnessHidController displayBrightnessHidController;
+    private readonly CpuTuningController cpuTuningController;
     private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
     private readonly Func<CancellationToken, Task> hyperBoostLifecycleExitBoundary;
     private readonly TimeProvider timeProvider;
@@ -849,6 +867,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
         Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
         LaptopControlPendingStore? laptopControlPendingStore = null,
+        CpuTuningController? cpuTuningController = null,
         ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
         string? coolingPadStateDirectory = null)
     {
@@ -884,6 +903,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ?? new SafeWindowsFanTemperatureSource();
         this.displayBrightnessHidController = displayBrightnessHidController
             ?? UnavailableDisplayBrightnessHidController.Instance;
+        this.cpuTuningController = cpuTuningController
+            ?? new CpuTuningController(new WindowsCpuTuningObservationSource());
         this.hyperBoostPadDiscoverySource = hyperBoostPadDiscoverySource
             ?? CoolingPadDiscoveryFactory.CreateWindows();
         this.hyperBoostOwnershipJournalStore = hyperBoostOwnershipJournalStore
@@ -1662,8 +1683,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 }
                 await ConfigurationStore.SaveProfilesAsync(profiles, token);
                 Automation.UpdateProfiles(profiles);
-                if (ResolveAutomationDesired(profileResolutionState).Lighting.Value
-                    != priorLightingIntent)
+                LightingSettings updatedLightingIntent = ResolveAutomationDesired(profileResolutionState).Lighting.Value;
+                if (GetStatus().Capabilities?.SupportsIndependentLightingControls == true
+                    ? updatedLightingIntent.IndependentControls != priorLightingIntent.IndependentControls
+                    : updatedLightingIntent != priorLightingIntent)
                 {
                     experimentalLightingResumeAwaitingRequest = false;
                 }
@@ -2337,9 +2360,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
             if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
             {
+                // Preserve legacy shortcut spellings while presenting the new
+                // two-word mode with its reviewed notification label.
+                string presetLabel = next == PerformancePreset.MaximumPower
+                    ? PerformanceLabel(next) : next.ToString();
                 string selectedBy = source == PerformanceShortcutSource.DedicatedButton
-                    ? $"The performance button selected {next}."
-                    : $"Fn+P selected {next}.";
+                    ? $"The performance button selected {presetLabel}."
+                    : $"Fn+P selected {presetLabel}.";
                 string message = result.Status == ControlOperationStatus.Stored
                     ? $"{selectedBy} It will be applied when fans return to Automatic."
                     : selectedBy;
@@ -2697,6 +2724,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ManualOverride<LightingSettings>? value,
         CancellationToken token)
     {
+        if (value is not null && GetStatus().Capabilities?.SupportsIndependentLightingControls == true)
+        {
+            return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked,
+                "Keyboard effect requests are unavailable; use independent brightness and logo controls."));
+        }
         ManualOverride<LightingSettings>? normalized = value is null
             ? null
             : value with
@@ -2733,6 +2765,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         CancellationToken token)
     {
         EnsureInitialized();
+        if (GetStatus().Capabilities?.SupportsIndependentLightingControls == true)
+        {
+            return new ControlOperationResult(ControlOperationStatus.Blocked,
+                "Firmware-native brightness stepping is not admitted for this model.");
+        }
         if (!Enum.IsDefined(direction) || !Enum.IsDefined(lifetime))
         {
             return RecordRejectedIntent(
@@ -4571,6 +4608,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
             bool isSuppressed = lightingSuppressions.Count > 0;
 
+            if (GetStatus().Capabilities?.SupportsIndependentLightingControls == true
+                && ResolveAutomationDesired(current.ConfirmedState ?? UnknownConfirmedState)
+                    .Lighting.Value.IndependentControls?.Brightness is null)
+            {
+                lightingSuppressionWritePending = false;
+                const string unmanaged = "Keyboard brightness is not managed by this profile; its lighting power policy was recorded.";
+                history.RecordSummary(ControlOperationStatus.Stored, unmanaged);
+                PublishScopedStatus(powerSource, current.ConfirmedState, current.Capabilities,
+                    unmanaged, current.DeviceVerified, current.WritesBlocked);
+                return new ControlOperationResult(ControlOperationStatus.Stored, unmanaged);
+            }
             if (wasSuppressed == isSuppressed && !lightingSuppressionWritePending)
             {
                 return new ControlOperationResult(
@@ -13260,7 +13308,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 : MergeScopedReadback(
                     DeviceSubsystem.Lighting,
                     changed.ConfirmedState,
-                    outcome.Readback);
+                    outcome.Readback,
+                    requested.IndependentControls);
             history.RecordSubsystemResult(DeviceSubsystem.Lighting, outcome.Result);
             PublishIfChanged(changed with
             {
@@ -13428,7 +13477,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         bool allowFanOwnershipRearm = false,
         Func<bool>? stillControlsSession = null,
         Func<DesiredDeviceState, IReadOnlyList<DeviceSubsystem>>?
-            thermalComponentResolver = null)
+            thermalComponentResolver = null,
+        Func<DesiredDeviceState, DesiredDeviceState>? hardwareDesiredProjection = null)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(token);
@@ -13544,6 +13594,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 powerSource,
                 apply,
                 token,
+                stageDesired: hardwareDesiredProjection,
                 allowFanOwnershipRearm: allowFanOwnershipRearm,
                 stillControlsSession: stillControlsSession,
                 thermalExecutionOptions: thermalComponentResolver is null
@@ -13865,7 +13916,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 outcome.EffectiveDesired ?? desired,
                 preWriteState,
                 BatteryIntentCommit: pendingBatteryIntentCommit,
-                GpuClockTuningOnly: gpuClockTuningOnly));
+                GpuClockTuningOnly: gpuClockTuningOnly,
+                BatteryConfirmation: outcome.BatteryConfirmation));
         }
 
         if (outcome.ConfirmedCoupledWrites is not null)
@@ -14426,7 +14478,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             confirmed = MergeScopedReadback(
                 subsystem,
                 cachedConfirmed,
-                outcome.Readback);
+                outcome.Readback,
+                subsystem == DeviceSubsystem.Lighting ? desired.Lighting.Value.IndependentControls : null);
             driftTracker.Observe(confirmed);
         }
 
@@ -14753,9 +14806,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     }
 
     private bool ShouldYieldAutomaticLighting(ServiceStatusSnapshot current) =>
-        !preferences.AlwaysOverrideExternalLightingChanges
-        && (current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
-            || ControllerMayOwnLighting(current));
+        experimentalLightingResumeAwaitingRequest
+        || !preferences.AlwaysOverrideExternalLightingChanges
+            && (current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
+                || ControllerMayOwnLighting(current));
 
     private bool ShouldRelinquishLightingOwnership(ServiceStatusSnapshot current) =>
         ShouldYieldAutomaticLighting(current)
@@ -15411,7 +15465,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 new HashSet<DeviceSubsystem>(deferred),
                 new HashSet<DeviceSubsystem>(outcome.WriteAttempted.Concat(
                     continuation?.Dependencies ?? new HashSet<DeviceSubsystem>())),
-                continuation?.ExpiresAt ?? timeProvider.GetUtcNow().AddMinutes(2));
+                continuation?.ExpiresAt ?? timeProvider.GetUtcNow().AddMinutes(2),
+                // Never weaken a prior cancellation/override dependency.
+                continuation?.Dependencies.Contains(DeviceSubsystem.Battery) == true
+                    && continuation.BatteryConfirmation != BatteryConfirmationScope.PolicyOnly
+                        ? BatteryConfirmationScope.All
+                        : outcome.WriteAttempted.Contains(DeviceSubsystem.Battery)
+                            ? outcome.BatteryConfirmation
+                            : continuation?.BatteryConfirmation ?? BatteryConfirmationScope.All);
         }
 
         if (outcome.PreWriteState is { } preWriteState)
@@ -15422,7 +15483,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
                     powerSource,
                     outcome.EffectiveDesired ?? desired,
-                    preWriteState));
+                    preWriteState,
+                    BatteryConfirmation: outcome.BatteryConfirmation));
             }
         }
 
@@ -15956,7 +16018,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private static ConfirmedDeviceState MergeScopedReadback(
         DeviceSubsystem subsystem,
         ConfirmedDeviceState? cached,
-        ConfirmedDeviceState readback)
+        ConfirmedDeviceState readback,
+        IndependentLightingSettings? independentFields = null)
     {
         if (cached is null)
         {
@@ -15976,21 +16039,48 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     CustomPerformance = readback.CustomPerformance,
                     GpuClockOffsets = readback.GpuClockOffsets,
                     LogoLighting = readback.LogoLighting ?? cached.LogoLighting,
+                    IndependentLighting = readback.IndependentLighting ?? cached.IndependentLighting,
                 },
             DeviceSubsystem.Lighting => cached with
             {
                 Lighting = readback.Lighting,
-                LogoLighting = readback.LogoLighting,
+                LogoLighting = independentFields is { LogoMode: null }
+                    ? cached.LogoLighting
+                    : readback.LogoLighting,
+                IndependentLighting = MergeIndependentLightingReadback(
+                    cached.IndependentLighting, readback.IndependentLighting, independentFields),
             },
             _ => readback,
         };
     }
 
+    private static IndependentLightingSettings? MergeIndependentLightingReadback(
+        IndependentLightingSettings? cached,
+        IndependentLightingSettings? readback,
+        IndependentLightingSettings? requested)
+    {
+        if (requested is null)
+        {
+            return readback;
+        }
+
+        // Null in a requested field means its read failed. Preserve only fields
+        // outside this operation's scope; never use cached state as confirmation.
+        byte? brightness = requested.Brightness.HasValue ? readback?.Brightness : cached?.Brightness;
+        LogoLightingMode? logo = requested.LogoMode.HasValue ? readback?.LogoMode : cached?.LogoMode;
+        return brightness.HasValue || logo.HasValue
+            ? new IndependentLightingSettings(brightness, logo)
+            : null;
+    }
+
     private async Task<PowerSource> ResolveCurrentPowerSourceAsync(
         CancellationToken cancellationToken,
-        bool allowCachedExternalClassification = false)
+        bool allowCachedExternalClassification = false,
+        CpuSavedAdmissionDiagnostic? cpuDiagnostic = null)
     {
-        PowerSource windowsSource = powerStateProvider.CapturePowerSource();
+        PowerSource windowsSource;
+        using (cpuDiagnostic?.BeginStage("power Windows source capture"))
+        { windowsSource = powerStateProvider.CapturePowerSource(); }
         cancellationToken.ThrowIfCancellationRequested();
         if (windowsSource == PowerSource.Battery)
         {
@@ -16016,9 +16106,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
         try
         {
-            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            IBladeDevice device;
+            using (cpuDiagnostic?.BeginStage("power verified device probe"))
             {
-                return PowerSource.ExternalUnknown;
+                if (!deviceProvider.TryGetVerifiedDevice(out device))
+                { return PowerSource.ExternalUnknown; }
             }
 
             AdapterPowerState classified = AdapterPowerState.Unknown;
@@ -16034,7 +16126,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 AdapterPowerState sample;
                 try
                 {
-                    sample = await device.ReadAdapterPowerStateAsync(cancellationToken);
+                    using (cpuDiagnostic?.BeginStage($"power adapter read sample {attempts + 1} of {MaximumAdapterPowerClassificationSamples} (open/exchange/dispose)"))
+                    { sample = await device.ReadAdapterPowerStateAsync(cancellationToken); }
                 }
                 catch (OperationCanceledException) when (
                     cancellationToken.IsCancellationRequested)
@@ -16448,7 +16541,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 subsystem,
                 new WriteConfirmationExpectation(
                     pending.EffectiveDesired,
-                    pending.PreWriteState),
+                    pending.PreWriteState,
+                    BatteryConfirmation: pending.BatteryConfirmation),
                 confirmed,
                 device);
             if (result == PendingConfirmationResult.Mismatch)
@@ -18170,7 +18264,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             Lighting = desired.Lighting with
             {
-                Value = LightingSettingsFactory.Off(),
+                Value = capabilities?.SupportsIndependentLightingControls == true
+                    ? desired.Lighting.Value with
+                    {
+                        IndependentControls = SuppressIndependentBrightness(desired.Lighting.Value.IndependentControls, suppressed: true),
+                    }
+                    : LightingSettingsFactory.Off(),
             },
         };
     }
@@ -19943,7 +20042,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ConfirmedDeviceState PreWriteState,
         IReadOnlySet<DeviceSubsystem> Subsystems,
         IReadOnlySet<DeviceSubsystem> Dependencies,
-        DateTimeOffset ExpiresAt);
+        DateTimeOffset ExpiresAt,
+        BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
 
     private sealed record PendingResumePerformanceDrift(
         long PowerGeneration,
@@ -20363,6 +20463,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         LightingSettings lighting,
         CancellationToken cancellationToken)
     {
+        if (GetStatus().Capabilities?.SupportsIndependentLightingControls == true)
+        {
+            return; // An independent field observation cannot confirm a keyboard effect.
+        }
         lighting = LightingSettingsFactory.NormalizeLegacyOff(lighting);
         if (preferences.LastKnownLighting == lighting)
         {
@@ -20558,6 +20662,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         PerformancePreset.Silent => "Quiet",
         PerformancePreset.Balanced => "Balanced",
         PerformancePreset.Performance => "Performance",
+        PerformancePreset.Turbo => "Turbo",
+        PerformancePreset.MaximumPower => "Maximum Power",
+        PerformancePreset.Gaming => "Gaming",
+        PerformancePreset.Creator => "Creator",
         _ => mode.ToString(),
     };
 

@@ -4,13 +4,19 @@ OpenBlade controls the Razer Laptop Cooling Pad RC21-0230 (`1532:0F43`) from the
 Cooling pad page in the left menu. The page appears when a connected pad is
 confirmed and disappears when unplugging is confirmed. A temporary connection
 check failure keeps the last confirmed page visible with writes disabled.
-Support is source-backed experimental on all seven admitted Blade models. Connect one pad, choose its settings, then select **Apply**. Starting
+Support is source-backed experimental. The pad is admitted by its own exact USB
+identity; pad commands do not depend on the laptop model. Laptop controls retain
+their separate model admission. Connect one pad, choose its settings, then select
+**Apply**. Starting
 OpenBlade or reconnecting the pad does not start control automatically.
 
 Choose a fixed target from 500 to 3200 RPM in 50-RPM steps, turn the fan off, or
 use a CPU curve, a GPU curve, or both. With both selected, the higher demand wins. Fixed targets come from the selected mode configuration; Smart targets come from
 the separate host-demand register. Neither is measured fan speed. Missing or stale temperature readings
-pause curve updates. Stop competing pad controllers before applying settings.
+pause curve updates. The shared CPU temperature source currently rejects the
+firmware's constant readings, so CPU and combined CPU/GPU curves remain unavailable
+until a supported changing CPU reading is provided. GPU-only curves can use an
+active GPU's fresh temperature. Stop competing pad controllers before applying settings.
 
 Lighting supports Off, Static, Breathing, Spectrum and Wave, with brightness and
 colors. Keyboard sync projects OpenBlade's host-rendered keyboard frames onto

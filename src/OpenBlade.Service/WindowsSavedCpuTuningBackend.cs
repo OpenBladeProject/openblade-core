@@ -1,0 +1,378 @@
+using System.Management;
+using OpenBlade.Contracts;
+using OpenBlade.Protocol;
+
+namespace OpenBlade.Service;
+
+// One operation's first denial only; this carries no admission authority.
+internal sealed class CpuSavedAdmissionDiagnostic
+{
+    private string? firstFailure;
+    private ActiveStage? activeStage;
+    private string? liveObservationTimeoutContext;
+    private CpuQueryProgress? nativeQuery;
+    private readonly object observationSync = new();
+    private CpuPowerObservationTiming? powerObservation;
+    private bool powerObservationReported;
+    private string? powerTimingSummary;
+    private CancellationToken? powerSequenceCaller;
+    internal string? PowerEmptyWindowDetail;
+    internal string? TakePowerEmptyWindowDetail() => Interlocked.Exchange(ref PowerEmptyWindowDetail, null);
+    internal void SetPowerSequenceCaller(CancellationToken caller)
+    { lock (observationSync) { powerSequenceCaller = caller; } }
+    internal string? PowerTimingSummary => Volatile.Read(ref powerTimingSummary);
+    internal string? TakePowerTimingSummary()
+    {
+        lock (observationSync)
+        {
+            string? summary = liveObservationTimeoutContext is null ? powerTimingSummary : null;
+            powerTimingSummary = null; return summary;
+        }
+    }
+    internal CpuPowerObservationTiming? BeginPowerObservation()
+    {
+        lock (observationSync)
+        {
+            if (liveObservationTimeoutContext is not null) { return null; }
+            powerObservationReported = false; powerTimingSummary = null; return powerObservation = new();
+        }
+    }
+    internal void CompletePowerObservation(CpuPowerObservationTiming? timing)
+    {
+        lock (observationSync)
+        {
+            timing?.Dispose();
+            if (timing is not null && ReferenceEquals(timing, powerObservation) && liveObservationTimeoutContext is null && !powerObservationReported)
+            { powerObservationReported = true; Volatile.Write(ref powerTimingSummary, timing.Snapshot()); }
+        }
+    }
+    internal CpuQueryProgress? BeginNativeQuery()
+    {
+        if (LiveObservationTimeoutContext is not null) { return null; }
+        var progress = new CpuQueryProgress(); Volatile.Write(ref nativeQuery, progress); return progress;
+    }
+    internal string? FirstFailure => Volatile.Read(ref firstFailure);
+    internal string? LiveObservationReason { get; set; }
+    internal string? LiveObservationTimeoutContext => Volatile.Read(ref liveObservationTimeoutContext);
+
+    internal void RecordObservationCancellation(bool callerCancelled, bool powerObservation = false)
+    {
+        lock (observationSync)
+        {
+            if (liveObservationTimeoutContext is not null) { return; }
+            if (powerObservation && powerSequenceCaller is { } caller) { callerCancelled = caller.IsCancellationRequested; }
+            string family = powerObservation ? "power" : "curve";
+            string detail = family + (callerCancelled ? " observation caller cancellation" : " observation operation timeout")
+                + ActiveStageDetail() + (powerObservation ? this.powerObservation?.Snapshot(freeze: true)
+                    : Volatile.Read(ref nativeQuery)?.Snapshot(freeze: true));
+            Interlocked.CompareExchange(ref liveObservationTimeoutContext, "; " + detail, null);
+            Check(false, detail);
+        }
+    }
+
+    internal void RecordCurveOperationCancellation(bool callerCancelled, string operation, TimeSpan elapsed)
+    {
+        string detail = "curve " + operation + (callerCancelled ? " caller cancellation" : " operation timeout") + ActiveStageDetail()
+            + $"; total {operation} elapsed {Math.Min(600000L, (long)elapsed.TotalMilliseconds)} ms";
+        Interlocked.CompareExchange(ref liveObservationTimeoutContext, "; " + detail, null);
+        Check(false, detail);
+    }
+
+    internal bool Check(bool allowed, string stage)
+    {
+        if (!allowed) { Interlocked.CompareExchange(ref firstFailure, stage, null); }
+        return allowed;
+    }
+
+    // Fixed code-owned stage names only. A timeout snapshots this context into
+    // the first failure; a late worker cannot rewrite the returned diagnostic.
+    internal IDisposable BeginStage(string name)
+    {
+        var stage = new ActiveStage(this, name, Volatile.Read(ref activeStage));
+        Volatile.Write(ref activeStage, stage);
+        return stage;
+    }
+
+    internal string ActiveStageDetail()
+    {
+        ActiveStage? stage = Volatile.Read(ref activeStage);
+        if (stage is null) { return string.Empty; }
+        string enclosing = string.Empty;
+        for (ActiveStage? parent = stage.Parent; parent is not null; parent = parent.Parent)
+        {
+            if (parent.Name.StartsWith("curve send ", StringComparison.Ordinal)
+                || parent.Name.StartsWith("curve native ", StringComparison.Ordinal)
+                || parent.Name.StartsWith("curve setter ", StringComparison.Ordinal)
+                || parent.Name.StartsWith("curve final ", StringComparison.Ordinal))
+            {
+                enclosing = "; enclosing stage " + parent.Name + $"; enclosing elapsed {Math.Min(600000L,
+                    (long)System.Diagnostics.Stopwatch.GetElapsedTime(parent.Started).TotalMilliseconds)} ms";
+                break;
+            }
+        }
+        return $"; active stage {stage.Name}{enclosing}; elapsed {Math.Min(600000L,
+            (long)System.Diagnostics.Stopwatch.GetElapsedTime(stage.Started).TotalMilliseconds)} ms";
+    }
+
+    private sealed class ActiveStage(CpuSavedAdmissionDiagnostic owner, string name, ActiveStage? parent) : IDisposable
+    {
+        internal string Name { get; } = name;
+        internal long Started { get; } = System.Diagnostics.Stopwatch.GetTimestamp();
+        private int disposed;
+        private readonly ActiveStage? parent = parent;
+        internal ActiveStage? Parent => parent;
+        public void Dispose()
+        {
+            Interlocked.Exchange(ref disposed, 1);
+            ActiveStage? previous = parent;
+            while (previous is not null && Volatile.Read(ref previous.disposed) != 0) { previous = previous.parent; }
+            Interlocked.CompareExchange(ref owner.activeStage, previous, this);
+        }
+    }
+}
+
+internal enum CpuPowerObservationPhase { InitialContext, FirstNative, RecoveryAdmission, ReplacementNative, PostRange, CompleteGetter }
+
+// Six sequential, code-owned phases for one operation. No samples, device data,
+// authority or cross-operation cache; the first cancellation freezes the text.
+internal sealed class CpuPowerObservationTiming(Func<TimeSpan>? elapsed = null) : IDisposable
+{
+    private static readonly string[] Names = ["initial getter/context", "first native observation", "recovery wait/admission",
+        "replacement native observation", "post-range checks", "CompleteGetter"];
+    private readonly object sync = new();
+    private readonly long started = System.Diagnostics.Stopwatch.GetTimestamp();
+    private readonly long?[] completed = new long?[Names.Length];
+    private int active;
+    private long phaseStarted, lastElapsed;
+    private string? frozen;
+    internal void MoveTo(CpuPowerObservationPhase phase)
+    {
+        lock (sync)
+        {
+            int next = (int)phase;
+            if (frozen is not null || active < 0 || next <= active || next >= Names.Length) { return; }
+            long now = Elapsed();
+            completed[active] = now - phaseStarted;
+            active = next; phaseStarted = now;
+        }
+    }
+    private long Elapsed() => lastElapsed = Math.Max(lastElapsed, Math.Clamp(
+        (long)(elapsed?.Invoke() ?? System.Diagnostics.Stopwatch.GetElapsedTime(started)).TotalMilliseconds, 0L, 600000L));
+    internal string Snapshot(bool freeze = false)
+    {
+        lock (sync)
+        {
+            if (frozen is not null) { return frozen; }
+            long now = active < 0 ? lastElapsed : Elapsed();
+            var phases = new List<string>(Names.Length);
+            for (int index = 0; index < Names.Length; index++)
+            {
+                if (completed[index] is long duration) { phases.Add($"{Names[index]}={duration} ms completed"); }
+                else if (index == active) { phases.Add($"{Names[index]}={now - phaseStarted} ms active"); }
+            }
+            string value = $"; power phases total {now} ms: " + string.Join(", ", phases);
+            if (freeze) { frozen = value; }
+            return value;
+        }
+    }
+    public void Dispose()
+    {
+        lock (sync)
+        {
+            if (frozen is not null || active < 0) { return; }
+            completed[active] = Elapsed() - phaseStarted; active = -1;
+        }
+    }
+}
+
+internal interface ICpuSavedFirmwareCommandInvoker
+{
+    // A false/unknown result after invocation must never be treated as proof
+    // that the provider did not receive the command.
+    Task<CpuSavedTuningSubmission> SendAsync(CpuSavedTuningCommand command,
+        Func<bool> freshAdmission, CancellationToken token);
+}
+
+internal sealed class WindowsSavedCpuTuningBackend : ICpuSavedTuningBackend
+{
+    private readonly ICpuTuningObservationSource source;
+    private readonly Func<DeviceIdentity, CpuSavedTuningCommand, bool> admitted;
+    private readonly ICpuSavedFirmwareCommandInvoker invoker;
+    private readonly CpuSavedAdmissionDiagnostic? diagnostic;
+
+    internal WindowsSavedCpuTuningBackend(ICpuTuningObservationSource source,
+        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission,
+        CpuSavedAdmissionDiagnostic? diagnostic = null)
+        : this(source, (identity, command) => freshRuntimeAdmission(identity, command)
+            && CheckStage(Rz090528CpuFreshUsbIdentity.Read() is { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 }, diagnostic, "fresh USB identity")
+            && CheckStage(Rz090528CpuControllerPresence.ControllersAbsent(), diagnostic, "fresh controller process/service inventory"),
+            new WindowsCpuSavedFirmwareCommandInvoker(), diagnostic)
+    { }
+
+    internal WindowsSavedCpuTuningBackend(ICpuTuningObservationSource source,
+        Func<DeviceIdentity, CpuSavedTuningCommand, bool> freshRuntimeAdmission,
+        ICpuSavedFirmwareCommandInvoker invoker, CpuSavedAdmissionDiagnostic? diagnostic = null)
+    {
+        this.source = source ?? throw new ArgumentNullException(nameof(source));
+        admitted = freshRuntimeAdmission ?? throw new ArgumentNullException(nameof(freshRuntimeAdmission));
+        this.invoker = invoker ?? throw new ArgumentNullException(nameof(invoker));
+        this.diagnostic = diagnostic;
+    }
+
+    public Task<bool> CheckWriteAdmissionAsync(DeviceIdentity identity, CpuSavedTuningCommand command,
+        CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        return Task.FromResult(Check(identity, command));
+    }
+
+    private bool Check(DeviceIdentity identity, CpuSavedTuningCommand command) =>
+        CheckStage(identity is { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 }, diagnostic, "saved command device identity")
+        && CheckStage(IsProductionCommandAdmitted(command), diagnostic, "saved command semantic encoding")
+        && CheckStage(admitted(identity, command), diagnostic, "fresh runtime admission")
+        && CheckStage(CpuHardwareIdentity.Same(source.ReadIdentity(), identity), diagnostic, "fresh host identity");
+
+    private static bool CheckStage(bool allowed, CpuSavedAdmissionDiagnostic? diagnostic, string stage) =>
+        diagnostic?.Check(allowed, stage) ?? allowed;
+
+    public Task<SavedCpuFirmwareReadResult> ReadAsync(DeviceIdentity identity, CancellationToken token) =>
+        CpuFirmwareReadScheduler.RunAsync(() =>
+        {
+            token.ThrowIfCancellationRequested();
+            if (!CpuHardwareIdentity.Same(source.ReadIdentity(), identity))
+            {
+                return new SavedCpuFirmwareReadResult(SavedCpuFirmwareReadStatus.UnsupportedIdentity,
+                    null, null, 0, 0);
+            }
+            SavedCpuFirmwareReadResult result = source.ReadSaved(identity);
+            token.ThrowIfCancellationRequested();
+            return result;
+        }, TimeSpan.FromSeconds(10), token);
+
+    public Task<CpuSavedTuningSubmission> SendAsync(DeviceIdentity identity,
+        CpuSavedTuningCommand command, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (!Check(identity, command)) { return Task.FromResult(CpuSavedTuningSubmission.NotSubmitted); }
+        // The native worker checks again after discovery/version negotiation,
+        // immediately before the one bounded typed RunCommand invocation.
+        return invoker.SendAsync(command, () => Check(identity, command), token);
+    }
+
+    // Reviewed source admission for the exact existing model/SKU guards.
+    // This does not replace version-7 negotiation, strict ACK decoding, fresh
+    // runtime safety, complete paired readback or exact original restoration.
+    // Installed LocalSystem/session IPC validation remains separate.
+    internal static bool IsProductionCommandAdmitted(CpuSavedTuningCommand command) =>
+        command is { IsWellFormed: true } && CpuSavedSemanticPolicy.MatchesKnownAnswers()
+        && CpuSavedSemanticPolicy.MatchesEncoding(command, command.Encode());
+
+    internal static bool CheckFreshAdmission(Func<bool> admission, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        bool allowed = admission();
+        // A synchronous identity/safety probe may outlive the outer deadline.
+        // It must not grant a late worker permission to invoke the provider.
+        token.ThrowIfCancellationRequested();
+        return allowed;
+    }
+
+    private sealed class WindowsCpuSavedFirmwareCommandInvoker : ICpuSavedFirmwareCommandInvoker
+    {
+        private static readonly TimeSpan OperationDeadline = TimeSpan.FromSeconds(10);
+        private const bool PinnedMissingReturnValueCompatibility = true;
+
+        public async Task<CpuSavedTuningSubmission> SendAsync(CpuSavedTuningCommand command,
+            Func<bool> freshAdmission, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!command.IsWellFormed || !freshAdmission()) { return CpuSavedTuningSubmission.NotSubmitted; }
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+            deadline.CancelAfter(OperationDeadline);
+            CancellationToken workerToken = deadline.Token;
+            Task<CpuSavedTuningSubmission> worker = Task.Run(
+                () => SendCore(command, freshAdmission, workerToken), CancellationToken.None);
+            try
+            {
+                return await worker.WaitAsync(deadline.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // COM/provider cancellation cannot prove non-submission. The
+                // durable PossibleSubmission journal prevents another command,
+                // including restoration, while completion remains unknown.
+                deadline.Cancel();
+                _ = worker.ContinueWith(static completed => { _ = completed.Exception; },
+                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted
+                        | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                return CpuSavedTuningSubmission.Unknown;
+            }
+        }
+
+        private static CpuSavedTuningSubmission SendCore(CpuSavedTuningCommand command,
+            Func<bool> freshAdmission, CancellationToken token)
+        {
+            bool invoking = false;
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                using var search = new ManagementObjectSearcher("root\\wmi", "SELECT * FROM AMD_ACPI");
+                search.Options.Timeout = OperationDeadline;
+                using ManagementObjectCollection objects = search.Get();
+                ManagementObject? instance = null;
+                try
+                {
+                    int count = 0;
+                    foreach (ManagementObject candidate in objects)
+                    {
+                        count++;
+                        if (count == 1) { instance = candidate; }
+                        else { candidate.Dispose(); }
+                    }
+                    token.ThrowIfCancellationRequested();
+                    if (count != 1 || instance is null || !CheckFreshAdmission(freshAdmission, token))
+                    { return CpuSavedTuningSubmission.NotSubmitted; }
+                    token.ThrowIfCancellationRequested();
+                    using ManagementBaseObject? version = instance.InvokeMethod("QueryVersion", null,
+                        new InvokeMethodOptions { Timeout = OperationDeadline });
+                    token.ThrowIfCancellationRequested();
+                    // This invoker is reachable only through the exact model,
+                    // USB and exact-host admission above. Enumerated absence is
+                    // distinct from a failed property read; never swallow a
+                    // provider error as successful missing-return compatibility.
+                    if (!WindowsSavedCpuWmiOutput.AcceptReturnValue(WindowsSavedCpuWmiOutput.Read(version, "ReturnValue"), PinnedMissingReturnValueCompatibility)
+                        || !WindowsSavedCpuWmiOutput.AcceptVersion(WindowsSavedCpuWmiOutput.Read(version, "version"))
+                        || !CheckFreshAdmission(freshAdmission, token))
+                    { return CpuSavedTuningSubmission.NotSubmitted; }
+                    using ManagementBaseObject input = instance.GetMethodParameters("RunCommand");
+                    input["Inbuf"] = command.Encode();
+                    token.ThrowIfCancellationRequested();
+                    if (!CheckFreshAdmission(freshAdmission, token)) { return CpuSavedTuningSubmission.NotSubmitted; }
+                    token.ThrowIfCancellationRequested();
+                    invoking = true;
+                    using ManagementBaseObject? result = instance.InvokeMethod("RunCommand", input,
+                        new InvokeMethodOptions { Timeout = OperationDeadline });
+                    // Acknowledgement is strictly typed, as in the attended
+                    // firmware helper. Missing fields or provider errors remain
+                    // ambiguous; the transaction always performs full readback.
+                    if (!WindowsSavedCpuWmiOutput.AcceptReturnValue(WindowsSavedCpuWmiOutput.Read(result, "ReturnValue"), PinnedMissingReturnValueCompatibility)
+                        || WindowsSavedCpuWmiOutput.Read(result, "Outbuf") is not
+                        { State: CpuSavedWmiPropertyState.Present, Value: ManagementBaseObject output })
+                    { return CpuSavedTuningSubmission.Unknown; }
+                    using (output)
+                    {
+                        return WindowsSavedCpuWmiOutput.AcceptCommandResult(WindowsSavedCpuWmiOutput.Read(output, "result"))
+                                ? CpuSavedTuningSubmission.Acknowledged : CpuSavedTuningSubmission.Unknown;
+                    }
+                }
+                finally { instance?.Dispose(); }
+            }
+            catch (Exception exception) when (exception is ManagementException or System.Runtime.InteropServices.COMException
+                or UnauthorizedAccessException or InvalidOperationException or OperationCanceledException
+                or System.Security.SecurityException)
+            {
+                return invoking ? CpuSavedTuningSubmission.Unknown : CpuSavedTuningSubmission.NotSubmitted;
+            }
+        }
+    }
+}

@@ -14,7 +14,7 @@ public sealed partial class ExperimentalThermalExpansionTests
     [InlineData(0x02A0, 4, true, false, false)]
     [InlineData(0x02A0, 11, false, true, true)]
     [InlineData(0x02A0, 15, true, true, true)]
-    public async Task SharedPowerModeFlags_AreDiagnosticObservationsWithoutFullChargeAdmission(
+    public async Task SharedPowerModeFlags_AreDiagnosticObservationsWithoutChangingModelCapability(
         int pid, byte flags, bool temporaryFullCharge, bool cpuBoost, bool localDimming)
     {
         var session = new Session { Mode = 4, PowerModeControlFlags = flags };
@@ -29,7 +29,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Contains($"TemporaryFullChargeBit={temporaryFullCharge}", observation.ConfirmedValue!);
         Assert.Contains($"CpuBoostBit={cpuBoost}", observation.ConfirmedValue!);
         Assert.Contains($"LocalDimmingBit={localDimming}", observation.ConfirmedValue!);
-        Assert.False(port.Capabilities.SupportsTemporaryFullCharge);
+        Assert.Equal(pid == 0x02A0, port.Capabilities.SupportsTemporaryFullCharge);
         if (pid == 0x02A0)
         {
             Assert.Equal(temporaryFullCharge, await port.QueryTemporaryFullChargeAsync(CancellationToken.None));

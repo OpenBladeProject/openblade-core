@@ -18,10 +18,12 @@ internal sealed class BatteryTestDevice : IBladeDevice
 
     public List<string> BatterySetterCalls { get; } = [];
     public bool AutoConfirmWrites { get; set; } = true;
+    public List<IndependentLightingSettings> IndependentLightingWrites { get; } = [];
     public int? ReadStateFailureOnCall { get; set; }
     public Exception? BatteryWriteFailure { get; set; }
     public Action<DeviceSubsystem>? AfterSetter { get; set; }
     public int StateReadCalls { get; private set; }
+    internal Func<CancellationToken, Task<AdapterPowerState>>? ReadAdapterPower;
 
     public Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken)
     {
@@ -77,7 +79,8 @@ internal sealed class BatteryTestDevice : IBladeDevice
         CancellationToken cancellationToken) => throw new NotSupportedException();
 
     public Task<AdapterPowerState> ReadAdapterPowerStateAsync(
-        CancellationToken cancellationToken) => throw new NotSupportedException();
+        CancellationToken cancellationToken) => ReadAdapterPower?.Invoke(cancellationToken)
+            ?? throw new NotSupportedException();
 
     public Task SetPerformanceAsync(
         PerformancePreset value,
@@ -115,6 +118,23 @@ internal sealed class BatteryTestDevice : IBladeDevice
         LightingSettings value,
         CancellationToken cancellationToken) => throw new NotSupportedException();
 
+    public Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        IndependentLightingWrites.Add(value);
+        if (AutoConfirmWrites)
+        {
+            State = State with
+            {
+                IndependentLighting = new(
+                    value.Brightness ?? State.IndependentLighting?.Brightness,
+                    value.LogoMode ?? State.IndependentLighting?.LogoMode),
+                LogoLighting = value.LogoMode ?? State.LogoLighting,
+            };
+        }
+        AfterSetter?.Invoke(DeviceSubsystem.Lighting);
+        return Task.CompletedTask;
+    }
     public Task<byte> StepKeyboardBrightnessAsync(
         KeyboardBrightnessDirection direction,
         CancellationToken cancellationToken) => throw new NotSupportedException();

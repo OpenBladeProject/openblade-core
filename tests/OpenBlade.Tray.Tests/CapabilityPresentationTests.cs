@@ -528,7 +528,18 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(28, animated.Length);
+        XElement cpuCard = Assert.Single(animated, element =>
+            Attribute(element, "DataContext") == "{Binding CpuTuning}");
+        Assert.Equal("{Binding IsVisible}", Attribute(cpuCard, "AnimatedVisibility.IsVisible"));
+        Assert.Equal(
+            new[] { "{Binding ShowRecoverySummary}", "{Binding ShowAvailabilitySummary}", "{Binding CanRestore}" },
+            cpuCard.Descendants()
+                .Select(element => Attribute(element, "AnimatedVisibility.IsVisible"))
+                .Where(binding => binding is not null));
+        XElement cpuRestore = Assert.Single(cpuCard.Descendants(), element =>
+            Attribute(element, "Command") == "{Binding RestoreCommand}");
+        Assert.Contains(cpuRestore, animated);
+        Assert.Equal("{Binding CanRestore}", Attribute(cpuRestore, "AnimatedVisibility.IsVisible"));
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -923,6 +934,7 @@ public sealed class CapabilityPresentationTests
             Attribute(sliderStyle, "BasedOn"));
         string[] sliderNames =
         [
+            "CpuCurveOffsetSlider",
             "GpuCoreClockOffsetSlider",
             "GpuMemoryClockOffsetSlider",
             "FixedFanSpeedSlider",
@@ -1529,7 +1541,7 @@ public sealed class CapabilityPresentationTests
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            19,
+            18,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -2544,7 +2556,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
         Assert.Equal(
-            9,
+            10,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "EntranceThemeTransition"));
     }
@@ -2567,6 +2579,257 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("IntegerEditorValue.ToDouble", source, StringComparison.Ordinal);
         Assert.Contains("IntegerEditorValue.ToInt32", source, StringComparison.Ordinal);
         Assert.Contains("throw new ArgumentException", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IndependentLighting_BackendTransitionsRefreshBrightnessAndLogoEditors()
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        ServiceStatusSnapshot classic = CreateStatus(true, false, DeviceCapabilities.SafeTargetDefaults());
+        classic = classic with
+        {
+            ConfirmedState = classic.ConfirmedState! with
+            {
+                Lighting = LightingSettingsFactory.SpectrumCycling(22),
+                LogoLighting = LogoLightingMode.Off,
+            },
+        };
+        await client.PublishAndWaitAsync(classic);
+        var notifications = new List<string?>();
+        vm.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+        await client.PublishAndWaitAsync(CreateIndependentLightingStatus(65, LogoLightingMode.Static) with { Revision = 2 });
+        Assert.Equal(65, vm.LightingBrightnessEditor);
+        Assert.Equal(LogoLightingMode.Static, vm.LogoLightingModeEditor);
+        Assert.Contains(nameof(MainViewModel.LightingBrightnessEditor), notifications);
+        Assert.Contains(nameof(MainViewModel.LogoLightingModeEditor), notifications);
+        notifications.Clear();
+        await client.PublishAndWaitAsync(classic with { Revision = 3 });
+        Assert.Equal(22, vm.LightingBrightnessEditor);
+        Assert.Equal(LogoLightingMode.Off, vm.LogoLightingModeEditor);
+        Assert.Contains(nameof(MainViewModel.LightingBrightnessEditor), notifications);
+        Assert.Contains(nameof(MainViewModel.LogoLightingModeEditor), notifications);
+    }
+
+    [Fact]
+    public async Task IndependentLighting_LabEffectGuidesRemainAvailableOnlyForClassicBackends()
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        ServiceStatusSnapshot classic = CreateStatus(true, false, DeviceCapabilities.SafeTargetDefaults());
+        await client.PublishAndWaitAsync(classic);
+        Assert.True(vm.ShowLightingEffectLabControls);
+        var notifications = new List<string?>();
+        vm.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+        await client.PublishAndWaitAsync(CreateIndependentLightingStatus(65, LogoLightingMode.Static) with { Revision = 2 });
+        Assert.False(vm.ShowLightingEffectLabControls);
+        Assert.Contains(nameof(MainViewModel.ShowLightingEffectLabControls), notifications);
+        notifications.Clear();
+        await client.PublishAndWaitAsync(classic with { Revision = 3 });
+        Assert.True(vm.ShowLightingEffectLabControls);
+        Assert.Contains(nameof(MainViewModel.ShowLightingEffectLabControls), notifications);
+    }
+
+    [Fact]
+    public void IndependentLighting_ControlsRequireTheirDedicatedCapability()
+    {
+        LightingSettings requested = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting with
+        {
+            IndependentControls = new(42, null),
+        };
+        Assert.False(ProfileAdmissionPolicy.LightingSupported(requested, DeviceCapabilities.SafeTargetDefaults()));
+    }
+
+    [Fact]
+    public void IndependentLighting_UsesExistingRowsAndUnknownReadbackPresentation()
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement slider = document.Descendants().Single(element =>
+            Attribute(element, "Name") == "DashboardLightingBrightnessSlider");
+        Assert.Equal("{StaticResource InlineCardSliderStyle}", Attribute(slider, "Style"));
+        Assert.Equal("{x:Bind LightingBrightnessMinimum, Mode=OneWay}", Attribute(slider, "Minimum"));
+        Assert.Equal("{x:Bind HasLightingBrightnessValue, Mode=OneWay}", Attribute(slider, "IsThumbToolTipEnabled"));
+        Assert.NotNull(slider.Attributes().SingleOrDefault(attribute => attribute.Name.LocalName == "AutomationProperties.Name"));
+        XElement row = slider.Ancestors().First(element => element.Name.LocalName == "Border");
+        Assert.Equal("{StaticResource SettingsRowStyle}", Attribute(row, "Style"));
+        XElement percent = row.Descendants().Single(element => Attribute(element, "Text") == "%");
+        Assert.Equal("{x:Bind HasLightingBrightnessValue, Mode=OneWay}", Attribute(percent, "Visibility"));
+        XElement logo = document.Descendants().Single(element => Attribute(element, "Name") == "LaptopLogoModeSelector");
+        Assert.Equal("{x:Bind LogoLightingPlaceholderText}", Attribute(logo, "PlaceholderText"));
+        Assert.Equal("{x:Bind SelectedLogoLightingModeOption, Mode=TwoWay}", Attribute(logo, "SelectedItem"));
+        XElement effect = document.Descendants().Single(element =>
+            Attribute(element, "CardReorder.CardId") == "LightingEffectPicker");
+        Assert.Equal("{x:Bind IsKeyboardEffectSelectionVisible, Mode=OneWay}", Attribute(effect, "Visibility"));
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData((byte)73, LogoLightingMode.Breathing)]
+    public async Task IndependentLighting_PresentsOnlyNullableBrightnessAndLogo(
+        byte? brightness, LogoLightingMode? logo)
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        ServiceStatusSnapshot status = CreateIndependentLightingStatus(brightness, logo);
+        await client.PublishAndWaitAsync(status);
+        Assert.True(vm.HasLightingCapability);
+        Assert.True(vm.CanControlLighting);
+        Assert.Empty(vm.AvailableLightingEffectOptions);
+        Assert.False(vm.IsKeyboardEffectSelectionVisible);
+        Assert.False(vm.LightingShowsPrimaryColor);
+        Assert.True(vm.LightingShowsBrightness);
+        Assert.Equal(brightness.HasValue, vm.HasLightingBrightnessValue);
+        Assert.Equal(brightness?.ToString() ?? "—", vm.LightingBrightnessValueText);
+        Assert.Equal(logo, vm.SelectedLogoLightingModeOption?.Mode);
+        Assert.False(vm.IsLightingApplyPending);
+        Assert.Null(vm.LightingDraft.IndependentControls);
+        Assert.Null(client.IndependentLightingRequest);
+        Assert.False(vm.HasLightingProfileSaveOpportunity);
+
+        await client.PublishAndWaitAsync(status with
+        {
+            Revision = 2,
+            WritesBlocked = true,
+            ExperimentalWritesPaused = true,
+            Capabilities = status.Capabilities! with
+            {
+                SupportsKeyboardBrightness = false,
+                LogoLightingModes = new HashSet<LogoLightingMode>(),
+            },
+        });
+        Assert.False(vm.CanControlLighting);
+        Assert.True(vm.IsLogoLightingVisible);
+        Assert.False(vm.IsKeyboardEffectSelectionVisible);
+        Assert.Equal(logo, vm.SelectedLogoLightingModeOption?.Mode);
+        Assert.Equal(brightness?.ToString() ?? "—", vm.LightingBrightnessValueText);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task IndependentLighting_EditSendsOnlyChangedFieldAndPreservesWrapper(bool brightness)
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        ServiceStatusSnapshot status = CreateIndependentLightingStatus(null, null);
+        await client.PublishAndWaitAsync(status);
+        LightingSettings wrapper = vm.LightingDraft;
+        if (brightness)
+        {
+            vm.LightingBrightnessEditor = 42;
+        }
+        else
+        {
+            vm.LogoLightingModeEditor = LogoLightingMode.Off;
+        }
+        LightingSettings draft = vm.LightingDraft;
+        Assert.Equal(wrapper, draft with { IndependentControls = null });
+        Assert.True(vm.IsLightingApplyPending);
+        Assert.True(vm.SetLightingCommand.CanExecute(draft));
+        Assert.False(vm.SetLightingCommand.CanExecute(draft with
+        {
+            Effect = draft.Effect == LightingEffect.Off ? LightingEffect.Spectrum : LightingEffect.Off,
+        }));
+        await Assert.IsType<AsyncRelayCommand>(vm.SetLightingCommand).ExecuteAsync(draft);
+        Assert.Equal(brightness ? new IndependentLightingSettings(42, null)
+            : new IndependentLightingSettings(null, LogoLightingMode.Off), client.IndependentLightingRequest?.Value);
+        Assert.False(vm.IsLightingApplyPending);
+        Assert.Null(client.ClassicLightingRequest);
+        await Assert.IsType<AsyncRelayCommand>(vm.SaveLightingProfileDraftCommand).ExecuteAsync(null);
+        Assert.Equal(draft, client.SavedProfiles?.PluggedIn.Lighting);
+    }
+
+    [Theory]
+    [InlineData("failed")]
+    [InlineData("exception")]
+    [InlineData("cancel")]
+    public async Task IndependentLighting_UnsuccessfulCommitCannotReplayAfterResume(string failure)
+    {
+        var client = new PresentationClient
+        {
+            IndependentLightingResultStatus = failure == "failed" ? ControlOperationStatus.Failed : ControlOperationStatus.Applied,
+            IndependentLightingException = failure == "exception" ? new IOException("Lost reply") : null,
+            IndependentLightingWaitForCancellation = failure == "cancel",
+        };
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        ServiceStatusSnapshot status = CreateIndependentLightingStatus(65, LogoLightingMode.Static);
+        await client.PublishAndWaitAsync(status);
+        vm.LightingBrightnessEditor = 42;
+        LightingSettings draft = vm.LightingDraft;
+        var queued = new LightingCommitRequest(draft, null) { EditorGeneration = vm.LightingCommitGeneration };
+        AsyncRelayCommand command = Assert.IsType<AsyncRelayCommand>(vm.SetLightingCommand);
+        Task operation = command.ExecuteAsync(draft);
+        if (failure == "cancel")
+        {
+            await WaitUntilAsync(() => client.IndependentLightingRequestCount == 1);
+            await command.DisposeAsync();
+            Assert.True(client.IndependentLightingCancellationObserved);
+        }
+        _ = await Record.ExceptionAsync(() => operation);
+        Assert.False(vm.IsLightingApplyPending);
+        Assert.False(vm.IsLightingCommitCurrent(queued));
+        Assert.Equal("65", vm.LightingBrightnessValueText);
+        await client.PublishAndWaitAsync(status with { Revision = 2, WritesBlocked = true, ExperimentalWritesPaused = true });
+        await client.PublishAndWaitAsync(status with { Revision = 3 });
+        Assert.False(vm.IsLightingApplyPending);
+        Assert.False(vm.IsLightingCommitCurrent(queued));
+        Assert.Equal(1, client.IndependentLightingRequestCount);
+        Assert.Null(client.SavedProfiles);
+        Assert.False(command.CanExecute(draft));
+        // Even an identical later user edit cannot revive the old callback.
+        vm.LightingBrightnessEditor = 42;
+        Assert.False(vm.IsLightingCommitCurrent(queued));
+        Assert.True(vm.IsLightingCommitCurrent(new(vm.LightingDraft, null)
+        {
+            EditorGeneration = vm.LightingCommitGeneration,
+        }));
+    }
+
+    [Fact]
+    public async Task IndependentLighting_PartialConfirmationSnapshotPreservesFullOverrideIntent()
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        ServiceStatusSnapshot status = CreateIndependentLightingStatus(65, LogoLightingMode.Static);
+        LightingSettings full = status.DesiredState.Lighting.Value with
+        {
+            IndependentControls = new(65, LogoLightingMode.Off),
+        };
+        await client.PublishAndWaitAsync(status with
+        {
+            LightingOverride = new(full, OverrideLifetime.UntilPowerSourceChange),
+            DesiredState = status.DesiredState with
+            {
+                Lighting = new(full with { IndependentControls = new(null, LogoLightingMode.Off) },
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        vm.LightingBrightnessEditor = 42;
+        Assert.Equal(new IndependentLightingSettings(42, LogoLightingMode.Off), vm.LightingDraft.IndependentControls);
+        Assert.Equal(LogoLightingMode.Static, vm.LogoLightingModeEditor);
+    }
+
+    private static ServiceStatusSnapshot CreateIndependentLightingStatus(byte? brightness, LogoLightingMode? logo)
+    {
+        ServiceStatusSnapshot status = CreateStatus(true, false, DeviceCapabilities.Unavailable() with
+        {
+            SupportsIndependentLightingControls = true,
+            SupportsKeyboardBrightness = true,
+            LogoLightingModes = new HashSet<LogoLightingMode> { LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing },
+        });
+        return status with
+        {
+            ConfirmedState = status.ConfirmedState! with
+            {
+                IndependentLighting = brightness.HasValue || logo.HasValue ? new(brightness, logo) : null,
+            },
+        };
     }
 
     [Fact]
@@ -3402,7 +3665,13 @@ public sealed class CapabilityPresentationTests
             Assert.Contains(input.Ancestors(), ancestor =>
                 ancestor.Name.LocalName == "ContentControl"
                 && Attribute(ancestor, "IsEnabled") == "{x:Bind CanRequestHardwareControl, Mode=OneWay}");
-            if (input.Ancestors().Contains(keyboardSection)
+            if (Attribute(input, "Name") is "ImportKeyboardLightingPresetButton" or "LightingRefreshRateToggle")
+            {
+                // Keep guide destinations visible while the individual capability gates disable them.
+                Assert.DoesNotContain(input.Ancestors(), ancestor =>
+                    Attribute(ancestor, "Visibility") == "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}");
+            }
+            else if (input.Ancestors().Contains(keyboardSection)
                 || input.Ancestors().Contains(powerSavingSection))
             {
                 Assert.Contains(input.Ancestors(), ancestor =>
@@ -3624,10 +3893,40 @@ public sealed class CapabilityPresentationTests
         }
     }
 
-    private sealed class PresentationClient : OpenBlade.Testing.UnavailableServiceClient
+    private sealed class PresentationClient : OpenBlade.Testing.UnavailableServiceClient, IServiceClient
     {
         private readonly Channel<PublishedStatus> statuses =
             Channel.CreateUnbounded<PublishedStatus>();
+        public ManualOverride<IndependentLightingSettings>? IndependentLightingRequest { get; private set; }
+        public ManualOverride<LightingSettings>? ClassicLightingRequest { get; private set; }
+        public ControlOperationStatus IndependentLightingResultStatus { get; init; } = ControlOperationStatus.Applied;
+        public Exception? IndependentLightingException { get; init; }
+        public bool IndependentLightingWaitForCancellation { get; init; }
+        public bool IndependentLightingCancellationObserved { get; private set; }
+        public int IndependentLightingRequestCount { get; private set; }
+        public async Task<ControlOperationResult> SetIndependentLightingOverrideAsync(
+            ManualOverride<IndependentLightingSettings>? value, CancellationToken token)
+        {
+            IndependentLightingRequest = value;
+            IndependentLightingRequestCount++;
+            if (IndependentLightingWaitForCancellation)
+            {
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    IndependentLightingCancellationObserved = true;
+                    throw;
+                }
+            }
+            if (IndependentLightingException is { } exception)
+            {
+                throw exception;
+            }
+            return new(IndependentLightingResultStatus, "Independent lighting test result");
+        }
         public ProfileSet? SavedProfiles { get; private set; }
         public BatteryPolicy? SavedBatteryPolicy { get; private set; }
         public bool? SavedBatteryProtection { get; private set; }
@@ -3681,7 +3980,11 @@ public sealed class CapabilityPresentationTests
             CancellationToken token) => Result();
         public override Task<ControlOperationResult> SetLightingOverrideAsync(
             ManualOverride<LightingSettings>? value,
-            CancellationToken token) => Result();
+            CancellationToken token)
+        {
+            ClassicLightingRequest = value;
+            return Result();
+        }
         public override Task<ControlOperationResult> SetBatteryPolicyAsync(
             BatteryPolicy value,
             CancellationToken token)

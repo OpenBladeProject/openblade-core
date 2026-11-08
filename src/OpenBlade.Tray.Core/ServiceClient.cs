@@ -189,6 +189,17 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 value),
             token);
 
+    public Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target,
+        CpuTuningSettings settings, CancellationToken token) => SendMutationAsync(
+            new SetCpuTuningRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), target, settings), token);
+
+    public Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend,
+        CancellationToken token) => SendMutationAsync(
+            new ObserveCpuTuningRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), useInstalledBackend), token);
+
+    public Task<ControlOperationResult> RestoreCpuTuningAsync(CpuTuningTarget target,
+        CancellationToken token) => SendMutationAsync(
+            new RestoreCpuTuningRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), target), token);
     public Task<ControlOperationResult> SetGpuClockTuningAsync(
         GpuClockTuningSettings value,
         OverrideLifetime lifetime,
@@ -240,6 +251,12 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ManualOverride<LightingSettings>? value,
         CancellationToken token) => SendMutationAsync(
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
+            token);
+
+    public Task<ControlOperationResult> SetIndependentLightingOverrideAsync(
+        ManualOverride<IndependentLightingSettings>? value,
+        CancellationToken token) => SendMutationAsync(
+            new SetIndependentLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
             token);
 
     public Task<ControlOperationResult> StepKeyboardBrightnessAsync(

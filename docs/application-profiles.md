@@ -57,6 +57,7 @@ unrenewed context. Existing typed capability and hardware admission still govern
 every requested control. An application rule grants no new model support or
 firmware command.
 
-Persisted profiles use schema 22, exported profiles use schema 14, service IPC is
-72 and display IPC is 2. Older profiles migrate with no application rules and no
-brightness overrides.
+Persisted profiles use schema 23, exported profiles use schema 15, service IPC is
+73 and display IPC is 2. Schema 22/14 files retain their application rules and
+brightness overrides; earlier formats migrate without those settings. Older
+files leave the new Turbo and Maximum Power Windows power-mode associations unset.

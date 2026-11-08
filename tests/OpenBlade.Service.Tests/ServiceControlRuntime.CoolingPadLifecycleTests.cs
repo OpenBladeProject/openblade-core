@@ -162,7 +162,7 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     private async Task<(TestContext Context, SecurityIdentifier User)> CreateActiveLifecyclePadContextAsync(
-        LifecyclePad pad, LowPowerGate? gate = null)
+        LifecyclePad pad, LowPowerGate? gate = null, bool laptopAvailable = true)
     {
         var user = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
         var repository = new RecordingUserConfigurationRepository(
@@ -170,6 +170,7 @@ public sealed partial class ServiceControlRuntimeTests
         TestContext context = CreateWritableContext(
             userConfigurationRepository: repository, lowPowerGate: gate,
             coolingPadDeviceProvider: new LifecyclePadProvider(pad));
+        context.Provider.Available = laptopAvailable;
         await context.Runtime.ObserveAsync(default);
         await context.Runtime.ActivateUserAsync(user, () => true, default);
         ControlOperationResult applied = await context.Runtime.SetCoolingPadSettingsAsync(

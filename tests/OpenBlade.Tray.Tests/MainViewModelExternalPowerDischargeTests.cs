@@ -6,6 +6,115 @@ namespace OpenBlade.Tray.Tests;
 public sealed partial class MainViewModelTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnchangedCoolingPadWireCurvesPreserveTrayOnlyFastPath(bool connected)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        var time = new MutableTimeProvider(NotificationTestTime);
+        await using var viewModel = new MainViewModel(client, dispatcher, time);
+        ServiceStatusSnapshot status = CreateLiveStatus() with
+        {
+            CoolingPad = new()
+            {
+                Connected = connected,
+                Connection = connected ? CoolingPadConnectionState.PresentExact : CoolingPadConnectionState.Absent,
+            },
+        };
+        ServiceStatusSnapshot initial = await RoundTripStatusAsync(status);
+        await ConnectAsync(viewModel, client, dispatcher, initial);
+        int padNotifications = 0;
+        viewModel.CoolingPad.PropertyChanged += (_, _) => padNotifications++;
+
+        ServiceStatusSnapshot unchanged = await RoundTripStatusAsync(status with
+        {
+            Revision = status.Revision + 1,
+            LiveReadings = new LiveReadings(-6000, 2300, 2400, 48, 50),
+        });
+        Assert.NotSame(initial.CoolingPad.Requested.CpuCurve, unchanged.CoolingPad.Requested.CpuCurve);
+        Assert.NotSame(initial.CoolingPad.Requested.GpuCurve, unchanged.CoolingPad.Requested.GpuCurve);
+        Assert.Equal(initial.CoolingPad.Requested.CpuCurve, unchanged.CoolingPad.Requested.CpuCurve);
+        Assert.Equal(initial.CoolingPad.Requested.GpuCurve, unchanged.CoolingPad.Requested.GpuCurve);
+
+        await ObserveAsync(client, () => viewModel.ObserveTrayStateAsync(CancellationToken.None), unchanged);
+        Assert.Equal(unchanged.LiveReadings, viewModel.LiveReadings);
+        Assert.Equal(connected, viewModel.CoolingPad.IsVisible);
+        Assert.Equal(0, padNotifications);
+
+        // An actual curve edit must leave the shortcut even when every scalar matches.
+        ServiceStatusSnapshot changed = await RoundTripStatusAsync(unchanged with
+        {
+            Revision = unchanged.Revision + 1,
+            CoolingPad = unchanged.CoolingPad with
+            {
+                Requested = unchanged.CoolingPad.Requested with
+                {
+                    CpuCurve = [new(50, 550), new(65, 1500), new(80, 2500), new(90, 3200)],
+                },
+            },
+        });
+        await ObserveAsync(client, () => viewModel.ObserveTrayStateAsync(CancellationToken.None), changed);
+        Assert.True(padNotifications > 0);
+        Assert.Equal(0, client.MutationCalls);
+    }
+
+    [Fact]
+    public async Task TrayOnlyObservationPublishesCoolingPadOnlyPresenceAndSafetyChanges()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        ServiceStatusSnapshot status = CreateLiveStatus() with
+        {
+            ActivePowerSource = PowerSource.PluggedIn,
+            CoolingPad = new() { Connection = CoolingPadConnectionState.Absent },
+        };
+        await ConnectAsync(viewModel, client, dispatcher, status);
+        Assert.False(viewModel.CoolingPad.IsVisible);
+
+        status = status with
+        {
+            Revision = status.Revision + 1,
+            CoolingPad = new()
+            {
+                Connected = true,
+                Connection = CoolingPadConnectionState.PresentExact,
+                ConfirmedTargetRpm = 1500,
+            },
+        };
+        await ObserveAsync(client,
+            () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
+        Assert.True(viewModel.CoolingPad.IsVisible);
+        Assert.True(viewModel.CoolingPad.CanApply);
+        Assert.Contains("1500", viewModel.CoolingPad.ConfiguredTargetText, StringComparison.Ordinal);
+
+        status = status with
+        {
+            Revision = status.Revision + 1,
+            CoolingPad = status.CoolingPad with { WritesPaused = true, ConfirmedTargetRpm = 2000 },
+        };
+        await ObserveAsync(client,
+            () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
+        Assert.True(viewModel.CoolingPad.IsVisible);
+        Assert.False(viewModel.CoolingPad.CanApply);
+        Assert.Contains("2000", viewModel.CoolingPad.ConfiguredTargetText, StringComparison.Ordinal);
+
+        status = status with
+        {
+            Revision = status.Revision + 1,
+            CoolingPad = new() { Connection = CoolingPadConnectionState.Absent },
+        };
+        await ObserveAsync(client,
+            () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
+        Assert.False(viewModel.CoolingPad.IsVisible);
+        Assert.False(viewModel.CoolingPad.CanApply);
+        Assert.Equal(3, client.ObservationCalls);
+        Assert.All(client.RequestedLiveReadings, sensors => Assert.Equal(LiveReadingSensors.BatteryPower, sensors));
+        Assert.Equal(0, client.MutationCalls);
+    }
+
+    [Theory]
     [InlineData(PowerSource.PluggedIn)]
     [InlineData(PowerSource.UsbC)]
     public async Task ExternalDischargeUsesFreshBatteryOnlyObservationsAndClearsOnRecovery(PowerSource source)

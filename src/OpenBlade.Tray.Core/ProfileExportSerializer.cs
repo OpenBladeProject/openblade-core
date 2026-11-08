@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 14;
+    public const int CurrentSchemaVersion = 16;
     public const int MaximumFileSizeBytes = 1024 * 1024;
 
     private static readonly JsonSerializerOptions SerializerOptions =
@@ -40,6 +40,7 @@ public static class ProfileExportSerializer
         ValidateWindowsPowerModes(profiles.WindowsPowerModes);
         ValidateThxAudio(profiles);
         ValidateApplicationProfiles(profiles);
+        ValidateIndependentLighting(profiles);
         if (string.IsNullOrWhiteSpace(applicationVersion))
         {
             throw new ArgumentException(
@@ -84,13 +85,13 @@ public static class ProfileExportSerializer
             11 => DeserializeVersion11(json),
             12 => DeserializeVersion11(json),
             13 => DeserializeVersion11(json),
-            14 => DeserializeCurrentShape(json),
+            14 or 15 or 16 => DeserializeCurrentShape(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} is not supported by this version of OpenBlade."),
         };
-        if (schemaVersion < CurrentSchemaVersion)
+        if (schemaVersion < 14)
         {
             profiles = ClearSchema14Settings(profiles);
         }
@@ -100,6 +101,7 @@ public static class ProfileExportSerializer
         }
         ValidateThxAudio(profiles);
         ValidateApplicationProfiles(profiles);
+        ValidateIndependentLighting(profiles);
         return profiles;
     }
 
@@ -119,12 +121,56 @@ public static class ProfileExportSerializer
                     "The profile file does not contain a valid schema version.");
             }
 
+            if (schemaVersion < 16)
+            {
+                RejectLegacyIndependentLighting(document.RootElement);
+            }
             return schemaVersion;
         }
         catch (Exception exception) when (exception is
             JsonException or NotSupportedException or ArgumentException)
         {
             throw InvalidDocument(exception);
+        }
+    }
+
+    // A historical document cannot opt in to newly introduced firmware writes,
+    // including properties in application overrides that a migration may discard.
+    private static void RejectLegacyIndependentLighting(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "independentControls", StringComparison.OrdinalIgnoreCase)
+                    && property.Value.ValueKind != JsonValueKind.Null)
+                {
+                    throw new InvalidDataException("Independent lighting controls require profile schema 16.");
+                }
+                RejectLegacyIndependentLighting(property.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement child in element.EnumerateArray())
+            {
+                RejectLegacyIndependentLighting(child);
+            }
+        }
+    }
+
+    private static void ValidateIndependentLighting(ProfileSet profiles)
+    {
+        static bool Valid(LightingSettings? lighting) =>
+            lighting?.IndependentControls is not { } controls || controls.IsWellFormed;
+        if (!Valid(profiles.PluggedIn.Lighting) || !Valid(profiles.Battery.Lighting)
+            || !Valid(profiles.UsbC.Lighting)
+            || profiles.ApplicationProfiles.Any(profile =>
+                !Valid(profile.Overrides.PluggedIn?.Lighting)
+                || !Valid(profile.Overrides.Battery?.Lighting)
+                || !Valid(profile.Overrides.UsbC?.Lighting)))
+        {
+            throw new InvalidDataException("The profile file contains invalid independent lighting controls.");
         }
     }
 
@@ -272,7 +318,18 @@ public static class ProfileExportSerializer
             profiles.Battery,
             profiles.UsbC,
         ];
-        foreach (PerformancePreset performance in Enum.GetValues<PerformancePreset>())
+        // These legacy schemas stored only the original six association roles.
+        // Keep that migration contract fixed as new per-preset roles are added.
+        PerformancePreset[] legacyAssociationRoles =
+        [
+            PerformancePreset.Silent,
+            PerformancePreset.Balanced,
+            PerformancePreset.Performance,
+            PerformancePreset.BatterySaver,
+            PerformancePreset.BatteryBalanced,
+            PerformancePreset.Custom,
+        ];
+        foreach (PerformancePreset performance in legacyAssociationRoles)
         {
             PowerProfile[] matching = legacyProfiles
                 .Where(profile => profile.Performance == performance)

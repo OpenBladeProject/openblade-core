@@ -28,7 +28,7 @@ public sealed class ExperimentalThermalPersistenceTests : IDisposable
         var store = new ProfileStore(Path.Combine(directory, "profiles.json"), ProfileSetValidator.CreateForDeviceCapabilities(caps));
         await store.SaveAsync(profiles, CancellationToken.None);
         Assert.Equal(custom, (await store.LoadAsync(CancellationToken.None)).Profiles.PluggedIn.CustomPerformance);
-        Assert.Contains("\"schemaVersion\": 22", await File.ReadAllTextAsync(Path.Combine(directory, "profiles.json")));
+        Assert.Contains($"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}", await File.ReadAllTextAsync(Path.Combine(directory, "profiles.json")));
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public sealed class ExperimentalThermalPersistenceTests : IDisposable
         ProfileLoadResult result = await new ProfileStore(path).LoadAsync(CancellationToken.None);
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.False(result.Profiles.PluggedIn.CustomPerformance!.MaximumFans);
-        Assert.Contains("\"schemaVersion\": 22", await File.ReadAllTextAsync(path));
+        Assert.Contains($"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}", await File.ReadAllTextAsync(path));
     }
 
     [Theory]
@@ -122,7 +122,7 @@ public sealed class ExperimentalThermalPersistenceTests : IDisposable
         await store.SaveAsync(new(PerformancePreset.Custom, null, null, custom), CancellationToken.None);
         Assert.Equal(custom, (await store.LoadAsync(CancellationToken.None)).Overrides.CustomPerformance);
         JsonNode document = JsonNode.Parse(await File.ReadAllTextAsync(path))!;
-        Assert.Equal(7, document["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(8, document["schemaVersion"]!.GetValue<int>());
         document["schemaVersion"] = 6;
         document["overrides"]!["customPerformance"]!["cpu"] = 1;
         document["overrides"]!["customPerformance"]!.AsObject().Remove("maximumFans");
@@ -130,7 +130,7 @@ public sealed class ExperimentalThermalPersistenceTests : IDisposable
         PersistentOverrideLoadResult loaded = await new PersistentOverrideStore(path).LoadAsync(CancellationToken.None);
         Assert.False(loaded.Recovered);
         Assert.False(loaded.Overrides.CustomPerformance!.MaximumFans);
-        Assert.Contains("\"schemaVersion\": 7", await File.ReadAllTextAsync(path));
+        Assert.Contains("\"schemaVersion\": 8", await File.ReadAllTextAsync(path));
     }
 
     public void Dispose()

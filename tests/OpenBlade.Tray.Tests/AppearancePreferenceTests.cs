@@ -23,6 +23,7 @@ public sealed class AppearancePreferenceTests
                 PrimaryNavigationItemKind.ThxAudio,
                 PrimaryNavigationItemKind.Lighting,
                 PrimaryNavigationItemKind.Telemetry,
+                PrimaryNavigationItemKind.Labs,
             ],
             result);
     }
@@ -73,6 +74,7 @@ public sealed class AppearancePreferenceTests
                 PrimaryNavigationItemKind.Lighting,
                 PrimaryNavigationItemKind.Telemetry,
                 PrimaryNavigationItemKind.Settings,
+                PrimaryNavigationItemKind.Labs,
             ],
             PrimaryNavigationPreferenceDefaults.Items);
         Assert.Equal(PrimaryNavigationPreferenceDefaults.Items,
@@ -103,7 +105,7 @@ public sealed class AppearancePreferenceTests
             PrimaryNavigationPreferenceDefaults.Normalize(customized);
         Assert.Equal(customized, migrated.Take(customized.Length));
         Assert.Equal(
-            [PrimaryNavigationItemKind.CoolingPad, PrimaryNavigationItemKind.ThxAudio, PrimaryNavigationItemKind.Telemetry],
+            [PrimaryNavigationItemKind.CoolingPad, PrimaryNavigationItemKind.ThxAudio, PrimaryNavigationItemKind.Telemetry, PrimaryNavigationItemKind.Labs],
             migrated.Skip(customized.Length));
         Assert.Equal(migrated, PrimaryNavigationPreferenceDefaults.Normalize(migrated));
     }
@@ -111,7 +113,7 @@ public sealed class AppearancePreferenceTests
     [Fact]
     public void ExistingSerializedNavigationIntegersKeepTheirMeaning()
     {
-        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5, 6, 7 }, new[]
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5, 6, 7, 8 }, new[]
         {
             (int)PrimaryNavigationItemKind.Profiles,
             (int)PrimaryNavigationItemKind.Laptop,
@@ -120,6 +122,7 @@ public sealed class AppearancePreferenceTests
             (int)PrimaryNavigationItemKind.Settings,
             (int)PrimaryNavigationItemKind.ThxAudio,
             (int)PrimaryNavigationItemKind.Telemetry,
+            (int)PrimaryNavigationItemKind.Labs,
             (int)PrimaryNavigationItemKind.CoolingPad,
         });
     }
@@ -133,6 +136,21 @@ public sealed class AppearancePreferenceTests
             PrimaryNavigationItemKind.Telemetry, PrimaryNavigationItemKind.Settings];
         Assert.Equal(PrimaryNavigationPreferenceDefaults.Items, PrimaryNavigationPreferenceDefaults.Normalize(previous));
         Assert.Equal(PrimaryNavigationItemKind.CoolingPad, PrimaryNavigationPreferenceDefaults.Items[3]);
+    }
+
+    [Fact]
+    public void DeployedLabsDefaultKeepsItsIdAndAddsCoolingPadAfterLaptop()
+    {
+        PrimaryNavigationItemKind[] previous = [PrimaryNavigationItemKind.Profiles,
+            PrimaryNavigationItemKind.Display, PrimaryNavigationItemKind.Laptop,
+            PrimaryNavigationItemKind.ThxAudio, PrimaryNavigationItemKind.Lighting,
+            PrimaryNavigationItemKind.Telemetry, PrimaryNavigationItemKind.Settings,
+            PrimaryNavigationItemKind.Labs];
+        Assert.Equal(7, (int)PrimaryNavigationItemKind.Labs);
+        Assert.Equal(8, (int)PrimaryNavigationItemKind.CoolingPad);
+        Assert.Equal(PrimaryNavigationPreferenceDefaults.Items, PrimaryNavigationPreferenceDefaults.Normalize(previous));
+        Assert.Equal(PrimaryNavigationItemKind.CoolingPad, PrimaryNavigationPreferenceDefaults.Items[3]);
+        Assert.Equal(PrimaryNavigationItemKind.Labs, PrimaryNavigationPreferenceDefaults.Items[^1]);
     }
 
     [Theory]

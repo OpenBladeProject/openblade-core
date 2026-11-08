@@ -35,6 +35,35 @@ public sealed class ProfileDefaultsTests
     }
 
     [Fact]
+    public void NewWindowsPowerModeAssociations_AreIndependentAndRetainTheLegacyConstructor()
+    {
+        var legacy = new WindowsPowerModeAssociations(null, WindowsPowerMode.Balanced,
+            WindowsPowerMode.BestPerformance, null, null, null);
+        Assert.Null(legacy.Turbo);
+        Assert.Null(legacy.MaximumPower);
+        Assert.Null(legacy.Gaming);
+        Assert.Null(legacy.Creator);
+        WindowsPowerModeAssociations configured = legacy
+            .WithPerformance(PerformancePreset.Turbo, WindowsPowerMode.BestPowerEfficiency)
+            .WithPerformance(PerformancePreset.MaximumPower, WindowsPowerMode.Balanced)
+            .WithPerformance(PerformancePreset.Gaming, WindowsPowerMode.BestPerformance)
+            .WithPerformance(PerformancePreset.Creator, WindowsPowerMode.BestPowerEfficiency);
+        Assert.Equal(WindowsPowerMode.BestPerformance, configured.Performance);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, configured.ForPerformance(PerformancePreset.Turbo));
+        Assert.Equal(WindowsPowerMode.Balanced, configured.ForPerformance(PerformancePreset.MaximumPower));
+        WindowsPowerModeAssociations updated = configured.WithPerformance(
+            PerformancePreset.Turbo, WindowsPowerMode.BestPerformance);
+        Assert.Equal(WindowsPowerMode.BestPerformance, updated.Turbo);
+        Assert.Equal(configured.MaximumPower, updated.MaximumPower);
+        Assert.Equal(WindowsPowerMode.BestPerformance, updated.Gaming);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, updated.Creator);
+        Assert.Equal(configured.Performance, updated.Performance);
+        Assert.Equal(configured.Balanced, updated.Balanced);
+        string json = System.Text.Json.JsonSerializer.Serialize(configured);
+        Assert.Equal(configured, System.Text.Json.JsonSerializer.Deserialize<WindowsPowerModeAssociations>(json));
+    }
+
+    [Fact]
     public void PowerSource_AppendsUsbCStatesWithoutRenumberingExistingValues()
     {
         Assert.Equal(0, (int)PowerSource.PluggedIn);

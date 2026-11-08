@@ -9,6 +9,23 @@ namespace OpenBlade.Service.Tests;
 public sealed class ServiceCompositionTests
 {
     [Fact]
+    public void CpuCompositionSharesOptionalLiveProviderWithoutNativeWorkAtConstruction()
+    {
+        var services = new ServiceCollection();
+        services.AddServiceControlRuntime(Path.Combine(Path.GetTempPath(), "OpenBlade.CpuCompositionTests", Guid.NewGuid().ToString("N")));
+        using var provider = services.BuildServiceProvider();
+        var controller = provider.GetRequiredService<CpuTuningController>();
+        Assert.True(controller.HasSavedBackend);
+        Assert.True(controller.HasLiveBackend);
+        Assert.Null(controller.CaptureLiveRuntimeLifetime());
+        var nativeProvider = provider.GetRequiredService<WindowsCpuLiveTuningTrustedNativeProvider>();
+        Assert.Null(nativeProvider.ReadFreshContext(default));
+        Assert.Null(((ICpuLivePowerTrustedNativeProvider)nativeProvider).ReadFreshContext(default));
+        Assert.NotNull(provider.GetRequiredService<ICpuLivePowerOwnershipJournalStore>());
+        Assert.Same(nativeProvider, provider.GetRequiredService<WindowsCpuLiveTuningTrustedNativeProvider>());
+    }
+
+    [Fact]
     public async Task AddServiceControlRuntime_RegistersPersistentHyperBoostOwnershipJournal()
     {
         string machineDataDirectory = Path.Combine(

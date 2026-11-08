@@ -141,6 +141,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     public DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics() =>
         Volatile.Read(ref verificationDiagnostics);
 
+    // Only a bounded CPU getter that has already obtained a fresh exact device
+    // may use this lifetime check; USB devnode continuity is independently held
+    // by its native provider. This does not authorize device commands.
+    internal bool IsCpuGetterDeviceCurrent(IBladeDevice retained)
+    {
+        lock (providerLifecycleSync) { return disposed == 0 && ReferenceEquals(retained, device); }
+    }
+
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
     {
         verifiedDevice = null!;
@@ -604,6 +612,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         LampArrayLightingAccess =
                             lighting.Capabilities.LampArrayLightingAccess,
                         LogoLightingModes = lighting.Capabilities.LogoLightingModes,
+                        SupportsIndependentLightingControls = lighting.Capabilities.SupportsIndependentLightingControls,
                         SupportsKeyboardBrightness =
                             lighting.Capabilities.SupportsKeyboardBrightness,
                         SupportsBreathingColorSelection = lighting.Capabilities.SupportsBreathingColorSelection,
@@ -880,6 +889,26 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
+        public async Task<ConfirmedDeviceState> ReadIndependentLightingStateAsync(
+            IndependentLightingSettings fields, CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                IndependentLightingSettings? observed = await lightingSession
+                    .ReadIndependentLightingStateCoreAsync(cancellationToken, fields).ConfigureAwait(false);
+                return new ConfirmedDeviceState(null, null, null, null)
+                {
+                    IndependentLighting = observed,
+                    LogoLighting = observed?.LogoMode,
+                };
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         public async Task<ConfirmedDeviceState> ReadLightingStateAsync(
             CancellationToken cancellationToken)
         {
@@ -898,6 +927,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     Lighting: lighting)
                 {
                     LogoLighting = logo,
+                    IndependentLighting = await lightingSession.ReadIndependentLightingStateCoreAsync(cancellationToken)
+                        .ConfigureAwait(false),
                 };
             }
             finally
@@ -942,10 +973,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     // Without the protection baseline the battery subsystem is
                     // already unknown, so the dependent override is not queried.
                     IProductionBatteryPort port = await lease.GetAsync().ConfigureAwait(false);
-                    // Models without an admitted override query use the protection
-                    // register alone. An admitted query must establish its real flag.
-                    bool? temporary = batteryFactory is ExperimentalBladeFactory
-                        && !port.SupportsTemporaryFullChargeQuery ? false : null;
+                    // The protection register does not report the override. Keep
+                    // that field unknown unless its own admitted query succeeds.
+                    bool? temporary = null;
                     if (port.SupportsTemporaryFullChargeQuery)
                     {
                         (_, temporary) = await ReadIsolatedStateQueryAsync(
@@ -999,6 +1029,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     CustomPerformance = performanceFan?.CustomPerformance,
                     GpuClockOffsets = gpuOffsets,
                     LogoLighting = logo,
+                    IndependentLighting = await lightingSession.ReadIndependentLightingStateCoreAsync(cancellationToken)
+                        .ConfigureAwait(false),
                 };
                 if (failures.Count == 0)
                 {
@@ -2310,6 +2342,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             LightingSettings value,
             CancellationToken cancellationToken) =>
             lightingSession.SetLightingAsync(value, cancellationToken);
+
+        public Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken token) =>
+            lightingSession.SetIndependentLightingAsync(value, token);
 
         internal void SetRecoveryWriteAdmission(Func<bool> admission) =>
             lightingSession.SetRecoveryWriteAdmission(admission);

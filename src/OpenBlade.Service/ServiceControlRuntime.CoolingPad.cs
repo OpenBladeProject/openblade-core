@@ -119,7 +119,8 @@ public sealed partial class ServiceControlRuntime
                 && activeUserStillControlsSession?.Invoke() == true
                 && CoolingPadPowerAdmission();
             // The typed native pad actor independently performs fresh process/service,
-            // exact-host and exact-HID admission before every SET. Do not duplicate the
+            // exact accessory-HID admission before every SET. Laptop model admission is
+            // separate from this accessory. Do not duplicate the
             // full Windows controller/LampArray scan at every software callback here.
         }
         catch { return false; }

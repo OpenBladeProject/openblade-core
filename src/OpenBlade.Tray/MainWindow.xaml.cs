@@ -389,6 +389,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             return;
         }
         hostAttached = false;
+        DisposeComponentSafely("global search detachment", CloseGlobalSearch);
         DisposeComponentSafely("window closing handler", DetachCloseHandler);
         DisposeComponentSafely("Mica theme source detachment", () => ContentHost.DetachBackdrop(Root));
         DisposeComponentSafely("content detachment", () =>
@@ -766,6 +767,25 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 }));
     }
 
+    private void OnOpenLabsLightingControl(object sender, RoutedEventArgs args)
+    {
+        if (!ViewModel.ShowLightingEffectLabControls
+            || sender is not Microsoft.UI.Xaml.Controls.Button { Tag: string targetName })
+        {
+            return;
+        }
+
+        // Opening a guide explicitly requests its section, even when hidden in Customize.
+        if (pageSections.TryGetValue(CustomizablePageKind.Lighting, out var sections))
+        {
+            sections.Single(section => section.Kind == PageSectionKind.LightingKeyboard).IsVisible = true;
+        }
+
+        OpenGlobalSearchResult(new GlobalSearchResult(
+            LocalizedResources.Get("MainWindow_TextBlockKeyboard2.Text", "Keyboard"),
+            string.Empty, LightingNavigationItem, LightingPage, LightingCard, targetName));
+    }
+
     public void NavigateToNotificationDestination(
         TrayNotificationDestination destination)
     {
@@ -875,6 +895,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
 
     private async ValueTask DisposeOwnedResourcesAsync()
     {
+        DisposeComponentSafely("global search retirement", ReleaseGlobalSearch);
         WindowXamlBindingLifetime.Release(this, Bindings, Bindings.StopTracking);
 
         DisposeComponentSafely("GPU app cleanup cancellation", gpuAppCleanupCoordinator.Cancel);
@@ -1058,7 +1079,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         NotificationPreferences initialNotifications = NotificationPreferences.Default;
         string? initialLastNotifiedReleaseTag = null;
         string? initialLastNotifiedFirmwareSignature = null;
-        bool initialLabFeaturesEnabled = false;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -1140,7 +1160,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             initialLastNotifiedReleaseTag = preferences.LastNotifiedReleaseTag;
             initialLastNotifiedFirmwareSignature =
                 preferences.LastNotifiedFirmwareSignature;
-            initialLabFeaturesEnabled = preferences.LabFeaturesEnabled;
         }
         catch (Exception exception)
         {
@@ -1186,8 +1205,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         InitializeKeyboardBackendSelectors();
         SnapTapToggle.IsOn = snapTapEnabled;
         RefreshSnapTapStatus();
-        ViewModel.LabFeaturesEnabled = initialLabFeaturesEnabled;
-        LabFeaturesToggle.IsOn = ViewModel.LabFeaturesEnabled;
         ApplyNotificationPreferences(initialNotifications);
         notificationCoordinator.RestoreDeliveredUpdates(
             initialLastNotifiedReleaseTag,
@@ -1655,7 +1672,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 LastNotifiedReleaseTag: notificationCoordinator.LastNotifiedReleaseTag,
                 LastNotifiedFirmwareSignature: notificationCoordinator.LastNotifiedFirmwareSignature,
                 TrayDashboard: trayDashboardPreference,
-                LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
                 Language: ViewModel.LanguagePreference,
                 SnapTapEnabled: snapTapEnabled,
                 SnapTapBackend: snapTapBackend,
@@ -1788,19 +1804,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         }
 
         StartMinimized = toggle.IsOn;
-        QueuePreferenceSave();
-    }
-
-    private void OnLabFeaturesToggled(object sender, RoutedEventArgs args)
-    {
-        if (sender is not ToggleSwitch toggle
-            || Volatile.Read(ref disposed) != 0
-            || toggle.IsOn == ViewModel.LabFeaturesEnabled)
-        {
-            return;
-        }
-
-        ViewModel.LabFeaturesEnabled = toggle.IsOn;
         QueuePreferenceSave();
     }
 
@@ -2019,7 +2022,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         if (changingLightingRefreshRate
             || Volatile.Read(ref disposed) != 0
             || sender is not ToggleSwitch toggle
-            || !ViewModel.LabFeaturesEnabled
             || !ViewModel.CanSetLightingRefreshRate
             || toggle.IsOn == ViewModel.IsSixtyHzLightingEnabled)
         {
@@ -3149,7 +3151,10 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 : null,
             ViewModel.HasUnsavedLightingPowerPolicy
                 ? ViewModel.LightingPowerPolicyDraft
-                : null);
+                : null)
+        {
+            EditorGeneration = ViewModel.LightingCommitGeneration,
+        };
         if (Volatile.Read(ref disposed) != 0 || !request.HasWork)
         {
             lightingCommits.ClearPending();
@@ -3190,7 +3195,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             if (request.Lighting is { } draft
                 && ViewModel.SetLightingCommand is AsyncRelayCommand lightingCommand)
             {
-                if (lightingCommand.CanExecute(draft))
+                if (ViewModel.IsLightingCommitCurrent(request) && lightingCommand.CanExecute(draft))
                 {
                     await lightingCommand.ExecuteAsync(draft);
                 }
@@ -3411,6 +3416,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
 
         string destination = (args.SelectedItemContainer as NavigationViewItem)?.Tag as string
             ?? "home";
+        ClearGlobalSearchArrival();
         ApplyNavigationDestination(destination);
     }
 
@@ -3594,6 +3600,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         DisplayPage.Visibility = destination == "display"
             ? Visibility.Visible
             : Visibility.Collapsed;
+        LabsPage.Visibility = destination == "labs" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPage.Visibility = destination == "settings"
             && !trayDashboardCustomizationActive
             ? Visibility.Visible
@@ -3660,11 +3667,13 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             "thx-audio" => ThxAudioNavigationItem,
             "lighting" => LightingNavigationItem,
             "display" => DisplayNavigationItem,
+            "labs" => LabsNavigationItem,
             "settings" => SettingsNavigationItem,
             "about" => AboutNavigationItem,
             _ => throw new ArgumentOutOfRangeException(nameof(destination)),
         };
         MainNavigation.SelectedItem = selected;
+        ClearGlobalSearchArrival();
         ApplyNavigationDestination(destination);
     }
 
@@ -3684,13 +3693,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
     {
         SettingsAppearanceSection.StartBringIntoView();
     }
-
-    internal void ShowLocalizationSnapshotExperimentalControls() =>
-        LabFeaturesToggle.StartBringIntoView(new BringIntoViewOptions
-        {
-            AnimationDesired = false,
-            VerticalAlignmentRatio = 0,
-        });
 
     internal bool HasLocalizedCheckNowButton(
         string expectedContent,
@@ -5348,6 +5350,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             changingPrimaryNavigationOrder = false;
         }
 
+        ClearGlobalSearchArrival();
         ApplyNavigationDestination(destination);
     }
 
@@ -5362,6 +5365,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             PrimaryNavigationItemKind.Lighting => LightingNavigationItem,
             PrimaryNavigationItemKind.Display => DisplayNavigationItem,
             PrimaryNavigationItemKind.Settings => SettingsNavigationItem,
+            PrimaryNavigationItemKind.Labs => LabsNavigationItem,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -5376,6 +5380,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             PrimaryNavigationItemKind.Lighting => LocalizedResources.Get("Navigation_Lighting", "Lighting"),
             PrimaryNavigationItemKind.Display => LocalizedResources.Get("Navigation_Display", "Display"),
             PrimaryNavigationItemKind.Settings => LocalizedResources.Get("Navigation_Settings", "Settings"),
+            PrimaryNavigationItemKind.Labs => LocalizedResources.Get("MainWindow_LabsNavigationItem.Content", "Labs"),
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -5624,11 +5629,14 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         StackPanel? powerSaving = FindDescendant<StackPanel>(
             LightingCard,
             "LightingPowerSavingSection");
-        if (host is null || keyboard is null || logo is null || powerSaving is null)
+        StackPanel? labControls = FindDescendant<StackPanel>(LightingCard, "LightingLabControls");
+        if (host is null || keyboard is null || logo is null || powerSaving is null || labControls is null)
         {
             return false;
         }
 
+        // The shared dashboard template keeps these actions hidden. Their profile actions live here.
+        labControls.Visibility = Visibility.Visible;
         pageSectionHosts[CustomizablePageKind.Lighting] = host;
         ConfigureSectionHostTransitions(host);
         pageSectionPresentations[PageSectionKind.LightingKeyboard] = keyboard;
@@ -5733,7 +5741,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
 
     private async void OnImportKeyboardLighting(object sender, RoutedEventArgs args)
     {
-        if (!ViewModel.LabFeaturesEnabled)
+        if (!ViewModel.CanControlLighting)
         {
             return;
         }

@@ -10,7 +10,8 @@ public static class ProfilePresentationFactory
         PowerProfile profile,
         WindowsPowerModeAssociations windowsPowerModes,
         string profileName,
-        LaptopBehaviorProfileSettings laptopBehaviorFallback)
+        LaptopBehaviorProfileSettings laptopBehaviorFallback,
+        bool independentLightingControls = false)
     {
         ProfileValuePresentation Value(string settingName, string text) =>
             new(text, settingName, profileName);
@@ -35,15 +36,18 @@ public static class ProfilePresentationFactory
             Value(
                 TrayText.Get("Battery protection"),
                 FormatOptionalToggle(profile.BatteryProtectionEnabled)),
-            Value(TrayText.Get("Lighting effect"), LightingPresentation.FormatLightingEffect(profile.Lighting)),
-            Value(TrayText.Get("Lighting brightness"), profile.Lighting.Effect == LightingEffect.Off
+            Value(TrayText.Get("Lighting effect"), independentLightingControls ? TrayText.Get("Not applicable") : LightingPresentation.FormatLightingEffect(profile.Lighting)),
+            Value(TrayText.Get("Lighting brightness"), independentLightingControls
+                ? profile.Lighting.IndependentControls?.Brightness is { } independentBrightness
+                    ? TrayText.Format("{0}%", independentBrightness) : TrayText.Get("Not set")
+                : profile.Lighting.Effect == LightingEffect.Off
                 ? TrayText.Get("Not applicable")
                 : TrayText.Format("{0}%", profile.Lighting.Brightness)),
-            Value(TrayText.Get("Lighting color"), LightingPresentation.FormatLightingColor(profile.Lighting)),
-            Value(TrayText.Get("Laptop lid logo"), profile.Lighting.LogoMode switch
+            Value(TrayText.Get("Lighting color"), independentLightingControls ? TrayText.Get("Not applicable") : LightingPresentation.FormatLightingColor(profile.Lighting)),
+            Value(TrayText.Get("Laptop lid logo"), (independentLightingControls ? profile.Lighting.IndependentControls?.LogoMode : profile.Lighting.LogoMode) switch
             {
                 LogoLightingMode.Static or LogoLightingMode.Breathing or LogoLightingMode.Off =>
-                    LightingPresentation.LogoLightingModeLabel(profile.Lighting.LogoMode.Value),
+                    LightingPresentation.LogoLightingModeLabel((independentLightingControls ? profile.Lighting.IndependentControls?.LogoMode : profile.Lighting.LogoMode)!.Value),
                 _ => TrayText.Get("Not set"),
             }),
             Value(TrayText.Get("Display turns off"), profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff

@@ -1,0 +1,308 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-11-07",
+  "model": {
+    "modelNumber": "RZ09-0301",
+    "productName": "Blade",
+    "usbIdentity": "1532:0245",
+    "vendorProductId": 581
+  },
+  "status": "Exact-model source review for independent brightness/logo and Balanced manual fans; physical validation remains pending.",
+  "sources": [
+    {
+      "file": "581-main.450b813b36b314f7abf0.js",
+      "size": 165547,
+      "sha256": "F7A863CF5E95D94539ABD3F4C29076E1710901B5D02624EFDC0275265C651D7A",
+      "url": "https://apps.razer.com/synapse/products/581/mw/main.450b813b36b314f7abf0.js"
+    },
+    {
+      "file": "581-6737.f49b9965ecd5cf011e43.js",
+      "size": 2354604,
+      "sha256": "5B11C5CD3E26BBD74DAC7A98413AB31315DAFEFAD5B783DBF0CF014E6A33D017",
+      "url": "https://apps.razer.com/synapse/products/581/mw/6737.f49b9965ecd5cf011e43.js"
+    },
+    {
+      "file": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "size": 279028,
+      "sha256": "8459C76B984DDF5894CC7C7E00A40B76EEDE5E32D65DF2F7D6D75A541C36DAC7",
+      "url": "https://apps.razer.com/synapse/products/581/mw/rzDevice25.f668146da6ee1d0b3b6c.js"
+    },
+    {
+      "file": "581-rzDevice25LedMatrix.dadaa67383371e256a18.js",
+      "size": 6461,
+      "sha256": "BEB240485210034445236483B1226DBCCEC67A5C8AB216C9CF976B57F604A1E6",
+      "url": "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrix.dadaa67383371e256a18.js"
+    },
+    {
+      "file": "581-rzDevice25LedMatrixBlade.211294bf38840fcb516b.js",
+      "size": 13099,
+      "sha256": "7F25B39B209807B8582E30717B90129AAB0B3B20B01DE5B0465C2819D4FD99DF",
+      "url": "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrixBlade.211294bf38840fcb516b.js"
+    },
+    {
+      "file": "581-rzDevice25LedMatrixBladeWattage.09358e38f5994093ae20.js",
+      "size": 2923,
+      "sha256": "EB94694DBB49AE38AD1837AC926D3D78515F9F501B249B68FE48C200250036F5",
+      "url": "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrixBladeWattage.09358e38f5994093ae20.js"
+    },
+    {
+      "file": "581-3159.f364bf525336e07016a6.js",
+      "size": 12078,
+      "sha256": "9099AB575124FDDCE557262C2D6DD4A67F872F678127D89AFBE8DF8781A4EDDF",
+      "url": "https://apps.razer.com/synapse/products/581/mw/3159.f364bf525336e07016a6.js"
+    },
+    {
+      "file": "581-3689.30a0792a28654ef8ef1c.js",
+      "size": 9075,
+      "sha256": "E9CFC508E4D6C81671C7A57081DA3DD640398B191AF87B761A17CCDF04B0440C",
+      "url": "https://apps.razer.com/synapse/products/581/mw/3689.30a0792a28654ef8ef1c.js"
+    },
+    {
+      "file": "581-ui-main.98cf2efe.js",
+      "size": 6338321,
+      "sha256": "C29CE6F4E66E5658B9B7FC4443AE27057EFA4C06DF3A96F6C0E70B79E712DB85",
+      "url": "https://apps.razer.com/synapse/products/581/ui/static/js/main.98cf2efe.js"
+    }
+  ],
+  "sourceExcerpts": [
+    {
+      "offsetUtf8": 27027,
+      "source": "581-main.450b813b36b314f7abf0.js",
+      "text": "O=[{name:n.Rb7,id:r.AoV.Ambient_Effect},{name:n.ncy,id:r.AoV.Audio_Meter_Effect},{name:n.xkP,id:r.AoV.Breathing_Effect},{name:n.ZKq,id:r.AoV.Fire_Effect},{name:n.ckz,id:r.AoV.Reactive_Effect},{name:n.NnH,id:r.AoV.Ripple_Effect},{name:n.k9y,id:r.AoV.Spectrum_Effect},{name:n.fYY,id:r.AoV.Starlight_Effect},{name:n.DU0,id:r.AoV.Static_Effect},{name:n.wrM,id:r.AoV.Wave_Effect},{name:n.eaG,id:r.AoV.Wheel_Effect},{name:n.jag,id:r.AoV.Tidal_Effect}],h=[{outputType:`${i.CLP}`,isHyperShift:!0,inputType:\"KeyInput\",inputID:\"KEY_F1\",multimediaGroup:{multime"
+    },
+    {
+      "offsetUtf8": 29788,
+      "source": "581-main.450b813b36b314f7abf0.js",
+      "text": "C=[{name:n.DU0,id:r.AoV.Static_Effect},{name:n.xkP,id:r.AoV.Breathing_Effect},{name:n.KFn,id:0}],L={performance:{plugged:{mode:\"balanced\",balanced:{active:\"auto"
+    },
+    {
+      "offsetUtf8": 80425,
+      "source": "581-main.450b813b36b314f7abf0.js",
+      "text": "brightness:{hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0}}),a.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBladeWattage\"),a.A.useFeature(\"useMWManifest\",\"yes\"),a.A.injectToDependencyList(\"runtimeCa"
+    },
+    {
+      "offsetUtf8": 715844,
+      "source": "581-6737.f49b9965ecd5cf011e43.js",
+      "text": "function Qe(e,t,i,n,o,a,l,c){return ke(this,void 0,void 0,(function*(){const o=s.jf.rzDevice;c.value={params:{effectId:n}};try{let e=0;const t=r.h_p.LogoLED,i=n?1:0,a=E.A.getFeatureParam(\"persistentInHardware\",\"config\");!0===(null==a?void 0:a.logoLighting)&&(console.log(\"PersistentInHardware Logo Lighting enabled, use profileId 0x01\"),e=1),yield o.setLedEffect(e,t,2===n?2:0),yield o.setLedState(e,t,i),console.log(\"%c taskRunnerSetLogoEffect SUCCESS\",\"background: green; color: white\"),c.result=!0,c.error=null}catch(e){return console.log(\"%c taskRunnerSetLogoEffect FAILED\",\"background: red; color: white\"),c.result=!1,c.error=e,Promise.reject(c)}if(null==l?void 0:l.signal.aborted)throw c.error=new Error(\"canceled\"),c.value.status=\"error\",c.error;c.value.status=\"completed\";try{U.J7.currValue.logoEffect=n,U.J7.lastModifiedDate=s.jf.currentTimerTick?s.jf.currentTimerTick:Date.now(),s.jf.taskRunnerBrightnessMemoryStorageCache[e][t]=i,s.jf.taskRunnerBrightnessMemoryStorageCache[e].value.logoEf"
+    },
+    {
+      "offsetUtf8": 713336,
+      "source": "581-6737.f49b9965ecd5cf011e43.js",
+      "text": "yield A.setBrightness({profileId:1,regionId:r.h_p.BacklightLED,brightness:u?v:0}),E.A.getFeatureParam(\"hasVCLed\",\"yes\")){const e=s.jf.rzDevice;yield e.setBright"
+    },
+    {
+      "offsetUtf8": 859770,
+      "source": "581-6737.f49b9965ecd5cf011e43.js",
+      "text": "Pe=(e=1)=>x(void 0,void 0,void 0,(function*(){var t,i,n;const o=r.jf.rzDevice,a=U.h_p.LogoLED;try{const n=yield o.getLedState(e,a),r=null===(t=null==n?void 0:n.jsonData)||void 0===t?void 0:t.ledOn;if(\"number\"!=typeof r)return;if(0===r)return 0;const s=yield o.getLedEffect(e,a);return 2===(null===(i=null==s?void 0:s.jsonData)||void 0===i?void 0:i.effectId)?2:1}catch(e){console.warn(\"getLogoLightingFromDevice failed\",null!==(n=null==e?void 0:e.message)&&void 0!==n?n:e)}})),Le=(e=1)=>x(void 0,void 0,void 0,(function*(){var t,i,n;const o=r.jf.rzDevice,{deviceUI:{config:{brightness:a}}}=(0,p.i)();let s;if(null==a?void 0:a.hasTwoMode)s=U.h_p.Backli"
+    },
+    {
+      "offsetUtf8": 860246,
+      "source": "581-6737.f49b9965ecd5cf011e43.js",
+      "text": "Le=(e=1)=>x(void 0,void 0,void 0,(function*(){var t,i,n;const o=r.jf.rzDevice,{deviceUI:{config:{brightness:a}}}=(0,p.i)();let s;if(null==a?void 0:a.hasTwoMode)s=U.h_p.BacklightLED;else{const e=null===(t=(0,p.UF)(\"rzDeviceType\"))||void 0===t?void 0:t.regionIdEnum;s=e?U.h_p[`${e}`]:U.h_p.AllRegion}try{const t=yield o.getBrightness({profileId:e,regionId:s}),n=null===(i=null==t?void 0:t.jsonData)||void 0===i?void 0:i.brightness;if(\"number\"==typeof n)return n}catch(e){console.warn(\"getBrightnessFromDevice failed\",null!==(n=null==e?void 0:e.message)&&void 0!==n?n:e)}})),Ne=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice,t={profiles:[{fileName:\"\",profileName:\"\"}],defaultProfile:\"\"};try{const i=yield e.getColorManagementICCProfiles();if(i){const{profiles:e,defaultProfile:n}=JSON.parse(i);e&&n&&(t.profiles=[...e],t.defaultProfile=n)"
+    },
+    {
+      "offsetUtf8": 73226,
+      "source": "581-6737.f49b9965ecd5cf011e43.js",
+      "text": "if(null==fe?void 0:fe.hasBatteryOptimizer){const t=yield(0,N.Hj)(),i=yield(0,le.getLocalStorageDeviceCache)(),n=null===(e=null==i?void 0:i.batteryOptimizer)||void 0===e?void 0:e.batteryChargingOverrid"
+    },
+    {
+      "offsetUtf8": 43268,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "const o=new Uint8Array([3,3,128]),i=new Uint8Array([3,3,0]),r=\"Get LED State\",a=\"Set LED State\",d=new Uint8Array([5,3,129]),s=new Uint8Array([5,3,1]),c=\"Get LED RGB\",u=\"Set LED RGB\",l=new Uint8Array([3,3,130]),m=new Uint8Array([3,3,2]),v=\"Get LED Effect\",h=\"Set LED Effect\",f=new Uint8Array([3,3,131]),S=new Uint8Array([3,3,3]),A=\"Get LED Brightness\",I=\"Set LED Brightness\",y=new Uint8Array([4,3,132]),U=new Uint8Array([4,3,4]),N=\"Get LED Blinking\",C=\"Set LED Blinking\",w=new Uint8Array([20,3,133]),g=new Uint8Array([20,3,5]),E=\"Get LED Pulsating\",D=\"Set LED Pulsating\",_=new Uint8Array([6,3,134]),R=new Uint8Array([6,3,6]),p=\"Get LED SW Controlled Parameter\",T=\"Set LED SW Controlled Parameter\",L=new Uint8Array([6,3,135]),P=new Uint8Array([6,3,7]),O=\"Get LED Transition Time\",V=\"Set LED Transition Time\",j=new Uint8Array([6,3,136]),$=new Uint8Array([6,3,8]),k=\"Get LED RGB Max Value\",M=\"Set LED RGB Max Value\",b=new Uint8Array([80,3,137]),z=\"Get LED ID List\",x=new Uint8Array([80,3,10]),F=\"Set LED Matrix RGB Effect\",G=new Uint8Array([70,3,11]),B=\"Set LED Matrix RGB Define Pattern\",H=new Uint8Array([80,3,12]),K=\"Set LED Lighting Bar Define Pattern\",J=new Uint8Array([80,3,13]),W=\"Set LED Extend Matrix RGB Effect\",Y=new Uint8Array([80,3,142]),Q=new Uint8Array([80,3,14]),q=\"Get LED Color Table Definition\",Z=\"Set LED Color Table Definition\",X=new Uint8Array([3,3,143]),tt=new Uint8Array([3,3,15]),nt=\"Get LED Dock Synchronize Control\",et=\"Set LED Dock Synchronize Control\",ot=new Uint8Array([1,3,144]),it=new Uint8Array([1,3,16]),rt=\"Get LED Charging Effect Control\",at=\"Set LED Charging Effect Control\",dt=new Uint8Array([3,3,160]),st=new Uint8Array([3,3,32]),ct=\"Get LED Get GPU Card Detection\",ut=\"Set LED Get GPU Card Detection\",lt=new Uint8Array([50,3,146]),mt=new Uint8Array([50,3,18]),vt=\"Get Knob Configuration Information\",ht=\"Set Knob Configuration Information\",ft=new Uint8Array([8,3,1"
+    },
+    {
+      "offsetUtf8": 24346,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "const c=t=>{t.jsonData={ledClassId:t.data[0],ledId:t.data[1],ledIdEnum:a.np(r.k9,t.data[1]),ledOn:t.data[2]}},u=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Pe[1],commandId:i.Pe[2],commandDesc:i.v2});const r=new Uint8Array(i.Pe[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Pe,i.v2,r);return c(a),a})),l=(t,n,e,r)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||isNaN(n)||isNaN(e)||isNaN(r))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.t$[1],commandId:i.t$[2],commandDesc:i.BR});const a=new Uint8Array(i.t$[0]);a[0]=n,a[1]=e,a[2]=r;const s=yield t.sendCommand(i.t$,i.BR,a);return c(s),s})),m=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={ledClassId:t.data[0],ledIdEnum:a.np(r.k9,t.data[1]),ledId:t.data[1],red:t.data[2],green:t.data[3],blue:t.data[4]})},v=(t,n,e)=>"
+    },
+    {
+      "offsetUtf8": 25978,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "f=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={ledClassId:t.data[0],ledIdEnum:a.np(r.k9,t.data[1]),ledId:t.data[1],effectId:t.data[2]})},S=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.r_[1],commandId:i.r_[2],commandDesc:i.P6});const r=new Uint8Array(i.r_[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.r_,i.P6,r);return f(a),a})),A=(t,n,e,r)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||isNaN(n)||isNaN(e)||isNaN(r))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.$E[1],commandId:i.$E[2],commandDesc:i.hF});const a=new Uint8Array(i.$E[0]);a[0]=n,a[1]=e,a[2]=r;const s=yield t.sendCommand(i.$E,i.hF,a);return f(s),s})),I=t=>{t.jsonData={ledClassId:t.data[0],ledIdEnum:a.np(r.k9,t.data[1]),ledId:t.data[1],brightness:Math.floor(t.data[2]/255*100)}},y=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0"
+    },
+    {
+      "offsetUtf8": 26781,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "I=t=>{t.jsonData={ledClassId:t.data[0],ledIdEnum:a.np(r.k9,t.data[1]),ledId:t.data[1],brightness:Math.floor(t.data[2]/255*100)}},y=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Je[1],commandId:i.Je[2],commandDesc:i.Rs});const r=new Uint8Array(i.Je[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Je,i.Rs,r);return I(a),a})),U=(t,n,e,r)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||isNaN(n)||isNaN(e)||isNaN(r))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Xr[1],commandId:i.Xr[2],commandDesc:i.zB});const a=new Uint8Array(i.Xr[0]);a[0]=n,a[1]=e,r>=100&&(r=100),a[2]=Math.ceil(r/100*255);const s=yield t.sendCommand(i.Xr,i.zB,a);return I(s),s})),N=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={ledClassId:t.data[0],ledIdEnum:a.np(r.k9,t.data[1]),ledId:t.data[1],onPeriod:t.data[2],offPeriod:t.data[3]})},C=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.ep[1],commandId:i.ep[2],commandDesc:i.at});const r=new Uint8Array(i.ep[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.ep,i.at,r);return N(a),a})),w=(t,n,e"
+    },
+    {
+      "offsetUtf8": 32981,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "k=(t,n,e,c,u,l=!0)=>s(void 0,void 0,void 0,(function*(){if(void 0===t||void 0===n||void 0===e||void 0===c||void 0===u)throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Fw[1],commandId:i.Fw[2],commandDesc:i.Tt});let s;const m=new Uint8Array(i.Fw[0]);switch(m[0]=n,n){case r.UE.Off:s=1;break;case r.UE.Wave:case r.UE.CustomFrame:s=2,m[1]=e;break;case r.UE.Afterglow:s=5,m[1]=e,u.length>=3&&(m[2]=u[0],m[3]=u[1],m[4]=u[2]);break;case r.UE.Breathing:switch(m[1]=e,e){case 1:s=5,u.length>=3&&(m[2]=u[0],m[3]=u[1],m[4]=u[2]);break;case 2:s=8,u.length>=6&&(m[2]=u[0],m[3]=u[1],m[4]=u[2],m[5]=u[3],m[6]=u[4],m[7]=u[5]);break;case 3:s=2}break;case r.UE.SpectrumCycling:s=1;break;case r.UE.Static:s=4,u.length>=3&&(m[1]=u[0],m[2]=u[1],m[3]=u[2]);break;case r.UE.PlayFrames:case r.UE.RunningLights:s=1;break;case r.UE.MusicSync:s=6,m[1]=e,m[2]=c,u.length>=3&&(m[3]=u[0],m[4]=u[1],m[5]=u[2]);break;case r.UE.FullSpectrum:case r.UE.ExtendedBreathing:case r.UE.StaggerBreathing:case r.UE.PeakBreathing:case r.UE.UserUsage:case r.UE.UserHeatmap:case r.UE.RadarEffect:case r.UE.GameOfLife:case r.UE.FireSimulation:case r.UE.RippleSimulation:case r.UE.RingEffect:case r.UE.RandomColors:case r.UE.KeyTestEffect:case r.UE.FactoryChromaTest:case r.UE.BulkFrameUpdate:case r.UE.StarlightField:case r.UE.CylonCenturion:s=9,m[1]=e,m[2]=c;for(let t=0;t<Math.min(u.length,6);t++)m[3+t]=u[t];break;default:s=1}const v=yield t.sendCommand(i.Fw,i.Tt,new Uint8Array(m),s,l);return v.jsonData={effectId:void 0!==v.data?v.data[0]:n,effectIdEnum:void 0!==v.data?a.np(r.UE,v.data[0]):a.np(r.UE,n)},v})),M=(t,n,e,r,a,c,u=!0)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===c||void 0===e||void 0===r||void 0"
+    },
+    {
+      "offsetUtf8": 34566,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "M=(t,n,e,r,a,c,u=!0)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===c||void 0===e||void 0===r||void 0===a||isNaN(n)||isNaN(e)||isNaN(r)||isNaN(a))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.aS[1],commandId:i.aS[2],commandDesc:i.Ko});const s=4+c.length;let l=[n,e,r,a,...c];return l.length<i.aS[0]&&(l=l.concat(...new Uint8Array(i.aS[0]-l.length))),t.sendCommand(i.aS,i.Ko,new Uint8Array(l),s,u)})),b=(t,n,e,r,a=!0)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||isNaN(n)||isNaN(e))throw"
+    },
+    {
+      "offsetUtf8": 80809,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "Bt=t=>{void 0!==t.data&&(t.jsonData={profileId:t.data[0],regionIdEnum:a.np(Mt.mG,t.data[1]),regionId:t.data[1],effectIdEnum:a.np(Mt.Kw,t.data[2]),effectId:t.data[2],flags:t.data[3],rate:t.data[4],numOfColor:t.data[5],colorArray:t.data.slice(6)})},Ht=(t,n,e,o=-1)=>bt(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===t)throw new r.jl({error:i.ERROR_INVALID_INPUT_VALUE,commandClass:kt.ms[1],commandId:kt.ms[2],commandDesc:kt.KM});const a=new Uint8Array(kt.ms[0]);a[0]=n,a[1]=e;const d=yield t.sendCommand(kt.ms,kt.KM,a,o);return Bt(d),d})),Kt=(t,n,e,o,a,d,s,c,u=!0)=>bt(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===o||void 0===a||void 0===d||void 0===s||void 0===c||void 0===t||isNaN(d"
+    },
+    {
+      "offsetUtf8": 207135,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "getChromaEffectCommon({profileId:t,regionId:n,packetSizeSet:e}){return ja(this,void 0,void 0,(function*(){return Ht(this,t,n,e)}))}setChromaEffect({profileId:t,regionId:n,effectId:e,flags:o,rate:i,colorArray:r,"
+    },
+    {
+      "offsetUtf8": 1187,
+      "source": "581-rzDevice25LedMatrix.dadaa67383371e256a18.js",
+      "text": "this.getBrightness=({profileId:e,regionId:t})=>h(this,void 0,void 0,(function*(){if((void 0===t||isNaN(t))&&(t=0),0===(t=parseInt(t)))try{const e=yield i.fn(this);void 0!==e.jsonData.idList&&e.jsonData.idList.length>0&&(t=e.jsonData.idList[0])}catch(e){t=1}return i.PU(this,e,t)})),this.setBrightness=({profileId:e,regionId:t,brightness:a})=>h(this,void 0,void 0,(function*(){return i.dD(this,e,t,a)})),this.generateChromaFrameData=({profileId:e,regionId:t,row:a,start:r,end:n,colorArray:s,frameId:i="
+    },
+    {
+      "offsetUtf8": 3898,
+      "source": "581-rzDevice25LedMatrix.dadaa67383371e256a18.js",
+      "text": "setChromaEffectCommon({profileId:e,regionId:t,effectId:a,flags:r,rate:n,colorArray:s,checkUSBTransferIn:l=!0,batchLighting:d=null}){return h(this,void 0,void 0,(function*(){let e;switch(this.isCustomFrame=a===c.Kw.CustomFrame,a){case c.Kw.Static:e=o.UE.Static;break;case c.Kw.Breathing:e=o.UE.Breathing;break;case c.Kw.Spectrum:e=o.UE.SpectrumCycling;break;case c.Kw.Wave:e=o.UE.Wave;break;case c.Kw.Reactive:e=o.UE.Afterglow;break;case c.Kw.BasicRipple:e=o.UE.RippleSimulation;break;case c.Kw.Starlite:e=o.UE.StarlightField;break;case c.Kw.CustomFrame:e=o.UE.CustomFrame;break;case c.Kw.Off:e=o.UE.Off;break;default:e=o.UE.CustomFrame}const t=(null==d?void 0:d.isEnabled())?d:this;return i.xO(t,e,r,n,s,l)}))}setChromaFrame({profileId:e,regionId:t,frameId:a=255,row:r,start:n,end:s,colorArray:c,checkUSBTransferIn:o=!1,batchLighting:l=null}){return h(this,void 0,void 0,(function*(){const e=(null==l?void 0:l.isEnabled())?l:this;return i.JZ(e,a,r,n,s,c,o)}))}setChromaFrameLightingEngine({eventData:e}){return h(this,void 0,void 0,(function*(){const t=l.aS,a=l.Ko,r=this.generateDefaultResult(t,a);if(this.useSendCommandEx){let a=[];for(let r=0;r<e.numRow;r++){const n=new Uint8Array(3*e.numCol);for(let t=0;t<n.length;t++)n[t]=e.frame[r*e.numCol*3+t];const s=this.generateChromaFrameData({profileId:0,regionId:e.regionId,row:r,start:0,end:e.numCol-1,colorArray:n}),i=this._createDataSend(t,s.dataArrayIn,s.packetSizeSet);a=[...a,...i]}const r=new U"
+    },
+    {
+      "offsetUtf8": 4858,
+      "source": "581-rzDevice25LedMatrix.dadaa67383371e256a18.js",
+      "text": "setChromaFrameLightingEngine({eventData:e}){return h(this,void 0,void 0,(function*(){const t=l.aS,a=l.Ko,r=this.generateDefaultResult(t,a);if(this.useSendCommandEx){let a=[];for(let r=0;r<e.numRow;r++){const n=new Uint8Array(3*e.numCol);for(let t=0;t<n.length;t++)n[t]=e.frame[r*e.numCol*3+t];const s=this.generateChromaFrameData({profileId:0,regionId:e.regionId,row:r,start:0,end:e.numCol-1,colorArray:n}),i=this._createDataSend(t,s.dataArrayIn,s.packetSizeSet);a=[...a,...i]}const r=new Uint8Array(l.Fw[0]);r[0]=o.UE.CustomFrame;const n=this._createDataSend(l.Fw,r,2);a=[...a,...n];try{this.isCustomFrame&&(yield this.device.controlTransferOuts({requestType:\"class\",recipient:\"interface\",request:9,value:768,index:this.claimInterface},new Uint8Array(a),90))}catch(e){console.log(\"controlTransferOuts\",e)}}else{const t=new f.y({rzDevice:this,enabled:this.isCustomFrame});for(let a=0;a<e.numRow;a++){const r=new Uint8Array(3*e.numCol);for(let t=0;t<r.length;t++)r[t]=e.frame[a*e.numCol*3+t];try{this.isCustomFrame&&(yield this.setChromaFrame({profileId:0,regionId:e.regionId,row:a,start:0,end:e.numCol-1,colorArray:r,checkUSBTransferIn:!1,batchLighting:t}),t.isEnabled()?t.add_sleep():yield s.yy(1))}catch(e){console.log(e)}}if(this.isCustomFrame&&!this.skipSetCustomEffect)try{yield this.setChromaEffectCommon({profileId:0,regionId:0,effectId:c.Kw.CustomFrame,flags:0,rate:0,colorArray:[],checkUSBTransferIn:!1,batchLighting:t})}catch(e){console.log(e)}yield t.flush()}return r.status=n.STATUS_SUCCESS,r.error=\"\",r}))}}const m=u}}]);\n//# sourceMappingURL=rzDevice25LedMatrix.dadaa67383371e256a18.js.map"
+    },
+    {
+      "offsetUtf8": 2123,
+      "source": "581-rzDevice25LedMatrixBlade.211294bf38840fcb516b.js",
+      "text": "this.setBrightness=({profileId:e,regionId:t,brightness:i})=>m(this,void 0,void 0,(function*(){return 0==(t=+t)&&(t=r.k9.Backlight_LED),l.dD(this,e,t,i)})),this.enumScreenRefreshRatesFilter=()=>m(this,void 0,void 0,(function*(){const e=\"enum"
+    },
+    {
+      "offsetUtf8": 12265,
+      "source": "581-rzDevice25LedMatrixBlade.211294bf38840fcb516b.js",
+      "text": "getBatteryChargeLimiterControl(){return m(this,void 0,void 0,(function*(){return g.Hj(this)}))}setBatteryChargeLimiterControl(e,t){return m(this,void 0,void 0,(function*(){return g.aW(this,e,t)}))}getMiniLEDPanelResolution(){return m(this,v"
+    },
+    {
+      "offsetUtf8": 5967713,
+      "source": "581-ui-main.98cf2efe.js",
+      "text": "(LI,{showLogoLighting:!0}),(0,bt.jsx)(ls,{})]}),(0,bt.jsx)(_s,{direction:\"right\",children:(0,bt.jsx)(uI,{})})]})})}}cons"
+    },
+    {
+      "offsetUtf8": 26060,
+      "source": "581-main.450b813b36b314f7abf0.js",
+      "text": "minFanSpeedValue:3700,maxFanSpeedValue:5300,defaultFanSpeedValue:4500},{id:2,mode:r.mNQ.Custom_Mode,title:n.DBO,content:n.lJc,icon:\"M22,4A18,18,0,1,0,40,22,18.021,18.021,0,0,0,22,4m0-2A20,20,0,1,1,2,22,20,20,0,0,1,22,2Zm9,19H28.959a6.976,6.976,0,0,0-1.34-3.2l1.452-1.453a1,1,0,1,0"
+    },
+    {
+      "offsetUtf8": 80487,
+      "source": "581-main.450b813b36b314f7abf0.js",
+      "text": "hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0}}),a.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBladeWattage\"),a.A.useFeature(\"useMWManifest\",\"yes\"),a.A.injectToDependencyList(\"runtimeCache\",c.A),a.A.injectData(\"initMemoryStorageCache\",(function(){"
+    },
+    {
+      "offsetUtf8": 198252,
+      "source": "581-6737.f49b9965ecd5cf011e43.js",
+      "text": "Ro=()=>Vn(void 0,void 0,void 0,(function*(){const e=N.jf.rzDevice,t=yield(0,St._$)(),i=[],n=[];rt.A.SupportedPerformanceModes.forEach((e=>i.push(e)));for(const o of i){let i;for(const n of t){const{profileId:t,fanMode:r,fanModeValue:a}=Wi.A.getPerformanceFanModeProfile(n,o.mode,\""
+    },
+    {
+      "offsetUtf8": 198831,
+      "source": "581-6737.f49b9965ecd5cf011e43.js",
+      "text": "100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}ct.A.fanVal"
+    },
+    {
+      "offsetUtf8": 1502479,
+      "source": "581-6737.f49b9965ecd5cf011e43.js",
+      "text": "static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},51147:(e,t,i)=>{\"use strict\";var n=i(88205),o=i(6949"
+    },
+    {
+      "offsetUtf8": 727955,
+      "source": "581-6737.f49b9965ecd5cf011e43.js",
+      "text": "customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yi"
+    },
+    {
+      "offsetUtf8": 2181,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new "
+    },
+    {
+      "offsetUtf8": 277467,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Th"
+    },
+    {
+      "offsetUtf8": 277681,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set Thermal Fan Table\",A=new Uint8Array([80,13,133]),I=(new Uint8Array([80,13,5]),\"Get Thermal Reading\"),y=new Uint8Array([7,13,1"
+    },
+    {
+      "offsetUtf8": 4367,
+      "source": "581-rzDevice25.f668146da6ee1d0b3b6c.js",
+      "text": "B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void 0,void 0,void 0,(function*(){i"
+    },
+    {
+      "offsetUtf8": 6113672,
+      "source": "581-ui-main.98cf2efe.js",
+      "text": "!y&&P&&(()=>{const e=V===Be.XuP.manual,{minVal:E,maxVal:a,defaultValue:t}=Oe(b);return(0,bt.jsxs)(\"div\",{className:\"fan-mode \"+(i?\"\":\"disabled\"),children:[(0,bt.jsx)(\"div\",{className:\"fan-title\",children:(0,bt.jsx)(Yt.A,{text:Ke.qTB})}),(0,bt.jsx)(MI.A,{name:Ke.GMJ,id:Be.XuP.auto"
+    },
+    {
+      "offsetUtf8": 6115718,
+      "source": "581-ui-main.98cf2efe.js",
+      "text": "min:E,max:a,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:Te}),(0,bt.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,bt.jsx)(As,{d:\"M-3,12a5.211,5.211,0,0,0,.05.69A9.389,9.389,0,0,1-8,11.97,9.929,9.929,0,0,1-6.46,6.68a11.4,11.4,0,0,0,3.59,4.17A5.4,5.4,0,0,0-3,12Zm.74,2"
+    }
+  ],
+  "brightness": {
+    "set": "03/03 len3 [1,5,ceil(percent*255/100)]",
+    "readback": "[class,LED,raw];percent=floor(raw*100/255)",
+    "get": "03/83 len3 [1,5,0]",
+    "basis": "The exact product enables hasTwoMode. Middleware selects profile 1 and BacklightLED 5; the paired numeric getter accepts the same profile and LED."
+  },
+  "logo": {
+    "set": "03/02 [0,4,(breathing?2:0)] then 03/00 [0,4,1] for On; Off uses only 03/00 [0,4,0].",
+    "caveat": "The generic startup reader defaults to profile 1 but is gated by persistentInHardware.logoLighting, which product 581 does not enable. Use profile 0 from the actual setter; the paired getter accepts that selector.",
+    "get": "03/80 state and 03/82 effect, length 3 [0,4,0]",
+    "modes": "Off0,Static1,Breathing2",
+    "basis": "The actual product UI enables showLogoLighting and declares its own LOGO_EFFECTS. Middleware uses profile 0; paired helpers accept class 0 and validate the response class, LED and value."
+  },
+  "keyboardEffects": {
+    "readback": "NotEstablished: only the inherited generic 0F/82 method and six-byte-header parser were found, without an actual product 581 caller or matching 03/8A old-matrix getter.",
+    "ownership": "Do not fabricate an effect/RGB baseline, reinterpret generic modern readback, or inherit Blade 18 restoration or frame handling.",
+    "setter": "03/0A, no profile/region prefix; matrix Off0 Wave1 Reactive2 Breathing3 Spectrum4 CustomFrame5 Static6 Ripple19 Starlight25"
+  },
+  "frames": {
+    "bounds": "NotEstablished here: the frame loop consumes external eventData.numRow/numCol. Family 7 and payload capacity do not independently establish row geometry or a layout mask.",
+    "setter": "03/0B nominal70, actual4+3N bytes [frameId255,row,start,end,RGB...]",
+    "activation": "03/0A [5,0]"
+  },
+  "battery": {
+    "reason": "The exact product 581 power configuration enables hasSystemPower, with no hasBatteryOptimizer flag or defaults. Shared battery getters and reducers exist, but actual read paths require hasBatteryOptimizer. Inheritance alone does not admit commands for this model.",
+    "status": "NotEstablished"
+  },
+  "previousAdmission": "2026-11-07-rz09-0301.json",
+  "manualFans": {
+    "performancePreset": "Balanced",
+    "power": "Confirmed full-power AC only; Automatic handback remains available on battery",
+    "sourceEnvelope": {
+      "minimumRpm": 3700,
+      "maximumRpm": 5300,
+      "stepRpm": 100
+    },
+    "currentRangeQuery": {
+      "command": "0D/83",
+      "requestBytes": 12,
+      "arguments": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "responseClass": 0,
+      "minimumByte": 6,
+      "defaultByte": 8,
+      "maximumByte": 10,
+      "rpmMultiplier": 100
+    },
+    "effectiveRange": "Intersection of fresh, ordered, nonzero firmware min/default/max with the source envelope. Validate before manual entry, every target SET and paired target readback; curve entry uses the fresh maximum.",
+    "targetGet": "0D/81 [1, zone=1/2, 0]",
+    "targetSet": "0D/01 [1, zone=1/2, rpm/100]",
+    "modeGet": "0D/82 [1, zone=1/2, 0, 0]",
+    "modeSet": "0D/02 [1, zone=1/2, preset=0, automatic=0/manual=1]",
+    "customManual": "Not admitted: exact product UI omits Custom manual support.",
+    "discovery": "Read the confirmed current preset directly. Do not reproduce vendor initialization writes across presets.",
+    "directTransitions": "Fixed/Curve subtype changes in the same confirmed admitted preset use the same typed target path without Automatic/Balanced writes."
+  },
+  "verificationBoundary": "Source pins and excerpts establish bounded typed contracts, not physical success. Unsupported effect getters, host-frame geometry, charge-limit enablement and native GPU DLL effects are not inferred."
+}

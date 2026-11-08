@@ -361,11 +361,36 @@ public sealed class RazerSnapTapDriverAdmissionTests
     }
 
     [Fact]
-    public void EveryCurrentSupportedModelHasAnExactReviewedDriverProfile()
+    public void EverySupportedModelHasAnExplicitReviewedDriverAdmissionDecision()
     {
+        // These exact source-reviewed models have no admitted keyboard driver API/setup
+        // contract. See evidence/source-reviewed-blades/2026-11-07-models{,-2021-2022,-2019-2020}.json
+        // and evidence/source-reviewed-blades/2026-11-07-rz09-0301.json.
+        (string ModelNumber, string UsbProductId)[] notAdmitted =
+        [
+            ("RZ09-0508", "02B6"),
+            ("RZ09-0510", "02B7"),
+            ("RZ09-0509", "02B8"),
+            ("RZ09-0529", "02C7"),
+            ("RZ09-0370", "0270"),
+            ("RZ09-0427", "028C"),
+            ("RZ09-0421", "028A"),
+            ("RZ09-0423", "028B"),
+            ("RZ09-0301", "0245"),
+            ("RZ09-0300", "0246"),
+            ("RZ09-0330", "0253"),
+            ("RZ09-0351", "0268"),
+        ];
         var models = OpenBlade.Contracts.RazerBladeModelCatalog.All;
-        Assert.Equal(models.Count, RazerSnapTapDriverProfiles.All.Count);
-        foreach (var model in models)
+        foreach (var decision in notAdmitted)
+        {
+            Assert.Single(models, model => model.ModelNumber == decision.ModelNumber
+                && model.UsbProductId == decision.UsbProductId);
+            Assert.DoesNotContain(RazerSnapTapDriverProfiles.All,
+                profile => profile.ProductId == decision.UsbProductId);
+        }
+        Assert.Equal(models.Count, RazerSnapTapDriverProfiles.All.Count + notAdmitted.Length);
+        foreach (var model in models.Where(model => !notAdmitted.Contains((model.ModelNumber, model.UsbProductId))))
         {
             var profile = Assert.Single(RazerSnapTapDriverProfiles.All,
                 p => p.ProductId == model.UsbProductId);

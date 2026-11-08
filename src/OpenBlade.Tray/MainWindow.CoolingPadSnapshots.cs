@@ -30,6 +30,12 @@ public sealed partial class MainWindow
             },
         });
         SelectLocalizationSnapshotPage("cooling-pad");
+        string coolingPadQuery = LocalizedResources.Get("MainWindow_CoolingPadNavigationItemText.Content", "Cooling pad");
+        if (variant != "absent" && !FindGlobalSearchResults(coolingPadQuery)
+                .Any(result => ReferenceEquals(result.Navigation, CoolingPadNavigationItem)))
+        {
+            throw new InvalidOperationException("Confirmed cooling-pad discovery must expose its localized search page.");
+        }
         if (variant == "unplugged")
         {
             ViewModel.CoolingPad.ApplyStatus(new CoolingPadStatusSnapshot { Connection = CoolingPadConnectionState.Absent });
@@ -42,6 +48,10 @@ public sealed partial class MainWindow
                 || HomePage.Visibility != Visibility.Visible)
             {
                 throw new InvalidOperationException("A confirmed absent cooling pad must hide its navigation and return to Dashboard.");
+            }
+            if (FindGlobalSearchResults(coolingPadQuery).Any(result => ReferenceEquals(result.Navigation, CoolingPadNavigationItem)))
+            {
+                throw new InvalidOperationException("Confirmed absence must remove cached cooling-pad search results.");
             }
             return;
         }

@@ -4,7 +4,7 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-/// <summary>Exact 0F43 accessory admission, shared by every already-admitted Blade host.</summary>
+/// <summary>Exact 0F43 accessory admission, independent of the laptop's identity.</summary>
 public sealed class WindowsCoolingPadDeviceProvider : ICoolingPadDeviceProvider
 {
     private int active;
@@ -39,30 +39,23 @@ public sealed class WindowsCoolingPadDeviceProvider : ICoolingPadDeviceProvider
         bool transferred = false;
         try
         {
-            var registry = new WindowsRegistryValueSource();
-            var platform = new RuntimeWindowsPlatformEvidenceSource(registry);
-            IHostIdentitySource? host = BatteryValidationFactory.AdmittedServiceModels
-                .Select(model => (IHostIdentitySource)new WindowsHostIdentitySource(registry, platform, model.HostIdentity))
-                .Concat(ExperimentalBladeModels.All.Select(model => ExperimentalBladeModels.CreateIdentity(model, registry, platform)))
-                .FirstOrDefault(source => source.ReadExactIdentity() is { Evidence: not null, Failure: null });
-            if (host is null) { return null; }
             ownership = new CoolingPadControllerLease();
             reference = ownership.Acquire();
             if (reference is null) { return null; }
             var windowsNative = new WindowsHidNative();
-            var native = new CoolingPadNative(windowsNative);
+            var opener = new WindowsCoolingPadHidSessionOpener(windowsNative);
             var guard = new CoolingPadAccessGuard(new RunningProcessSource(), new WindowsServiceSource(),
-                () => host.ReadExactIdentity() is { Evidence: not null, Failure: null } && native.StillExact());
-            var opener = new WindowsRazerHidSessionOpener(host, guard, native,
-                ControllerExclusivityPolicy.Strict, ExactIdentity);
-            var actors = new ValidationActorFactory(opener, new OverlappedFeatureOperation(windowsNative), guard,
-                TimeProvider.System, TimeSpan.FromSeconds(3), ControllerExclusivityPolicy.Strict,
-                TimeSpan.FromMilliseconds(30), featureReportId: 0);
+                opener.StillExact);
+            var actors = new ValidationActorFactory(() => opener.Open(guard),
+                (handle, lease) => new WindowsRazerHidSession(handle,
+                    new OverlappedFeatureOperation(windowsNative), guard, TimeProvider.System, lease,
+                    ControllerExclusivityPolicy.Strict, TimeSpan.FromMilliseconds(30), featureReportId: 0,
+                    queryDiagnostics: FirmwareQueryDiagnostics.Process), TimeSpan.FromSeconds(3));
             var opened = await actors.OpenAsync(new ValidationRunContext()).ConfigureAwait(false);
             actor = opened.Value;
             if (opened.Failure is not null || actor is null)
             { throw new CoolingPadOperationException($"Cooling-pad control is unavailable: {opened.Failure}.", false); }
-            string identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(native.SelectedPath!.ToUpperInvariant())));
+            string identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(opener.SelectedPath!.ToUpperInvariant())));
             var ownedActor = actor;
             var ownedReference = reference;
             var ownedLease = ownership;
@@ -93,43 +86,6 @@ public sealed class WindowsCoolingPadDeviceProvider : ICoolingPadDeviceProvider
 
     internal static readonly HidHandleIdentity ExactIdentity = new(0x1532, 0x0F43, 0x000C, 1, 91, 0x0200);
 
-    private sealed class CoolingPadNative(IHidCandidateNative native) : IHidCandidateNative
-    {
-        internal IHidCandidateNative Native => native;
-        internal string? SelectedPath { get; private set; }
-        private readonly Dictionary<OpenedCandidateHandle, string> paths = [];
-        public IReadOnlyList<string> EnumerateDevicePaths() => native.EnumerateDevicePaths()
-            .Where(path => path.Contains("vid_1532&pid_0f43&", StringComparison.OrdinalIgnoreCase)
-                && (path.Contains("&mi_00#", StringComparison.OrdinalIgnoreCase)
-                    || path.Contains("&mi_00&", StringComparison.OrdinalIgnoreCase))).ToArray();
-        public HidCandidateOpenResult TryOpen(string path, HidOpenParameters parameters)
-        {
-            var result = native.TryOpen(path, parameters);
-            if (result.Candidate is { } candidate) { paths[candidate] = path; }
-            return result;
-        }
-        public HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle) => native.ReadIdentity(handle);
-        public OpenedHidHandle BindSelected(OpenedCandidateHandle handle)
-        {
-            SelectedPath = paths[handle];
-            paths.Clear();
-            return native.BindSelected(handle);
-        }
-        internal bool StillExact()
-        {
-            var pathsNow = EnumerateDevicePaths();
-            if (SelectedPath is { } selected && !pathsNow.Contains(selected, StringComparer.OrdinalIgnoreCase)) { return false; }
-            int count = 0;
-            foreach (string path in pathsNow)
-            {
-                using var handle = native.TryOpen(path, WindowsRazerHidEvidenceEvaluator.MetadataOnlyOpenParameters).Candidate;
-                if (handle is null) { return false; }
-                if (native.ReadIdentity(handle).MatchesExpected(ExactIdentity)) { count++; }
-            }
-            return count == 1;
-        }
-    }
-
     internal sealed class CoolingPadAccessGuard(IRunningProcessSource processes, IWindowsServiceSource services,
         Func<bool> identityAllowed) : IHardwareAccessGuard
     {
@@ -149,7 +105,7 @@ public sealed class WindowsCoolingPadDeviceProvider : ICoolingPadDeviceProvider
                     && (service.ServiceName.Contains("Razer", StringComparison.OrdinalIgnoreCase)
                         || service.DisplayName.Contains("Razer", StringComparison.OrdinalIgnoreCase))).Select(service => service.ServiceName);
                 if (!identityAllowed())
-                { return new([], "Exact cooling-pad or host identity is unavailable."); }
+                { return new([], "Exact cooling-pad identity is unavailable."); }
                 return new([.. ordinary.Conflicts, .. conflicts, .. vendor], ordinary.DetectionFailure);
             }
             catch { return new([], "Cooling-pad identity or controller detection failed."); }
