@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Text;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Core.Native;
@@ -20,14 +19,13 @@ public sealed record NativeDisplayResult(DisplayProfileSettings? Display, Native
 }
 
 /// <summary>
-/// Explicit developer-only binding for pure profile projection. No product path loads
-/// this helper. Whole-profile validation, application matching and state ownership stay
+/// Binding for pure profile projection. Whole-profile validation, application
+/// matching, opaque UTF-16 keys and state ownership stay
 /// with the C# host. Failed results do not imply that any hardware command was submitted.
 /// </summary>
 public sealed unsafe class NativeProfilePolicy : IDisposable
 {
     public const uint PolicyAbiVersion = 0x00010000;
-    private static readonly UTF8Encoding Utf8 = new(false, true);
     private readonly PolicyModule module;
     private readonly delegate* unmanaged[Cdecl]<uint, NativeProfileProjection*, NativeProfileProjection*, byte*, uint, NativeProfileProjection*, byte*, uint, uint*, NativeErrorRecord*, uint> apply;
     private readonly delegate* unmanaged[Cdecl]<uint, NativeDisplayProjection*, NativeDisplayProjection*, byte*, uint, NativeDisplayProjection*, byte*, uint, uint*, NativeErrorRecord*, uint> applyDisplay;
@@ -81,7 +79,7 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
                 || !File.Exists(absoluteLibraryPath))
             {
                 return new(null, Error(NativeBoundaryErrorKind.InvalidLibraryPath,
-                    $"Supply a normalized absolute path to an existing {expectedName} developer artifact."));
+                    $"Supply a normalized absolute path to an existing {expectedName} artifact."));
             }
         }
         catch (Exception exception) when (exception is ArgumentException or NotSupportedException or IOException or UnauthorizedAccessException)
@@ -123,14 +121,14 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
             }
             if (value is null)
             {
-                // No field is consumed: preserve even legacy UTF-16 that cannot cross
-                // the strict UTF-8 projection ABI, just as the C# helper does.
+                // Preserve the original no-op branch, including object identity
+                // and null fields, without constructing a projection.
                 return new(baseline, null);
             }
-            var keys = new List<byte>();
+            var keys = new KeyProjection();
             NativeProfileProjection basis = Project(baseline, keys);
             NativeProfileProjection replacement = Project(value, keys);
-            byte[] input = keys.ToArray();
+            byte[] input = keys.Bytes.ToArray();
             byte[] output = new byte[input.Length];
             NativeProfileProjection result = NativeProfileProjection.Empty;
             NativeErrorRecord error = NativeErrorRecord.Create();
@@ -152,7 +150,15 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
                 return InvalidProfile();
             }
 
-            DisplayProfileSettings? display = result.HasDisplay == 1 ? ReadDisplay(result.Display, output.AsSpan(0, (int)written)) : null;
+            DisplayProfileSettings? display = result.HasDisplay == 1 ? ReadDisplay(result.Display, output.AsSpan(0, (int)written), keys) : null;
+            if (value.Display is null && baseline.Display is not null)
+            {
+                if (display != baseline.Display)
+                {
+                    return InvalidProfile();
+                }
+                display = baseline.Display;
+            }
             FanControlSettings? fan = ResolveFan(result, baseline, value);
             if (result.HasDisplay != 1)
             {
@@ -185,11 +191,6 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
                 Lighting = value.Lighting ?? baseline.Lighting,
             }, null);
         }
-        catch (EncoderFallbackException)
-        {
-            return new(null, Error(NativeBoundaryErrorKind.InvalidArgument, "Profile keys must encode as strict UTF-8.", 4));
-        }
-        catch (DecoderFallbackException) { return InvalidProfile(); }
         catch (InvalidPolicyResultException) { return InvalidProfile(); }
         catch (ObjectDisposedException) { return new(null, Error(NativeBoundaryErrorKind.Disposed, "The native policy helper is disposed.")); }
     }
@@ -208,10 +209,10 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
             {
                 return new(baseline, null);
             }
-            var keys = new List<byte>();
+            var keys = new KeyProjection();
             NativeDisplayProjection basis = ProjectDisplay(baseline, keys);
             NativeDisplayProjection replacement = ProjectDisplay(value, keys);
-            byte[] input = keys.ToArray();
+            byte[] input = keys.Bytes.ToArray();
             byte[] output = new byte[input.Length];
             NativeDisplayProjection result = NativeDisplayProjection.Empty;
             NativeErrorRecord error = NativeErrorRecord.Create();
@@ -228,11 +229,9 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
                     return new(null, failure);
                 }
             }
-            DisplayProfileSettings display = ReadDisplay(result, output.AsSpan(0, (int)written));
+            DisplayProfileSettings display = ReadDisplay(result, output.AsSpan(0, (int)written), keys);
             return new(display, null);
         }
-        catch (EncoderFallbackException) { return new(null, Error(NativeBoundaryErrorKind.InvalidArgument, "Display keys must encode as strict UTF-8.", 4)); }
-        catch (DecoderFallbackException) { return new(null, InvalidResult()); }
         catch (InvalidPolicyResultException) { return new(null, InvalidResult()); }
         catch (ObjectDisposedException) { return new(null, Error(NativeBoundaryErrorKind.Disposed, "The native policy helper is disposed.")); }
     }
@@ -291,7 +290,7 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
         }
     }
 
-    private static NativeProfileProjection Project(PowerProfile? profile, List<byte> keys)
+    private static NativeProfileProjection Project(PowerProfile? profile, KeyProjection keys)
     {
         NativeProfileProjection result = NativeProfileProjection.Empty;
         if (profile is null)
@@ -306,7 +305,7 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
         return result;
     }
 
-    private static NativeProfileProjection Project(ApplicationPowerProfileOverride? profile, List<byte> keys)
+    private static NativeProfileProjection Project(ApplicationPowerProfileOverride? profile, KeyProjection keys)
     {
         NativeProfileProjection result = NativeProfileProjection.Empty;
         if (profile is null)
@@ -321,7 +320,7 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
         return result;
     }
 
-    private static void SetObjects(ref NativeProfileProjection result, FanControlSettings? fan, DisplayProfileSettings? display, List<byte> keys)
+    private static void SetObjects(ref NativeProfileProjection result, FanControlSettings? fan, DisplayProfileSettings? display, KeyProjection keys)
     {
         result.HasFanControl = fan is null ? (byte)0 : (byte)1;
         result.FanMode = fan is null ? 0 : (int)fan.Mode;
@@ -330,7 +329,7 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
         result.Display = ProjectDisplay(display, keys);
     }
 
-    private static NativeDisplayProjection ProjectDisplay(DisplayProfileSettings? display, List<byte> keys)
+    private static NativeDisplayProjection ProjectDisplay(DisplayProfileSettings? display, KeyProjection keys)
         => new()
         {
             StructSize = 44,
@@ -340,17 +339,46 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
             BrightnessPercent = NativeOptionalInt.From(display?.BrightnessPercent is byte brightness ? (int)brightness : null),
         };
 
-    private static NativeOptionalUtf8 AddKey(string? value, List<byte> keys)
+    private static NativeOptionalUtf8 AddKey(string? value, KeyProjection keys) => keys.Add(value);
+
+    // At most four present keys cross a call (two per display). Rust selects
+    // opaque one-byte source tokens; the original host strings never cross UTF-8.
+    // Occurrences are distinct even for equal text, preserving selected spelling
+    // and identity, empty strings, NULs, and unpaired UTF-16 surrogates losslessly.
+    private sealed class KeyProjection
     {
-        if (value is null)
+        private readonly List<string> originals = [];
+        internal List<byte> Bytes { get; } = [];
+
+        internal NativeOptionalUtf8 Add(string? value)
         {
-            return default;
+            if (value is null)
+            {
+                return default;
+            }
+            if (originals.Count >= 4)
+            {
+                throw new InvalidPolicyResultException();
+            }
+            uint offset = (uint)originals.Count;
+            originals.Add(value);
+            Bytes.Add((byte)('A' + offset));
+            return new() { Offset = offset, Length = 1, Present = 1 };
         }
 
-        byte[] bytes = Utf8.GetBytes(value);
-        var result = new NativeOptionalUtf8 { Offset = checked((uint)keys.Count), Length = checked((uint)bytes.Length), Present = 1 };
-        keys.AddRange(bytes);
-        return result;
+        internal string Resolve(ReadOnlySpan<byte> token)
+        {
+            if (token.Length != 1)
+            {
+                throw new InvalidPolicyResultException();
+            }
+            int index = token[0] - 'A';
+            if ((uint)index >= (uint)originals.Count)
+            {
+                throw new InvalidPolicyResultException();
+            }
+            return originals[index];
+        }
     }
 
     private static bool ValidProfile(NativeProfileProjection value) => value.StructSize == 88
@@ -377,7 +405,7 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
         return selected;
     }
 
-    private static DisplayProfileSettings ReadDisplay(NativeDisplayProjection value, ReadOnlySpan<byte> keys)
+    private static DisplayProfileSettings ReadDisplay(NativeDisplayProjection value, ReadOnlySpan<byte> keys, KeyProjection projection)
     {
         if (value.StructSize != 44 || !value.HdrEnabled.IsBoolean || !value.BrightnessPercent.IsValid
             || (value.BrightnessPercent.Present == 1 && value.BrightnessPercent.Value is < 0 or > 255))
@@ -385,13 +413,13 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
             throw new InvalidPolicyResultException();
         }
 
-        return new(ReadKey(value.RefreshRateKey, keys), ReadBoolean(value.HdrEnabled), ReadKey(value.ColorProfileKey, keys))
+        return new(ReadKey(value.RefreshRateKey, keys, projection), ReadBoolean(value.HdrEnabled), ReadKey(value.ColorProfileKey, keys, projection))
         {
             BrightnessPercent = value.BrightnessPercent.Present == 1 ? (byte)value.BrightnessPercent.Value : null,
         };
     }
 
-    private static string? ReadKey(NativeOptionalUtf8 key, ReadOnlySpan<byte> keys)
+    private static string? ReadKey(NativeOptionalUtf8 key, ReadOnlySpan<byte> keys, KeyProjection projection)
     {
         if (!key.IsValid)
         {
@@ -408,7 +436,7 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
             throw new InvalidPolicyResultException();
         }
 
-        return Utf8.GetString(keys.Slice((int)key.Offset, (int)key.Length));
+        return projection.Resolve(keys.Slice((int)key.Offset, (int)key.Length));
     }
 
     private static bool? ReadBoolean(NativeOptionalInt value) => value.Present == 1 ? value.Value == 1 : null;

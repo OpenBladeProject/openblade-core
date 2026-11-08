@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 
 namespace OpenBlade.Service.Tests;
 
@@ -74,6 +75,28 @@ public sealed class ServicePeriodicObservationLoopTests
         Assert.Equal(1, runtime.RefreshCalls);
         Assert.Equal(1, runtime.DriverModeMaintenanceCalls);
         Assert.Equal(1, runtime.RestoreCalls);
+    }
+
+    [Fact]
+    public async Task RunAsync_NativeFailureStopsBeforeLaterMaintenanceWithoutRetry()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var expected = new NativeComponentException((int)NativeBoundaryErrorKind.InternalFailure);
+        var runtime = new RecordingRuntime(cancellation) { RefreshFailure = expected };
+        var loop = new ServicePeriodicObservationLoop(
+            runtime,
+            new LowPowerGate(),
+            NullLogger.Instance,
+            (_, _) => Task.CompletedTask);
+
+        NativeComponentException actual = await Assert.ThrowsAsync<NativeComponentException>(() =>
+            loop.RunAsync(cancellation.Token).WaitAsync(TimeSpan.FromSeconds(5)));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(1, runtime.RefreshCalls);
+        Assert.Equal(0, runtime.DriverModeMaintenanceCalls);
+        Assert.Equal(0, runtime.RestoreCalls);
+        Assert.Equal(0, runtime.ThermalObservationCalls);
     }
 
     [Fact]

@@ -3,9 +3,24 @@
     <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
+    <OpenBladeNativePayloadDirectory Condition="'$(OpenBladeNativePayloadDirectory)' == ''">$(MSBuildProjectDirectory)/obj/native/$(Configuration)</OpenBladeNativePayloadDirectory>
+    <OpenBladeNativeDevelopmentBuild Condition="'$(OpenBladeNativeDevelopmentBuild)' == ''">true</OpenBladeNativeDevelopmentBuild>
+    <OpenBladeNativeShell Condition="'$(OS)' == 'Windows_NT'">powershell.exe</OpenBladeNativeShell>
+    <OpenBladeNativeShell Condition="'$(OS)' != 'Windows_NT'">pwsh</OpenBladeNativeShell>
+    <OpenBladeNativeFileName Condition="'$(OS)' == 'Windows_NT'">openblade_ffi.dll</OpenBladeNativeFileName>
+    <OpenBladeNativeFileName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libopenblade_ffi.dylib</OpenBladeNativeFileName>
+    <OpenBladeNativeFileName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libopenblade_ffi.so</OpenBladeNativeFileName>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../OpenBlade.Contracts/OpenBlade.Contracts.csproj" />
     <InternalsVisibleTo Include="OpenBlade.Core.Native.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(OpenBladeNativePayloadDirectory)/OpenBlade.Native.provenance.json" LogicalName="OpenBlade.Native.provenance.json" />
+    <None Include="$(OpenBladeNativePayloadDirectory)/$(OpenBladeNativeFileName)" Link="$(OpenBladeNativeFileName)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildRequiredNativeComponent" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Condition="'$(OpenBladeNativeDevelopmentBuild)' == 'true'" IgnoreStandardErrorWarningFormat="true" Command="&quot;$(OpenBladeNativeShell)&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)/../../build/Build-NativeDevelopment.ps1&quot; -Output &quot;$(OpenBladeNativePayloadDirectory)&quot; -ProductVersion &quot;$(Version)&quot; -Configuration &quot;$(Configuration)&quot;" />
+    <Error Condition="!Exists('$(OpenBladeNativePayloadDirectory)/$(OpenBladeNativeFileName)') Or !Exists('$(OpenBladeNativePayloadDirectory)/OpenBlade.Native.provenance.json')" Text="The required native component or its embedded build manifest is missing." />
+  </Target>
 </Project>

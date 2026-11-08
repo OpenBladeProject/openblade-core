@@ -3,8 +3,8 @@ using System.Runtime.InteropServices;
 namespace OpenBlade.Core.Native;
 
 /// <summary>
-/// Developer-only, synchronous pure codec binding. Loading requires an explicit native
-/// library path; this assembly has no production callers or hardware responsibilities.
+/// Synchronous pure codec binding. Product loading is admitted by ProductNativeRuntime;
+/// explicit artifact loading is retained for offline boundary tests.
 /// </summary>
 public sealed unsafe class NativeReportCodec : IDisposable
 {
@@ -118,6 +118,51 @@ public sealed unsafe class NativeReportCodec : IDisposable
         }
     }
 
+    /// <summary>
+    /// Encodes from the original payload without allocating a report graph. Payload and
+    /// destination may overlap: FFI output uses separate stack storage and is published
+    /// to destination only after the call has finished reading all input.
+    /// </summary>
+    public NativeBoundaryError? EncodeInto(byte transaction, byte commandClass, byte commandId,
+        ReadOnlySpan<byte> payload, Span<byte> destination)
+    {
+        if (destination.Length != ReportLength)
+        {
+            return new(NativeBoundaryErrorKind.InvalidArgument, 2, 0, "A report destination must contain exactly 90 bytes.");
+        }
+        NativeReportRequest request = NativeReportRequest.Create(transaction, commandClass, commandId);
+        NativeErrorRecord error = NativeErrorRecord.Create();
+        Span<byte> output = stackalloc byte[ReportLength];
+        uint written = 0;
+        try
+        {
+            fixed (byte* inputPointer = payload)
+            fixed (byte* outputPointer = output)
+            {
+                uint status = RawEncode(AbiVersion, &request, inputPointer, (uint)payload.Length,
+                    outputPointer, ReportLength, &written, &error);
+                if (status == 0 && error.StructSize == 16 && error.Category == 0
+                    && error.Detail == 0 && error.RequiredLength == 0 && written == ReportLength)
+                {
+                    output.CopyTo(destination);
+                    return null;
+                }
+                // The allocating interpretation is used only on failure, preserving the
+                // same bounded status/error taxonomy without hot-path allocations.
+                return Interpret(status, error, written, new byte[ReportLength], ReportLength).Error
+                    ?? InvalidResult().Error;
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            return Failure(NativeBoundaryErrorKind.Disposed, "The native codec is disposed.").Error;
+        }
+    }
+
+    /// <summary>
+    /// Validates immutable request/response spans, which may alias each other as allowed
+    /// by ABI v1. Native writable output and metadata use separately owned storage.
+    /// </summary>
     public NativeCodecResult ValidateResponse(byte transaction, byte commandClass, byte commandId,
         ReadOnlySpan<byte> requestPayload, ReadOnlySpan<byte> response, int? expectedPayloadLength = null)
     {

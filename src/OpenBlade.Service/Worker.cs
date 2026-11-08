@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 
 namespace OpenBlade.Service;
 
@@ -43,17 +44,30 @@ public sealed class Worker(
                 startupCompleted,
                 intentionalStop,
                 token),
-            stoppingToken);
+            stoppingToken,
+            exception =>
+            {
+                logger.LogCritical("{NativeComponentFailure}", exception.Message);
+                Environment.ExitCode = 1;
+            });
     }
 
     internal static async Task RunWithShutdownCleanupAsync(
         Func<CancellationToken, Task> runAsync,
         Func<bool, CancellationToken, Task> cleanupAsync,
-        CancellationToken stoppingToken)
+        CancellationToken stoppingToken,
+        Action<NativeComponentException>? reportNativeFailure = null)
     {
         try
         {
             await runAsync(stoppingToken).ConfigureAwait(false);
+        }
+        catch (NativeComponentException exception)
+        {
+            // BackgroundService failures do not reliably escape host.Run(). Report
+            // before cleanup, then let normal supervision stop all producers.
+            reportNativeFailure?.Invoke(exception);
+            throw;
         }
         finally
         {

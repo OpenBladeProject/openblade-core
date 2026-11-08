@@ -68,6 +68,7 @@ public sealed class ProfilePolicyParityTests
             },
         };
         PowerProfile actual = ApplicationProfileResolution.Apply(baseline!, application);
+        Assert.Equal(ManagedProfilePolicyBaseline.Apply(baseline!, application), actual);
         Assert.True(expected == actual, $"{id}: expected {expected}; got {actual}");
         if (application is null)
         {
@@ -77,8 +78,83 @@ public sealed class ProfilePolicyParityTests
         {
             DisplayProfileSettings display = ApplicationProfileResolution.ApplyDisplay(
                 baseline!.Display ?? DisplayProfileSettings.Unconfigured(), application.Display);
+            Assert.Equal(ManagedProfilePolicyBaseline.ApplyDisplay(baseline!.Display ?? DisplayProfileSettings.Unconfigured(), application.Display), display);
             Assert.True(expectedFields.Display == display, $"{id}: direct display merge differs");
         }
+    }
+
+    [Fact]
+    public void ActivatedMergePreservesOpaqueUtf16AndOriginalReferences()
+    {
+        string inherited = new((char)0xD800, 1);
+        string selected = new((char)0xDC00, 1);
+        var curve = new ManualFanCurve([new(32, 2100), new(84, 5300)], [new(34, 2200), new(88, 5200)], false);
+        PowerProfile baseline = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+        {
+            Display = new(inherited, null, inherited),
+            FanControl = new(FanMode.ManualCurve, 3900, curve),
+            ThxAudio = new(false, null!, null!, []),
+            LightingPowerPolicy = new(true, 7),
+        };
+        var value = new ApplicationPowerProfileOverride { Display = new(selected, false, null) };
+        PowerProfile actual = ApplicationProfileResolution.Apply(baseline, value);
+        Assert.Equal(ManagedProfilePolicyBaseline.Apply(baseline, value), actual);
+        Assert.Same(selected, actual.Display!.RefreshRateKey);
+        Assert.Same(inherited, actual.Display.ColorProfileKey);
+        Assert.Same(curve, actual.FanControl!.ManualCurve);
+        Assert.Same(baseline.FanControl, actual.FanControl);
+        Assert.Same(baseline.ThxAudio, actual.ThxAudio);
+        Assert.Same(baseline.LightingPowerPolicy, actual.LightingPowerPolicy);
+        Assert.Same(baseline, ApplicationProfileResolution.Apply(baseline, null));
+    }
+
+    [Fact]
+    public void ActivatedPolicyPreservesNullAndLegacyExceptionBranches()
+    {
+        Assert.Equal("baseline", Assert.Throws<ArgumentNullException>(
+            () => ApplicationProfileResolution.Apply(null!, null)).ParamName);
+        Assert.Null(ApplicationProfileResolution.ApplyDisplay(null!, null));
+        Assert.Null(ManagedProfilePolicyBaseline.ApplyDisplay(null!, null));
+        var complete = new DisplayProfileSettings("", false, "") { BrightnessPercent = 0 };
+        Assert.Equal(ManagedProfilePolicyBaseline.ApplyDisplay(null!, complete),
+            ApplicationProfileResolution.ApplyDisplay(null!, complete));
+        foreach (DisplayProfileSettings partial in new[]
+        {
+            complete with { RefreshRateKey = null },
+            complete with { HdrEnabled = null },
+            complete with { ColorProfileKey = null },
+            complete with { BrightnessPercent = null },
+        })
+        {
+            Assert.Throws<NullReferenceException>(() => ManagedProfilePolicyBaseline.ApplyDisplay(null!, partial));
+            Assert.Throws<NullReferenceException>(() => ApplicationProfileResolution.ApplyDisplay(null!, partial));
+        }
+
+        PowerProfile baseline = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+        {
+            Performance = (PerformancePreset)(-123),
+            Fans = (FanMode)456,
+            Display = null,
+            LaptopBehavior = null,
+            FanControl = null,
+        };
+        foreach (ApplicationPowerProfileOverride value in new ApplicationPowerProfileOverride[]
+        {
+            new(), new() { Performance = (PerformancePreset)999 },
+            new() { Fans = (FanMode)999, FanControl = new(FanMode.Fixed, 2000, ManualFanCurve.Default) },
+        })
+        {
+            Assert.Equal(ManagedProfilePolicyBaseline.Apply(baseline, value),
+                ApplicationProfileResolution.Apply(baseline, value));
+        }
+        var invalidLegacy = new ApplicationPowerProfileOverride { Fans = (FanMode)999 };
+        ArgumentOutOfRangeException expected = Assert.Throws<ArgumentOutOfRangeException>(
+            () => ManagedProfilePolicyBaseline.Apply(baseline, invalidLegacy));
+        ArgumentOutOfRangeException actual = Assert.Throws<ArgumentOutOfRangeException>(
+            () => ApplicationProfileResolution.Apply(baseline, invalidLegacy));
+        Assert.Equal(expected.ParamName, actual.ParamName);
+        Assert.Equal(expected.ActualValue, actual.ActualValue);
+        Assert.Equal(expected.Message, actual.Message);
     }
 
     private static FanControlSettings? ToFanControl(FanProjection? value) => value is null
