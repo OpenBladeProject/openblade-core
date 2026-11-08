@@ -74,7 +74,9 @@ function Get-OpenBladeNativePeInfo {
             if ($bytes[$position] -eq 0) { break }
             $name += [char]$bytes[$position]
         }
-        if ($character -eq 128 -or $name -notmatch '^(?i:kernel32|advapi32|bcrypt|ntdll|userenv|ws2_32)\.dll$') {
+        # This API-set contract is supplied by Windows (since 10.0.10240),
+        # not a redistributable CRT: learn.microsoft.com/uwp/win32-and-com/win32-apis.
+        if ($character -eq 128 -or $name -notmatch '^(?i:kernel32|advapi32|bcrypt|ntdll|userenv|ws2_32|api-ms-win-core-synch-l1-2-0)\.dll$') {
             throw "Native DLL has an unreviewed runtime dependency: $name"
         }
         $imports += $name.ToLowerInvariant()
@@ -158,6 +160,19 @@ function Build-OpenBladeNativePayload {
     foreach ($entry in [Environment]::GetEnvironmentVariables('Process').GetEnumerator()) { $savedEnvironment[$entry.Key] = $entry.Value }
     Push-Location (Join-Path $Repository 'rust')
     try {
+        # Cargo config/wrappers can change source replacement and native tools.
+        # Release provenance admits only the checked-in recipe and pinned tools.
+        $configDirectory = [IO.DirectoryInfo](Get-Location).Path
+        while ($null -ne $configDirectory) {
+            foreach ($configName in @('.cargo/config', '.cargo/config.toml')) {
+                if (Test-Path -LiteralPath (Join-Path $configDirectory.FullName $configName)) { throw 'External Cargo configuration is not admitted for release packaging.' }
+            }
+            $configDirectory = $configDirectory.Parent
+        }
+        $cargoHomePath = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
+        foreach ($configName in @('config', 'config.toml')) {
+            if (Test-Path -LiteralPath (Join-Path $cargoHomePath $configName)) { throw 'External Cargo configuration is not admitted for release packaging.' }
+        }
         $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
         $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
         if ($LASTEXITCODE -ne 0 -or -not $installation) { throw 'MSVC Build Tools with Windows SDK are required.' }
@@ -171,6 +186,17 @@ function Build-OpenBladeNativePayload {
         $compiler = & rustc "+$pin" -vV
         if ($LASTEXITCODE -ne 0 -or $compiler[0] -notlike "rustc $pin *") { throw 'Pinned Rust compiler is unavailable.' }
         $linker = (Get-Command link.exe -ErrorAction Stop).Source
+        $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = $linker
+        $env:RUSTC = $null
+        $env:RUSTC_WRAPPER = $null
+        $env:RUSTC_WORKSPACE_WRAPPER = $null
+        $env:CARGO_BUILD_RUSTC = $null
+        $env:CARGO_BUILD_RUSTC_WRAPPER = $null
+        $env:CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER = $null
+        foreach ($key in @([Environment]::GetEnvironmentVariables('Process').Keys)) {
+            if ($key -like 'CARGO_PROFILE_*') { [Environment]::SetEnvironmentVariable($key, $null, 'Process') }
+        }
+        $env:CARGO_PROFILE_RELEASE_PANIC = 'unwind'
         $linkerHash = (Get-FileHash -LiteralPath $linker -Algorithm SHA256).Hash.ToLowerInvariant()
         $resourceCompiler = (Get-Command rc.exe -ErrorAction Stop).Source
         $nativeBuild = Join-Path $outputPath 'build'

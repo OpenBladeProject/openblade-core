@@ -246,7 +246,13 @@ Packaging refuses dirty or untracked native inputs and a mismatching supplied
 source revision. It builds into this checkout's `artifacts/` staging directory,
 never a sibling worktree's output. It inspects PE architecture/imports without
 loading code, verifies version/source/hash/notice identity, and rejects unexpected
-CRT or delay-loaded dependencies. Existing optional Authenticode signing covers
+CRT or delay-loaded dependencies. The observed imports are `kernel32.dll`,
+`ntdll.dll` and `api-ms-win-core-synch-l1-2-0.dll`; the last is a
+[Windows API-set contract present since Windows 10](https://learn.microsoft.com/en-us/uwp/win32-and-com/win32-apis),
+within the existing Windows 11 minimum. [Static CRT linkage](https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes)
+is selected explicitly. Release builds reject external Cargo configuration,
+clear compiler wrappers/profile overrides and select the recorded linker.
+Existing optional Authenticode signing covers
 the native DLL before Burn embeds it; provenance is then updated to its final
 hash and signature trust is checked. Unsigned development/release preflights
 retain the existing visibly incomplete signing status. No new trust root exists.
