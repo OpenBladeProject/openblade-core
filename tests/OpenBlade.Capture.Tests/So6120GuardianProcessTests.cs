@@ -6,16 +6,16 @@ namespace OpenBlade.Capture.Tests;
 
 // Sibling fake processes demonstrate caller/owner independence in this test
 // environment. These tests do not exercise Windows deployment or job lifetime.
-public sealed class So6120GuardianProcessTests
+public sealed class So6120GuardianProcessTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     [Theory]
     [InlineData("fe-pending")]
     [InlineData("zero-checkpoint")]
     public async Task AbruptCallerExitLeavesSameOwnerToRestoreAuto(string gate)
     {
-        using var run = new TestRun();
-        await using var owner = Child.Start("owner", run.Root, run.Pipe, gate);
-        await using var caller = Child.Start("caller", run.Pipe);
+        using var run = new TestRun(output);
+        await using var owner = Child.Start(run, "owner", run.Root, run.Pipe, gate);
+        await using var caller = Child.Start(run, "caller", run.Pipe);
         var pending = await run.ReadReport<PendingReport>("pending.json", owner);
         Assert.Equal(gate, pending.Gate);
         Assert.Equal(owner.Id, pending.OwnerPid);
@@ -61,14 +61,15 @@ public sealed class So6120GuardianProcessTests
         Assert.True(journal.PermissionRestoredConfirmed);
         Assert.False(journal.UnresolvedWork);
         Assert.False(journal.Corrupt);
+        run.Complete();
     }
 
     [Fact]
     public async Task AbruptOwnerExitLeavesIncompleteJournalAndSameRootRefusesReuseWithoutCommands()
     {
-        using var run = new TestRun();
-        await using var owner = Child.Start("owner", run.Root, run.Pipe, "fe-pending");
-        await using var caller = Child.Start("caller", run.Pipe);
+        using var run = new TestRun(output);
+        await using var owner = Child.Start(run, "owner", run.Root, run.Pipe, "fe-pending");
+        await using var caller = Child.Start(run, "caller", run.Pipe);
         var pending = await run.ReadReport<PendingReport>("pending.json", owner);
         Assert.Equal(owner.Id, pending.OwnerPid);
         string[] before = run.Commands();
@@ -90,7 +91,7 @@ public sealed class So6120GuardianProcessTests
         Assert.False(journal.PermissionRestoredConfirmed);
         Assert.False(journal.CanResume);
 
-        await using var probe = Child.Start("probe-reuse", run.Root);
+        await using var probe = Child.Start(run, "probe-reuse", run.Root);
         await probe.ExpectSuccess(run.Token);
         var reuse = await run.ReadReport<ReuseReport>("reuse.json", probe);
         Assert.Equal(probe.Id, reuse.ProcessId);
@@ -99,12 +100,18 @@ public sealed class So6120GuardianProcessTests
         Assert.Equal(interrupted, File.ReadAllBytes(journalPath));
         Assert.Equal(before, run.Commands());
         Assert.False(run.Exists("receipt.json"));
+        run.Complete();
     }
 
-    private sealed class TestRun : IDisposable
+    private sealed class TestRun(Xunit.Abstractions.ITestOutputHelper output) : IDisposable
     {
+        private readonly List<string> cleanupFailures = [];
+        private bool completed;
+        public void Complete() => completed = true;
+        public void RecordCleanupFailure(Exception error) => cleanupFailures.Add(error.ToString());
         private readonly DirectoryInfo directory = Directory.CreateTempSubdirectory("ob-guardian-");
-        private readonly CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        // This is a real deadlock guard, not the simulated guardian lease.
+        private readonly CancellationTokenSource timeout = new(TimeSpan.FromMinutes(2));
         public string Root => directory.FullName;
         public string Pipe { get; } = "ob-guardian-" + Guid.NewGuid().ToString("N");
         public CancellationToken Token => timeout.Token;
@@ -145,19 +152,31 @@ public sealed class So6120GuardianProcessTests
         public void Dispose()
         {
             timeout.Dispose();
-            directory.Delete(recursive: true);
+            if (cleanupFailures.Count == 0)
+            {
+                try { directory.Delete(recursive: true); }
+                catch (Exception error) { RecordCleanupFailure(error); }
+            }
+            if (cleanupFailures.Count > 0)
+            {
+                string diagnostic = $"Fake child cleanup incomplete; retained {Root}.\n" + string.Join("\n", cleanupFailures);
+                if (completed) { Assert.Fail(diagnostic); }
+                else { output.WriteLine(diagnostic); }
+            }
         }
     }
 
     private sealed class Child : IAsyncDisposable
     {
-        private static readonly TimeSpan CleanupLimit = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan CleanupLimit = TimeSpan.FromSeconds(15);
+        private readonly TestRun run;
         private readonly Process process;
         private readonly Task<string> stdout;
         private readonly Task<string> stderr;
 
-        private Child(Process process)
+        private Child(TestRun run, Process process)
         {
+            this.run = run;
             this.process = process;
             stdout = process.StandardOutput.ReadToEndAsync();
             stderr = process.StandardError.ReadToEndAsync();
@@ -166,7 +185,7 @@ public sealed class So6120GuardianProcessTests
         public int Id => process.Id;
         public bool Exited => process.HasExited;
 
-        public static Child Start(params string[] arguments)
+        public static Child Start(TestRun run, params string[] arguments)
         {
             string executable = Path.Combine(AppContext.BaseDirectory, "OpenBlade.Guardian.TestHost.exe");
             var info = new ProcessStartInfo(executable)
@@ -177,7 +196,7 @@ public sealed class So6120GuardianProcessTests
                 RedirectStandardError = true,
             };
             foreach (string argument in arguments) { info.ArgumentList.Add(argument); }
-            return new(Process.Start(info) ?? throw new InvalidOperationException("Could not start the fake test host."));
+            return new(run, Process.Start(info) ?? throw new InvalidOperationException("Could not start the fake test host."));
         }
 
         public async Task ExpectSuccess(CancellationToken cancellationToken)
@@ -204,6 +223,7 @@ public sealed class So6120GuardianProcessTests
         public async ValueTask DisposeAsync()
         {
             try { await Kill(); }
+            catch (Exception error) { run.RecordCleanupFailure(error); }
             finally { process.Dispose(); }
         }
     }

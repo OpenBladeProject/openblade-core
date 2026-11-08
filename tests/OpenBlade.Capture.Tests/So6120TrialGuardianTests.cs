@@ -5,7 +5,7 @@ namespace OpenBlade.Capture.Tests;
 
 public sealed class So6120TrialGuardianTests
 {
-    private static readonly TimeSpan Wait = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan Wait = Fixture.GuardianWait;
 
     private static So6120GuardianTrial Prepare(Fixture fixture, Action<So6120SilentTrialProgress> progress,
         Action<So6120JournalWriteStage>? storageFault = null, ISo6120MailboxBytePort? port = null)
@@ -41,6 +41,7 @@ public sealed class So6120TrialGuardianTests
             if (!release.Wait(Wait)) { throw new TimeoutException("Fake transfer was not released."); }
         };
         var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress), fixture.Clock);
+        await using var ownership = fixture.Track(guardian);
         try
         {
             await pending.Task.WaitAsync(Wait);
@@ -83,6 +84,7 @@ public sealed class So6120TrialGuardianTests
             if (!release.Wait(Wait)) { throw new TimeoutException(); }
         };
         var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress), fixture.Clock);
+        await using var ownership = fixture.Track(guardian);
         try
         {
             await pending.Task.WaitAsync(Wait);
@@ -115,6 +117,7 @@ public sealed class So6120TrialGuardianTests
         {
             if (armed && (int)stage == stageToFail) { throw new IOException("Synthetic journal failure."); }
         }), fixture.Clock);
+        await using var ownership = fixture.Track(guardian);
         var receipt = await guardian.Completion.WaitAsync(Wait);
         Assert.False(receipt.Resolved);
         Assert.False(receipt.JournalCompleted);
@@ -130,6 +133,7 @@ public sealed class So6120TrialGuardianTests
         using var fixture = So6120SilentTrialTests.StopFixture();
         fixture.Port.AfterWrite = (_, _) => fixture.Source.Deny = true;
         var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress), fixture.Clock);
+        await using var ownership = fixture.Track(guardian);
         var receipt = await guardian.Completion.WaitAsync(Wait);
         Assert.False(receipt.Resolved);
         Assert.True(receipt.Trial!.CommandsFenced);
@@ -143,6 +147,7 @@ public sealed class So6120TrialGuardianTests
         using var fixture = So6120SilentTrialTests.StopFixture();
         var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress,
             port: new CloseFailingPort(fixture.Port)), fixture.Clock);
+        await using var ownership = fixture.Track(guardian);
         var receipt = await guardian.Completion.WaitAsync(Wait);
         Assert.True(receipt.AutoConfirmed);
         Assert.True(receipt.CleanupConfirmed);
@@ -170,6 +175,7 @@ public sealed class So6120TrialGuardianTests
         };
         var options = new So6120GuardianOptions(TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(800));
         var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress), fixture.Clock, options);
+        await using var ownership = fixture.Track(guardian);
         try
         {
             await pending.Task.WaitAsync(Wait);
@@ -211,6 +217,7 @@ public sealed class So6120TrialGuardianTests
         var operationLimit = TimeSpan.FromSeconds(1);
         var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress), fixture.Clock,
             new(TimeSpan.FromSeconds(5), operationLimit));
+        await using var ownership = fixture.Track(guardian);
         try
         {
             await pendingAuto.Task.WaitAsync(Wait);
@@ -249,6 +256,7 @@ public sealed class So6120TrialGuardianTests
         var options = new So6120GuardianOptions(TimeSpan.FromMilliseconds(300),
             TimeSpan.FromMilliseconds(operationExpires ? 800 : 5000));
         var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress), fixture.Clock, options, signals);
+        await using var ownership = fixture.Track(guardian);
         var expected = operationExpires ? So6120GuardianStopReason.OperationLimit : So6120GuardianStopReason.LeaseExpired;
         try
         {
@@ -277,6 +285,7 @@ public sealed class So6120TrialGuardianTests
     public async Task LiveCallerWithoutHeartbeatsExpiresWhileItsTransferRemainsPending()
     {
         using var fixture = So6120SilentTrialTests.StopFixture();
+        var leaseClock = new So6120DirectDutySessionTests.Clock();
         using var release = new ManualResetEventSlim();
         var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         fixture.Port.AfterWrite = (_, _) =>
@@ -285,11 +294,15 @@ public sealed class So6120TrialGuardianTests
             pending.SetResult();
             if (!release.Wait(Wait)) { throw new TimeoutException(); }
         };
-        var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress),
+        var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress), leaseClock,
             options: new(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(10)));
+        await using var ownership = fixture.Track(guardian);
         try
         {
             await pending.Task.WaitAsync(Wait);
+            // Expire only liveness after durable preparation reaches its gate;
+            // this case keeps the separate native-transfer clock pending.
+            leaseClock.Advance(TimeSpan.FromSeconds(2));
             using var timeout = new CancellationTokenSource(Wait);
             So6120GuardianStatus expired;
             do { expired = await guardian.Statuses.ReadAsync(timeout.Token); }
@@ -317,6 +330,7 @@ public sealed class So6120TrialGuardianTests
             if (!release.Wait(Wait)) { owned.Session.Dispose(); throw new TimeoutException(); }
             return owned;
         }, fixture.Clock);
+        await using var ownership = fixture.Track(guardian);
         try
         {
             await prepared.Task.WaitAsync(Wait);
@@ -342,6 +356,7 @@ public sealed class So6120TrialGuardianTests
     {
         using var fixture = So6120SilentTrialTests.StopFixture();
         var guardian = So6120TrialGuardian.Start(progress => Prepare(fixture, progress), fixture.Clock);
+        await using var ownership = fixture.Track(guardian);
         Assert.True((await guardian.Completion.WaitAsync(Wait)).Resolved);
         Assert.True(guardian.Statuses.TryRead(out var status));
         Assert.Equal("Complete", status!.Phase);

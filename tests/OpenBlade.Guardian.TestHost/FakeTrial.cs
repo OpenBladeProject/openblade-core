@@ -33,6 +33,9 @@ internal sealed class FakeTrial
     }
 
     public int PortCalls => port.Calls;
+    // Durable fixture setup must not consume the guardian's semantic deadlines.
+    // IPC, gate and process deadlock guards still use real elapsed time.
+    public TimeProvider Clock => clock;
 
     public So6120DirectDutySession CreateSession() =>
         So6120DirectDutySession.CreateInjected(root, binding, port, new EvidenceSource(binding, clock), clock);
@@ -52,8 +55,8 @@ internal sealed class FakeTrial
         }
     }
 
-    // External test coordination must not consume the session's logical
-    // transaction budget. The guardian's caller lease uses real elapsed time.
+    // External test coordination must not consume the shared logical session,
+    // guardian or signal budgets. Only IPC/process deadlock guards use real time.
     private sealed class SessionClock(Func<bool>? waitBeforeCoast) : TimeProvider
     {
         private bool coastReached;
@@ -171,7 +174,7 @@ internal sealed class FakeTrial
             string release = Path.Combine(root, "release");
             while (!File.Exists(release))
             {
-                if (wait.Elapsed >= TimeSpan.FromSeconds(40))
+                if (wait.Elapsed >= TimeSpan.FromMinutes(2))
                 { return false; }
                 Thread.Sleep(10);
             }

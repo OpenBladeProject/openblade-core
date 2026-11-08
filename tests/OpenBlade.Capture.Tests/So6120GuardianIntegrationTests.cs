@@ -1,9 +1,45 @@
 using OpenBlade.Capture;
+using Fixture = OpenBlade.Capture.Tests.So6120DirectDutySessionTests.Fixture;
 
 namespace OpenBlade.Capture.Tests;
 
 public sealed class So6120GuardianIntegrationTests
 {
+    [Fact]
+    public async Task TrackedGuardianDrainWaitsForPendingTransferBeforeFixtureDeletion()
+    {
+        using var fixture = So6120SilentTrialTests.StopFixture();
+        using var release = new ManualResetEventSlim();
+        var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Port.AfterWrite = (_, _) =>
+        {
+            if (fixture.Port.Writes.Count != 1) { return; }
+            pending.SetResult();
+            if (!release.Wait(Fixture.GuardianWait)) { throw new TimeoutException(); }
+        };
+        var guardian = So6120TrialGuardian.Start(progress =>
+        {
+            var session = fixture.Create();
+            var plan = session.PrepareBalancedStop(new(() => true, () => true, progress));
+            return new(session, plan, new(plan.PlanId, plan.PlanSha256, Guid.NewGuid(), new('C', 64)));
+        }, fixture.Clock);
+        await using var ownership = fixture.Track(guardian);
+        Task drain;
+        try
+        {
+            await pending.Task.WaitAsync(Fixture.GuardianWait);
+            drain = ownership.DisposeAsync().AsTask();
+            Assert.False(drain.IsCompleted);
+            Assert.False(fixture.Port.Disposed);
+            Assert.True(Directory.Exists(fixture.Root));
+        }
+        finally { release.Set(); }
+        await drain.WaitAsync(Fixture.GuardianWait);
+        Assert.True(fixture.Port.Disposed);
+        fixture.Dispose();
+        Assert.False(Directory.Exists(fixture.Root));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(2)]
@@ -21,7 +57,8 @@ public sealed class So6120GuardianIntegrationTests
         Assert.False(signals.Receive(1));
         var guardian = So6120TrialGuardian.Start(_ => new(session, plan,
             new(plan.PlanId, plan.PlanSha256, Guid.NewGuid(), new('C', 64))), fixture.Clock, signals: signals);
-        var receipt = await guardian.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+        await using var ownership = fixture.Track(guardian);
+        var receipt = await guardian.Completion.WaitAsync(Fixture.GuardianWait);
         Assert.Equal(command == 2 ? So6120GuardianStopReason.ExplicitAuto : So6120GuardianStopReason.CallerDisconnected,
             receipt.StopReason);
         Assert.True(receipt.Trial!.NoSettingWritePublished);
@@ -96,7 +133,8 @@ public sealed class So6120GuardianIntegrationTests
                 return closeConfirmed;
             });
         }, fixture.Clock);
-        var receipt = await guardian.Completion.WaitAsync(TimeSpan.FromSeconds(15));
+        await using var ownership = fixture.Track(guardian);
+        var receipt = await guardian.Completion.WaitAsync(Fixture.GuardianWait);
         Assert.True(receipt.AutoConfirmed);
         Assert.True(receipt.CleanupConfirmed);
         Assert.True(receipt.JournalCompleted);
@@ -117,7 +155,7 @@ public sealed class So6120GuardianIntegrationTests
         {
             if (fixture.Port.Writes.Count != 1) { return; }
             pending.SetResult();
-            if (!release.Wait(TimeSpan.FromSeconds(15))) { throw new TimeoutException(); }
+            if (!release.Wait(Fixture.GuardianWait)) { throw new TimeoutException(); }
         };
         var guardian = So6120TrialGuardian.Start(progress =>
         {
@@ -125,16 +163,17 @@ public sealed class So6120GuardianIntegrationTests
             var plan = session.PrepareBalancedStop(new(() => true, () => true, progress));
             return new(session, plan, new(plan.PlanId, plan.PlanSha256, Guid.NewGuid(), new('C', 64)));
         }, fixture.Clock, signals: signals);
+        await using var ownership = fixture.Track(guardian);
         try
         {
-            await pending.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            await pending.Task.WaitAsync(Fixture.GuardianWait);
             Assert.False(signals.Receive(2));
             Assert.False(fixture.Port.Disposed);
             Assert.False(guardian.Completion.IsCompleted);
             Assert.Single(fixture.Port.Writes);
         }
         finally { release.Set(); }
-        var receipt = await guardian.Completion.WaitAsync(TimeSpan.FromSeconds(15));
+        var receipt = await guardian.Completion.WaitAsync(Fixture.GuardianWait);
         Assert.True(receipt.Resolved);
         Assert.Equal(So6120GuardianStopReason.ExplicitAuto, receipt.StopReason);
         Assert.True(receipt.Trial!.CancelRequested);
@@ -220,7 +259,8 @@ public sealed class So6120GuardianIntegrationTests
             var plan = session.PrepareBalancedStop(new(() => true, () => true, progress));
             return new(session, plan, new(Guid.NewGuid(), plan.PlanSha256, Guid.NewGuid(), new('C', 64)));
         }, fixture.Clock);
-        var receipt = await guardian.Completion.WaitAsync(TimeSpan.FromSeconds(10));
+        await using var ownership = fixture.Track(guardian);
+        var receipt = await guardian.Completion.WaitAsync(Fixture.GuardianWait);
         Assert.Null(receipt.Trial);
         Assert.True(receipt.ReleaseCompleted);
         Assert.False(receipt.Resolved);

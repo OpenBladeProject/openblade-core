@@ -20,7 +20,7 @@ public sealed class So6120GuardianLaunchTests
     public async Task FakeOwnerInSeparateConsoleSurvivesCallerJobClosureAndRestoresAuto()
     {
         string[] payload = ["", "has spaces", "trailing\\", "slash\\\"quote", "two\\\\\"quotes\"", "München"];
-        await using var run = new LaunchRun("disconnect", payload);
+        await using var run = new LaunchRun(output, "disconnect", payload);
         LaunchReadyReport ready = await run.Report<LaunchReadyReport>("ready.json");
         Assert.Equal(await run.Report<int>("launched.json"), ready.ProcessId);
         Assert.NotEqual(run.Caller.Id, ready.ProcessId);
@@ -58,24 +58,26 @@ public sealed class So6120GuardianLaunchTests
         Assert.True(receipt.ZeroPwmObserved);
         await owner.WaitForExitAsync(run.Token);
         Assert.Equal(23, owner.ExitCode);
+        run.Complete();
     }
 
     [Fact]
     public async Task RestrictiveCallerJobRefusesBreakawayWithoutFallback()
     {
-        await using var run = new LaunchRun("restricted", []);
+        await using var run = new LaunchRun(output, "restricted", []);
         const int errorAccessDenied = 5;
         Assert.Equal(errorAccessDenied, await run.Report<int>("rejected.json"));
         await run.Caller.WaitForExitAsync(run.Token);
         Assert.Equal(0, run.Caller.ExitCode);
         Assert.False(run.Exists("launched.json"));
         Assert.False(run.Exists("ready.json"));
+        run.Complete();
     }
 
     [Fact]
     public async Task CanceledWaitAndDisposedObservationLeaveFakeOwnerRunning()
     {
-        await using var run = new LaunchRun("observe", []);
+        await using var run = new LaunchRun(output, "observe", []);
         LaunchReadyReport ready = await run.Report<LaunchReadyReport>("ready.json");
         Assert.Equal(run.Caller.Id, ready.CallerProcessId);
         output.WriteLine($"Owner retained an ambient host job: {ready.InAmbientJob}.");
@@ -87,6 +89,7 @@ public sealed class So6120GuardianLaunchTests
         Assert.Equal(23, await run.Report<int>("exit.json"));
         await run.Caller.WaitForExitAsync(run.Token);
         Assert.Equal(0, run.Caller.ExitCode);
+        run.Complete();
     }
 
     [Fact]
@@ -113,11 +116,12 @@ public sealed class So6120GuardianLaunchTests
     [Fact]
     public async Task UnrelatedValidJobCannotEstablishCallerIsolation()
     {
-        await using var run = new LaunchRun("wrong-job", []);
+        await using var run = new LaunchRun(output, "wrong-job", []);
         string refusal = await run.Report<string>("owner-error.json");
         Assert.Contains("live original caller in its private job", refusal);
         Assert.False(run.Exists("ready.json"));
         Assert.False(run.Exists("pending.json"));
+        run.Complete();
     }
 
     [Fact]
@@ -131,7 +135,7 @@ public sealed class So6120GuardianLaunchTests
     [Fact]
     public async Task OriginalCallerExitCode259CannotMasqueradeAsAlive()
     {
-        await using var run = new LaunchRun("exit-259", []);
+        await using var run = new LaunchRun(output, "exit-259", []);
         int ownerId = await run.Report<int>("launched.json");
         Process owner = run.ObserveOwner(ownerId);
         run.ReleaseOwner();
@@ -141,18 +145,23 @@ public sealed class So6120GuardianLaunchTests
         Assert.Contains("live original caller in its private job", refusal);
         Assert.False(run.Exists("ready.json"));
         Assert.False(run.Exists("pending.json"));
+        run.Complete();
     }
 
     private sealed class LaunchRun : IAsyncDisposable
     {
         private readonly DirectoryInfo directory = Directory.CreateTempSubdirectory("ob guardian ");
-        private readonly CancellationTokenSource timeout = new(TimeSpan.FromSeconds(25));
+        // This is a real deadlock guard, not the simulated guardian lease.
+        private readonly CancellationTokenSource timeout = new(TimeSpan.FromMinutes(2));
         private readonly Task<string> callerError;
+        private readonly Xunit.Abstractions.ITestOutputHelper output;
+        private bool completed;
         private Process? owner;
         private Process? member;
 
-        internal LaunchRun(string mode, string[] payload)
+        internal LaunchRun(Xunit.Abstractions.ITestOutputHelper output, string mode, string[] payload)
         {
+            this.output = output;
             var start = new ProcessStartInfo(Executable)
             {
                 UseShellExecute = false,
@@ -168,6 +177,7 @@ public sealed class So6120GuardianLaunchTests
             callerError = Caller.StandardError.ReadToEndAsync();
         }
 
+        internal void Complete() => completed = true;
         internal Process Caller { get; }
         internal CancellationToken Token => timeout.Token;
         internal bool Exists(string name) => File.Exists(Path.Combine(directory.FullName, name));
@@ -219,29 +229,28 @@ public sealed class So6120GuardianLaunchTests
 
         public async ValueTask DisposeAsync()
         {
+            var failures = new List<string>();
+            bool drained = false;
             try
             {
-                ReleaseOwner();
-                if (!Caller.HasExited)
-                {
-                    try { Caller.Kill(entireProcessTree: false); }
-                    catch (InvalidOperationException) when (Caller.HasExited) { }
-                }
-
-                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await Caller.WaitForExitAsync(cleanup.Token);
+                try { ReleaseOwner(); }
+                catch (Exception error) { failures.Add(error.ToString()); }
+                await Drain(Caller);
                 if (owner is null && Exists("launched.json"))
                 {
                     try { ObserveOwner(ReadReport<int>("launched.json")); }
                     catch (ArgumentException) { } // The fake owner already exited.
+                    catch (Exception error) { failures.Add(error.ToString()); }
                 }
-                if (owner is not null) { await owner.WaitForExitAsync(cleanup.Token); }
+                if (owner is not null) { await Drain(owner); }
                 if (member is null && Exists("member.json"))
                 {
                     try { ObserveMember(ReadReport<int>("member.json")); }
                     catch (ArgumentException) { }
+                    catch (Exception error) { failures.Add(error.ToString()); }
                 }
-                if (member is not null) { await member.WaitForExitAsync(cleanup.Token); }
+                if (member is not null) { await Drain(member); }
+                drained = failures.Count == 0;
             }
             finally
             {
@@ -249,7 +258,38 @@ public sealed class So6120GuardianLaunchTests
                 member?.Dispose();
                 Caller.Dispose();
                 timeout.Dispose();
-                directory.Delete(recursive: true);
+                // Never erase a journal while an unconfirmed child may still own it.
+                if (drained)
+                {
+                    try { directory.Delete(recursive: true); }
+                    catch (Exception error) { failures.Add(error.ToString()); }
+                }
+                if (failures.Count > 0)
+                {
+                    string diagnostic = $"Fake child cleanup incomplete; retained {directory.FullName}.\n"
+                        + string.Join("\n", failures);
+                    if (completed) { Assert.Fail(diagnostic); }
+                    else { output.WriteLine(diagnostic); } // Preserve the test body's original failure.
+                }
+            }
+
+            async Task Drain(Process process)
+            {
+                try
+                {
+                    // Only Caller came from Process.Start with an owned identity.
+                    // Owner/member were reopened by reported PID, which may have
+                    // been reused: they are observation-only, even during cleanup.
+                    if (process == Caller && !process.HasExited)
+                    {
+                        try { process.Kill(entireProcessTree: false); }
+                        catch (InvalidOperationException) when (process.HasExited) { }
+                    }
+                    using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(process == Caller ? 15 : 30));
+                    await process.WaitForExitAsync(cleanup.Token);
+                    if (process == Caller) { await callerError.WaitAsync(cleanup.Token); }
+                }
+                catch (Exception error) { failures.Add(error.ToString()); }
             }
         }
     }

@@ -8,7 +8,7 @@ namespace OpenBlade.Guardian.TestHost;
 // disconnect delivery, with no production command or deployment surface.
 internal static class Program
 {
-    private static readonly TimeSpan HostLimit = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan HostLimit = TimeSpan.FromMinutes(2);
 
     public static async Task<int> Main(string[] args)
     {
@@ -51,7 +51,7 @@ internal static class Program
         await pipe.WaitForConnectionAsync(timeout.Token);
 
         var fixture = new FakeTrial(root, gate);
-        var guardian = So6120TrialGuardian.Start(fixture.Prepare);
+        var guardian = So6120TrialGuardian.Start(fixture.Prepare, fixture.Clock);
         var monitor = MonitorCaller(pipe, guardian, root, timeout.Token);
         var receipt = await guardian.Completion.WaitAsync(timeout.Token);
         await timeout.CancelAsync();

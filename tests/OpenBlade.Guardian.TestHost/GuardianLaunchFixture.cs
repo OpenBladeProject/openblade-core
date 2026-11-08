@@ -14,7 +14,7 @@ internal static class GuardianLaunchFixture
     private const uint KillOnJobClose = 0x00002000;
     private const uint HandleFlagInherit = 1;
     private const int JobObjectExtendedLimitInformation = 9;
-    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(40);
+    private static readonly TimeSpan Limit = TimeSpan.FromMinutes(2);
 
     internal static async Task RunCaller(string root, string mode, string[] payload)
     {
@@ -233,13 +233,13 @@ internal static class GuardianLaunchFixture
     private static async Task RunTrialUntilDisconnect(string root, AnonymousPipeClientStream pipe)
     {
         using var timeout = new CancellationTokenSource(Limit);
-        await using var signals = new So6120GuardianSignals();
+        var trial = new FakeTrial(root, "zero-checkpoint");
+        await using var signals = new So6120GuardianSignals(trial.Clock);
         var reader = So6120GuardianHost.ReadControlAsync(pipe, signals, timeout.Token);
         try
         {
             await signals.FirstHeartbeat.WaitAsync(timeout.Token);
-            var trial = new FakeTrial(root, "zero-checkpoint");
-            var guardian = So6120TrialGuardian.Start(trial.Prepare, signals: signals);
+            var guardian = So6120TrialGuardian.Start(trial.Prepare, trial.Clock, signals: signals);
             await reader;
             var snapshot = guardian.Snapshot;
             Program.WriteReport(root, "disconnected.json", new DisconnectReport(Environment.ProcessId,

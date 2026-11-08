@@ -442,6 +442,9 @@ public sealed class So6120DirectDutySessionTests
     }
     internal sealed class Fixture : IDisposable
     {
+        // A host deadlock guard, not a simulated firmware or guardian deadline.
+        // These fixtures retain real durable storage on slower hosted runners.
+        internal static readonly TimeSpan GuardianWait = TimeSpan.FromMinutes(2);
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "ob-session-" + Guid.NewGuid().ToString("N"));
         public Clock Clock { get; } = new();
         public MemoryPort Port { get; } = new();
@@ -449,6 +452,7 @@ public sealed class So6120DirectDutySessionTests
         public So6120SessionBinding Binding { get; }
         public EvidenceSource Source { get; }
         private int durableCapture;
+        private bool preserveRoot;
         public Fixture(PerformancePreset profile = PerformancePreset.Silent, byte selector = 5, bool preparing = false,
             bool zeroDuty = false)
         {
@@ -476,7 +480,27 @@ public sealed class So6120DirectDutySessionTests
             });
         public void Dispose()
         {
+            if (preserveRoot) { return; }
             if (Directory.Exists(Root)) { Directory.Delete(Root, recursive: true); }
+        }
+
+        internal IAsyncDisposable Track(So6120TrialGuardian guardian) => new GuardianLifetime(this, guardian);
+
+        private sealed class GuardianLifetime(Fixture fixture, So6120TrialGuardian guardian) : IAsyncDisposable
+        {
+            public async ValueTask DisposeAsync()
+            {
+                guardian.RequestAuto();
+                try { await guardian.Completion.WaitAsync(GuardianWait); }
+                catch (Exception ex)
+                {
+                    // Do not replace the drain error with a sharing violation,
+                    // or delete evidence while the synthetic owner still runs.
+                    fixture.preserveRoot = true;
+                    throw new InvalidOperationException(
+                        $"Synthetic guardian did not drain in phase {guardian.Snapshot.Phase}; retained {fixture.Root}.", ex);
+                }
+            }
         }
     }
 }
