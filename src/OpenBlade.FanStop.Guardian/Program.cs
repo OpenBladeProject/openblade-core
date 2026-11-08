@@ -205,9 +205,8 @@ internal static class Program
             publish(Status(FanStopGuardianPhase.Starting) with { CommandPending = true });
             FanStopModelContract family = FanStopModelContract.ForCurrentWindowsHost()
                 ?? throw new InvalidDataException("No reviewed Fan Stop contract matches this exact host.");
-            var candidateRead = So6120WindowsSupervisedMetadata.CaptureForService(operation, TimeProvider.System, family);
             FanStopModelContract contract = So6120ServiceModelAdmission.SelectFirmware(family,
-                candidateRead.Metadata ?? throw new InvalidDataException($"Firmware selection metadata unavailable ({candidateRead.FailedStage})."));
+                So6120WindowsSupervisedMetadata.CaptureFirmwareForService(family));
             So6120JournalIdentity identity = So6120ServiceModelAdmission.CreateJournal(contract, operation,
                 reservation.ServicePid, reservation.ServiceStartUtcTicks);
             acquisition = So6120ServiceDutyPlatform.Acquire(identity, contract, reservation.ServicePid,

@@ -345,7 +345,9 @@ public sealed class GuardianFanStopBackendTests
         public int StartCalls;
         public int AutoCalls;
         public bool AutoTokenWasCanceled;
-        public FanStopUnavailableReason UnavailableReason => FanStopUnavailableReason.None;
+        public Func<FanStopFirmwareAvailabilityResult>? FirmwareAvailability;
+        public FanStopUnavailableReason UnavailableReason => FirmwareAvailability?.Invoke().Reason ?? FanStopUnavailableReason.None;
+        public string? UnavailableMessage => FirmwareAvailability?.Invoke().Message;
         public FanStopStartupDisposition StartupDisposition { get; set; } = FanStopStartupDisposition.Clear;
         public FanStopGuardianSnapshot Snapshot { get; private set; } = new(Guid.Empty, 0, FanStopGuardianPhase.Idle);
         public event Action? SnapshotChanged;

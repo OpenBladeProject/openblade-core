@@ -9,7 +9,7 @@ namespace OpenBlade.FanStop.Guardian;
 // developer trial. Both use the same bounded transaction and recovery code.
 internal static class So6120ServiceModelAdmission
 {
-    internal static FanStopModelContract SelectFirmware(FanStopModelContract family, So6120SupervisedMetadata metadata)
+    internal static FanStopModelContract SelectFirmware(FanStopModelContract family, So6120ServiceFirmwareMetadata metadata)
     {
         if (metadata.ProcessArchitecture != Architecture.X64 || !family.MatchesHost(metadata.Host))
         { throw new InvalidDataException("The firmware candidate does not match the exact host."); }

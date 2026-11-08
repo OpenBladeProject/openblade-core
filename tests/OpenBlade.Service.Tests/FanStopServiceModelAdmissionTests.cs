@@ -49,13 +49,13 @@ public sealed class FanStopServiceModelAdmissionTests
         foreach (FanStopModelContract contract in FanStopModelContract.All)
         {
             FanStopModelContract family = FanStopModelContract.ForModel(contract.Model)!;
-            Assert.Same(contract, So6120ServiceModelAdmission.SelectFirmware(family, Metadata(contract)));
+            Assert.Same(contract, So6120ServiceModelAdmission.SelectFirmware(family, FirmwareMetadata(contract)));
             Assert.Throws<InvalidDataException>(() => So6120ServiceModelAdmission.SelectFirmware(family,
-                Metadata(contract) with { ReportedEcVersion = new Version(99, 99) }));
+                FirmwareMetadata(contract) with { ReportedEcVersion = new Version(99, 99) }));
             foreach (FanStopModelContract other in FanStopModelContract.All.Where(item => item.Model != family.Model))
             {
                 Assert.Throws<InvalidDataException>(() => So6120ServiceModelAdmission.SelectFirmware(family,
-                    Metadata(other) with { ReportedEcVersion = contract.EcVersion }));
+                    FirmwareMetadata(other) with { ReportedEcVersion = contract.EcVersion }));
             }
         }
         var standard = FanStopModelContract.ForFirmware("RZ09-0483", new Version(2, 1))!;
@@ -166,6 +166,9 @@ public sealed class FanStopServiceModelAdmissionTests
 
     private static So6120JournalIdentity Journal(FanStopModelContract contract) =>
         So6120ServiceModelAdmission.CreateJournal(contract, Guid.NewGuid(), ServicePid, ServiceStart);
+
+    private static So6120ServiceFirmwareMetadata FirmwareMetadata(FanStopModelContract contract) =>
+        new(Architecture.X64, Metadata(contract).Host, contract.EcVersion);
 
     private static string PathFor(FanStopModelContract contract) =>
         $@"\\?\hid#vid_{contract.VendorId:x4}&pid_{contract.ProductId:x4}&mi_03&col01#fixture";
