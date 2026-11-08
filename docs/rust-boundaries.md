@@ -1,13 +1,13 @@
 # Shared Rust core boundaries
 
-This contract was pinned in stage 1. Stages 2 and 3 added the workspace and pure
-report codec. Stage 4 implements the codec C ABI and a separate developer-only
-.NET binding with real cross-language tests. Stage 5 packages a dormant Windows
-x64 DLL and adds an explicit developer shadow comparison. Stage 6 adds a dormant
-profile policy projection and its separately negotiated additive ABI. Production
-C# behavior
-is unchanged; product loading and runtime handoff remain later stages. See
-[the workspace guide](../rust/README.md) for developer commands.
+The Windows C# host uses the Rust report codec and selected profile merge policy
+through a required packaged native component. WinUI 3, the service, Session Agent
+and hardware ownership remain in C#. See the [active contract](#active-codec-and-selected-profile-merge-stage-7)
+and [workspace guide](../rust/README.md) for current behavior and build requirements.
+
+Sections describing stages 1–6 preserve the migration history. Their dormant,
+developer-only and deferred-loading limits describe those original stages;
+they are superseded by stage 7 for the active product.
 
 ## Ownership and dependencies
 
@@ -38,7 +38,7 @@ The initial extraction seams are:
 
 The Windows C# service remains the sole owner of the laptop control HID handle
 and the authoritative hardware writer throughout phase 1. WinUI 3 and the
-Session Agent keep their current roles. Any later call to a pure helper supplies
+Session Agent keep their current roles. Any call to a pure helper supplies
 values and receives a result; it does not transfer ownership, admission, or
 permission to submit a command. Fresh exact-device, capability, controller,
 power, session, ownership and readback checks remain at the existing write path.
@@ -77,7 +77,7 @@ export has a versioned name (`ob_v1_encode_report`,
 reading operation inputs. A missing export, wrong architecture, incompatible
 version or layout fails the helper admission with a visible diagnostic before
 hardware work. Never guess a layout or silently switch implementations in a
-live hardware operation. The later integration PR decides startup selection and
+live hardware operation. Stage 4 deferred startup selection and
 recovery behavior explicitly.
 
 Use these representation rules:
@@ -136,7 +136,7 @@ Protocol details retain `ReportId=0`, `EnvelopeLength=1`, `Checksum=2`,
 `TransactionMismatch=3`, `CommandClassMismatch=4`, `CommandIdMismatch=5`,
 `Status=6`, `PayloadLength=7`, `PayloadValidator=8`. The pure report validator
 emits only 1 through 7; report ID and semantic payload checks remain outside it.
-A later production host adapter will map category/detail to the existing taxonomy,
+The production host adapter maps category/detail to the existing taxonomy,
 preserving
 validation failure and submission state. A pure-helper failure never means a
 hardware command was submitted, and cannot reinterpret an earlier ambiguous
@@ -190,11 +190,12 @@ covers every native call so concurrent disposal cannot unload executing code.
 It validates native status/error consistency and result bounds before exposing
 owned bytes. This is a developer trust boundary, not artifact authenticity or
 production activation policy. The packaging contract below covers artifact
-provenance; trusted production loading remains a later reviewed decision.
+provenance; stage 7 specifies the required production loading policy.
 
 `OpenBlade.Native.slnx` and `rust/Test-NativeInterop.ps1` are explicit developer
-paths. The ordinary product solution does not reference these projects or build
-Rust. Tests require `OPENBLADE_NATIVE_LIBRARY` to name the actual built artifact;
+paths. The product graph also consumes `OpenBlade.Core.Native` through Protocol
+and builds Rust. Developer interop tests require `OPENBLADE_NATIVE_LIBRARY` to
+name the actual built artifact;
 a missing artifact fails. Rust unit tests inject a panic privately in the same
 exported work boundary; production libraries expose no panic/test entrypoint.
 C header smoke tests link and call the real shared library. ABI capacity tests
@@ -209,18 +210,18 @@ It pins the reviewed source revision and independent expected values. These are
 synthetic software vectors, separate from production capture/admission evidence.
 Existing tests remain in place.
 
-Later stages must run both readers against these same files before replacing a
-helper. Full profile validation, application selection, override lifetimes,
-hardware admission, transport outcomes, ownership, durable recovery and
-platform behavior need their existing tests plus the focused parity tests for
-the slice actually migrated. This PR does not start those later stages.
+Migrated helpers run both readers against these same files. Full profile
+validation, application selection, override lifetimes, hardware admission,
+transport outcomes, ownership, durable recovery and platform behavior retain
+their existing tests plus the focused parity tests for the slice migrated.
 
 ## Dormant Windows packaging (stage 5)
 
 `build/Publish.ps1` builds the first-party `openblade_ffi.dll` for
 `x86_64-pc-windows-msvc` from this checkout's committed source with Rust 1.99.1,
-the locked Cargo graph and the selected x64 MSVC/Windows SDK tools. Ordinary
-`dotnet build` and `dotnet test OpenBlade.slnx` remain independent of Rust.
+the locked Cargo graph and the selected x64 MSVC/Windows SDK tools. At the
+original stage 5 boundary, ordinary .NET builds remained independent of Rust;
+stage 7 makes the native component part of ordinary builds and tests.
 Release packaging needs rustup, the pinned toolchain, `cargo fetch --locked`
 and MSVC Build Tools with the Windows SDK; hosted installer CI prepares the pin.
 The DLL statically links the CRT and admits only its reviewed Windows system
@@ -361,8 +362,9 @@ C/Rust/C# layout, UTF-8, optional, buffer, error and lifetime checks execute on
 Windows x64, Linux x64, Intel macOS and ARM macOS through native CI. These are
 software checks. Product solution/project references, callers, IPC, saved
 schemas, service ownership, hardware admission and product version remain
-unchanged at 0.56.1. Runtime activation is stage 7; there is no production fallback
-or native selection in this stage.
+unchanged at the original stage 6 boundary (product version 0.56.1). Runtime
+activation followed in stage 7; stage 6 itself added no production fallback
+or native selection.
 
 The policy loader checks only policy exports/version and its own path, platform
 and layout admission. A separate test-only C library exports policy v1 without
@@ -377,9 +379,11 @@ unchanged canonical source on Windows, Linux and macOS.
 
 The C# Windows host now calls the proven codec and profile merge through the
 mandatory packaged native component. The codec and policy ABI versions remain
-v1. Product version 0.56.1, both IPC protocols and persisted schemas are unchanged:
-this is a behavior-preserving internal refactor. The stage is stacked on exact
-predecessor `69f66ba673c0523c0521b09b286a7d09f8137488`.
+v1; both IPC protocols and persisted schemas are unchanged. Activation is a
+behavior-preserving internal refactor; packaging follows normal [product versioning](../VERSIONING.md).
+The original stage 7 implementation was stacked on exact predecessor
+`69f66ba673c0523c0521b09b286a7d09f8137488`; integration refreshes that reviewed
+scope from current main and recalculates the packaging version there.
 
 `RazerReport` preserves its copied request payload, exact 90-byte destinations,
 payload-before-destination argument errors, response validation order, protocol
@@ -409,7 +413,7 @@ precedes the managed hash
 binding; ordinary developer builds create their own manifest from current inputs.
 
 Protocol is shared by Service, Capture and FirmwareSmoke; the native reference
-and payload follow those graphs. Startup gates precede hardware work. The existing
+and payload follow those graphs. Startup gates precede laptop-control work. The existing
 fresh identity, capability, controller, power, session, ownership and readback
 checks, journals and handback remain host code. The capture-backed lighting
 semantic manifest still checks its command/geometry/layout/known-answer contract;

@@ -90,9 +90,9 @@ coverage and a 20,000-input malformed corpus. These software checks establish
 codec parity and portability; physical validation remains separate.
 
 All 14 profile vectors run through Rust and the real native C# policy wrapper.
-Production loading, runtime selection
-and OS adapters remain later stages. Windows ARM64, Linux
-ARM64, musl and 32-bit targets are unvalidated. CI publishes no artifacts and
+Production loading and runtime selection are described below. OS adapters
+remain future work. Windows ARM64, Linux ARM64, musl and 32-bit targets are
+unvalidated. CI publishes no artifacts and
 accepts stacked PRs. Existing Windows CI retains its conservative full-validation
 fallback for Rust changes.
 
@@ -138,11 +138,12 @@ uses explicit Cdecl function pointers with SafeHandle lifetime references so
 independent module instances and concurrent disposal are safe. It checks the
 exact ABI, managed record layout and every returned status/error/length before
 exposing owned output. It has no reference to the Windows-only Protocol assembly
-and returns typed boundary errors for a later production host adapter.
+and returns typed boundary errors to the host adapter.
 
-The developer solution is separate from `OpenBlade.slnx`; ordinary product builds
-do not invoke Cargo or load a Rust module. These tests establish software ABI
-parity on their runners and do not establish physical hardware validation.
+The developer solution is separate from `OpenBlade.slnx`. Ordinary product builds
+also build the required native component, as described under [production activation](#production-activation).
+These tests establish software ABI parity on their runners and do not establish
+physical hardware validation.
 
 ## Release payload and shadow comparison
 
@@ -150,8 +151,11 @@ On Windows x64, `build/Publish.ps1` builds the committed native source with the
 pinned Rust toolchain and x64 MSVC/Windows SDK tools. Run `cargo fetch --locked`
 from `rust/` first. The DLL uses static CRT linkage; packaging checks its actual
 PE imports, file version and source-bound hashes. The existing signing switch
-signs it before installer embedding. See the [packaging contract](../docs/rust-boundaries.md#dormant-windows-packaging-stage-5)
-for provenance, notices and upgrade behavior. Product processes do not load it.
+signs it before compiling the managed hash binding and embedding the installer.
+See the [packaging contract](../docs/rust-boundaries.md#dormant-windows-packaging-stage-5)
+for provenance, notices and upgrade behavior, and the [active product contract](../docs/rust-boundaries.md#active-codec-and-selected-profile-merge-stage-7)
+for mandatory loading. Installed and developer payloads carry the native DLL,
+provenance and notices.
 
 Run the pure comparison against a trusted, explicitly built Windows DLL:
 
@@ -159,19 +163,21 @@ Run the pure comparison against a trusted, explicitly built Windows DLL:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File rust/Compare-Shadow.ps1 -LibraryPath C:\path\to\openblade_ffi.dll
 ```
 
-This compares actual C# and native results for the 9 encoding and 20 response
-fixtures. It performs no device discovery or hardware I/O. Packaging runs it
-against the new Release DLL, then verifies the final signed/unsigned artifact
-and exercises real payload tampering checks. The separate four-platform ABI
+This compares the frozen independent managed baseline with native results for
+the 9 encoding and 20 response fixtures. It performs no device discovery or
+hardware I/O. Packaging reuses its selected configuration and native payload,
+then verifies the final signed/unsigned artifact and exercises real payload
+tampering checks. The separate four-platform ABI
 lanes continue to test their native developer artifacts.
 
 ## Profile API
 
 The allocation-free domain merge and separately negotiated additive policy ABI
 are documented in [the stage 6 contract](../docs/rust-boundaries.md#dormant-profile-projection-stage-6).
-Use NativeProfilePolicy explicitly with a developer artifact. C# retains full
-profile validation and all production paths. Codec v1 loading remains independent
-of policy exports. No IPC, saved schema, hardware command or product behavior changes.
+Developer callers can load `NativeProfilePolicy` with an explicit artifact;
+production uses `ProductNativeRuntime.Policy`. C# retains whole-profile validation,
+host-only fields and hardware ownership. Codec v1 loading remains independent of
+policy exports. IPC, saved schemas, firmware commands and product behavior are unchanged.
 
 ## Production activation
 
@@ -194,7 +200,7 @@ project embeds the build manifest and copies the library transitively to each
 consumer. A missing compiler, linker, library or manifest fails the build.
 
 At startup Service, Capture and FirmwareSmoke admit the fixed native component
-before device work. The assembly-embedded manifest binds target, version, ABI and
+before laptop-control work. The assembly-embedded manifest binds target, version, ABI and
 SHA-256. The loader uses the application base directory, verifies the file before
 loading, and retains its file lease and modules through process exit so shutdown
 cleanup can still encode handback commands. Failures have bounded numeric,
