@@ -1,8 +1,8 @@
 # Rust workspace
 
-Stage 4 adds a versioned C codec ABI and a developer-only net10.0 wrapper to the
-pure report codec. The Windows product continues to use C#; its ordinary build,
-installer and release payload remain independent of Rust.
+Stage 5 packages a dormant Windows x64 codec DLL and an explicit developer shadow
+comparison. The Windows product continues to use C#; ordinary .NET builds and
+tests remain independent of Rust. Explicit release packaging builds Rust.
 
 ## Develop
 
@@ -86,8 +86,8 @@ ownership, all combinations of envelope faults, signed lengths, checksum byte
 coverage and a 20,000-input malformed corpus. These software checks establish
 codec parity and portability; physical validation remains separate.
 
-The 14 profile vectors await stage 6. Production loading, runtime selection,
-packaging and OS adapters remain later stages. Windows ARM64, Linux
+The 14 profile vectors await stage 6. Production loading, runtime selection
+and OS adapters remain later stages. Windows ARM64, Linux
 ARM64, musl and 32-bit targets are unvalidated. CI publishes no artifacts and
 accepts stacked PRs. Existing Windows CI retains its conservative full-validation
 fallback for Rust changes.
@@ -137,3 +137,24 @@ and returns typed boundary errors for a later production host adapter.
 The developer solution is separate from `OpenBlade.slnx`; ordinary product builds
 do not invoke Cargo or load a Rust module. These tests establish software ABI
 parity on their runners and do not establish physical hardware validation.
+
+## Release payload and shadow comparison
+
+On Windows x64, `build/Publish.ps1` builds the committed native source with the
+pinned Rust toolchain and x64 MSVC/Windows SDK tools. Run `cargo fetch --locked`
+from `rust/` first. The DLL uses static CRT linkage; packaging checks its actual
+PE imports, file version and source-bound hashes. The existing signing switch
+signs it before installer embedding. See the [packaging contract](../docs/rust-boundaries.md#dormant-windows-packaging-stage-5)
+for provenance, notices and upgrade behavior. Product processes do not load it.
+
+Run the pure comparison against a trusted, explicitly built Windows DLL:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File rust/Compare-Shadow.ps1 -LibraryPath C:\path\to\openblade_ffi.dll
+```
+
+This compares actual C# and native results for the 9 encoding and 20 response
+fixtures. It performs no device discovery or hardware I/O. Packaging runs it
+against the new Release DLL, then verifies the final signed/unsigned artifact
+and exercises real payload tampering checks. The separate four-platform ABI
+lanes continue to test their native developer artifacts.

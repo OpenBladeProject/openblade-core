@@ -32,6 +32,7 @@ $artifacts = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts'))
 . (Join-Path $PSScriptRoot 'WindowsAppRuntimeNotificationResource.ps1')
 . (Join-Path $PSScriptRoot 'BuildIdentity.ps1')
 . (Join-Path $PSScriptRoot 'SparsePackageIdentity.ps1')
+. (Join-Path $PSScriptRoot 'NativePayload.ps1')
 
 & (Join-Path $PSScriptRoot 'Verify-Branding.ps1') -Repository $repository
 if ($LASTEXITCODE -ne 0) {
@@ -219,6 +220,16 @@ if ($signingEnabled) {
 try {
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
 
+    # Explicit release packaging builds Rust; ordinary .NET builds stay independent.
+    # This first-party DLL is dormant until a later reviewed runtime handoff.
+    $nativeOutput = Join-Path $stagingRoot 'native'
+    Build-OpenBladeNativePayload -Repository $repository -Output $nativeOutput -BuildIdentity $buildIdentity
+    foreach ($nativeFile in @('openblade_ffi.dll', 'OpenBlade.Native.provenance.json', 'OpenBlade.Native.NOTICE.txt')) {
+        Copy-Item -LiteralPath (Join-Path $nativeOutput $nativeFile) -Destination (Join-Path $payload $nativeFile)
+    }
+    & (Join-Path $repository 'rust/Compare-Shadow.ps1') -LibraryPath (Join-Path $payload 'openblade_ffi.dll')
+    if ($LASTEXITCODE -ne 0) { throw 'Developer native shadow comparison failed.' }
+
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Service\OpenBlade.Service.csproj') `
         $payload ($installedPublishArguments + $serviceValidationArguments)
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.SessionAgent\OpenBlade.SessionAgent.csproj') `
@@ -310,7 +321,7 @@ try {
         foreach ($file in Get-ChildItem -LiteralPath $stagingBundle -Recurse -File |
             Where-Object {
                 ($_.Extension -in @('.exe', '.dll')) -and
-                $_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal)
+                ($_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal) -or $_.Name -ceq 'openblade_ffi.dll')
             }) {
             Invoke-OpenBladeSigning -Path $file.FullName -ResolvedSignTool $resolvedSignTool
         }
@@ -318,6 +329,13 @@ try {
             -Path (Join-Path $stagingInstallerUi 'OpenBlade.Installer.UI.exe') `
             -ResolvedSignTool $resolvedSignTool
     }
+
+    # Signing changes PE bytes. Bind provenance to the final embedded artifact,
+    # retaining the unsigned build hash separately for reproducibility checks.
+    Update-OpenBladeNativePayloadHash -Payload $payload
+    Assert-OpenBladeNativePayload -Payload $payload -Repository $repository `
+        -BuildIdentity $buildIdentity -RequireSignature:$signingEnabled
+    & (Join-Path $repository 'tests/Build.Tests/NativePayload.Tests.ps1') -Payload $payload
 
     New-Item -ItemType Directory -Path $stagingInstallerOutput -Force | Out-Null
     $installerBuildArguments = @(

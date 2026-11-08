@@ -171,6 +171,7 @@ function Write-OpenBladeStoreReadinessReport {
             $signature.SignerCertificate.Subject
         }
         $isFirstParty = ($relativePath -eq 'OpenBlade-Setup.exe') -or
+            ($relativePath -ceq 'payload\openblade_ffi.dll') -or
             ($relativePath -match '^(?:[^\\]+\\)*OpenBlade\.[^\\]+\.(?:dll|exe)$')
 
         if (($status -ne 'Valid') -and ($status -ne 'NotSigned')) {

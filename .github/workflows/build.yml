@@ -302,6 +302,16 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Prepare pinned native packaging toolchain
+        shell: powershell
+        run: |
+          $pin = [regex]::Match((Get-Content rust/rust-toolchain.toml -Raw), '(?m)^channel = "([0-9.]+)"$').Groups[1].Value
+          if (-not $pin) { throw 'Missing exact Rust toolchain pin.' }
+          rustup toolchain install $pin --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned Rust toolchain setup failed.' }
+          cargo "+$pin" fetch --locked --manifest-path rust/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Locked native inputs could not be fetched.' }
+
       - name: Publish and validate production installer
         if: inputs.channel == 'Stable'
         shell: powershell

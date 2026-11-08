@@ -5,8 +5,7 @@ on:
     branches:
       - main
   pull_request:
-    branches:
-      - main
+    # Stacked migration PRs require the same .NET and installer gates as main.
     types:
       - opened
       - synchronize
