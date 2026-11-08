@@ -1,0 +1,413 @@
+{
+  "schemaVersion": 1,
+  "suite": "razer-report",
+  "sourceRevision": "123936f3ea69881d21bd16a7a09529930c9a2c6f",
+  "encoding": [
+    {
+      "id": "known-balanced",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "destinationLength": 90,
+      "expectedError": null,
+      "expectedReportHex": "001C000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B00"
+    },
+    {
+      "id": "empty-payload",
+      "request": {
+        "transactionId": 0,
+        "commandClass": 0,
+        "commandId": 0,
+        "payloadHex": ""
+      },
+      "destinationLength": 90,
+      "expectedError": null,
+      "expectedReportHex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "id": "maximum-zero-payload",
+      "request": {
+        "transactionId": 255,
+        "commandClass": 255,
+        "commandId": 255,
+        "payloadHex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "destinationLength": 90,
+      "expectedError": null,
+      "expectedReportHex": "00FF00000050FFFF00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005000"
+    },
+    {
+      "id": "maximum-sequential-payload",
+      "request": {
+        "transactionId": 65,
+        "commandClass": 3,
+        "commandId": 11,
+        "payloadHex": "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F"
+      },
+      "destinationLength": 90,
+      "expectedError": null,
+      "expectedReportHex": "004100000050030B000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F5800"
+    },
+    {
+      "id": "nonzero-reused-buffer",
+      "request": {
+        "transactionId": 65,
+        "commandClass": 3,
+        "commandId": 11,
+        "payloadHex": "FF020010"
+      },
+      "destinationLength": 90,
+      "expectedError": null,
+      "expectedReportHex": "004100000004030BFF02001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000E100"
+    },
+    {
+      "id": "payload-81",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "destinationLength": 90,
+      "expectedError": "payload-too-large",
+      "expectedReportHex": null
+    },
+    {
+      "id": "destination-89",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": ""
+      },
+      "destinationLength": 89,
+      "expectedError": "destination-length",
+      "expectedReportHex": null
+    },
+    {
+      "id": "destination-91",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": ""
+      },
+      "destinationLength": 91,
+      "expectedError": "destination-length",
+      "expectedReportHex": null
+    }
+  ],
+  "responses": [
+    {
+      "id": "success-known-payload",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021C000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B00",
+      "expectedPayloadLength": 4,
+      "expectedFailure": null,
+      "expectedPayloadHex": "01010000"
+    },
+    {
+      "id": "success-unspecified-length",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021C000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B00",
+      "expectedPayloadLength": null,
+      "expectedFailure": null,
+      "expectedPayloadHex": "01010000"
+    },
+    {
+      "id": "success-empty",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021C000000000D0200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000F00",
+      "expectedPayloadLength": 0,
+      "expectedFailure": null,
+      "expectedPayloadHex": ""
+    },
+    {
+      "id": "success-maximum",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021C000000500D02000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F5F00",
+      "expectedPayloadLength": 80,
+      "expectedFailure": null,
+      "expectedPayloadHex": "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F"
+    },
+    {
+      "id": "envelope-89",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021C000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "EnvelopeLength",
+        "value": 1
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "envelope-91",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021C000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B0000",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "EnvelopeLength",
+        "value": 1
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "checksum",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021C000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "Checksum",
+        "value": 2
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "transaction",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021D000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "TransactionMismatch",
+        "value": 3
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "command-class",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021C000000040C0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "CommandClassMismatch",
+        "value": 4
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "command-id",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021C000000040D0301010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "CommandIdMismatch",
+        "value": 5
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "status-new",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "001C000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "Status",
+        "value": 6
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "status-not-supported",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "051C000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "Status",
+        "value": 6
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "status-unknown",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "FF1C000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "Status",
+        "value": 6
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "declared-payload-81",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021C000000510D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005E00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "PayloadLength",
+        "value": 7
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "contract-length-mismatch",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021C000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B00",
+      "expectedPayloadLength": 0,
+      "expectedFailure": {
+        "name": "PayloadLength",
+        "value": 7
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "checksum-before-transaction",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021D000000040D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "Checksum",
+        "value": 2
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "transaction-before-class",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "021D000000040C0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "TransactionMismatch",
+        "value": 3
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "class-before-id-and-status",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "051C000000040C0301010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000B00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "CommandClassMismatch",
+        "value": 4
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "id-before-status",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "051C000000040D0301010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "CommandIdMismatch",
+        "value": 5
+      },
+      "expectedPayloadHex": null
+    },
+    {
+      "id": "status-before-payload-length",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "01010000"
+      },
+      "responseHex": "051C000000510D0201010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005E00",
+      "expectedPayloadLength": null,
+      "expectedFailure": {
+        "name": "Status",
+        "value": 6
+      },
+      "expectedPayloadHex": null
+    }
+  ]
+}

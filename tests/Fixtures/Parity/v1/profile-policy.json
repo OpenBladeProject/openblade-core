@@ -1,0 +1,381 @@
+{
+  "schemaVersion": 1,
+  "suite": "application-profile-merge",
+  "sourceRevision": "123936f3ea69881d21bd16a7a09529930c9a2c6f",
+  "cases": [
+    {
+      "id": "null-override",
+      "baseline": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": null,
+      "expected": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "expectedError": null
+    },
+    {
+      "id": "empty-policy-override",
+      "baseline": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": {},
+      "expected": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "expectedError": null
+    },
+    {
+      "id": "performance-only",
+      "baseline": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": {
+        "performance": 2
+      },
+      "expected": {
+        "performance": 2,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "expectedError": null
+    },
+    {
+      "id": "false-and-zero-are-values",
+      "baseline": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": {
+        "gamingModeEnabled": false,
+        "display": {
+          "hdrEnabled": false,
+          "brightnessPercent": 0
+        }
+      },
+      "expected": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": false,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 0
+        },
+        "gamingModeEnabled": false
+      },
+      "expectedError": null
+    },
+    {
+      "id": "partial-display-and-utf8",
+      "baseline": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": {
+        "display": {
+          "refreshRateKey": "native:60",
+          "colorProfileKey": "profile:色",
+          "brightnessPercent": 100
+        }
+      },
+      "expected": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:60",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:色",
+          "brightnessPercent": 100
+        },
+        "gamingModeEnabled": true
+      },
+      "expectedError": null
+    },
+    {
+      "id": "legacy-maximum-fans",
+      "baseline": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": {
+        "fans": 3
+      },
+      "expected": {
+        "performance": 1,
+        "fans": 3,
+        "fanControl": {
+          "mode": 3,
+          "fixedSpeedRpm": 5400
+        },
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "expectedError": null
+    },
+    {
+      "id": "legacy-fixed-default-speed",
+      "baseline": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": {
+        "fans": 1
+      },
+      "expected": {
+        "performance": 1,
+        "fans": 1,
+        "fanControl": {
+          "mode": 1,
+          "fixedSpeedRpm": 3700
+        },
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "expectedError": null
+    },
+    {
+      "id": "explicit-fan-control",
+      "baseline": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": {
+        "fanControl": {
+          "mode": 1,
+          "fixedSpeedRpm": 2000
+        }
+      },
+      "expected": {
+        "performance": 1,
+        "fans": 1,
+        "fanControl": {
+          "mode": 1,
+          "fixedSpeedRpm": 2000
+        },
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "expectedError": null
+    },
+    {
+      "id": "legacy-mode-precedes-control-mode",
+      "baseline": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": {
+        "fans": 3,
+        "fanControl": {
+          "mode": 1,
+          "fixedSpeedRpm": 2000
+        }
+      },
+      "expected": {
+        "performance": 1,
+        "fans": 3,
+        "fanControl": {
+          "mode": 1,
+          "fixedSpeedRpm": 2000
+        },
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "expectedError": null
+    },
+    {
+      "id": "legacy-automatic-replaces-fixed",
+      "baseline": {
+        "performance": 1,
+        "fans": 1,
+        "fanControl": {
+          "mode": 1,
+          "fixedSpeedRpm": 5400
+        },
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": {
+        "fans": 0
+      },
+      "expected": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": {
+          "mode": 0,
+          "fixedSpeedRpm": 3700
+        },
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "expectedError": null
+    },
+    {
+      "id": "unconfigured-display-normalized-for-present-override",
+      "baseline": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": null,
+        "gamingModeEnabled": null
+      },
+      "override": {
+        "performance": 1
+      },
+      "expected": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": null,
+          "hdrEnabled": null,
+          "colorProfileKey": null,
+          "brightnessPercent": null
+        },
+        "gamingModeEnabled": null
+      },
+      "expectedError": null
+    },
+    {
+      "id": "null-baseline-rejected",
+      "baseline": null,
+      "override": {
+        "performance": 2
+      },
+      "expected": null,
+      "expectedError": "baseline-null"
+    }
+  ]
+}
