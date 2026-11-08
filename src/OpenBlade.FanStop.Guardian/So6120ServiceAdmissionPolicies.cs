@@ -15,6 +15,32 @@ internal static class So6120ServiceInitialAdmissionDiagnostics
     private static string Value(int? value) => value?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unavailable";
 }
 
+// Stop confirmation means observed stopped tachometers, not just a zero-PWM
+// command. Keep that evidence sticky and preserve the entry/coast failure even
+// when the same owner successfully restores Auto afterward.
+internal sealed class So6120ServiceStopProgress
+{
+    internal bool StopConfirmed { get; private set; }
+    internal string? IncompleteReason { get; private set; }
+    internal string ReturningReason => IncompleteReason ?? "Auto requested or continuation admission ended.";
+
+    internal void RecordEntryFailure(So6120DutyFailure failure, string? admissionDetail)
+    {
+        string detail = string.IsNullOrWhiteSpace(admissionDetail) ? string.Empty : $" {admissionDetail}";
+        string reason = $"Stop entry did not complete ({failure}).{detail}";
+        IncompleteReason ??= reason[..Math.Min(reason.Length, 900)];
+    }
+
+    internal void RecordCoast(So6120StopCoastResult coast, FanStopEndReason endReason)
+    {
+        if (coast == So6120StopCoastResult.Stopped) { StopConfirmed = true; }
+        else if (!StopConfirmed)
+        {
+            IncompleteReason ??= $"Stopped fans were not confirmed during coast-down ({coast}; endReason={endReason}).";
+        }
+    }
+}
+
 internal sealed class So6120ServicePowerReadException(Exception inner)
     : IOException("The adapter read did not establish a resolved native operation.", inner)
 {

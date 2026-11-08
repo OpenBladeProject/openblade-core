@@ -314,11 +314,19 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
         try
         {
             So6120SessionMetadata current = So6120WindowsSupervisedMetadata.ReadSessionMetadata();
-            return ActiveSession(current) && !current.Interactive && current.ProcessSession == 0 && current.AcLineStatus == 1
+            bool admitted = ActiveSession(current) && !current.Interactive && current.ProcessSession == 0 && current.AcLineStatus == 1
                 && !powerUnresolved && PowerObservationFresh() && thermalSafe && observedPowerSource == PowerSource.UsbC
                 && clock.GetElapsedTime(thermalTimestamp) <= TimeSpan.FromSeconds(2);
+            if (!admitted)
+            {
+                // Describe this failed cached gate using existing observations;
+                // do not refresh samples or add hardware calls during publication.
+                return RefuseEntry(FormattableString.Invariant($"stage=EntryCached; activeSession={ActiveSession(current)}; interactive={current.Interactive}; processSession={current.ProcessSession}; acLine={current.AcLineStatus}; observedPower={observedPowerSource}; powerUnresolved={powerUnresolved}; powerAgeMs={(powerTimestamp is long observed ? clock.GetElapsedTime(observed).TotalMilliseconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) : "unavailable")}; thermalSafe={thermalSafe}; thermalAgeMs={clock.GetElapsedTime(thermalTimestamp).TotalMilliseconds:F1}"));
+            }
+            return true;
         }
-        catch { return false; }
+        catch (Exception error)
+        { return RefuseEntry($"stage=EntryCached; outcome={error.GetType().Name}; hresult=0x{error.HResult:X8}"); }
     }
 
     internal bool ContinueStopAdmission()

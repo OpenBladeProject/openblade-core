@@ -588,9 +588,12 @@ internal sealed class FanStopController(IFanStopBackend backend)
                 if (token.IsCancellationRequested || ownedContinuationAdmitted?.Invoke() == false)
                 {
                     using var cleanup = new CancellationTokenSource(AutomaticCleanupBudget);
-                    await ReturnGuardianToAutomaticAsync(cleanup.Token).ConfigureAwait(false);
+                    ControlOperationResult cleanupResult = await ReturnGuardianToAutomaticAsync(cleanup.Token).ConfigureAwait(false);
                     token.ThrowIfCancellationRequested();
-                    return new(ControlOperationStatus.Applied, status.Message!);
+                    if (cleanupResult.Status != ControlOperationStatus.Applied) { return cleanupResult; }
+                    return Guardian.Snapshot.StopConfirmed
+                        ? new(ControlOperationStatus.Applied, status.Message!)
+                        : Blocked($"Stop was not independently confirmed. {status.Message}");
                 }
                 await Task.Delay(25, confirmation.Token).ConfigureAwait(false);
             }
@@ -600,10 +603,16 @@ internal sealed class FanStopController(IFanStopBackend backend)
         if (token.IsCancellationRequested || ownedContinuationAdmitted?.Invoke() == false)
         {
             using var cleanup = new CancellationTokenSource(AutomaticCleanupBudget);
-            await ReturnGuardianToAutomaticAsync(cleanup.Token).ConfigureAwait(false);
+            ControlOperationResult cleanupResult = await ReturnGuardianToAutomaticAsync(cleanup.Token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            if (cleanupResult.Status != ControlOperationStatus.Applied) { return cleanupResult; }
         }
         token.ThrowIfCancellationRequested();
-        return new(ControlOperationStatus.Applied, status.Message!);
+        // Confirmed Auto cleanup resolves ownership; it does not establish that
+        // the requested Stop ever completed before the owner handed back.
+        return Guardian.Snapshot.StopConfirmed
+            ? new(ControlOperationStatus.Applied, status.Message!)
+            : Blocked($"Stop was not independently confirmed. {status.Message}");
     }
 
     private async Task<ControlOperationResult> ReturnGuardianToAutomaticAsync(CancellationToken token)

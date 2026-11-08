@@ -186,12 +186,13 @@ internal static class Program
         long revision = 0;
         bool stopped = false;
         bool stoppedObserved = false;
+        var progress = new So6120ServiceStopProgress();
         FanStopEndReason endReason = FanStopEndReason.None;
         So6120DirectDutySession? session = null;
         So6120SessionCommandEvidence? retainedCommandEvidence = null;
         So6120ServiceDutyPlatform? acquisition = null;
         FanStopGuardianSnapshot Status(FanStopGuardianPhase phase, string? reason = null) =>
-            new(operation, ++revision, phase, StopConfirmed: stopped, Reason: reason) { EndReason = endReason };
+            new(operation, ++revision, phase, StopConfirmed: progress.StopConfirmed, Reason: reason) { EndReason = endReason };
         void PublishTerminal(FanStopGuardianSnapshot result)
         {
             store.RecordOwnerResult(result);
@@ -223,6 +224,7 @@ internal static class Program
                     () => !stop.IsCancellationRequested && acquisition.ContinueStopAdmission()));
             So6120DutyResult entry = session.EnterStopped(stop);
             stopped = entry.Success && entry.DirectEntryConfirmed;
+            if (!stopped) { progress.RecordEntryFailure(entry.Failure, acquisition.EntryAdmissionRefusal); }
             if (entry.CommandsFenced || entry.CleanupCheckpoint is null)
             {
                 string detail = acquisition.EntryAdmissionRefusal is { } refusal ? $" {refusal}" : "";
@@ -232,6 +234,7 @@ internal static class Program
             {
                 acquisition.BeginOwnedStop();
                 So6120StopCoastResult coast = session.ObserveStoppedCoast(stop);
+                progress.RecordCoast(coast, acquisition.EndReason);
                 if (coast == So6120StopCoastResult.Unresolved)
                 { throw new InvalidDataException("Stopped-fan coast observation is unresolved."); }
                 if (coast == So6120StopCoastResult.Stopped)
@@ -276,7 +279,7 @@ internal static class Program
             if (stop.IsCancellationRequested || service.HasExited) { endReason = FanStopEndReason.CallerRequest; }
             else if (endReason == FanStopEndReason.None)
             { endReason = acquisition.EndReason == FanStopEndReason.None ? FanStopEndReason.SafetyCondition : acquisition.EndReason; }
-            publish(Status(FanStopGuardianPhase.ReturningToAutomatic, "Auto requested or continuation admission ended.")
+            publish(Status(FanStopGuardianPhase.ReturningToAutomatic, progress.ReturningReason)
                 with
             { CommandPending = true, ConfirmedState = stoppedObserved ? FanStopObservedState.Stopped : FanStopObservedState.Unknown });
             So6120DutyResult automatic = session.ReturnToAutomatic();
@@ -291,7 +294,7 @@ internal static class Program
             var inspection = So6120DirectDutyJournal.Inspect(store.RunRoot(operation));
             if (!inspection.Complete || inspection.Corrupt || inspection.Fenced || inspection.UnresolvedWork)
             { throw new InvalidDataException("Guardian journal is not complete."); }
-            PublishTerminal(Status(FanStopGuardianPhase.Completed) with
+            PublishTerminal(Status(FanStopGuardianPhase.Completed, progress.IncompleteReason) with
             {
                 ConfirmedState = FanStopObservedState.Automatic,
                 AutoConfirmed = true,

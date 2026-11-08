@@ -24,6 +24,114 @@ public sealed class GuardianFanStopBackendTests
         Assert.False(controller.BlocksOrdinaryHardware);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task AutoCleanupOnlyAppliesStopRequestWhenStopWasIndependentlyConfirmed(
+        bool stopConfirmed, bool cleanupComplete)
+    {
+        var client = new Client();
+        client.Start = (_, _) =>
+        {
+            client.Set(client.Snapshot with
+            {
+                Revision = 2,
+                Phase = FanStopGuardianPhase.ReturningToAutomatic,
+                ConfirmedState = stopConfirmed ? FanStopObservedState.Stopped : FanStopObservedState.Unknown,
+                StopConfirmed = stopConfirmed,
+                Reason = stopConfirmed ? "The confirmed Stop ended." : "Stop entry refused before FE submission.",
+            });
+            if (cleanupComplete) { client.Complete(); }
+            return Task.FromResult(FanStopSubmission.Submitted);
+        };
+        var lease = new Lease();
+        var controller = Controller(client, lease);
+
+        ControlOperationResult result = await Stop(controller);
+
+        Assert.Equal(stopConfirmed ? ControlOperationStatus.Applied : ControlOperationStatus.Blocked, result.Status);
+        if (!stopConfirmed) { Assert.Contains("Stop was not independently confirmed", result.Message); }
+        Assert.Equal(cleanupComplete ? FanStopState.Automatic : FanStopState.ReturningToAutomatic,
+            controller.GetStatus(true).State);
+        Assert.Equal(stopConfirmed ? 1 : 0, controller.ConfirmedStopGeneration);
+        Assert.Equal(1, client.StartCalls);
+        Assert.Equal(0, client.AutoCalls);
+        Assert.Equal(cleanupComplete ? 1 : 0, lease.Disposals);
+        Assert.Equal(!cleanupComplete, controller.BlocksOrdinaryHardware);
+        Assert.False(controller.RequiresRecovery);
+
+        if (!cleanupComplete)
+        {
+            // An unsuccessful Stop receipt does not weaken or replace the
+            // independent terminal proof required by an explicit Auto request.
+            ControlOperationResult automatic = await controller.SetModeAsync(
+                FanStopMode.Automatic, true, Normal, () => true, default);
+            Assert.Equal(ControlOperationStatus.Applied, automatic.Status);
+            Assert.Equal(FanStopState.Automatic, controller.GetStatus(true).State);
+            Assert.Equal(1, client.AutoCalls);
+            Assert.Equal(1, lease.Disposals);
+            Assert.False(controller.BlocksOrdinaryHardware);
+        }
+    }
+
+    [Fact]
+    public async Task ContinuationLossBeforeStopConfirmationDoesNotApplyStopAfterAutoCleanup()
+    {
+        var client = new Client();
+        client.Start = (_, _) =>
+        {
+            client.Set(client.Snapshot with
+            {
+                Revision = 2,
+                Phase = FanStopGuardianPhase.Starting,
+                ConfirmedState = FanStopObservedState.Unknown,
+                StopConfirmed = false,
+            });
+            return Task.FromResult(FanStopSubmission.Submitted);
+        };
+        var lease = new Lease();
+        var controller = Controller(client, lease);
+
+        ControlOperationResult result = await controller.SetModeAsync(
+            FanStopMode.Stop, true, Normal, () => true, default, ownedContinuationAdmitted: () => false);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("Stop was not independently confirmed", result.Message);
+        Assert.Equal(FanStopState.Automatic, controller.GetStatus(true).State);
+        Assert.Equal(0, controller.ConfirmedStopGeneration);
+        Assert.Equal(1, client.StartCalls);
+        Assert.Equal(1, client.AutoCalls);
+        Assert.Equal(1, lease.Disposals);
+        Assert.False(controller.BlocksOrdinaryHardware);
+        Assert.False(controller.RequiresRecovery);
+    }
+
+    [Fact]
+    public async Task ConfirmedStopDoesNotHideUnresolvedAutoCleanupAfterContinuationLoss()
+    {
+        var client = new Client
+        {
+            CompleteOnAuto = false,
+            AutoSubmission = FanStopSubmission.Uncertain,
+        };
+        var lease = new Lease();
+        var controller = Controller(client, lease);
+
+        ControlOperationResult result = await controller.SetModeAsync(
+            FanStopMode.Stop, true, Normal, () => true, default, ownedContinuationAdmitted: () => false);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("Auto request is unresolved", result.Message);
+        Assert.Equal(1, controller.ConfirmedStopGeneration);
+        Assert.True(controller.RequiresRecovery);
+        Assert.True(controller.BlocksOrdinaryHardware);
+        Assert.Equal(1, client.StartCalls);
+        Assert.Equal(1, client.AutoCalls);
+        Assert.Equal(0, lease.Disposals);
+    }
+
     [Fact]
     public async Task ProvenAsyncRefusalReleasesWithoutClaimingAutoOrHistoricalStop()
     {
