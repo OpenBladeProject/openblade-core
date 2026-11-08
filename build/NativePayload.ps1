@@ -8,16 +8,26 @@ $script:OpenBladeNativeManifestName = 'OpenBlade.Native.provenance.json'
 function Get-OpenBladeNativeInputs {
     param([Parameter(Mandatory)][string]$Repository)
 
-    $paths = @(& git -C $Repository ls-files -- rust build/NativePayload.ps1 Directory.Build.props LICENSE)
-    if ($LASTEXITCODE -ne 0 -or $paths.Count -lt 10) { throw 'Cannot enumerate native source inputs.' }
+    # Git blob identities describe canonical source bytes, independently of a
+    # Windows checkout's CRLF conversion. DLL/notice artifact hashes use SHA-256.
+    $entries = @(& git -C $Repository -c core.quotepath=false ls-tree -r HEAD -- rust build/NativePayload.ps1 Directory.Build.props LICENSE)
+    if ($LASTEXITCODE -ne 0 -or $entries.Count -lt 10) { throw 'Cannot enumerate native source inputs.' }
     $inputs = @()
-    foreach ($path in @($paths | Sort-Object -CaseSensitive)) {
-        if ($path -notmatch '^[A-Za-z0-9_./-]+$' -or $path.Contains('..')) { throw 'Invalid native source path.' }
+    foreach ($entry in $entries) {
+        if ($entry -notmatch '\A[0-7]{6} blob (?<blob>[0-9a-f]{40})\t(?<path>[A-Za-z0-9_./-]+)\z') { throw 'Invalid native source entry.' }
+        $path = $Matches.path
+        $blob = $Matches.blob
+        if ($path.Contains('..')) { throw 'Invalid native source path.' }
         $inputs += [ordered]@{
             path = $path
-            sha256 = (Get-FileHash -LiteralPath (Join-Path $Repository $path) -Algorithm SHA256).Hash.ToLowerInvariant()
+            gitBlobId = $blob
         }
     }
+    $paths = @($inputs | ForEach-Object { $_.path })
+    & git -C $Repository diff --quiet HEAD -- @paths
+    if ($LASTEXITCODE -ne 0) { throw 'Commit native build inputs before release packaging.' }
+    $untracked = @(& git -C $Repository ls-files --others --exclude-standard -- rust build/NativePayload.ps1)
+    if ($LASTEXITCODE -ne 0 -or $untracked.Count -ne 0) { throw 'Untracked native inputs cannot enter release packaging.' }
     return $inputs
 }
 
@@ -40,6 +50,12 @@ function Get-OpenBladeNativePeInfo {
         $optionalSize -lt 224 -or $sectionCount -lt 1 -or $sectionCount -gt 96 -or
         $optional + $optionalSize + 40 * $sectionCount -gt $bytes.Length) {
         throw 'Native payload must be a Windows x64 PE32+ DLL.'
+    }
+    # PE32+ starts its data-directory array at 112. Both declared bounds must
+    # cover entry 13 before inspecting delay imports (Microsoft PE format).
+    $directoryCount = [BitConverter]::ToUInt32($bytes, $optional + 108)
+    if ($directoryCount -lt 14 -or 112 + [uint64]$directoryCount * 8 -gt $optionalSize) {
+        throw 'Native PE data directories exceed their declared header bounds.'
     }
     $sections = @()
     for ($index = 0; $index -lt $sectionCount; $index++) {
@@ -76,7 +92,7 @@ function Get-OpenBladeNativePeInfo {
         }
         # This API-set contract is supplied by Windows (since 10.0.10240),
         # not a redistributable CRT: learn.microsoft.com/uwp/win32-and-com/win32-apis.
-        if ($character -eq 128 -or $name -notmatch '^(?i:kernel32|advapi32|bcrypt|ntdll|userenv|ws2_32|api-ms-win-core-synch-l1-2-0)\.dll$') {
+        if ($character -eq 128 -or $name -notmatch '\A(?i:kernel32|ntdll|api-ms-win-core-synch-l1-2-0)\.dll\z') {
             throw "Native DLL has an unreviewed runtime dependency: $name"
         }
         $imports += $name.ToLowerInvariant()
@@ -92,6 +108,7 @@ function Assert-OpenBladeNativePayload {
         [Parameter(Mandatory)][string]$Payload,
         [Parameter(Mandatory)][string]$Repository,
         [Parameter(Mandatory)][psobject]$BuildIdentity,
+        [string]$ExpectedUnsignedSha256,
         [switch]$RequireSignature
     )
 
@@ -108,6 +125,8 @@ function Assert-OpenBladeNativePayload {
         $manifest.sourceRevision -cne $head -or $manifest.productVersion -cne $BuildIdentity.Version -or
         $manifest.fileVersion -cne $BuildIdentity.FileVersion -or $version.FileVersion -cne $BuildIdentity.FileVersion -or
         $manifest.sha256 -cne (Get-FileHash -LiteralPath $library -Algorithm SHA256).Hash.ToLowerInvariant() -or
+        $manifest.unsignedSha256 -cnotmatch '\A[0-9a-f]{64}\z' -or
+        ($ExpectedUnsignedSha256 -and $manifest.unsignedSha256 -cne $ExpectedUnsignedSha256) -or
         $manifest.staticCrt -ne $true -or $manifest.panic -cne 'unwind' -or
         $manifest.compiler[0] -notlike "rustc $pin *" -or
         ($manifest.imports -join ',') -cne ($pe.Imports -join ',') -or
@@ -119,6 +138,9 @@ function Assert-OpenBladeNativePayload {
         throw 'Native payload notice hash does not match.'
     }
     $signature = Get-AuthenticodeSignature -LiteralPath $library
+    if ($signature.Status -eq 'NotSigned' -and $manifest.unsignedSha256 -cne $manifest.sha256) {
+        throw 'Native unsigned build hash does not match the unsigned artifact.'
+    }
     if ($RequireSignature) {
         if ($signature.Status -ne 'Valid') { throw 'Native payload requires valid Authenticode signing.' }
     } elseif ($signature.Status -notin @('Valid', 'NotSigned')) { throw 'Native payload signature is invalid.' }
@@ -145,11 +167,6 @@ function Build-OpenBladeNativePayload {
     if ($LASTEXITCODE -ne 0 -or $head -notmatch '^[0-9a-f]{40}$') { throw 'Native packaging requires exact Git provenance.' }
     if ($BuildIdentity.SourceRevision -and $BuildIdentity.SourceRevision -cne $head) { throw 'Native source revision differs from build identity.' }
     $inputs = @(Get-OpenBladeNativeInputs -Repository $Repository)
-    $paths = @($inputs | ForEach-Object { $_.path })
-    & git -C $Repository diff --quiet HEAD -- @paths
-    if ($LASTEXITCODE -ne 0) { throw 'Commit native build inputs before release packaging.' }
-    $untracked = @(& git -C $Repository ls-files --others --exclude-standard -- rust build/NativePayload.ps1)
-    if ($LASTEXITCODE -ne 0 -or $untracked.Count -ne 0) { throw 'Untracked native inputs cannot enter release packaging.' }
     $outputPath = [IO.Path]::GetFullPath($Output)
     $artifactRoot = Join-Path $Repository 'artifacts'
     Assert-StrictPublishDescendant -PermittedRoot $artifactRoot -Candidate $outputPath -Context 'native build output'
@@ -260,6 +277,7 @@ Rust standard library: MIT OR Apache-2.0; notices follow (from the pinned toolch
         [IO.File]::WriteAllText((Join-Path $outputPath 'OpenBlade.Native.NOTICE.txt'), $notice, [Text.UTF8Encoding]::new($false))
         $after = @(Get-OpenBladeNativeInputs -Repository $Repository)
         if ((ConvertTo-Json -InputObject $after -Compress) -cne (ConvertTo-Json -InputObject $inputs -Compress)) { throw 'Native inputs changed during build.' }
+        $unsignedHash = (Get-FileHash -LiteralPath $library -Algorithm SHA256).Hash.ToLowerInvariant()
         $manifest = [ordered]@{
             schemaVersion = 1; abiVersion = '0x00010000'; fileName = $script:OpenBladeNativeFileName
             target = 'x86_64-pc-windows-msvc'; productVersion = $BuildIdentity.Version; fileVersion = $BuildIdentity.FileVersion
@@ -270,8 +288,8 @@ Rust standard library: MIT OR Apache-2.0; notices follow (from the pinned toolch
             # Record reproducible arguments without a developer's absolute paths.
             flags = @('-C target-feature=+crt-static', '-C link-arg=/Brepro', '--remap-path-prefix=<repository>=/openblade', '-C link-arg=<generated-version-resource>')
             inputs = $inputs; imports = $pe.Imports
-            unsignedSha256 = (Get-FileHash $library -Algorithm SHA256).Hash.ToLowerInvariant()
-            sha256 = (Get-FileHash $library -Algorithm SHA256).Hash.ToLowerInvariant()
+            unsignedSha256 = $unsignedHash
+            sha256 = $unsignedHash
             noticeSha256 = (Get-FileHash (Join-Path $outputPath 'OpenBlade.Native.NOTICE.txt') -Algorithm SHA256).Hash.ToLowerInvariant()
         }
         [IO.File]::WriteAllText((Join-Path $outputPath $script:OpenBladeNativeManifestName), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))

@@ -30,6 +30,7 @@ try {
     $image[132] = 0x64; $image[133] = 0x86; $image[134] = 1
     $image[148] = 240; $image[151] = 0x20
     $image[152] = 0x0B; $image[153] = 0x02
+    Set-FixtureInteger $image 260 16
     Set-FixtureInteger $image 272 0x1000
     Set-FixtureInteger $image 276 40
     Set-FixtureInteger $image 404 0x1000
@@ -41,6 +42,30 @@ try {
     [IO.File]::WriteAllBytes($fixture, $image)
     $info = Get-OpenBladeNativePeInfo $fixture
     if ($info.Machine -ne 'x64' -or ($info.Imports -join ',') -cne 'kernel32.dll') { throw 'PE architecture/import parsing failed.' }
+
+    Set-FixtureInteger $image 260 13
+    [IO.File]::WriteAllBytes($fixture, $image)
+    Assert-NativeThrows { Get-OpenBladeNativePeInfo $fixture } '*declared header bounds*'
+    Set-FixtureInteger $image 260 16
+    $image[148] = 224
+    [IO.File]::WriteAllBytes($fixture, $image)
+    Assert-NativeThrows { Get-OpenBladeNativePeInfo $fixture } '*declared header bounds*'
+    $image[148] = 240
+    foreach ($dependency in @('api-ms-win-core-synch-l1-2-0.dll', 'ntdll.dll')) {
+        [Array]::Clear($image, 576, 128)
+        [Text.Encoding]::ASCII.GetBytes($dependency + "`0").CopyTo($image, 576)
+        [IO.File]::WriteAllBytes($fixture, $image)
+        $info = Get-OpenBladeNativePeInfo $fixture
+        if (($info.Imports -join ',') -cne $dependency) { throw 'Reviewed Windows import was rejected.' }
+    }
+    foreach ($dependency in @('api-ms-win-crt-runtime-l1-1-0.dll', 'advapi32.dll', "kernel32.dll`n")) {
+        [Array]::Clear($image, 576, 128)
+        [Text.Encoding]::ASCII.GetBytes($dependency + "`0").CopyTo($image, 576)
+        [IO.File]::WriteAllBytes($fixture, $image)
+        Assert-NativeThrows { Get-OpenBladeNativePeInfo $fixture } '*unreviewed runtime dependency*'
+    }
+    [Array]::Clear($image, 576, 128)
+    [Text.Encoding]::ASCII.GetBytes("KERNEL32.dll`0").CopyTo($image, 576)
 
     $image[132] = 0x4C; $image[133] = 0x01
     [IO.File]::WriteAllBytes($fixture, $image)
@@ -59,6 +84,34 @@ try {
     Assert-NativeThrows { Get-OpenBladeNativePeInfo $fixture } '*Invalid native PE RVA*'
     [IO.File]::WriteAllBytes($fixture, [byte[]]::new(100))
     Assert-NativeThrows { Get-OpenBladeNativePeInfo $fixture } '*Invalid native PE image*'
+
+    # Same Git source revision with LF and CRLF working bytes must identify the
+    # same source inputs. This tiny data-only repository never builds a DLL.
+    $sourceFixture = Join-Path $testRoot 'source'
+    New-Item -ItemType Directory -Path (Join-Path $sourceFixture 'rust') -Force | Out-Null
+    for ($index = 0; $index -lt 12; $index++) {
+        [IO.File]::WriteAllText((Join-Path $sourceFixture "rust/input$index.txt"), "fixture`n")
+    }
+    $properties = Join-Path $sourceFixture 'Directory.Build.props'
+    [IO.File]::WriteAllText($properties, "<Project />`n")
+    & git -C $sourceFixture init -q -b build/native-source-fixture
+    if ($LASTEXITCODE -ne 0) { throw 'Source fixture initialization failed.' }
+    & git -C $sourceFixture config core.autocrlf false
+    if ($LASTEXITCODE -ne 0) { throw 'Source fixture configuration failed.' }
+    & git -C $sourceFixture add .
+    if ($LASTEXITCODE -ne 0) { throw 'Source fixture staging failed.' }
+    & git -C $sourceFixture -c user.name='OpenBlade Tests' -c user.email='tests@example.invalid' -c commit.gpgsign=false commit -qm fixture
+    if ($LASTEXITCODE -ne 0) { throw 'Source fixture commit failed.' }
+    $lfInputs = @(Get-OpenBladeNativeInputs -Repository $sourceFixture)
+    & git -C $sourceFixture config core.autocrlf true
+    if ($LASTEXITCODE -ne 0) { throw 'Source fixture CRLF configuration failed.' }
+    [IO.File]::WriteAllText($properties, "<Project />`r`n")
+    $crlfInputs = @(Get-OpenBladeNativeInputs -Repository $sourceFixture)
+    if ((ConvertTo-Json -InputObject $lfInputs -Compress) -cne (ConvertTo-Json -InputObject $crlfInputs -Compress)) {
+        throw 'Native source identity depends on checkout line endings.'
+    }
+    [IO.File]::AppendAllText($properties, 'changed')
+    Assert-NativeThrows { Get-OpenBladeNativeInputs -Repository $sourceFixture } '*Commit native build inputs*'
 
     foreach ($path in @('rust/crates/openblade-ffi/src/lib.rs', 'build/NativePayload.ps1')) {
         $plan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($path)
@@ -83,7 +136,7 @@ try {
         }
         $manifestPath = Join-Path $copy 'OpenBlade.Native.provenance.json'
         $original = [IO.File]::ReadAllBytes($manifestPath)
-        foreach ($property in @('sha256', 'sourceRevision', 'fileVersion', 'target', 'noticeSha256')) {
+        foreach ($property in @('sha256', 'unsignedSha256', 'sourceRevision', 'fileVersion', 'target', 'noticeSha256')) {
             $changed = [Text.Encoding]::UTF8.GetString($original) | ConvertFrom-Json
             $changed.$property = 'wrong'
             [IO.File]::WriteAllText($manifestPath, ($changed | ConvertTo-Json -Depth 8))
@@ -91,7 +144,17 @@ try {
         }
         [IO.File]::WriteAllBytes($manifestPath, $original)
         $changed = [Text.Encoding]::UTF8.GetString($original) | ConvertFrom-Json
-        $changed.inputs[0].sha256 = '0' * 64
+        $changed.unsignedSha256 = '0' * 64
+        [IO.File]::WriteAllText($manifestPath, ($changed | ConvertTo-Json -Depth 8))
+        Assert-NativeThrows {
+            Assert-OpenBladeNativePayload -Payload $copy -Repository $repository -BuildIdentity $identity -ExpectedUnsignedSha256 $manifest.unsignedSha256
+        } '*does not match*'
+        if ((Get-AuthenticodeSignature -LiteralPath (Join-Path $copy 'openblade_ffi.dll')).Status -eq 'NotSigned') {
+            Assert-NativeThrows { Assert-OpenBladeNativePayload -Payload $copy -Repository $repository -BuildIdentity $identity } '*unsigned build hash*'
+        }
+        [IO.File]::WriteAllBytes($manifestPath, $original)
+        $changed = [Text.Encoding]::UTF8.GetString($original) | ConvertFrom-Json
+        $changed.inputs[0].gitBlobId = '0' * 40
         [IO.File]::WriteAllText($manifestPath, ($changed | ConvertTo-Json -Depth 8))
         Assert-NativeThrows { Assert-OpenBladeNativePayload -Payload $copy -Repository $repository -BuildIdentity $identity } '*source provenance does not match*'
         [IO.File]::WriteAllBytes($manifestPath, $original)

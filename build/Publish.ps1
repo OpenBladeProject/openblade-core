@@ -224,6 +224,7 @@ try {
     # This first-party DLL is dormant until a later reviewed runtime handoff.
     $nativeOutput = Join-Path $stagingRoot 'native'
     Build-OpenBladeNativePayload -Repository $repository -Output $nativeOutput -BuildIdentity $buildIdentity
+    $nativeUnsignedSha256 = (Get-FileHash -LiteralPath (Join-Path $nativeOutput 'openblade_ffi.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
     foreach ($nativeFile in @('openblade_ffi.dll', 'OpenBlade.Native.provenance.json', 'OpenBlade.Native.NOTICE.txt')) {
         Copy-Item -LiteralPath (Join-Path $nativeOutput $nativeFile) -Destination (Join-Path $payload $nativeFile)
     }
@@ -319,7 +320,8 @@ try {
 
     # Confirm the copied build artifact before signing may legitimately alter it.
     # Updating the final hash must never bless an unexpected pre-sign replacement.
-    Assert-OpenBladeNativePayload -Payload $payload -Repository $repository -BuildIdentity $buildIdentity
+    Assert-OpenBladeNativePayload -Payload $payload -Repository $repository `
+        -BuildIdentity $buildIdentity -ExpectedUnsignedSha256 $nativeUnsignedSha256
     if ($signingEnabled) {
         foreach ($file in Get-ChildItem -LiteralPath $stagingBundle -Recurse -File |
             Where-Object {
@@ -337,7 +339,7 @@ try {
     # retaining the unsigned build hash separately for reproducibility checks.
     Update-OpenBladeNativePayloadHash -Payload $payload
     Assert-OpenBladeNativePayload -Payload $payload -Repository $repository `
-        -BuildIdentity $buildIdentity -RequireSignature:$signingEnabled
+        -BuildIdentity $buildIdentity -ExpectedUnsignedSha256 $nativeUnsignedSha256 -RequireSignature:$signingEnabled
     & (Join-Path $repository 'tests/Build.Tests/NativePayload.Tests.ps1') -Payload $payload
 
     New-Item -ItemType Directory -Path $stagingInstallerOutput -Force | Out-Null

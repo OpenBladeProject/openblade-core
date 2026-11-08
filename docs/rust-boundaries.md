@@ -235,8 +235,11 @@ unwind containment. No vendor code or new firmware capability is included.
 The payload contains the DLL, `OpenBlade.Native.provenance.json` and
 `OpenBlade.Native.NOTICE.txt`. PE file versions follow the existing stable,
 Nightly and LocalDev build identity. Provenance records the full source revision,
-source input hashes, exact compiler output, linker/resource-compiler hashes,
+canonical Git blob identities for source inputs, exact compiler output,
+MSVC/SDK versions, linker/resource-compiler hashes,
 target, flags, imports, ABI, notice hash and both unsigned and final DLL hashes.
+Source identities use Git's canonical blobs so LF/CRLF checkout conversion does
+not change them; fresh dirty/untracked-input checks still guard compilation.
 Path remapping and `/Brepro` remove checkout-dependent debug paths and PE link
 timestamps. Reproducing an unsigned DLL also requires the recorded MSVC/SDK and
 Rust toolchain; Authenticode timestamped bytes are intentionally separate.
@@ -254,7 +257,9 @@ is selected explicitly. Release builds reject external Cargo configuration,
 clear compiler wrappers/profile overrides and select the recorded linker.
 Existing optional Authenticode signing covers
 the native DLL before Burn embeds it; provenance is then updated to its final
-hash and signature trust is checked. Unsigned development/release preflights
+hash and signature trust is checked. The original unsigned hash is retained
+independently across signing; unsigned artifacts must match both hash fields.
+Unsigned development/release preflights
 retain the existing visibly incomplete signing status. No new trust root exists.
 
 Setup's existing complete-file hash manifest, staged readback, atomic replacement
