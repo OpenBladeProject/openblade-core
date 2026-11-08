@@ -5,12 +5,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.57.1-nightly.109] - 2026-11-08
+
 ### Added
 
 - Add experimental Stop/Auto fan controls for the Blade 16 RZ09-0581 in USB-C Balanced, with rolling average temperature limits, immediate cutoffs and automatic stopping below 50°C. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Bundle CPU temperature monitoring through LibreHardwareMonitor and PawnIO. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Add an offline firmware CLI, register explorer and developer diagnostics. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
-
 - Control Razer Laptop Cooling Pad fan targets, temperature curves, lighting and keyboard lighting sync from its own page, shown when connected. Support is experimental and based on reviewed vendor definitions. ([#889](https://github.com/OpenBladeProject/openblade-core/pull/889))
 - Support Blade 15 Advanced (Mid 2019) RZ09-0301 with Balanced/Custom performance, Balanced fixed fans and host curves on full-power AC, independent keyboard brightness and logo controls. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Search OpenBlade pages and settings from the title bar. Press Ctrl+K to open search and jump to a result. ([#883](https://github.com/OpenBladeProject/openblade-core/pull/883))
@@ -2357,7 +2358,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.51.0-nightly.107-attempt.2...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.57.1-nightly.109...HEAD
+[0.57.1-nightly.109]: https://github.com/OSSBlade/openblade-core/compare/v0.51.0-nightly.107-attempt.2...v0.57.1-nightly.109
 [0.51.0-nightly.107]: https://github.com/OSSBlade/openblade-core/compare/v0.50.3...v0.51.0-nightly.107-attempt.2
 [0.44.1-nightly.105]: https://github.com/OSSBlade/openblade-core/compare/v0.44.0-nightly.104...v0.44.1-nightly.105
 [0.44.0-nightly.104]: https://github.com/OSSBlade/openblade-core/compare/v0.43.0-nightly.103...v0.44.0-nightly.104

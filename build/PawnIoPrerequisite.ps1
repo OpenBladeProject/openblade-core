@@ -46,9 +46,30 @@ function Copy-OpenBladePawnIoPrerequisite {
             [void][IO.Directory]::CreateDirectory($entry)
             $download = Join-Path $entry ([Guid]::NewGuid().ToString('N') + '.download')
             try {
-                Invoke-WebRequest -Uri $pin.Uri -OutFile $download -UseBasicParsing -TimeoutSec 60 -Headers @{
-                    Accept = 'application/octet-stream'
-                    'X-GitHub-Api-Version' = '2022-11-28'
+                # The official asset endpoint intermittently returns 503. Retry only
+                # transient acquisition failures, at most four 60-second requests.
+                # Integrity and publisher failures below are never retried.
+                $retryDelays = @(5, 15, 30)
+                for ($attempt = 0; ; $attempt++) {
+                    try {
+                        Invoke-WebRequest -Uri $pin.Uri -OutFile $download -UseBasicParsing -TimeoutSec 60 -Headers @{
+                            Accept = 'application/octet-stream'
+                            'X-GitHub-Api-Version' = '2022-11-28'
+                        }
+                        break
+                    }
+                    catch {
+                        $response = $_.Exception.PSObject.Properties['Response']
+                        $status = if ($null -ne $response -and $null -ne $response.Value) {
+                            $response.Value.PSObject.Properties['StatusCode']
+                        } else { $null }
+                        $transient = ($null -ne $status -and [int]$status.Value -in @(408, 429, 500, 502, 503, 504)) -or
+                            ($_.Exception -is [Net.WebException] -and $_.Exception.Status -eq [Net.WebExceptionStatus]::Timeout)
+                        if (-not $transient -or $attempt -ge $retryDelays.Count) { throw }
+                        if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Force }
+                        Write-Warning "PawnIO download attempt $($attempt + 1) failed temporarily; retrying in $($retryDelays[$attempt]) seconds."
+                        Start-Sleep -Seconds $retryDelays[$attempt]
+                    }
                 }
                 Assert-OpenBladePawnIoPrerequisite $download
                 if ([IO.File]::Exists($cached)) { [IO.File]::Replace($download, $cached, [NullString]::Value) }
