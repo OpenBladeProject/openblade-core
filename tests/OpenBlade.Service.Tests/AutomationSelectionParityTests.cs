@@ -16,7 +16,7 @@ public sealed class AutomationSelectionParityTests
                 SettingValueSource, ResolvedSetting<PerformancePreset>>>();
         foreach (int scalar in new[] { 0, -1, 999 })
         {
-            foreach (SettingValueSource source in new[] { SettingValueSource.PowerProfile, SettingValueSource.ApplicationProfile })
+            foreach (SettingValueSource source in Enum.GetValues<SettingValueSource>().Append((SettingValueSource)999))
             {
                 for (int flags = 0; flags < 4; flags++)
                 {

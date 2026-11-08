@@ -568,7 +568,11 @@ public sealed class ProfileAutomationState
             AutomationValueOrigin.Persistent => persistentOverride!.Value,
             _ => throw new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult),
         };
-        return new(value, selection.Source);
+        // The profile source is host data, including legacy/undefined values;
+        // only its origin participates in the portable selection.
+        return new(value, selection.Origin == AutomationValueOrigin.Profile
+            ? profileSource
+            : selection.Source);
     }
 
     private static NativeAutomationSelection RequireSelection(NativeAutomationResult result)

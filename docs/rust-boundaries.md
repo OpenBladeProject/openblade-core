@@ -475,6 +475,13 @@ Errors propagate through existing `NativeComponentException` supervision.
 A separate C loader fixture proves independence from codec/profile exports;
 it never supplies parity results or enters the product payload.
 
+Managed result admission rejects tokens that cannot address this request's host
+values, including lighting overrides on unknown external power. Priority remains
+Rust policy and is checked against the independent oracle. Performance ignores
+lighting-only flags as specified by the ABI; host reconstruction also preserves
+legacy/undefined managed profile-source values without expanding the wire schema.
+
+
 The managed oracle freezes the actual helper/resolver bodies at
 `9e53ed92bbe3985e1ea899ed6c1124f6f6dd020e`, adapting only instance fields to
 explicit parameters. Eighteen shared literal cases cover priority, absence and

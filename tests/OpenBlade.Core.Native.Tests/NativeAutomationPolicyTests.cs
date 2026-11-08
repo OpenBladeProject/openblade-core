@@ -149,6 +149,72 @@ public sealed class NativeAutomationPolicyTests
     }
 
     [Fact]
+    public unsafe void PerformanceIgnoredFlagsAgreeAcrossRealAbiAndManagedResultValidation()
+    {
+        using NativeAutomationPolicy policy = Load();
+        for (int flags = 0; flags < 8; flags++)
+        {
+            NativeAutomationRequest request = new()
+            {
+                StructSize = 16,
+                Operation = 0,
+                HasProfile = (byte)(flags & 1),
+                HasConfirmed = (byte)((flags >> 1) & 1),
+                ExternalUnknown = (byte)((flags >> 2) & 1),
+                FromApplication = 1,
+            };
+            NativeAutomationRecord result = new() { StructSize = 12 };
+            NativeErrorRecord error = NativeErrorRecord.Create();
+            uint written = 999;
+            uint status = policy.RawSelect(NativeAutomationPolicy.AutomationAbiVersion,
+                &request, &result, &written, &error);
+            NativeAutomationResult actual = NativeAutomationPolicy.ReadSelection(request, result, status, error, written);
+            Assert.True(actual.IsSuccess, actual.Error?.ToString());
+            Assert.Equal(new NativeAutomationSelection(AutomationValueOrigin.Profile,
+                SettingValueSource.ApplicationProfile), actual.Selection);
+        }
+    }
+
+    [Fact]
+    public void ImpossibleHostValueTokensFailWithoutReimplementingPriority()
+    {
+        NativeAutomationRequest known = new() { StructSize = 16, Operation = 1, HasProfile = 1, HasConfirmed = 1 };
+        NativeAutomationRequest unknown = known;
+        unknown.ExternalUnknown = 1;
+        NativeAutomationRequest absent = new() { StructSize = 16, Operation = 1 };
+        NativeAutomationRequest unknownAbsent = absent;
+        unknownAbsent.ExternalUnknown = 1;
+        NativeAutomationRequest unknownOverrides = unknown;
+        unknownOverrides.HasTemporary = 1;
+        unknownOverrides.HasPersistent = 1;
+        NativeErrorRecord success = NativeErrorRecord.Create();
+        var cases = new (NativeAutomationRequest Request, NativeAutomationRecord Record)[]
+        {
+            (absent, new() { StructSize = 12, Origin = 0, Provenance = 1 }),
+            (known, new() { StructSize = 12, Origin = 1, Provenance = 0 }),
+            (unknownAbsent, new() { StructSize = 12, Origin = 1, Provenance = 0 }),
+            (unknown, new() { StructSize = 12, Origin = 0, Provenance = 1 }),
+            (unknownOverrides, new() { StructSize = 12, Origin = 2, Provenance = 3 }),
+            (unknownOverrides, new() { StructSize = 12, Origin = 3, Provenance = 4 }),
+            (known, new() { StructSize = 12, Origin = 2, Provenance = 3 }),
+            (known, new() { StructSize = 12, Origin = 3, Provenance = 4 }),
+            (known, new() { StructSize = 12, Origin = 0, Provenance = 99 }),
+            (known, new() { StructSize = 4, Origin = 0, Provenance = 1 }),
+        };
+        foreach (var entry in cases)
+        {
+            NativeAutomationResult result = NativeAutomationPolicy.ReadSelection(
+                entry.Request, entry.Record, 0, success, 0);
+            Assert.Equal(NativeBoundaryErrorKind.InvalidNativeResult, result.Error!.Kind);
+        }
+        // Both null fallbacks are original behavior, and remain admitted.
+        Assert.True(NativeAutomationPolicy.ReadSelection(absent,
+            new() { StructSize = 12, Origin = 1, Provenance = 0 }, 0, success, 0).IsSuccess);
+        Assert.True(NativeAutomationPolicy.ReadSelection(unknownAbsent,
+            new() { StructSize = 12, Origin = 0, Provenance = 1 }, 0, success, 0).IsSuccess);
+    }
+
+    [Fact]
     public void IndependentLoaderNeedsNoCodecOrProfileExports()
     {
         string path = Environment.GetEnvironmentVariable("OPENBLADE_AUTOMATION_ONLY_LIBRARY")

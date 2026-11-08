@@ -140,37 +140,53 @@ public sealed unsafe class NativeAutomationPolicy : IDisposable
             NativeErrorRecord error = NativeErrorRecord.Create();
             uint written = 0;
             uint status = RawSelect(AutomationAbiVersion, &request, &result, &written, &error);
-            if (written != 0)
-            {
-                return InvalidResult();
-            }
-            NativeBoundaryError? failure = NativeProfilePolicy.CheckStatus(status, error, written, 0);
-            if (failure is not null)
-            {
-                return new(null, failure);
-            }
-            if (result.StructSize != 12 || result.Origin > 3 || result.Provenance > 4)
-            {
-                return InvalidResult();
-            }
-            AutomationValueOrigin origin = (AutomationValueOrigin)result.Origin;
-            SettingValueSource source = (SettingValueSource)result.Provenance;
-            bool valid = origin switch
-            {
-                AutomationValueOrigin.Profile => source == (request.ExternalUnknown == 1
-                    ? SettingValueSource.PowerProfile
-                    : request.FromApplication == 1 ? SettingValueSource.ApplicationProfile : SettingValueSource.PowerProfile),
-                AutomationValueOrigin.Confirmed => request.Operation == 1 && source == SettingValueSource.ConfirmedFirmwareState,
-                AutomationValueOrigin.Temporary => request.HasTemporary == 1 && source == SettingValueSource.TemporaryOverride,
-                AutomationValueOrigin.Persistent => request.HasPersistent == 1 && source == SettingValueSource.PersistentOverride,
-                _ => false,
-            };
-            return valid ? new(new(origin, source), null) : InvalidResult();
+            return ReadSelection(request, result, status, error, written);
         }
         catch (ObjectDisposedException)
         {
             return new(null, Error(NativeBoundaryErrorKind.Disposed, "Native automation policy is disposed."));
         }
+    }
+
+    internal static NativeAutomationResult ReadSelection(NativeAutomationRequest request,
+        NativeAutomationRecord result, uint status, NativeErrorRecord error, uint written)
+    {
+        if (written != 0)
+        {
+            return InvalidResult();
+        }
+        NativeBoundaryError? failure = NativeProfilePolicy.CheckStatus(status, error, written, 0);
+        if (failure is not null)
+        {
+            return new(null, failure);
+        }
+        if (result.StructSize != 12 || result.Origin > 3 || result.Provenance > 4)
+        {
+            return InvalidResult();
+        }
+        AutomationValueOrigin origin = (AutomationValueOrigin)result.Origin;
+        SettingValueSource source = (SettingValueSource)result.Provenance;
+        bool unknownLighting = request.Operation == 1 && request.ExternalUnknown == 1;
+        // Admit only tokens that can address this request's host values. Priority
+        // remains Rust policy, checked by the independent frozen oracle.
+        bool valid = origin switch
+        {
+            AutomationValueOrigin.Profile => source == (unknownLighting
+                ? SettingValueSource.PowerProfile
+                : request.FromApplication == 1 ? SettingValueSource.ApplicationProfile : SettingValueSource.PowerProfile)
+                && (request.Operation == 0 || (unknownLighting
+                    ? request.HasConfirmed == 0
+                    : request.HasProfile == 1)),
+            AutomationValueOrigin.Confirmed => request.Operation == 1
+                && source == SettingValueSource.ConfirmedFirmwareState
+                && (unknownLighting ? request.HasConfirmed == 1 : request.HasProfile == 0),
+            AutomationValueOrigin.Temporary => !unknownLighting
+                && request.HasTemporary == 1 && source == SettingValueSource.TemporaryOverride,
+            AutomationValueOrigin.Persistent => !unknownLighting
+                && request.HasPersistent == 1 && source == SettingValueSource.PersistentOverride,
+            _ => false,
+        };
+        return valid ? new(new(origin, source), null) : InvalidResult();
     }
 
     internal uint RawSelect(uint version, NativeAutomationRequest* request, NativeAutomationRecord* result,
