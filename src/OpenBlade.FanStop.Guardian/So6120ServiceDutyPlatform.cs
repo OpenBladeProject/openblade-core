@@ -33,6 +33,9 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
     private bool powerUnresolved;
     private bool thermalSafe;
     private long thermalTimestamp;
+    private FanTemperatureReadings latestThermalReading;
+    private TimeSpan latestThermalAge;
+    private bool latestThermalCanceled;
     private bool ownedStopStarted;
     private long? powerTimestamp;
     private PowerSource observedPowerSource = PowerSource.ExternalUnknown;
@@ -102,16 +105,51 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
             // Expected session/thermal refusals must resolve before any native
             // device or HID command is opened, so they cannot fabricate an
             // uncertain Stop transaction on an idle or already-hot laptop.
-            if (!owner.ActiveSession(metadata) || metadata.OpenBladeStatus != ServiceControllerStatus.Running
-                || metadata.OpenBladeWriterPids.Count != 1 || metadata.OpenBladeWriterPids[0] != servicePid)
-            { throw new InvalidOperationException("Initial command-free Stop admission refused."); }
+            if (!owner.ActiveSession(metadata))
+            {
+                throw new InvalidOperationException(So6120ServiceInitialAdmissionDiagnostics.Refusal("ActiveConsoleSession",
+                    $"consoleSession={metadata.Session.ConsoleSession}; boundSession={owner.Binding.ConsoleSession}"));
+            }
+            if (metadata.OpenBladeStatus != ServiceControllerStatus.Running)
+            {
+                throw new InvalidOperationException(So6120ServiceInitialAdmissionDiagnostics.Refusal("ServiceRunning",
+                    $"serviceStatus={metadata.OpenBladeStatus}"));
+            }
+            if (metadata.OpenBladeWriterPids.Count != 1 || metadata.OpenBladeWriterPids[0] != servicePid)
+            {
+                throw new InvalidOperationException(So6120ServiceInitialAdmissionDiagnostics.Refusal("ServiceWriterOwnership",
+                    $"writerCount={metadata.OpenBladeWriterPids.Count}; originalWriterPresent={metadata.OpenBladeWriterPids.Contains(servicePid)}"));
+            }
             // A guardian has a new sensor worker on every activation. Prepare it
             // before the first one-shot admission read, while no fan handle or
             // command exists. Cold readiness never substitutes for a fresh sample.
-            if (!temperatureSource.PrepareAsync(cancellationToken).AsTask()
-                    .WaitAsync(TimeSpan.FromSeconds(10), cancellationToken).GetAwaiter().GetResult()
-                || !owner.RefreshTemperature())
-            { throw new InvalidOperationException("Initial command-free Stop admission refused."); }
+            bool prepared;
+            try
+            {
+                prepared = temperatureSource.PrepareAsync(cancellationToken).AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(10), cancellationToken).GetAwaiter().GetResult();
+            }
+            catch (Exception error)
+            {
+                throw new InvalidOperationException(So6120ServiceInitialAdmissionDiagnostics.Refusal("CpuReaderPreparation",
+                    $"outcome={error.GetType().Name}; canceled={cancellationToken.IsCancellationRequested}"), error);
+            }
+            if (!prepared)
+            {
+                throw new InvalidOperationException(So6120ServiceInitialAdmissionDiagnostics.Refusal("CpuReaderPreparation", "outcome=NotReady"));
+            }
+            bool thermalAdmitted;
+            try { thermalAdmitted = owner.RefreshTemperature(); }
+            catch (Exception error)
+            {
+                throw new InvalidOperationException(So6120ServiceInitialAdmissionDiagnostics.Refusal("ThermalSample",
+                    $"outcome={error.GetType().Name}; sampleUnavailable=True"), error);
+            }
+            if (!thermalAdmitted)
+            {
+                throw new InvalidOperationException(So6120ServiceInitialAdmissionDiagnostics.ThermalRefusal(settings,
+                    owner.latestThermalReading, owner.latestThermalAge, owner.latestThermalCanceled));
+            }
             cancellationToken.ThrowIfCancellationRequested();
             owner.driverPin = So6120NativeAcquisition.PinDriverFile(metadata.Driver);
             owner.RequireAdmission(owner.ReadMetadata());
@@ -305,6 +343,9 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
                 ? temperatureSource.ReadForFanStopAsync(deadline.Token) : temperatureSource.ReadAsync(deadline.Token)).AsTask()
             .WaitAsync(TimeSpan.FromSeconds(2)).GetAwaiter().GetResult();
         TimeSpan age = clock.GetElapsedTime(thermalTimestamp);
+        latestThermalReading = reading;
+        latestThermalAge = age;
+        latestThermalCanceled = deadline.IsCancellationRequested;
         if (continuation)
         {
             bool admitted = thermalPolicy.Observe(reading.CpuCelsius, reading.GpuCelsius,

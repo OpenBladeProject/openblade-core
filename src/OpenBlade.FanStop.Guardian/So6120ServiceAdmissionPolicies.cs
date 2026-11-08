@@ -1,6 +1,19 @@
 using OpenBlade.Contracts;
+using OpenBlade.Service;
 
 namespace OpenBlade.FanStop.Guardian;
+
+internal static class So6120ServiceInitialAdmissionDiagnostics
+{
+    internal static string Refusal(string stage, string detail) =>
+        $"Initial command-free Stop admission refused (stage={stage}; {detail}).";
+
+    internal static string ThermalRefusal(FanStopSettings settings, FanTemperatureReadings reading,
+        TimeSpan age, bool canceled) => Refusal("ThermalEntry",
+            FormattableString.Invariant($"mode={settings.EndMode}; cpuC={Value(reading.CpuCelsius)}; gpuC={Value(reading.GpuCelsius)}; gpuInactive={reading.GpuInactive}; gpuPoweredDown={reading.GpuPoweredDown}; sampleAgeMs={Math.Clamp(age.TotalMilliseconds, -1, 60000):F1}; sampleCanceled={canceled}; cpuEntryLimitC={(settings.EndMode == FanStopEndMode.Auto ? 55 : settings.CpuLimitCelsius)}; gpuEntryLimitC={(settings.EndMode == FanStopEndMode.Custom ? Value(settings.GpuLimitCelsius) : "inactive-required")}; maxSampleAgeMs=2000"));
+
+    private static string Value(int? value) => value?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unavailable";
+}
 
 internal sealed class So6120ServicePowerReadException(Exception inner)
     : IOException("The adapter read did not establish a resolved native operation.", inner)
