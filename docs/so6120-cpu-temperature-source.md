@@ -48,11 +48,28 @@ status. Runtime requires the trusted driver to be running and the actual signed
 module/API operation to succeed. OpenBlade uninstall preserves shared PawnIO.
 
 Offline tests cover sensor selection, missing/failed samples, worker lifetime,
-protocol matching and installer outcomes. This implementation has **not** been
-installed or physically validated on the laptop. The prior IPF readings below
-do not validate this provider. CPU reader coverage is shared across admitted
-Blade profiles; it does not add fan-control support to another model. Stop's
-existing exact-device and mode admission remains unchanged.
+protocol matching and installer outcomes. On 2026-11-07, source `e94a93b2` was
+installed through the enrolled LocalDev broker on RZ09-0581. All 372 installed
+payload files matched the packaged source. Twenty fresh service observations
+returned changing CPU temperatures from 49–72 C, and the dashboard updated.
+This establishes operation of the bundled provider on this laptop, not external
+sensor calibration or coverage of other processors. The prior IPF readings below
+remain separate evidence. CPU reader coverage is shared across admitted Blade
+profiles; it does not add fan-control support to another model. Stop's existing
+exact-device and mode admission remains unchanged. The diagnostic-only
+`220097f9` update was also installed and verified; its twenty fresh service
+readings ranged from 52–78 C. A guardian activation independently measured
+62 C and correctly refused Auto-policy entry above 55 C before any EC command.
+See the [installed test result](so6120-stop-auto-guardian.md#evidence-and-remaining-validation).
+
+The first installation exposed an invalid `QueryServiceConfigW` buffer size.
+The shared PawnIO admission reader now queries the required size and enforces
+the [documented 8 KiB maximum](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-queryserviceconfigw);
+a metadata-only reproduction confirmed the fix.
+A later product-directory access-denied rollback recovered on an identical-byte
+broker retry. Its lock owner was not established, so that retry does not prove
+a permanent installer fix. The official PawnIO installation completed and was
+reused on subsequent attempts without replaying its installer.
 
 ## Independent review
 

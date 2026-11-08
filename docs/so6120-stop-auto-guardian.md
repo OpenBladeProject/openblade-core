@@ -15,9 +15,10 @@ The formerly selected Windows TZRZ thermal counters are rejected because their
 firmware methods return a constant 45.05 C. CPU readings now use the bundled
 LibreHardwareMonitor CPU subset through PawnIO, in a separate job-owned helper
 with a one-second request deadline. Missing or failed readings refuse Stop entry
-and end an owned Stop immediately. This integration still requires physical
-validation; no earlier Intel diagnostic or EC fan experiment validates the new
-reader. See [CPU temperature source](so6120-cpu-temperature-source.md).
+and end an owned Stop immediately. Installed service observations now confirm
+changing CPU readings on RZ09-0581. The installed guardian path remains under
+validation; earlier Intel diagnostics and EC fan experiments are separate
+results. See [CPU temperature source](so6120-cpu-temperature-source.md).
 
 Each new guardian prepares the CPU helper under a separate ten-second startup
 deadline after host/session admission and before opening the fan-control
@@ -169,7 +170,8 @@ The shared coordinator, journal, port and caller-isolation code are extracted
 into `OpenBlade.FanStop.Core`; Capture keeps its separate attended consent,
 stopped-OpenBlade admission and developer attempt marker. The product owner
 requires the already installed pinned InpOut driver. No driver or vendor DLL
-is downloaded, installed, loaded through a vendor API, or bundled by this work.
+is provisioned for EC access. CPU sensing separately bundles the reviewed
+PawnIO installation described in the CPU source guide.
 The product host check uses the exact model and HID identity; SKU and BIOS are
 diagnostic metadata. The EC 1.04 requirement is explicit because this register
 contract was decoded from that exact image. Its source SHA-256 is
@@ -181,7 +183,22 @@ establishes recovery by the surviving owner for its frozen Capture build.
 It does not validate the new installed Session-0 delegation path, direct zero
 entry without the spinning test step, sustained Stop, or power transitions.
 These still need one appropriately scoped, attended installed-path test after
-review. This implementation task performs no installation or hardware test.
+review. The 2026-11-07 broker installation and changing CPU readings are
+confirmed. Its first installed Stop requests were refused before any EC command:
+one by the completed developer marker and one by initial command-free admission.
+Both reported zero resolved EC commands, no mutation and no pending command.
+The diagnostic-only `220097f9` build was then installed and all 372 payload files
+verified. Its supervised request reached the guardian after fresh service CPU
+samples of 50, 51 and 50 C. The guardian independently measured 62 C in 172.9 ms;
+Auto requires at most 55 C. GPU inactivity passed. It refused before opening the
+fan interface or publishing an EC command and returned released/inactive state.
+Fans remained Automatic, with no blocked writes or unconfirmed submission.
+
+This establishes the precise thermal refusal and operation of the guardian's
+fresh CPU read. It does not establish successful installed Stop or Auto
+restoration. Limits were not raised, and a matching ordinary Automatic mode is
+not presented as restoration evidence. A later test needs fresh admitted
+conditions; no failed or uncertain command may be replayed.
 
 Guardian termination, an unknown outer-job termination, a native call that
 never returns, sleep/resume and OS failure do not have a demonstrated
@@ -204,7 +221,9 @@ reuse, and renames only the matching marker without changing its bytes. Unknown
 runs, altered evidence, active owners and existing destinations are refused.
 The tool does not reopen a device, restore firmware or replay a journal. Adding
 another run requires separate evidence review. This implementation was tested
-using temporary marker fixtures; the real machine marker remains unchanged.
+using temporary marker fixtures. On 2026-11-07, the matching completed caller-loss
+marker was archived with explicit user approval after independently verifying its
+completion evidence. The original bytes were preserved; no EC command was sent.
 
 See [review dispositions](so6120-stop-auto-guardian-review.md) for the independent
 guardian review, and [Stop settings review](so6120-stop-settings-review.md) for
