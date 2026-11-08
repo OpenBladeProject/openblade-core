@@ -35,30 +35,58 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
     private NativeProfilePolicy(PolicyModule module)
     {
         this.module = module;
-        nint handle = module.DangerousGetHandle();
-        var policyVersion = (delegate* unmanaged[Cdecl]<uint>)NativeLibrary.GetExport(handle, "ob_policy_abi_version");
-        if (policyVersion() != PolicyAbiVersion)
+        bool added = false;
+        try
         {
-            throw new PolicyVersionException();
+            module.DangerousAddRef(ref added);
+            nint handle = module.DangerousGetHandle();
+            var policyVersion = (delegate* unmanaged[Cdecl]<uint>)NativeLibrary.GetExport(handle, "ob_policy_abi_version");
+            if (policyVersion() != PolicyAbiVersion)
+            {
+                throw new PolicyVersionException();
+            }
+            apply = (delegate* unmanaged[Cdecl]<uint, NativeProfileProjection*, NativeProfileProjection*, byte*, uint, NativeProfileProjection*, byte*, uint, uint*, NativeErrorRecord*, uint>)NativeLibrary.GetExport(handle, "ob_v1_apply_profile");
+            applyDisplay = (delegate* unmanaged[Cdecl]<uint, NativeDisplayProjection*, NativeDisplayProjection*, byte*, uint, NativeDisplayProjection*, byte*, uint, uint*, NativeErrorRecord*, uint>)NativeLibrary.GetExport(handle, "ob_v1_apply_display");
         }
-        apply = (delegate* unmanaged[Cdecl]<uint, NativeProfileProjection*, NativeProfileProjection*, byte*, uint, NativeProfileProjection*, byte*, uint, uint*, NativeErrorRecord*, uint>)NativeLibrary.GetExport(handle, "ob_v1_apply_profile");
-        applyDisplay = (delegate* unmanaged[Cdecl]<uint, NativeDisplayProjection*, NativeDisplayProjection*, byte*, uint, NativeDisplayProjection*, byte*, uint, uint*, NativeErrorRecord*, uint>)NativeLibrary.GetExport(handle, "ob_v1_apply_display");
+        finally
+        {
+            if (added)
+            {
+                module.DangerousRelease();
+            }
+        }
     }
 
     public static NativePolicyLoadResult Load(string absoluteLibraryPath)
     {
-        // The existing codec admission also checks the exact library filename, normalized
-        // absolute path, supported process architecture and the unchanged codec ABI v1.
-        NativeCodecLoadResult codec = NativeReportCodec.Load(absoluteLibraryPath);
-        if (!codec.IsSuccess)
+        if (!(OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            || RuntimeInformation.ProcessArchitecture is not (Architecture.X64 or Architecture.Arm64))
         {
-            return new(null, codec.Error);
+            return new(null, Error(NativeBoundaryErrorKind.UnsupportedPlatform, "The policy helper supports Windows, Linux, or macOS x64/arm64 processes only."));
         }
-
-        using NativeReportCodec admittedCodec = codec.Codec!;
         if (!LayoutsMatch())
         {
             return new(null, Error(NativeBoundaryErrorKind.InvalidLayout, "Managed policy ABI layout differs from v1."));
+        }
+
+        // Policy negotiation is independent of codec versions and codec exports.
+        string expectedName = OperatingSystem.IsWindows() ? "openblade_ffi.dll"
+            : OperatingSystem.IsMacOS() ? "libopenblade_ffi.dylib" : "libopenblade_ffi.so";
+        try
+        {
+            if (string.IsNullOrWhiteSpace(absoluteLibraryPath)
+                || !Path.IsPathFullyQualified(absoluteLibraryPath)
+                || !string.Equals(absoluteLibraryPath, Path.GetFullPath(absoluteLibraryPath), StringComparison.Ordinal)
+                || !string.Equals(Path.GetFileName(absoluteLibraryPath), expectedName, StringComparison.Ordinal)
+                || !File.Exists(absoluteLibraryPath))
+            {
+                return new(null, Error(NativeBoundaryErrorKind.InvalidLibraryPath,
+                    $"Supply a normalized absolute path to an existing {expectedName} developer artifact."));
+            }
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or IOException or UnauthorizedAccessException)
+        {
+            return new(null, Error(NativeBoundaryErrorKind.InvalidLibraryPath, exception.Message));
         }
 
         PolicyModule? loaded = null;
@@ -88,6 +116,17 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
     {
         try
         {
+            EnsureAvailable();
+            if (baseline is null)
+            {
+                return new(null, Error(NativeBoundaryErrorKind.InvalidArgument, "A baseline profile is required.", 5));
+            }
+            if (value is null)
+            {
+                // No field is consumed: preserve even legacy UTF-16 that cannot cross
+                // the strict UTF-8 projection ABI, just as the C# helper does.
+                return new(baseline, null);
+            }
             var keys = new List<byte>();
             NativeProfileProjection basis = Project(baseline, keys);
             NativeProfileProjection replacement = Project(value, keys);
@@ -99,8 +138,8 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
             fixed (byte* inputPointer = input)
             fixed (byte* outputPointer = output)
             {
-                uint status = RawApply(PolicyAbiVersion, baseline is null ? null : &basis,
-                    value is null ? null : &replacement, inputPointer, (uint)input.Length,
+                uint status = RawApply(PolicyAbiVersion, &basis,
+                    &replacement, inputPointer, (uint)input.Length,
                     &result, outputPointer, (uint)output.Length, &written, &error);
                 NativeBoundaryError? failure = CheckStatus(status, error, written, output.Length);
                 if (failure is not null)
@@ -108,27 +147,13 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
                     return new(null, failure);
                 }
             }
-            if (baseline is null || !ValidProfile(result))
+            if (!ValidProfile(result))
             {
                 return InvalidProfile();
             }
 
             DisplayProfileSettings? display = result.HasDisplay == 1 ? ReadDisplay(result.Display, output.AsSpan(0, (int)written)) : null;
             FanControlSettings? fan = ResolveFan(result, baseline, value);
-            if (value is null)
-            {
-                // A null override must retain the entire original record and its nulls.
-                if (result.FanControlSource != (baseline.FanControl is null ? 0u : 1u)
-                    || result.Performance.Value != (int)baseline.Performance || result.Fans.Value != (int)baseline.Fans
-                    || result.HasDisplay != (baseline.Display is null ? 0 : 1)
-                    || display != baseline.Display || fan != baseline.FanControl
-                    || ReadBoolean(result.GamingModeEnabled) != baseline.EffectiveLaptopBehavior.GamingModeEnabled)
-                {
-                    return InvalidProfile();
-                }
-
-                return new(baseline, null);
-            }
             if (result.HasDisplay != 1)
             {
                 return InvalidProfile();
@@ -174,6 +199,15 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
     {
         try
         {
+            EnsureAvailable();
+            if (baseline is null)
+            {
+                return new(null, Error(NativeBoundaryErrorKind.InvalidArgument, "A baseline display is required.", 5));
+            }
+            if (value is null)
+            {
+                return new(baseline, null);
+            }
             var keys = new List<byte>();
             NativeDisplayProjection basis = ProjectDisplay(baseline, keys);
             NativeDisplayProjection replacement = ProjectDisplay(value, keys);
@@ -185,8 +219,8 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
             fixed (byte* inputPointer = input)
             fixed (byte* outputPointer = output)
             {
-                uint status = RawApplyDisplay(PolicyAbiVersion, baseline is null ? null : &basis,
-                    value is null ? null : &replacement, inputPointer, (uint)input.Length,
+                uint status = RawApplyDisplay(PolicyAbiVersion, &basis,
+                    &replacement, inputPointer, (uint)input.Length,
                     &result, outputPointer, (uint)output.Length, &written, &error);
                 NativeBoundaryError? failure = CheckStatus(status, error, written, output.Length);
                 if (failure is not null)
@@ -195,21 +229,28 @@ public sealed unsafe class NativeProfilePolicy : IDisposable
                 }
             }
             DisplayProfileSettings display = ReadDisplay(result, output.AsSpan(0, (int)written));
-            if (value is null)
-            {
-                if (display != baseline)
-                {
-                    return new(null, InvalidResult());
-                }
-
-                return new(baseline, null);
-            }
             return new(display, null);
         }
         catch (EncoderFallbackException) { return new(null, Error(NativeBoundaryErrorKind.InvalidArgument, "Display keys must encode as strict UTF-8.", 4)); }
         catch (DecoderFallbackException) { return new(null, InvalidResult()); }
         catch (InvalidPolicyResultException) { return new(null, InvalidResult()); }
         catch (ObjectDisposedException) { return new(null, Error(NativeBoundaryErrorKind.Disposed, "The native policy helper is disposed.")); }
+    }
+
+    private void EnsureAvailable()
+    {
+        bool added = false;
+        try
+        {
+            module.DangerousAddRef(ref added);
+        }
+        finally
+        {
+            if (added)
+            {
+                module.DangerousRelease();
+            }
+        }
     }
 
     internal uint RawApply(uint version, NativeProfileProjection* baseline, NativeProfileProjection* value,

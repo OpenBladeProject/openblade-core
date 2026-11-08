@@ -1,5 +1,5 @@
 //! Additive, stateless policy projection ABI. Codec ABI v1 remains independently usable.
-use crate::{ABSENT, FLAG, Failure, ObErrorV1, RECORD_SIZE, boundary, bytes};
+use crate::{ABSENT, FLAG, Failure, ObErrorV1, RECORD_SIZE, boundary_for_version, bytes};
 use openblade_domain::{
     DisplayProjection, FanControlProjection, ProfileOverride, ProfileProjection,
 };
@@ -228,45 +228,56 @@ pub unsafe extern "C" fn ob_v1_apply_profile(
     written_or_required: *mut u32,
     error: *mut ObErrorV1,
 ) -> u32 {
-    // SAFETY: forwarded exported contract. Policy currently negotiates the same
-    // version value as codec v1, without changing or requiring codec exports.
+    // SAFETY: forwarded exported contract. Policy admission uses only its own version.
     unsafe {
-        boundary(abi_version, written_or_required, error, || {
-            admit_record(result)?;
-            admit_record(baseline)?;
-            let keys = bytes(keys, keys_length)?;
-            let baseline = profile(baseline.read(), keys)?;
-            let baseline = ProfileProjection {
-                performance: baseline.performance.ok_or(ABSENT)?,
-                fans: baseline.fans.ok_or(ABSENT)?,
-                fan_control: baseline.fan_control,
-                display: baseline.display,
-                gaming_mode_enabled: baseline.gaming_mode_enabled,
-            };
-            let override_ = if override_.is_null() {
-                None
-            } else {
-                admit_record(override_)?;
-                Some(profile(override_.read(), keys)?)
-            };
-            let resolved = openblade_domain::apply(Some(baseline), override_).map_err(|_| FLAG)?;
-            let value = resolved.profile;
-            let fan = value.fan_control;
-            let record = ObProfileProjectionV1 {
-                struct_size: 88,
-                performance: encode_optional(Some(value.performance)),
-                fans: encode_optional(Some(value.fans)),
-                fan_mode: fan.map_or(0, |v| v.mode),
-                fixed_speed_rpm: fan.map_or(0, |v| v.fixed_speed_rpm),
-                has_fan_control: u8::from(fan.is_some()),
-                has_display: u8::from(value.display.is_some()),
-                reserved: [0; 2],
-                gaming_mode_enabled: encode_bool(value.gaming_mode_enabled),
-                display: encode_display(value.display.unwrap_or_default())?,
-                fan_control_source: resolved.fan_control_source as u32,
-            };
-            publish(record, result, value.display, output_keys, capacity)
-        })
+        boundary_for_version(
+            abi_version,
+            OB_POLICY_ABI_VERSION,
+            written_or_required,
+            error,
+            || {
+                admit_record(result)?;
+                admit_record(baseline)?;
+                let keys = bytes(keys, keys_length)?;
+                let baseline = profile(baseline.read(), keys)?;
+                let baseline = ProfileProjection {
+                    performance: baseline.performance.ok_or(ABSENT)?,
+                    fans: baseline.fans.ok_or(ABSENT)?,
+                    fan_control: baseline.fan_control,
+                    display: baseline.display,
+                    gaming_mode_enabled: baseline.gaming_mode_enabled,
+                };
+                let override_ = if override_.is_null() {
+                    None
+                } else {
+                    admit_record(override_)?;
+                    Some(profile(override_.read(), keys)?)
+                };
+                let resolved =
+                    openblade_domain::apply(Some(baseline), override_).map_err(|failure| {
+                        match failure {
+                            openblade_domain::PolicyError::BaselineNull => ABSENT,
+                            openblade_domain::PolicyError::InvalidLegacyFanMode => FLAG,
+                        }
+                    })?;
+                let value = resolved.profile;
+                let fan = value.fan_control;
+                let record = ObProfileProjectionV1 {
+                    struct_size: 88,
+                    performance: encode_optional(Some(value.performance)),
+                    fans: encode_optional(Some(value.fans)),
+                    fan_mode: fan.map_or(0, |v| v.mode),
+                    fixed_speed_rpm: fan.map_or(0, |v| v.fixed_speed_rpm),
+                    has_fan_control: u8::from(fan.is_some()),
+                    has_display: u8::from(value.display.is_some()),
+                    reserved: [0; 2],
+                    gaming_mode_enabled: encode_bool(value.gaming_mode_enabled),
+                    display: encode_display(value.display.unwrap_or_default())?,
+                    fan_control_source: resolved.fan_control_source as u32,
+                };
+                publish(record, result, value.display, output_keys, capacity)
+            },
+        )
     }
 }
 
@@ -289,25 +300,31 @@ pub unsafe extern "C" fn ob_v1_apply_display(
 ) -> u32 {
     // SAFETY: forwarded exported contract.
     unsafe {
-        boundary(abi_version, written_or_required, error, || {
-            admit_record(result)?;
-            admit_record(baseline)?;
-            let keys = bytes(keys, keys_length)?;
-            let baseline = display(baseline.read(), keys)?;
-            let override_ = if override_.is_null() {
-                None
-            } else {
-                admit_record(override_)?;
-                Some(display(override_.read(), keys)?)
-            };
-            let value = openblade_domain::apply_display(baseline, override_);
-            publish(
-                encode_display(value)?,
-                result,
-                Some(value),
-                output_keys,
-                capacity,
-            )
-        })
+        boundary_for_version(
+            abi_version,
+            OB_POLICY_ABI_VERSION,
+            written_or_required,
+            error,
+            || {
+                admit_record(result)?;
+                admit_record(baseline)?;
+                let keys = bytes(keys, keys_length)?;
+                let baseline = display(baseline.read(), keys)?;
+                let override_ = if override_.is_null() {
+                    None
+                } else {
+                    admit_record(override_)?;
+                    Some(display(override_.read(), keys)?)
+                };
+                let value = openblade_domain::apply_display(baseline, override_);
+                publish(
+                    encode_display(value)?,
+                    result,
+                    Some(value),
+                    output_keys,
+                    capacity,
+                )
+            },
+        )
     }
 }

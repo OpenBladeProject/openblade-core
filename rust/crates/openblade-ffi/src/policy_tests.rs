@@ -133,7 +133,7 @@ fn utf8_query_and_insufficient_capacity_leave_both_outputs_untouched() {
         // SAFETY: live disjoint records/buffers, capacity covers its writable range.
         let status = unsafe {
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 &baseline,
                 null(),
                 keys.as_ptr(),
@@ -169,7 +169,7 @@ fn utf8_query_and_insufficient_capacity_leave_both_outputs_untouched() {
     // SAFETY: all records and buffers live and disjoint.
     let status = unsafe {
         ob_v1_apply_profile(
-            OB_ABI_VERSION,
+            OB_POLICY_ABI_VERSION,
             &baseline,
             null(),
             keys.as_ptr(),
@@ -273,7 +273,7 @@ fn malformed_policy_inputs_fail_before_publication() {
         // SAFETY: even rejected records have accessible size prefixes; full records and buffers live/disjoint.
         let status = unsafe {
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 &baseline,
                 null(),
                 invalid_utf8.as_ptr(),
@@ -318,7 +318,7 @@ fn empty_absent_false_zero_and_dormant_payloads_are_distinct() {
     // SAFETY: valid records and one readable key byte; no output storage needed for empty result.
     let status = unsafe {
         ob_v1_apply_display(
-            OB_ABI_VERSION,
+            OB_POLICY_ABI_VERSION,
             &baseline,
             &value,
             b"x".as_ptr(),
@@ -350,7 +350,7 @@ fn empty_absent_false_zero_and_dormant_payloads_are_distinct() {
     // SAFETY: all declared record ranges remain live and disjoint.
     let status = unsafe {
         ob_v1_apply_profile(
-            OB_ABI_VERSION,
+            OB_POLICY_ABI_VERSION,
             &baseline,
             null(),
             null(),
@@ -386,7 +386,7 @@ fn legacy_synthesis_is_the_only_scalar_enum_validation_in_merge() {
     unsafe {
         assert_eq!(
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 &baseline,
                 &value,
                 null(),
@@ -411,7 +411,7 @@ fn legacy_synthesis_is_the_only_scalar_enum_validation_in_merge() {
         let sentinel = result;
         assert_eq!(
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 &baseline,
                 &value,
                 null(),
@@ -431,7 +431,7 @@ fn legacy_synthesis_is_the_only_scalar_enum_validation_in_merge() {
         value.fixed_speed_rpm = -456;
         assert_eq!(
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 &baseline,
                 &value,
                 null(),
@@ -501,7 +501,7 @@ fn policy_admission_precedence_and_required_pointers() {
         assert_eq!((err.detail, written), (0, 0));
         assert_eq!(
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 null(),
                 null(),
                 null(),
@@ -518,7 +518,7 @@ fn policy_admission_precedence_and_required_pointers() {
         result.struct_size = 87;
         assert_eq!(
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 null(),
                 null(),
                 null(),
@@ -535,7 +535,7 @@ fn policy_admission_precedence_and_required_pointers() {
         result = sentinel;
         assert_eq!(
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 &baseline,
                 null(),
                 null(),
@@ -551,7 +551,7 @@ fn policy_admission_precedence_and_required_pointers() {
         assert_eq!(err.detail, 5);
         assert_eq!(
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 &baseline,
                 null(),
                 null(),
@@ -567,7 +567,7 @@ fn policy_admission_precedence_and_required_pointers() {
         assert_eq!(err.detail, 5);
         assert_eq!(
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 &baseline,
                 null(),
                 null(),
@@ -583,7 +583,7 @@ fn policy_admission_precedence_and_required_pointers() {
         assert_eq!(err.detail, 5);
         assert_eq!(
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 &baseline,
                 null(),
                 null(),
@@ -599,7 +599,7 @@ fn policy_admission_precedence_and_required_pointers() {
         assert_eq!(err.detail, 5);
         assert_eq!(
             ob_v1_apply_profile(
-                OB_ABI_VERSION,
+                OB_POLICY_ABI_VERSION,
                 &baseline,
                 null(),
                 null(),
@@ -631,7 +631,7 @@ fn both_policy_exports_contain_panics_before_record_or_byte_publication() {
         let status = unsafe {
             if display_call {
                 ob_v1_apply_display(
-                    OB_ABI_VERSION,
+                    OB_POLICY_ABI_VERSION,
                     &baseline.display,
                     null(),
                     null(),
@@ -644,7 +644,7 @@ fn both_policy_exports_contain_panics_before_record_or_byte_publication() {
                 )
             } else {
                 ob_v1_apply_profile(
-                    OB_ABI_VERSION,
+                    OB_POLICY_ABI_VERSION,
                     &baseline,
                     null(),
                     null(),
@@ -675,7 +675,7 @@ fn both_policy_exports_contain_panics_before_record_or_byte_publication() {
 
 #[test]
 fn independent_policy_calls_share_no_state_and_codec_v1_still_works() {
-    assert_eq!(ob_policy_abi_version(), OB_ABI_VERSION);
+    assert_eq!(ob_policy_abi_version(), OB_POLICY_ABI_VERSION);
     assert_eq!(ob_abi_version(), OB_ABI_VERSION);
     let threads: Vec<_> = (0..8)
         .map(|value| {
@@ -689,7 +689,7 @@ fn independent_policy_calls_share_no_state_and_codec_v1_still_works() {
                     // SAFETY: each thread owns every writable range and its immutable baseline.
                     let status = unsafe {
                         ob_v1_apply_profile(
-                            OB_ABI_VERSION,
+                            OB_POLICY_ABI_VERSION,
                             &baseline,
                             null(),
                             null(),
@@ -733,4 +733,27 @@ fn independent_policy_calls_share_no_state_and_codec_v1_still_works() {
         )
     };
     assert_eq!((status, written, err.category), (0, 90, 0));
+}
+
+#[test]
+fn version_admission_uses_the_selected_contract_not_the_codec_constant() {
+    let selected = 0x0002_0000;
+    let mut written = 99;
+    let mut err = error();
+    // SAFETY: live, disjoint error/length outputs; no pointer input or result writes.
+    let status = unsafe {
+        crate::boundary_for_version(selected, selected, &mut written, &mut err, || Ok(0))
+    };
+    assert_eq!((status, written, err.category), (0, 0, 0));
+    let mut called = false;
+    // SAFETY: same output contract; mismatched version must not inspect operation data.
+    let status = unsafe {
+        crate::boundary_for_version(OB_ABI_VERSION, selected, &mut written, &mut err, || {
+            called = true;
+            Ok(0)
+        })
+    };
+    assert_eq!((status, written, err.category), (1, 0, 1));
+    assert!(!called);
+    assert_eq!(ob_policy_abi_version(), OB_POLICY_ABI_VERSION);
 }

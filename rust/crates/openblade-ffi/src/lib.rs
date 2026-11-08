@@ -139,6 +139,17 @@ unsafe fn boundary(
     error: *mut ObErrorV1,
     operation: impl FnOnce() -> Result<u32, Failure>,
 ) -> u32 {
+    // SAFETY: codec callers retain the frozen v1 pointer contract.
+    unsafe { boundary_for_version(version, OB_ABI_VERSION, written, error, operation) }
+}
+
+unsafe fn boundary_for_version(
+    version: u32,
+    expected_version: u32,
+    written: *mut u32,
+    error: *mut ObErrorV1,
+    operation: impl FnOnce() -> Result<u32, Failure>,
+) -> u32 {
     let outcome = match catch_unwind(AssertUnwindSafe(|| {
         if !error.is_null() {
             // SAFETY: caller provides an aligned readable size prefix, even for invalid sizes.
@@ -146,7 +157,7 @@ unsafe fn boundary(
                 return Err(RECORD_SIZE);
             }
         }
-        if version != OB_ABI_VERSION {
+        if version != expected_version {
             return Err(Failure(1, 0, 0));
         }
         if written.is_null() {

@@ -332,7 +332,7 @@ legacy synthesized fan mode to detail 3. Baseline absence maps to detail 5.
 Policy integers are scalar enum payloads, not a new validation boundary. Unknown
 performance and inherited fan values, contradictory fan fields, empty/control/
 long keys and brightness 101..255 survive as they do in C#. Only legacy fan
-synthesis rejects undefined fans 0..3, matching `FromLegacy`'s constructor.
+synthesis rejects fan modes outside 0..3, matching `FromLegacy`'s constructor.
 Direct native callers may supply other signed brightness/fan-control scalars;
 they grant no host admission. The managed adapter accepts only values representable
 by the existing typed host records. The next activation stage must preserve host
@@ -346,9 +346,13 @@ outside this slice. Fan source 0/1/2/3 selects none, the exact baseline object,
 the exact override object, or the existing host legacy defaults. Arbitrary CPU/
 GPU curves and their higher-temperature policy therefore stay host-owned.
 CustomPerformance, GpuClockTuning, Lighting and GamingModeKeyPolicy keep their
-existing host-side override branches. A null application override returns the
-same baseline object; a present override retains the existing unconfigured
-display/behavior behavior. The direct display API requires a nonnull baseline;
+existing host-side override branches. Null application overrides bypass projection
+without consuming keys and return the
+same baseline object, including legacy UTF-16 strings; baseline absence is checked
+before encoding. Consumed keys require strict UTF-8, so present overrides with
+unpaired UTF-16 surrogates return an encoding error. Activation must account for
+this wire limit without silently changing host validation. A present override
+retains the existing unconfigured display and behavior objects. The direct display API requires a nonnull baseline;
 the unused C# null-baseline short-circuit quirks are outside this ABI contract.
 
 Real C# tests link the unchanged C# merge helper as their oracle, consume all 14
@@ -359,3 +363,13 @@ software checks. Product solution/project references, callers, IPC, saved
 schemas, service ownership, hardware admission and product version remain
 unchanged at 0.56.1. Runtime activation is stage 7; there is no production fallback
 or native selection in this stage.
+
+The policy loader checks only policy exports/version and its own path, platform
+and layout admission. A separate test-only C library exports policy v1 without
+any codec symbols to verify independent loading; its work stubs fail and never
+supply parity results. `Test-NativeInterop.ps1` builds this fixture and supplies
+`OPENBLADE_POLICY_ONLY_LIBRARY` to the developer tests. All merge and sentinel
+results still run against the actual Rust library. Native workflow path filters
+include Contracts and the linked authoritative C# merge helper. Contracts codec
+checkout/analyzer LF policies agree so this newly cross-platform build compiles
+unchanged canonical source on Windows, Linux and macOS.

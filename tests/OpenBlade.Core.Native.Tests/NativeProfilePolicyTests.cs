@@ -182,9 +182,48 @@ public sealed unsafe class NativeProfilePolicyTests
     public void UnpairedSurrogatesFailStrictEncodingWithoutSubstitution()
     {
         using NativeProfilePolicy policy = Load();
-        NativeDisplayResult result = policy.ApplyDisplay(new("\uD800", null, null), null);
+        NativeDisplayResult result = policy.ApplyDisplay(new("\uD800", null, null), DisplayProfileSettings.Unconfigured());
         Assert.Equal(NativeBoundaryErrorKind.InvalidArgument, result.Error!.Kind);
         Assert.Equal(4u, result.Error.Detail);
+    }
+
+    [Fact]
+    public void PolicyLoaderNegotiatesWithoutAnyCodecExports()
+    {
+        string path = Environment.GetEnvironmentVariable("OPENBLADE_POLICY_ONLY_LIBRARY")
+            ?? throw new InvalidOperationException("OPENBLADE_POLICY_ONLY_LIBRARY must name the native policy-only negotiation test shim.");
+        NativeCodecLoadResult codec = NativeReportCodec.Load(path);
+        Assert.Equal(NativeBoundaryErrorKind.MissingExport, codec.Error!.Kind);
+        Assert.False(codec.IsSuccess);
+        NativePolicyLoadResult result = NativeProfilePolicy.Load(path);
+        Assert.True(result.IsSuccess, result.Error?.ToString());
+        using NativeProfilePolicy admitted = result.Policy!;
+        // Work-method parity is exercised against the actual Rust artifact above.
+        // This minimal shim proves that policy admission never requests codec exports.
+        Assert.False(NativeProfilePolicy.Load(Path.GetFileName(path)).IsSuccess);
+    }
+
+    [Fact]
+    public void MissingBaselinePrecedesUtf8AndNullOverridePreservesOpaqueUtf16()
+    {
+        using NativeProfilePolicy policy = Load();
+        DisplayProfileSettings display = new("\uD800", null, "\uDC00");
+        PowerProfile baseline = ProfileDefaults.CreateSafeDefaults().PluggedIn with { Display = display };
+        var value = new ApplicationPowerProfileOverride { Display = display };
+        NativeProfileResult missingProfile = policy.Apply(null, value);
+        Assert.Equal(NativeBoundaryErrorKind.InvalidArgument, missingProfile.Error!.Kind);
+        Assert.Equal(5u, missingProfile.Error.Detail);
+        NativeDisplayResult missingDisplay = policy.ApplyDisplay(null, display);
+        Assert.Equal(NativeBoundaryErrorKind.InvalidArgument, missingDisplay.Error!.Kind);
+        Assert.Equal(5u, missingDisplay.Error.Detail);
+        Assert.Same(ApplicationProfileResolution.Apply(baseline, null), policy.Apply(baseline, null).Profile);
+        Assert.Same(ApplicationProfileResolution.ApplyDisplay(display, null), policy.ApplyDisplay(display, null).Display);
+        Assert.Equal(4u, policy.Apply(baseline, new()).Error!.Detail);
+        policy.Dispose();
+        Assert.Equal(NativeBoundaryErrorKind.Disposed, policy.Apply(baseline, null).Error!.Kind);
+        Assert.Equal(NativeBoundaryErrorKind.Disposed, policy.ApplyDisplay(display, null).Error!.Kind);
+        Assert.Equal(NativeBoundaryErrorKind.Disposed, policy.Apply(null, value).Error!.Kind);
+        Assert.Equal(NativeBoundaryErrorKind.Disposed, policy.ApplyDisplay(null, display).Error!.Kind);
     }
 
     [Fact]

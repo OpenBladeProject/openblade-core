@@ -122,7 +122,9 @@ Caught payloads are deliberately forgotten to avoid a second unwind across C.
 The process panic hook is unchanged and may emit diagnostics.
 
 To run only .NET tests after explicitly building Rust, set
-`OPENBLADE_NATIVE_LIBRARY` to the normalized absolute artifact path and run:
+`OPENBLADE_NATIVE_LIBRARY` to the normalized absolute Rust artifact path and
+`OPENBLADE_POLICY_ONLY_LIBRARY` to the same platform filename in its `policy-only/`
+subfolder (built by `Test-NativeInterop.ps1`), then run:
 
 ```text
 dotnet test OpenBlade.Native.slnx -c Release
