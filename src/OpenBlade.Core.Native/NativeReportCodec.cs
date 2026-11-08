@@ -118,7 +118,11 @@ public sealed unsafe class NativeReportCodec : IDisposable
         }
     }
 
-    /// <summary>Encodes without allocating a report graph; publishes only a verified complete result.</summary>
+    /// <summary>
+    /// Encodes from the original payload without allocating a report graph. Payload and
+    /// destination may overlap: FFI output uses separate stack storage and is published
+    /// to destination only after the call has finished reading all input.
+    /// </summary>
     public NativeBoundaryError? EncodeInto(byte transaction, byte commandClass, byte commandId,
         ReadOnlySpan<byte> payload, Span<byte> destination)
     {
@@ -155,6 +159,10 @@ public sealed unsafe class NativeReportCodec : IDisposable
         }
     }
 
+    /// <summary>
+    /// Validates immutable request/response spans, which may alias each other as allowed
+    /// by ABI v1. Native writable output and metadata use separately owned storage.
+    /// </summary>
     public NativeCodecResult ValidateResponse(byte transaction, byte commandClass, byte commandId,
         ReadOnlySpan<byte> requestPayload, ReadOnlySpan<byte> response, int? expectedPayloadLength = null)
     {
