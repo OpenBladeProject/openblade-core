@@ -17,9 +17,9 @@ internal static class Program
 
     private static async Task Main(string[] args)
     {
-        if (args is not [var scenario] || scenario is not ("batch-encode" or "query-validate" or "policy-failure"))
+        if (args is not [var scenario] || scenario is not ("batch-encode" or "query-validate" or "policy-failure" or "automation-failure"))
         {
-            throw new ArgumentException("Choose batch-encode, query-validate or policy-failure.");
+            throw new ArgumentException("Choose batch-encode, query-validate, policy-failure or automation-failure.");
         }
         ProductNativeRuntime.EnsureAvailable();
         if (scenario == "policy-failure")
@@ -27,7 +27,40 @@ internal static class Program
             RunPolicyFailure();
             return;
         }
+        if (scenario == "automation-failure")
+        {
+            RunAutomationFailure();
+            return;
+        }
         await RunAsync(scenario);
+    }
+
+    private static void RunAutomationFailure()
+    {
+        // Pure state only: no service startup, device discovery, handles or writes.
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var state = new OpenBlade.Service.ProfileAutomationState(
+            profiles, new BatteryAutomationPreferences(), PowerSource.PluggedIn);
+        ProductNativeRuntime.Automation.Dispose();
+        Expect<ArgumentNullException>(() => state.Resolve(null!));
+        var invalid = new OpenBlade.Service.ProfileAutomationState(
+            profiles, new BatteryAutomationPreferences(), (PowerSource)999);
+        Expect<InvalidOperationException>(() => invalid.Resolve(new(null, null, null, null)));
+        DesiredDeviceState? published = null;
+        NativeComponentException failure = Expect<NativeComponentException>(() =>
+            published = state.Resolve(new(null, null, null, null)));
+        Require(published is null && failure.Category == (int)NativeBoundaryErrorKind.Disposed,
+            "Automation failure must not publish desired state or select a fallback.");
+        Require(failure.InnerException is null && !failure.Message.Contains((char)92)
+            && !failure.Message.Contains('/'), "Automation failure must remain redacted.");
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            scenario = "automation-failure",
+            passed = true,
+            hostValidationPreserved = true,
+            failure.Category,
+            desiredStatePublished = published is not null,
+        }));
     }
 
     private static void RunPolicyFailure()

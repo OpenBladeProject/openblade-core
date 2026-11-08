@@ -12,6 +12,7 @@ public sealed class ProductNativeRuntimeTests
         ProductNativeRuntime.EnsureAvailable();
         Assert.Same(ProductNativeRuntime.Codec, ProductNativeRuntime.Codec);
         Assert.Same(ProductNativeRuntime.Policy, ProductNativeRuntime.Policy);
+        Assert.Same(ProductNativeRuntime.Automation, ProductNativeRuntime.Automation);
     }
 
     [Theory]

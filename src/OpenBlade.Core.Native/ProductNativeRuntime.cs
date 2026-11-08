@@ -12,6 +12,7 @@ public static class ProductNativeRuntime
 
     public static NativeReportCodec Codec => State.Value.Codec;
     public static NativeProfilePolicy Policy => State.Value.Policy;
+    public static NativeAutomationPolicy Automation => State.Value.Automation;
 
     public static void EnsureAvailable() => _ = State.Value;
 
@@ -30,6 +31,7 @@ public static class ProductNativeRuntime
         FileStream? lease = null;
         NativeReportCodec? codec = null;
         NativeProfilePolicy? policy = null;
+        NativeAutomationPolicy? automation = null;
         try
         {
             Assembly assembly = typeof(ProductNativeRuntime).Assembly;
@@ -65,15 +67,19 @@ public static class ProductNativeRuntime
             NativePolicyLoadResult policyResult = NativeProfilePolicy.Load(path);
             policy = policyResult.Policy;
             if (!policyResult.IsSuccess) { throw new NativeComponentException(policyResult.Error!); }
+            NativeAutomationLoadResult automationResult = NativeAutomationPolicy.Load(path);
+            automation = automationResult.Policy;
+            if (!automationResult.IsSuccess) { throw new NativeComponentException(automationResult.Error!); }
             VerifyHash(lease, hash);
 
-            // Deliberately retain both safe module handles and the no-write/no-delete
+            // Deliberately retain all safe module handles and the no-write/no-delete
             // file lease until process exit. Host shutdown still uses codec/policy
             // during keyboard/fan restoration; DI disposal must not unload them.
-            return new RuntimeState(codec!, policy!, lease);
+            return new RuntimeState(codec!, policy!, automation!, lease);
         }
         catch (NativeComponentException)
         {
+            automation?.Dispose();
             policy?.Dispose();
             codec?.Dispose();
             lease?.Dispose();
@@ -83,6 +89,7 @@ public static class ProductNativeRuntime
             or JsonException or InvalidOperationException or KeyNotFoundException
             or ArgumentException or NotSupportedException or FormatException)
         {
+            automation?.Dispose();
             policy?.Dispose();
             codec?.Dispose();
             lease?.Dispose();
@@ -110,10 +117,11 @@ public static class ProductNativeRuntime
         _ => null,
     };
 
-    internal sealed record RuntimeState(NativeReportCodec Codec, NativeProfilePolicy Policy, FileStream Lease) : IDisposable
+    internal sealed record RuntimeState(NativeReportCodec Codec, NativeProfilePolicy Policy, NativeAutomationPolicy Automation, FileStream Lease) : IDisposable
     {
         public void Dispose()
         {
+            Automation.Dispose();
             Policy.Dispose();
             Codec.Dispose();
             Lease.Dispose();
