@@ -101,7 +101,8 @@ Use these representation rules:
   validation adds a response slice and optional expected payload length.
   Encoding returns exactly 90 protocol bytes, excluding Windows' report-ID
   prefix. Validation returns a copied payload of at most 80 bytes.
-- The future profile helper (not exported in stage 4) will take a required baseline and optional override with
+- The future profile helper (not exported in stage 4) will take a required baseline
+  and optional override with
   explicit presence for each projected field, including fan-control/display
   objects. Its v1 slice contains performance, legacy fan mode, fan-control mode
   and fixed RPM, display keys/HDR/brightness, and gaming-mode enabled. Curves
@@ -139,7 +140,8 @@ Protocol details retain `ReportId=0`, `EnvelopeLength=1`, `Checksum=2`,
 `TransactionMismatch=3`, `CommandClassMismatch=4`, `CommandIdMismatch=5`,
 `Status=6`, `PayloadLength=7`, `PayloadValidator=8`. The pure report validator
 emits only 1 through 7; report ID and semantic payload checks remain outside it.
-A later production host adapter will map category/detail to the existing taxonomy, preserving
+A later production host adapter will map category/detail to the existing taxonomy,
+preserving
 validation failure and submission state. A pure-helper failure never means a
 hardware command was submitted, and cannot reinterpret an earlier ambiguous
 submission as safe to retry. Fixture `payload-too-large` maps to invalid-argument
@@ -149,9 +151,12 @@ buffer rule is separately tested and does not change C#'s exact-span contract.
 
 Contain panics inside every work export with an unwind-catching boundary;
 validate and compute into bounded temporary storage before publishing output.
-No panic or C++/managed exception may unwind across the ABI. The later build
-must support catching Rust unwinds; aborts, allocation failure or process faults
-cannot be converted into recoverable errors and must not be described as such.
+No panic or C++/managed exception may unwind across the ABI. Both checked-in build
+profiles use unwind panic handling. The boundary deliberately forgets a caught
+panic payload so its destructor cannot trigger another unwind across C; this
+exceptional path leaks that payload. The process panic hook remains unchanged
+and may emit diagnostics. Aborts, allocation failure and process faults cannot
+be converted into recoverable errors.
 Independent calls may run concurrently using disjoint caller buffers. No helper
 acquires the service hardware queue or changes host serialization. The first
 binding must test parallel calls, malformed lengths/flags/UTF-8, buffer queries,

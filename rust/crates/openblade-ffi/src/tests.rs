@@ -354,11 +354,11 @@ fn both_exports_contain_panics_before_publication() {
     let req = request();
     let opts = options();
     let valid = response(&[7]);
-    for validate in [false, true] {
+    for (panic_kind, validate) in [(1, false), (1, true), (2, false), (2, true)] {
         let mut output = [0xA5; 90];
         let mut written = 77;
         let mut err = error();
-        PANIC_NEXT.with(|flag| flag.set(true));
+        PANIC_NEXT.with(|flag| flag.set(panic_kind));
         // SAFETY: live records/buffers, disjoint writable ranges.
         let status = unsafe {
             if validate {

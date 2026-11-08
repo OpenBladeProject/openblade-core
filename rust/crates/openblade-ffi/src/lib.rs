@@ -139,7 +139,7 @@ unsafe fn boundary(
     error: *mut ObErrorV1,
     operation: impl FnOnce() -> Result<u32, Failure>,
 ) -> u32 {
-    let outcome = catch_unwind(AssertUnwindSafe(|| {
+    let outcome = match catch_unwind(AssertUnwindSafe(|| {
         if !error.is_null() {
             // SAFETY: caller provides an aligned readable size prefix, even for invalid sizes.
             if unsafe { error.cast::<u32>().read() } != mem::size_of::<ObErrorV1>() as u32 {
@@ -153,8 +153,16 @@ unsafe fn boundary(
             return Err(ABSENT);
         }
         operation()
-    }))
-    .unwrap_or(Err(Failure(5, 0, 0)));
+    })) {
+        Ok(result) => result,
+        Err(payload) => {
+            // A panic payload can itself panic on Drop. Never run arbitrary
+            // destructors outside the unwind boundary. Deliberately leak this
+            // exceptional payload rather than unwind across C; normal calls leak nothing.
+            mem::forget(payload);
+            Err(Failure(5, 0, 0))
+        }
+    };
     let (category, detail, required, length) = match outcome {
         Ok(length) => (0, 0, 0, length),
         Err(Failure(category, detail, required)) => (
@@ -253,14 +261,20 @@ pub unsafe extern "C" fn ob_v1_validate_response(
 }
 
 #[cfg(test)]
-std::thread_local! { static PANIC_NEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+std::thread_local! { static PANIC_NEXT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) }; }
 #[cfg(test)]
 fn panic_injection() {
-    PANIC_NEXT.with(|flag| {
-        if flag.replace(false) {
-            panic!("private boundary containment test");
+    struct PanickingDrop;
+    impl Drop for PanickingDrop {
+        fn drop(&mut self) {
+            panic!("caught payload destructor must never run across C");
         }
-    });
+    }
+    match PANIC_NEXT.with(|flag| flag.replace(0)) {
+        1 => panic!("private boundary containment test"),
+        2 => std::panic::panic_any(PanickingDrop),
+        _ => {}
+    }
 }
 
 #[cfg(test)]

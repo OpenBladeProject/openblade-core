@@ -11,10 +11,20 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Cannot determine the Rust host.' }
     $hostTarget = (($version | Where-Object { $_ -like 'host: *' }) -replace '^host: ', '').Trim()
     if (-not $Target) { $Target = $hostTarget }
+    $reviewedTargets = @(
+        'x86_64-pc-windows-msvc',
+        'x86_64-unknown-linux-gnu',
+        'x86_64-apple-darwin',
+        'aarch64-apple-darwin'
+    )
+    if ($Target -cnotin $reviewedTargets) {
+        throw "Unsupported native interop target: $Target. Only the four reviewed native CI targets are supported."
+    }
     if ($Target -cne $hostTarget) { throw 'Native interop tests must execute on the selected target host.' }
 
-    # Import MSVC environment only into this process, without installing tools.
-    if ($IsWindows -and -not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+    # Always select x64, even inside a pre-existing x86 developer prompt.
+    # Import the environment only into this process, without installing tools.
+    if ($IsWindows) {
         $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
         if (-not (Test-Path -LiteralPath $vswhere)) { throw 'MSVC Build Tools are required for the C header test.' }
         $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

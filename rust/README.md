@@ -35,7 +35,8 @@ typed JSON and duplicate-field rejection without adding a handwritten parser.
 Production libraries have only inward local dependencies. The workspace guard
 checks the four libraries, reviewed test targets/dependencies, MSRV and compiler
 policies independently of the caller's directory. Its regression tests use
-disposable workspace copies. Inner crates retain `no_std` and inherit `unsafe_code = "forbid"`. Only the FFI
+disposable workspace copies. Inner crates retain `no_std` and inherit
+`unsafe_code = "forbid"`. Only the FFI
 crate permits the documented pointer/export boundary, with unsafe operations
 explicitly marked and `unsafe_op_in_unsafe_fn` denied. Both dev and release
 profiles retain unwind panic handling; aborts and process faults are not caught.
@@ -114,7 +115,9 @@ report cases, native buffer/error contracts, output integrity, concurrent calls
 and module disposal. The two canonical destination-length cases concern the
 existing exact-span C# API; the ABI separately admits any capacity at least 90.
 The Rust boundary tests trigger private test-only panics through the real work
-exports; no production panic hook exists.
+exports with ordinary and destructor-panicking payloads; no test export exists.
+Caught payloads are deliberately forgotten to avoid a second unwind across C.
+The process panic hook is unchanged and may emit diagnostics.
 
 To run only .NET tests after explicitly building Rust, set
 `OPENBLADE_NATIVE_LIBRARY` to the normalized absolute artifact path and run:

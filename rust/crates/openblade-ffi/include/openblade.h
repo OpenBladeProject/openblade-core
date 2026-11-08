@@ -56,7 +56,9 @@ typedef struct ObErrorV1 {
  * insufficient capacity changes no result bytes and sets written to required;
  * every other failure changes no result bytes and sets written to zero when
  * supplied. Caller memory ownership never transfers. Panic unwinds are caught;
- * aborts, allocation failure and process faults are not recoverable errors.
+ * caught panic payloads are deliberately forgotten to prevent destructor panics.
+ * The process panic hook is unchanged and may emit diagnostics. Aborts,
+ * allocation failure and process faults are not recoverable errors.
  * Concurrent calls require disjoint writable buffers. No exported test hooks.
  * Admission precedence: error record size, ABI version, written pointer,
  * request size/reserved, payload bound/pointer, options size/flags/reserved,
