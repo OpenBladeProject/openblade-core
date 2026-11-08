@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 
 namespace OpenBlade.Service;
 
@@ -10,6 +11,10 @@ public sealed class ServiceStartupCoordinator(
     IPowerStateProvider powerStateProvider,
     ILogger logger)
 {
+    // Post-initialization startup can already own Driver mode before later
+    // reconciliation fails. It still needs the normal guarded shutdown cleanup.
+    internal bool RuntimeInitialized { get; private set; }
+
     public async Task<bool> InitializeAsync(CancellationToken cancellationToken)
     {
         BatteryConfiguration configuration;
@@ -64,6 +69,7 @@ public sealed class ServiceStartupCoordinator(
             powerSource,
             persistentOverrides.Overrides,
             recoveringUnexpectedExit);
+        RuntimeInitialized = true;
 
         try
         {
@@ -85,7 +91,7 @@ public sealed class ServiceStartupCoordinator(
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             logger.LogError(
                 exception,

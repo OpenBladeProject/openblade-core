@@ -225,7 +225,7 @@ public sealed class WorkerTests
         int cleanupCalls = 0;
 
         bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
-            startupCompleted: true,
+            runtimeInitialized: true,
             intentionalStop: false,
             _ =>
             {
@@ -242,13 +242,13 @@ public sealed class WorkerTests
     }
 
     [Fact]
-    public async Task StartupFailure_SkipsCleanupWithoutHardwareWarning()
+    public async Task UninitializedStartup_SkipsCleanupWithoutHardwareWarning()
     {
         bool cleanupCalled = false;
         var logger = new RecordingLogger();
 
         bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
-            startupCompleted: false,
+            runtimeInitialized: false,
             intentionalStop: false,
             _ =>
             {
@@ -265,7 +265,7 @@ public sealed class WorkerTests
         LogEntry entry = Assert.Single(logger.Entries);
         Assert.Equal(LogLevel.Information, entry.Level);
         Assert.Contains(
-            "startup did not complete",
+            "runtime was not initialized",
             entry.Message,
             StringComparison.OrdinalIgnoreCase);
     }
@@ -321,7 +321,7 @@ public sealed class WorkerTests
         bool expected)
     {
         bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
-            startupCompleted: true,
+            runtimeInitialized: true,
             intentionalStop: true,
             _ => Task.FromResult(new ControlOperationResult(status, "result")),
             new RecordingLogger(),

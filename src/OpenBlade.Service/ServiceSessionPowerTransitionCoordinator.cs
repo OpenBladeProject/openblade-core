@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 
 namespace OpenBlade.Service;
 
@@ -14,6 +15,8 @@ public sealed class ServiceSessionPowerTransitionCoordinator
     private readonly IServiceControlRuntime runtime;
     private readonly LowPowerGate gate;
     private readonly CancellationToken stoppingToken;
+    private readonly TaskCompletionSource<NativeComponentException> nativeFailure =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private AgentInstance? agentInstance;
     private long lastSequence;
     private Work? active;
@@ -30,6 +33,15 @@ public sealed class ServiceSessionPowerTransitionCoordinator
         this.gate = gate ?? throw new ArgumentNullException(nameof(gate));
         stoppingToken = applicationLifetime?.ApplicationStopping ?? CancellationToken.None;
         gate.TransitionChanged += CancelSupersededWork;
+    }
+
+    // A relay caller can stop waiting before its accepted operation fails. The
+    // Worker supervises this independent signal along with the other producers.
+    internal async Task WaitForNativeFailureAsync(CancellationToken cancellationToken)
+    {
+        NativeComponentException exception = await nativeFailure.Task
+            .WaitAsync(cancellationToken).ConfigureAwait(false);
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
     }
 
     private void CancelSupersededWork()
@@ -149,6 +161,10 @@ public sealed class ServiceSessionPowerTransitionCoordinator
         Task<ControlOperationResult> result;
         lock (sync)
         {
+            if (nativeFailure.Task.IsCompleted)
+            {
+                return Task.FromResult(NativeFailureResult());
+            }
             if (transition.Generation != gate.Generation
                 || transition.Generation < lastCompletedGeneration
                 || (pending is not null && transition.Generation < pending.Transition.Generation))
@@ -211,6 +227,23 @@ public sealed class ServiceSessionPowerTransitionCoordinator
             try
             {
                 result = await ProcessAsync(work).ConfigureAwait(false);
+            }
+            catch (NativeComponentException exception)
+            {
+                // Permanently close this queue before notifying supervision. A
+                // new notification must never retry the broken native policy.
+                lock (sync)
+                {
+                    nativeFailure.TrySetResult(exception);
+                    if (pending is not null)
+                    {
+                        gate.ReleaseResumeGeneration(pending.Transition.Generation);
+                        pending.Completion.TrySetResult(NativeFailureResult());
+                        pending.Cancellation.Dispose();
+                        pending = null;
+                    }
+                }
+                result = NativeFailureResult();
             }
             catch (Exception exception)
             {
@@ -327,6 +360,10 @@ public sealed class ServiceSessionPowerTransitionCoordinator
 
     private TimeSpan Remaining(long timestamp) => MaximumAge
         - gate.TimeProvider.GetElapsedTime(timestamp, gate.GetTimestamp());
+
+    private static ControlOperationResult NativeFailureResult() =>
+        new(ControlOperationStatus.Failed,
+            "Power notification processing stopped because the required native component failed; the service is stopping.");
 
     private static ControlOperationResult Accepted(string message) =>
         new(ControlOperationStatus.Stored, message);

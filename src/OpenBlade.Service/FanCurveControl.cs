@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 using OpenBlade.Platform;
 
 namespace OpenBlade.Service;
@@ -826,7 +827,7 @@ public sealed class ServiceFanCurveLoop(
                 {
                     return;
                 }
-                catch (Exception exception)
+                catch (Exception exception) when (exception is not NativeComponentException)
                 {
                     logger.LogWarning(exception, "Manual fan-curve maintenance failed.");
                 }

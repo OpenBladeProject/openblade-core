@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$Payload)
+param([string]$Payload, [string]$DeveloperTools)
 
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
@@ -123,12 +123,63 @@ try {
         if (-not $pullRequest -or $pullRequest.Contains('branches:')) { throw "$workflow must validate stacked PR bases." }
     }
 
+    # Packaging must reuse its native payload and selected configuration. Stub only
+    # dotnet so this contract test never loads the data-only DLL fixture.
+    $shadowPayload = Join-Path $testRoot 'shadow'
+    New-Item -ItemType Directory -Path $shadowPayload | Out-Null
+    $shadowLibrary = Join-Path $shadowPayload 'openblade_ffi.dll'
+    [IO.File]::WriteAllBytes($shadowLibrary, [byte[]]::new(1))
+    $shadowManifest = Join-Path $shadowPayload 'OpenBlade.Native.provenance.json'
+    [IO.File]::WriteAllText($shadowManifest, '{}')
+    $shadowInvocation = @{ Arguments = @(); LibraryEnvironment = $null }
+    function dotnet {
+        $shadowInvocation.Arguments = @($args)
+        $shadowInvocation.LibraryEnvironment = $env:OPENBLADE_NATIVE_LIBRARY
+        $global:LASTEXITCODE = 0
+    }
+    $previousShadowLibrary = $env:OPENBLADE_NATIVE_LIBRARY
+    try {
+        $env:OPENBLADE_NATIVE_LIBRARY = 'preserved-test-value'
+        & (Join-Path $repository 'rust/Compare-Shadow.ps1') -LibraryPath $shadowLibrary -Configuration Debug -NativePayloadDirectory $shadowPayload | Out-Null
+        $configurationIndex = [Array]::IndexOf($shadowInvocation.Arguments, '--configuration')
+        if ($configurationIndex -lt 0 -or $shadowInvocation.Arguments[$configurationIndex + 1] -cne 'Debug' -or
+            '-p:OpenBladeNativeDevelopmentBuild=false' -cnotin $shadowInvocation.Arguments -or
+            "-p:OpenBladeNativePayloadDirectory=$shadowPayload" -cnotin $shadowInvocation.Arguments -or
+            $shadowInvocation.LibraryEnvironment -cne $shadowLibrary -or
+            $env:OPENBLADE_NATIVE_LIBRARY -cne 'preserved-test-value') {
+            throw 'Packaging shadow comparison did not reuse the selected payload/configuration or restore its environment.'
+        }
+        & (Join-Path $repository 'rust/Compare-Shadow.ps1') -LibraryPath $shadowLibrary | Out-Null
+        $configurationIndex = [Array]::IndexOf($shadowInvocation.Arguments, '--configuration')
+        if ($configurationIndex -lt 0 -or $shadowInvocation.Arguments[$configurationIndex + 1] -cne 'Release' -or
+            @($shadowInvocation.Arguments | Where-Object { $_ -like '-p:OpenBladeNativePayloadDirectory=*' -or $_ -like '-p:OpenBladeNativeDevelopmentBuild=*' }).Count -ne 0) {
+            throw 'Ordinary shadow comparison lost its development-build defaults.'
+        }
+        Remove-Item -LiteralPath $shadowManifest
+        Assert-NativeThrows {
+            & (Join-Path $repository 'rust/Compare-Shadow.ps1') -LibraryPath $shadowLibrary -NativePayloadDirectory $shadowPayload
+        } '*existing native payload*'
+    }
+    finally {
+        Remove-Item Function:dotnet
+        $env:OPENBLADE_NATIVE_LIBRARY = $previousShadowLibrary
+    }
+
     # The installer lane supplies a real compiled payload. The contract lane can
     # inspect malformed PE bytes without installing Rust, MSVC, or product files.
     if ($Payload) {
         $manifest = Get-Content -LiteralPath (Join-Path $Payload 'OpenBlade.Native.provenance.json') -Raw | ConvertFrom-Json
         $identity = [pscustomobject]@{ Version = $manifest.productVersion; FileVersion = $manifest.fileVersion }
         Assert-OpenBladeNativePayload -Payload $Payload -Repository $repository -BuildIdentity $identity
+        if ($DeveloperTools) {
+            Assert-OpenBladeNativePayload -Payload $DeveloperTools -Repository $repository -BuildIdentity $identity
+            foreach ($nativeFile in @('openblade_ffi.dll', 'OpenBlade.Native.provenance.json', 'OpenBlade.Native.NOTICE.txt')) {
+                if ((Get-FileHash -LiteralPath (Join-Path $Payload $nativeFile) -Algorithm SHA256).Hash -cne
+                    (Get-FileHash -LiteralPath (Join-Path $DeveloperTools $nativeFile) -Algorithm SHA256).Hash) {
+                    throw "Developer tools must carry the same native DLL, provenance and notices: $nativeFile"
+                }
+            }
+        }
         $copy = Join-Path $testRoot 'payload'
         New-Item -ItemType Directory -Path $copy | Out-Null
         foreach ($file in @('openblade_ffi.dll', 'OpenBlade.Native.provenance.json', 'OpenBlade.Native.NOTICE.txt')) {

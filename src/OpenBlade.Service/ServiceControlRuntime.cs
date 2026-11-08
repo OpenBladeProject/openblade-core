@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Principal;
 using System.Text;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
@@ -3379,7 +3380,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 await SaveCommittedLightingPreferencesAsync(staged, token)
                     .ConfigureAwait(false);
             }
-            catch (Exception saveException) when (delegateToWindows)
+            catch (Exception saveException) when (delegateToWindows
+                && saveException is not NativeComponentException)
             {
                 try
                 {
@@ -3391,7 +3393,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                             "The previous lighting renderer could not be restored.");
                     }
                 }
-                catch (Exception restoreException)
+                catch (Exception restoreException) when (restoreException is not NativeComponentException)
                 {
                     throw new AggregateException(
                         "The lighting-control preference could not be saved and the previous renderer could not be restored.",
@@ -4537,7 +4539,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             string refreshMessage =
                 $"{message} Laptop status will refresh automatically. {exception.Message}";
@@ -4650,7 +4652,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             string message = $"Experimental controls remain paused. {exception.Message}";
             PublishIfChanged(GetStatus() with { Message = message });
@@ -12283,7 +12285,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             history.RecordSummary(ControlOperationStatus.Failed, canceled);
             return new ControlOperationResult(ControlOperationStatus.Failed, canceled);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             string failure =
                 $"HyperBoost lifecycle restoration failed. OpenBlade will not retry it: {exception.Message}";
@@ -12613,7 +12615,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return new(ControlOperationStatus.Blocked,
                 "Keyboard standby Off exhausted its preparation budget before confirmation.");
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             return new(ControlOperationStatus.Failed,
                 $"Keyboard standby Off could not be prepared: {exception.Message}");
@@ -16798,7 +16800,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             PublishVerifiedDeviceObservationFailure(
                 powerSource,
@@ -19493,7 +19495,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     explicitReapplyRequired: true);
             }
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             history.RecordSummary(
                 ControlOperationStatus.Failed,

@@ -15,6 +15,7 @@
     "build/Run-AffectedCi.ps1"
   ],
   "fullInstallerPatterns": [
+    "src/OpenBlade.Core.Native/*",
     "rust/*",
     "build/NativePayload.ps1",
     "build/Build-NativeDevelopment.ps1",

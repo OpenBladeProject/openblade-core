@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
@@ -17855,6 +17856,48 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Maximum, context.Runtime.GetStatus().FanOverride!.Value);
         Assert.Equal(FanMode.Maximum, context.Runtime.GetStatus().ConfirmedState!.Fans);
         Assert.Equal(1, context.Device.FanSetCalls);
+    }
+
+    [Fact]
+    public async Task ObserveAsync_NativeFailurePropagatesWithoutPublishingDeviceFailureOrWriting()
+    {
+        TestContext context = CreateWritableContext();
+        var expected = new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        int writes = context.Device.TotalSetterCalls;
+        context.Device.ReadStateFailure = expected;
+
+        NativeComponentException actual = await Assert.ThrowsAsync<NativeComponentException>(
+            () => context.Runtime.ObserveAsync(CancellationToken.None));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+        Assert.Equal(before.DeviceVerified, context.Runtime.GetStatus().DeviceVerified);
+        Assert.DoesNotContain(context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(expected.Message, StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_NativeFailureStopsConsumerWithoutRetryOrWrites()
+    {
+        ThermalConvergenceTestContext thermal = await CreateThermalConvergenceContextAsync("native-failure");
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        int writes = thermal.Context.Device.TotalSetterCalls;
+        var expected = new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
+        thermal.Context.Device.ReadStateFailure = expected;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        NativeComponentException actual = await Assert.ThrowsAsync<NativeComponentException>(
+            () => thermal.Context.Runtime.RunThermalConvergenceAsync(cancellation.Token));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(writes, thermal.Context.Device.TotalSetterCalls);
+        Assert.DoesNotContain(thermal.Context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains("Maintain thermal convergence stopped safely", StringComparison.Ordinal) == true);
     }
 
     [Fact]

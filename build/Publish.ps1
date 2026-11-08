@@ -240,7 +240,8 @@ try {
     foreach ($nativeFile in @('openblade_ffi.dll', 'OpenBlade.Native.provenance.json', 'OpenBlade.Native.NOTICE.txt')) {
         Copy-Item -LiteralPath (Join-Path $nativeOutput $nativeFile) -Destination (Join-Path $payload $nativeFile)
     }
-    & (Join-Path $repository 'rust/Compare-Shadow.ps1') -LibraryPath (Join-Path $payload 'openblade_ffi.dll')
+    & (Join-Path $repository 'rust/Compare-Shadow.ps1') -LibraryPath (Join-Path $payload 'openblade_ffi.dll') `
+        -Configuration $Configuration -NativePayloadDirectory $nativeOutput
     if ($LASTEXITCODE -ne 0) { throw 'Developer native shadow comparison failed.' }
 
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Service\OpenBlade.Service.csproj') `
@@ -269,6 +270,10 @@ try {
     # contains a portable-PDB debug directory.
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Capture\OpenBlade.Capture.csproj') `
         $stagingDeveloperTools ($productionPublishArguments + @('--self-contained', 'true'))
+    # Capture carries the same native DLL and must retain its provenance and notices.
+    foreach ($nativeMetadata in @('OpenBlade.Native.provenance.json', 'OpenBlade.Native.NOTICE.txt')) {
+        Copy-Item -LiteralPath (Join-Path $nativeOutput $nativeMetadata) -Destination (Join-Path $stagingDeveloperTools $nativeMetadata)
+    }
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj') `
         $stagingBundle ($productionPublishArguments + $setupPublishArguments + @('--self-contained', 'true'))
     $forbiddenDevelopmentPayload = Get-ChildItem `
@@ -338,10 +343,6 @@ try {
         -DestinationDirectory $stagingPrerequisites)
     $embedDotNetRuntime = if ($OfflineInstaller) { 'yes' } else { 'no' }
 
-    # Confirm the copied build artifact before signing may legitimately alter it.
-    # Updating the final hash must never bless an unexpected pre-sign replacement.
-    Assert-OpenBladeNativePayload -Payload $payload -Repository $repository `
-        -BuildIdentity $buildIdentity -ExpectedUnsignedSha256 $nativeUnsignedSha256
     if ($signingEnabled) {
         foreach ($file in Get-ChildItem -LiteralPath $stagingBundle -Recurse -File |
             Where-Object {
@@ -356,12 +357,13 @@ try {
             -ResolvedSignTool $resolvedSignTool
     }
 
-    # Signing changes PE bytes. Bind provenance to the final embedded artifact,
-    # retaining the unsigned build hash separately for reproducibility checks.
-    Update-OpenBladeNativePayloadHash -Payload $payload
-    Assert-OpenBladeNativePayload -Payload $payload -Repository $repository `
-        -BuildIdentity $buildIdentity -ExpectedUnsignedSha256 $nativeUnsignedSha256 -RequireSignature:$signingEnabled
-    & (Join-Path $repository 'tests/Build.Tests/NativePayload.Tests.ps1') -Payload $payload
+    # Native signing precedes managed compilation. Verify both final copies against
+    # that fixed manifest; never rewrite its hash to bless changed payload bytes.
+    foreach ($nativePayload in @($payload, $stagingDeveloperTools)) {
+        Assert-OpenBladeNativePayload -Payload $nativePayload -Repository $repository `
+            -BuildIdentity $buildIdentity -ExpectedUnsignedSha256 $nativeUnsignedSha256 -RequireSignature:$signingEnabled
+    }
+    & (Join-Path $repository 'tests/Build.Tests/NativePayload.Tests.ps1') -Payload $payload -DeveloperTools $stagingDeveloperTools
 
     New-Item -ItemType Directory -Path $stagingInstallerOutput -Force | Out-Null
     $installerBuildArguments = @(

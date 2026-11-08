@@ -173,10 +173,27 @@ public sealed class ServicePeriodicObservationLoopTests
                 StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task FanCurveLoop_NativePolicyFailureStopsWithoutRetry()
+    {
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var expected = new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
+        var runtime = new RecordingRuntime(cancellation) { FanCurveFailure = expected };
+        var loop = new ServiceFanCurveLoop(runtime, NullLogger.Instance);
+
+        NativeComponentException actual = await Assert.ThrowsAsync<NativeComponentException>(
+            () => loop.RunAsync(cancellation.Token));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(1, runtime.FanCurveCalls);
+    }
+
     private sealed class RecordingRuntime(CancellationTokenSource cancellation)
         : IServiceControlRuntime
     {
         public int RefreshCalls { get; private set; }
+        public int FanCurveCalls { get; private set; }
+        public Exception? FanCurveFailure { get; init; }
         public int DriverModeMaintenanceCalls { get; private set; }
         public int RestoreCalls { get; private set; }
         public int ThermalObservationCalls { get; private set; }
@@ -244,6 +261,12 @@ public sealed class ServicePeriodicObservationLoopTests
                 cancellation.Cancel();
             }
             return Task.CompletedTask;
+        }
+
+        public Task MaintainFanCurveAsync(CancellationToken cancellationToken)
+        {
+            FanCurveCalls++;
+            return FanCurveFailure is null ? Task.CompletedTask : Task.FromException(FanCurveFailure);
         }
 
         public Task MaintainDriverModeAsync(CancellationToken cancellationToken)
