@@ -425,3 +425,17 @@ switch. The original canonical fixtures are retained. Native interop runs on all
 four existing host targets; affected Windows integration and package tests check
 the coordinated payload and failure paths. See [native development](../rust/README.md)
 for the new ordinary build requirements.
+
+## Developer-only read-only status CLI
+
+The separate std binary [openblade-status-cli](../rust/crates/openblade-status-cli/README.md)
+reads the existing Windows service's cached GetStatus snapshot through its v51
+read-only compatibility path (current service IPC is v78). It has no dependency
+on the four shared libraries and is excluded from product packaging. JSON and
+OS/runtime dependencies belong to this CLI alone; the existing inner no_std,
+unsafe and inward-dependency rules remain authoritative.
+
+The guide records the compatibility lease's temporary thermal-admission effect,
+redaction, unknown telemetry freshness, identity limits and bounded cancellation.
+The Windows pipe module is the transport seam for future OS work. Other systems
+currently return unsupported transport without reporting invented device state.

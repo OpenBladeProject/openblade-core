@@ -56,6 +56,26 @@ try {
         @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = '[dev-dependencies]'; After = "[[test]]`nname = 'unexpected'`npath = 'src/lib.rs'`n`n[dev-dependencies]"; Error = 'Unreviewed target*' },
         @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[dependencies]`nserde_json = '=1.0.149'`n`n[lints]"; Error = 'Unreviewed dependency kind*' }
     )
+    # The std CLI is a leaf: only its exact reviewed binary and registry roots.
+    $cliManifest = 'crates/openblade-status-cli/Cargo.toml'
+    $cases += @(
+        @{ Path = $cliManifest; Before = '[lints]'; After = "[features]`nextra = []`n`n[lints]"; Error = 'CLI package features are not admitted*' },
+        @{ Path = $cliManifest; Before = "[lints]`nworkspace = true"; After = ''; Error = 'Required lints policy*' },
+        @{ Path = $cliManifest; Before = '[dependencies]'; After = '[dev-dependencies]'; Error = 'Unreviewed dependency kind*' },
+        @{ Path = $cliManifest; Before = '[dependencies]'; After = '[build-dependencies]'; Error = 'Unreviewed dependency kind*' },
+        @{ Path = $cliManifest; Before = '=1.54.1'; After = '^1.54.1'; Error = 'Unreviewed dependency kind*' },
+        @{ Path = $cliManifest; Before = '"signal", "macros"'; After = '"signal", "macros", "rt-multi-thread"'; Error = 'Unreviewed CLI dependency features*' },
+        @{ Path = $cliManifest; Before = '"signal", "macros"'; After = '"macros"'; Error = 'Unreviewed CLI dependency features*' },
+        @{ Path = $cliManifest; Before = 'version = "=1.54.1"'; After = 'version = "=1.54.1", default-features = false'; Error = 'Unreviewed dependency kind*' },
+        @{ Path = $cliManifest; Before = 'serde_json = "=1.0.149"'; After = ''; Error = 'CLI dependencies changed*' },
+        @{ Path = $cliManifest; Before = '[dependencies]'; After = "[dependencies]`nopenblade-types = { path = '../openblade-types' }"; Error = 'Production dependency boundary changed*' },
+        @{ Path = $cliManifest; Before = '[lints]'; After = "[dev-dependencies]`nserde_json = '=1.0.149'`n`n[lints]"; Error = 'Unreviewed dependency kind*' },
+        @{ Path = $cliManifest; Before = '[lints]'; After = "[[bin]]`nname = 'unexpected'`npath = 'src/main.rs'`n`n[lints]"; Error = 'The CLI requires only its reviewed*' },
+        @{ Path = $cliManifest; Before = '[lints]'; After = "[lib]`npath = 'src/main.rs'`n`n[lints]"; Error = 'The CLI requires only its reviewed*' },
+        @{ Path = $cliManifest; Before = '[lints]'; After = "[[test]]`nname = 'unexpected'`npath = 'src/main.rs'`n`n[lints]"; Error = 'The CLI requires only its reviewed*' },
+        @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[dependencies]`ntokio = { version = '=1.54.1', features = ['rt'] }`n`n[lints]"; Error = 'Unreviewed dependency kind*' },
+        @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[dependencies]`nopenblade-status-cli = { path = '../openblade-status-cli' }`n`n[lints]"; Error = 'Production dependency boundary changed*' }
+    )
     # Protect all three inner crates, rather than only the first member.
     foreach ($crate in @('openblade-protocol', 'openblade-domain')) {
         $cases += @{ Path = "crates/$crate/Cargo.toml"; Before = "[lints]`nworkspace = true"; After = ''; Error = 'Required lints policy*' }
@@ -133,6 +153,7 @@ try {
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Header = '[lints]' },
         @{ Path = 'crates/openblade-domain/Cargo.toml'; Header = '[lints]' },
         @{ Path = 'crates/openblade-ffi/Cargo.toml'; Header = '[lints.rust]' },
+        @{ Path = 'crates/openblade-status-cli/Cargo.toml'; Header = '[lints]' },
         @{ Path = 'Cargo.toml'; Header = '[profile.dev]' },
         @{ Path = 'Cargo.toml'; Header = '[profile.release]' }
     )) {
@@ -153,7 +174,7 @@ try {
         & (Join-Path $probe 'Check-Workspace.ps1')
     }
     finally { Pop-Location }
-    Write-Output 'Workspace guard tests passed: caller location, compiler policies, MSRV, production/dev features and roots, external package admission, test targets and equivalent TOML.'
+    Write-Output 'Workspace guard tests passed: caller location, compiler policies, MSRV, production/dev features and roots, CLI isolation and targets, external package admission, test targets and equivalent TOML.'
 }
 finally {
     # Only remove the unique directory this invocation created under temporary storage.

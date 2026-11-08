@@ -1,0 +1,26 @@
+{
+  "frame":"response",
+  "version":51,
+  "requestId":"11111111-2222-4333-8444-555555555555",
+  "success":true,
+  "error":null,
+  "status":{
+    "revision":9223372036854775807,
+    "deviceVerified":true,
+    "activePowerSource":2,
+    "controlAccess":0,
+    "liveReadings":{
+      "batteryPowerFlowMilliwatts":-32768,
+      "fan1Rpm":2700,
+      "fan2Rpm":null,
+      "cpuTemperatureCelsius":65,
+      "gpuTemperatureCelsius":null
+    },
+    "message":"SYNTHETIC-PRIVATE-MESSAGE",
+    "profiles":{"path":"SYNTHETIC-PRIVATE-PATH","application":"SYNTHETIC-PRIVATE-APP"},
+    "unknownExtension":{"serial":"SYNTHETIC-PRIVATE-SERIAL","futureInteger":18446744073709551615}
+  },
+  "result":null,
+  "archive":null,
+  "errorCode":null
+}
