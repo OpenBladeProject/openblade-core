@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace OpenBlade.Tray.Tests;
 
 public sealed class WhatsNewReleaseTests : IDisposable
@@ -142,6 +144,23 @@ public sealed class WhatsNewReleaseTests : IDisposable
     }
 
     [Fact]
+    public void EmptyUnreleased_DoesNotSubstitutePublishedNightlyNotes()
+    {
+        const string changelog = """
+            ## [Unreleased]
+
+            ## [0.45.0-nightly.106] - 2026-10-30
+            ### Fixed
+            - Published nightly fix.
+            """;
+
+        Assert.Empty(new WhatsNewRelease("0.45.0+commit", changelog).Sections);
+        WhatsNewSection section = Assert.Single(
+            new WhatsNewRelease("0.45.0-nightly.106+commit", changelog).Sections);
+        Assert.Equal("Published nightly fix.", Assert.Single(section.Items));
+    }
+
+    [Fact]
     public void ReleaseNotes_ExposePlainTextAndJoinContinuationLines()
     {
         const string changelog = """
@@ -166,10 +185,18 @@ public sealed class WhatsNewReleaseTests : IDisposable
     }
 
     [Fact]
-    public void BundledChangelog_ContainsReadableReleaseNotes()
+    public void BundledChangelog_ContainsReadablePublishedReleaseNotes()
     {
-        WhatsNewRelease release = WhatsNewRelease.Load(
-            OpenBlade.Contracts.OpenBladeProductVersion.Read(typeof(WhatsNewRelease).Assembly));
+        using Stream stream = typeof(WhatsNewRelease).Assembly
+            .GetManifestResourceStream("OpenBlade.Changelog.md")
+            ?? throw new InvalidOperationException("The bundled changelog is missing.");
+        using var reader = new StreamReader(stream);
+        Match publishedHeading = Regex.Match(
+            reader.ReadToEnd(), @"^## \[(?<version>\d+\.\d+\.\d+(?:-[^\]\r\n]+)?)\]",
+            RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        Assert.True(publishedHeading.Success, "The bundled changelog must contain a published release.");
+
+        WhatsNewRelease release = WhatsNewRelease.Load(publishedHeading.Groups["version"].Value);
 
         Assert.NotEmpty(release.Sections);
         Assert.All(release.Sections, section =>
