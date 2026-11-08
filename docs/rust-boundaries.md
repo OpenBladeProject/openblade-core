@@ -384,7 +384,9 @@ predecessor `69f66ba673c0523c0521b09b286a7d09f8137488`.
 `RazerReport` preserves its copied request payload, exact 90-byte destinations,
 payload-before-destination argument errors, response validation order, protocol
 numeric categories and messages. The native capacity contract is projected to
-that exact host contract. The report-ID prefix, transaction allocation,
+that exact host contract. A bounded host projection preserves the static encoder's
+legacy clear/header-before-copy behavior when payload and destination overlap;
+the ABI input/output buffers remain disjoint. The report-ID prefix, transaction allocation,
 command-specific payload callbacks and batch SET sequencing remain outside the
 codec. Native boundary failures retire the serialized session and drain queued
 work; a failure after possible submission never selects a fallback or replays.

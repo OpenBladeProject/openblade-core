@@ -133,8 +133,32 @@ internal sealed class RazerReport
                 nameof(destination));
         }
 
+        // The managed static encoder cleared the destination and filled its header before copying
+        // payload. For aliased spans, those writes were observable as input. Preserve
+        // that legacy input projection without overlapping ABI buffers or publishing
+        // partial native output. Production command buffers normally do not alias.
+        Span<byte> projected = stackalloc byte[MaximumPayloadLength];
+        scoped ReadOnlySpan<byte> nativePayload = payload;
+        if (payload.Overlaps(destination, out int destinationOffset))
+        {
+            payload.CopyTo(projected);
+            int first = Math.Max(0, destinationOffset);
+            int end = Math.Min(payload.Length, destinationOffset + ReportLength);
+            for (int index = first; index < end; index++)
+            {
+                projected[index] = (index - destinationOffset) switch
+                {
+                    1 => transactionId,
+                    5 => (byte)payload.Length,
+                    6 => commandClass,
+                    7 => commandId,
+                    _ => 0,
+                };
+            }
+            nativePayload = projected[..payload.Length];
+        }
         NativeBoundaryError? error = ProductNativeRuntime.Codec.EncodeInto(
-            transactionId, commandClass, commandId, payload, destination);
+            transactionId, commandClass, commandId, nativePayload, destination);
         if (error is not null)
         {
             throw new NativeComponentException(error);

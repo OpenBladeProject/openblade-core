@@ -54,6 +54,41 @@ public sealed class NativeActivationTests
     }
 
     [Theory]
+    [InlineData(-20, 80)]
+    [InlineData(0, 80)]
+    [InlineData(1, 10)]
+    [InlineData(8, 40)]
+    [InlineData(85, 10)]
+    public void StaticEncoderPreservesLegacyAliasedPayload(int sourceOffset, int length)
+    {
+        byte[] expected = Enumerable.Range(0, 200).Select(value => (byte)value).ToArray();
+        byte[] actual = expected.ToArray();
+        ManagedReportBaseline.Encode(0x23, 0x07, 0x8F,
+            expected.AsSpan(40 + sourceOffset, length), expected.AsSpan(40, 90));
+        RazerReport.Encode(0x23, 0x07, 0x8F,
+            actual.AsSpan(40 + sourceOffset, length), actual.AsSpan(40, 90));
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void StaticEncoderMatchesBaselineAcrossBoundedAliasGeometry()
+    {
+        for (int length = 0; length <= RazerReport.MaximumPayloadLength; length++)
+        {
+            for (int offset = -80; offset <= 90; offset++)
+            {
+                byte[] expected = Enumerable.Range(0, 256).Select(value => (byte)value).ToArray();
+                byte[] actual = expected.ToArray();
+                ManagedReportBaseline.Encode(0x23, 0x07, 0x8F,
+                    expected.AsSpan(80 + offset, length), expected.AsSpan(80, 90));
+                RazerReport.Encode(0x23, 0x07, 0x8F,
+                    actual.AsSpan(80 + offset, length), actual.AsSpan(80, 90));
+                Assert.Equal(expected, actual);
+            }
+        }
+    }
+
+    [Theory]
     [InlineData(89)]
     [InlineData(91)]
     public void HostLengthAndPayloadValidationPreserveExceptionOrderWithoutNativeCall(int length)
