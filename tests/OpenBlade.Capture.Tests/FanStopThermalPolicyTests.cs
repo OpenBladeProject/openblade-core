@@ -62,13 +62,21 @@ public sealed class FanStopThermalPolicyTests
     [Fact]
     public void CustomEntryUsesFreshActualGpuTemperatureOrExplicitDevicePowerEvidence()
     {
-        var policy = new FanStopThermalPolicy(Custom, new Clock());
-        Assert.True(policy.AdmitsEntry(55, 55, false, false, TimeSpan.Zero));
-        Assert.False(policy.AdmitsEntry(56, 40, true, false, TimeSpan.Zero));
-        Assert.False(policy.AdmitsEntry(40, 56, false, false, TimeSpan.Zero));
+        var policy = new FanStopThermalPolicy(Custom with { CpuImmediateCutoffCelsius = 80, GpuImmediateCutoffCelsius = 75 }, new Clock());
+        Assert.True(policy.AdmitsEntry(60, 61, false, false, TimeSpan.Zero));
+        Assert.True(policy.AdmitsEntry(80, 75, false, false, TimeSpan.Zero));
+        Assert.False(policy.AdmitsEntry(81, 40, true, false, TimeSpan.Zero));
+        Assert.Equal(new FanStopThermalTrigger(81, 80), policy.EntryThermalDecision!.Cpu);
+        Assert.Null(policy.EntryThermalDecision.Gpu);
+        Assert.False(policy.AdmitsEntry(40, 76, false, false, TimeSpan.Zero));
+        Assert.Equal(new FanStopThermalTrigger(76, 75), policy.EntryThermalDecision!.Gpu);
+        Assert.Null(policy.EntryThermalDecision.Cpu);
         Assert.False(policy.AdmitsEntry(40, null, true, false, TimeSpan.Zero));
         Assert.True(policy.AdmitsEntry(40, null, true, true, TimeSpan.Zero));
+        Assert.Null(policy.EntryThermalDecision);
         Assert.False(policy.AdmitsEntry(40, 40, true, false, TimeSpan.FromSeconds(3)));
+        Assert.Null(policy.EntryThermalDecision);
+        Assert.False(policy.AdmitsEntry(40, 40, true, false, TimeSpan.Zero, canceled: true));
     }
 
     [Fact]
@@ -99,7 +107,7 @@ public sealed class FanStopThermalPolicyTests
         {
             clock.Advance(1);
             Assert.True(policy.AdmitsCommand(40, 40, false, false, TimeSpan.Zero));
-            Assert.False(policy.AdmitsEntry(56, 40, false, false, TimeSpan.Zero));
+            Assert.True(policy.AdmitsEntry(56, 40, false, false, TimeSpan.Zero));
             Assert.Equal(second < 5, policy.Observe(56, 40, false, false, TimeSpan.Zero));
         }
         Assert.False(policy.AdmitsCommand(40, 40, false, false, TimeSpan.Zero));
@@ -285,16 +293,35 @@ public sealed class FanStopThermalPolicyTests
     public void EntryReportsBothSensorsWithoutEndingPolicyAndResetsOnSafetyOrCoolSample()
     {
         var policy = new FanStopThermalPolicy(Custom, new Clock());
-        Assert.False(policy.AdmitsEntry(60, 61, false, false, TimeSpan.Zero));
-        Assert.Equal("EntryLimit", policy.EntryThermalDecision!.Rule);
-        Assert.Equal(new FanStopThermalTrigger(60, 55), policy.EntryThermalDecision.Cpu);
-        Assert.Equal(new FanStopThermalTrigger(61, 55), policy.EntryThermalDecision.Gpu);
+        Assert.False(policy.AdmitsEntry(70, 71, false, false, TimeSpan.Zero));
+        Assert.Equal("ImmediateCutoff", policy.EntryThermalDecision!.Rule);
+        Assert.Equal(new FanStopThermalTrigger(70, 65), policy.EntryThermalDecision.Cpu);
+        Assert.Equal(new FanStopThermalTrigger(71, 65), policy.EntryThermalDecision.Gpu);
         Assert.Equal(FanStopEndReason.None, policy.EndReason);
         Assert.Null(policy.TerminalThermalDecision);
         Assert.False(policy.AdmitsEntry(100, null, false, false, TimeSpan.Zero));
         Assert.Null(policy.EntryThermalDecision);
         Assert.True(policy.AdmitsEntry(55, 55, false, false, TimeSpan.Zero));
         Assert.Null(policy.EntryThermalDecision);
+    }
+
+    [Fact]
+    public void CustomEntryAboveAverageLimitDoesNotSeedOrCreditContinuationWindows()
+    {
+        var clock = new Clock();
+        var policy = new FanStopThermalPolicy(Custom with { SecondsAboveLimit = 2 }, clock);
+        Assert.True(policy.AdmitsEntry(64, 64, false, false, TimeSpan.Zero));
+        clock.Advance(5);
+        Assert.True(policy.AdmitsEntry(64, 64, false, false, TimeSpan.Zero));
+        clock.Advance(5);
+        Assert.True(policy.Observe(64, 64, false, false, TimeSpan.Zero));
+        clock.Advance(1);
+        Assert.True(policy.Observe(64, 64, false, false, TimeSpan.Zero));
+        clock.Advance(1);
+        Assert.False(policy.Observe(64, 64, false, false, TimeSpan.Zero));
+        Assert.Equal("RollingAverage", policy.TerminalThermalDecision!.Rule);
+        Assert.Equal(new FanStopThermalTrigger(64, 55), policy.TerminalThermalDecision.Cpu);
+        Assert.Equal(new FanStopThermalTrigger(64, 55), policy.TerminalThermalDecision.Gpu);
     }
 
     [Fact]

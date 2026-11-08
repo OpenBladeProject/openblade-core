@@ -42,11 +42,18 @@ public sealed class FanStopInitialAdmissionDiagnosticsTests
     [Fact]
     public void CustomRefusalRetainsItsOwnLimitsAndBoundsOnlyDiagnosticAge()
     {
-        FanStopSettings settings = FanStopSettings.Default with { EndMode = FanStopEndMode.Custom, CpuLimitCelsius = 60, GpuLimitCelsius = 65 };
+        FanStopSettings settings = FanStopSettings.Default with
+        {
+            EndMode = FanStopEndMode.Custom,
+            CpuLimitCelsius = 60,
+            GpuLimitCelsius = 65,
+            CpuImmediateCutoffCelsius = 80,
+            GpuImmediateCutoffCelsius = 75
+        };
         string message = So6120ServiceInitialAdmissionDiagnostics.ThermalRefusal(settings,
             new(61, 66, false, false), TimeSpan.FromDays(1), false);
         Assert.Contains("mode=Custom; cpuC=61; gpuC=66;", message);
         Assert.Contains("sampleAgeMs=60000.0;", message);
-        Assert.Contains("cpuEntryLimitC=60; gpuEntryLimitC=65;", message);
+        Assert.Contains("cpuEntryLimitC=80; gpuEntryLimitC=75;", message);
     }
 }

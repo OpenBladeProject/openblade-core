@@ -10,13 +10,14 @@ public sealed class FanStopGuardianProgressTests
     public void InitialAndPartialEntryRetainActualThermalDecisionInInvariantFormat()
     {
         var policy = new FanStopThermalPolicy(FanStopSettings.Default with { EndMode = FanStopEndMode.Custom }, TimeProvider.System);
-        Assert.False(policy.AdmitsEntry(60, 61, false, false, TimeSpan.Zero));
+        Assert.False(policy.AdmitsEntry(70, 71, false, false, TimeSpan.Zero));
         string refusal = So6120ServiceInitialAdmissionDiagnostics.ThermalRefusal(
             FanStopSettings.Default with { EndMode = FanStopEndMode.Custom },
-            new(60, 61, false), TimeSpan.Zero, false, policy.EntryThermalDecision);
+            new(70, 71, false), TimeSpan.Zero, false, policy.EntryThermalDecision);
         var progress = new So6120ServiceStopProgress();
         progress.RecordEntryFailure(So6120DutyFailure.NotSubmitted, refusal);
-        Assert.Contains("thermalRule=EntryLimit; cpuC=60; cpuLimitC=55; gpuC=61; gpuLimitC=55", refusal);
+        Assert.Contains("thermalRule=ImmediateCutoff; cpuC=70; cpuLimitC=65; gpuC=71; gpuLimitC=65", refusal);
+        Assert.Contains("cpuEntryLimitC=65; gpuEntryLimitC=65", refusal);
         Assert.Contains(refusal, progress.CompletionReason!);
         Assert.True(refusal.Length < 640);
         Assert.Equal(FanStopEndReason.None, policy.EndReason);

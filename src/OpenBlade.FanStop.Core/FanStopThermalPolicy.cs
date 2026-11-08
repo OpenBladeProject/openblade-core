@@ -33,11 +33,9 @@ internal sealed class FanStopThermalPolicy
     {
         FanStopEndReason assessment = Assess(cpu, gpu, gpuInactive, gpuPoweredDown, sampleAge, canceled, out var decision);
         EntryThermalDecision = decision;
-        if (assessment != FanStopEndReason.None) { return false; }
-        if (settings.EndMode == FanStopEndMode.Auto) { return true; }
-        EntryThermalDecision = RawDecision("EntryLimit", cpu, gpu, gpuPoweredDown,
-            settings.CpuLimitCelsius, settings.GpuLimitCelsius);
-        return EntryThermalDecision is null;
+        // Custom entry shares the immediate raw cutoffs. Average limits apply
+        // only to complete continuation windows; entry grants no window credit.
+        return assessment == FanStopEndReason.None;
     }
 
     // Command reads enforce freshness and the immediate cutoffs, but cannot

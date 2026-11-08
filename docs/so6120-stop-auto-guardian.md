@@ -41,8 +41,10 @@ CPU/GPU immediate cutoffs (65 C by default) request Auto on a single fresh
 reading above the cutoff, without waiting for the window. A cutoff must be at
 least its average limit; equal values give the immediate cutoff priority.
 
-Initial Stop entry still requires a fresh instantaneous reading at or below
-each normal limit. Historical averages cannot admit entry. GPU activity alone
+Custom Stop entry requires a fresh instantaneous reading at or below each
+configured immediate cutoff. Average limits apply to continuation after a full
+window is available; entry reads do not contribute to that window. Auto retains
+its CPU 55 C and inactive-GPU entry policy. GPU activity alone
 does not end Custom Stop. Unavailable, stale or implausible readings still end
 continuation immediately. Each average weights the previous valid observation
 by its actual elapsed duration; rapid sampling cannot outweigh a longer
@@ -314,7 +316,13 @@ entry limit refused Stop before any EC command; the 80 C cutoff was not reached.
 Fans remained Automatic, ownership conclusively released, and every original
 setting, including the CPU cutoff, was restored with exact readback. Final CPU
 was 51 C and fans 2200/1900 RPM. Raising the immediate cutoff does not widen the
-existing instantaneous entry limit; this trial did not confirm Stopped.
+then-current instantaneous entry limit; this trial did not confirm Stopped.
+
+The subsequent requested change makes Custom entry use the configured CPU/GPU
+immediate cutoffs, including equality, while preserving fresh valid readings
+and explicit GPU power-state evidence. The separately configured Automatic Stop
+cool threshold and dwell remain unchanged. Average-window history still begins
+with owned continuation, so entry and command reads cannot credit elapsed time.
 
 Guardian termination, an unknown outer-job termination, a native call that
 never returns, sleep/resume and OS failure do not have a demonstrated
