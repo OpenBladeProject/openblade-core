@@ -306,6 +306,16 @@ CPU 52 C and fans 2200/2100 RPM, with no blocked or unconfirmed writes. This
 confirms the new trigger diagnostics and settings restoration, not a stopped
 interval or Auto restoration after a fan write.
 
+An additional authorized trial kept the CPU average at 65 C and raised only its
+immediate cutoff to 80 C, preserving the GPU limits and five-second window.
+After 52/53/53 C preflight, the guardian recorded `thermalRule=EntryLimit;
+cpuC=70; cpuLimitC=65` with a 178.5 ms sample age and GPU D3. The instantaneous
+entry limit refused Stop before any EC command; the 80 C cutoff was not reached.
+Fans remained Automatic, ownership conclusively released, and every original
+setting, including the CPU cutoff, was restored with exact readback. Final CPU
+was 51 C and fans 2200/1900 RPM. Raising the immediate cutoff does not widen the
+existing instantaneous entry limit; this trial did not confirm Stopped.
+
 Guardian termination, an unknown outer-job termination, a native call that
 never returns, sleep/resume and OS failure do not have a demonstrated
 independent cooling fallback. A fenced owner retains its native resources;
