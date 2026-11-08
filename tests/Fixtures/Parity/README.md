@@ -4,8 +4,11 @@
 these files into their `Parity/` output folder. A future Rust test reads these
 same repository files, with no generated C# expectations or duplicated copies.
 
-Each file is UTF-8 JSON with `schemaVersion: 1`, a `suite`, a pinned
-`sourceRevision`, and named case arrays. IDs are unique within each array and
+Each file is UTF-8 JSON with LF line endings, `schemaVersion: 1`, a `suite`, a
+`sourceRevision` matching the v1 provenance revision below, and named case arrays.
+Field names are case-sensitive; unknown/duplicate fields and numeric strings are rejected.
+Override projection fields may be omitted as documented below; envelope and row
+fields are required even when their value is null. IDs are unique within each array and
 appear in test names and mismatch messages. Reject unsupported schema versions
 and suites. Adding cases preserves v1; changing field meanings requires a new
 schema directory and readers. These fixture versions are independent of ABI,
@@ -32,7 +35,9 @@ The tests exercise allocating, instance-span and static-span encoders.
 a null failure and a copied payload. A failure is `{ "name": ..., "value": ... }`
 using the existing `HidProtocolValidationFailure` name and numeric value. The
 tests verify both, without comparing localized exception text. Several rows
-contain multiple faults to pin validation precedence.
+contain multiple faults to pin validation precedence, including payload size
+before destination length in encoding. Theory arguments contain only IDs;
+the test-only reader looks up and validates each row from the same file.
 
 Provenance at `123936f3ea69881d21bd16a7a09529930c9a2c6f`:
 
@@ -92,9 +97,16 @@ The cases cover sparse inheritance, false/zero, maximum brightness, UTF-8,
 legacy fan defaults and explicit fan-control precedence. The empty override
 case targets the pure merge function; transport validation may reject an empty
 application override. The conflicting fan-fields case records merge precedence
-before whole-profile validation; it is not a hardware-admission fixture.
+before whole-profile validation; it preserves both raw fields and does not claim
+which mode downstream consumers use. Whole-profile validation rejects that
+contradictory pair. Separate cases preserve the accepted legacy Maximum plus
+Fixed/5400-RPM compatibility shape (`ProfileSetValidator.cs:402-411`). These are
+not hardware-admission fixtures.
 Merge is not full profile validation, normalization,
 capability admission, foreground selection, power-source selection, manual
 override priority, journal recovery or hardware execution. Those existing
 contracts and tests stay authoritative. Future migrated slices need their own
 shared cases rather than inferring full-domain parity from this small suite.
+In particular, overriding GamingModeKeyPolicy, CustomPerformance, GpuClockTuning
+or Lighting is outside this projection; their override branches remain C#-owned
+until a later slice adds its own parity cases.

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
 using OpenBlade.Service;
 using OpenBlade.Testing;
@@ -7,17 +8,21 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ProfilePolicyParityTests
 {
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        AllowDuplicateProperties = false,
+    };
 
     public static IEnumerable<object[]> Cases() =>
         ParityFixture.Rows("profile-policy.json", "application-profile-merge", "cases");
 
     [Theory]
     [MemberData(nameof(Cases))]
-    public void ApplicationMergeMatchesSharedContract(string id, string json)
+    public void ApplicationMergeMatchesSharedContract(string id)
     {
-        using JsonDocument document = JsonDocument.Parse(json);
-        JsonElement row = document.RootElement;
+        JsonElement row = ParityFixture.Row("profile-policy.json", "application-profile-merge", "cases", id);
         Projection? baselineFields = row.GetProperty("baseline").Deserialize<Projection>(Options);
         Projection? overrideFields = row.GetProperty("override").Deserialize<Projection>(Options);
         // These sentinel fields are outside the fixture slice. Whole-record equality
@@ -78,6 +83,17 @@ public sealed class ProfilePolicyParityTests
 
     private static FanControlSettings? ToFanControl(FanProjection? value) => value is null
         ? null : new(value.Mode, value.FixedSpeedRpm, ManualFanCurve.Default);
+
+    [Theory]
+    [InlineData("{\"performance\":\"2\"}")]
+    [InlineData("{\"Performance\":2}")]
+    [InlineData("{\"gamingModeEnable\":false}")]
+    [InlineData("{\"display\":{\"HDRenabled\":false}}")]
+    [InlineData("{\"performance\":1,\"performance\":2}")]
+    public void ProjectionRejectsNonContractRepresentations(string json)
+    {
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<Projection>(json, Options));
+    }
 
     private sealed record FanProjection(FanMode Mode, int FixedSpeedRpm);
 

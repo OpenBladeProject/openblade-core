@@ -98,6 +98,18 @@
       "destinationLength": 91,
       "expectedError": "destination-length",
       "expectedReportHex": null
+    },
+    {
+      "id": "payload-before-destination-length",
+      "request": {
+        "transactionId": 28,
+        "commandClass": 13,
+        "commandId": 2,
+        "payloadHex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "destinationLength": 89,
+      "expectedError": "payload-too-large",
+      "expectedReportHex": null
     }
   ],
   "responses": [

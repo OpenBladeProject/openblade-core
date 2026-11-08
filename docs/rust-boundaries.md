@@ -172,3 +172,12 @@ helper. Full profile validation, application selection, override lifetimes,
 hardware admission, transport outcomes, ownership, durable recovery and
 platform behavior need their existing tests plus the focused parity tests for
 the slice actually migrated. This PR does not start those later stages.
+
+## Migration stage reviews
+
+Each migration stage requires a real Claude advisory review of its exact scope.
+Record the reviewed base and head commits. Codex validates the findings against
+that revision, fixes supported issues, and verifies the affected checks. Record
+the findings disposition and resulting head in the stage's PR. Attribute the
+review to the revision Claude actually inspected; a later fix commit does not
+inherit that review. This requirement applies to the Rust migration stages.

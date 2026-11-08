@@ -268,7 +268,7 @@
       "expectedError": null
     },
     {
-      "id": "legacy-mode-precedes-control-mode",
+      "id": "conflicting-fan-fields-preserve-raw-merge",
       "baseline": {
         "performance": 1,
         "fans": 0,
@@ -376,6 +376,81 @@
       },
       "expected": null,
       "expectedError": "baseline-null"
+    },
+    {
+      "id": "legacy-maximum-fixed-5400-preserved",
+      "baseline": {
+        "performance": 1,
+        "fans": 3,
+        "fanControl": {
+          "mode": 1,
+          "fixedSpeedRpm": 5400
+        },
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": {
+        "performance": 2
+      },
+      "expected": {
+        "performance": 2,
+        "fans": 3,
+        "fanControl": {
+          "mode": 1,
+          "fixedSpeedRpm": 5400
+        },
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "expectedError": null
+    },
+    {
+      "id": "explicit-legacy-maximum-fixed-5400",
+      "baseline": {
+        "performance": 1,
+        "fans": 0,
+        "fanControl": null,
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "override": {
+        "fans": 3,
+        "fanControl": {
+          "mode": 1,
+          "fixedSpeedRpm": 5400
+        }
+      },
+      "expected": {
+        "performance": 1,
+        "fans": 3,
+        "fanControl": {
+          "mode": 1,
+          "fixedSpeedRpm": 5400
+        },
+        "display": {
+          "refreshRateKey": "native:240",
+          "hdrEnabled": true,
+          "colorProfileKey": "profile:base",
+          "brightnessPercent": 70
+        },
+        "gamingModeEnabled": true
+      },
+      "expectedError": null
     }
   ]
 }

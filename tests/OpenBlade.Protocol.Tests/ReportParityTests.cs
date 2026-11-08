@@ -14,15 +14,14 @@ public sealed class ReportParityTests
 
     [Theory]
     [MemberData(nameof(EncodingCases))]
-    public void EncodingMatchesSharedContract(string id, string json)
+    public void EncodingMatchesSharedContract(string id)
     {
-        using JsonDocument document = JsonDocument.Parse(json);
-        JsonElement row = document.RootElement;
+        JsonElement row = ParityFixture.Row("razer-report.json", "razer-report", "encoding", id);
         JsonElement request = row.GetProperty("request");
         byte transaction = request.GetProperty("transactionId").GetByte();
         byte commandClass = request.GetProperty("commandClass").GetByte();
         byte commandId = request.GetProperty("commandId").GetByte();
-        byte[] payload = Convert.FromHexString(request.GetProperty("payloadHex").GetString()!);
+        byte[] payload = ParityFixture.Hex(request.GetProperty("payloadHex"));
         byte[] destination = Enumerable.Repeat((byte)0xA5,
             row.GetProperty("destinationLength").GetInt32()).ToArray();
         string? expectedError = row.GetProperty("expectedError").GetString();
@@ -59,17 +58,16 @@ public sealed class ReportParityTests
 
     [Theory]
     [MemberData(nameof(ResponseCases))]
-    public void ResponseValidationMatchesSharedContract(string id, string json)
+    public void ResponseValidationMatchesSharedContract(string id)
     {
-        using JsonDocument document = JsonDocument.Parse(json);
-        JsonElement row = document.RootElement;
+        JsonElement row = ParityFixture.Row("razer-report.json", "razer-report", "responses", id);
         JsonElement request = row.GetProperty("request");
         RazerReport report = RazerReport.Create(
             request.GetProperty("transactionId").GetByte(),
             request.GetProperty("commandClass").GetByte(),
             request.GetProperty("commandId").GetByte(),
-            Convert.FromHexString(request.GetProperty("payloadHex").GetString()!));
-        byte[] response = Convert.FromHexString(row.GetProperty("responseHex").GetString()!);
+            ParityFixture.Hex(request.GetProperty("payloadHex")));
+        byte[] response = ParityFixture.Hex(row.GetProperty("responseHex"));
         int? expectedLength = row.GetProperty("expectedPayloadLength").ValueKind == JsonValueKind.Null
             ? null : row.GetProperty("expectedPayloadLength").GetInt32();
         JsonElement failure = row.GetProperty("expectedFailure");
