@@ -7,19 +7,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Bundle LibreHardwareMonitor CPU temperature support and the official PawnIO installer for telemetry, fan curves and Stop. Sensor failures remain unavailable, and acquisition runs separately so it cannot block Auto restoration. Compatible existing PawnIO installations are reused and preserved on uninstall. Changing CPU readings are verified on RZ09-0581; other processors and installed Stop remain under validation. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
-- Add foldable Stop settings with Auto or custom temperature limits, a sustained-temperature delay, and opt-in automatic Stop below 50°C. Manual Auto pauses automatic stopping until resumed. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
-- Connect the experimental Stop fans switch to a separate guardian, with pending states and confirmed Auto cleanup before ordinary controls resume. Stop lasts until Auto, an explicit mode change or a safety condition; a lower-power transition preserves the owned Stop only after readback. The installed service path still needs physical validation. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
-- Integrate the guardian with the attended PWM runner. Caller-loss recovery to Auto passed on the exact SO6120 test laptop; guardian loss, unknown outer jobs and OS failure remain outside that result. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
-- Add a developer-only offline firmware CLI and HTML register explorer with exact-image EC/MCU profiles, factory table decoding and report comparison. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
-- Add a bounded developer Windows battery recorder that preserves unsupported temperature results without changing fan or profile settings. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
-- Add developer mailbox observation scripts and offline trace/ACPI inspectors with bounded recording, explicit coverage limits and no direct fan commands. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Add experimental Stop/Auto fan controls for the Blade 16 RZ09-0581 in USB-C Balanced, with rolling average temperature limits, immediate cutoffs and automatic stopping below 50°C. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Bundle CPU temperature monitoring through LibreHardwareMonitor and PawnIO. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Add an offline firmware CLI, register explorer and developer diagnostics. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 
 ### Fixed
 
-- Reject the firmware's constant 45°C CPU-temperature sources. Missing CPU readings prevent Stop activation and retain the existing maximum-speed fallback for CPU-dependent fan curves. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879), [#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
-- Verify the attended fan guardian's separation from its actual caller job and preserve startup errors after its console closes. Ambient host-job and OS failure remain outside the supervised recovery contract. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
-- Recognize a confirmed Silent/manual thermal state without enabling an unvalidated fan-stop capability. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Fix CPU temperatures stuck at 45°C. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879), [#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Improve fan-state detection and supervised-test startup and recovery. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Reduce memory growth when changing app language by sharing localized resource lookups across the main window and quick controls. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Avoid native event-argument memory growth when closing main and quick-controls windows to the tray. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
 - Preserve window size limits while reducing memory growth during language changes. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))

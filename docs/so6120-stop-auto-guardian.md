@@ -33,14 +33,24 @@ performance/profile/fan-mode change, losing the active session, or failing
 continuation safety requests Auto from the same owner. The current conservative
 Auto thermal policy requires an admitted CPU-temperature reading between 10 and 55 C, no
 active GPU, and a reading completed within two seconds. Custom uses separate
-CPU/GPU thresholds (55 C by default) and independent continuous over-limit
-timers (five seconds by default). Either sensor can end Stop. A reading at or
-below its threshold resets only that sensor's timer. GPU activity alone does
-not end Custom Stop. Unavailable, stale or implausible readings still end
-continuation immediately. These inputs are not measurements of every die hotspot.
+CPU/GPU limits (55 C by default) and independent time-weighted rolling
+averages (five-second windows by default). Each average covers a full trailing
+window; a brief cool reading contributes to that average instead of resetting
+a timer. Either average exceeding its limit requests Auto. Separate editable
+CPU/GPU immediate cutoffs (65 C by default) request Auto on a single fresh
+reading above the cutoff, without waiting for the window. A cutoff must be at
+least its average limit; equal values give the immediate cutoff priority.
+
+Initial Stop entry still requires a fresh instantaneous reading at or below
+each normal limit. Historical averages cannot admit entry. GPU activity alone
+does not end Custom Stop. Unavailable, stale or implausible readings still end
+continuation immediately. Each average weights the previous valid observation
+by its actual elapsed duration; rapid sampling cannot outweigh a longer
+interval. Confirmed GPU D3 clears only the GPU window. On wake, the GPU starts
+a fresh full window while its immediate cutoff remains active.
 
 The Stop card has independently foldable End Stop and Automatic Stop sections.
-Custom warns above 60 C or an exit delay above ten seconds. Input bounds are
+Custom warns for average limits above 60 C or an averaging window above ten seconds. Input bounds are
 10-100 C and 1-300 seconds; they are parsing bounds, not independently validated
 safe operating limits. An active guardian keeps its immutable policy. Changing
 that thermal policy requests and confirms Auto before saving the next policy.
@@ -87,9 +97,14 @@ observations rather than hiding them behind a shared cache. This is OS-reported
 state, not proof of D3cold or physically validated no-wake behavior. Ordinary
 fan-curve and Auto-policy sampling retain their existing behavior.
 
-Policy settings use configuration schema 24 and service IPC 76. Older settings
-migrate with Auto selected and automatic Stop disabled. Software/native UI
-checks do not establish physical validation of the new temperature policies.
+Policy settings use configuration schema 25 and service IPC 77. Schema-24
+settings retain their mode, temperature limits and duration; the duration now
+controls the averaging window. Each new immediate cutoff starts 10 C above its
+corresponding saved limit, capped at the existing 100 C input maximum. A saved
+100 C limit therefore keeps an equal 100 C immediate cutoff. Older pre-Stop
+settings still migrate with Auto selected and automatic Stop disabled. The new
+averaging policy is an implementation change; the installed trial below used
+the previous continuous-timer build.
 
 External power is classified by the existing typed adapter query in the owner,
 serialized outside mailbox transactions. Windows external-power indication by
@@ -196,9 +211,28 @@ Fans remained Automatic, with no blocked writes or unconfirmed submission.
 
 This establishes the precise thermal refusal and operation of the guardian's
 fresh CPU read. It does not establish successful installed Stop or Auto
-restoration. Limits were not raised, and a matching ordinary Automatic mode is
-not presented as restoration evidence. A later test needs fresh admitted
-conditions; no failed or uncertain command may be replayed.
+restoration. That trial kept Auto's limits, and a matching ordinary Automatic
+mode is not presented as restoration evidence.
+
+A separately authorized Custom trial on the same installed build temporarily
+changed only the CPU limit from 55 to 65 C. GPU remained 55 C, the continuous
+exit delay remained five seconds, and automatic entry stayed disabled. Fresh
+service samples of 52, 52 and 61 C admitted dispatch. The initial guardian check
+passed, but its later cleanup-checkpoint admission returned `AdmissionRefused`
+before any EC command (zero resolved commands, no mutation or pending command).
+The specific later predicate was not exposed; the 72 C restoration sample does
+not prove temperature caused that refusal. The client independently confirmed
+released/inactive ownership, restored the exact original Custom 55/55 C and
+five-second settings, and verified their readback. Fans remained Automatic at
+2300/1900 RPM. No fan-stop or Auto-restoration success is claimed for this trial.
+The trial used the installed continuous-timer implementation, not the new
+rolling average policy under development.
+
+Later entry checks now retain the failed stage and that attempt's available
+sample in the refusal receipt. Each attempt clears earlier diagnostics; a
+prerequisite failure before thermal acquisition is marked as not sampled.
+This changes reporting only, without adding hardware reads or changing
+admission and recovery ordering.
 
 Guardian termination, an unknown outer-job termination, a native call that
 never returns, sleep/resume and OS failure do not have a demonstrated
