@@ -176,10 +176,9 @@ internal static class ExperimentalBladeModels
 
     private static IReadOnlyList<ExperimentalFeatureEvidence> FanStopEvidenceFor(ExperimentalBladeModel model)
     {
-        FanStopModelContract[] contracts = FanStopModelContract.All.Where(contract =>
-            contract.Model == model.ModelNumber && contract.ProductId == model.ProductId
-            && contract.Host.ProductName == model.ProductName).ToArray();
-        return contracts.Length == 0 ? [] :
+        IReadOnlyList<FanStopModelContract> contracts = FanStopModelContract.ForProfile(
+            model.ModelNumber, model.ProductId, model.ProductName);
+        return contracts.Count == 0 ? [] :
             [new("FanStopAndGuardianAuto", "FirmwareSourceBackedWithoutPhysicalValidation",
                 ["https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
                     .. contracts.Select(contract => $"{contract.FirmwareIdentity};SHA256={contract.FirmwareSha256}")])];

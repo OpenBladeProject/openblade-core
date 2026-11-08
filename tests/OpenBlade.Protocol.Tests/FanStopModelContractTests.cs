@@ -4,6 +4,33 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class FanStopModelContractTests
 {
+    [Fact]
+    public void FirmwareSelectionIsUniqueAndFamilyCandidatesShareExactHostAndHid()
+    {
+        Assert.Equal(FanStopModelContract.All.Count,
+            FanStopModelContract.All.Select(item => (item.Model, item.EcVersion)).Distinct().Count());
+        foreach (var family in FanStopModelContract.All.GroupBy(item => item.Model))
+        {
+            Assert.Single(family.Select(item => (item.Host.Manufacturer, item.Host.ProductName,
+                item.VendorId, item.ProductId)).Distinct());
+            FanStopModelContract first = family.First();
+            Assert.Equal(family.Count(), FanStopModelContract.ForProfile(first.Model,
+                first.ProductId, first.Host.ProductName).Count);
+        }
+    }
+
+    [Fact]
+    public void Rz090528FactorySourceEvidenceDoesNotDependOnTheMachineConstructingIt()
+    {
+        // Creating this fixed-model factory performs no hardware operation.
+        // Source metadata exists even on another host or after a transient
+        // registry failure; the opener and guardian still admit each live use.
+        IProductionBatteryPortFactory factory = BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+        Assert.True(factory.Capabilities.HasFanStopSourceEvidence);
+        Assert.False(factory.Capabilities.HasFanStopTrialEvidence);
+        Assert.False(factory.Capabilities.SupportsFanStop);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

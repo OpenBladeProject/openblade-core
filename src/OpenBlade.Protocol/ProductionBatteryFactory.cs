@@ -494,7 +494,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             // Source and physical evidence are separate metadata. The guardian
             // independently admits the live device, EC and owned mailbox session.
             hasFanStopTrialEvidence: IsExactModelScopedRz090581Identity(exactIdentity),
-            hasFanStopSourceEvidence: IsExactModelScopedRz090581Identity(exactIdentity),
+            hasFanStopSourceEvidence: FanStopModelContract.ForProfile(TargetBladeDevice.Model,
+                TargetBladeDevice.ProductId, WindowsHostIdentitySource.ProductionIdentity.ProductName).Count != 0,
             // Ordinary controls remain advisory. Stopping cooling requires a fresh
             // competing-controller and exact-host check at each native submission.
             stopHardwareAdmission: () => hardwareAccessGuard.Check().Safe

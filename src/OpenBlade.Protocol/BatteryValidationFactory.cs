@@ -662,8 +662,8 @@ public static class BatteryValidationFactory
                 DeviceFeatureAccess.ReadWrite,
                 ThxAudioProductIds.Rznb11),
             laptopControlRecoveryIdentity: $"{target.Model}|{target.VendorId:X4}:{target.ProductId:X4}",
-            hasFanStopSourceEvidence: FanStopModelContract.ForModel("RZ09-0528")?
-                .MatchesHost(hostIdentity.ReadExactIdentity()) == true);
+            hasFanStopSourceEvidence: FanStopModelContract.ForProfile(target.Model, target.ProductId,
+                WindowsHostIdentitySource.Rz090528Identity.ProductName).Count != 0);
     }
 
     internal static ProductionBatteryReadEvidence

@@ -97,8 +97,17 @@ internal sealed class FanStopModelContract
     internal string DeviceIdentity => $"{Model}/{VendorId:X4}:{ProductId:X4}";
     internal HidHandleIdentity ControlHid => new(VendorId, ProductId, 0x0001, 0x0002, 91);
 
+    // Family lookup only: the reported version selects the intended firmware
+    // later, and every live admission checks that selected contract afresh.
     internal static FanStopModelContract? ForModel(string model) =>
         All.FirstOrDefault(contract => contract.Model == model);
+
+    // Static source metadata follows the selected exact product profile. A
+    // transient live identity read must not latch this evidence off; live
+    // host, firmware, HID and ownership admission remain separate requirements.
+    internal static IReadOnlyList<FanStopModelContract> ForProfile(string model, ushort productId, string productName) =>
+        All.Where(contract => contract.Model == model && contract.ProductId == productId
+            && contract.Host.ProductName == productName).ToArray();
 
     internal static FanStopModelContract? ForFirmware(string model, Version? ecVersion) =>
         All.SingleOrDefault(contract => contract.Model == model && contract.EcVersion == ecVersion);
