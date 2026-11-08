@@ -253,6 +253,23 @@ writes. This validates the observed Auto cleanup and settings restoration, but
 does not establish fan stop, a stopped dwell or operation of the rolling exit
 thresholds. No further Stop request was sent.
 
+Read-only inspection of that run's protected journal verified its 659-record
+hash chain. The owner confirmed the override permission bit, then refused the
+final FE command in the fresh entry check before any FE transfer began. All
+snapshots retained PWM 58/52 and tach 25/23. Cleanup restored the permission bit
+and completed the journal. This was partial entry, not a PWM convergence or
+coast-down failure. The old build discarded the failed check's specific detail
+when an owned cleanup checkpoint existed, so its precise predicate cannot be
+recovered from this record.
+
+The corrected owner retains the first entry/coast cause through successful Auto
+cleanup. It records Stop as confirmed only after stopped tachometers are observed,
+and keeps that history through later cleanup. The service reports a Stop request
+as blocked when Stop was never confirmed, while preserving independent Auto
+release proof. Failed Auto cleanup remains a failed result even after an earlier
+confirmed Stop. No thermal threshold, freshness rule or hardware sequence changes
+as part of this correction.
+
 Guardian termination, an unknown outer-job termination, a native call that
 never returns, sleep/resume and OS failure do not have a demonstrated
 independent cooling fallback. A fenced owner retains its native resources;
