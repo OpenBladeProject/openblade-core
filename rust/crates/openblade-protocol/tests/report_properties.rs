@@ -247,7 +247,8 @@ fn deterministic_malformed_corpus_never_panics_and_success_is_bounded_and_copied
         state ^= state << 17;
         state
     };
-    let mut successes = 0;
+    let mut successes_without_expected_length = 0;
+    let mut successes_with_expected_length = 0;
     for case in 0..20_000 {
         let length = if case % 2 == 0 {
             REPORT_LENGTH
@@ -255,7 +256,7 @@ fn deterministic_malformed_corpus_never_panics_and_success_is_bounded_and_copied
             (next() % 258) as usize
         };
         let mut response: Vec<u8> = (0..length).map(|_| next() as u8).collect();
-        let expected = match case % 4 {
+        let mut expected = match case % 4 {
             0 => None,
             1 => Some(-1),
             2 => Some((next() % 81) as i32),
@@ -270,10 +271,17 @@ fn deterministic_malformed_corpus_never_panics_and_success_is_bounded_and_copied
             response[6] = 0x22;
             response[7] = 0x33;
             repair_checksum(&mut response);
+            // Alternate the coherent cases between no contract length and an
+            // exact contract length so both successful API paths stay covered.
+            expected = (case % 16 == 8).then_some(i32::from(response[5]));
         }
         let saved = response.clone();
         if let Ok(payload) = request().validate_response(&response, expected) {
-            successes += 1;
+            if expected.is_some() {
+                successes_with_expected_length += 1;
+            } else {
+                successes_without_expected_length += 1;
+            }
             assert_eq!(length, REPORT_LENGTH);
             assert_eq!(saved[0], 2);
             assert_eq!((saved[1], saved[6], saved[7]), (0x11, 0x22, 0x33));
@@ -285,7 +293,8 @@ fn deterministic_malformed_corpus_never_panics_and_success_is_bounded_and_copied
             assert_eq!(payload.as_slice(), &saved[8..8 + usize::from(saved[5])]);
         }
     }
-    assert!(successes >= 2_500);
+    assert!(successes_without_expected_length >= 1_250);
+    assert!(successes_with_expected_length >= 1_250);
 }
 
 #[test]

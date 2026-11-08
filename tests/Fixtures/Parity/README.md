@@ -1,8 +1,9 @@
 # Shared parity fixtures
 
 `v1/*.json` is the language-neutral migration baseline. C# test projects copy
-these files into their `Parity/` output folder. A future Rust test reads these
-same repository files, with no generated C# expectations or duplicated copies.
+these files into their `Parity/` output folder. Rust report tests read the same
+repository report file directly, with no generated expectations or duplicated
+copies. The 14 profile cases await the stage 6 Rust implementation.
 
 Each file is UTF-8 JSON with LF line endings, `schemaVersion: 1`, a `suite`, a
 `sourceRevision` matching the v1 provenance revision below, and named case arrays.

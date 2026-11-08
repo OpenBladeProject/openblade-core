@@ -37,6 +37,9 @@ try {
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = 'name = "openblade-protocol"'; After = "name = 'openblade-protocol'`nautotests = false"; Error = 'Reviewed integration tests are missing*' },
         @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[lib]`ncrate-type = ['cdylib']`n`n[lints]"; Error = 'Exactly one ordinary Rust library is required*' },
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = '=1.0.149'; After = '^1.0.149'; Error = 'Unreviewed dependency kind*' },
+        @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = "features = ['derive']"; After = "features = ['derive', 'rc']"; Error = 'Unreviewed fixture-reader features*' },
+        @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = "serde_json = '=1.0.149'"; After = "serde_json = { version = '=1.0.149', default-features = false }"; Error = 'Unreviewed dependency kind*' },
+        @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = "serde_json = '=1.0.149'"; After = ''; Error = 'Fixture-reader dev dependencies changed*' },
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = '[dev-dependencies]'; After = "[[bin]]`nname = 'unexpected'`npath = 'src/lib.rs'`n`n[dev-dependencies]"; Error = 'Unreviewed target*' },
         @{ Path = 'crates/openblade-protocol/Cargo.toml'; Before = '[dev-dependencies]'; After = "[[test]]`nname = 'unexpected'`npath = 'src/lib.rs'`n`n[dev-dependencies]"; Error = 'Unreviewed target*' },
         @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = 'openblade-types.workspace = true'; After = "openblade-types.workspace = true`nopenblade-protocol.workspace = true"; Error = 'Production dependency boundary changed*' },
@@ -68,6 +71,37 @@ try {
         if (-not $rejected) { throw "Workspace policy drift was accepted: $($case.Path)" }
     }
 
+    # Exercise external-package name/source admission using real resolved metadata.
+    # Mutate one field in a snapshot rather than acquire an unrelated registry.
+    Push-Location $probe
+    try {
+        $snapshotJson = cargo metadata --locked --offline --format-version 1
+        if ($LASTEXITCODE -ne 0) { throw 'External-package test metadata failed.' }
+    }
+    finally { Pop-Location }
+    foreach ($externalCase in @(
+        @{ Field = 'name'; Value = 'unreviewed-parser' },
+        @{ Field = 'source'; Value = 'registry+https://unreviewed.invalid/index' }
+    )) {
+        $snapshot = ($snapshotJson -join "`n") | ConvertFrom-Json
+        $external = @($snapshot.packages | Where-Object { $null -ne $_.source })[0]
+        $external.($externalCase.Field) = $externalCase.Value
+        $fixtureMetadataJson = $snapshot | ConvertTo-Json -Depth 100 -Compress
+        $rejected = $false
+        function cargo {
+            if (($args -join ' ') -cne 'metadata --locked --offline --format-version 1') {
+                throw 'Unexpected Cargo command during metadata snapshot test.'
+            }
+            $fixtureMetadataJson
+        }
+        try { & (Join-Path $probe 'Check-Workspace.ps1') }
+        catch {
+            if ($_.Exception.Message -notlike 'Unreviewed external package:*') { throw }
+            $rejected = $true
+        }
+        finally { Remove-Item Function:cargo }
+        if (-not $rejected) { throw "Unreviewed external package $($externalCase.Field) was accepted." }
+    }
     # Header comments must end at their newline, leaving assignments in the body.
     foreach ($entry in @(
         @{ Path = 'Cargo.toml'; Header = '[workspace.lints.rust]' },
@@ -93,7 +127,7 @@ try {
         & (Join-Path $probe 'Check-Workspace.ps1')
     }
     finally { Pop-Location }
-    Write-Output 'Workspace guard tests passed: caller location, compiler policies, MSRV, production/dev boundaries, test targets and equivalent TOML.'
+    Write-Output 'Workspace guard tests passed: caller location, compiler policies, MSRV, production/dev features and roots, external package admission, test targets and equivalent TOML.'
 }
 finally {
     # Only remove the unique directory this invocation created under temporary storage.

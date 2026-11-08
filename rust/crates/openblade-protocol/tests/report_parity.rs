@@ -145,6 +145,20 @@ fn parse(json: &str) -> Result<Fixture, String> {
         }
     }
     for row in &fixture.responses {
+        if row.request.payload_hex.0.len() > 80 {
+            return Err(format!("{}: response request exceeds 80 bytes", row.id));
+        }
+        if row.expected_payload_hex.as_ref().is_some_and(|hex| {
+            hex.0.len() > 80
+                || row
+                    .expected_payload_length
+                    .is_some_and(|expected| expected != hex.0.len() as i32)
+        }) {
+            return Err(format!(
+                "{}: incoherent expected response payload length",
+                row.id
+            ));
+        }
         if row.expected_failure.is_none() != row.expected_payload_hex.is_some() {
             return Err(format!("{}: incoherent response expectation", row.id));
         }
@@ -338,6 +352,15 @@ fn reader_rejects_malformed_contract() {
             serde_json::json!("Other"),
         ),
         ("/responses/0/expectedPayloadLength", serde_json::json!(1.0)),
+        (
+            "/responses/0/request/payloadHex",
+            serde_json::json!("00".repeat(81)),
+        ),
+        ("/responses/0/expectedPayloadHex", serde_json::json!("00")),
+        (
+            "/responses/0/expectedPayloadHex",
+            serde_json::json!("00".repeat(81)),
+        ),
         ("/encoding", serde_json::json!([])),
         ("/responses", serde_json::json!([])),
     ];
