@@ -102,9 +102,8 @@ settings retain their mode, temperature limits and duration; the duration now
 controls the averaging window. Each new immediate cutoff starts 10 C above its
 corresponding saved limit, capped at the existing 100 C input maximum. A saved
 100 C limit therefore keeps an equal 100 C immediate cutoff. Older pre-Stop
-settings still migrate with Auto selected and automatic Stop disabled. The new
-averaging policy is an implementation change; the installed trial below used
-the previous continuous-timer build.
+settings still migrate with Auto selected and automatic Stop disabled. Each
+installed trial below identifies the policy build it exercised.
 
 External power is classified by the existing typed adapter query in the owner,
 serialized outside mailbox transactions. Windows external-power indication by
@@ -225,14 +224,34 @@ not prove temperature caused that refusal. The client independently confirmed
 released/inactive ownership, restored the exact original Custom 55/55 C and
 five-second settings, and verified their readback. Fans remained Automatic at
 2300/1900 RPM. No fan-stop or Auto-restoration success is claimed for this trial.
-The trial used the installed continuous-timer implementation, not the new
-rolling average policy under development.
+This trial preceded the rolling average installation described below.
 
 Later entry checks now retain the failed stage and that attempt's available
 sample in the refusal receipt. Each attempt clears earlier diagnostics; a
 prerequisite failure before thermal acquisition is marked as not sampled.
 This changes reporting only, without adding hardware reads or changing
 admission and recovery ordering.
+
+On 2026-11-07, the reviewed `e820aed2` rolling-average build was installed through
+the enrolled broker as LocalDev `65535.417.48188.62986`. Publishing passed all
+171 installer UI tests; independent verification matched all 372 installed
+payload files and the running service, Session Agent and tray. The typed IPC-77
+readback preserved Custom 55/55 C, the five-second window and disabled automatic
+entry, with both new immediate cutoffs migrated to 65 C.
+
+The authorized repeat changed only the CPU average limit to 65 C. GPU stayed at
+55 C, both immediate cutoffs stayed at 65 C, and the window stayed five seconds.
+After an initial 79 C sample, three fresh service samples of 59, 57 and 56 C
+admitted the single Stop request. Saved status moved from Starting directly to
+ReturningToAutomatic, without a confirmed Stopped snapshot. The receipt reported
+"Auto requested or continuation admission ended" without identifying the cause.
+One harness-issued Auto request completed with firmware Auto, durable cleanup
+and native release confirmed; independent public readback also confirmed released
+ownership. Every original setting was then restored and independently matched.
+Final readings were CPU 58 C and fans 2500/2300 RPM, with no blocked or unconfirmed
+writes. This validates the observed Auto cleanup and settings restoration, but
+does not establish fan stop, a stopped dwell or operation of the rolling exit
+thresholds. No further Stop request was sent.
 
 Guardian termination, an unknown outer-job termination, a native call that
 never returns, sleep/resume and OS failure do not have a demonstrated
