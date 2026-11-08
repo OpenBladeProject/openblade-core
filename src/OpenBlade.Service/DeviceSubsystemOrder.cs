@@ -38,5 +38,5 @@ internal static class DeviceSubsystemOrder
         DeviceSubsystem.Performance or DeviceSubsystem.Fans;
 
     internal static bool IsManualFanMode(FanMode? mode) => mode is
-        FanMode.Maximum or FanMode.Fixed or FanMode.ManualCurve;
+        FanMode.Maximum or FanMode.Fixed or FanMode.ManualCurve or FanMode.Stop;
 }

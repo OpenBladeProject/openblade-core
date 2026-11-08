@@ -6,6 +6,90 @@ namespace OpenBlade.Tray.Tests;
 public sealed partial class MainViewModelTests
 {
     [Fact]
+    public async Task BatterySaverFanStop_RequestUsesTypedOperationAndAuthoritativeReadback()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        status = status with
+        {
+            ActivePowerSource = PowerSource.Battery,
+            Capabilities = status.Capabilities! with { SupportsBatterySaverFanStop = true },
+            ConfirmedState = status.ConfirmedState! with { Performance = PerformancePreset.BatterySaver },
+            DesiredState = status.DesiredState with { Performance = new(PerformancePreset.BatterySaver, SettingValueSource.PowerProfile) },
+            BatterySaverFanStopStatus = new(Requested: false),
+        };
+        await PushAsync(client, dispatcher, status);
+        client.GetStatusResponse = status with
+        {
+            Revision = status.Revision + 1,
+            BatterySaverFanStopStatus = new(Requested: true, NormalFanControl: FanControlSettings.Default)
+        };
+        await viewModel.SetBatterySaverFanStopAsync(true, CancellationToken.None);
+        Assert.True(viewModel.BatterySaverFanStopRequested);
+        Assert.Contains("batterySaverFanStop:True", client.MutationOperations);
+        Assert.Null(client.LastFanControlSettings);
+        Assert.Null(client.LastProfiles);
+        client.NextResult = new(ControlOperationStatus.Blocked, "Blocked");
+        client.GetStatusResponse = status with
+        {
+            Revision = status.Revision + 2,
+            BatterySaverFanStopStatus = new(Requested: true, NormalFanControl: FanControlSettings.Default)
+        };
+        await viewModel.SetBatterySaverFanStopAsync(false, CancellationToken.None);
+        Assert.True(viewModel.BatterySaverFanStopRequested);
+        Assert.True(viewModel.CanToggleBatterySaverFanStop);
+    }
+    [Fact]
+    public async Task BatterySaverFanStop_PresentsRequestedStateAndNormalFanIntent()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        var normal = new FanControlSettings(FanMode.Fixed, 3000, ManualFanCurve.Default);
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        status = status with
+        {
+            ActivePowerSource = PowerSource.Battery,
+            Capabilities = status.Capabilities! with { SupportsBatterySaverFanStop = true },
+            ConfirmedState = status.ConfirmedState! with { Performance = PerformancePreset.BatterySaver, Fans = FanMode.Stop },
+            DesiredState = status.DesiredState with { Performance = new(PerformancePreset.BatterySaver, SettingValueSource.PowerProfile) },
+            BatterySaverFanStopStatus = new(Requested: true, Applied: true, ThermallySuspended: true, NormalFanControl: normal),
+        };
+        await PushAsync(client, dispatcher, status);
+        Assert.True(viewModel.IsBatterySaverFanStopVisible);
+        Assert.True(viewModel.BatterySaverFanStopRequested);
+        Assert.True(viewModel.IsBatterySaverFanStopSuspended);
+        Assert.True(viewModel.CanToggleBatterySaverFanStop);
+        Assert.False(viewModel.CanEditFanControl);
+        Assert.Equal(FanMode.Fixed, viewModel.SelectedFanMode);
+        Assert.Equal(3000, viewModel.FixedFanSpeedRpm);
+        Assert.DoesNotContain(viewModel.AvailableActiveFanModeOptions, option => option.Value == FanMode.Stop);
+
+        await PushAsync(client, dispatcher, status with
+        {
+            Revision = status.Revision + 1,
+            Capabilities = status.Capabilities! with { SupportsBatterySaverFanStop = false }
+        });
+        Assert.False(viewModel.IsBatterySaverFanStopVisible);
+        await PushAsync(client, dispatcher, status with
+        {
+            Revision = status.Revision + 2,
+            ActivePowerSource = PowerSource.PluggedIn
+        });
+        Assert.False(viewModel.IsBatterySaverFanStopVisible);
+        await PushAsync(client, dispatcher, status with
+        {
+            Revision = status.Revision + 3,
+            ConfirmedState = status.ConfirmedState! with { Performance = PerformancePreset.Balanced },
+            DesiredState = status.DesiredState with { Performance = new(PerformancePreset.Balanced, SettingValueSource.PowerProfile) }
+        });
+        Assert.False(viewModel.IsBatterySaverFanStopVisible);
+    }
+    [Fact]
     public async Task FanControlEditor_LimitedPowerCapabilityChangeRefreshesChoices()
     {
         var client = new FakeServiceClient();

@@ -21042,7 +21042,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         ];
         foreach (PerformancePreset performance in fullPowerProfiles)
         {
-            foreach (FanMode fanMode in Enum.GetValues<FanMode>())
+            // The operational Battery Saver stop target is not an ordinary
+            // full-power fan preference or a HyperBoost entry intent.
+            foreach (FanMode fanMode in DeviceCapabilities.SafeTargetDefaults().FanModes)
             {
                 matrix.Add(performance, fanMode);
             }
@@ -31071,6 +31073,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
         Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
+        Func<PowerSource>? batterySaverFanStopPowerReader = null,
+        IFanStopBackend? fanStopBackend = null,
         ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
         string? coolingPadStateDirectory = null)
     {
@@ -31172,6 +31176,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
             hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary,
             laptopControlPendingStore: new LaptopControlPendingStore(Path.Combine(directory, "laptop-control-pending.json")),
+            batterySaverFanStopPowerReader: batterySaverFanStopPowerReader ?? (() => telemetry.Current.PowerSource),
+            fanStopBackend: fanStopBackend,
             coolingPadDeviceProvider: coolingPadDeviceProvider,
             coolingPadStateDirectory: coolingPadStateDirectory);
         if (initialize)
@@ -31752,10 +31758,13 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     {
         private readonly object publishGate = new();
 
+        public Action? BeforePublish { get; set; }
+
         public List<ServiceStatusSnapshot> Published { get; } = [];
 
         public void Publish(ServiceStatusSnapshot snapshot)
         {
+            BeforePublish?.Invoke();
             lock (publishGate)
             {
                 Published.Add(snapshot);
@@ -31772,8 +31781,26 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public string? LaptopControlRecoveryIdentity { get; set; } = "RZ09-0581|1532:02E0";
 
         public Func<bool>? RecoveryWriteAdmission { get; private set; }
+        public int GuardianLeaseAcquisitions { get; private set; }
+        public GuardianFanStopBackendTests.Lease GuardianLease { get; } = new();
+
+        public Task<IDisposable> AcquireFanStopHardwareLeaseAsync(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            GuardianLeaseAcquisitions++;
+            return Task.FromResult<IDisposable>(GuardianLease);
+        }
 
         public void SetRecoveryWriteAdmission(Func<bool> admission) => RecoveryWriteAdmission = admission;
+
+        public Func<bool>? BatterySaverFanStopWriteAdmission { get; private set; }
+        public bool BatterySaverFanStopReadInterest { get; private set; }
+
+        public void SetBatterySaverFanStopContext(bool readbackRequested, Func<bool>? writeAdmission)
+        {
+            BatterySaverFanStopReadInterest = readbackRequested;
+            BatterySaverFanStopWriteAdmission = writeAdmission;
+        }
 
         public IBladeDevice Device { get; set; } = device;
 

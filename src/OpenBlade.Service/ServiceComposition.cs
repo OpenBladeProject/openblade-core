@@ -43,7 +43,12 @@ internal static class ServiceComposition
             recoveryWorkerIdle: () => CpuNativeWorkerCoordinator.ForSession(WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession()).Status
                 is { WorkerOutstanding: false, Invalid: false }));
         services.AddSingleton<IServiceControlRuntime>(provider =>
-            new ServiceControlRuntime(
+        {
+            ServiceControlRuntime? runtime = null;
+            var guardian = new GuardianFanStopBackend(new WindowsFanStopGuardianClient(
+                machineDataDirectory, token => runtime!.ReadFanStopServiceAdmissionAsync(token),
+                () => runtime!.ReadFanStopContinuationAdmission()));
+            runtime = new ServiceControlRuntime(
                 provider.GetRequiredService<BatteryConfigurationStore>(),
                 provider.GetRequiredService<PersistentOverrideStore>(),
                 provider.GetRequiredService<IPowerStateProvider>(),
@@ -63,9 +68,12 @@ internal static class ServiceComposition
                     provider.GetRequiredService<IHyperBoostOwnershipJournalStore>(),
                 laptopControlPendingStore: new LaptopControlPendingStore(
                     Path.Combine(machineDataDirectory, "laptop-control-pending.json")),
+                fanStopBackend: guardian,
                 cpuTuningController: provider.GetRequiredService<CpuTuningController>(),
                 coolingPadDeviceProvider: new WindowsCoolingPadDeviceProvider(),
-                coolingPadStateDirectory: Path.Combine(machineDataDirectory, "cooling-pad")));
+                coolingPadStateDirectory: Path.Combine(machineDataDirectory, "cooling-pad"));
+            return runtime;
+        });
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();
         return services;
     }

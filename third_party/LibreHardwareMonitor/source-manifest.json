@@ -1,0 +1,407 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor",
+  "upstream_commit": "b4718a6208ebbcf028cc29f2aea30e58b138e830",
+  "upstream_nuget_version": "0.9.7-pre781",
+  "upstream_nuget_sha256": "9ad61599402d920736a9464a10018069e07c8393b9b476604b97f5fd392f1845",
+  "module_repository": "https://github.com/namazso/PawnIO.Modules",
+  "module_release": "0.2.11",
+  "module_commit": "52a7e536dff3e53c96917a28caac5e0fa6510696",
+  "module_release_zip_sha256": "43608cb89bc84247fef1368a139013f7d043e17db6d6c8dfc9b46bf0905a81f4",
+  "module_hashes": {
+    "IntelMSR.bin": "d6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f",
+    "AMDFamily17.bin": "dae74615761b78bdf064dfb3e136252ddcc6fc727d88f14738d0e5800d427a91"
+  },
+  "files": [
+    {
+      "path": "LibreHardwareMonitorLib.csproj",
+      "upstream_path": "LibreHardwareMonitorLib/LibreHardwareMonitorLib.csproj",
+      "upstream_git_blob": "96201638a374975cfa9f3c0ab6b918dfe41089d8",
+      "upstream_sha256": null,
+      "modified": true,
+      "distributed_sha256": "e99629b34dcec1b6b973d3a9cf43375ec7efc20995ff69eac0785b44e193c5b3"
+    },
+    {
+      "path": "LICENSE",
+      "upstream_path": "LICENSE",
+      "upstream_git_blob": "a612ad9813b006ce81d1ee438dd784da99a54007",
+      "upstream_sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "modified": false,
+      "distributed_sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"
+    },
+    {
+      "path": "NativeMethods.txt",
+      "upstream_path": "LibreHardwareMonitorLib/NativeMethods.txt",
+      "upstream_git_blob": "8e118ea37f1d8504f500cca76dcea3e76fc7ec10",
+      "upstream_sha256": "ebe1b276f1be763a8f017c0cd165f8f7831d75802e945062ee7bc2a6665ebbe8",
+      "modified": true,
+      "distributed_sha256": "19e3483b085e246f490bdba1e59d168691aa82c7a599f2b1bd12341687369be9"
+    },
+    {
+      "path": "THIRD-PARTY-NOTICES.txt",
+      "upstream_path": "THIRD-PARTY-NOTICES.txt",
+      "upstream_git_blob": "d6e5e18564dc93bfa3775f140f6bffce5ab2c53e",
+      "upstream_sha256": "a60d5ee62f4d700caff38566f42874d554b8b530437c72804fb28b958cfbda9b",
+      "modified": false,
+      "distributed_sha256": "a60d5ee62f4d700caff38566f42874d554b8b530437c72804fb28b958cfbda9b"
+    },
+    {
+      "path": "Hardware/CoreType.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/CoreType.cs",
+      "upstream_git_blob": "0f83c8f8393629c339258ab3537e013410ec1301",
+      "upstream_sha256": "581123a0204a735da074cb20e6bc191623d32c247d97deea5a1ea3dc6252b551",
+      "modified": false,
+      "distributed_sha256": "581123a0204a735da074cb20e6bc191623d32c247d97deea5a1ea3dc6252b551"
+    },
+    {
+      "path": "Hardware/GroupAffinity.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/GroupAffinity.cs",
+      "upstream_git_blob": "63b6e5dbee233082451ddc61c7f5390964cc3e46",
+      "upstream_sha256": "b4a03e9e28f4e9dc432c92f99c50c6d5f710474960d02c2a02e4e32cc15069ba",
+      "modified": false,
+      "distributed_sha256": "b4a03e9e28f4e9dc432c92f99c50c6d5f710474960d02c2a02e4e32cc15069ba"
+    },
+    {
+      "path": "Hardware/Hardware.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/Hardware.cs",
+      "upstream_git_blob": "03d4be36beba8f4db5995822302bc9cefcb160ea",
+      "upstream_sha256": "df656116a708176428505743fc0ef8df30981ace47258797cf4f4aaea015430f",
+      "modified": false,
+      "distributed_sha256": "df656116a708176428505743fc0ef8df30981ace47258797cf4f4aaea015430f"
+    },
+    {
+      "path": "Hardware/HardwareType.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/HardwareType.cs",
+      "upstream_git_blob": "e775271fece6e395581819c45095e1a7ee16009c",
+      "upstream_sha256": "28e1d7aab22d73d694fbf4fdd2936f05dbf5c1a2a05baedfb0ba59e4eac19892",
+      "modified": false,
+      "distributed_sha256": "28e1d7aab22d73d694fbf4fdd2936f05dbf5c1a2a05baedfb0ba59e4eac19892"
+    },
+    {
+      "path": "Hardware/IComputer.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/IComputer.cs",
+      "upstream_git_blob": "d8933d84a9c33e0d6247cabdc5f66580c3cedbd4",
+      "upstream_sha256": null,
+      "modified": false,
+      "distributed_sha256": "858049bd751302ddacd06dfc848c1fe6867aefda5d9bd268dc13852d58c4ef1f"
+    },
+    {
+      "path": "Hardware/IControl.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/IControl.cs",
+      "upstream_git_blob": "e3b6ac48873878673276631c2ecb15d7533f280f",
+      "upstream_sha256": "9a9cf22bd2bcb1d6b6f0899038192604e2eb730cb098b75b308744aec23b3047",
+      "modified": false,
+      "distributed_sha256": "9a9cf22bd2bcb1d6b6f0899038192604e2eb730cb098b75b308744aec23b3047"
+    },
+    {
+      "path": "Hardware/Identifier.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/Identifier.cs",
+      "upstream_git_blob": "ab54b362a4c1fff85b76f2b4989bb57cab146518",
+      "upstream_sha256": "832b9c325f38e0f18ae2f7429f66b06331b9f2e0bc96d560dbd39a390a1e5d98",
+      "modified": true,
+      "distributed_sha256": "64412baa0a28e838543973994aed41a7952101b06806a1c53b32929b1c4385d6"
+    },
+    {
+      "path": "Hardware/IElement.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/IElement.cs",
+      "upstream_git_blob": "380b7deffe7b27b2600450fde902c4b6f6da84e5",
+      "upstream_sha256": "a35a9bd46d4aba71d4284c7b8e071d3175743312b64fb08ba82a996e221d04c9",
+      "modified": false,
+      "distributed_sha256": "a35a9bd46d4aba71d4284c7b8e071d3175743312b64fb08ba82a996e221d04c9"
+    },
+    {
+      "path": "Hardware/IGroup.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/IGroup.cs",
+      "upstream_git_blob": "863e32e598b8a1e119f151ea1743dced52655d1a",
+      "upstream_sha256": "8521e700a9ad34e396a345f62bc27c63fc9f0de5fbbe7c16e89da4c8b5fc2f6f",
+      "modified": false,
+      "distributed_sha256": "8521e700a9ad34e396a345f62bc27c63fc9f0de5fbbe7c16e89da4c8b5fc2f6f"
+    },
+    {
+      "path": "Hardware/IHardware.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/IHardware.cs",
+      "upstream_git_blob": "a08086d9eb7a021a7a6dd5b09a1231c0cd927229",
+      "upstream_sha256": "255d893e57d2a64f831318f265ca624d0c438134338729d13246fedf486d2302",
+      "modified": false,
+      "distributed_sha256": "255d893e57d2a64f831318f265ca624d0c438134338729d13246fedf486d2302"
+    },
+    {
+      "path": "Hardware/IHardwareChanged.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/IHardwareChanged.cs",
+      "upstream_git_blob": "8808f8b1e4d44861cd47eb72d629d6fe348a1833",
+      "upstream_sha256": "8439de21dfa35a4fd3cef8d851f7ace04c52069e211513edb1feb1477587b994",
+      "modified": false,
+      "distributed_sha256": "8439de21dfa35a4fd3cef8d851f7ace04c52069e211513edb1feb1477587b994"
+    },
+    {
+      "path": "Hardware/IParameter.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/IParameter.cs",
+      "upstream_git_blob": "d3c1dc5114d7970607938ee3f24d7cfa82ef64e2",
+      "upstream_sha256": "e60c8d5a0479588179f620eb90c02ed7d7f7c7988248e552bed4c1b96b57b99c",
+      "modified": false,
+      "distributed_sha256": "e60c8d5a0479588179f620eb90c02ed7d7f7c7988248e552bed4c1b96b57b99c"
+    },
+    {
+      "path": "Hardware/ISensor.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/ISensor.cs",
+      "upstream_git_blob": "db95a8571a6ce342190ccf83001c8d38f379347b",
+      "upstream_sha256": "938731bf31be2a115e62f5eb3591133985969efccb71e6fd72dfed2aef1ca595",
+      "modified": false,
+      "distributed_sha256": "938731bf31be2a115e62f5eb3591133985969efccb71e6fd72dfed2aef1ca595"
+    },
+    {
+      "path": "Hardware/ISensorLimits.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/ISensorLimits.cs",
+      "upstream_git_blob": "9f04cf37c913dfef154bf8d2044e4d745dbc7c76",
+      "upstream_sha256": "35f2869499ff049fb7c21b6ceb02c33c2347bf4f29aeead3809bb50942f6bed8",
+      "modified": false,
+      "distributed_sha256": "35f2869499ff049fb7c21b6ceb02c33c2347bf4f29aeead3809bb50942f6bed8"
+    },
+    {
+      "path": "Hardware/ISettings.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/ISettings.cs",
+      "upstream_git_blob": "6bdbc973db508e3a17bf2fe5635fb0f91949acd0",
+      "upstream_sha256": "afec0e41a656553b8a7af20674577a3131177d8145ce7ae6c99acafa72309266",
+      "modified": false,
+      "distributed_sha256": "afec0e41a656553b8a7af20674577a3131177d8145ce7ae6c99acafa72309266"
+    },
+    {
+      "path": "Hardware/IVisitor.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/IVisitor.cs",
+      "upstream_git_blob": "bdb25a0401be230417122512b82e32c2eee1c3f9",
+      "upstream_sha256": "670d28125fb73c213dd3aaed356d281c5ee3cdf5e16d0e9c751ddb7154b74fc4",
+      "modified": false,
+      "distributed_sha256": "670d28125fb73c213dd3aaed356d281c5ee3cdf5e16d0e9c751ddb7154b74fc4"
+    },
+    {
+      "path": "Hardware/Mutexes.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/Mutexes.cs",
+      "upstream_git_blob": "3fdd5b8c1d15749c54f7c00c51128cbe7f17e165",
+      "upstream_sha256": "d6a7f6855edfecdeea2c010e2e4b12abf0ba9a27b9f2a88fddd144e472942056",
+      "modified": true,
+      "distributed_sha256": "2e1658feb3ed5a0b46518b97b9af27106761301cecf710f479115a61a1839d1e"
+    },
+    {
+      "path": "Hardware/OpCode.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/OpCode.cs",
+      "upstream_git_blob": "64bbc77905fa655d68bcdfc49bc7bb41de8aa0d5",
+      "upstream_sha256": "26c28b639fedfc57f42d139741dc619cc8911d6bf55e36e3dd4779adecb99fc5",
+      "modified": true,
+      "distributed_sha256": "b2d95ee841c3aa7f7f8c528286531aa0b5e131e9494dc40ca792ec0e618ebe69"
+    },
+    {
+      "path": "Hardware/Parameter.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/Parameter.cs",
+      "upstream_git_blob": "5014ab90088ef2c850833e06a8d424f334c0771a",
+      "upstream_sha256": "5ef6d1d541fd592d99e813036ccc59a9b6552d5bf927ff32db7e20efabd2bf15",
+      "modified": false,
+      "distributed_sha256": "5ef6d1d541fd592d99e813036ccc59a9b6552d5bf927ff32db7e20efabd2bf15"
+    },
+    {
+      "path": "Hardware/ParameterDescription.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/ParameterDescription.cs",
+      "upstream_git_blob": "359dbfc6ae67357252eff0eefcfbc67a1b325062",
+      "upstream_sha256": "61f518ee9b0534db11da3157c8203daff4847efbe47452a8a73c221cc56f8dc2",
+      "modified": false,
+      "distributed_sha256": "61f518ee9b0534db11da3157c8203daff4847efbe47452a8a73c221cc56f8dc2"
+    },
+    {
+      "path": "Hardware/Sensor.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/Sensor.cs",
+      "upstream_git_blob": "2951d588c07bf17cb54d0b7ecf22d718ad234edd",
+      "upstream_sha256": "38e500fbd1223e78b9cec2e8b78e86ed776c7efad1fc20fd8cb75cc85e322a1f",
+      "modified": false,
+      "distributed_sha256": "38e500fbd1223e78b9cec2e8b78e86ed776c7efad1fc20fd8cb75cc85e322a1f"
+    },
+    {
+      "path": "Hardware/ThreadAffinity.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/ThreadAffinity.cs",
+      "upstream_git_blob": "3c794de181fe704ed0abd8b73b86cf2fe5455feb",
+      "upstream_sha256": "b8e3431bb1d0cf6af08debec5eb3836b5df5bef9ffb6094047e4c8a48ae9308c",
+      "modified": true,
+      "distributed_sha256": "d499a71d3947c0d7991c5a34e6abf258addd2b44f6649f21f60ab17f17d6d634"
+    },
+    {
+      "path": "Hardware/Cpu/Amd17Cpu.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/Cpu/Amd17Cpu.cs",
+      "upstream_git_blob": "c6578354a2d2a68c0d3a6a114e7dd2b52be311af",
+      "upstream_sha256": "8a6dba06cd584c91043f13bc4555fb43ec095534c80ceb00afa31e62d2b082e3",
+      "modified": true,
+      "distributed_sha256": "9b40a3a669f778ed10c0a7fcc1af321b3fa78be89eada6c09effcf4720f41ded"
+    },
+    {
+      "path": "Hardware/Cpu/AmdCpu.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/Cpu/AmdCpu.cs",
+      "upstream_git_blob": "c0a1d3af6f3d98293fcd568104e6ecad17a8ff93",
+      "upstream_sha256": "bf2ca1fe4abca007b0676b9e242b05da41e3d9ab588b4682d64f7330a0de80f1",
+      "modified": false,
+      "distributed_sha256": "bf2ca1fe4abca007b0676b9e242b05da41e3d9ab588b4682d64f7330a0de80f1"
+    },
+    {
+      "path": "Hardware/Cpu/CpuGroup.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/Cpu/CpuGroup.cs",
+      "upstream_git_blob": "d35201e3d81c6d847f9a0b7436cb03d35eafe46f",
+      "upstream_sha256": "41ac9a7451aaf72ba7251da8086575f2f38c298db935601c67deb756534e29c2",
+      "modified": true,
+      "distributed_sha256": "df876e19b0d48583ceca9037ec6808548652325ec6708926653fcb900b5942bd"
+    },
+    {
+      "path": "Hardware/Cpu/CpuId.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/Cpu/CpuId.cs",
+      "upstream_git_blob": "5a9ea5c870f4ee1532642b43607dcd269a70ee1f",
+      "upstream_sha256": "987ac27f3c28699486cdbd5afa56bfb8ded63b4911f5d85c8e426acd0916797f",
+      "modified": false,
+      "distributed_sha256": "987ac27f3c28699486cdbd5afa56bfb8ded63b4911f5d85c8e426acd0916797f"
+    },
+    {
+      "path": "Hardware/Cpu/GenericCpu.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/Cpu/GenericCpu.cs",
+      "upstream_git_blob": "61010f19c79cf8c0b86f7079629796cb2690bb42",
+      "upstream_sha256": "757e1c23d57ee0ad7704b26fd49d18410a939f97a68430987404b3e5a71dc9ae",
+      "modified": true,
+      "distributed_sha256": "1e6966a55db1e5fe4251332dd98f865b0ac83ca66dbd1da72eae12b4ba37bf7d"
+    },
+    {
+      "path": "Hardware/Cpu/IntelCpu.cs",
+      "upstream_path": "LibreHardwareMonitorLib/Hardware/Cpu/IntelCpu.cs",
+      "upstream_git_blob": "972b6cfdb240e1617d27b8d1d0a5b7bb7016ad67",
+      "upstream_sha256": "77c785464859195fcbcc732ccd9fe9ed527a7936fd3a1e4d23d8b89217922a90",
+      "modified": true,
+      "distributed_sha256": "107068b86f5f0922eee6d9f43c8634ce8ad8b2a69cb3a74f66dfe88979e37ab0"
+    },
+    {
+      "path": "PawnIo/AmdFamily17.cs",
+      "upstream_path": "LibreHardwareMonitorLib/PawnIo/AmdFamily17.cs",
+      "upstream_git_blob": "037100ffe991cffb5090bd5f783faf9b3063630d",
+      "upstream_sha256": "d47cbc1e8469dd7e1b8b6cbbd798c298df62ca59229de0f0d7163ac869d6f970",
+      "modified": true,
+      "distributed_sha256": "7606bb2783970984c7b3504eb0c22123fb23941fd7a99c933260199ae2565f41"
+    },
+    {
+      "path": "PawnIo/IntelMsr.cs",
+      "upstream_path": "LibreHardwareMonitorLib/PawnIo/IntelMsr.cs",
+      "upstream_git_blob": "8236d8d9b0b68d690fb5425fa8ae699499117e3e",
+      "upstream_sha256": "2c65b8afb3ec17273bef35dccb4c0c497fad8e50f1aba8bc1b2be4ecc398c33c",
+      "modified": true,
+      "distributed_sha256": "aac0d00a0694c3e16f01f139c4b500077ada30fa45566fb16354b00939c47fe9"
+    },
+    {
+      "path": "PawnIo/PawnIo.cs",
+      "upstream_path": "LibreHardwareMonitorLib/PawnIo/PawnIo.cs",
+      "upstream_git_blob": "8f10deb3ba35ac371bddaacaaa4c8b58e9a0346f",
+      "upstream_sha256": "42d1602c9af3d2524be661cac21f40fd87e38609482aa6ddab4cc39f369d746a",
+      "modified": true,
+      "distributed_sha256": "2e9825ed7ab87ec3c87046ba08ec4d8a0615b626e33cff936a40de892995c2b9"
+    },
+    {
+      "path": "Resources/PawnIo/AMDFamily17.bin",
+      "upstream_path": "LibreHardwareMonitorLib/Resources/PawnIo/AMDFamily17.bin",
+      "upstream_git_blob": "795107e2d150d54c9ff7fd53367f6a6c48ec0a71",
+      "upstream_sha256": "dae74615761b78bdf064dfb3e136252ddcc6fc727d88f14738d0e5800d427a91",
+      "modified": false,
+      "distributed_sha256": "dae74615761b78bdf064dfb3e136252ddcc6fc727d88f14738d0e5800d427a91"
+    },
+    {
+      "path": "Resources/PawnIo/COPYING",
+      "upstream_path": "LibreHardwareMonitorLib/Resources/PawnIo/COPYING",
+      "upstream_git_blob": "4362b49151d7b34ef83b3067a8f9c9f877d72a0e",
+      "upstream_sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "modified": false,
+      "distributed_sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+    },
+    {
+      "path": "Resources/PawnIo/IntelMSR.bin",
+      "upstream_path": "LibreHardwareMonitorLib/Resources/PawnIo/IntelMSR.bin",
+      "upstream_git_blob": "47da9db96cf769363415239250d7514fa94186bc",
+      "upstream_sha256": "d6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f",
+      "modified": false,
+      "distributed_sha256": "d6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f"
+    }
+  ],
+  "module_source_files": [
+    {
+      "path": "AMDFamily17.p",
+      "upstream_path": "AMDFamily17.p",
+      "upstream_git_blob": "e9e27a3c6d0fde030d8252478ce35d821daa6672",
+      "sha256": "8a1808a2e51e184f96d17362991ae900c65a1a23135a68c256ec6759e8297bb9",
+      "modified": false
+    },
+    {
+      "path": "COPYING",
+      "upstream_path": "COPYING",
+      "upstream_git_blob": "4362b49151d7b34ef83b3067a8f9c9f877d72a0e",
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "modified": false
+    },
+    {
+      "path": "IntelMSR.p",
+      "upstream_path": "IntelMSR.p",
+      "upstream_git_blob": "e83d9238fe51a9ec868ac0f202f8ca91c8b03850",
+      "sha256": "f3d9c573091fa844805ea8fcccd49304319491c51c7f7315e68935c4657ab0ad",
+      "modified": false
+    },
+    {
+      "path": "README.md",
+      "upstream_path": "README.md",
+      "upstream_git_blob": "430af1e51a0202f40ee92a55a9239a29cf244487",
+      "sha256": "4fe9bf550c50819ec563d3c18f0fb4770c2ad78d03f882bb9c6e8153314a87a0",
+      "modified": false
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "upstream_path": ".github/workflows/ci.yml",
+      "upstream_git_blob": "6313939c549edf811352cc41fb33d6f55a7638d1",
+      "sha256": "e33ad14083e9fe3d5a668120d6baeeb996ed23e3c1ea3effab34ed66d8a32ef4",
+      "modified": false
+    },
+    {
+      "path": "include/core.inc",
+      "upstream_path": "include/core.inc",
+      "upstream_git_blob": "2e605631b2f2efb5718fbe499de31097e930eadc",
+      "sha256": "3c3fdb0bb54d48792e5fadf4a17607023a35f25f1c006893a114342bac9d6aff",
+      "modified": false
+    },
+    {
+      "path": "include/extra.inc",
+      "upstream_path": "include/extra.inc",
+      "upstream_git_blob": "76ad2270e18f679b9c315ebf83439f8c1fdb347f",
+      "sha256": "4780c6ba2489264ff5982f2f9a5e2b7f4e8ec8951adfe8ef88e728592f1b2e94",
+      "modified": false
+    },
+    {
+      "path": "include/native.inc",
+      "upstream_path": "include/native.inc",
+      "upstream_git_blob": "337a633f61400a28343055cdad641b4ed602439f",
+      "sha256": "b526bf69d66ebe00b22ea8609d9b6c2073ba6eeaf0730a2cf32477d0b64ee395",
+      "modified": false
+    },
+    {
+      "path": "include/ntstatus.inc",
+      "upstream_path": "include/ntstatus.inc",
+      "upstream_git_blob": "e8e01d35b73bfd444453c70261ac0f14af199f62",
+      "sha256": "bcb76abca4bc951f286074b59f64fb950e384a2204d4dfe6d1e0d03502d0bd2a",
+      "modified": false
+    },
+    {
+      "path": "include/pawnio.inc",
+      "upstream_path": "include/pawnio.inc",
+      "upstream_git_blob": "464f289d1a52ecedd2fd85c329ac48151d11d1ee",
+      "sha256": "0809f5964d7707272398b212879078f62e08bc579a3def0283a1a059cf9e72a4",
+      "modified": false
+    },
+    {
+      "path": "include/registry.inc",
+      "upstream_path": "include/registry.inc",
+      "upstream_git_blob": "1d1d66279835f285752f3b4e3b7a72897eac8d6b",
+      "sha256": "ef33b339849f949b07792936f749de8eca1fa72b4348096c5b644b364e0870ad",
+      "modified": false
+    },
+    {
+      "path": "include/util.inc",
+      "upstream_path": "include/util.inc",
+      "upstream_git_blob": "e97c31b04d90247e1181f644e3d0ebd266474d1d",
+      "sha256": "ab390f9d9e244c2f7a5932f42a7e79194d100dc4a16549dbc31f9cf4932f3027",
+      "modified": false
+    }
+  ]
+}

@@ -1,4 +1,3 @@
-# Reviewed exported API baseline. Regenerate with build/Update-PublicApiBaselines.ps1 and review the diff.
 type sealed class OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest>
@@ -260,6 +259,29 @@ type sealed class OpenBlade.Contracts.BatteryPolicy
   method static System.Boolean op_Inequality(OpenBlade.Contracts.BatteryPolicy left, OpenBlade.Contracts.BatteryPolicy right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.BatteryPolicy other)
   property System.Int32 ChargeLimitPercent { get; }
+type sealed class OpenBlade.Contracts.BatterySaverFanStopStatus
+  interface System.IEquatable<OpenBlade.Contracts.BatterySaverFanStopStatus>
+  ctor (System.Boolean Requested = false, System.Boolean Applied = false, System.Boolean ThermallySuspended = false, OpenBlade.Contracts.FanControlSettings NormalFanControl = null)
+  method OpenBlade.Contracts.BatterySaverFanStopStatus <Clone>$()
+  method OpenBlade.Contracts.FanControlSettings get_NormalFanControl()
+  method System.Boolean get_Applied()
+  method System.Boolean get_Requested()
+  method System.Boolean get_ThermallySuspended()
+  method System.Void Deconstruct(out System.Boolean Requested, out System.Boolean Applied, out System.Boolean ThermallySuspended, out OpenBlade.Contracts.FanControlSettings NormalFanControl)
+  method System.Void set_Applied(System.Boolean value)
+  method System.Void set_NormalFanControl(OpenBlade.Contracts.FanControlSettings value)
+  method System.Void set_Requested(System.Boolean value)
+  method System.Void set_ThermallySuspended(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.BatterySaverFanStopStatus left, OpenBlade.Contracts.BatterySaverFanStopStatus right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.BatterySaverFanStopStatus left, OpenBlade.Contracts.BatterySaverFanStopStatus right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.BatterySaverFanStopStatus other)
+  property OpenBlade.Contracts.FanControlSettings NormalFanControl { get; init; }
+  property System.Boolean Applied { get; init; }
+  property System.Boolean Requested { get; init; }
+  property System.Boolean ThermallySuspended { get; init; }
 type static class OpenBlade.Contracts.Blade18KeyboardLightingLayout
   field const System.Int32 Columns = 16
   field const System.Int32 Rows = 6
@@ -1036,10 +1058,13 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.ThxAudioCapabilities get_ThxAudio()
   method System.Boolean SupportsBreathingMode(OpenBlade.Contracts.BreathingColorMode mode)
   method System.Boolean SupportsFanSpeedInAnyPerformancePreset(System.Int32 speedRpm)
+  method System.Boolean get_HasFanStopTrialEvidence()
   method System.Boolean get_ReportsPerformanceWithManualFans()
   method System.Boolean get_SupportsBatteryProtectionOff()
+  method System.Boolean get_SupportsBatterySaverFanStop()
   method System.Boolean get_SupportsBreathingColorSelection()
   method System.Boolean get_SupportsDirectManualFanTransitions()
+  method System.Boolean get_SupportsFanStop()
   method System.Boolean get_SupportsIndependentLightingControls()
   method System.Boolean get_SupportsKeyboardBrightness()
   method System.Boolean get_SupportsManualFansOnLimitedPower()
@@ -1075,6 +1100,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_FanSpeedRange(OpenBlade.Contracts.FanSpeedRange value)
   method System.Void set_FanSpeedRangesByPerformancePreset(System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> value)
   method System.Void set_GpuOverclock(OpenBlade.Contracts.GpuOverclockCapabilities value)
+  method System.Void set_HasFanStopTrialEvidence(System.Boolean value)
   method System.Void set_HostManagedLaptopControls(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> value)
   method System.Void set_HyperBoostAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_HyperBoostBaseModes(OpenBlade.Contracts.HyperBoostBaseModeCapabilities value)
@@ -1092,8 +1118,10 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_SupportedBreathingColorModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.BreathingColorMode> value)
   method System.Void set_SupportedLightingRefreshRates(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingRefreshRate> value)
   method System.Void set_SupportsBatteryProtectionOff(System.Boolean value)
+  method System.Void set_SupportsBatterySaverFanStop(System.Boolean value)
   method System.Void set_SupportsBreathingColorSelection(System.Boolean value)
   method System.Void set_SupportsDirectManualFanTransitions(System.Boolean value)
+  method System.Void set_SupportsFanStop(System.Boolean value)
   method System.Void set_SupportsIndependentLightingControls(System.Boolean value)
   method System.Void set_SupportsKeyboardBrightness(System.Boolean value)
   method System.Void set_SupportsManualFansOnLimitedPower(System.Boolean value)
@@ -1119,10 +1147,13 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property OpenBlade.Contracts.HyperBoostBaseModeCapabilities HyperBoostBaseModes { get; init; }
   property OpenBlade.Contracts.SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
   property OpenBlade.Contracts.ThxAudioCapabilities ThxAudio { get; init; }
+  property System.Boolean HasFanStopTrialEvidence { get; init; }
   property System.Boolean ReportsPerformanceWithManualFans { get; init; }
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
+  property System.Boolean SupportsBatterySaverFanStop { get; init; }
   property System.Boolean SupportsBreathingColorSelection { get; init; }
   property System.Boolean SupportsDirectManualFanTransitions { get; init; }
+  property System.Boolean SupportsFanStop { get; init; }
   property System.Boolean SupportsIndependentLightingControls { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
   property System.Boolean SupportsManualFansOnLimitedPower { get; init; }
@@ -1466,6 +1497,7 @@ type enum OpenBlade.Contracts.FanMode
   field const OpenBlade.Contracts.FanMode Fixed = 1
   field const OpenBlade.Contracts.FanMode ManualCurve = 2
   field const OpenBlade.Contracts.FanMode Maximum = 3
+  field const OpenBlade.Contracts.FanMode Stop = 4
 type sealed class OpenBlade.Contracts.FanSpeedRange
   interface System.IEquatable<OpenBlade.Contracts.FanSpeedRange>
   ctor (System.Int32 MinimumRpm, System.Int32 MaximumRpm, System.Int32 StepRpm)
@@ -1492,6 +1524,143 @@ type sealed class OpenBlade.Contracts.FanSpeedRange
   property System.Int32 MaximumRpm { get; init; }
   property System.Int32 MinimumRpm { get; init; }
   property System.Int32 StepRpm { get; init; }
+type enum OpenBlade.Contracts.FanStopAutomationPauseReason
+  field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason AttemptFailed = 6
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason ManualAuto = 1
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason ModeChanged = 2
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason None = 0
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason PowerChanged = 4
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason Restarted = 7
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason SafetyCondition = 5
+  field const OpenBlade.Contracts.FanStopAutomationPauseReason SessionChanged = 3
+type enum OpenBlade.Contracts.FanStopAutomationState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopAutomationState Disabled = 0
+  field const OpenBlade.Contracts.FanStopAutomationState Paused = 2
+  field const OpenBlade.Contracts.FanStopAutomationState Stopped = 3
+  field const OpenBlade.Contracts.FanStopAutomationState Waiting = 1
+type enum OpenBlade.Contracts.FanStopEndMode
+  field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopEndMode Auto = 0
+  field const OpenBlade.Contracts.FanStopEndMode Custom = 1
+type enum OpenBlade.Contracts.FanStopEndReason
+  field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopEndReason CallerRequest = 5
+  field const OpenBlade.Contracts.FanStopEndReason None = 0
+  field const OpenBlade.Contracts.FanStopEndReason PowerChanged = 3
+  field const OpenBlade.Contracts.FanStopEndReason SafetyCondition = 2
+  field const OpenBlade.Contracts.FanStopEndReason SessionChanged = 4
+  field const OpenBlade.Contracts.FanStopEndReason ThermalThreshold = 1
+type enum OpenBlade.Contracts.FanStopMode
+  field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopMode Automatic = 0
+  field const OpenBlade.Contracts.FanStopMode Stop = 1
+type sealed class OpenBlade.Contracts.FanStopSettings
+  interface System.IEquatable<OpenBlade.Contracts.FanStopSettings>
+  ctor ()
+  field const System.Int32 DurationWarningSeconds = 10
+  field const System.Int32 MaximumSecondsAboveLimit = 300
+  field const System.Int32 MaximumSecondsBelowLimits = 3600
+  field const System.Int32 MaximumTemperatureCelsius = 100
+  field const System.Int32 MinimumTemperatureCelsius = 10
+  field const System.Int32 TemperatureWarningCelsius = 60
+  method OpenBlade.Contracts.FanStopEndMode get_EndMode()
+  method OpenBlade.Contracts.FanStopSettings <Clone>$()
+  method System.Boolean get_AutomaticEnabled()
+  method System.Int32 get_AutomaticCpuBelowCelsius()
+  method System.Int32 get_AutomaticGpuBelowCelsius()
+  method System.Int32 get_CpuImmediateCutoffCelsius()
+  method System.Int32 get_CpuLimitCelsius()
+  method System.Int32 get_GpuImmediateCutoffCelsius()
+  method System.Int32 get_GpuLimitCelsius()
+  method System.Int32 get_SecondsAboveLimit()
+  method System.Int32 get_SecondsBelowLimits()
+  method System.Void set_AutomaticCpuBelowCelsius(System.Int32 value)
+  method System.Void set_AutomaticEnabled(System.Boolean value)
+  method System.Void set_AutomaticGpuBelowCelsius(System.Int32 value)
+  method System.Void set_CpuImmediateCutoffCelsius(System.Int32 value)
+  method System.Void set_CpuLimitCelsius(System.Int32 value)
+  method System.Void set_EndMode(OpenBlade.Contracts.FanStopEndMode value)
+  method System.Void set_GpuImmediateCutoffCelsius(System.Int32 value)
+  method System.Void set_GpuLimitCelsius(System.Int32 value)
+  method System.Void set_SecondsAboveLimit(System.Int32 value)
+  method System.Void set_SecondsBelowLimits(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Contracts.FanStopSettings get_Default()
+  method static System.Boolean IsWellFormed(OpenBlade.Contracts.FanStopSettings value)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.FanStopSettings left, OpenBlade.Contracts.FanStopSettings right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.FanStopSettings left, OpenBlade.Contracts.FanStopSettings right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.FanStopSettings other)
+  property OpenBlade.Contracts.FanStopEndMode EndMode { get; init; }
+  property OpenBlade.Contracts.FanStopSettings Default { get; }
+  property System.Boolean AutomaticEnabled { get; init; }
+  property System.Int32 AutomaticCpuBelowCelsius { get; init; }
+  property System.Int32 AutomaticGpuBelowCelsius { get; init; }
+  property System.Int32 CpuImmediateCutoffCelsius { get; init; }
+  property System.Int32 CpuLimitCelsius { get; init; }
+  property System.Int32 GpuImmediateCutoffCelsius { get; init; }
+  property System.Int32 GpuLimitCelsius { get; init; }
+  property System.Int32 SecondsAboveLimit { get; init; }
+  property System.Int32 SecondsBelowLimits { get; init; }
+type enum OpenBlade.Contracts.FanStopState
+  field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopState Automatic = 3
+  field const OpenBlade.Contracts.FanStopState Inactive = 1
+  field const OpenBlade.Contracts.FanStopState RecoveryRequired = 4
+  field const OpenBlade.Contracts.FanStopState ReturningToAutomatic = 6
+  field const OpenBlade.Contracts.FanStopState Starting = 5
+  field const OpenBlade.Contracts.FanStopState Stopped = 2
+  field const OpenBlade.Contracts.FanStopState Unavailable = 0
+type sealed class OpenBlade.Contracts.FanStopStatus
+  interface System.IEquatable<OpenBlade.Contracts.FanStopStatus>
+  ctor (OpenBlade.Contracts.FanStopMode RequestedMode = Automatic, OpenBlade.Contracts.FanStopState State = Unavailable, OpenBlade.Contracts.FanStopUnavailableReason UnavailableReason = UnsupportedDevice, System.Boolean CanStop = false, System.Boolean CanReturnToAutomatic = false, OpenBlade.Contracts.FanControlSettings NormalFanControl = null, System.String Message = null)
+  method OpenBlade.Contracts.FanControlSettings get_NormalFanControl()
+  method OpenBlade.Contracts.FanStopAutomationPauseReason get_AutomationPauseReason()
+  method OpenBlade.Contracts.FanStopAutomationState get_AutomationState()
+  method OpenBlade.Contracts.FanStopMode get_RequestedMode()
+  method OpenBlade.Contracts.FanStopSettings get_Settings()
+  method OpenBlade.Contracts.FanStopState get_State()
+  method OpenBlade.Contracts.FanStopStatus <Clone>$()
+  method OpenBlade.Contracts.FanStopUnavailableReason get_UnavailableReason()
+  method System.Boolean get_CanReturnToAutomatic()
+  method System.Boolean get_CanStop()
+  method System.String get_Message()
+  method System.Void Deconstruct(out OpenBlade.Contracts.FanStopMode RequestedMode, out OpenBlade.Contracts.FanStopState State, out OpenBlade.Contracts.FanStopUnavailableReason UnavailableReason, out System.Boolean CanStop, out System.Boolean CanReturnToAutomatic, out OpenBlade.Contracts.FanControlSettings NormalFanControl, out System.String Message)
+  method System.Void set_AutomationPauseReason(OpenBlade.Contracts.FanStopAutomationPauseReason value)
+  method System.Void set_AutomationState(OpenBlade.Contracts.FanStopAutomationState value)
+  method System.Void set_CanReturnToAutomatic(System.Boolean value)
+  method System.Void set_CanStop(System.Boolean value)
+  method System.Void set_Message(System.String value)
+  method System.Void set_NormalFanControl(OpenBlade.Contracts.FanControlSettings value)
+  method System.Void set_RequestedMode(OpenBlade.Contracts.FanStopMode value)
+  method System.Void set_Settings(OpenBlade.Contracts.FanStopSettings value)
+  method System.Void set_State(OpenBlade.Contracts.FanStopState value)
+  method System.Void set_UnavailableReason(OpenBlade.Contracts.FanStopUnavailableReason value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.FanStopStatus left, OpenBlade.Contracts.FanStopStatus right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.FanStopStatus left, OpenBlade.Contracts.FanStopStatus right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.FanStopStatus other)
+  property OpenBlade.Contracts.FanControlSettings NormalFanControl { get; init; }
+  property OpenBlade.Contracts.FanStopAutomationPauseReason AutomationPauseReason { get; init; }
+  property OpenBlade.Contracts.FanStopAutomationState AutomationState { get; init; }
+  property OpenBlade.Contracts.FanStopMode RequestedMode { get; init; }
+  property OpenBlade.Contracts.FanStopSettings Settings { get; init; }
+  property OpenBlade.Contracts.FanStopState State { get; init; }
+  property OpenBlade.Contracts.FanStopUnavailableReason UnavailableReason { get; init; }
+  property System.Boolean CanReturnToAutomatic { get; init; }
+  property System.Boolean CanStop { get; init; }
+  property System.String Message { get; init; }
+type enum OpenBlade.Contracts.FanStopUnavailableReason
+  field System.Int32 value__
+  field const OpenBlade.Contracts.FanStopUnavailableReason GuardianUnavailable = 3
+  field const OpenBlade.Contracts.FanStopUnavailableReason None = 0
+  field const OpenBlade.Contracts.FanStopUnavailableReason RecoveryNotValidated = 2
+  field const OpenBlade.Contracts.FanStopUnavailableReason UnsupportedDevice = 1
 type sealed class OpenBlade.Contracts.FireLightingParameters
   base OpenBlade.Contracts.LightingEffectParameters
   interface System.IEquatable<OpenBlade.Contracts.FireLightingParameters>
@@ -2122,7 +2291,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 76
+  field const System.Int32 ProtocolVersion = 78
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -2223,6 +2392,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   method OpenBlade.Contracts.PowerProfile <Clone>$()
   method OpenBlade.Contracts.ThxAudioProfileSettings get_ThxAudio()
   method System.Boolean get_EffectiveBatteryProtectionEnabled()
+  method System.Boolean get_StopFansInBatterySaver()
   method System.Nullable<OpenBlade.Contracts.WindowsPowerMode> get_WindowsPowerMode()
   method System.Nullable<System.Boolean> get_BatteryProtectionEnabled()
   method System.Void Deconstruct(out OpenBlade.Contracts.PerformancePreset Performance, out OpenBlade.Contracts.FanMode Fans, out OpenBlade.Contracts.LightingSettings Lighting, out OpenBlade.Contracts.DisplayProfileSettings Display)
@@ -2236,6 +2406,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   method System.Void set_Lighting(OpenBlade.Contracts.LightingSettings value)
   method System.Void set_LightingPowerPolicy(OpenBlade.Contracts.LightingPowerPolicy value)
   method System.Void set_Performance(OpenBlade.Contracts.PerformancePreset value)
+  method System.Void set_StopFansInBatterySaver(System.Boolean value)
   method System.Void set_ThxAudio(OpenBlade.Contracts.ThxAudioProfileSettings value)
   method System.Void set_WindowsPowerMode(System.Nullable<OpenBlade.Contracts.WindowsPowerMode> value)
   method override System.Boolean Equals(System.Object obj)
@@ -2257,6 +2428,7 @@ type sealed class OpenBlade.Contracts.PowerProfile
   property OpenBlade.Contracts.PerformancePreset Performance { get; init; }
   property OpenBlade.Contracts.ThxAudioProfileSettings ThxAudio { get; init; }
   property System.Boolean EffectiveBatteryProtectionEnabled { get; }
+  property System.Boolean StopFansInBatterySaver { get; init; }
   property System.Nullable<OpenBlade.Contracts.WindowsPowerMode> WindowsPowerMode { get; init; }
   property System.Nullable<System.Boolean> BatteryProtectionEnabled { get; init; }
 type enum OpenBlade.Contracts.PowerSource
@@ -2622,6 +2794,19 @@ type sealed class OpenBlade.Contracts.RestoreCpuTuningRequest
   method virtual OpenBlade.Contracts.RestoreCpuTuningRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.RestoreCpuTuningRequest other)
   property OpenBlade.Contracts.CpuTuningTarget Target { get; init; }
+type sealed class OpenBlade.Contracts.ResumeAutomaticFanStopRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ResumeAutomaticFanStopRequest>
+  ctor (System.Int32 Version, System.Guid RequestId)
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ResumeAutomaticFanStopRequest left, OpenBlade.Contracts.ResumeAutomaticFanStopRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ResumeAutomaticFanStopRequest left, OpenBlade.Contracts.ResumeAutomaticFanStopRequest right)
+  method virtual OpenBlade.Contracts.ResumeAutomaticFanStopRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ResumeAutomaticFanStopRequest other)
 type sealed class OpenBlade.Contracts.ResumeExperimentalWritesRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.ResumeExperimentalWritesRequest>
@@ -2799,6 +2984,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   ctor (System.Int64 Revision, System.Boolean DeviceVerified, System.Boolean WritesBlocked, System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers, System.String ControllerDetectionWarning, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> ExternalChanges, System.String Message, OpenBlade.Contracts.DeviceCapabilities Capabilities, OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState, OpenBlade.Contracts.ProfileSet Profiles, OpenBlade.Contracts.DesiredDeviceState DesiredState, OpenBlade.Contracts.PowerSource ActivePowerSource, OpenBlade.Contracts.LiveReadings LiveReadings, OpenBlade.Contracts.PerformanceOverride PerformanceOverride, OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> FanOverride, OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.LightingSettings> LightingOverride, System.Boolean FullChargeOverride, OpenBlade.Contracts.FirmwareVersions Firmware = null, System.String ServiceVersion = null, OpenBlade.Contracts.LightingRendererOwnershipState LightingRendererOwnership = None, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> LightingSuppressions = null, System.Nullable<System.Boolean> StartupAnimationEnabled = null, System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyPrimary = null, System.Nullable<System.Boolean> GamingModeEnabled = null, System.Boolean AlwaysOverrideExternalLightingChanges = false, System.Nullable<System.Boolean> KeyboardDriverModeActive = null, OpenBlade.Contracts.BatteryHealthStatus BatteryHealth = null, OpenBlade.Contracts.KeyboardLightingControlMode KeyboardLightingControlMode = OpenBlade, OpenBlade.Contracts.SessionControlAccess ControlAccess = Active, System.Boolean AllowUntestedFirmware = false, OpenBlade.Contracts.FirmwareCompatibilityStatus FirmwareCompatibility = Unknown, OpenBlade.Contracts.DisplayBrightnessHidAvailability DisplayBrightnessHidAvailability = Unknown, OpenBlade.Contracts.LightingRefreshRate LightingRefreshRate = ThirtyHz)
   method OpenBlade.Contracts.BatteryHealthStatus get_BatteryHealth()
   method OpenBlade.Contracts.BatteryPolicy get_BatteryPolicyOverride()
+  method OpenBlade.Contracts.BatterySaverFanStopStatus get_BatterySaverFanStopStatus()
   method OpenBlade.Contracts.ConfirmedDeviceState get_ConfirmedState()
   method OpenBlade.Contracts.CoolingPadStatusSnapshot get_CoolingPad()
   method OpenBlade.Contracts.CpuTuningStatus get_CpuTuning()
@@ -2807,6 +2993,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method OpenBlade.Contracts.DeviceObservationReason get_ObservationReason()
   method OpenBlade.Contracts.DisplayBrightnessHidAvailability get_DisplayBrightnessHidAvailability()
   method OpenBlade.Contracts.FanControlSettings get_FanControlOverride()
+  method OpenBlade.Contracts.FanStopStatus get_FanStopStatus()
   method OpenBlade.Contracts.FirmwareCompatibilityStatus get_FirmwareCompatibility()
   method OpenBlade.Contracts.FirmwareVersions get_Firmware()
   method OpenBlade.Contracts.KeyboardLightingControlMode get_KeyboardLightingControlMode()
@@ -2859,6 +3046,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_BatteryHealth(OpenBlade.Contracts.BatteryHealthStatus value)
   method System.Void set_BatteryPolicyOverride(OpenBlade.Contracts.BatteryPolicy value)
   method System.Void set_BatteryProtectionOverride(System.Nullable<System.Boolean> value)
+  method System.Void set_BatterySaverFanStopStatus(OpenBlade.Contracts.BatterySaverFanStopStatus value)
   method System.Void set_Capabilities(OpenBlade.Contracts.DeviceCapabilities value)
   method System.Void set_ConfirmedState(OpenBlade.Contracts.ConfirmedDeviceState value)
   method System.Void set_ControlAccess(OpenBlade.Contracts.SessionControlAccess value)
@@ -2874,6 +3062,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_ExternalChanges(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> value)
   method System.Void set_FanControlOverride(OpenBlade.Contracts.FanControlSettings value)
   method System.Void set_FanOverride(OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> value)
+  method System.Void set_FanStopStatus(OpenBlade.Contracts.FanStopStatus value)
   method System.Void set_Firmware(OpenBlade.Contracts.FirmwareVersions value)
   method System.Void set_FirmwareCompatibility(OpenBlade.Contracts.FirmwareCompatibilityStatus value)
   method System.Void set_FullChargeOverride(System.Boolean value)
@@ -2911,6 +3100,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method virtual System.Boolean Equals(OpenBlade.Contracts.ServiceStatusSnapshot other)
   property OpenBlade.Contracts.BatteryHealthStatus BatteryHealth { get; init; }
   property OpenBlade.Contracts.BatteryPolicy BatteryPolicyOverride { get; init; }
+  property OpenBlade.Contracts.BatterySaverFanStopStatus BatterySaverFanStopStatus { get; init; }
   property OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState { get; init; }
   property OpenBlade.Contracts.CoolingPadStatusSnapshot CoolingPad { get; init; }
   property OpenBlade.Contracts.CpuTuningStatus CpuTuning { get; init; }
@@ -2919,6 +3109,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.DeviceObservationReason ObservationReason { get; init; }
   property OpenBlade.Contracts.DisplayBrightnessHidAvailability DisplayBrightnessHidAvailability { get; init; }
   property OpenBlade.Contracts.FanControlSettings FanControlOverride { get; init; }
+  property OpenBlade.Contracts.FanStopStatus FanStopStatus { get; init; }
   property OpenBlade.Contracts.FirmwareCompatibilityStatus FirmwareCompatibility { get; init; }
   property OpenBlade.Contracts.FirmwareVersions Firmware { get; init; }
   property OpenBlade.Contracts.KeyboardLightingControlMode KeyboardLightingControlMode { get; init; }
@@ -3001,6 +3192,22 @@ type sealed class OpenBlade.Contracts.SetBatteryProtectionRequest
   method static System.Boolean op_Inequality(OpenBlade.Contracts.SetBatteryProtectionRequest left, OpenBlade.Contracts.SetBatteryProtectionRequest right)
   method virtual OpenBlade.Contracts.SetBatteryProtectionRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetBatteryProtectionRequest other)
+  property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Contracts.SetBatterySaverFanStopRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetBatterySaverFanStopRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.Boolean Enabled)
+  method System.Boolean get_Enabled()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.Boolean Enabled)
+  method System.Void set_Enabled(System.Boolean value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetBatterySaverFanStopRequest left, OpenBlade.Contracts.SetBatterySaverFanStopRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetBatterySaverFanStopRequest left, OpenBlade.Contracts.SetBatterySaverFanStopRequest right)
+  method virtual OpenBlade.Contracts.SetBatterySaverFanStopRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetBatterySaverFanStopRequest other)
   property System.Boolean Enabled { get; init; }
 type sealed class OpenBlade.Contracts.SetCoolingPadDemandLeaseRequest
   base OpenBlade.Contracts.ServiceRequest
@@ -3126,6 +3333,38 @@ type sealed class OpenBlade.Contracts.SetFanOverrideRequest
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetFanOverrideRequest other)
   property OpenBlade.Contracts.FanControlSettings Settings { get; init; }
   property OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> Value { get; init; }
+type sealed class OpenBlade.Contracts.SetFanStopModeRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetFanStopModeRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.FanStopMode Mode)
+  method OpenBlade.Contracts.FanStopMode get_Mode()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.FanStopMode Mode)
+  method System.Void set_Mode(OpenBlade.Contracts.FanStopMode value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetFanStopModeRequest left, OpenBlade.Contracts.SetFanStopModeRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetFanStopModeRequest left, OpenBlade.Contracts.SetFanStopModeRequest right)
+  method virtual OpenBlade.Contracts.SetFanStopModeRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetFanStopModeRequest other)
+  property OpenBlade.Contracts.FanStopMode Mode { get; init; }
+type sealed class OpenBlade.Contracts.SetFanStopSettingsRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetFanStopSettingsRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.FanStopSettings Settings)
+  method OpenBlade.Contracts.FanStopSettings get_Settings()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.FanStopSettings Settings)
+  method System.Void set_Settings(OpenBlade.Contracts.FanStopSettings value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetFanStopSettingsRequest left, OpenBlade.Contracts.SetFanStopSettingsRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetFanStopSettingsRequest left, OpenBlade.Contracts.SetFanStopSettingsRequest right)
+  method virtual OpenBlade.Contracts.SetFanStopSettingsRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetFanStopSettingsRequest other)
+  property OpenBlade.Contracts.FanStopSettings Settings { get; init; }
 type sealed class OpenBlade.Contracts.SetFirmwareCompatibilityOverrideRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.SetFirmwareCompatibilityOverrideRequest>

@@ -43,6 +43,10 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut")]
 [JsonDerivedType(typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
+[JsonDerivedType(typeof(SetBatterySaverFanStopRequest), "setBatterySaverFanStop")]
+[JsonDerivedType(typeof(SetFanStopModeRequest), "setFanStopMode")]
+[JsonDerivedType(typeof(SetFanStopSettingsRequest), "setFanStopSettings")]
+[JsonDerivedType(typeof(ResumeAutomaticFanStopRequest), "resumeAutomaticFanStop")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
 [JsonDerivedType(typeof(SetIndependentLightingOverrideRequest), "setIndependentLightingOverride")]
 [JsonDerivedType(typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness")]
@@ -224,6 +228,13 @@ public sealed record PerformanceShortcutPreview(
     Guid SessionId,
     long Generation,
     PerformancePreset Preset);
+
+public sealed record SetBatterySaverFanStopRequest(
+    int Version, Guid RequestId, bool Enabled) : ServiceRequest(Version, RequestId);
+
+public sealed record BatterySaverFanStopStatus(
+    bool Requested = false, bool Applied = false, bool ThermallySuspended = false,
+    FanControlSettings? NormalFanControl = null);
 
 public sealed record SetFanOverrideRequest(
     int Version,
@@ -519,6 +530,10 @@ public sealed record ServiceStatusSnapshot(
     public IReadOnlyList<DeviceSubsystem> UnconfirmedWrites { get; init; } = [];
 
     public FanControlSettings? FanControlOverride { get; init; }
+
+    public BatterySaverFanStopStatus? BatterySaverFanStopStatus { get; init; }
+
+    public FanStopStatus FanStopStatus { get; init; } = new();
 
     public PerformanceShortcutPreview? PerformanceShortcutPreview { get; init; }
 

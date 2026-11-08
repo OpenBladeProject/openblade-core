@@ -528,6 +528,8 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
+        Assert.Contains(animated, element => Attribute(element, "Name") == "FanStopCell"
+            && Attribute(element, "AnimatedVisibility.IsVisible") == "{Binding IsFanStopVisible}");
         XElement cpuCard = Assert.Single(animated, element =>
             Attribute(element, "DataContext") == "{Binding CpuTuning}");
         Assert.Equal("{Binding IsVisible}", Attribute(cpuCard, "AnimatedVisibility.IsVisible"));
@@ -710,7 +712,7 @@ public sealed class CapabilityPresentationTests
                 && element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate"))
             .ToArray();
 
-        Assert.Equal(14, compactRows.Length);
+        Assert.Equal(25, compactRows.Length);
         Assert.All(compactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -720,10 +722,23 @@ public sealed class CapabilityPresentationTests
             {
                 XElement[] children = content.Elements().ToArray();
                 Assert.Equal(2, children.Length);
-                Assert.Equal("InfoBar", children[1].Name.LocalName);
-                Assert.Equal("HyperBoostUnavailableInfoBar", Attribute(children[1], "Name"));
-                Assert.Equal("{x:Bind HasHyperBoostUnavailableReason, Mode=OneWay}",
-                    Attribute(children[1], "Visibility"));
+                if (children[1].Name.LocalName == "InfoBar")
+                {
+                    Assert.Equal("HyperBoostUnavailableInfoBar", Attribute(children[1], "Name"));
+                    Assert.Equal("{x:Bind HasHyperBoostUnavailableReason, Mode=OneWay}",
+                        Attribute(children[1], "Visibility"));
+                }
+                else
+                {
+                    Assert.Equal("TextBlock", children[1].Name.LocalName);
+                    string? editorName = Attribute(Assert.Single(row.Descendants(), element => element.Name.LocalName == "NumberBox"), "Name");
+                    Assert.NotNull(editorName);
+                    Assert.Contains(editorName, new[] { "AutomaticFanStopCpuLimitEditor", "AutomaticFanStopGpuLimitEditor" });
+                    string error = editorName == "AutomaticFanStopCpuLimitEditor" ? "AutomaticFanStopCpuError" : "AutomaticFanStopGpuError";
+                    Assert.Equal($"{{Binding {error}}}", Attribute(children[1], "Text"));
+                    Assert.Equal($"{{x:Bind Has{error}, Mode=OneWay}}", Attribute(children[1], "Visibility"));
+                    Assert.Equal("Polite", Attribute(children[1], "AutomationProperties.LiveSetting"));
+                }
                 content = children[0];
             }
             Assert.Equal("Grid", content.Name.LocalName);
@@ -733,9 +748,10 @@ public sealed class CapabilityPresentationTests
             XElement title = content.Descendants().First(element =>
                 element.Name.LocalName == "TextBlock"
                 && Attribute(element, "Style") == "{StaticResource CardTitleStyle}");
-            if (CanonicalLocalizedXaml.Identity(title) == "MainWindow_TextBlockLaptopPerformance")
+            if (Attribute(title, "SizeChanged") is null)
             {
                 Assert.NotNull(title.Parent);
+                Assert.Equal("StackPanel", title.Parent.Name.LocalName);
                 Assert.Equal(
                     "OnDashboardTextStackSizeChanged",
                     Attribute(title.Parent, "SizeChanged"));
@@ -756,6 +772,17 @@ public sealed class CapabilityPresentationTests
                 "GPU",
                 "Maximum fans",
                 "Fans",
+                "Stop fans",
+                "CPU average limit (°C)",
+                "CPU immediate cutoff (°C)",
+                "GPU average limit (°C)",
+                "GPU immediate cutoff (°C)",
+                "Averaging window (seconds)",
+                "Stop automatically when cool",
+                "CPU below (°C)",
+                "GPU below (°C)",
+                "Time below both limits (seconds)",
+                "Stop fans",
                 "Fan speed",
                 "Battery protection",
                 "Charge limit",
@@ -785,7 +812,10 @@ public sealed class CapabilityPresentationTests
         XElement[] animatedCompactRows = compactRows
             .Where(row => Attribute(row, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
-        Assert.Equal(10, animatedCompactRows.Length);
+        Assert.Equal(11, animatedCompactRows.Length);
+        XElement stopOwner = Assert.Single(document.Descendants(), element => Attribute(element, "Name") == "FanStopCell");
+        Assert.Equal("{Binding IsFanStopVisible}", Attribute(stopOwner, "AnimatedVisibility.IsVisible"));
+        Assert.Contains(compactRows, row => row.Ancestors().Contains(stopOwner));
         Assert.All(animatedCompactRows, row =>
         {
             Assert.Null(Attribute(row, "Height"));
@@ -962,6 +992,35 @@ public sealed class CapabilityPresentationTests
 
     }
 
+    [Fact]
+    public void BatterySaverFanStop_UsesSharedSingleLineTogglePresentation()
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement toggle = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "ToggleSwitch"
+            && Attribute(element, "Toggled") == "OnBatterySaverFanStopToggled");
+        XElement reference = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "ToggleSwitch"
+            && Attribute(element, "Toggled") == "OnCustomMaximumFansToggled");
+        XElement row = toggle.Ancestors().First(element => element.Name.LocalName == "Border");
+        XElement referenceRow = reference.Ancestors().First(element => element.Name.LocalName == "Border");
+        Assert.Equal(Attribute(referenceRow, "Style"), Attribute(row, "Style"));
+        Assert.Equal(Attribute(referenceRow, "Padding"), Attribute(row, "Padding"));
+        Assert.Equal(Attribute(reference, "Style"), Attribute(toggle, "Style"));
+        Assert.Equal("{x:Bind BatterySaverFanStopRequested, Mode=OneWay}", Attribute(toggle, "IsOn"));
+        Assert.Equal("{x:Bind CanToggleBatterySaverFanStop, Mode=OneWay}", Attribute(toggle, "IsEnabled"));
+        Assert.Equal("Stop fans", Attribute(toggle, "AutomationProperties.Name"));
+        XElement textStack = Assert.Single(row.Descendants(), element =>
+            element.Name.LocalName == "StackPanel"
+            && Attribute(element, "SizeChanged") == "OnDashboardTextStackSizeChanged");
+        Assert.Contains(textStack.Elements(), element => element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "{x:Bind BatterySaverFanStopPausedMessage, Mode=OneWay}"
+            && Attribute(element, "TextWrapping") == "Wrap");
+        XElement grid = toggle.Parent!;
+        XElement referenceGrid = reference.Parent!;
+        Assert.Equal(Attribute(referenceGrid, "MinHeight"), Attribute(grid, "MinHeight"));
+        Assert.Equal(Attribute(referenceGrid, "ColumnSpacing"), Attribute(grid, "ColumnSpacing"));
+    }
     [Fact]
     public void MainWindow_UsesDashboardNavigationAndImmediateControls()
     {

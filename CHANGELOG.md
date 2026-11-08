@@ -7,6 +7,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Add experimental Stop/Auto fan controls for the Blade 16 RZ09-0581 in USB-C Balanced, with rolling average temperature limits, immediate cutoffs and automatic stopping below 50°C. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Bundle CPU temperature monitoring through LibreHardwareMonitor and PawnIO. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Add an offline firmware CLI, register explorer and developer diagnostics. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+
 - Control Razer Laptop Cooling Pad fan targets, temperature curves, lighting and keyboard lighting sync from its own page, shown when connected. Support is experimental and based on reviewed vendor definitions. ([#889](https://github.com/OpenBladeProject/openblade-core/pull/889))
 - Support Blade 15 Advanced (Mid 2019) RZ09-0301 with Balanced/Custom performance, Balanced fixed fans and host curves on full-power AC, independent keyboard brightness and logo controls. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Search OpenBlade pages and settings from the title bar. Press Ctrl+K to open search and jump to a result. ([#883](https://github.com/OpenBladeProject/openblade-core/pull/883))
@@ -25,6 +29,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fix CPU temperatures stuck at 45°C. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879), [#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Use Custom temperature cutoffs for Stop entry and improve fan-state diagnostics and recovery. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Change directly between Fixed fans and host curves in an admitted preset on source-reviewed backends. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Stop treating constant ACPI values as CPU temperature, so custom fan curves use the existing maximum-speed fallback when no CPU sensor is available. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Preserve cancellation when a queued service request resumes. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))

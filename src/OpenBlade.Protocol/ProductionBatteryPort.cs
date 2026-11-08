@@ -124,7 +124,9 @@ internal sealed class ProductionBatteryPort :
         bool allowPadlessHyperBoostLifecycleValidation = false,
         PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced,
         bool supportsDirectManualFanTransitions = false,
-        ThxAudioCapabilities? thxAudioCapabilities = null)
+        ThxAudioCapabilities? thxAudioCapabilities = null,
+        bool supportsBatterySaverFanStop = false,
+        Func<bool>? stopHardwareAdmission = null)
         : this(
             session,
             session,
@@ -148,7 +150,9 @@ internal sealed class ProductionBatteryPort :
             allowPadlessHyperBoostLifecycleValidation,
             padlessHyperBoostLifecycleBaseMode,
             supportsDirectManualFanTransitions,
-            thxAudioCapabilities)
+            thxAudioCapabilities,
+            supportsBatterySaverFanStop,
+            stopHardwareAdmission)
     {
     }
 
@@ -175,7 +179,9 @@ internal sealed class ProductionBatteryPort :
         bool allowPadlessHyperBoostLifecycleValidation = false,
         PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced,
         bool supportsDirectManualFanTransitions = false,
-        ThxAudioCapabilities? thxAudioCapabilities = null)
+        ThxAudioCapabilities? thxAudioCapabilities = null,
+        bool supportsBatterySaverFanStop = false,
+        Func<bool>? stopHardwareAdmission = null)
         : this(
             sharedCommandGate is null
                 ? actor.Session
@@ -201,7 +207,9 @@ internal sealed class ProductionBatteryPort :
             allowPadlessHyperBoostLifecycleValidation,
             padlessHyperBoostLifecycleBaseMode,
             supportsDirectManualFanTransitions,
-            thxAudioCapabilities)
+            thxAudioCapabilities,
+            supportsBatterySaverFanStop,
+            stopHardwareAdmission)
     {
     }
 
@@ -228,8 +236,11 @@ internal sealed class ProductionBatteryPort :
         bool allowPadlessHyperBoostLifecycleValidation,
         PerformancePreset padlessHyperBoostLifecycleBaseMode,
         bool supportsDirectManualFanTransitions,
-        ThxAudioCapabilities? thxAudioCapabilities)
+        ThxAudioCapabilities? thxAudioCapabilities,
+        bool supportsBatterySaverFanStop,
+        Func<bool>? stopHardwareAdmission)
     {
+        this.stopHardwareAdmission = stopHardwareAdmission;
         this.session = session ?? throw new ArgumentNullException(nameof(session));
         this.ownedSession = ownedSession ?? throw new ArgumentNullException(nameof(ownedSession));
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -341,7 +352,79 @@ internal sealed class ProductionBatteryPort :
             hyperBoostWithoutCoolingPadAccess,
             hyperBoostBaseModes,
             supportsDirectManualFanTransitions,
-            thxAudioCapabilities);
+            thxAudioCapabilities,
+            supportsBatterySaverFanStop);
+    }
+
+    private readonly Func<bool>? stopHardwareAdmission;
+    private int stopRestorationAdmissionRequired;
+
+    // Monotonic for this port: clearing runtime read interest cannot weaken queued writes.
+    public void RequireBatterySaverFanStopRestorationAdmission() =>
+        Interlocked.Exchange(ref stopRestorationAdmissionRequired, 1);
+
+    private Func<bool>? WithStopRestorationAdmission(Func<bool>? priorAdmission) =>
+        Volatile.Read(ref stopRestorationAdmissionRequired) == 0
+            ? priorAdmission
+            : () => stopHardwareAdmission?.Invoke() == true
+                && (priorAdmission?.Invoke() ?? true);
+    private Func<bool>? batterySaverFanStopWriteAdmission;
+
+    private bool BatterySaverStopSubmissionAllowed() =>
+        stopHardwareAdmission?.Invoke() == true
+        && batterySaverFanStopWriteAdmission?.Invoke() == true;
+
+    public void SetBatterySaverFanStopWriteAdmission(Func<bool>? admission) =>
+        batterySaverFanStopWriteAdmission = admission;
+
+    public async Task<ProductionPerformanceFanState> QueryBatterySaverFanStopStateAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureUsable();
+            ProductionPerformanceFanState state = await QueryPerformanceFanStateCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return await ClassifyBatterySaverFanStopAsync(state, cancellationToken).ConfigureAwait(false);
+        }
+        finally { operationGate.Release(); }
+    }
+
+    private async Task<ProductionPerformanceFanState> ClassifyBatterySaverFanStopAsync(
+        ProductionPerformanceFanState state, CancellationToken cancellationToken)
+    {
+        if (!Capabilities.SupportsBatterySaverFanStop
+            || state.Performance != PerformancePreset.BatterySaver
+            || state.Fans != FanMode.Maximum || state.HyperBoostActive)
+        {
+            return state;
+        }
+        bool stopped = true;
+        foreach (byte channel in new byte[] { 1, 2 })
+        {
+            HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
+                new RazerCommandSpec(0x0D, 0x81, [1, channel, 0], 3,
+                    payload => payload.Length == 3 && payload.Span[0] == 1
+                        && payload.Span[1] == channel),
+                AllocateTransaction, exchangeTimeout, cancellationToken).ConfigureAwait(false);
+            if (result.Failure is { } failure)
+            {
+                ThrowReadFailure(failure, result.Diagnostic, cancellationToken,
+                    DeviceStateQuery.PerformanceAndFans, result.NativeRetirement);
+            }
+            if (result.Value.Length != 3 || result.Value.Span[0] != 1 || result.Value.Span[1] != channel)
+            {
+                poisoned = true;
+                throw new RazerProtocolException("Battery Saver stored fan targets could not be confirmed.",
+                    HidProtocolValidationFailure.PayloadValidator)
+                {
+                    StateQuery = DeviceStateQuery.PerformanceAndFans,
+                };
+            }
+            stopped &= result.Value.Span[2] == 15;
+        }
+        return stopped ? state with { Fans = FanMode.Stop } : state;
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -950,6 +1033,20 @@ internal sealed class ProductionBatteryPort :
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(value);
+        if (value.Mode == FanMode.Stop)
+        {
+            if (!Capabilities.SupportsBatterySaverFanStop)
+            {
+                return Task.FromException(Unavailable("Battery Saver fan stop is not admitted."));
+            }
+            return ExecuteDynamicFanCommandsAsync(
+                [
+                    RequiredCommand(FanMaximumStateFirstAction),
+                    RequiredCommand(FanMaximumStateSecondAction),
+                    CreateFanSpeedCommand(ThermalChannel.First, 1500),
+                    CreateFanSpeedCommand(ThermalChannel.Second, 1500),
+                ], true, cancellationToken, batterySaverStop: true);
+        }
         if (admittedFanModes is not null && !admittedFanModes.Contains(value.Mode))
         {
             return Task.FromException(Unavailable(
@@ -1055,7 +1152,8 @@ internal sealed class ProductionBatteryPort :
     private async Task ExecuteDynamicFanCommandsAsync(
         IReadOnlyList<RazerCommandDefinition> commands,
         bool requireAutomaticEntry,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool batterySaverStop = false)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -1084,6 +1182,11 @@ internal sealed class ProductionBatteryPort :
                     BladeWriteFailurePhase.ThermalPreWriteRead,
                     "The adjustable fan pre-write read failed before submission.",
                     exception);
+            }
+            if (batterySaverStop && (current.Performance != PerformancePreset.BatterySaver
+                || current.HyperBoostActive || !BatterySaverStopSubmissionAllowed()))
+            {
+                throw KnownNotApplied("Battery Saver fan stop requires fresh cool, inactive-GPU battery admission.");
             }
             bool manual = current.Fans == FanMode.Maximum;
             // A battery selector can persist after power changes. Classify the
@@ -1125,6 +1228,10 @@ internal sealed class ProductionBatteryPort :
                         .. commands.Skip(2),
                     ];
                 }
+            }
+            if (batterySaverStop && batterySelectorPower != DirectManualFanPowerRequirement.Battery)
+            {
+                throw KnownNotApplied("Battery Saver fan stop requires confirmed battery power.");
             }
             if (requireAutomaticEntry)
             {
@@ -1171,6 +1278,14 @@ internal sealed class ProductionBatteryPort :
                             cancellationToken).ConfigureAwait(false);
                     }
                 }
+                if (batterySaverStop && !BatterySaverStopSubmissionAllowed())
+                {
+                    if (submitted)
+                    {
+                        throw Indeterminate("Battery Saver fan-stop cooling admission changed after submission.");
+                    }
+                    throw KnownNotApplied("Battery Saver fan-stop cooling admission is unavailable.");
+                }
                 bool hadPriorSubmission = submitted;
                 submitted = true;
                 HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
@@ -1179,7 +1294,12 @@ internal sealed class ProductionBatteryPort :
                         command.CommandId,
                         command.Payload.ToArray(),
                         command.Payload.Length,
-                        payload => payload.Span.SequenceEqual(command.Payload.AsSpan())),
+                        payload => payload.Span.SequenceEqual(command.Payload.AsSpan()))
+                    {
+                        SubmissionAllowed = WithStopRestorationAdmission(batterySaverStop
+                            ? BatterySaverStopSubmissionAllowed
+                            : null),
+                    },
                     AllocateTransaction,
                     exchangeTimeout,
                     cancellationToken).ConfigureAwait(false);
@@ -1239,9 +1359,25 @@ internal sealed class ProductionBatteryPort :
                         cancellationToken).ConfigureAwait(false);
                 }
             }
+            if (batterySaverStop)
+            {
+                ProductionPerformanceFanState readback = await QueryPerformanceFanStateCoreAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                readback = await ClassifyBatterySaverFanStopAsync(readback, cancellationToken)
+                    .ConfigureAwait(false);
+                if (readback.Fans != FanMode.Stop)
+                {
+                    poisoned = true;
+                    throw Indeterminate("Battery Saver fan-stop target readback did not match.");
+                }
+            }
         }
         catch (BladeWriteException)
         {
+            if (submitted)
+            {
+                poisoned = true;
+            }
             throw;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1586,7 +1722,8 @@ internal sealed class ProductionBatteryPort :
         DeviceFeatureAccess? hyperBoostWithoutCoolingPadAccess = null,
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         bool supportsDirectManualFanTransitions = false,
-        ThxAudioCapabilities? thxAudioCapabilities = null)
+        ThxAudioCapabilities? thxAudioCapabilities = null,
+        bool supportsBatterySaverFanStop = false)
     {
         var limits = new HashSet<int>();
         foreach ((int percent, string action) in ChargeLimitActions)
@@ -1731,6 +1868,8 @@ internal sealed class ProductionBatteryPort :
                 ? []
                 : [.. observedPowerSourceBehaviors],
             ThxAudio = thxAudioCapabilities,
+            SupportsBatterySaverFanStop = supportsBatterySaverFanStop
+                && supportsDirectManualFanTransitions && HasDirectManualFanCommandSet(catalog),
         };
     }
 
@@ -2210,7 +2349,7 @@ internal sealed class ProductionBatteryPort :
                 command.Payload.Length,
                 payload => payload.Span.SequenceEqual(command.Payload.AsSpan()))
             {
-                SubmissionAllowed = submissionAllowed,
+                SubmissionAllowed = WithStopRestorationAdmission(submissionAllowed),
             },
             AllocateTransaction,
             exchangeTimeout,
@@ -2345,6 +2484,9 @@ internal sealed class ProductionBatteryPort :
             ThermalModeState.SilentAutomatic => new(
                 PerformancePreset.Silent,
                 FanMode.Automatic),
+            ThermalModeState.SilentManual => new(
+                PerformancePreset.Silent,
+                FanMode.Maximum),
             ThermalModeState.PerformanceAutomatic => new(
                 PerformancePreset.Performance,
                 FanMode.Automatic),

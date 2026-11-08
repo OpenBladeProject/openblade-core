@@ -721,7 +721,9 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
         }
 
         string installerResultDetail = execution.ExitObserved
-            ? "installer-exit-observed"
+            ? execution.ExitCode == 3010
+                ? "installer-exit-observed-reboot-required"
+                : "installer-exit-observed"
             : "installer-result-unknown";
         if (installerExitWasObserved && installerResultBindingFailed)
         {

@@ -443,6 +443,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.SupportedLightingRefreshRates.Contains(value);
         }
 
+        result["fans.batterySaverStop"] = capabilities.SupportsBatterySaverFanStop;
         result["battery.chargeLimit"] = capabilities.ChargeLimits.Count > 0;
         result["battery.protectionOff"] = capabilities.SupportsBatteryProtectionOff;
         result["battery.temporaryFullCharge"] = capabilities.SupportsTemporaryFullCharge;

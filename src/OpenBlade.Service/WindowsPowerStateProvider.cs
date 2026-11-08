@@ -142,7 +142,7 @@ public sealed class WindowsPowerStateProvider : IPowerStateProvider
         return rate;
     }
 
-    private static PowerSource CaptureWindowsPowerSource()
+    internal static PowerSource CaptureWindowsPowerSource()
     {
         if (!GetSystemPowerStatus(out SystemPowerStatus status))
         {

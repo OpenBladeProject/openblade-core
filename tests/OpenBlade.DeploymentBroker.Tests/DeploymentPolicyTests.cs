@@ -119,6 +119,10 @@ public sealed class DeploymentPolicyTests : IDisposable
 
     [Theory]
     [InlineData(true, 0, true, true, false, BrokerDeploymentDisposition.Succeeded)]
+    [InlineData(true, 3010, true, true, false, BrokerDeploymentDisposition.Succeeded)]
+    [InlineData(true, 3010, true, false, false, BrokerDeploymentDisposition.Indeterminate)]
+    [InlineData(true, 3010, false, false, true, BrokerDeploymentDisposition.RolledBack)]
+    [InlineData(false, 3010, true, true, false, BrokerDeploymentDisposition.Indeterminate)]
     [InlineData(true, 1, false, false, true, BrokerDeploymentDisposition.RolledBack)]
     [InlineData(false, null, false, false, false, BrokerDeploymentDisposition.Indeterminate)]
     [InlineData(true, 0, true, false, false, BrokerDeploymentDisposition.Indeterminate)]

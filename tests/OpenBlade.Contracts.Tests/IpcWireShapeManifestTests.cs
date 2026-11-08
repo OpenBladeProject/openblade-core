@@ -29,6 +29,11 @@ public sealed class IpcWireShapeManifestTests
         Assert.Contains("property blade18KeyboardLayoutId:System.Byte? member", manifest, StringComparison.Ordinal);
         Assert.Contains("property hostManagedLaptopControls:System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> member", manifest, StringComparison.Ordinal);
         Assert.Contains("property fanSpeedRangesByPerformancePreset:System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset,OpenBlade.Contracts.FanSpeedRange> member", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived setFanStopMode=OpenBlade.Contracts.SetFanStopModeRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived setFanStopSettings=OpenBlade.Contracts.SetFanStopSettingsRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("derived resumeAutomaticFanStop=OpenBlade.Contracts.ResumeAutomaticFanStopRequest", manifest, StringComparison.Ordinal);
+        Assert.Contains("property settings:OpenBlade.Contracts.FanStopSettings required", manifest, StringComparison.Ordinal);
+        Assert.Contains("property fanStopStatus:OpenBlade.Contracts.FanStopStatus member", manifest, StringComparison.Ordinal);
         Assert.Contains("derived setCpuTuning=OpenBlade.Contracts.SetCpuTuningRequest", manifest, StringComparison.Ordinal);
         Assert.Contains("derived observeCpuTuning=OpenBlade.Contracts.ObserveCpuTuningRequest", manifest, StringComparison.Ordinal);
         Assert.Contains("derived restoreCpuTuning=OpenBlade.Contracts.RestoreCpuTuningRequest", manifest, StringComparison.Ordinal);
@@ -70,6 +75,8 @@ public sealed class IpcWireShapeManifestTests
             75 => "646E0ADEA4D0038513194BFF2D6157AD3D329ACC0CF0A7D9DD2E784977437FFD",
             // Protocol 76 adds source-backed cooling-pad operations and status.
             76 => "6259E2AF01F7E0351B5B9D98846046F14345DEFB0BA173DBEC8E7FB5577EB8DD",
+            // Protocol 78 combines main CPU/cooling-pad/lighting contracts with Fan Stop policies.
+            78 => "14F86C7DF2AB4C48E745B97A30D859835582B25A1DD149E570555FCDC73A4DF7",
             _ => null,
         };
 

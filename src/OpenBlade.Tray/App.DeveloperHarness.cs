@@ -770,8 +770,13 @@ public partial class App
             bool captureSnapTap = captureSnapTapFailure || captureSnapTapEnabled || captureSnapTapInformation || captureSnapTapDriverMissing
                 || string.Equals(requestedPage, "laptop-snap-tap", StringComparison.Ordinal);
             bool captureDischargeSettings = requestedPage == "settings-notifications";
+            bool captureFanStop = requestedPage == "fan-stop";
+            if (captureFanStop)
+            {
+                snapshotMainWindow.AppWindow.Resize(new Windows.Graphics.SizeInt32(1000, 1500));
+            }
             if (!string.IsNullOrWhiteSpace(requestedPage)
-                && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
+                && !captureFanStop && !mainDestinations.Contains(requestedPage, StringComparer.Ordinal)
                 && !captureProfilesVariant
                 && !captureFeatureSnapshot
                 && !captureLabsTarget
@@ -787,7 +792,7 @@ public partial class App
                     $"Unknown localization snapshot page '{requestedPage}'.");
             }
             IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
-                || captureDischargeSettings || captureLabsTarget || captureGlobalSearch
+                || captureDischargeSettings || captureFanStop || captureLabsTarget || captureGlobalSearch
                 ? [requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
@@ -888,6 +893,7 @@ public partial class App
                             or "profiles-application-discovery-empty" => "profiles",
                         _ when destination.StartsWith("telemetry-", StringComparison.Ordinal) => "telemetry",
                         "whats-new" => "about",
+                        "fan-stop" => "home",
 
                         "display-brightness-known" or "display-brightness-unavailable" => "display",
                         _ when captureCoolingPad => "home",
@@ -1045,9 +1051,22 @@ public partial class App
                     }
                     else
                     {
-                        await SaveSnapshotAsync(
-                            snapshotMainWindow.Content,
-                            Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+                        if (captureFanStop)
+                        {
+                            var stop = FindPerformanceSmokeDescendant<FrameworkElement>(snapshotMainWindow.Content, "FanStopCell")
+                                ?? throw new InvalidOperationException("The Stop settings group was not realized.");
+                            ExpandFanStopSnapshotSections(snapshotMainWindow, stop);
+                            await WaitForSnapshotLayoutAsync();
+                            stop.StartBringIntoView();
+                            await WaitForSnapshotLayoutAsync();
+                            await SaveSnapshotAsync(stop, Path.Combine(resolvedDirectory, "fan-stop.png"));
+                        }
+                        else
+                        {
+                            await SaveSnapshotAsync(
+                                snapshotMainWindow.Content,
+                                Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+                        }
                         if (captureGlobalSearch)
                         {
                             FrameworkElement results = snapshotMainWindow.GetGlobalSearchSnapshotResults()
@@ -1732,6 +1751,19 @@ public partial class App
         {
             return;
         }
+        if (state is "fan-stop-off" or "fan-stop-on" or "fan-stop-paused" or "fan-stop-unsupported")
+        {
+            ApplyBatterySaverFanStopSnapshotState(window, state);
+            return;
+        }
+        if (state is "direct-fan-stop-off" or "direct-fan-stop-on" or "direct-fan-stop-gated"
+            or "direct-fan-stop-recovery" or "direct-fan-stop-unsupported"
+            or "direct-fan-stop-starting" or "direct-fan-stop-returning" or "direct-fan-stop-guardian-unavailable"
+            or "direct-fan-stop-settings" or "direct-fan-stop-settings-warning" or "direct-fan-stop-settings-paused" or "direct-fan-stop-settings-invalid")
+        {
+            ApplyDirectFanStopSnapshotState(window, state);
+            return;
+        }
         if (state is "source-reviewed-presets" or "source-reviewed-base")
         {
             ApplySourceReviewedPresetsSnapshotState(window, legacyBase: state == "source-reviewed-base");
@@ -2041,6 +2073,122 @@ public partial class App
             .Invoke(window, null);
     }
 
+    private static void ApplyDirectFanStopSnapshotState(MainWindow window, string state)
+    {
+        // Disconnected synthetic status only; this never acquires a hardware backend.
+        bool starting = state == "direct-fan-stop-starting";
+        bool returning = state == "direct-fan-stop-returning";
+        bool owned = state is "direct-fan-stop-on" or "direct-fan-stop-recovery" || starting || returning;
+        bool gated = state is "direct-fan-stop-gated" or "direct-fan-stop-unsupported" or "direct-fan-stop-guardian-unavailable";
+        bool recovery = state == "direct-fan-stop-recovery";
+        bool settingsPreview = state.StartsWith("direct-fan-stop-settings", StringComparison.Ordinal);
+        bool warning = state == "direct-fan-stop-settings-warning";
+        bool paused = state == "direct-fan-stop-settings-paused";
+        var settings = FanStopSettings.Default with
+        {
+            EndMode = settingsPreview ? FanStopEndMode.Custom : FanStopEndMode.Auto,
+            CpuLimitCelsius = warning ? 61 : 55,
+            GpuLimitCelsius = warning ? 61 : 55,
+            SecondsAboveLimit = warning ? 11 : 5,
+            AutomaticEnabled = settingsPreview,
+        };
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var normal = new FanControlSettings(FanMode.Fixed, 3000, ManualFanCurve.Default);
+        var status = new ServiceStatusSnapshot(
+            1, true, recovery, [], null, [], "Fan stop preview",
+            DeviceCapabilities.SafeTargetDefaults() with
+            {
+                HasFanStopTrialEvidence = state != "direct-fan-stop-unsupported",
+                SupportsFanStop = !gated,
+            },
+            new ConfirmedDeviceState(PerformancePreset.Balanced, owned ? FanMode.Stop : FanMode.Fixed, null, null),
+            profiles,
+            new DesiredDeviceState(new(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new(FanMode.Fixed, SettingValueSource.PowerProfile),
+                new(profiles.Battery.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, false, false)),
+            PowerSource.UsbC, null, null, null, null, false)
+        {
+            FanStopStatus = new(owned && !returning ? FanStopMode.Stop : FanStopMode.Automatic,
+                starting ? FanStopState.Starting : returning ? FanStopState.ReturningToAutomatic : recovery ? FanStopState.RecoveryRequired : owned ? FanStopState.Stopped : gated ? FanStopState.Unavailable : FanStopState.Inactive,
+                state == "direct-fan-stop-unsupported" ? FanStopUnavailableReason.UnsupportedDevice
+                    : state == "direct-fan-stop-guardian-unavailable" ? FanStopUnavailableReason.GuardianUnavailable
+                    : gated ? FanStopUnavailableReason.RecoveryNotValidated : FanStopUnavailableReason.None,
+                CanStop: !gated && !owned, CanReturnToAutomatic: owned && !recovery,
+                NormalFanControl: owned ? normal : null)
+            {
+                Settings = settings,
+                AutomationState = paused ? FanStopAutomationState.Paused : settingsPreview ? FanStopAutomationState.Waiting : FanStopAutomationState.Disabled,
+                AutomationPauseReason = paused ? FanStopAutomationPauseReason.ManualAuto : FanStopAutomationPauseReason.None,
+            },
+        };
+        typeof(MainViewModel).GetMethod("ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(window.ViewModel, [status, false]);
+        // Dashboard pinning is independent of hardware state. Keep the tested
+        // controls visible even when the current user's dashboard is empty.
+        var changingCards = typeof(MainWindow).GetField("changingDashboardCards",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        changingCards.SetValue(window, true);
+        try
+        {
+            window.DashboardCards.Add(new DashboardCardOption(
+                DashboardCardKind.Fans, "Fans", string.Empty, true));
+        }
+        finally { changingCards.SetValue(window, false); }
+        typeof(MainWindow).GetMethod("RefreshDashboardCards",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
+    }
+
+    private static void ExpandFanStopSnapshotSections(MainWindow window, FrameworkElement stop)
+    {
+        string? state = Environment.GetEnvironmentVariable("OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE");
+        if (state?.StartsWith("direct-fan-stop-settings", StringComparison.Ordinal) == true)
+        {
+            var endExpander = FindPerformanceSmokeDescendant<Microsoft.UI.Xaml.Controls.Expander>(stop, "FanStopEndExpander")!;
+            var automaticExpander = FindPerformanceSmokeDescendant<Microsoft.UI.Xaml.Controls.Expander>(stop, "AutomaticFanStopExpander")!;
+            endExpander.IsExpanded = true;
+            automaticExpander.IsExpanded = true;
+            double savedCpuLimit = window.ViewModel.FanStopCpuLimit;
+            endExpander.IsExpanded = false;
+            if (!automaticExpander.IsExpanded || window.ViewModel.FanStopCpuLimit != savedCpuLimit
+                || !window.ViewModel.AutomaticFanStopEnabled)
+            {
+                throw new InvalidOperationException("Stop sections did not fold independently while preserving settings.");
+            }
+            endExpander.IsExpanded = true;
+            if (state == "direct-fan-stop-settings-invalid")
+            {
+                window.ViewModel.AutomaticFanStopCpuLimit = 55;
+                window.ViewModel.AutomaticFanStopGpuLimit = 55;
+            }
+        }
+    }
+
+    private static void ApplyBatterySaverFanStopSnapshotState(MainWindow window, string state)
+    {
+        // Synthetic status in a disconnected snapshot window; no service or hardware access.
+        bool requested = state is "fan-stop-on" or "fan-stop-paused";
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        FanControlSettings normal = FanControlSettings.Default;
+        var status = new ServiceStatusSnapshot(
+            1, true, false, [], null, [], "Fan stop preview",
+            DeviceCapabilities.SafeTargetDefaults() with { SupportsBatterySaverFanStop = state != "fan-stop-unsupported" },
+            new ConfirmedDeviceState(PerformancePreset.BatterySaver, requested ? FanMode.Stop : FanMode.Automatic, null, null),
+            profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.BatterySaver, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.Battery.Lighting, SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, false, false)),
+            PowerSource.Battery, null, null, null, null, false)
+        {
+            BatterySaverFanStopStatus = new(requested, requested, state == "fan-stop-paused", normal),
+        };
+        System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
+            "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Status presentation hook was not found.");
+        applyStatus.Invoke(window.ViewModel, [status, false]);
+    }
     private static void ApplyExperimentalBatterySnapshotState(MainWindow window, bool off, bool paused = false)
     {
         // Disconnected, synthetic observations: no service or hardware access.

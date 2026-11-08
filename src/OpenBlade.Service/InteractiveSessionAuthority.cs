@@ -124,6 +124,8 @@ public static class ServiceRequestAccessPolicy
         }
 
         if (request is SetThermalControlPolicyRequest
+            or SetFanStopSettingsRequest
+            or ResumeAutomaticFanStopRequest
             or AcknowledgeThermalPolicyUpgradeDisclosureRequest
             or ResumeExperimentalWritesRequest)
         {

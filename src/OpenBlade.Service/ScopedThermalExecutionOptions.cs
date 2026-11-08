@@ -24,7 +24,8 @@ internal sealed class ScopedThermalExecutionOptions
             ScopedThermalFreshSessionRetryPolicy.Allow,
         Func<string?>? additionalWriteBlockReason = null,
         ScopedThermalAuthorityPurpose authorityPurpose =
-            ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent)
+            ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
+        Func<bool>? lowPowerFanCleanupAdmission = null)
     {
         ArgumentNullException.ThrowIfNull(components);
         if (components.Count == 0
@@ -49,6 +50,15 @@ internal sealed class ScopedThermalExecutionOptions
         FreshSessionRetryPolicy = freshSessionRetryPolicy;
         AdditionalWriteBlockReason = additionalWriteBlockReason;
         AuthorityPurpose = authorityPurpose;
+        LowPowerFanCleanupAdmission = lowPowerFanCleanupAdmission;
+        if (lowPowerFanCleanupAdmission is not null
+            && (authorityPurpose != ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
+                || components.Count != 1 || components[0] != DeviceSubsystem.Fans
+                || freshSessionRetryPolicy != ScopedThermalFreshSessionRetryPolicy.BlockDuringBoundedCleanup))
+        {
+            throw new ArgumentException("Low-power cleanup admits only a bounded prior-authority fan handback.",
+                nameof(lowPowerFanCleanupAdmission));
+        }
     }
 
     internal IReadOnlyList<DeviceSubsystem> Components => components;
@@ -58,6 +68,8 @@ internal sealed class ScopedThermalExecutionOptions
     internal Func<string?>? AdditionalWriteBlockReason { get; }
 
     internal ScopedThermalAuthorityPurpose AuthorityPurpose { get; }
+
+    internal Func<bool>? LowPowerFanCleanupAdmission { get; }
 
     internal void ValidateFor(DeviceSubsystem subsystem)
     {

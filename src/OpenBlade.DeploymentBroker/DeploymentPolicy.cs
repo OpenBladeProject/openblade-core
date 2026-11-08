@@ -428,7 +428,7 @@ public static class BrokerDeploymentClassifier
         bool exactPreviousStateRestored)
     {
         if (installerResultKnown
-            && exitCode == 0
+            && exitCode is 0 or 3010
             && exactTargetInstalled
             && serviceHealthy)
         {

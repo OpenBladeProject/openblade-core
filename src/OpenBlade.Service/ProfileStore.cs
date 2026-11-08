@@ -13,7 +13,9 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 24;
+    internal const int CurrentSchemaVersion = 25;
+    internal const int FanStopRollingAverageSchemaVersion = 25;
+    internal const int FanStopSettingsSchemaVersion = 24;
     internal const int AutomaticExperimentalSupportSchemaVersion = 19;
     internal const int ExperimentalFeaturesConsentSchemaVersion = 17;
     internal const int ExperimentalFeaturesConsentPredecessorSchemaVersion = 16;
@@ -280,6 +282,15 @@ public sealed class ProfileStore
         if (schemaVersion <= ExperimentalFeaturesConsentSchemaVersion)
         {
             ValidateLegacyBatteryPolicy(profiles);
+        }
+        if (schemaVersion < 23)
+        {
+            profiles = profiles with
+            {
+                Battery = profiles.Battery with { StopFansInBatterySaver = false },
+                PluggedIn = profiles.PluggedIn with { StopFansInBatterySaver = false },
+                UsbC = profiles.UsbC with { StopFansInBatterySaver = false },
+            };
         }
         validator.ValidateStoredCustomIntent(profiles);
         return profiles;

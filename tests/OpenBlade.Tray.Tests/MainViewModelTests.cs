@@ -10333,11 +10333,13 @@ public sealed partial class MainViewModelTests
                 HyperBoostRestoredPerformance = PerformancePreset.Performance,
             },
         };
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         ServiceStatusSnapshot inactive = CreatePadlessHyperBoostStatus(baseline) with
         {
+            Message = "Coalesced entry: inactive baseline",
             DesiredState = baseline.DesiredState with
             {
                 Performance = new ResolvedSetting<PerformancePreset>(
@@ -10350,10 +10352,11 @@ public sealed partial class MainViewModelTests
                 HyperBoostActive = false,
             },
         };
-        client.Publish(inactive);
-        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Silent);
-        client.Publish(inactive with
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, inactive);
+        Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, inactive with
         {
+            Message = "Coalesced entry: active snapshot",
             Revision = inactive.Revision + 2,
             DesiredState = inactive.DesiredState with
             {
@@ -10367,7 +10370,7 @@ public sealed partial class MainViewModelTests
                 HyperBoostActive = true,
             },
         });
-        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+        Assert.True(viewModel.HyperBoostActive);
         LaptopPerformanceOption silent = viewModel.AvailableLaptopPerformanceOptions
             .Single(option => option.Value == PerformancePreset.Silent);
 
@@ -10850,9 +10853,10 @@ public sealed partial class MainViewModelTests
             PerformancePreset.Performance,
             PerformancePreset.Custom,
         ];
+        IReadOnlySet<FanMode> ordinaryFanModes = CreateStatus(verified: true, blocked: false).Capabilities!.FanModes;
         foreach (PerformancePreset performance in performancePresets)
         {
-            foreach (FanMode fans in Enum.GetValues<FanMode>())
+            foreach (FanMode fans in ordinaryFanModes)
             {
                 yield return [performance, fans];
             }
@@ -11622,6 +11626,31 @@ public sealed partial class MainViewModelTests
             return SetFanOverrideAsync(value, token);
         }
 
+        public Task<ControlOperationResult> SetBatterySaverFanStopAsync(bool enabled, CancellationToken token)
+        {
+            MutationOperations.Add($"batterySaverFanStop:{enabled}");
+            return MutateAsync(token);
+        }
+
+        public FanStopSettings? LastFanStopSettings { get; private set; }
+        public Task<ControlOperationResult> SetFanStopSettingsAsync(FanStopSettings settings, CancellationToken token)
+        {
+            LastFanStopSettings = settings;
+            MutationOperations.Add("fanStopSettings");
+            return MutateAsync(token);
+        }
+
+        public Task<ControlOperationResult> ResumeAutomaticFanStopAsync(CancellationToken token)
+        {
+            MutationOperations.Add("resumeAutomaticFanStop");
+            return MutateAsync(token);
+        }
+
+        public Task<ControlOperationResult> SetFanStopModeAsync(FanStopMode mode, CancellationToken token)
+        {
+            MutationOperations.Add($"fanStop:{mode}");
+            return MutateAsync(token);
+        }
         public override Task<ControlOperationResult> SetLightingOverrideAsync(
             ManualOverride<LightingSettings>? value,
             CancellationToken token)

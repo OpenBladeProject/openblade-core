@@ -983,6 +983,257 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
+                            <Border x:Name="FanStopCell" local:CardReorder.CardId="FanStop" Style="{StaticResource SettingsExpanderRowStyle}"
+                                    Visibility="Collapsed" local:AnimatedVisibility.IsVisible="{Binding IsFanStopVisible}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsNeutralSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center"
+                                                SizeChanged="OnDashboardTextStackSizeChanged">
+                                        <TextBlock Text="{CustomResource MainWindow_FanStop.Text}"
+                                                   Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{x:Bind FanStopDescription, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{CustomResource FanStop_UnsavedSettings.Text}"
+                                                   Visibility="{x:Bind HasUnsavedFanStopSettings, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="FanStopToggle" Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                  IsOn="{x:Bind FanStopRequested, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind CanToggleFanStop, Mode=OneWay}"
+                                                  AutomationProperties.Name="{CustomResource MainWindow_FanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                  AutomationProperties.HelpText="{x:Bind FanStopDescription, Mode=OneWay}"
+                                                  Toggled="OnFanStopToggled" />
+                                </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsExpanderRowStyle}">
+                                    <Expander x:Name="FanStopEndExpander" Style="{StaticResource CardContentExpanderStyle}" IsExpanded="False"
+                                              AutomationProperties.Name="{CustomResource FanStop_EndTitle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}">
+                                        <Expander.Resources>
+                                            <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
+                                            <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
+                                        </Expander.Resources>
+                                        <Expander.Header>
+                                            <Border Style="{StaticResource SettingsExpanderHeaderStyle}">
+                                                <StackPanel Margin="16,14,60,14" Spacing="3">
+                                                    <TextBlock Text="{CustomResource FanStop_EndTitle.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding FanStopEndSummary}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Expander.Header>
+                                        <ContentControl IsEnabled="{Binding CanEditFanStopSettings}" HorizontalContentAlignment="Stretch" IsTabStop="False">
+                                            <StackPanel>
+                                            <Border Style="{StaticResource SettingsEditorSubcardStyle}">
+                                                <StackPanel Spacing="8">
+                                                    <TextBlock Text="{CustomResource FanStop_EndDescription.Text}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                    <RadioButtons x:Name="FanStopEndModeSelector" MaxColumns="2" SelectedIndex="{Binding FanStopEndModeIndex, Mode=TwoWay}"
+                                                                  SelectionChanged="OnFanStopEndModeChanged" AutomationProperties.Name="{CustomResource FanStop_EndMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}">
+                                                        <RadioButton Content="{CustomResource FanStop_Auto.Content}" />
+                                                        <RadioButton Content="{CustomResource FanStop_Custom.Content}" />
+                                                    </RadioButtons>
+                                                </StackPanel>
+                                            </Border>
+                                            <StackPanel Visibility="{x:Bind IsCustomFanStopEnd, Mode=OneWay}">
+                                                <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
+                                                            <TextBlock Text="{CustomResource FanStop_CpuEnd.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <NumberBox x:Name="FanStopCpuLimitEditor" Grid.Column="1" Width="120" Minimum="10" Maximum="100" SmallChange="1" LargeChange="5"
+                                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                   AutomationProperties.Name="{CustomResource FanStop_CpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                                   Value="{Binding FanStopCpuLimit, Mode=TwoWay}" LostFocus="OnFanStopSettingsLostFocus" />
+                                                    </Grid>
+
+                                                </Border>
+                                                <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
+                                                            <TextBlock Text="{CustomResource FanStop_CpuImmediateCutoff.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <NumberBox x:Name="FanStopCpuImmediateCutoffEditor" Grid.Column="1" Width="120" Minimum="10" Maximum="100" SmallChange="1" LargeChange="5"
+                                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                   AutomationProperties.Name="{CustomResource FanStop_CpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                                   Value="{Binding FanStopCpuImmediateCutoff, Mode=TwoWay}" LostFocus="OnFanStopSettingsLostFocus" />
+                                                    </Grid>
+
+                                                </Border>
+                                                <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
+                                                            <TextBlock Text="{CustomResource FanStop_GpuEnd.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <NumberBox x:Name="FanStopGpuLimitEditor" Grid.Column="1" Width="120" Minimum="10" Maximum="100" SmallChange="1" LargeChange="5"
+                                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                   AutomationProperties.Name="{CustomResource FanStop_GpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                                   Value="{Binding FanStopGpuLimit, Mode=TwoWay}" LostFocus="OnFanStopSettingsLostFocus" />
+                                                    </Grid>
+
+                                                </Border>
+                                                <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
+                                                            <TextBlock Text="{CustomResource FanStop_GpuImmediateCutoff.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <NumberBox x:Name="FanStopGpuImmediateCutoffEditor" Grid.Column="1" Width="120" Minimum="10" Maximum="100" SmallChange="1" LargeChange="5"
+                                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                   AutomationProperties.Name="{CustomResource FanStop_GpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                                   Value="{Binding FanStopGpuImmediateCutoff, Mode=TwoWay}" LostFocus="OnFanStopSettingsLostFocus" />
+                                                    </Grid>
+
+                                                </Border>
+                                                <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
+                                                            <TextBlock Text="{CustomResource FanStop_ExitDelay.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <NumberBox x:Name="FanStopExitSecondsEditor" Grid.Column="1" Width="120" Minimum="1" Maximum="300" SmallChange="1" LargeChange="5"
+                                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                   AutomationProperties.Name="{CustomResource FanStop_ExitDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                                   Value="{Binding FanStopExitSeconds, Mode=TwoWay}" LostFocus="OnFanStopSettingsLostFocus" />
+                                                    </Grid>
+
+                                                </Border>
+                                                <Border Style="{StaticResource SettingsEditorSubcardStyle}">
+                                                    <StackPanel Spacing="4">
+                                                        <TextBlock Text="{CustomResource FanStop_CustomDescription.Text}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding FanStopTemperatureWarning}" Visibility="{x:Bind HasFanStopTemperatureWarning, Mode=OneWay}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCautionBrush}" AutomationProperties.LiveSetting="Polite" />
+                                                        <TextBlock Text="{Binding FanStopDelayWarning}" Visibility="{x:Bind HasFanStopDelayWarning, Mode=OneWay}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCautionBrush}" AutomationProperties.LiveSetting="Polite" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        </ContentControl>
+                                    </Expander>
+                                </Border>
+                                <Border Style="{StaticResource SettingsExpanderRowStyle}">
+                                    <Expander x:Name="AutomaticFanStopExpander" Style="{StaticResource CardContentExpanderStyle}" IsExpanded="False"
+                                              AutomationProperties.Name="{CustomResource FanStop_AutomaticTitle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}">
+                                        <Expander.Resources>
+                                            <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
+                                            <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
+                                        </Expander.Resources>
+                                        <Expander.Header>
+                                            <Border Style="{StaticResource SettingsExpanderHeaderStyle}">
+                                                <StackPanel Margin="16,14,60,14" Spacing="3">
+                                                    <TextBlock Text="{CustomResource FanStop_AutomaticTitle.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding AutomaticFanStopSummary}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Expander.Header>
+                                        <ContentControl IsEnabled="{Binding CanEditFanStopSettings}" HorizontalContentAlignment="Stretch" IsTabStop="False">
+                                            <StackPanel>
+                                            <Border Style="{StaticResource SettingsNeutralSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                    <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
+                                                            <TextBlock Text="{CustomResource FanStop_EnableAutomatic.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                    <ToggleSwitch Grid.Column="1" x:Name="AutomaticFanStopToggle" Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                                  IsOn="{Binding AutomaticFanStopEnabled, Mode=TwoWay}" Toggled="OnAutomaticFanStopToggled"
+                                                                  AutomationProperties.Name="{CustomResource FanStop_EnableAutomatic.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" />
+                                                </Grid>
+                                            </Border>
+                                            <ContentControl IsEnabled="{Binding AutomaticFanStopEnabled}" HorizontalContentAlignment="Stretch" IsTabStop="False">
+                                            <StackPanel>
+                                                <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                    <StackPanel Spacing="4">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
+                                                            <TextBlock Text="{CustomResource FanStop_CpuStart.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <NumberBox x:Name="AutomaticFanStopCpuLimitEditor" Grid.Column="1" Width="120" Minimum="10" Maximum="100" SmallChange="1" LargeChange="5"
+                                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                   AutomationProperties.Name="{CustomResource FanStop_CpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                                   Value="{Binding AutomaticFanStopCpuLimit, Mode=TwoWay}" LostFocus="OnFanStopSettingsLostFocus" />
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding AutomaticFanStopCpuError}" Visibility="{x:Bind HasAutomaticFanStopCpuError, Mode=OneWay}" Style="{StaticResource SecondaryTextStyle}"
+                                                               Foreground="{ThemeResource SystemFillColorCriticalBrush}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                                    </StackPanel>
+
+                                                </Border>
+                                                <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                    <StackPanel Spacing="4">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
+                                                            <TextBlock Text="{CustomResource FanStop_GpuStart.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <NumberBox x:Name="AutomaticFanStopGpuLimitEditor" Grid.Column="1" Width="120" Minimum="10" Maximum="100" SmallChange="1" LargeChange="5"
+                                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                   AutomationProperties.Name="{CustomResource FanStop_GpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                                   Value="{Binding AutomaticFanStopGpuLimit, Mode=TwoWay}" LostFocus="OnFanStopSettingsLostFocus" />
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding AutomaticFanStopGpuError}" Visibility="{x:Bind HasAutomaticFanStopGpuError, Mode=OneWay}" Style="{StaticResource SecondaryTextStyle}"
+                                                               Foreground="{ThemeResource SystemFillColorCriticalBrush}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                                    </StackPanel>
+
+                                                </Border>
+                                                <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                                    <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3" VerticalAlignment="Center" SizeChanged="OnDashboardTextStackSizeChanged">
+                                                            <TextBlock Text="{CustomResource FanStop_EntryDelay.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <NumberBox x:Name="AutomaticFanStopSecondsEditor" Grid.Column="1" Width="120" Minimum="1" Maximum="3600" SmallChange="1" LargeChange="5"
+                                                                   SpinButtonPlacementMode="Compact" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                   AutomationProperties.Name="{CustomResource FanStop_EntryDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                                   Value="{Binding AutomaticFanStopSeconds, Mode=TwoWay}" LostFocus="OnFanStopSettingsLostFocus" />
+                                                    </Grid>
+
+                                                </Border>
+                                            </StackPanel>
+                                        </ContentControl>
+                                            <Border Style="{StaticResource SettingsEditorSubcardStyle}">
+                                                <StackPanel Spacing="8">
+                                                    <TextBlock Text="{CustomResource FanStop_AutomaticDescription.Text}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                    <Button x:Name="ResumeAutomaticFanStopButton" Content="{CustomResource FanStop_Resume.Content}" Style="{StaticResource AppCommandButtonStyle}"
+                                                            Visibility="{x:Bind CanResumeAutomaticFanStop, Mode=OneWay}" HorizontalAlignment="Left" Click="OnResumeAutomaticFanStop" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                        </ContentControl>
+                                    </Expander>
+                                </Border>
+                                    <Border Style="{StaticResource SettingsEditorSubcardStyle}" Visibility="{x:Bind HasFanStopSettingsError, Mode=OneWay}">
+                                        <TextBlock Text="{Binding FanStopSettingsError}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                            <Border local:CardReorder.CardId="BatterySaverFanStop" Style="{StaticResource SettingsNeutralSubcardStyle}"
+                                    Padding="{StaticResource DashboardSingleLineRowPadding}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsBatterySaverFanStopVisible}">
+                                <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center"
+                                                SizeChanged="OnDashboardTextStackSizeChanged">
+                                        <TextBlock Text="{CustomResource MainWindow_BatterySaverFanStop.Text}"
+                                                   Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{x:Bind BatterySaverFanStopPausedMessage, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap"
+                                                   Visibility="{x:Bind IsBatterySaverFanStopSuspended, Mode=OneWay}" />
+                                    </StackPanel>
+                                    <ToggleSwitch Grid.Column="1" Style="{StaticResource CompactCardToggleSwitchStyle}"
+                                                  IsOn="{x:Bind BatterySaverFanStopRequested, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind CanToggleBatterySaverFanStop, Mode=OneWay}"
+                                                  AutomationProperties.Name="{CustomResource MainWindow_BatterySaverFanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                  Toggled="OnBatterySaverFanStopToggled" />
+                                </Grid>
+                            </Border>
                             <InfoBar
                                      IsOpen="{x:Bind HasFanControlUnavailableMessage, Mode=OneWay}"
                                      Visibility="{x:Bind HasFanControlUnavailableMessage, Mode=OneWay}"

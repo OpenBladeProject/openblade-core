@@ -4,6 +4,7 @@ namespace OpenBlade.Setup;
 
 public interface ISetupPayloadTransaction : IAsyncDisposable
 {
+    string StagedPayloadDirectory { get; }
     bool HadExistingInstall { get; }
     bool IsActivated { get; }
     string? CommitWarning { get; }
@@ -42,6 +43,7 @@ public interface ISetupPlatform
 {
     string CurrentUserSid { get; }
     Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken);
+    Task<bool> EnsureCpuTemperaturePrerequisiteAsync(string stagedPayloadDirectory, CancellationToken cancellationToken);
     Task<SetupInstallLifecycleState> CaptureInstallLifecycleStateAsync(CancellationToken cancellationToken);
     Task PrepareServiceForInstallAsync(CancellationToken cancellationToken);
     Task RestoreServiceInstallStateAsync(
@@ -120,6 +122,8 @@ public sealed class SetupCommandRunner(
                         + "Setup stopped before making changes; perform a manual repair or uninstall first.");
                 }
 
+                bool rebootRequired = await platform.EnsureCpuTemperaturePrerequisiteAsync(
+                    transaction.StagedPayloadDirectory, cancellationToken);
                 mutationStarted = true;
                 progress.Report(SetupProgressCode.RemoveLegacyRegistration);
                 await platform.RemoveTrayStartupAsync(cancellationToken);
@@ -160,7 +164,7 @@ public sealed class SetupCommandRunner(
                 }
                 await transaction.CommitAsync(cancellationToken);
                 WriteCommitWarningNoThrow(transaction.CommitWarning);
-                return 0;
+                return rebootRequired ? 3010 : 0;
             }
             catch (Exception failure)
             {

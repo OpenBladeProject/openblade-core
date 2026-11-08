@@ -45,6 +45,7 @@ public sealed class ExactFanControlOwnershipTests
     [InlineData(FanMode.Fixed)]
     [InlineData(FanMode.ManualCurve)]
     [InlineData(FanMode.Maximum)]
+    [InlineData(FanMode.Stop)]
     public void ManualObservationClassifiesTopologyWithoutEstablishingExactOwnership(FanMode mode)
     {
         foreach (ExactFanControlOwnership ownership in UnownedStates())

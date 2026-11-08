@@ -114,6 +114,18 @@ public interface IServiceClient : IServiceStatusWatcher
         FanControlSettings? settings,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetBatterySaverFanStopAsync(bool enabled, CancellationToken token) =>
+        throw new NotSupportedException();
+
+    Task<ControlOperationResult> SetFanStopSettingsAsync(FanStopSettings settings, CancellationToken token) =>
+        throw new NotSupportedException();
+
+    Task<ControlOperationResult> ResumeAutomaticFanStopAsync(CancellationToken token) =>
+        throw new NotSupportedException();
+
+    Task<ControlOperationResult> SetFanStopModeAsync(FanStopMode mode, CancellationToken token) =>
+        throw new NotSupportedException();
+
     Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token);

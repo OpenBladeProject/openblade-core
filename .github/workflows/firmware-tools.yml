@@ -1,0 +1,60 @@
+name: Offline firmware and observation tools
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/firmware/**'
+      - 'tools/mailbox-observation/**'
+      - '.github/workflows/firmware-tools.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/firmware/**'
+      - 'tools/mailbox-observation/**'
+      - '.github/workflows/firmware-tools.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-tools-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-tests:
+    name: Offline parser and explorer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools/firmware
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Test offline parsing and report contracts
+        run: python -m unittest discover -s tests -v
+      - name: Test explorer interactions without a browser
+        run: node --test tests/test_explorer.js
+      - name: Validate shipped profiles
+        run: python firmware.py profiles
+      - name: Test offline observation inspectors
+        working-directory: tools/mailbox-observation
+        run: python -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Test recorder with fake sessions and offline exporter fixtures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: tools/mailbox-observation
+        run: |
+          & ./tests/Test-MailboxTraceController.ps1
+          & ./tests/Test-MailboxTraceExporter.ps1

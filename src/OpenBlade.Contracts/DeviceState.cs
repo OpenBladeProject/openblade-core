@@ -218,6 +218,14 @@ public sealed record DeviceCapabilities(
     /// </summary>
     public bool SupportsDirectManualFanTransitions { get; init; }
 
+    public bool SupportsBatterySaverFanStop { get; init; }
+
+    /// <summary>Attended exact-model evidence exists. This is display metadata,
+    /// not runtime command admission or crash-recovery evidence.</summary>
+    public bool HasFanStopTrialEvidence { get; init; }
+
+    public bool SupportsFanStop { get; init; }
+
     /// <summary>Exact backend reports the real performance mode and Custom levels
     /// while manual fans are active, rather than a shared manual selector.</summary>
     public bool ReportsPerformanceWithManualFans { get; init; }
@@ -402,7 +410,7 @@ public sealed record DeviceCapabilities(
 
     public static DeviceCapabilities SafeTargetDefaults() => new(
         new HashSet<PerformancePreset>(Enum.GetValues<PerformancePreset>()),
-        new HashSet<FanMode>(Enum.GetValues<FanMode>()),
+        new HashSet<FanMode>(Enum.GetValues<FanMode>().Where(mode => mode != FanMode.Stop)),
         new HashSet<LightingEffect> { LightingEffect.Off },
         new HashSet<int>(),
         SupportsBatteryProtectionOff: false,
@@ -429,7 +437,7 @@ public sealed record DeviceCapabilities(
     }
 
     private static bool IsManualFanMode(FanMode mode) =>
-        mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum;
+        mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum or FanMode.Stop;
 
     private static bool IsValidEnumSet<TEnum>(IReadOnlySet<TEnum>? values)
         where TEnum : struct, Enum =>

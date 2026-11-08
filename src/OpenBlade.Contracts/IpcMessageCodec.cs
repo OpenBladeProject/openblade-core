@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 76;
+    public const int ProtocolVersion = 78;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -266,6 +266,10 @@ public static class IpcMessageCodec
                 set.Value is null
                 || set.Value.IsWellFormed(),
             SetHyperBoostRequest => true,
+            SetBatterySaverFanStopRequest => true,
+            SetFanStopModeRequest set => Enum.IsDefined(set.Mode),
+            SetFanStopSettingsRequest set => FanStopSettings.IsWellFormed(set.Settings),
+            ResumeAutomaticFanStopRequest => true,
             SetGpuClockTuningRequest set =>
                 GpuClockTuningSettings.IsWellFormed(set.Value)
                 && Enum.IsDefined(set.Lifetime),
@@ -295,6 +299,7 @@ public static class IpcMessageCodec
                 set.Value is null
                     ? set.Settings is null
                     : Enum.IsDefined(set.Value.Value)
+                        && set.Value.Value != FanMode.Stop
                         && Enum.IsDefined(set.Value.Lifetime)
                         && (set.Settings is null
                             || set.Settings.Mode == set.Value.Value),
@@ -424,6 +429,21 @@ public static class IpcMessageCodec
         if (!Enum.IsDefined(status.ObservationReason))
         {
             throw InvalidStatus("observation reason is invalid");
+        }
+
+        if (status.FanStopStatus is not { } fanStop
+            || !Enum.IsDefined(fanStop.RequestedMode)
+            || !Enum.IsDefined(fanStop.State)
+            || !Enum.IsDefined(fanStop.UnavailableReason)
+            || !FanStopSettings.IsWellFormed(fanStop.Settings)
+            || !Enum.IsDefined(fanStop.AutomationState)
+            || !Enum.IsDefined(fanStop.AutomationPauseReason)
+            || fanStop.State is FanStopState.Unavailable or FanStopState.RecoveryRequired
+                && (fanStop.CanStop || fanStop.CanReturnToAutomatic)
+            || fanStop.CanReturnToAutomatic && fanStop.State is not
+                (FanStopState.Stopped or FanStopState.Starting or FanStopState.ReturningToAutomatic))
+        {
+            throw InvalidStatus("fan-stop status is invalid");
         }
 
         if (status.CpuTuning is { IsWellFormed: false })
@@ -903,6 +923,7 @@ public static class IpcMessageCodec
             ? null
             : status.Capabilities with
             {
+                FanModes = status.Capabilities.FanModes.Where(mode => mode != FanMode.Stop).ToHashSet(),
                 PerformancePresets = status.Capabilities.PerformancePresets
                     .Where(IsProtocol51PerformancePreset)
                     .ToHashSet(),
@@ -942,7 +963,8 @@ public static class IpcMessageCodec
                         ? confirmedPerformance : null,
                 CustomPerformance = IsProtocol51CustomState(status.ConfirmedState.CustomPerformance)
                     ? status.ConfirmedState.CustomPerformance : null,
-                Fans = status.ConfirmedState.CustomPerformance?.MaximumFans == true
+                Fans = status.ConfirmedState.Fans == FanMode.Stop
+                    || status.ConfirmedState.CustomPerformance?.MaximumFans == true
                     ? null : status.ConfirmedState.Fans,
                 Lighting = status.ConfirmedState.Lighting is { } confirmedLighting
                     && IsProtocol51LightingSetting(confirmedLighting)
@@ -967,6 +989,15 @@ public static class IpcMessageCodec
             },
             DesiredState = status.DesiredState with
             {
+                Fans = status.DesiredState.Fans with
+                {
+                    Value = status.DesiredState.Fans.Value == FanMode.Stop
+                        ? status.BatterySaverFanStopStatus?.NormalFanControl?.Mode ?? FanMode.Automatic
+                        : status.DesiredState.Fans.Value,
+                },
+                FanControl = status.DesiredState.FanControl?.Mode == FanMode.Stop
+                    ? status.BatterySaverFanStopStatus?.NormalFanControl ?? FanControlSettings.Default
+                    : status.DesiredState.FanControl,
                 Performance = status.DesiredState.Performance with
                 {
                     Value = IsProtocol51PerformancePreset(status.DesiredState.Performance.Value)
@@ -1157,6 +1188,19 @@ public static class IpcMessageCodec
         var resolver = new DefaultJsonTypeInfoResolver();
         resolver.Modifiers.Add(typeInfo =>
         {
+            if (protocol51Projection)
+            {
+                foreach (JsonPropertyInfo property in typeInfo.Properties.Where(property =>
+                    property.Name.Equals("stopFansInBatterySaver", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("supportsBatterySaverFanStop", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("hasFanStopTrialEvidence", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("supportsFanStop", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("fanStopStatus", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("batterySaverFanStopStatus", StringComparison.OrdinalIgnoreCase)))
+                {
+                    property.ShouldSerialize = static (_, _) => false;
+                }
+            }
             if (protocol51Projection
                 && (typeInfo.Type == typeof(ServiceStatusSnapshot)
                     || typeInfo.Type == typeof(ControlOperationResult)))

@@ -4,6 +4,7 @@ param(
     [string]$Configuration = 'Release',
     [string]$VcRedistPath,
     [string]$DotNetRuntimePath,
+    [string]$PawnIoInstallerPath,
     [switch]$OfflineInstaller,
     [string]$SigningThumbprint,
     [string]$SignTool,
@@ -28,6 +29,7 @@ $artifacts = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts'))
 . (Join-Path $PSScriptRoot 'PublishPayloadValidation.ps1')
 . (Join-Path $PSScriptRoot 'InstallerValidation.ps1')
 . (Join-Path $PSScriptRoot 'InstallerPrerequisites.ps1')
+. (Join-Path $PSScriptRoot 'PawnIoPrerequisite.ps1')
 . (Join-Path $PSScriptRoot 'StoreSubmissionValidation.ps1')
 . (Join-Path $PSScriptRoot 'WindowsAppRuntimeNotificationResource.ps1')
 . (Join-Path $PSScriptRoot 'BuildIdentity.ps1')
@@ -50,6 +52,8 @@ $developerTools = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlad
 $stagingRoot = [IO.Path]::GetFullPath((Join-Path $artifacts ('.staging\' + [Guid]::NewGuid().ToString('N'))))
 $stagingBundle = Join-Path $stagingRoot 'OpenBlade'
 $stagingDeveloperTools = Join-Path $stagingRoot 'OpenBlade.DeveloperTools'
+$stagingGuardian = Join-Path $stagingRoot 'OpenBlade.FanStop.Guardian'
+$stagingCpuTemperature = Join-Path $stagingRoot 'OpenBlade.CpuTemperature'
 $stagingInstallerOutput = Join-Path $stagingRoot 'installer'
 $stagingInstallerUi = Join-Path $stagingRoot 'installer-ui'
 $stagingUpgradeProbeOutput = Join-Path $stagingRoot 'installer-upgrade-probe'
@@ -221,10 +225,18 @@ try {
 
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Service\OpenBlade.Service.csproj') `
         $payload ($installedPublishArguments + $serviceValidationArguments)
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.FanStop.Guardian\OpenBlade.FanStop.Guardian.csproj') `
+        $stagingGuardian ($installedPublishArguments + $serviceValidationArguments)
+    Add-GuardianPublishPayload -Guardian $stagingGuardian -Payload $payload
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.SessionAgent\OpenBlade.SessionAgent.csproj') `
         $payload $installedPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `
         $payload $installedPublishArguments
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.CpuTemperature\OpenBlade.CpuTemperature.csproj') `
+        $stagingCpuTemperature $installedPublishArguments
+    Add-CpuTemperaturePublishPayload -Helper $stagingCpuTemperature -Payload $payload
+    [void](Copy-OpenBladePawnIoPrerequisite -SourcePath $PawnIoInstallerPath -DestinationDirectory $payload)
+    Add-CpuTemperatureLicensePayload -Repository $repository -Payload $payload
     $trayAssets = Join-Path $repository (
         'src\OpenBlade.Tray\obj\project.assets.json')
     Add-WindowsAppRuntimeNotificationResource `
@@ -310,7 +322,8 @@ try {
         foreach ($file in Get-ChildItem -LiteralPath $stagingBundle -Recurse -File |
             Where-Object {
                 ($_.Extension -in @('.exe', '.dll')) -and
-                $_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal)
+                ($_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal) -or
+                    $_.FullName -ceq (Join-Path $payload 'LibreHardwareMonitorLib.dll'))
             }) {
             Invoke-OpenBladeSigning -Path $file.FullName -ResolvedSignTool $resolvedSignTool
         }

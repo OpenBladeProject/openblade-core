@@ -5,11 +5,14 @@
   <Folder Name="/src/">
     <Project Path="src/OpenBlade.Capture/OpenBlade.Capture.csproj" />
     <Project Path="src/OpenBlade.Contracts/OpenBlade.Contracts.csproj" />
+    <Project Path="src/OpenBlade.CpuTemperature/OpenBlade.CpuTemperature.csproj" />
     <Project Path="src/OpenBlade.Deployment/OpenBlade.Deployment.csproj" />
     <Project Path="src/OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj" />
     <Project Path="src/OpenBlade.DeploymentClient/OpenBlade.DeploymentClient.csproj" />
     <Project Path="src/OpenBlade.DevelopmentDeployment.Setup/OpenBlade.DevelopmentDeployment.Setup.csproj" />
     <Project Path="src/OpenBlade.Display/OpenBlade.Display.csproj" />
+    <Project Path="src/OpenBlade.FanStop.Core/OpenBlade.FanStop.Core.csproj" />
+    <Project Path="src/OpenBlade.FanStop.Guardian/OpenBlade.FanStop.Guardian.csproj" />
     <Project Path="src/OpenBlade.FirmwareSmoke/OpenBlade.FirmwareSmoke.csproj" />
     <Project Path="src/OpenBlade.Platform/OpenBlade.Platform.csproj" />
     <Project Path="src/OpenBlade.PmSupervisor/OpenBlade.PmSupervisor.csproj" />
@@ -24,12 +27,14 @@
   <Folder Name="/tests/">
     <Project Path="tests/OpenBlade.Architecture.Tests/OpenBlade.Architecture.Tests.csproj" />
     <Project Path="tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj" />
+    <Project Path="tests/OpenBlade.CpuTemperature.Tests/OpenBlade.CpuTemperature.Tests.csproj" />
     <Project Path="tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj" />
     <Project Path="tests/OpenBlade.DeploymentBroker.Tests/OpenBlade.DeploymentBroker.Tests.csproj" />
     <Project Path="tests/OpenBlade.DeploymentClient.Tests/OpenBlade.DeploymentClient.Tests.csproj" />
     <Project Path="tests/OpenBlade.DevelopmentDeployment.Setup.Tests/OpenBlade.DevelopmentDeployment.Setup.Tests.csproj" />
     <Project Path="tests/OpenBlade.Display.Tests/OpenBlade.Display.Tests.csproj" />
     <Project Path="tests/OpenBlade.FirmwareSmoke.Tests/OpenBlade.FirmwareSmoke.Tests.csproj" />
+    <Project Path="tests/OpenBlade.Guardian.TestHost/OpenBlade.Guardian.TestHost.csproj" />
     <Project Path="tests/OpenBlade.LocalDevDeployment.Tool.Tests/OpenBlade.LocalDevDeployment.Tool.Tests.csproj" />
     <Project Path="tests/OpenBlade.Platform.Tests/OpenBlade.Platform.Tests.csproj" />
     <Project Path="tests/OpenBlade.Capture.Tests/OpenBlade.Capture.Tests.csproj" />
@@ -39,5 +44,9 @@
     <Project Path="tests/OpenBlade.SessionAgent.Tests/OpenBlade.SessionAgent.Tests.csproj" />
     <Project Path="tests/OpenBlade.Setup.Tests/OpenBlade.Setup.Tests.csproj" />
     <Project Path="tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj" />
+  </Folder>
+  <Folder Name="/third_party/">
+    <Project Path="third_party/LibreHardwareMonitor/LibreHardwareMonitorLib.csproj" />
+    <Project Path="third_party/LibreHardwareMonitor/tests/OpenBlade.LibreHardwareMonitor.Tests.csproj" />
   </Folder>
 </Solution>

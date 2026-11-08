@@ -487,6 +487,30 @@ public sealed class BatteryConfigurationStore
         }
 
         BatteryAutomationPreferences preferences = document.Preferences;
+        if (expectedSchemaVersion >= ProfileStore.FanStopSettingsSchemaVersion
+            && (!preferencesElement.TryGetProperty("fanStopSettings", out JsonElement stopSettings)
+                || stopSettings.ValueKind != JsonValueKind.Object || preferences.FanStopSettings is null))
+        { throw new InvalidDataException("The current preferences are missing valid Fan Stop settings."); }
+        if (expectedSchemaVersion < ProfileStore.FanStopSettingsSchemaVersion)
+        { preferences = preferences with { FanStopSettings = FanStopSettings.Default }; }
+        else if (expectedSchemaVersion < ProfileStore.FanStopRollingAverageSchemaVersion)
+        {
+            // Preserve every selected value and automation preference. These are
+            // product defaults within the existing input range, not validated
+            // thermal ceilings. At 100 C the equal cutoff takes immediate priority.
+            FanStopSettings legacy = preferences.FanStopSettings;
+            preferences = preferences with
+            {
+                FanStopSettings = legacy with
+                {
+                    CpuImmediateCutoffCelsius = (int)Math.Min((long)legacy.CpuLimitCelsius + 10, FanStopSettings.MaximumTemperatureCelsius),
+                    GpuImmediateCutoffCelsius = (int)Math.Min((long)legacy.GpuLimitCelsius + 10, FanStopSettings.MaximumTemperatureCelsius),
+                },
+            };
+        }
+        else if (!preferencesElement.GetProperty("fanStopSettings").TryGetProperty("cpuImmediateCutoffCelsius", out _)
+            || !preferencesElement.GetProperty("fanStopSettings").TryGetProperty("gpuImmediateCutoffCelsius", out _))
+        { throw new InvalidDataException("The current Fan Stop settings are missing immediate cutoffs."); }
         if (expectedSchemaVersion
             < ProfileStore.ExperimentalFeaturesConsentPredecessorSchemaVersion)
         {

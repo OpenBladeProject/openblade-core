@@ -1714,6 +1714,73 @@
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>电源来源已更改。请检查当前配置方案后重试。</value>
   </data>
+  <data name="Fan-stop control paused. Turn it off to restore normal cooling." xml:space="preserve"><value>风扇停止控制已暂停。关闭此功能可恢复正常散热。</value></data>
+  <data name="Fan control needs recovery. Automatic cooling is not confirmed." xml:space="preserve">
+    <value>风扇控制需要恢复。尚未确认自动散热已恢复。</value>
+  </data>
+  <data name="Fans are stopped. Turn off to return to Auto." xml:space="preserve">
+    <value>风扇已停止。关闭此开关以恢复自动控制。</value>
+  </data>
+  <data name="Fan stop is not available in this build." xml:space="preserve">
+    <value>此版本暂不支持停止风扇。</value>
+  </data>
+  <data name="Turn on to stop the fans. Turn off to return to Auto." xml:space="preserve">
+    <value>开启以停止风扇，关闭以恢复自动控制。</value>
+  </data>
+  <data name="Fan stop is unavailable right now." xml:space="preserve">
+    <value>当前无法停止风扇。</value>
+  </data>
+  <data name="Fans are stopped" xml:space="preserve">
+    <value>风扇已停止</value>
+  </data>
+  <data name="Fan control needs recovery" xml:space="preserve">
+    <value>风扇控制需要恢复</value>
+  </data>
+  <data name="Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto." xml:space="preserve">
+    <value>正在等待风扇停止确认，可能需要几十秒。关闭即可返回自动模式。</value>
+  </data>
+  <data name="Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds." xml:space="preserve">
+    <value>正在返回自动模式。自动散热尚未确认，可能需要几十秒。</value>
+  </data>
+  <data name="Fan stop is unavailable because its safety guardian is not ready." xml:space="preserve">
+    <value>安全监护程序尚未就绪，无法停止风扇。</value>
+  </data>
+  <data name="Waiting for fan stop confirmation" xml:space="preserve">
+    <value>正在等待风扇停止确认</value>
+  </data>
+  <data name="Returning to Auto" xml:space="preserve">
+    <value>正在返回自动模式</value>
+  </data>
+  <data name="Custom: {2} s average CPU {0} °C / GPU {1} °C; immediate CPU {3} °C / GPU {4} °C" xml:space="preserve">
+    <value>自定义：{2} 秒平均 CPU {0} °C / GPU {1} °C；即时上限 CPU {3} °C / GPU {4} °C</value>
+  </data>
+  <data name="Auto: use the existing conservative end conditions." xml:space="preserve">
+    <value>自动：使用现有的保守结束条件。</value>
+  </data>
+  <data name="Paused — resume to start a fresh cool interval." xml:space="preserve">
+    <value>已暂停 — 继续后将重新开始计算冷却时段。</value>
+  </data>
+  <data name="CPU below {0} °C and GPU below {1} °C for {2} s" xml:space="preserve">
+    <value>CPU 低于 {0} °C 且 GPU 低于 {1} °C，持续 {2} 秒</value>
+  </data>
+  <data name="Higher temperature limits allow the laptop to stay hotter before cooling restarts." xml:space="preserve">
+    <value>更高的温度上限会让笔记本电脑在恢复散热前保持更高温度。</value>
+  </data>
+  <data name="A longer averaging window responds more slowly to rising temperatures. Immediate cutoffs still apply." xml:space="preserve">
+    <value>平均窗口越长，对温度上升的响应越慢。即时温度上限仍然有效。</value>
+  </data>
+  <data name="The CPU start limit must be below the CPU end limit." xml:space="preserve">
+    <value>CPU 停转阈值必须低于 CPU 结束阈值。</value>
+  </data>
+  <data name="The GPU start limit must be below the GPU end limit." xml:space="preserve">
+    <value>GPU 停转阈值必须低于 GPU 结束阈值。</value>
+  </data>
+  <data name="Use whole temperatures from 10 to 100 °C, an averaging window from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding average limits." xml:space="preserve">
+    <value>请输入 10 至 100 °C 的整数温度、1 至 300 秒的平均窗口以及 1 至 3600 秒的冷却间隔。启动阈值必须低于对应的平均温度阈值。</value>
+  </data>
+  <data name="Each immediate cutoff must be at least its corresponding average limit." xml:space="preserve">
+    <value>每个即时温度上限必须不低于对应的平均温度阈值。</value>
+  </data>
   <data name="Turbo" xml:space="preserve">
     <value>极速</value>
   </data>

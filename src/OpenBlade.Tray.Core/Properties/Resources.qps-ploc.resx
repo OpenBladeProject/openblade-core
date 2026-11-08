@@ -1804,6 +1804,75 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
     <value>[!! Thé pówér sóúrcé chángéd. Révíéw thé cúrrént prófílé ánd trý ágáín. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Fan-stop control paused. Turn it off to restore normal cooling." xml:space="preserve">
+    <value>[!! Fán-stóp cóntról páúséd. Túrn ít óff tó réstóré nórmál cóólíng. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan control needs recovery. Automatic cooling is not confirmed." xml:space="preserve">
+    <value>[!! Fán cóntról nééds récóvérý. Áútómátíc cóólíng ís nót cónfírméd. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fans are stopped. Turn off to return to Auto." xml:space="preserve">
+    <value>[!! Fáns áré stóppéd. Túrn óff tó rétúrn tó Áútó. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan stop is not available in this build." xml:space="preserve">
+    <value>[!! Fán stóp ís nót áváíláblé ín thís búíld. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Turn on to stop the fans. Turn off to return to Auto." xml:space="preserve">
+    <value>[!! Túrn ón tó stóp thé fáns. Túrn óff tó rétúrn tó Áútó. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan stop is unavailable right now." xml:space="preserve">
+    <value>[!! Fán stóp ís únáváíláblé ríght nów. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fans are stopped" xml:space="preserve">
+    <value>[!! Fáns áré stóppéd ~~~~~ !!]</value>
+  </data>
+  <data name="Fan control needs recovery" xml:space="preserve">
+    <value>[!! Fán cóntról nééds récóvérý ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto." xml:space="preserve">
+    <value>[!! Wáítíng fór fán stóp cónfírmátíón. Thís máý táké téns óf sécónds. Túrn óff tó rétúrn tó Áútó. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds." xml:space="preserve">
+    <value>[!! Rétúrníng tó Áútó. Áútómátíc cóólíng ís nót cónfírméd ýét; thís máý táké téns óf sécónds. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan stop is unavailable because its safety guardian is not ready." xml:space="preserve">
+    <value>[!! Fán stóp ís únáváíláblé bécáúsé íts sáfétý gúárdíán ís nót réádý. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Waiting for fan stop confirmation" xml:space="preserve">
+    <value>[!! Wáítíng fór fán stóp cónfírmátíón ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Returning to Auto" xml:space="preserve">
+    <value>[!! Rétúrníng tó Áútó ~~~~~~ !!]</value>
+  </data>
+  <data name="Custom: {2} s average CPU {0} °C / GPU {1} °C; immediate CPU {3} °C / GPU {4} °C" xml:space="preserve">
+    <value>[!! Cústóm: {2} s ávérágé CPÚ {0} °C / GPÚ {1} °C; ímmédíáté CPÚ {3} °C / GPÚ {4} °C ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Auto: use the existing conservative end conditions." xml:space="preserve">
+    <value>[!! Áútó: úsé thé éxístíng cónsérvátívé énd cóndítíóns. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Paused — resume to start a fresh cool interval." xml:space="preserve">
+    <value>[!! Páúséd — résúmé tó stárt á frésh cóól íntérvál. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="CPU below {0} °C and GPU below {1} °C for {2} s" xml:space="preserve">
+    <value>[!! CPÚ bélów {0} °C ánd GPÚ bélów {1} °C fór {2} s ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Higher temperature limits allow the laptop to stay hotter before cooling restarts." xml:space="preserve">
+    <value>[!! Híghér témpérátúré límíts állów thé láptóp tó stáý hóttér béfóré cóólíng réstárts. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="A longer averaging window responds more slowly to rising temperatures. Immediate cutoffs still apply." xml:space="preserve">
+    <value>[!! Á lóngér ávérágíng wíndów réspónds móré slówlý tó rísíng témpérátúrés. Ímmédíáté cútóffs stíll ápplý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The CPU start limit must be below the CPU end limit." xml:space="preserve">
+    <value>[!! Thé CPÚ stárt límít múst bé bélów thé CPÚ énd límít. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The GPU start limit must be below the GPU end limit." xml:space="preserve">
+    <value>[!! Thé GPÚ stárt límít múst bé bélów thé GPÚ énd límít. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Use whole temperatures from 10 to 100 °C, an averaging window from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding average limits." xml:space="preserve">
+    <value>[!! Úsé whólé témpérátúrés fróm 10 tó 100 °C, án ávérágíng wíndów fróm 1 tó 300 sécónds, ánd á cóól íntérvál fróm 1 tó 3600 sécónds. Stárt límíts múst bé bélów thé córréspóndíng ávérágé límíts. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Each immediate cutoff must be at least its corresponding average limit." xml:space="preserve">
+    <value>[!! Éách ímmédíáté cútóff múst bé át léást íts córréspóndíng ávérágé límít. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="Turbo" xml:space="preserve">
     <value>[!! Túrbó ~~ !!]</value>
   </data>

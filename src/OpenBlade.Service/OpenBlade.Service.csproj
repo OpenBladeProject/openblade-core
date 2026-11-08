@@ -51,6 +51,7 @@
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
     <ProjectReference Include="..\OpenBlade.Platform\OpenBlade.Platform.csproj" />
     <ProjectReference Include="..\OpenBlade.Protocol\OpenBlade.Protocol.csproj" />
+    <ProjectReference Include="..\OpenBlade.FanStop.Core\OpenBlade.FanStop.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />

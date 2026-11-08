@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(76, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(78, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(16 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -59,6 +59,10 @@ public sealed class ServiceMessageContractTests
             (typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut"),
             (typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview"),
             (typeof(SetFanOverrideRequest), "setFanOverride"),
+            (typeof(SetBatterySaverFanStopRequest), "setBatterySaverFanStop"),
+            (typeof(SetFanStopModeRequest), "setFanStopMode"),
+            (typeof(SetFanStopSettingsRequest), "setFanStopSettings"),
+            (typeof(ResumeAutomaticFanStopRequest), "resumeAutomaticFanStop"),
             (typeof(SetLightingOverrideRequest), "setLightingOverride"),
             (typeof(SetIndependentLightingOverrideRequest), "setIndependentLightingOverride"),
             (typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness"),
@@ -113,7 +117,7 @@ public sealed class ServiceMessageContractTests
             "PerformanceShortcutPreview", "BatteryHealth", "KeyboardLightingControlMode",
             "ControlAccess", "AllowUntestedFirmware", "AllowExperimentalFeatures",
             "IsExperimentalDevice", "ExperimentalSupportSource", "ExperimentalWritesPaused", "FirmwareCompatibility",
-            "DisplayBrightnessHidAvailability",
+            "DisplayBrightnessHidAvailability", "BatterySaverFanStopStatus", "FanStopStatus",
             "CpuTuning",
         ];
 

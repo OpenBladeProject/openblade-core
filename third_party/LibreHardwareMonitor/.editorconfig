@@ -1,0 +1,3 @@
+# Keep the pinned upstream subset's style independent of OpenBlade conventions.
+# Compiler diagnostics and functional tests remain enabled for this project.
+root = true

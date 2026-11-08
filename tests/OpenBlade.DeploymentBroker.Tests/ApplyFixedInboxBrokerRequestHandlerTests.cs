@@ -8,6 +8,21 @@ namespace OpenBlade.DeploymentBroker.Tests;
 
 public sealed class ApplyFixedInboxBrokerRequestHandlerTests : IDisposable
 {
+    [Fact]
+    public async Task RebootRequiredVerifiedInstallPreservesClientSuccessContractAndDurableExitMeaning()
+    {
+        using HandlerFixture fixture = CreateFixture(new BrokerInstallerExecutionResult(true, 3010, false),
+            new BrokerPostInstallVerification(true, true, false));
+        BrokerResponse response = await fixture.Handler.HandleAsync(fixture.Request, fixture.Enrollment, CancellationToken.None);
+        Assert.Equal(BrokerResponseStatus.Succeeded, response.Status);
+        Assert.Equal("install-succeeded", response.Code);
+        Assert.False(File.Exists(fixture.Paths.InFlightPath));
+        string report = await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(fixture.Paths.ReportDirectory)));
+        Assert.Contains("3010", report);
+        Assert.Contains("Succeeded", report);
+        string journal = await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(fixture.Paths.JournalDirectory)));
+        Assert.Contains("installer-exit-observed-reboot-required", journal);
+    }
     private readonly string root = Path.Combine(
         Path.GetTempPath(),
         "OpenBlade.DeploymentBroker.Tests",

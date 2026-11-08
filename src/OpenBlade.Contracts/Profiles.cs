@@ -200,6 +200,9 @@ public enum FanMode
     // Kept for profiles written before adjustable fixed speed was added.
     // It is equivalent to Fixed at 5,400 RPM.
     Maximum,
+
+    // Operational state only; selected through the Battery Saver preference.
+    Stop,
 }
 
 public sealed record FanCurvePoint
@@ -516,6 +519,9 @@ public sealed record PowerProfile(
     LightingSettings Lighting,
     DisplayProfileSettings? Display = null)
 {
+    // Base battery preference; ordinary and application fan intent stays intact.
+    public bool StopFansInBatterySaver { get; init; }
+
     // Retained while another preset is selected so switching back to Custom
     // restores the user's last valid CPU/GPU pair.
     public CustomPerformanceSettings? CustomPerformance { get; init; }

@@ -140,12 +140,26 @@ function Write-ValidServicePayload {
     New-Item -ItemType Directory -Path $Payload -Force | Out-Null
     Write-ServiceManifest -Payload $Payload -Manifest (New-ValidServiceManifest)
     foreach ($sessionAgentFile in @(
+            'OpenBlade.CpuTemperature.exe',
+            'OpenBlade.CpuTemperature.dll',
+            'OpenBlade.CpuTemperature.deps.json',
+            'OpenBlade.CpuTemperature.runtimeconfig.json',
+            'LibreHardwareMonitorLib.dll',
+            'PawnIO_setup.exe',
+            'PawnIO-NOTICE.txt',
+            'licenses\LibreHardwareMonitor-source.zip',
             'OpenBlade.Platform.dll',
+            'OpenBlade.FanStop.Core.dll',
+            'OpenBlade.FanStop.Guardian.exe',
+            'OpenBlade.FanStop.Guardian.dll',
+            'OpenBlade.FanStop.Guardian.deps.json',
+            'OpenBlade.FanStop.Guardian.runtimeconfig.json',
             'OpenBlade.SessionAgent.exe',
             'OpenBlade.SessionAgent.dll',
             'OpenBlade.SessionAgent.deps.json',
             'OpenBlade.SessionAgent.runtimeconfig.json',
             'Microsoft.WindowsAppRuntime.Insights.Resource.dll')) {
+        [void][IO.Directory]::CreateDirectory((Split-Path -Parent (Join-Path $Payload $sessionAgentFile)))
         Set-Content -LiteralPath (Join-Path $Payload $sessionAgentFile) `
             -Value 'session agent payload' -NoNewline
     }
@@ -484,7 +498,7 @@ try {
         -Value 'runtime resource loader' -NoNewline
     [xml]$buildProperties = Get-Content -LiteralPath (Join-Path $repository 'Directory.Build.props')
     $runtimeVersion = [string]$buildProperties.Project.PropertyGroup.OpenBladeMinimumDotNetRuntimeVersion
-    foreach ($application in @('OpenBlade.Service', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
+    foreach ($application in @('OpenBlade.Service', 'OpenBlade.FanStop.Guardian', 'OpenBlade.CpuTemperature', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
         $frameworks = @([ordered]@{ name = 'Microsoft.NETCore.App'; version = $runtimeVersion })
         if ($application -eq 'OpenBlade.Tray') {
             $frameworks += [ordered]@{ name = 'Microsoft.WindowsDesktop.App'; version = $runtimeVersion }

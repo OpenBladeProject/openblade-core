@@ -4,6 +4,11 @@ using OpenBlade.Display;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
+if (args.Length > 0 && WindowsBatteryObservationCommand.Recognizes(args[0]))
+{
+    return await WindowsBatteryObservationCommand.RunAsync(args);
+}
+
 if (args.Length > 0 && args[0] == CpuVoltageSessionCommand.HostName)
 {
     return await CpuVoltageSessionCommand.RunHostAsync(args.Skip(1).ToArray(), Console.Out);
@@ -1705,6 +1710,74 @@ if (args.Length > 0 && args[0].Equals(
         Console.Out,
         target: DeviceModeValidationTarget.Rz090528);
     return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0] == So6120GuardianHost.OwnerName)
+{
+    return await So6120GuardianHost.RunOwnerAsync(args[1..], Console.In, Console.Out);
+}
+
+if (args.Length > 0 && args[0] == So6120SilentPwmCommand.Name)
+{
+    return await So6120SilentPwmCommand.RunAsync(args[1..], Console.In, Console.Out);
+}
+
+if (args.Length > 0 && args[0] == So6120SilentPwmCommand.BalancedName)
+{
+    return await So6120SilentPwmCommand.RunBalancedAsync(args[1..], Console.In, Console.Out);
+}
+
+if (args.Length > 0 && args[0] == So6120SilentPwmCommand.HalfCycleName)
+{
+    return await So6120SilentPwmCommand.RunBalancedHalfCycleAsync(args[1..], Console.In, Console.Out);
+}
+
+if (args.Length > 0 && args[0] == So6120SilentPwmCommand.StopName)
+{
+    return await So6120SilentPwmCommand.RunBalancedStopAsync(args[1..], Console.In, Console.Out);
+}
+
+if (args.Length > 0 && args[0] == So6120MailboxObservationCommand.Name)
+{
+    return await So6120MailboxObservationCommand.RunAsync(args[1..], Console.In, Console.Out);
+}
+
+if (args.Length > 0 && args[0] == So6120StagingRecoveryCommand.Name)
+{
+    return await So6120StagingRecoveryCommand.RunAsync(args[1..], Console.In, Console.Out);
+}
+
+if (args.Length > 0 && args[0] is SilentLowFanValidationCommand.StopName
+    or SilentLowFanValidationCommand.LowestName or SilentLowFanValidationCommand.ZeroName)
+{
+    return await SilentLowFanValidationCommand.RunWindowsAsync(args[1..], Console.Out,
+        args[0] switch
+        {
+            SilentLowFanValidationCommand.StopName => SilentLowFanScenario.FanStop1500,
+            SilentLowFanValidationCommand.LowestName => SilentLowFanScenario.LowestSpinning,
+            _ => SilentLowFanScenario.LiteralZero,
+        });
+}
+if (args.Length > 0 && args[0] is BatterySaverLowFanValidationCommand.Name
+    or BatterySaverLowFanValidationCommand.SpinDownName
+    or BatterySaverLowFanValidationCommand.LowestNonzeroName
+    or BatterySaverLowFanValidationCommand.Reconcile100Name
+    or BatterySaverLowFanValidationCommand.Restore100Name)
+{
+    return await BatterySaverLowFanValidationCommand.RunWindowsAsync(args[1..], Console.Out,
+        confirmSpinningAt2000: args[0] is BatterySaverLowFanValidationCommand.SpinDownName
+            or BatterySaverLowFanValidationCommand.LowestNonzeroName
+            or BatterySaverLowFanValidationCommand.Reconcile100Name
+            or BatterySaverLowFanValidationCommand.Restore100Name,
+        useLowestNonzeroTarget: args[0] is BatterySaverLowFanValidationCommand.LowestNonzeroName
+            or BatterySaverLowFanValidationCommand.Reconcile100Name
+            or BatterySaverLowFanValidationCommand.Restore100Name,
+        operation: args[0] switch
+        {
+            BatterySaverLowFanValidationCommand.Reconcile100Name => LowFanValidationOperation.Reconcile100,
+            BatterySaverLowFanValidationCommand.Restore100Name => LowFanValidationOperation.Restore100Baseline,
+            _ => LowFanValidationOperation.Probe,
+        });
 }
 
 if (args.Length > 0 && args[0] is "validate-direct-thermal-transition" or "validate-direct-battery-off" or "query-direct-thermal-state")
