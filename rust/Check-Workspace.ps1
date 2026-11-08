@@ -28,6 +28,14 @@ try {
     Assert-ManifestSetting 'Cargo.toml' 'workspace.lints.rust' `
         '(?m)^\s*unsafe_code\s*=\s*["'']forbid["'']\s*(?:#[^\r\n]*)?$'
 
+    foreach ($profile in @('profile.dev', 'profile.release')) {
+        Assert-ManifestSetting 'Cargo.toml' $profile `
+            '(?m)^\s*panic\s*=\s*["'']unwind["'']\s*(?:#[^\r\n]*)?$'
+    }
+    if ((Get-Content Cargo.toml -Raw) -match '(?m)^\s*panic\s*=\s*["'']abort["'']') {
+        throw 'Panic abort is not admitted: FFI requires unwind containment.'
+    }
+
     $expectedDependencies = @{
         'openblade-types' = @()
         'openblade-protocol' = @('openblade-types')
@@ -68,11 +76,21 @@ try {
         if ($package.rust_version -cne $testedVersion) {
             throw "MSRV must equal the tested toolchain $testedVersion`: $($package.name)"
         }
-        Assert-ManifestSetting $package.manifest_path 'lints' `
-            '(?m)^\s*workspace\s*=\s*true\s*(?:#[^\r\n]*)?$'
-        $libraries = @($package.targets | Where-Object { ($_.kind -join ',') -ceq 'lib' })
-        if ($libraries.Count -ne 1 -or ($libraries[0].crate_types -join ',') -cne 'lib') {
-            throw "Exactly one ordinary Rust library is required: $($package.name)"
+        $isFfi = $package.name -ceq 'openblade-ffi'
+        if ($isFfi) {
+            # Raw pointer conversion is confined to this reviewed ABI adapter.
+            Assert-ManifestSetting $package.manifest_path 'lints.rust' `
+                '(?m)^\s*unsafe_op_in_unsafe_fn\s*=\s*["'']deny["'']\s*(?:#[^\r\n]*)?$'
+        } else {
+            Assert-ManifestSetting $package.manifest_path 'lints' `
+                '(?m)^\s*workspace\s*=\s*true\s*(?:#[^\r\n]*)?$'
+        }
+        $libraries = @($package.targets | Where-Object { @($_.kind | Where-Object { $_ -in @('lib', 'rlib', 'cdylib', 'staticlib') }).Count -gt 0 })
+        $expectedOutputs = if ($isFfi) { 'cdylib,rlib,staticlib' } else { 'lib' }
+        if ($libraries.Count -ne 1 -or
+            (@($libraries[0].crate_types | Sort-Object) -join ',') -cne $expectedOutputs -or
+            (@($libraries[0].kind | Sort-Object) -join ',') -cne $expectedOutputs) {
+            throw "Reviewed library outputs are required: $($package.name) ($expectedOutputs)"
         }
         if ($package.name -ne 'openblade-ffi') {
             $source = Get-Content -LiteralPath $libraries[0].src_path -Raw
@@ -118,7 +136,7 @@ try {
         }
         $tests = @()
         foreach ($target in $package.targets) {
-            if (($target.kind -join ',') -ceq 'lib') { continue }
+            if ($target -eq $libraries[0]) { continue }
             if ($package.name -cne 'openblade-protocol' -or
                 ($target.kind -join ',') -cne 'test' -or
                 ($target.crate_types -join ',') -cne 'bin' -or
