@@ -324,6 +324,18 @@ and explicit GPU power-state evidence. The separately configured Automatic Stop
 cool threshold and dwell remain unchanged. Average-window history still begins
 with owned continuation, so entry and command reads cannot credit elapsed time.
 
+The reviewed `11544956` build was installed through the broker as LocalDev
+`65535.417.48314.31236`; all 372 installed files and running components matched.
+Its authorized CPU 65 C average / 80 C cutoff trial passed preflight at 60/77/80 C
+and independently confirmed Stopped. After the requested five-second host delay,
+one explicit Auto request confirmed firmware Auto, durable cleanup and native
+release, followed by independent released
+Automatic readback. Every original setting, including CPU average 55 C and
+cutoff 65 C, was restored exactly. Final readings were CPU 54 C and fans
+2100/1900 RPM, with no blocked or unconfirmed writes. This establishes the brief
+installed Stop/Auto round trip in USB-C Balanced under that policy; five seconds
+describes the host dwell, not a hard physical exposure bound.
+
 Guardian termination, an unknown outer-job termination, a native call that
 never returns, sleep/resume and OS failure do not have a demonstrated
 independent cooling fallback. A fenced owner retains its native resources;
