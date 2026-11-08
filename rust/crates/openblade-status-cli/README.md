@@ -39,8 +39,10 @@ applications, remote error text and arbitrary extensions are also excluded.
 
 Frames use a signed four-byte little-endian length, 1..65536 UTF-8 bytes.
 The client checks response kind, ID and exact negotiated version, rejects malformed
-JSON and duplicate keys recursively (including ignored objects), then validates
-the typed whitelist and the C# telemetry bounds. Unknown fields remain compatible.
+JSON and duplicate keys recursively (including ignored objects and Unicode case
+aliases), then validates
+the typed whitelist and the C# telemetry bounds. Unicode uppercase folding is
+conservative for expanding case mappings; unique unknown fields remain compatible.
 Each frame read/write has a two-second timeout; connection, exchange and Ctrl+C
 cancellation share a five-second overall deadline. Only busy-pipe opens retry,
 before any submission. There is no reconnect or request replay. Tokio owns the

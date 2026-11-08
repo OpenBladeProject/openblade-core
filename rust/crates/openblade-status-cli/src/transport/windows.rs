@@ -50,7 +50,9 @@ pub fn get_status() -> Result<String, Error> {
         },
         async {
             // A signal-registration failure also stops the operation before submission.
-            let _ = tokio::signal::ctrl_c().await;
+            tokio::signal::ctrl_c()
+                .await
+                .map_err(|_| Error::CancellationSetup)
         },
     ))
 }

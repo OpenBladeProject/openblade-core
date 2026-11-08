@@ -7,14 +7,17 @@ These hand-authored expectations were reviewed against C# at
   `ServiceMessages.cs:24-25,76,93-94`, Web JSON naming and discriminator.
   After its file newline is removed, the payload is exactly 89 UTF-8 bytes.
   The framing prefix is independently fixed at `59 00 00 00` hexadecimal.
-  The C# contract test serializes the real request type against these bytes.
+  The C# contract test serializes the real request type against these bytes
+  and reads the frame with the production compatibility decoder.
 - `response.json`: sanitized projection containing only the fields consumed
   by this prototype plus synthetic private strings and an unknown extension.
   Envelope: `ServiceMessages.cs:577-601`; status: `485-522`;
   telemetry: `Automation.cs:41-46`; version projection:
   `IpcMessageCodec.cs:113-145`. Unused required C# snapshot fields are omitted
   deliberately: this is a whitelist-reader fixture, not a complete snapshot for
-  round-tripping through the C# closed snapshot reader.
+  round-tripping through the C# closed snapshot reader. A separate C# test
+  writes a real complete status with the production v51 writer and compares
+  the envelope and each consumed whitelist field to this fixture.
 - `summary.json`: independently written output whitelist, preserving signed
   flow, i64 revision and nulls. None of the synthetic private strings belongs
   in output.

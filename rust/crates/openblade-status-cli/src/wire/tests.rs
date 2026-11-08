@@ -93,6 +93,7 @@ fn rejects_mismatch_duplicates_malformed_and_conflicting_status() {
         RESPONSE.replace("\"success\":true", "\"success\":true,\"Success\":false"),
         RESPONSE.replace("\"fan1Rpm\":2700", "\"fan1Rpm\":2700,\"fan1Rpm\":5"),
         RESPONSE.replace("\"serial\":", "\"serial\":0,\"serial\":"),
+        RESPONSE.replace("\"serial\":", "\"É\":0,\"é\":0,\"serial\":"),
         RESPONSE.replace(
             "\"success\":true",
             "\"success\":true,\"\\u0073uccess\":false",
@@ -119,6 +120,7 @@ fn rejects_mismatch_duplicates_malformed_and_conflicting_status() {
     );
     for input in [
         RESPONSE.replace("\"error\":null", "\"error\":\"SYNTHETIC-SECRET\""),
+        RESPONSE.replace("\"errorCode\":null", "\"errorCode\":0"),
         RESPONSE.replace("\"result\":null", "\"result\":{}"),
         RESPONSE.replace("\"archive\":null", "\"archive\":{}"),
         RESPONSE.replace("\"revision\":9223372036854775807", "\"revision\":-1"),
@@ -214,12 +216,19 @@ fn bounded_read_write_overall_and_cancellation_paths() {
         let (mut client, _server) = duplex(1);
         assert_eq!(write_request(&mut client, ID).await, Err(Error::Timeout));
         assert_eq!(bounded(pending(), pending()).await, Err(Error::Timeout));
-        assert_eq!(bounded(pending(), ready(())).await, Err(Error::Cancelled));
+        assert_eq!(
+            bounded(pending(), ready(Ok(()))).await,
+            Err(Error::Cancelled)
+        );
+        assert_eq!(
+            bounded(pending(), ready(Err(Error::CancellationSetup))).await,
+            Err(Error::CancellationSetup)
+        );
         // Cancellation wins before even polling a ready operation.
         assert_eq!(
             bounded(
                 async { panic!("operation polled after cancellation") },
-                ready(())
+                ready(Ok(()))
             )
             .await,
             Err(Error::Cancelled)

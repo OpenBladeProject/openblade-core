@@ -18,6 +18,7 @@ pub enum Error {
     Unavailable,
     Timeout,
     Cancelled,
+    CancellationSetup,
     Io,
     InvalidFrame,
     InvalidJson,
@@ -33,6 +34,7 @@ impl fmt::Display for Error {
             Self::Unavailable => "service pipe unavailable or access denied",
             Self::Timeout => "deadline exceeded",
             Self::Cancelled => "cancelled",
+            Self::CancellationSetup => "cancellation handler setup failed",
             Self::Io => "pipe I/O failed",
             Self::InvalidFrame => "invalid or truncated frame",
             Self::InvalidJson => "malformed or duplicate JSON",
@@ -68,6 +70,7 @@ struct Response {
     request_id: String,
     success: bool,
     error: Option<String>,
+    error_code: Option<i32>,
     result: Option<Value>,
     archive: Option<Value>,
     status: Option<Status>,
@@ -119,6 +122,8 @@ struct Summary {
 
 // Serde owns JSON grammar, UTF-8, depth and numeric parsing. This visitor rejects
 // duplicate keys in EVERY object, including ignored extensions, before typed decoding.
+// Unicode uppercase folding is conservative for expanding case mappings. The
+// actual contract names are ASCII; values and output names are never folded.
 struct Unique(Value);
 impl<'de> Deserialize<'de> for Unique {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -162,7 +167,7 @@ impl<'de> Deserialize<'de> for Unique {
                 let mut keys = HashSet::new();
                 let mut values = Map::new();
                 while let Some(key) = map.next_key::<String>()? {
-                    if !keys.insert(key.to_ascii_lowercase()) {
+                    if !keys.insert(key.to_uppercase()) {
                         return Err(de::Error::custom("duplicate key"));
                     }
                     let Unique(value) = map.next_value()?;
@@ -190,7 +195,11 @@ pub fn summarize(bytes: &[u8], id: &str) -> Result<String, Error> {
     if !response.success {
         return Err(Error::ServiceRejected);
     }
-    if response.error.is_some() || response.result.is_some() || response.archive.is_some() {
+    if response.error_code.is_some()
+        || response.error.is_some()
+        || response.result.is_some()
+        || response.archive.is_some()
+    {
         return Err(Error::InvalidStatus);
     }
     let status = response.status.ok_or(Error::InvalidStatus)?;
@@ -261,11 +270,11 @@ pub async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(
 pub async fn bounded<F, C>(operation: F, cancellation: C) -> Result<String, Error>
 where
     F: std::future::Future<Output = Result<String, Error>>,
-    C: std::future::Future<Output = ()>,
+    C: std::future::Future<Output = Result<(), Error>>,
 {
     tokio::select! {
         biased;
-        _ = cancellation => Err(Error::Cancelled),
+        signal = cancellation => Err(signal.err().unwrap_or(Error::Cancelled)),
         result = tokio::time::timeout(OVERALL_TIMEOUT, operation) => result.map_err(|_| Error::Timeout)?,
     }
 }
