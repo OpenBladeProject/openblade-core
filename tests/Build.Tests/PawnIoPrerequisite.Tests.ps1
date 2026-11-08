@@ -28,6 +28,15 @@ try {
     $script:downloads = 0
     $script:badHash = $false
     $script:badSigner = $false
+    $script:downloadFailures = [Collections.Generic.Queue[int]]::new()
+    $script:retrySleeps = [Collections.Generic.List[int]]::new()
+    Add-Type -TypeDefinition @'
+public sealed class PawnIoTestResponse : System.Net.WebResponse
+{
+    public int StatusCode { get; set; }
+}
+'@
+    function Start-Sleep { param([int]$Seconds) $script:retrySleeps.Add($Seconds) }
     function Get-FileHash { param($LiteralPath, $Algorithm) @{ Hash = $(if ($script:badHash) { 'bad' } else { (Get-OpenBladePawnIoPrerequisite).Sha256 }) } }
     function Get-AuthenticodeSignature { param($LiteralPath) @{ Status = [Management.Automation.SignatureStatus]::Valid;
         SignerCertificate = @{ Subject = $(if ($script:badSigner) { 'other publisher' } else { (Get-OpenBladePawnIoPrerequisite).Publisher }) } } }
@@ -39,18 +48,69 @@ try {
             throw 'PawnIO acquisition did not request the exact official binary asset with a bounded download.'
         }
         $script:downloads++
+        if (Test-Path -LiteralPath $OutFile) { throw 'A download retry retained partial bytes.' }
         [IO.File]::WriteAllText($OutFile, 'fake installer bytes')
+        if ($script:downloadFailures.Count -gt 0) {
+            $status = $script:downloadFailures.Dequeue()
+            if ($status -eq -1) { throw [Net.WebException]::new('simulated timeout', [Net.WebExceptionStatus]::Timeout) }
+            if ($status -eq -2) { throw [InvalidOperationException]::new('simulated unexpected failure') }
+            $response = [PawnIoTestResponse]::new()
+            $response.StatusCode = $status
+            throw [Net.WebException]::new("simulated HTTP $status", $null, [Net.WebExceptionStatus]::ProtocolError, $response)
+        }
     }
     $cache = Join-Path $root 'cache'
     [void](Copy-OpenBladePawnIoPrerequisite -DestinationDirectory (Join-Path $root 'download1') -CacheDirectory $cache)
     [void](Copy-OpenBladePawnIoPrerequisite -DestinationDirectory (Join-Path $root 'download2') -CacheDirectory $cache)
     if ($script:downloads -ne 1) { throw 'A verified PawnIO cache entry was downloaded again.' }
+    $caseNumber = 0
+    foreach ($case in @(
+        @{ Failures = @(503, 503); Requests = 3; Sleeps = @(5, 15); Success = $true },
+        @{ Failures = @(-1); Requests = 2; Sleeps = @(5); Success = $true },
+        @{ Failures = @(503, 503, 503, 503); Requests = 4; Sleeps = @(5, 15, 30); Success = $false },
+        @{ Failures = @(404); Requests = 1; Sleeps = @(); Success = $false },
+        @{ Failures = @(403); Requests = 1; Sleeps = @(); Success = $false },
+        @{ Failures = @(-2); Requests = 1; Sleeps = @(); Success = $false }
+    )) {
+        $caseNumber++
+        $caseRoot = Join-Path $root "retry-$caseNumber"
+        $script:downloads = 0
+        $script:retrySleeps.Clear()
+        $script:downloadFailures.Clear()
+        foreach ($status in $case.Failures) { $script:downloadFailures.Enqueue($status) }
+        $succeeded = $false
+        $failureMessage = ''
+        try {
+            [void](Copy-OpenBladePawnIoPrerequisite -DestinationDirectory (Join-Path $caseRoot 'payload') -CacheDirectory (Join-Path $caseRoot 'cache'))
+            $succeeded = $true
+        }
+        catch { $failureMessage = $_.Exception.Message }
+        if ($succeeded -ne $case.Success -or $script:downloads -ne $case.Requests -or
+            ($script:retrySleeps -join ',') -ne ($case.Sleeps -join ',')) {
+            throw "Unexpected download retry result in case ${caseNumber}: requests=$script:downloads; success=$succeeded; error=$failureMessage"
+        }
+        if (@(Get-ChildItem -LiteralPath $caseRoot -Recurse -Filter '*.download').Count -ne 0) {
+            throw 'A completed or failed acquisition retained temporary download bytes.'
+        }
+        if (-not $succeeded -and ($failureMessage -notlike '*simulated*' -or
+            @(Get-ChildItem -LiteralPath $caseRoot -Recurse -Filter 'PawnIO_setup.exe').Count -ne 0)) {
+            throw 'A failed acquisition lost its error or published a cache/payload entry.'
+        }
+    }
     foreach ($failure in @('hash', 'signer')) {
+        $script:downloadFailures.Clear()
+        $script:downloads = 0
+        $script:retrySleeps.Clear()
         $script:badHash = $failure -eq 'hash'
         $script:badSigner = $failure -eq 'signer'
         $rejected = $false
-        try { Assert-OpenBladePawnIoPrerequisite -Path 'unused-mocked-path' } catch { $rejected = $true }
-        if (-not $rejected) { throw "PawnIO acquisition accepted a bad $failure." }
+        $caseRoot = Join-Path $root "bad-$failure"
+        try { [void](Copy-OpenBladePawnIoPrerequisite -DestinationDirectory (Join-Path $caseRoot 'payload') -CacheDirectory (Join-Path $caseRoot 'cache')) }
+        catch { $rejected = $true }
+        if (-not $rejected -or $script:downloads -ne 1 -or $script:retrySleeps.Count -ne 0 -or
+            @(Get-ChildItem -LiteralPath $caseRoot -Recurse -File).Count -ne 0) {
+            throw "PawnIO acquisition accepted, retried or retained a bad $failure."
+        }
     }
     $source = Join-Path $root 'repo\third_party\LibreHardwareMonitor'
     [void][IO.Directory]::CreateDirectory((Join-Path $source 'obj'))
