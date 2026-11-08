@@ -36,12 +36,12 @@ public sealed class UiPreferenceStoreTests : IDisposable
     }
 
     [Theory]
-    [InlineData("[4,3,1,0,2]")]
-    [InlineData("""["Settings","Display","Laptop","Profiles","Lighting"]""")]
-    [InlineData("""["Settings","Display","Laptop","Profiles","Lighting","ThxAudio","Telemetry","Labs"]""")]
-    [InlineData("""["Settings","FuturePage","Display","Laptop","Profiles","Lighting"]""")]
-    [InlineData("""["4","FuturePage",3,"Laptop","Profiles","Lighting",999]""")]
-    public async Task NavigationPreservesCustomOrderAndWritesRollbackCompatibleIds(string navigation)
+    [InlineData("[4,3,1,0,2]", false)]
+    [InlineData("""["Settings","Display","Laptop","Profiles","Lighting"]""", false)]
+    [InlineData("""["Settings","Display","Laptop","Profiles","Lighting","ThxAudio","Telemetry","Labs"]""", true)]
+    [InlineData("""["Settings","FuturePage","Display","Laptop","Profiles","Lighting"]""", false)]
+    [InlineData("""["4","FuturePage",3,"Laptop","Profiles","Lighting",999]""", false)]
+    public async Task NavigationPreservesCustomOrderAndWritesRollbackCompatibleIds(string navigation, bool completeMainOrder)
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "navigation-preferences.json");
@@ -49,29 +49,49 @@ public sealed class UiPreferenceStoreTests : IDisposable
             $$"""{"theme":"Dark","primaryNavigationItems":{{navigation}},"labFeaturesEnabled":false}""");
         var store = new UiPreferenceStore(path);
         UiPreferences loaded = await store.LoadAsync();
-        PrimaryNavigationItemKind[] expected =
-        [
-            PrimaryNavigationItemKind.Settings,
-            PrimaryNavigationItemKind.Display,
-            PrimaryNavigationItemKind.Laptop,
-            PrimaryNavigationItemKind.Profiles,
-            PrimaryNavigationItemKind.Lighting,
-            PrimaryNavigationItemKind.ThxAudio,
-            PrimaryNavigationItemKind.Telemetry,
-            PrimaryNavigationItemKind.Labs,
-        ];
+        PrimaryNavigationItemKind[] expected = completeMainOrder
+            ? [PrimaryNavigationItemKind.Settings, PrimaryNavigationItemKind.Display,
+                PrimaryNavigationItemKind.Laptop, PrimaryNavigationItemKind.Profiles,
+                PrimaryNavigationItemKind.Lighting, PrimaryNavigationItemKind.ThxAudio,
+                PrimaryNavigationItemKind.Telemetry, PrimaryNavigationItemKind.Labs,
+                PrimaryNavigationItemKind.CoolingPad]
+            : [PrimaryNavigationItemKind.Settings, PrimaryNavigationItemKind.Display,
+                PrimaryNavigationItemKind.Laptop, PrimaryNavigationItemKind.Profiles,
+                PrimaryNavigationItemKind.Lighting, PrimaryNavigationItemKind.CoolingPad,
+                PrimaryNavigationItemKind.ThxAudio, PrimaryNavigationItemKind.Telemetry,
+                PrimaryNavigationItemKind.Labs];
         Assert.Equal(ThemePreference.Dark, loaded.Theme);
         Assert.Equal(expected, loaded.EffectivePrimaryNavigationItems);
         await store.SaveAsync(loaded with { PrimaryNavigationItems = loaded.EffectivePrimaryNavigationItems });
         using JsonDocument saved = JsonDocument.Parse(await File.ReadAllTextAsync(path));
         Assert.Equal(
-            [4, 3, 1, 0, 2, 5, 6, 7],
+            completeMainOrder ? new[] { 4, 3, 1, 0, 2, 5, 6, 7, 8 } : new[] { 4, 3, 1, 0, 2, 8, 5, 6, 7 },
             saved.RootElement.GetProperty("primaryNavigationItems").EnumerateArray().Select(item => item.GetInt32()));
 
         UiPreferences reloaded = await store.LoadAsync();
         Assert.Equal(ThemePreference.Dark, reloaded.Theme);
         Assert.Equal(expected, reloaded.PrimaryNavigationItems);
         Assert.Equal(expected, reloaded.EffectivePrimaryNavigationItems);
+    }
+
+    [Fact]
+    public async Task DeployedNumericLabsIdRetainsItsMeaningWhenCoolingPadIsAdded()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "labs-navigation.json");
+        await File.WriteAllTextAsync(path, """{"theme":"Dark","primaryNavigationItems":[7,4]}""");
+        var store = new UiPreferenceStore(path);
+        UiPreferences loaded = await store.LoadAsync();
+        Assert.Equal(ThemePreference.Dark, loaded.Theme);
+        Assert.Equal(PrimaryNavigationItemKind.Labs, loaded.EffectivePrimaryNavigationItems[0]);
+        Assert.Equal(PrimaryNavigationItemKind.Settings, loaded.EffectivePrimaryNavigationItems[1]);
+        Assert.Contains(PrimaryNavigationItemKind.CoolingPad, loaded.EffectivePrimaryNavigationItems);
+        await store.SaveAsync(loaded with { PrimaryNavigationItems = loaded.EffectivePrimaryNavigationItems });
+        using JsonDocument saved = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+        int[] ids = saved.RootElement.GetProperty("primaryNavigationItems").EnumerateArray().Select(item => item.GetInt32()).ToArray();
+        Assert.Equal(7, ids[0]);
+        Assert.Contains(8, ids);
+        Assert.Equal(loaded.EffectivePrimaryNavigationItems, (await store.LoadAsync()).EffectivePrimaryNavigationItems);
     }
 
     [Theory]
@@ -685,6 +705,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 PrimaryNavigationItemKind.Display,
                 PrimaryNavigationItemKind.Laptop,
                 PrimaryNavigationItemKind.Profiles,
+                PrimaryNavigationItemKind.CoolingPad,
                 PrimaryNavigationItemKind.ThxAudio,
                 PrimaryNavigationItemKind.Lighting,
                 PrimaryNavigationItemKind.Telemetry,

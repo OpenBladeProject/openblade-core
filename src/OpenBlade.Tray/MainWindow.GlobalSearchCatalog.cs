@@ -12,6 +12,7 @@ public sealed partial class MainWindow
         Page(HomeNavigationItem, HomePage, "MainWindow_HomeNavigationItemText.Content");
         GlobalSearchResult profiles = Page(ProfilesNavigationItem, ProfilesPage, "MainWindow_TextBlockProfiles.Text");
         GlobalSearchResult laptop = Page(LaptopNavigationItem, LaptopPage, "MainWindow_LaptopNavigationItemText.Content");
+        GlobalSearchResult coolingPad = Page(CoolingPadNavigationItem, CoolingPadPage, "MainWindow_CoolingPadNavigationItemText.Content");
         GlobalSearchResult display = Page(DisplayNavigationItem, DisplayPage, "MainWindow_DisplayNavigationItemText.Content");
         GlobalSearchResult lighting = Page(LightingNavigationItem, LightingPage, "MainWindow_LightingNavigationItemText.Content");
         GlobalSearchResult audio = Page(ThxAudioNavigationItem, ThxAudioPage, "MainWindow_ThxAudioHeading.Text");
@@ -21,6 +22,27 @@ public sealed partial class MainWindow
         GlobalSearchResult about = Page(AboutNavigationItem, AboutPage, "MainWindow_AboutNavigationItemText.Content");
 
         Section(profiles, ApplicationProfilesSection, "Applications_Title.Text");
+
+        // The common navigation-visibility filter keeps every accessory result
+        // unavailable until exact discovery has confirmed this optional page.
+        Row(coolingPad, "MainWindow_CoolingPadFanLabelText.Text", "CoolingPadFanSelector");
+        Row(coolingPad, "MainWindow_CoolingPadFixedRpmText.Header", "CoolingPadFixedRpm",
+            exposed: () => ViewModel.CoolingPad.ShowFixedSpeed);
+        Row(coolingPad, "MainWindow_CoolingPadDemandLabelText.Text", "CoolingPadDemandToggle",
+            exposed: () => ViewModel.CoolingPad.ShowDemandApiOption);
+        Row(coolingPad, "MainWindow_CoolingPadCurvesText.Header", "CoolingPadCurves",
+            exposed: () => ViewModel.CoolingPad.ShowCurves);
+        Row(coolingPad, "MainWindow_CoolingPadTemperatureSourceLabel.Text", "CoolingPadTemperatureSource",
+            anchor: CoolingPadCurves, exposed: () => ViewModel.CoolingPad.ShowCurves);
+        Row(coolingPad, "MainWindow_CoolingPadLightingLabelText.Text", "CoolingPadLightingSelector");
+        Row(coolingPad, "MainWindow_CoolingPadBrightnessText.Header", "CoolingPadBrightness");
+        Row(coolingPad, "MainWindow_CoolingPadPrimaryColorText.Header", "CoolingPadPrimaryColor",
+            exposed: () => ViewModel.CoolingPad.ShowPrimaryColor);
+        Row(coolingPad, "MainWindow_CoolingPadSecondaryColorText.Header", "CoolingPadSecondaryColor",
+            exposed: () => ViewModel.CoolingPad.ShowSecondaryColor);
+        Row(coolingPad, "MainWindow_CoolingPadWaveDirectionLabel.Text", "CoolingPadWaveDirection",
+            exposed: () => ViewModel.CoolingPad.ShowWaveDirection);
+
 
         GlobalSearchResult performance = Section(laptop, PowerModeCard, "MainWindow_TextBlockPerformance.Text");
         Row(performance, "MainWindow_TextBlockLaptopPerformance.Text", "DashboardPerformanceSelector",

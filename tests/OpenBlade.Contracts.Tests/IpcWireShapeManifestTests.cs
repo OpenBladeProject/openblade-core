@@ -68,6 +68,8 @@ public sealed class IpcWireShapeManifestTests
             74 => "6D8B3D1A749E2B3F52F3990AE1383FC2CA052515198F8996B73863581FE3A45A",
             // Protocol 75 adds optional independent lighting intent/readback and a bounded typed request.
             75 => "646E0ADEA4D0038513194BFF2D6157AD3D329ACC0CF0A7D9DD2E784977437FFD",
+            // Protocol 76 adds source-backed cooling-pad operations and status.
+            76 => "6259E2AF01F7E0351B5B9D98846046F14345DEFB0BA173DBEC8E7FB5577EB8DD",
             _ => null,
         };
 

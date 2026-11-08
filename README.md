@@ -62,6 +62,8 @@ to collect and submit evidence for your model.
 - Power modes, automatic or fixed fan speeds, custom fan curves, and NVIDIA GPU
   clock offsets.
 - HyperBoost on full-power AC, with or without the Razer cooling pad.
+- [Razer Laptop Cooling Pad](docs/cooling-pad.md) fan targets, temperature curves,
+  lighting and keyboard lighting sync, with experimental support based on reviewed sources.
 - Charge limits, battery health, and separate settings for each
   power source.
 - [Application profiles](docs/application-profiles.md) for exact game or app executables,

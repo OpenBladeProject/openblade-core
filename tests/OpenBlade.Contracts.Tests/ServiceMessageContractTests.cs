@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(75, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(76, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(16 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -39,6 +39,11 @@ public sealed class ServiceMessageContractTests
         AssertDerivedTypes(
             typeof(ServiceRequest),
             (typeof(GetStatusRequest), "getStatus"),
+            (typeof(SetCoolingPadSettingsRequest), "setCoolingPadSettings"),
+            (typeof(ReadCoolingPadStatusRequest), "readCoolingPadStatus"),
+            (typeof(ReleaseCoolingPadControlRequest), "releaseCoolingPadControl"),
+            (typeof(SetCoolingPadDemandLeaseRequest), "setCoolingPadDemandLease"),
+            (typeof(RemoveCoolingPadDemandLeaseRequest), "removeCoolingPadDemandLease"),
             (typeof(ObserveStateRequest), "observeState"),
             (typeof(SubscribeStatusRequest), "subscribeStatus"),
             (typeof(ExportDiagnosticsRequest), "exportDiagnostics"),
@@ -91,7 +96,7 @@ public sealed class ServiceMessageContractTests
     {
         string[] expected =
         [
-            "Revision", "DeviceVerified", "WritesBlocked", "PotentialControllers",
+            "CoolingPad", "Revision", "DeviceVerified", "WritesBlocked", "PotentialControllers",
             "ControllerDetectionWarning", "ExternalChanges", "UnconfirmedWrites", "Message", "ObservationReason",
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
             "ActiveApplicationProfileId", "EffectiveLaptopBehavior",

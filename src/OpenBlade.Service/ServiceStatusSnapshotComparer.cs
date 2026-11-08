@@ -6,7 +6,8 @@ namespace OpenBlade.Service;
 internal static class ServiceStatusSnapshotComparer
 {
     internal static bool Equivalent(ServiceStatusSnapshot left, ServiceStatusSnapshot right) =>
-        left.DeviceVerified == right.DeviceVerified
+        left.CoolingPad == right.CoolingPad
+        && left.DeviceVerified == right.DeviceVerified
         && left.WritesBlocked == right.WritesBlocked
         && left.PotentialControllers.SequenceEqual(
             right.PotentialControllers,

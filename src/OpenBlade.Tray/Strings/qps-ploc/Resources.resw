@@ -2911,4 +2911,85 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve">
     <value>[!! Áll-córé óffsét ~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_CoolingPadApplyHelpText.Text" xml:space="preserve">
+    <value>[!! Ápplý stárts cóntról fór thís séssíón. Réléásé réstórés thé cáptúréd pád séttíngs. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadApplyText.Content" xml:space="preserve">
+    <value>[!! Ápplý ~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadBrightnessText.Header" xml:space="preserve">
+    <value>[!! Réqúéstéd bríghtnéss (%) ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCpuCurveText.Text" xml:space="preserve">
+    <value>[!! CPÚ ~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveHelpText.Text" xml:space="preserve">
+    <value>[!! Úsé íncréásíng témpérátúrés ánd nóndécréásíng tárgéts ín 50 RPM stéps. Bóth úsés thé híghér tárgét. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveRpmText.Header" xml:space="preserve">
+    <value>[!! Tárgét (RPM) ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveTemperatureText.Header" xml:space="preserve">
+    <value>[!! Témpérátúré (°C) ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurvesText.Header" xml:space="preserve">
+    <value>[!! CPÚ/GPÚ cúrvés ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadExperimentalText.Text" xml:space="preserve">
+    <value>[!! Sóúrcé-báckéd éxpéríméntál · Razer RC21-0230 ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanLabelText.Text" xml:space="preserve">
+    <value>[!! Fán ~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadFixedRpmText.Header" xml:space="preserve">
+    <value>[!! Réqúéstéd fán tárgét (RPM) ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadGpuCurveText.Text" xml:space="preserve">
+    <value>[!! GPÚ ~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadHeadingText.Text" xml:space="preserve">
+    <value>[!! Cóólíng pád ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingLabelText.Text" xml:space="preserve">
+    <value>[!! Líghtíng ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadPrimaryColorText.Header" xml:space="preserve">
+    <value>[!! Cólór (RGB héx) ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadRefreshText.Content" xml:space="preserve">
+    <value>[!! Réfrésh státús ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadReleaseText.Content" xml:space="preserve">
+    <value>[!! Réléásé cóntról ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadSecondaryColorText.Header" xml:space="preserve">
+    <value>[!! Sécónd bréáthíng cólór (RGB héx) ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionLabel.Text" xml:space="preserve">
+    <value>[!! Díréctíón ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceLabel.Text" xml:space="preserve">
+    <value>[!! Témpérátúré sóúrcé ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadNavigationItemText.Content" xml:space="preserve">
+    <value>[!! Cóólíng pád ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanSelectorText.AccessibleName" xml:space="preserve">
+    <value>[!! Cóólíng-pád fán módé ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingSelectorText.AccessibleName" xml:space="preserve">
+    <value>[!! Cóólíng-pád líghtíng éfféct ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceText.AccessibleName" xml:space="preserve">
+    <value>[!! Cóólíng-pád témpérátúré sóúrcé ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionText.AccessibleName" xml:space="preserve">
+    <value>[!! Cóólíng-pád wávé díréctíón ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandLabelText.Text" xml:space="preserve">
+    <value>[!! Állów ápps tó réqúést móré cóólíng ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Állów ápps tó réqúést móré cóólíng ~~~~~~~~~~~ !!]</value>
+  </data>
 </root>

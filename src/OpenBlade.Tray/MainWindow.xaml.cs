@@ -236,6 +236,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         displayRefreshTimer.IsRepeating = true;
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
+        ViewModel.CoolingPad.PropertyChanged += OnCoolingPadPropertyChanged;
         InitializeKeyboardBackendSelectors();
         InitializeApplicationProfilePages();
         BatteryHistoryViewModel.PropertyChanged += OnBatteryHistoryPropertyChanged;
@@ -914,6 +915,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         }
 
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        ViewModel.CoolingPad.PropertyChanged -= OnCoolingPadPropertyChanged;
         UpdateViewModel.PreferencesChanged -= OnUpdatePreferencesChanged;
         UpdateViewModel.UpdateAvailable -= OnAppUpdateAvailable;
         FirmwareUpdateViewModel.PreferencesChanged -=
@@ -3558,6 +3560,11 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
 
     private void ApplyNavigationDestination(string destination)
     {
+        if (destination == "cooling-pad" && !ViewModel.CoolingPad.IsVisible)
+        {
+            destination = "home";
+            MainNavigation.SelectedItem = HomeNavigationItem;
+        }
         ResetApplicationSubpageNavigation();
         if (trayDashboardCustomizationActive && destination != "settings")
         {
@@ -3576,6 +3583,9 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         {
             RefreshTelemetryPresentation();
         }
+        CoolingPadPage.Visibility = destination == "cooling-pad" && ViewModel.CoolingPad.IsVisible
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         LaptopPage.Visibility = destination == "laptop"
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -3653,6 +3663,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             "profiles" => ProfilesNavigationItem,
             "telemetry" => TelemetryNavigationItem,
             "laptop" => LaptopNavigationItem,
+            "cooling-pad" => CoolingPadNavigationItem,
             "thx-audio" => ThxAudioNavigationItem,
             "lighting" => LightingNavigationItem,
             "display" => DisplayNavigationItem,
@@ -5349,6 +5360,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             PrimaryNavigationItemKind.Profiles => ProfilesNavigationItem,
             PrimaryNavigationItemKind.Telemetry => TelemetryNavigationItem,
             PrimaryNavigationItemKind.Laptop => LaptopNavigationItem,
+            PrimaryNavigationItemKind.CoolingPad => CoolingPadNavigationItem,
             PrimaryNavigationItemKind.ThxAudio => ThxAudioNavigationItem,
             PrimaryNavigationItemKind.Lighting => LightingNavigationItem,
             PrimaryNavigationItemKind.Display => DisplayNavigationItem,
@@ -5363,6 +5375,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             PrimaryNavigationItemKind.Profiles => LocalizedResources.Get("Navigation_Profiles", "Profiles"),
             PrimaryNavigationItemKind.Telemetry => LocalizedResources.Get("Navigation_Telemetry", "Telemetry"),
             PrimaryNavigationItemKind.Laptop => LocalizedResources.Get("Navigation_Laptop", "Laptop"),
+            PrimaryNavigationItemKind.CoolingPad => LocalizedResources.Get("MainWindow_CoolingPadNavigationItemText.Content", "Cooling pad"),
             PrimaryNavigationItemKind.ThxAudio => LocalizedResources.Get("Navigation_ThxAudio", "THX Audio"),
             PrimaryNavigationItemKind.Lighting => LocalizedResources.Get("Navigation_Lighting", "Lighting"),
             PrimaryNavigationItemKind.Display => LocalizedResources.Get("Navigation_Display", "Display"),

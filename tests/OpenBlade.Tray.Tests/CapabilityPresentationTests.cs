@@ -1239,7 +1239,28 @@ public sealed class CapabilityPresentationTests
         XElement[] usages = mainWindow.Descendants()
             .Where(element => element.Name.LocalName == "ResponsiveChoiceSelector")
             .ToArray();
-        Assert.Equal(30, usages.Length);
+        // Cooling-pad choices edit an explicit Apply draft. Keep their typed
+        // two-way bindings separate from the immediate-command OneWay controls.
+        var coolingPadDrafts = new List<XElement>();
+        XElement compactReference = NamedElement(mainWindow, "ResponsiveChoiceSelector", "DashboardCustomCpuSelector");
+        foreach ((string name, string options, string selection) in new[]
+                 {
+                     ("CoolingPadFanSelector", "FanModes", "FanMode"),
+                     ("CoolingPadLightingSelector", "LightingModes", "LightingMode"),
+                     ("CoolingPadTemperatureSource", "TemperatureSources", "TemperatureSource"),
+                     ("CoolingPadWaveDirection", "WaveDirections", "WaveDirection"),
+                 })
+        {
+            XElement draft = NamedElement(mainWindow, "ResponsiveChoiceSelector", name);
+            Assert.Equal("{x:Bind ViewModel.CoolingPad." + options + "}", Attribute(draft, "ItemsSource"));
+            Assert.Equal("{x:Bind ViewModel.CoolingPad." + selection + ", Mode=TwoWay}", Attribute(draft, "SelectedItem"));
+            Assert.Equal("Label", Attribute(draft, "DisplayMemberPath"));
+            Assert.Equal(Attribute(compactReference, "CompactMinWidth"), Attribute(draft, "CompactMinWidth"));
+            Assert.Equal(Attribute(compactReference, "ExpandedMinWindowWidth"), Attribute(draft, "ExpandedMinWindowWidth"));
+            Assert.Null(Attribute(draft, "SelectionChanged"));
+            coolingPadDrafts.Add(draft);
+        }
+        Assert.Equal(30, usages.Except(coolingPadDrafts).Count());
         string backendSource = ReadTraySource("MainWindow.KeyboardBackends.cs");
         Assert.All(usages, usage =>
         {
@@ -1386,6 +1407,10 @@ public sealed class CapabilityPresentationTests
             "Update channel",
             "Update check interval",
             "Firmware update check interval",
+            "Cooling-pad fan mode",
+            "Cooling-pad temperature source",
+            "Cooling-pad lighting effect",
+            "Cooling-pad wave direction",
         ];
 
         foreach (string accessibleName in expected)

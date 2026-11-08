@@ -19,6 +19,9 @@
     "tray/main-thx-audio-enhancements.png",
     "tray/main-thx-audio-applications.png",
     "tray/main-laptop.png",
+    "tray/main-cooling-pad-connected.png",
+    "tray/main-cooling-pad-curves.png",
+    "tray/main-cooling-pad-paused.png",
     "tray/main-telemetry-battery-report.png",
     "tray/main-telemetry-battery-report-narrow.png",
     "tray/main-telemetry-battery-report-details.png",
@@ -59,6 +62,20 @@
     "tray/tray-dashboard.png"
   ],
   "rules": [
+    {
+      "surface": "tray",
+      "match": "key",
+      "pattern": "^MainWindow_CoolingPad",
+      "context": "Dedicated connected-only Razer Laptop Cooling Pad page, requested fan and lighting editors, CPU/GPU sensor curves, and paused recovery status shown with disconnected fixtures.",
+      "screenshots": ["tray/main-cooling-pad-connected.png", "tray/main-cooling-pad-curves.png", "tray/main-cooling-pad-paused.png"]
+    },
+    {
+      "surface": "tray-core",
+      "match": "source",
+      "pattern": "(?i)(?:cooling.pad|configured fan target|configured brightness|CPU/GPU curves|mirror keyboard|^(?:CPU|GPU|Both|Keep current)$)",
+      "context": "Cooling-pad choices and confirmed target status; RPM values are configured targets rather than tachometer readings.",
+      "screenshots": ["tray/main-cooling-pad-connected.png", "tray/main-cooling-pad-curves.png", "tray/main-cooling-pad-paused.png"]
+    },
     {
       "surface": "tray",
       "match": "key",

@@ -372,6 +372,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private readonly Dictionary<string, object?> publishedComputedValues =
         new(StringComparer.Ordinal);
 
+    public CoolingPadViewModel CoolingPad { get; }
+
     public MainViewModel(IServiceClient serviceClient, IUiDispatcher dispatcher)
         : this(
             serviceClient,
@@ -427,6 +429,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 && !HasControllerDetectionWarning && latestStatus?.PotentialControllers.Count == 0,
             () => IsConnected, lifetime.Token);
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        CoolingPad = new CoolingPadViewModel(serviceClient, dispatcher, lifetime.Token);
         this.diagnosticArchiveSaver = diagnosticArchiveSaver
             ?? throw new ArgumentNullException(nameof(diagnosticArchiveSaver));
         this.externalUriLauncher = externalUriLauncher
@@ -5316,6 +5319,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         lifetime.Cancel();
+        await CoolingPad.DisposeAsync();
         await CpuTuning.DisposeAsync();
         foreach (AsyncRelayCommand command in commands)
         {
@@ -5457,6 +5461,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot? previousStatus = latestStatus;
         latestAcceptedRevision = status.Revision;
         latestStatus = status;
+        CoolingPad.ApplyStatus(status.CoolingPad, status.ControlAccess == SessionControlAccess.Active);
         NotifyComputed(nameof(ActiveApplicationProfileName), ActiveApplicationProfileName);
         if (IsConnected
             && previousStatus is not null
@@ -5968,6 +5973,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void MarkReconnecting(string message)
     {
+        CoolingPad.SetServiceAvailable(false);
         if (!IsConnected || latestStatus is null)
         {
             MarkDisconnected(message);
@@ -6199,6 +6205,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void MarkDisconnected(string message)
     {
+        CoolingPad.SetServiceAvailable(false);
         InvalidatePendingLightingHold();
         connectionGeneration++;
         reconnectGeneration++;

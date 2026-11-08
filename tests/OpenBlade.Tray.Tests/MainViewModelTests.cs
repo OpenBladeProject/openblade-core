@@ -6504,7 +6504,8 @@ public sealed partial class MainViewModelTests
     {
         using var culture = new CultureScope("en-US");
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         Assert.Equal("60 Hz lighting support couldn’t be checked.", viewModel.LightingRefreshRateAvailabilityText);
 
         await viewModel.StartAsync();
@@ -6539,11 +6540,13 @@ public sealed partial class MainViewModelTests
             verified: true,
             blocked: false,
             capabilities: capabilities);
-        client.Publish(status with
+        // Ownership is assigned before capabilities within one UI dispatch.
+        // Wait for that complete snapshot before asserting both fields together.
+        await PushAsync(client, dispatcher, status with
         {
             KeyboardLightingControlMode = KeyboardLightingControlMode.WindowsDynamicLighting,
         });
-        await WaitUntilAsync(() => viewModel.UseWindowsDynamicLighting);
+        Assert.True(viewModel.UseWindowsDynamicLighting);
         Assert.True(viewModel.SupportsSixtyHzLighting);
         Assert.Equal("Windows Dynamic Lighting manages keyboard lighting.", viewModel.LightingRefreshRateAvailabilityText);
         Assert.False(viewModel.CanSetLightingRefreshRate);

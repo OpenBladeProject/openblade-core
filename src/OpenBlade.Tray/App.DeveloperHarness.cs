@@ -730,8 +730,9 @@ public partial class App
                 or "telemetry-expired" or "telemetry-retention"
                 or "telemetry-recording" or "telemetry-replay";
             bool captureBatteryReport = requestedPage?.StartsWith("telemetry-battery-report", StringComparison.Ordinal) == true;
+            bool captureCoolingPad = requestedPage?.StartsWith("cooling-pad-", StringComparison.Ordinal) == true;
             bool captureLabsTarget = requestedPage is "labs-import-target" or "labs-60hz-target";
-            bool captureFeatureSnapshot = captureBatteryReport || captureTelemetryVariant || requestedPage is
+            bool captureFeatureSnapshot = captureCoolingPad || captureBatteryReport || captureTelemetryVariant || requestedPage is
                 "profiles-applications" or "profiles-applications-empty"
                 or "profiles-application-editor" or "profiles-application-editor-controls" or "profiles-application-discovery"
                 or "profiles-application-discovery-empty" or "telemetry-empty" or "telemetry-disabled"
@@ -816,6 +817,14 @@ public partial class App
                                 StringComparison.Ordinal)
                                 ? new Windows.Graphics.SizeInt32(1600, 900)
                                 : new Windows.Graphics.SizeInt32(1120, 820);
+                    if (captureCoolingPad && destination.EndsWith("-wide", StringComparison.Ordinal))
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(1600, 900);
+                    }
+                    if (captureCoolingPad && destination.EndsWith("-narrow", StringComparison.Ordinal))
+                    {
+                        snapshotSize = new Windows.Graphics.SizeInt32(800, 820);
+                    }
                     if (destination is "profiles-applications"
                         or "profiles-applications-empty"
                         or "profiles-application-editor")
@@ -881,6 +890,7 @@ public partial class App
                         "whats-new" => "about",
 
                         "display-brightness-known" or "display-brightness-unavailable" => "display",
+                        _ when captureCoolingPad => "home",
                         _ when captureSnapTap => "laptop",
                         _ when destination.StartsWith("thx-audio", StringComparison.Ordinal) => "thx-audio",
                         _ when captureProfilesVariant => "profiles",
@@ -917,6 +927,11 @@ public partial class App
                         snapshotMainWindow.ShowLocalizationSnapshotOneShotControls();
                         await WaitForSnapshotLayoutAsync();
                     }
+                    if (captureCoolingPad)
+                    {
+                        snapshotMainWindow.ShowCoolingPadSnapshot(destination["cooling-pad-".Length..]);
+                        await WaitForSnapshotLayoutAsync();
+                    }
                     if (captureSnapTap)
                     {
                         snapshotMainWindow.ShowLocalizationSnapshotSnapTap(captureSnapTapFailure, captureSnapTapEnabled, captureSnapTapDriverMissing, driverSetupState);
@@ -929,7 +944,7 @@ public partial class App
                         snapshotMainWindow.SetGlobalSearchSnapshotQuery("nightly", compactGlobalSearch);
                         await WaitForSnapshotLayoutAsync();
                     }
-                    if (captureFeatureSnapshot || destination == "telemetry")
+                    if ((captureFeatureSnapshot && !captureCoolingPad) || destination == "telemetry")
                     {
                         if (destination == "display-brightness-unavailable")
                         {

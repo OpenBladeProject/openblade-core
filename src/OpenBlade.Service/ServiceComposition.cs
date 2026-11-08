@@ -63,7 +63,9 @@ internal static class ServiceComposition
                     provider.GetRequiredService<IHyperBoostOwnershipJournalStore>(),
                 laptopControlPendingStore: new LaptopControlPendingStore(
                     Path.Combine(machineDataDirectory, "laptop-control-pending.json")),
-                cpuTuningController: provider.GetRequiredService<CpuTuningController>()));
+                cpuTuningController: provider.GetRequiredService<CpuTuningController>(),
+                coolingPadDeviceProvider: new WindowsCoolingPadDeviceProvider(),
+                coolingPadStateDirectory: Path.Combine(machineDataDirectory, "cooling-pad")));
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();
         return services;
     }

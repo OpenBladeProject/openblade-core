@@ -1843,4 +1843,64 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve">
     <value>[!! Récóvérý óf éárlíér sávéd CPÚ séttíngs ís blóckéd. ~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
+    <value>[!! Thé cóólíng-pád chángé wás blóckéd. Réfrésh státús ánd chéck Tróúbléshóótíng. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Configured brightness: {0}%" xml:space="preserve">
+    <value>[!! Cónfígúréd bríghtnéss: {0}% ~~~~~~~ !!]</value>
+  </data>
+  <data name="Cooling-pad status is unavailable. Showing the last confirmed state." xml:space="preserve">
+    <value>[!! Cóólíng-pád státús ís únáváíláblé. Shówíng thé lást cónfírméd státé. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Configured fan target: {0} RPM" xml:space="preserve">
+    <value>[!! Cónfígúréd fán tárgét: {0} RPM ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Cooling-pad control is paused. Refresh status before making another change." xml:space="preserve">
+    <value>[!! Cóólíng-pád cóntról ís páúséd. Réfrésh státús béfóré mákíng ánóthér chángé. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Keep current" xml:space="preserve">
+    <value>[!! Kéép cúrrént ~~~~ !!]</value>
+  </data>
+  <data name="Configured fan target unavailable" xml:space="preserve">
+    <value>[!! Cónfígúréd fán tárgét únáváíláblé ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Spectrum" xml:space="preserve">
+    <value>[!! Spéctrúm ~~~ !!]</value>
+  </data>
+  <data name="Mirror keyboard" xml:space="preserve">
+    <value>[!! Mírrór kéýbóárd ~~~~~ !!]</value>
+  </data>
+  <data name="Reconnecting. Showing the last confirmed cooling-pad state." xml:space="preserve">
+    <value>[!! Récónnéctíng. Shówíng thé lást cónfírméd cóólíng-pád státé. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade is controlling the cooling pad." xml:space="preserve">
+    <value>[!! OpenBlade ís cóntróllíng thé cóólíng pád. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Connected. Choose settings and apply them to take control." xml:space="preserve">
+    <value>[!! Cónnéctéd. Chóósé séttíngs ánd ápplý thém tó táké cóntról. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The cooling-pad change could not be confirmed. Refresh status before continuing." xml:space="preserve">
+    <value>[!! Thé cóólíng-pád chángé cóúld nót bé cónfírméd. Réfrésh státús béfóré cóntínúíng. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
+    <value>[!! Chéck fán spééds, íncréásíng cúrvé témpérátúrés, ánd síx-dígít RGB cólórs. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="CPU/GPU curves" xml:space="preserve">
+    <value>[!! CPÚ/GPÚ cúrvés ~~~~~ !!]</value>
+  </data>
+  <data name="Configured brightness unavailable" xml:space="preserve">
+    <value>[!! Cónfígúréd bríghtnéss únáváíláblé ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Apply new settings, or release control to restore the captured cooling-pad settings." xml:space="preserve">
+    <value>[!! Ápplý néw séttíngs, ór réléásé cóntról tó réstóré thé cáptúréd cóólíng-pád séttíngs. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="CPU" xml:space="preserve">
+    <value>[!! CPÚ ~~ !!]</value>
+  </data>
+  <data name="GPU" xml:space="preserve">
+    <value>[!! GPÚ ~~ !!]</value>
+  </data>
+  <data name="Both" xml:space="preserve">
+    <value>[!! Bóth ~~ !!]</value>
+  </data>
 </root>

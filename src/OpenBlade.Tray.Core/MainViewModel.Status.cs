@@ -14,6 +14,7 @@ public sealed partial class MainViewModel
         && left.WritesBlocked == right.WritesBlocked
         && left.HyperBoostRestorePending == right.HyperBoostRestorePending
         && CpuTuningEqual(left.CpuTuning, right.CpuTuning)
+        && CoolingPadEqual(left.CoolingPad, right.CoolingPad)
         && ThermalConvergenceEqual(left.ThermalConvergence, right.ThermalConvergence)
         && left.PotentialControllers.SequenceEqual(
             right.PotentialControllers,
@@ -69,6 +70,15 @@ public sealed partial class MainViewModel
         && left.Firmware == right.Firmware
         && left.BatteryHealth == right.BatteryHealth
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
+
+    private static bool CoolingPadEqual(CoolingPadStatusSnapshot left, CoolingPadStatusSnapshot right) =>
+        ReferenceEquals(left, right)
+        // IPC recreates curve lists. Compare the remaining record fields normally
+        // and the two ordered point sequences by value.
+        || ((left with { Requested = right.Requested }) == right
+            && (left.Requested with { CpuCurve = right.Requested.CpuCurve, GpuCurve = right.Requested.GpuCurve }) == right.Requested
+            && left.Requested.CpuCurve.SequenceEqual(right.Requested.CpuCurve)
+            && left.Requested.GpuCurve.SequenceEqual(right.Requested.GpuCurve));
 
     private static bool CpuTuningEqual(CpuTuningStatus? left, CpuTuningStatus? right) =>
         ReferenceEquals(left, right)
