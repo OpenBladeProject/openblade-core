@@ -5,10 +5,133 @@ namespace OpenBlade.Capture.Tests;
 public sealed class So6120OwnedStopSessionTests
 {
     private static So6120DirectDutySession Create(So6120DirectDutySessionTests.Fixture fixture,
-        Func<bool>? entryAllowed = null, Func<bool>? continueAllowed = null) =>
+        Func<bool>? entryAllowed = null, Func<bool>? continueAllowed = null, ushort? boardSsid = null) =>
         So6120DirectDutySession.CreateForOwnedStop(fixture.Root, fixture.Binding, fixture.Port,
             fixture.Source, fixture.Clock, So6120SupervisedSessionAdmissionPolicy.Instance,
-            new(entryAllowed ?? (() => true), entryAllowed ?? (() => true), continueAllowed ?? (() => true)));
+            new(entryAllowed ?? (() => true), entryAllowed ?? (() => true), continueAllowed ?? (() => true)),
+            expectedBoardSsid: boardSsid);
+
+    [Theory]
+    [InlineData(0x3006)]
+    [InlineData(0x3009)]
+    public void MatchingFamilyIsReadBeforeSettingsAndBeforeEachFreshSnapshot(int ssid)
+    {
+        using var fixture = new So6120DirectDutySessionTests.Fixture(PerformancePreset.Balanced, 0, zeroDuty: true);
+        fixture.Port.Mapped[0xE3] = (byte)ssid;
+        fixture.Port.Mapped[0xE4] = (byte)(ssid >> 8);
+        using (var session = Create(fixture, boardSsid: (ushort)ssid))
+        {
+            Assert.True(session.EnterStopped().Success);
+            Assert.Equal(new byte[] { 0xE3, 0xE4 }, fixture.Port.Publications.Take(2).Select(row => row.Register));
+            Assert.All(fixture.Port.Publications.Where(row => row.Register is 0xE3 or 0xE4), row => Assert.Equal(0xA0, row.Command));
+            int before = fixture.Port.Publications.Count;
+            Assert.Equal(So6120DutyIoDisposition.Confirmed, session.VerifyOwnedStop().Disposition);
+            Assert.Equal(new byte[] { 0xE3, 0xE4 }, fixture.Port.Publications.Skip(before).Take(2).Select(row => row.Register));
+            Assert.True(session.ReturnToAutomatic().Success);
+        }
+        var journal = So6120DirectDutyJournal.Inspect(fixture.Root);
+        Assert.False(journal.Corrupt);
+        Assert.True(journal.Complete);
+        Assert.Equal(1, journal.FormatVersion);
+    }
+
+    [Theory]
+    [InlineData(0x3006, 0x3009)]
+    [InlineData(0x3009, 0x3006)]
+    [InlineData(0x3109, 0x3009)]
+    public void MismatchingFamilyRecordsActualEvidenceAndRefusesBeforeAnySetting(int observed, int expected)
+    {
+        using var fixture = new So6120DirectDutySessionTests.Fixture(PerformancePreset.Balanced, 0, zeroDuty: true);
+        fixture.Port.Mapped[0xE3] = (byte)observed;
+        fixture.Port.Mapped[0xE4] = (byte)(observed >> 8);
+        using (var session = Create(fixture, boardSsid: (ushort)expected))
+        {
+            Assert.False(session.EnterStopped().Success);
+            Assert.Empty(fixture.Port.Writes);
+            Assert.Equal(2, session.CommandEvidence.CommandsCompleted);
+            Assert.True(session.CommandEvidence.CleanNoMutation);
+            Assert.Contains($"expected SSID={expected:X4}; observed SSID={observed:X4}", session.BoardIdentityRefusal);
+        }
+        var journal = So6120DirectDutyJournal.Inspect(fixture.Root);
+        Assert.False(journal.Corrupt);
+        Assert.False(journal.Complete);
+    }
+
+    [Fact]
+    public void FamilyChangeAfterEntryFencesBeforeAnyFurtherSettingOrAuto()
+    {
+        using var fixture = new So6120DirectDutySessionTests.Fixture(PerformancePreset.Balanced, 0, zeroDuty: true);
+        fixture.Port.Mapped[0xE3] = 9;
+        fixture.Port.Mapped[0xE4] = 0x30;
+        using var session = Create(fixture, boardSsid: 0x3009);
+        Assert.True(session.EnterStopped().Success);
+        int writes = fixture.Port.Writes.Count;
+        fixture.Port.Mapped[0xE3] = 6;
+        Assert.Equal(So6120DutyIoDisposition.Unresolved, session.VerifyOwnedStop().Disposition);
+        int calls = fixture.Port.Calls;
+        Assert.Throws<InvalidOperationException>(() => session.ReturnToAutomatic());
+        Assert.Equal(calls, fixture.Port.Calls);
+        Assert.Equal(writes, fixture.Port.Writes.Count);
+    }
+
+    [Fact]
+    public void FamilyChangeAfterConfirmedStagingPrefixCannotBeRetriedAsAuto()
+    {
+        using var fixture = new So6120DirectDutySessionTests.Fixture(PerformancePreset.Balanced, 0, zeroDuty: true);
+        fixture.Port.Mapped[0xE3] = 9;
+        fixture.Port.Mapped[0xE4] = 0x30;
+        fixture.Port.AfterPublication = () =>
+        {
+            if (fixture.Port.Writes.Count == 1 && fixture.Port.Publications[^1] is { Command: 0xA0, Register: 0x06 })
+            { fixture.Port.Mapped[0xE3] = 6; }
+        };
+        using var session = Create(fixture, boardSsid: 0x3009);
+        var entry = session.EnterStopped();
+        Assert.False(entry.Success);
+        Assert.True(entry.CommandsFenced);
+        Assert.Equal(new (byte, byte)[] { (0xB8, 0) }, fixture.Port.Writes);
+        int calls = fixture.Port.Calls;
+        fixture.Port.Mapped[0xE3] = 9;
+        Assert.Throws<InvalidOperationException>(() => session.ReturnToAutomatic());
+        Assert.Equal(calls, fixture.Port.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FamilyReadFailureNeverPublishesASetting(bool afterPublication)
+    {
+        using var fixture = new So6120DirectDutySessionTests.Fixture(PerformancePreset.Balanced, 0, zeroDuty: true);
+        using var session = Create(fixture, boardSsid: 0x3009);
+        if (afterPublication) { fixture.Port.AfterPublication = () => fixture.Port.FailNextReadUnperformed = true; }
+        else { fixture.Port.FailNextReadUnperformed = true; }
+        var result = session.EnterStopped();
+        Assert.False(result.Success);
+        Assert.Empty(fixture.Port.Writes);
+        Assert.Equal(!afterPublication, session.CommandEvidence.CleanNoMutation);
+        if (afterPublication)
+        {
+            Assert.True(result.CommandsFenced);
+            int calls = fixture.Port.Calls;
+            Assert.Throws<InvalidOperationException>(() => session.ReturnToAutomatic());
+            Assert.Equal(calls, fixture.Port.Calls);
+        }
+    }
+
+    [Fact]
+    public void ExtraFamilyReadsLeaveRoomForFullPwmObservationBudgetAndHandback()
+    {
+        using var fixture = new So6120DirectDutySessionTests.Fixture(PerformancePreset.Balanced, 0, zeroDuty: true);
+        fixture.Port.Mapped[0xE3] = 9;
+        fixture.Port.Mapped[0xE4] = 0x30;
+        fixture.Port.UpdatePwm = false;
+        using (var session = Create(fixture, boardSsid: 0x3009))
+        {
+            Assert.Equal(So6120DutyFailure.PwmNotObserved, session.EnterStopped().Failure);
+            Assert.True(session.ReturnToAutomatic().Success);
+        }
+        Assert.True(So6120DirectDutyJournal.Inspect(fixture.Root).Complete);
+    }
 
     [Fact]
     public void DirectZeroEntryPersistsThroughOsOnlyMonitoringThenRestoresCapturedFields()

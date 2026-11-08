@@ -150,6 +150,7 @@ public sealed partial class MainViewModel
                 && entry.Value == rightRange)
             && left.SupportsBatterySaverFanStop == right.SupportsBatterySaverFanStop
             && left.HasFanStopTrialEvidence == right.HasFanStopTrialEvidence
+            && left.HasFanStopSourceEvidence == right.HasFanStopSourceEvidence
             && left.SupportsFanStop == right.SupportsFanStop
             && left.SupportsDirectManualFanTransitions
                 == right.SupportsDirectManualFanTransitions

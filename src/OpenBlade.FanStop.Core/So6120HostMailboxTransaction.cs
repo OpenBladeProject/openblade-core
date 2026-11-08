@@ -1,11 +1,14 @@
 namespace OpenBlade.FanStop;
 
-// Exact SO6120 EC 1.04 bank-zero mapping. This enum is not a raw-address API.
+// Bank-zero mapping independently reviewed for the exact firmware contracts in
+// FanStopModelContract. The legacy SO6120 type name does not grant family-wide
+// admission. This enum is not a raw-address API.
 internal enum So6120MailboxRegister : byte
 {
     ActiveState = 0x06, Tachometer1 = 0x08, Tachometer2 = 0x09, PolicyCommand = 0x0A, PolicyStatus = 0x0B,
     Selector = 0x1A, Manual = 0x36, ActualDuty1 = 0xB0, ActualDuty2 = 0xB1,
-    Cycle = 0xB2, StagedDuty1 = 0xB8, StagedDuty2 = 0xB9, Override = 0xF0,
+    Cycle = 0xB2, StagedDuty1 = 0xB8, StagedDuty2 = 0xB9,
+    BoardSsidLow = 0xE3, BoardSsidHigh = 0xE4, Override = 0xF0,
 }
 
 internal enum So6120PortEffect { NotPerformed, MayHavePerformed, Performed }
@@ -86,11 +89,13 @@ internal sealed class So6120HostMailboxTransaction
     private readonly int maxPolls;
     private readonly int pollIntervalMilliseconds;
     private readonly Action<int, CancellationToken> waitForNextPoll;
+    private readonly bool allowBoardIdentityReads;
     private int started;
 
     public So6120HostMailboxTransaction(ISo6120MailboxBytePort port,
         ISo6120MailboxPrerequisites prerequisites, TimeProvider? time = null,
-        TimeSpan? timeout = null, int maxPolls = 128, Action<int, CancellationToken>? waitForNextPoll = null)
+        TimeSpan? timeout = null, int maxPolls = 128, Action<int, CancellationToken>? waitForNextPoll = null,
+        bool allowBoardIdentityReads = false)
     {
         this.port = port ?? throw new ArgumentNullException(nameof(port));
         this.prerequisites = prerequisites ?? throw new ArgumentNullException(nameof(prerequisites));
@@ -100,6 +105,7 @@ internal sealed class So6120HostMailboxTransaction
         { throw new ArgumentOutOfRangeException(nameof(timeout)); }
         if (maxPolls is < 1 or > 1000) { throw new ArgumentOutOfRangeException(nameof(maxPolls)); }
         this.maxPolls = maxPolls;
+        this.allowBoardIdentityReads = allowBoardIdentityReads;
         pollIntervalMilliseconds = (int)Math.Ceiling(this.timeout.TotalMilliseconds / maxPolls);
         this.waitForNextPoll = waitForNextPoll ?? ((milliseconds, token) => token.WaitHandle.WaitOne(milliseconds));
     }
@@ -121,6 +127,8 @@ internal sealed class So6120HostMailboxTransaction
         string phase = "prepare";
         if (Interlocked.Exchange(ref started, 1) != 0) { return Result(So6120MailboxFailure.AlreadyUsed); }
         if (!Readable(register) || value.HasValue && !Writable(register)) { return Result(So6120MailboxFailure.InvalidRequest); }
+        if (!allowBoardIdentityReads && register is So6120MailboxRegister.BoardSsidLow or So6120MailboxRegister.BoardSsidHigh)
+        { return Result(So6120MailboxFailure.InvalidRequest); }
         try
         {
             observed = Transfer(request);
@@ -268,7 +276,8 @@ internal sealed class So6120HostMailboxTransaction
         So6120MailboxRegister.Selector or So6120MailboxRegister.Manual or
         So6120MailboxRegister.ActualDuty1 or So6120MailboxRegister.ActualDuty2 or
         So6120MailboxRegister.Cycle or So6120MailboxRegister.StagedDuty1 or
-        So6120MailboxRegister.StagedDuty2 or So6120MailboxRegister.Override;
+        So6120MailboxRegister.StagedDuty2 or So6120MailboxRegister.Override or
+        So6120MailboxRegister.BoardSsidLow or So6120MailboxRegister.BoardSsidHigh;
 
     private static bool Writable(So6120MailboxRegister register) => register is
         So6120MailboxRegister.Selector or So6120MailboxRegister.Manual or

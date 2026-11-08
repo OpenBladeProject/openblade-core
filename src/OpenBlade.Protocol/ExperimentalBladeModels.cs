@@ -76,6 +76,7 @@ internal static class ExperimentalBladeModels
                     ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("MaximumFans", thermal.SupportsMaximumFans ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
+                .. FanStopEvidenceFor(model),
                 new(model.ProductId == 0x0245 ? "KeyboardEffectsFramesAndHyperBoost" : "LightingAndHyperBoost", "NotEstablished", sources),
             ];
         }
@@ -167,9 +168,21 @@ internal static class ExperimentalBladeModels
                 new("CustomAndChargeLimits50To100", "SourceBackedExtrapolation", [Blade18Source])],
             _ => [],
         };
+        features = [.. features, .. FanStopEvidenceFor(model)];
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
+    }
+
+    private static IReadOnlyList<ExperimentalFeatureEvidence> FanStopEvidenceFor(ExperimentalBladeModel model)
+    {
+        FanStopModelContract[] contracts = FanStopModelContract.All.Where(contract =>
+            contract.Model == model.ModelNumber && contract.ProductId == model.ProductId
+            && contract.Host.ProductName == model.ProductName).ToArray();
+        return contracts.Length == 0 ? [] :
+            [new("FanStopAndGuardianAuto", "FirmwareSourceBackedWithoutPhysicalValidation",
+                ["https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
+                    .. contracts.Select(contract => $"{contract.FirmwareIdentity};SHA256={contract.FirmwareSha256}")])];
     }
 
     public static IReadOnlyList<ExperimentalBladeModel> All { get; } = Array.AsReadOnly<ExperimentalBladeModel>(

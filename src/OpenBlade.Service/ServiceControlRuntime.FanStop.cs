@@ -152,7 +152,7 @@ public sealed partial class ServiceControlRuntime
             && Volatile.Read(ref guardianNotificationsStopped) == 0
             && !Volatile.Read(ref thermalConvergenceShutdown) && !lowPowerGate.IsActive
             && current.FanStopStatus.State != FanStopState.RecoveryRequired;
-        return new(current.DeviceVerified && current.Capabilities?.HasFanStopTrialEvidence == true,
+        return new(current.DeviceVerified && current.Capabilities?.HasFanStopEvidence == true,
             !FanControllerAdmissionUnsafe(current), PowerKnown: true, session, active,
             current.ConfirmedState?.Performance == PerformancePreset.Balanced,
             PowerInScope: true, TemperatureSafe: true,
@@ -173,7 +173,7 @@ public sealed partial class ServiceControlRuntime
         ServiceStatusSnapshot current = GetStatus();
         bool delegated = fanStopController.Guardian?.BlocksOrdinaryHardware == true;
         bool profile = current.ConfirmedState?.Performance == PerformancePreset.Balanced;
-        bool exact = current.DeviceVerified && current.Capabilities?.HasFanStopTrialEvidence == true;
+        bool exact = current.DeviceVerified && current.Capabilities?.HasFanStopEvidence == true;
         if (!delegated && !fanStopController.RequiresRecovery && exact
             && deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
         {
@@ -212,7 +212,7 @@ public sealed partial class ServiceControlRuntime
             if (mode == FanStopMode.Stop && !fanStopController.BlocksOrdinaryThermalWrites)
             { fanStopController.Guardian?.ConfigureSettings(preferences.FanStopSettings); }
             ControlOperationResult result = await fanStopController.SetModeAsync(
-                mode, current.Capabilities?.HasFanStopTrialEvidence == true,
+                mode, current.Capabilities?.HasFanStopEvidence == true,
                 ResolveCurrentFanIntent(),
                 FanStopCommandAdmitted, cancellationToken,
                 () => stillControlsSession() && FanStopEntryAdmitted(),
@@ -230,14 +230,14 @@ public sealed partial class ServiceControlRuntime
 
     private ServiceStatusSnapshot ProjectFanStopStatus(ServiceStatusSnapshot current)
     {
-        FanStopStatus projected = ProjectAutomaticFanStop(fanStopController.GetStatus(current.Capabilities?.HasFanStopTrialEvidence == true));
+        FanStopStatus projected = ProjectAutomaticFanStop(fanStopController.GetStatus(current.Capabilities?.HasFanStopEvidence == true));
         bool writesBlocked = current.WritesBlocked || fanStopController.RequiresRecovery;
         DeviceCapabilities? capabilities = current.Capabilities;
         if (capabilities is not null)
         {
             // Capability is service/backend potential. Current device, session,
             // thermal and ownership admission remains in FanStopStatus.CanStop.
-            bool supported = capabilities.HasFanStopTrialEvidence && fanStopController.BackendAvailable;
+            bool supported = capabilities.HasFanStopEvidence && fanStopController.BackendAvailable;
             if (capabilities.SupportsFanStop != supported)
             { capabilities = capabilities with { SupportsFanStop = supported }; }
         }
@@ -255,7 +255,7 @@ public sealed partial class ServiceControlRuntime
         if (!preferences.FanStopSettings.AutomaticEnabled
             && !fanStopController.BlocksOrdinaryThermalWrites
             && (!fanStopController.BackendAvailable
-                || GetStatus().Capabilities?.HasFanStopTrialEvidence != true))
+                || GetStatus().Capabilities?.HasFanStopEvidence != true))
         {
             return;
         }
@@ -274,7 +274,7 @@ public sealed partial class ServiceControlRuntime
             ObserveGuardianPowerSource();
             if (fanStopController.Guardian is null && FanStopEntryAdmitted())
             {
-                await fanStopController.RefreshAsync(GetStatus().Capabilities?.HasFanStopTrialEvidence == true,
+                await fanStopController.RefreshAsync(GetStatus().Capabilities?.HasFanStopEvidence == true,
                     () => FanStopCommandAdmitted() && FanStopEntryAdmitted(), token).ConfigureAwait(false);
             }
             await fanStopController.ReconcileAsync(!(fanStopController.Guardian is not null
@@ -297,7 +297,7 @@ public sealed partial class ServiceControlRuntime
             // those updates, so CanStop describes the next possible activation.
             if (fanStopController.Guardian is not null && FanStopEntryAdmitted())
             {
-                await fanStopController.RefreshAsync(GetStatus().Capabilities?.HasFanStopTrialEvidence == true,
+                await fanStopController.RefreshAsync(GetStatus().Capabilities?.HasFanStopEvidence == true,
                     () => FanStopCommandAdmitted() && FanStopEntryAdmitted(), token).ConfigureAwait(false);
             }
             if (allowAutomaticEntry) { await MaintainAutomaticFanStopAsync(token).ConfigureAwait(false); }

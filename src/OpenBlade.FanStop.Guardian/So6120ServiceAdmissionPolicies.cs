@@ -1,7 +1,60 @@
+using System.Runtime.InteropServices;
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 using OpenBlade.Service;
 
 namespace OpenBlade.FanStop.Guardian;
+
+// The service's source-reviewed model binding is independent of the attended
+// developer trial. Both use the same bounded transaction and recovery code.
+internal static class So6120ServiceModelAdmission
+{
+    internal static FanStopModelContract SelectFirmware(FanStopModelContract family, So6120SupervisedMetadata metadata)
+    {
+        if (metadata.ProcessArchitecture != Architecture.X64 || !family.MatchesHost(metadata.Host))
+        { throw new InvalidDataException("The firmware candidate does not match the exact host."); }
+        return FanStopModelContract.ForFirmware(family.Model, metadata.ReportedEcVersion)
+            ?? throw new InvalidDataException("No reviewed Fan Stop firmware candidate matches the reported EC version.");
+    }
+
+    internal static So6120JournalIdentity CreateJournal(FanStopModelContract contract, Guid operation,
+        int servicePid, long serviceStartUtcTicks) =>
+        new(new(operation, contract.DeviceIdentity, contract.FirmwareIdentity, Guid.NewGuid()),
+            PerformancePreset.Balanced, 0, 0, contract.ContractSha256, contract.FirmwareSha256,
+            operation, contract.ContractSha256, $"service:{servicePid}:{serviceStartUtcTicks}");
+
+    internal static bool MatchesJournal(FanStopModelContract contract, So6120JournalIdentity identity,
+        int servicePid, long serviceStartUtcTicks) =>
+        // Only immutable catalog instances can grant model authority. A
+        // journal is evidence for this owner, never a way to choose a model.
+        FanStopModelContract.All.Contains(contract)
+        && identity.Owner.OperationId != Guid.Empty && identity.Owner.ControllerSession != Guid.Empty
+        && identity.Owner.DeviceIdentity == contract.DeviceIdentity
+        && identity.Owner.FirmwareEvidence == contract.FirmwareIdentity
+        && identity.DeviceEvidenceSha256 == contract.ContractSha256
+        && identity.FirmwareEvidenceSha256 == contract.FirmwareSha256
+        && identity.ConsentId == identity.Owner.OperationId && identity.ConsentSha256 == contract.ContractSha256
+        && identity.BootIdentity == $"service:{servicePid}:{serviceStartUtcTicks}"
+        && identity.CapturedProfile == PerformancePreset.Balanced
+        && identity.RequestedDuty1 == 0 && identity.RequestedDuty2 == 0;
+
+    internal static So6120AdmissionAssessment Assess(FanStopModelContract contract, So6120JournalIdentity identity,
+        int servicePid, long serviceStartUtcTicks, So6120SupervisedMetadata metadata)
+    {
+        if (!MatchesJournal(contract, identity, servicePid, serviceStartUtcTicks))
+        { return So6120AdmissionAssessment.OpenBladeHandoffMissingOrMismatched; }
+        if (metadata.ProcessArchitecture != Architecture.X64 || !contract.MatchesHost(metadata.Host))
+        { return So6120AdmissionAssessment.HostMismatch; }
+        if (metadata.ReportedEcVersion != contract.EcVersion)
+        { return So6120AdmissionAssessment.EcVersionMismatch; }
+        if (metadata.HidCandidates.Count == 0 || metadata.HidCandidates.Any(candidate =>
+                !contract.IsTargetHidPath(candidate.Path) || candidate.Identity is not { } hid
+                || hid.VendorId != contract.VendorId || hid.ProductId != contract.ProductId)
+            || metadata.HidCandidates.Count(candidate => candidate.Identity is { } hid && contract.MatchesHid(hid)) != 1)
+        { return So6120AdmissionAssessment.HidIdentityUnavailable; }
+        return So6120AdmissionAssessment.InputsMatched;
+    }
+}
 
 internal static class So6120ServiceInitialAdmissionDiagnostics
 {

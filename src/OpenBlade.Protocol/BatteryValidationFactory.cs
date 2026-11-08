@@ -661,7 +661,9 @@ public static class BatteryValidationFactory
             thxAudioCapabilities: new ThxAudioCapabilities(
                 DeviceFeatureAccess.ReadWrite,
                 ThxAudioProductIds.Rznb11),
-            laptopControlRecoveryIdentity: $"{target.Model}|{target.VendorId:X4}:{target.ProductId:X4}");
+            laptopControlRecoveryIdentity: $"{target.Model}|{target.VendorId:X4}:{target.ProductId:X4}",
+            hasFanStopSourceEvidence: FanStopModelContract.ForModel("RZ09-0528")?
+                .MatchesHost(hostIdentity.ReadExactIdentity()) == true);
     }
 
     internal static ProductionBatteryReadEvidence

@@ -36,12 +36,14 @@ public sealed partial class IpcMessageCodecTests
     {
         ServiceStatusSnapshot status = CreateStatus() with
         {
-            Capabilities = DeviceCapabilities.SafeTargetDefaults() with { HasFanStopTrialEvidence = true },
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            { HasFanStopTrialEvidence = true, HasFanStopSourceEvidence = true },
             FanStopStatus = new(UnavailableReason: FanStopUnavailableReason.RecoveryNotValidated),
         };
         ServiceStatusSnapshot decoded = await RoundTripStatusAsync(status);
         Assert.Equal(status.FanStopStatus, decoded.FanStopStatus);
         Assert.True(decoded.Capabilities!.HasFanStopTrialEvidence);
+        Assert.True(decoded.Capabilities.HasFanStopSourceEvidence);
         Assert.False(decoded.Capabilities.SupportsFanStop);
         using MemoryStream stream = new();
         await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(stream,
@@ -49,7 +51,46 @@ public sealed partial class IpcMessageCodecTests
         JsonObject projected = FramedJsonObject(stream)["status"]!.AsObject();
         Assert.False(projected.ContainsKey("fanStopStatus"));
         Assert.False(projected["capabilities"]!.AsObject().ContainsKey("hasFanStopTrialEvidence"));
+        Assert.False(projected["capabilities"]!.AsObject().ContainsKey("hasFanStopSourceEvidence"));
+        Assert.False(projected["capabilities"]!.AsObject().ContainsKey("hasFanStopEvidence"));
         Assert.False(projected["capabilities"]!.AsObject().ContainsKey("supportsFanStop"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FanStop_SourceEvidenceRoundTripsWithoutClaimingPhysicalTrial(bool sourceEvidence)
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            { HasFanStopSourceEvidence = sourceEvidence },
+        };
+        DeviceCapabilities decoded = (await RoundTripStatusAsync(status)).Capabilities!;
+        Assert.Equal(sourceEvidence, decoded.HasFanStopSourceEvidence);
+        Assert.Equal(sourceEvidence, decoded.HasFanStopEvidence);
+        Assert.False(decoded.HasFanStopTrialEvidence);
+        Assert.False(decoded.SupportsFanStop);
+    }
+
+    [Fact]
+    public async Task FanStop_MissingSourceEvidenceDefaultsToUnavailable()
+    {
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(encoded,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.SafeTargetDefaults() with { HasFanStopSourceEvidence = true },
+            }), CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        var status = Assert.IsType<JsonObject>(json["status"]);
+        Assert.True(Assert.IsType<JsonObject>(status["capabilities"]).Remove("hasFanStopSourceEvidence"));
+        using MemoryStream missing = FrameJson(json.ToJsonString());
+        ServiceStatusEvent actual = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(missing, CancellationToken.None));
+        Assert.False(actual.Status.Capabilities!.HasFanStopSourceEvidence);
+        Assert.False(actual.Status.Capabilities.HasFanStopEvidence);
+        Assert.False(actual.Status.Capabilities.SupportsFanStop);
     }
 
     [Theory]
@@ -773,7 +814,7 @@ public sealed partial class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(78, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(79, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -815,7 +856,7 @@ public sealed partial class IpcMessageCodecTests
         using MemoryStream requestBytes = new();
         await IpcMessageCodec.WriteRequestAsync(requestBytes, request, CancellationToken.None);
         JsonObject requestJson = FramedJsonObject(requestBytes);
-        Assert.Equal(78, requestJson["version"]!.GetValue<int>());
+        Assert.Equal(79, requestJson["version"]!.GetValue<int>());
         Assert.Equal(wireValue, requestJson["value"]!["value"]!.GetValue<int>());
         requestBytes.Position = 0;
         Assert.Equal(request, await IpcMessageCodec.ReadRequestAsync(requestBytes, CancellationToken.None));
@@ -912,7 +953,7 @@ public sealed partial class IpcMessageCodecTests
                 }),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(78, json["version"]!.GetValue<int>());
+        Assert.Equal(79, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
@@ -947,7 +988,7 @@ public sealed partial class IpcMessageCodecTests
             await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
         Assert.True(roundTrip.Status.Capabilities!.SupportsManualFansOnLimitedPower);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(78, json["version"]!.GetValue<int>());
+        Assert.Equal(79, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsManualFansOnLimitedPower"));
@@ -1522,7 +1563,7 @@ public sealed partial class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(78, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(79, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -2222,6 +2263,7 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(75)]
     [InlineData(76)]
     [InlineData(77)]
+    [InlineData(78)]
     public async Task WriteRequestAsync_RejectsPriorProtocols(int previousProtocolVersion)
     {
         using MemoryStream stream = new();
@@ -2234,7 +2276,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(78, exception.ExpectedVersion);
+        Assert.Equal(79, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2251,6 +2293,7 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(75)]
     [InlineData(76)]
     [InlineData(77)]
+    [InlineData(78)]
     public async Task ReadRequestAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         using MemoryStream stream = FrameJson(
@@ -2261,7 +2304,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(78, exception.ExpectedVersion);
+        Assert.Equal(79, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2278,6 +2321,7 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(75)]
     [InlineData(76)]
     [InlineData(77)]
+    [InlineData(78)]
     public async Task ReadServerFrameAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         Guid requestId = Guid.NewGuid();
@@ -2300,7 +2344,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(78, exception.ExpectedVersion);
+        Assert.Equal(79, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 

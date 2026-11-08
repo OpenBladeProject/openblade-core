@@ -11,6 +11,12 @@ model and feature; source-reviewed support does not claim complete hardware
 testing. RZ09-0581 and RZ09-0528 retain their separately physically validated
 support. The limits and remaining experimental features below still apply.
 
+Stop/Auto supports eight model families in USB-C Balanced. See the
+[model and EC version coverage](fan-stop-model-coverage.md) for the exact list.
+The seven additions use separately reviewed firmware contracts and have not
+been physically tested. They require the reviewed InpOut driver already
+installed; PawnIO supplies CPU temperatures only.
+
 ## Available controls
 
 The earlier five models retain the following controls. The additional models

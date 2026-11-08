@@ -64,6 +64,28 @@ public sealed class So6120HostMailboxTransactionTests
     }
 
     [Theory]
+    [InlineData(0xE3)]
+    [InlineData(0xE4)]
+    public void FamilyIdentityReadNeedsSeparateAuthorityAndNeverPermitsWrites(int register)
+    {
+        var refused = new Fake();
+        Assert.Equal(So6120MailboxFailure.InvalidRequest, Core(refused).Read((So6120MailboxRegister)register).Failure);
+        Assert.Equal(0, refused.Calls);
+        var admitted = new Fake();
+        admitted.Registers[register] = 0x30;
+        var read = new So6120HostMailboxTransaction(admitted, admitted, allowBoardIdentityReads: true)
+            .Read((So6120MailboxRegister)register);
+        Assert.True(read.Success);
+        Assert.Equal((byte)0x30, read.Value);
+        Assert.Equal(new byte[] { 0xA0 }, admitted.Commands);
+        var write = new Fake();
+        Assert.Equal(So6120MailboxFailure.InvalidRequest,
+            new So6120HostMailboxTransaction(write, write, allowBoardIdentityReads: true)
+                .WriteAndConfirm((So6120MailboxRegister)register, 0).Failure);
+        Assert.Equal(0, write.Calls);
+    }
+
+    [Theory]
     [InlineData(0x06)]
     [InlineData(0x08)]
     [InlineData(0x09)]

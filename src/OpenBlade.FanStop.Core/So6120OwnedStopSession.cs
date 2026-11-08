@@ -16,13 +16,16 @@ internal sealed partial class So6120DirectDutySession
     private long ownedStopEntryStarted;
     private long? ownedStopAutoStarted;
     private bool ownedStopRestoring;
+    private ushort? expectedBoardSsid;
+    internal string? BoardIdentityRefusal { get; private set; }
     private static readonly TimeSpan OwnedStopEntryLimit = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan OwnedStopAutoLimit = TimeSpan.FromSeconds(60);
 
     internal static So6120DirectDutySession CreateForOwnedStop(string runRoot, So6120SessionBinding binding,
         ISo6120MailboxBytePort port, ISo6120SessionEvidenceSource source, TimeProvider clock,
         ISo6120SessionAdmissionPolicy admissionPolicy, So6120OwnedStopHooks hooks,
-        So6120SessionOptions? options = null, Action<So6120JournalWriteStage>? storageFault = null)
+        So6120SessionOptions? options = null, Action<So6120JournalWriteStage>? storageFault = null,
+        ushort? expectedBoardSsid = null)
     {
         ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(admissionPolicy);
@@ -37,6 +40,7 @@ internal sealed partial class So6120DirectDutySession
 
         var session = CreateInjected(runRoot, binding, port, source, clock, options, storageFault, admissionPolicy);
         session.ownedStopHooks = hooks;
+        session.expectedBoardSsid = expectedBoardSsid;
         return session;
     }
 

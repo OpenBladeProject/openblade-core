@@ -73,7 +73,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         string? laptopControlRecoveryIdentity = null,
         bool supportsBatterySaverFanStop = false,
         Func<bool>? stopHardwareAdmission = null,
-        bool hasFanStopTrialEvidence = false)
+        bool hasFanStopTrialEvidence = false,
+        bool hasFanStopSourceEvidence = false)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         LaptopControlRecoveryIdentity = laptopControlRecoveryIdentity;
@@ -190,6 +191,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             this.supportsBatterySaverFanStop) with
         {
             HasFanStopTrialEvidence = hasFanStopTrialEvidence,
+            HasFanStopSourceEvidence = hasFanStopSourceEvidence,
         };
     }
 
@@ -489,9 +491,10 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 allowPadlessHyperBoostLifecycleValidation,
             supportsDirectManualFanTransitions: supportsDirectManualFanTransitions,
             supportsBatterySaverFanStop: supportsBatterySaverFanStop,
-            // Attended SO6120/RZ09-0581 evidence is display-only. Live Stop and
-            // controller-loss recovery remain unavailable; no HID command is admitted.
+            // Source and physical evidence are separate metadata. The guardian
+            // independently admits the live device, EC and owned mailbox session.
             hasFanStopTrialEvidence: IsExactModelScopedRz090581Identity(exactIdentity),
+            hasFanStopSourceEvidence: IsExactModelScopedRz090581Identity(exactIdentity),
             // Ordinary controls remain advisory. Stopping cooling requires a fresh
             // competing-controller and exact-host check at each native submission.
             stopHardwareAdmission: () => hardwareAccessGuard.Check().Safe

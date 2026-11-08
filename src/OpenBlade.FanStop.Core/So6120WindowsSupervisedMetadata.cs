@@ -35,8 +35,9 @@ internal static class So6120WindowsSupervisedMetadata
             So6120SupervisedAdmission.Manufacturer, So6120SupervisedAdmission.Product, So6120SupervisedAdmission.Sku,
             [So6120SupervisedAdmission.Bios]));
 
-    internal static So6120MetadataRead CaptureForService(Guid runId, TimeProvider clock) =>
-        Capture(runId, clock, WindowsHostIdentitySource.ProductionIdentity);
+    internal static So6120MetadataRead CaptureForService(Guid runId, TimeProvider clock,
+        FanStopModelContract contract) =>
+        Capture(runId, clock, contract.Host, serviceContract: contract);
 
     // SMBIOS is the boot's reported table, not a live EC measurement. Reusing
     // its admitted version adds no weaker live-firmware claim. The deny-write/
@@ -44,11 +45,12 @@ internal static class So6120WindowsSupervisedMetadata
     // Host registry, HID, controller, configured-driver and DOS-target identity
     // are still captured afresh for every actual command admission.
     internal static So6120MetadataRead CaptureForService(Guid runId, TimeProvider clock,
-        FileStream driverPin, Version bootReportedEcVersion) =>
-        Capture(runId, clock, WindowsHostIdentitySource.ProductionIdentity, driverPin, bootReportedEcVersion);
+        FanStopModelContract contract, FileStream driverPin, Version bootReportedEcVersion) =>
+        Capture(runId, clock, contract.Host, driverPin, bootReportedEcVersion, contract);
 
     private static So6120MetadataRead Capture(Guid runId, TimeProvider clock, ExpectedHostIdentity expectedHost,
-        FileStream? driverPin = null, Version? bootReportedEcVersion = null)
+        FileStream? driverPin = null, Version? bootReportedEcVersion = null,
+        FanStopModelContract? serviceContract = null)
     {
         if (!OperatingSystem.IsWindows() || RuntimeInformation.ProcessArchitecture != Architecture.X64)
         { return new(null, So6120MetadataStage.Platform, null); }
@@ -72,7 +74,7 @@ internal static class So6120WindowsSupervisedMetadata
                 ec = ReadReportedEcVersion(smbios);
             }
             stage = So6120MetadataStage.Hid;
-            var hid = ReadHidMetadata(ReadPresentHidPaths(), new WindowsHidNative());
+            var hid = ReadHidMetadata(ReadPresentHidPaths(), new WindowsHidNative(), serviceContract);
             stage = So6120MetadataStage.ConsoleAndPower;
             So6120SessionMetadata session = ReadSessionMetadata();
             uint console = session.ConsoleSession;
@@ -133,10 +135,14 @@ internal static class So6120WindowsSupervisedMetadata
         throw new IOException("Invalid HID interface list terminator.");
     }
 
-    internal static IReadOnlyList<So6120HidMetadata> ReadHidMetadata(IReadOnlyList<string> paths, IHidCandidateNative native)
+    internal static IReadOnlyList<So6120HidMetadata> ReadHidMetadata(IReadOnlyList<string> paths, IHidCandidateNative native,
+        FanStopModelContract? serviceContract = null)
     {
         List<So6120HidMetadata> candidates = [];
-        foreach (string path in paths.Where(So6120SupervisedAdmission.IsTargetHidPath))
+        // Developer capture retains its exact 0581 boundary. The installed
+        // owner supplies its separately reviewed immutable model contract.
+        foreach (string path in paths.Where(path => serviceContract is null
+                     ? So6120SupervisedAdmission.IsTargetHidPath(path) : serviceContract.IsTargetHidPath(path)))
         {
             // Keep any relevant unopenable candidate, so one good collection
             // cannot turn an incomplete identity inspection into uniqueness.

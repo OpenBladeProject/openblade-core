@@ -1,12 +1,11 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO.Pipes;
-using System.Security.Cryptography;
-using System.Text;
 using System.Threading.Channels;
 using Microsoft.Win32.SafeHandles;
 using OpenBlade.Contracts;
 using OpenBlade.FanStop;
+using OpenBlade.Protocol;
 using OpenBlade.Service;
 
 namespace OpenBlade.FanStop.Guardian;
@@ -204,13 +203,14 @@ internal static class Program
             if (!FanStopSettings.IsWellFormed(reservation.Settings))
             { throw new InvalidDataException("Guardian reservation has an invalid Stop policy."); }
             publish(Status(FanStopGuardianPhase.Starting) with { CommandPending = true });
-            string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-                "SO6120 EC1.04 RZ09-0581 reviewed direct zero/Auto contract")));
-            const string firmwareHash = "8537E9FD55B7B35504D8D87B0191ACC4391B67365B3FE72F6E1029A424C9E707";
-            var identity = new So6120JournalIdentity(new(operation, "RZ09-0581/1532:02E0", "SO6120-EC1.04", Guid.NewGuid()),
-                PerformancePreset.Balanced, 0, 0, hash, firmwareHash, operation, hash,
-                $"service:{reservation.ServicePid}:{reservation.ServiceStartUtcTicks}");
-            acquisition = So6120ServiceDutyPlatform.Acquire(identity, reservation.ServicePid,
+            FanStopModelContract family = FanStopModelContract.ForCurrentWindowsHost()
+                ?? throw new InvalidDataException("No reviewed Fan Stop contract matches this exact host.");
+            var candidateRead = So6120WindowsSupervisedMetadata.CaptureForService(operation, TimeProvider.System, family);
+            FanStopModelContract contract = So6120ServiceModelAdmission.SelectFirmware(family,
+                candidateRead.Metadata ?? throw new InvalidDataException($"Firmware selection metadata unavailable ({candidateRead.FailedStage})."));
+            So6120JournalIdentity identity = So6120ServiceModelAdmission.CreateJournal(contract, operation,
+                reservation.ServicePid, reservation.ServiceStartUtcTicks);
+            acquisition = So6120ServiceDutyPlatform.Acquire(identity, contract, reservation.ServicePid,
                 reservation.ServiceStartUtcTicks, () => store.ReadReservation(operation) == reservation,
                 So6120ServiceDutyPlatform.CreateTemperatureSource(), reservation.Settings, stop);
             stop.ThrowIfCancellationRequested();
@@ -221,13 +221,15 @@ internal static class Program
                 acquisition.Port, acquisition.EvidenceSource, TimeProvider.System, acquisition.AdmissionPolicy,
                 new(() => !stop.IsCancellationRequested && acquisition.RefreshEntryAdmission(),
                     () => !stop.IsCancellationRequested && acquisition.CachedEntryAdmission(),
-                    () => !stop.IsCancellationRequested && acquisition.ContinueStopAdmission()));
+                    () => !stop.IsCancellationRequested && acquisition.ContinueStopAdmission()),
+                expectedBoardSsid: contract.BoardSsid);
             So6120DutyResult entry = session.EnterStopped(stop);
             stopped = entry.Success && entry.DirectEntryConfirmed;
-            if (!stopped) { progress.RecordEntryFailure(entry.Failure, acquisition.EntryAdmissionRefusal); }
+            string? entryRefusal = session.BoardIdentityRefusal ?? acquisition.EntryAdmissionRefusal;
+            if (!stopped) { progress.RecordEntryFailure(entry.Failure, entryRefusal); }
             if (entry.CommandsFenced || entry.CleanupCheckpoint is null)
             {
-                string detail = acquisition.EntryAdmissionRefusal is { } refusal ? $" {refusal}" : "";
+                string detail = entryRefusal is { } refusal ? $" {refusal}" : "";
                 throw new InvalidDataException($"Stop entry did not establish an owned cleanup checkpoint ({entry.Failure}).{detail}");
             }
             if (stopped)

@@ -10,7 +10,7 @@ public sealed partial class MainViewModel
         FanStopState.Stopped or FanStopState.Starting or FanStopState.ReturningToAutomatic
         or FanStopState.RecoveryRequired;
 
-    public bool IsFanStopVisible => Capabilities.HasFanStopTrialEvidence
+    public bool IsFanStopVisible => Capabilities.HasFanStopEvidence
         || Capabilities.SupportsFanStop || FanStopOwnsControl;
 
     public bool FanStopRequested => CurrentFanStopStatus.RequestedMode == FanStopMode.Stop;
