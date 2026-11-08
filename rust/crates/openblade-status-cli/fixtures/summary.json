@@ -1,0 +1,1 @@
+{"servicePresence":"responded","responseProtocol":51,"source":"cached-service-snapshot","telemetryFreshness":"unknown","serviceReportedDeviceVerified":true,"revision":9223372036854775807,"activePowerSource":2,"controlAccess":0,"liveReadings":{"batteryPowerFlowMilliwatts":-32768,"fan1Rpm":2700,"fan2Rpm":null,"cpuTemperatureCelsius":65,"gpuTemperatureCelsius":null}}

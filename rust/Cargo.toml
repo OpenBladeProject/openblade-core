@@ -4,6 +4,7 @@ members = [
     "crates/openblade-protocol",
     "crates/openblade-domain",
     "crates/openblade-ffi",
+    "crates/openblade-status-cli",
 ]
 resolver = "3"
 

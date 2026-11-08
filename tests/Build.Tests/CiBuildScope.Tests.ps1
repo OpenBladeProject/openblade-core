@@ -298,6 +298,22 @@ Assert-Equal $false $testMetadata.RunInstaller 'Test metadata must not publish t
 Assert-Equal 0 @($testMetadata.ContractTests).Count 'Test metadata must not select unrelated contracts.'
 Assert-Equal 0 @($testMetadata.PublishProjects).Count 'Test metadata must not publish product binaries.'
 
+foreach ($cliFixture in @('request.json', 'response.json')) {
+    $fixturePlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+        "rust/crates/openblade-status-cli/fixtures/$cliFixture")
+    Assert-Equal 'affected' $fixturePlan.Mode 'Rust-only IPC fixture edits must use affected validation.'
+    Assert-Contains $fixturePlan.QualityProjects `
+        'tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj' `
+        'Rust IPC fixture edits must build the real C# contract comparison.'
+    Assert-Contains $fixturePlan.TestProjects `
+        'tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj' `
+        'Rust IPC fixture edits must run the real C# contract comparison.'
+    Assert-Contains $fixturePlan.ContractTests 'tests/Build.Tests/NativePayload.Tests.ps1' `
+        'Rust IPC fixture routing must retain the native payload contract checks.'
+    Assert-Equal $true $fixturePlan.RunInstaller `
+        'Rust IPC fixture routing must retain actual installer payload validation.'
+}
+
 foreach ($nativeInput in @(
         'src/OpenBlade.Core.Native/ProductNativeRuntime.cs',
         'src/OpenBlade.Core.Native/OpenBlade.Core.Native.csproj')) {

@@ -31,11 +31,15 @@ no older compiler compatibility is claimed. Update both together. `0.0.0`
 identifies these unpublished migration crates independently of the Windows
 product version. Licensing follows `GPL-3.0-or-later`.
 
-Commit `Cargo.lock`. Only the protocol and domain integration tests use registry roots:
+Commit `Cargo.lock`. The protocol and domain integration tests use registry roots:
 exact `serde` 1.0.228 with derive and `serde_json` 1.0.149, plus their locked
 parsing/proc-macro dependency closure. These established parsers provide strict
 typed JSON and duplicate-field rejection without adding a handwritten parser.
-Production libraries have only inward local dependencies. The workspace guard
+The separate developer-only `openblade-status-cli` uses the same JSON parsers
+and Tokio 1.54.1 for bounded asynchronous Windows pipe I/O and cancellation.
+Its locked OS/runtime dependencies stay in the CLI. Production libraries have
+only inward local dependencies. See [the read-only status guide](crates/openblade-status-cli/README.md).
+The workspace guard
 checks the four libraries, reviewed test targets/dependencies, MSRV and compiler
 policies independently of the caller's directory. Its regression tests use
 disposable workspace copies. Inner crates retain `no_std` and inherit

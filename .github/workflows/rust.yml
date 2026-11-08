@@ -112,7 +112,7 @@ jobs:
           cargo --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Fetch locked test-only dependencies
+      - name: Fetch locked dependencies
         run: cargo fetch --locked
 
       - name: Check workspace boundaries
@@ -126,6 +126,18 @@ jobs:
 
       - name: Build
         run: cargo build --locked --workspace --all-targets --target ${{ matrix.target }}
+
+      - name: Verify unsupported transport output
+        if: runner.os != 'Windows'
+        run: |
+          $diagnostic = Join-Path $env:RUNNER_TEMP 'openblade-status-unsupported.txt'
+          $output = & "./target/${{ matrix.target }}/debug/openblade-status-cli" 2> $diagnostic
+          $code = $LASTEXITCODE
+          if ($code -ne 1 -or $output) { throw 'Unsupported transport invented a successful status.' }
+          if ((Get-Content $diagnostic -Raw).Trim() -cne 'OpenBlade status: unsupported transport (Windows named pipe required)') {
+            throw 'Unsupported transport diagnostic changed.'
+          }
+          exit 0
 
       - name: Test workspace and all 43 canonical report and profile cases
         run: cargo test --locked --workspace --all-targets --target ${{ matrix.target }}
