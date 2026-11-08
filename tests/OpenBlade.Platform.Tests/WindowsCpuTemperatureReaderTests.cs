@@ -170,8 +170,12 @@ public sealed class WindowsCpuTemperatureReaderTests
             }
             return Task.FromResult(frame);
         };
-        using var reader = Create(() => child);
+        using var reader = Create(() => child, TimeSpan.FromSeconds(3));
+        // Malformed-response handling starts after readiness. A cold-call null
+        // can instead mean initialization is still owned, with no sample sent.
+        Assert.True(await reader.PrepareAsync());
         Assert.Null(await reader.ReadAsync());
+        Assert.Single(child.Requests);
         await child.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(3));
     }
 
