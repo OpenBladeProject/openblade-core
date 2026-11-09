@@ -11,17 +11,7 @@ struct Synthetic {
 impl DiscoverySource for Synthetic {
     fn read_host(&self, cancelled: &AtomicBool) -> io::Result<HostObservation> {
         check_cancelled(cancelled)?;
-        let copy = |source: &RegistrySource| RegistrySource {
-            manufacturer: source.manufacturer.clone(),
-            product_name: source.product_name.clone(),
-        };
-        Ok(HostObservation {
-            platform: self.host.platform,
-            bios: copy(&self.host.bios),
-            system_information: copy(&self.host.system_information),
-            sku: self.host.sku.clone(),
-            bios_version: self.host.bios_version.clone(),
-        })
+        Ok(self.host.clone())
     }
 
     fn scan_hid(
@@ -30,10 +20,7 @@ impl DiscoverySource for Synthetic {
         mut visit: impl FnMut(Option<Interface>) -> io::Result<()>,
     ) -> io::Result<ScanState> {
         for row in &self.rows {
-            visit(row.as_ref().map(|row| Interface {
-                path: row.path.clone(),
-                hardware_ids: row.hardware_ids.clone(),
-            }))?;
+            visit(row.clone())?;
         }
         if self.cancel_after_scan {
             cancelled.store(true, Ordering::Relaxed);
@@ -79,6 +66,7 @@ const EXACT: &[&str] = &[
     r"HID\VID_1532&PID_02E0&REV_0001&MI_00&COL01",
     r"HID\VID_1532&PID_02E0&MI_00&COL01",
     "HID_DEVICE_UP:0001_U:0002",
+    r"HID\VID_1532&UP:0001_U:0002",
     "HID_DEVICE_SYSTEM_MOUSE",
     "HID_DEVICE",
 ];
@@ -186,6 +174,64 @@ fn source_reviewed_candidates_do_not_inherit_a_physical_usage_selector() {
         assert_eq!(result["hid"]["candidates"], "singleUnresolved");
         assert_eq!(result["hid"]["counts"]["matchingHints"], 1);
     }
+}
+
+#[test]
+fn alternate_hid_id_families_are_readable_and_vendor_aliases_require_consensus() {
+    let mut fixture = fixture(BLADE_0581);
+    fixture.rows = vec![
+        row("opaque-device-a", EXACT),
+        row(
+            "opaque-device-b",
+            &[r"HID\VEN_SYNA&DEV_1234&COL01", "HID_DEVICE_UP:000D_U:0005"],
+        ),
+        row(
+            "opaque-device-c",
+            &[r"HID\CONVERTEDDEVICE&COL01", "HID_DEVICE_SYSTEM_KEYBOARD"],
+        ),
+    ];
+    let result = snapshot(&fixture);
+    assert_eq!(result["hid"]["inventory"], "complete");
+    assert_eq!(result["hid"]["candidates"], "singleUnresolved");
+    assert_eq!(result["hid"]["unreadableInterfaces"], 0);
+
+    for alias in [
+        r"HID\VID_1111&UP:0001_U:0002",
+        r"HID\VID_1532&UP:0001_U:0006",
+    ] {
+        let mut conflicting = EXACT.to_vec();
+        conflicting.push(alias);
+        fixture.rows[0] = row("opaque-device-a", &conflicting);
+        let result = snapshot(&fixture);
+        assert_eq!(result["hid"]["inventory"], "incomplete");
+        assert_eq!(result["hid"]["counts"]["matchingHints"], 0);
+    }
+    fixture.rows[0] = row("opaque-device-a", &[r"HID\VID_1532&UP:0001_U:0002"]);
+    assert_eq!(snapshot(&fixture)["hid"]["candidates"], "incomplete");
+}
+
+#[test]
+fn source_reviewed_cardinality_counts_interfaces_without_collapsing_collections() {
+    let mut fixture = fixture("Blade 14 - RZ09-0482");
+    fixture.rows = vec![
+        row(
+            "opaque-device-a",
+            &[
+                r"HID\VID_1532&PID_029D&MI_00&COL01",
+                "HID_DEVICE_UP:FF00_U:0001",
+            ],
+        ),
+        row(
+            "opaque-device-b",
+            &[
+                r"HID\VID_1532&PID_029D&MI_00&COL02",
+                "HID_DEVICE_UP:0001_U:0006",
+            ],
+        ),
+    ];
+    let result = snapshot(&fixture);
+    assert_eq!(result["hid"]["candidates"], "ambiguous");
+    assert_eq!(result["hid"]["counts"]["matchingHints"], 2);
 }
 
 #[test]

@@ -65,12 +65,11 @@ pub(crate) fn run() -> io::Result<()> {
 }
 
 unsafe extern "system" fn cancel(event: u32) -> i32 {
-    if matches!(event, CTRL_C_EVENT | CTRL_BREAK_EVENT) {
-        CANCELLED.store(true, Ordering::Relaxed);
-        1
-    } else {
-        0
-    }
+    // Leave a second interrupt to the default handler if a synchronous call stalls.
+    i32::from(
+        matches!(event, CTRL_C_EVENT | CTRL_BREAK_EVENT)
+            && !CANCELLED.swap(true, Ordering::Relaxed),
+    )
 }
 
 struct WindowsMetadata;

@@ -131,11 +131,13 @@ enum Platform {
     Unavailable,
 }
 
+#[derive(Clone)]
 struct RegistrySource {
     manufacturer: RegistryText,
     product_name: RegistryText,
 }
 
+#[derive(Clone)]
 struct HostObservation {
     platform: Platform,
     bios: RegistrySource,
@@ -215,6 +217,7 @@ impl HostObservation {
     }
 }
 
+#[derive(Clone)]
 struct Interface {
     // Windows supplies this opaque interface name. It is never parsed or exported.
     path: String,
@@ -363,7 +366,7 @@ fn discover_hid(
         };
         let expected_usage = model.windows_control_usage;
         for facts in interfaces.values().filter_map(Option::as_ref) {
-            if facts.device == expected_id {
+            if facts.device() == Some(expected_id) {
                 match (expected_usage, facts.usage) {
                     (None, _) => counts.matching_hints += 1,
                     (Some(expected), Some(usage)) if usage == expected => {
