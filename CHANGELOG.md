@@ -9,6 +9,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Add Stop/Auto for Blade 14 RZ09-0427/0530, Blade 15 RZ09-0330/0421 and Blade 16 RZ09-0483/0510/0528 on reviewed EC versions, including the Lamborghini variant. ([#901](https://github.com/OSSBlade/openblade-core/pull/901))
 
+### Fixed
+
+- Preserve Silent, Performance, and Custom when changing between Automatic and manual fans on full adapter power on Blade 16 RZ09-0581 and RZ09-0528. Apply admitted AC performance presets directly when leaving HyperBoost. ([#907](https://github.com/OSSBlade/openblade-core/pull/907))
+
 ## [0.57.1-nightly.109] - 2026-11-08
 
 ### Added

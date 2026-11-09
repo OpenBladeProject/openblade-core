@@ -757,24 +757,27 @@ internal sealed class ProductionBatteryPort :
                 [PerformanceBatteryBalancedFirstAction, PerformanceBatteryBalancedSecondAction],
             _ => null,
         };
+        bool directHyperBoostExit = CanExitHyperBoostDirectlyTo(value);
         return actions is null
             ? Task.FromException(Unavailable(
                 $"Performance preset '{value}' is not admitted for production use."))
             : ExecuteThermalSettersAsync(
                 actions,
                 state => state.Performance == value && state.Fans == FanMode.Automatic,
-                state => CanApplyAutomaticPerformanceFrom(state, value),
+                state => CanApplyAutomaticPerformanceFrom(state, value)
+                    || (directHyperBoostExit && state.HyperBoostActive && state.Fans == FanMode.Automatic),
                 "Performance changes require a confirmed Automatic thermal state or an admitted direct manual transition.",
                 applyMaximumTiming: false,
                 verifyFinalState: value is PerformancePreset.BatterySaver
                     or PerformancePreset.BatteryBalanced,
                 cancellationToken,
-                hyperBoostExitActions:
+                hyperBoostExitActions: directHyperBoostExit ? null :
                 [
                     HyperBoostRestoreFirstAction,
                     HyperBoostRestoreSecondAction,
                 ],
-                hyperBoostExitCatalog: hyperBoostCatalog);
+                hyperBoostExitCatalog: hyperBoostCatalog,
+                requireFullPowerOnDirectHyperBoostExit: directHyperBoostExit && value != PerformancePreset.Balanced);
     }
 
     private bool CanApplyAutomaticPerformanceFrom(
@@ -790,6 +793,12 @@ internal sealed class ProductionBatteryPort :
                     or PerformancePreset.Custom
                     or PerformancePreset.BatterySaver
                     or PerformancePreset.BatteryBalanced);
+
+    // Both exact models have an admitted direct mode-7 exit to these named
+    // AC destinations. The captured Balanced exit is not a prerequisite.
+    private bool CanExitHyperBoostDirectlyTo(PerformancePreset target) =>
+        Capabilities.SupportsDirectManualFanTransitions
+        && Capabilities.HyperBoostBaseModes?.AccessFor(target) == DeviceFeatureAccess.ReadWrite;
 
     public Task SetHyperBoostAsync(bool enabled, CancellationToken cancellationToken) =>
         SetHyperBoostAsync(enabled, PerformancePreset.Balanced, cancellationToken);
@@ -938,6 +947,7 @@ internal sealed class ProductionBatteryPort :
                 "The custom performance CPU/GPU combination is not admitted."));
         }
 
+        bool directHyperBoostExit = CanExitHyperBoostDirectlyTo(PerformancePreset.Custom);
         return ExecuteThermalSettersAsync(
             [
                 PerformanceCustomFirstAction,
@@ -948,20 +958,21 @@ internal sealed class ProductionBatteryPort :
             state => state.Performance == PerformancePreset.Custom
                 && state.Fans == FanMode.Automatic
                 && state.CustomPerformance == value,
-            state => !state.HyperBoostActive
-                && (state.Fans == FanMode.Automatic
-                    || Capabilities.SupportsDirectManualFanTransitions
-                        && state.Fans == FanMode.Maximum),
+            state => state.HyperBoostActive
+                ? directHyperBoostExit && state.Fans == FanMode.Automatic
+                : state.Fans == FanMode.Automatic
+                    || Capabilities.SupportsDirectManualFanTransitions && state.Fans == FanMode.Maximum,
             "Custom performance requires confirmed Automatic fans or an admitted direct manual transition.",
             applyMaximumTiming: false,
             verifyFinalState: true,
             cancellationToken,
-            hyperBoostExitActions:
+            hyperBoostExitActions: directHyperBoostExit ? null :
             [
                 HyperBoostRestoreFirstAction,
                 HyperBoostRestoreSecondAction,
             ],
-            hyperBoostExitCatalog: hyperBoostCatalog);
+            hyperBoostExitCatalog: hyperBoostCatalog,
+            requireFullPowerOnDirectHyperBoostExit: directHyperBoostExit);
     }
 
     public Task SetFanModeAsync(
@@ -986,10 +997,15 @@ internal sealed class ProductionBatteryPort :
         if (value == FanMode.Automatic
             && Capabilities.SupportsDirectManualFanTransitions)
         {
+            if (!Capabilities.FanModes.Contains(FanMode.Automatic))
+            {
+                return Task.FromException(Unavailable("Automatic fan control is not admitted."));
+            }
+
             return ExecuteDynamicFanCommandsAsync(
                 [
-                    RequiredCommand(PerformanceBalancedFirstAction),
-                    RequiredCommand(PerformanceBalancedSecondAction),
+                    CreateFanStateCommand(ThermalChannel.First, 0x00, 0x00),
+                    CreateFanStateCommand(ThermalChannel.Second, 0x00, 0x00),
                 ],
                 requireAutomaticEntry: false,
                 cancellationToken);
@@ -1100,8 +1116,12 @@ internal sealed class ProductionBatteryPort :
         ValidateFanSpeed(fan2Rpm, nameof(fan2Rpm));
         return ExecuteDynamicFanCommandsAsync(
             [
-                RequiredCommand(FanMaximumStateFirstAction),
-                RequiredCommand(FanMaximumStateSecondAction),
+                Capabilities.SupportsDirectManualFanTransitions
+                    ? CreateFanStateCommand(ThermalChannel.First, 0x00, 0x01)
+                    : RequiredCommand(FanMaximumStateFirstAction),
+                Capabilities.SupportsDirectManualFanTransitions
+                    ? CreateFanStateCommand(ThermalChannel.Second, 0x00, 0x01)
+                    : RequiredCommand(FanMaximumStateSecondAction),
                 CreateFanSpeedCommand(ThermalChannel.First, fan1Rpm),
                 CreateFanSpeedCommand(ThermalChannel.Second, fan2Rpm),
             ],
@@ -1127,13 +1147,15 @@ internal sealed class ProductionBatteryPort :
         string templateAction = channel == ThermalChannel.First
             ? FanMaximumSpeedFirstAction
             : FanMaximumSpeedSecondAction;
-        RazerCommandDefinition template = RequiredCommand(templateAction);
         byte[] payload = [0x01, (byte)channel, checked((byte)(speedRpm / 100))];
-        return new RazerCommandDefinition(
-            template.CommandClass,
-            template.CommandId,
-            payload,
-            payload);
+        if (Capabilities.SupportsDirectManualFanTransitions)
+        {
+            // Both exact MCU workers accept ordinary RPM requests in 100 RPM units.
+            return new RazerCommandDefinition(ThermalModeProtocol.CommandClass, 0x01, payload, payload);
+        }
+
+        RazerCommandDefinition template = RequiredCommand(templateAction);
+        return new RazerCommandDefinition(template.CommandClass, template.CommandId, payload, payload);
     }
 
     private void ValidateFanSpeed(int speedRpm, string parameterName)
@@ -1191,45 +1213,69 @@ internal sealed class ProductionBatteryPort :
             bool manual = current.Fans == FanMode.Maximum;
             // A battery selector can persist after power changes. Classify the
             // fresh physical source before choosing the selector to write.
-            bool batteryAutomaticEntry =
-                IsDirectManualFanBatteryAutomaticEntryState(current);
             bool batterySelectorState = !current.HyperBoostActive
                 && current.Performance is PerformancePreset.BatterySaver
                     or PerformancePreset.BatteryBalanced;
             bool stateCommands = commands.Count >= 2
-                && commands[0].CommandId == 0x02
+                && commands[0].CommandId == ThermalModeProtocol.SetCommandId
                 && commands[0].Payload.Length == 4
-                && commands[1].CommandId == 0x02
+                && commands[1].CommandId == ThermalModeProtocol.SetCommandId
                 && commands[1].Payload.Length == 4;
             IReadOnlyList<RazerCommandDefinition> effectiveCommands = commands;
-            DirectManualFanPowerRequirement? batterySelectorPower = null;
+            ThermalWritePowerRequirement? powerRequirement = null;
             bool initialPowerAdmissionAvailable = false;
-            if (batterySelectorState)
+            ThermalModeState? preservedManualState = null;
+            // Both exact MCU/EC paths write the selector separately from manual
+            // flags. Synapse keeps that selector on full power and uses Balanced
+            // on limited power. See docs/rz09-0581-direct-control-transitions.md.
+            (byte Selector, ThermalModeState ManualState)? acPreset = Capabilities.SupportsDirectManualFanTransitions
+                && stateCommands && (requireAutomaticEntry ? !manual : manual)
+                ? current.Performance switch
+                {
+                    PerformancePreset.Performance => ((byte)0x02, ThermalModeState.PerformanceManual),
+                    PerformancePreset.Custom => ((byte)0x04, ThermalModeState.CustomManual),
+                    PerformancePreset.Silent => ((byte)0x05, ThermalModeState.SilentManual),
+                    _ => null,
+                }
+                : null;
+            if (batterySelectorState || acPreset is not null)
             {
-                AdapterPowerState adapter = await QueryDirectManualFanPowerAsync(
+                AdapterPowerState adapter = await QueryThermalWritePowerAsync(
                     submitted: false,
                     cancellationToken).ConfigureAwait(false);
-                batterySelectorPower = ClassifyDirectManualFanPower(adapter)
-                    ?? throw DirectManualFanPowerFailure(
+                powerRequirement = ClassifyThermalWritePower(adapter)
+                    ?? throw ThermalWritePowerFailure(
                         submitted: false,
                         "Direct manual fan entry requires a confirmed admitted battery or external power state.");
                 initialPowerAdmissionAvailable = true;
-                if (batterySelectorPower == DirectManualFanPowerRequirement.Battery
-                    && stateCommands)
+                byte? selector = powerRequirement switch
                 {
-                    byte mode = current.Performance == PerformancePreset.BatterySaver
-                        ? (byte)0x03
-                        : (byte)0x06;
+                    ThermalWritePowerRequirement.Battery when batterySelectorState =>
+                        current.Performance == PerformancePreset.BatterySaver ? (byte)0x03 : (byte)0x06,
+                    ThermalWritePowerRequirement.FullPower => acPreset?.Selector,
+                    _ => null,
+                };
+                if (requireAutomaticEntry && acPreset is not null
+                    && powerRequirement == ThermalWritePowerRequirement.Battery)
+                {
+                    throw KnownNotApplied("An AC performance selector cannot enter manual fans on battery.");
+                }
+                if (selector is { } mode && stateCommands)
+                {
                     byte fanValue = requireAutomaticEntry ? (byte)0x01 : (byte)0x00;
                     effectiveCommands =
                     [
-                        CreateFanStateCommand(commands[0], ThermalChannel.First, mode, fanValue),
-                        CreateFanStateCommand(commands[1], ThermalChannel.Second, mode, fanValue),
+                        CreateFanStateCommand(ThermalChannel.First, mode, fanValue),
+                        CreateFanStateCommand(ThermalChannel.Second, mode, fanValue),
                         .. commands.Skip(2),
                     ];
+                    if (powerRequirement == ThermalWritePowerRequirement.FullPower)
+                    {
+                        preservedManualState = acPreset?.ManualState;
+                    }
                 }
             }
-            if (batterySaverStop && batterySelectorPower != DirectManualFanPowerRequirement.Battery)
+            if (batterySaverStop && powerRequirement != ThermalWritePowerRequirement.Battery)
             {
                 throw KnownNotApplied("Battery Saver fan stop requires confirmed battery power.");
             }
@@ -1259,12 +1305,46 @@ internal sealed class ProductionBatteryPort :
                     "Manual fan targets were not written because firmware is no longer in manual fan mode.");
             }
 
+            if (preservedManualState == ThermalModeState.CustomManual)
+            {
+                // Synapse reapplies Custom CPU/GPU levels after selecting fan mode.
+                // Use the freshly read levels and the existing exact-model setters.
+                if (current.CustomPerformance is not { } custom
+                    || Capabilities.CustomPerformance?.Supports(custom) != true
+                    || CustomPerformanceAction(CustomPerformanceDomain.Cpu, custom.Cpu) is not { } cpuAction
+                    || CustomPerformanceAction(CustomPerformanceDomain.Gpu, custom.Gpu) is not { } gpuAction
+                    || !catalog.TryGet(cpuAction, out RazerCommandDefinition? cpuCommand) || cpuCommand is null
+                    || !catalog.TryGet(gpuAction, out RazerCommandDefinition? gpuCommand) || gpuCommand is null)
+                {
+                    if (requireAutomaticEntry)
+                    {
+                        throw KnownNotApplied("Custom manual fans require restorable CPU and GPU levels.");
+                    }
+
+                    // This handback cannot safely reapply the observed levels.
+                    // Release manual ownership through the admitted Balanced pair.
+                    effectiveCommands = commands;
+                    preservedManualState = null;
+                }
+                else
+                {
+                    effectiveCommands = [.. effectiveCommands, cpuCommand, gpuCommand];
+                }
+            }
+
             int firstCommand = manual && requireAutomaticEntry ? 2 : 0;
             for (int index = firstCommand; index < effectiveCommands.Count; index++)
             {
                 RazerCommandDefinition command = effectiveCommands[index];
                 cancellationToken.ThrowIfCancellationRequested();
-                if (batterySelectorPower is { } requiredPower)
+                if (requireAutomaticEntry && preservedManualState is { } expected && index == 2)
+                {
+                    if (await QueryThermalModeStateCoreAsync(cancellationToken).ConfigureAwait(false) != expected)
+                    {
+                        throw Indeterminate("The manual fan selector did not retain the active performance preset.");
+                    }
+                }
+                if (powerRequirement is { } requiredPower)
                 {
                     if (initialPowerAdmissionAvailable)
                     {
@@ -1272,7 +1352,7 @@ internal sealed class ProductionBatteryPort :
                     }
                     else
                     {
-                        await EnsureDirectManualFanPowerAsync(
+                        await EnsureThermalWritePowerAsync(
                             requiredPower,
                             submitted,
                             cancellationToken).ConfigureAwait(false);
@@ -1307,15 +1387,20 @@ internal sealed class ProductionBatteryPort :
                     || !result.Value.Span.SequenceEqual(command.Payload.AsSpan()))
                 {
                     bool manualEntryCommand = requireAutomaticEntry && index < 2;
-                    string stage = manualEntryCommand ? "manual entry" : "fan target";
+                    bool customLevelCommand = command.CommandId == 0x07;
+                    string stage = manualEntryCommand ? "manual entry"
+                        : customLevelCommand ? "Custom level"
+                        : stateCommands && index < 2 ? "Automatic handback" : "fan target";
                     int stageIndex = manualEntryCommand
                         ? index + 1
-                        : requireAutomaticEntry
-                            ? index - 1
-                            : index + 1;
+                        : customLevelCommand
+                            ? index - commands.Count + 1
+                            : requireAutomaticEntry ? index - 1 : index + 1;
                     string failure = result.Failure?.ToString()
                         ?? "UnexpectedAcknowledgement";
-                    BladeWriteFailurePhase failurePhase = manualEntryCommand
+                    // The legacy target-only continuation cannot verify the
+                    // retained preset or restore Custom levels after uncertainty.
+                    BladeWriteFailurePhase failurePhase = manualEntryCommand && preservedManualState is null
                         ? index == 0
                             ? BladeWriteFailurePhase
                                 .AdjustableFanFirstManualEntrySubmission
@@ -1357,6 +1442,17 @@ internal sealed class ProductionBatteryPort :
                     await Task.Delay(
                         ThermalWriteTiming.MaximumInterCommandDelay(index),
                         cancellationToken).ConfigureAwait(false);
+                }
+            }
+            if (preservedManualState is not null)
+            {
+                ProductionPerformanceFanState confirmed = await QueryPerformanceFanStateCoreAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                FanMode expectedFans = requireAutomaticEntry ? FanMode.Maximum : FanMode.Automatic;
+                if (confirmed.Fans != expectedFans || confirmed.Performance != current.Performance
+                    || confirmed.CustomPerformance != current.CustomPerformance)
+                {
+                    throw Indeterminate("The fan transition did not retain the confirmed performance settings.");
                 }
             }
             if (batterySaverStop)
@@ -1424,34 +1520,27 @@ internal sealed class ProductionBatteryPort :
             or PerformancePreset.BatterySaver
             or PerformancePreset.BatteryBalanced;
 
-    private static bool IsDirectManualFanBatteryAutomaticEntryState(
-        ProductionPerformanceFanState state) =>
-        IsDirectManualFanAutomaticEntryState(state)
-        && state.Performance is PerformancePreset.BatterySaver
-            or PerformancePreset.BatteryBalanced;
-
     private static RazerCommandDefinition CreateFanStateCommand(
-        RazerCommandDefinition template,
         ThermalChannel channel,
         byte mode,
         byte fanValue)
     {
         byte[] payload = [0x01, (byte)channel, mode, fanValue];
         return new RazerCommandDefinition(
-            template.CommandClass,
-            template.CommandId,
+            ThermalModeProtocol.CommandClass,
+            ThermalModeProtocol.SetCommandId,
             payload,
             payload);
     }
 
-    private enum DirectManualFanPowerRequirement
+    private enum ThermalWritePowerRequirement
     {
         Battery,
         LimitedExternal,
         FullPower,
     }
 
-    private DirectManualFanPowerRequirement? ClassifyDirectManualFanPower(
+    private ThermalWritePowerRequirement? ClassifyThermalWritePower(
         AdapterPowerState adapter)
     {
         if (admittedAdapterPowerStates?.Contains(adapter) != true)
@@ -1461,12 +1550,12 @@ internal sealed class ProductionBatteryPort :
 
         if (adapter == AdapterPowerState.Battery)
         {
-            return DirectManualFanPowerRequirement.Battery;
+            return ThermalWritePowerRequirement.Battery;
         }
 
         if (HyperBoostValidationPower.IsAdmittedFullPower(adapter))
         {
-            return DirectManualFanPowerRequirement.FullPower;
+            return ThermalWritePowerRequirement.FullPower;
         }
 
         return adapter is AdapterPowerState.LimitedExternal
@@ -1476,36 +1565,36 @@ internal sealed class ProductionBatteryPort :
             or AdapterPowerState.UsbCPower80W
             or AdapterPowerState.UsbCPower90W
             or AdapterPowerState.UsbCPower100W
-                ? DirectManualFanPowerRequirement.LimitedExternal
+                ? ThermalWritePowerRequirement.LimitedExternal
                 : null;
     }
 
-    private async Task EnsureDirectManualFanPowerAsync(
-        DirectManualFanPowerRequirement requiredPower,
+    private async Task EnsureThermalWritePowerAsync(
+        ThermalWritePowerRequirement requiredPower,
         bool submitted,
         CancellationToken cancellationToken)
     {
-        AdapterPowerState adapter = await QueryDirectManualFanPowerAsync(
+        AdapterPowerState adapter = await QueryThermalWritePowerAsync(
             submitted,
             cancellationToken).ConfigureAwait(false);
-        if (ClassifyDirectManualFanPower(adapter) != requiredPower)
+        if (ClassifyThermalWritePower(adapter) != requiredPower)
         {
-            throw DirectManualFanPowerFailure(
+            throw ThermalWritePowerFailure(
                 submitted,
-                "The power source changed during direct manual fan entry.");
+                "The required adapter power was not confirmed for the thermal write.");
         }
     }
 
-    private async Task<AdapterPowerState> QueryDirectManualFanPowerAsync(
+    private async Task<AdapterPowerState> QueryThermalWritePowerAsync(
         bool submitted,
         CancellationToken cancellationToken)
     {
         if (!readEvidence.SupportsAdapterPowerQuery
             || admittedAdapterPowerStates is null)
         {
-            throw DirectManualFanPowerFailure(
+            throw ThermalWritePowerFailure(
                 submitted,
-                "Direct manual fan entry from a battery thermal state requires fresh adapter-power evidence.");
+                "The thermal write requires fresh adapter-power evidence.");
         }
 
         HidSessionResult<AdapterPowerState> result;
@@ -1529,16 +1618,16 @@ internal sealed class ProductionBatteryPort :
         }
         catch (Exception exception)
         {
-            throw DirectManualFanPowerFailure(
+            throw ThermalWritePowerFailure(
                 submitted,
-                "The direct manual fan adapter-power admission read failed.",
+                "The thermal adapter-power admission read failed.",
                 exception);
         }
 
         return result.Value;
     }
 
-    private BladeWriteException DirectManualFanPowerFailure(
+    private BladeWriteException ThermalWritePowerFailure(
         bool submitted,
         string message,
         Exception? innerException = null)
@@ -1556,7 +1645,7 @@ internal sealed class ProductionBatteryPort :
                 ? BladeWriteFailurePhase.Unspecified
                 : BladeWriteFailurePhase.ThermalPreWriteRead,
             submitted
-                ? "The adjustable fan write outcome is indeterminate because power admission was lost after a prior command."
+                ? "The thermal write outcome is indeterminate because power admission was lost after a prior command."
                 : message,
             innerException);
     }
@@ -2083,7 +2172,8 @@ internal sealed class ProductionBatteryPort :
         IReadOnlyList<string>? hyperBoostExitActions = null,
         DeviceCommandCatalog? hyperBoostExitCatalog = null,
         bool revalidateEligibilityPerCommand = false,
-        Func<CoolingPadConnectionState>? requiredPadStatePerCommand = null)
+        Func<CoolingPadConnectionState>? requiredPadStatePerCommand = null,
+        bool requireFullPowerOnDirectHyperBoostExit = false)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -2115,7 +2205,7 @@ internal sealed class ProductionBatteryPort :
             ProductionPerformanceFanState current = await MapThermalStateAsync(
                 currentMode,
                 cancellationToken).ConfigureAwait(false);
-            bool exitedHyperBoost = false;
+            bool exitedHyperBoost = current.HyperBoostActive;
             if (current.HyperBoostActive && hyperBoostExitActions is not null)
             {
                 if (hyperBoostExitCatalog is null)
@@ -2189,7 +2279,6 @@ internal sealed class ProductionBatteryPort :
                         "HyperBoost restoration did not confirm Balanced performance and Automatic fans.");
                 }
 
-                exitedHyperBoost = true;
             }
 
             if (alreadyMatches(current))
@@ -2211,6 +2300,12 @@ internal sealed class ProductionBatteryPort :
             {
                 RazerCommandDefinition command = commands[index];
                 cancellationToken.ThrowIfCancellationRequested();
+                if (exitedHyperBoost && requireFullPowerOnDirectHyperBoostExit)
+                {
+                    await EnsureThermalWritePowerAsync(
+                        ThermalWritePowerRequirement.FullPower, submitted, cancellationToken)
+                        .ConfigureAwait(false);
+                }
                 if (revalidateEligibilityPerCommand && validateEligibility is not null)
                 {
                     await validateEligibility(cancellationToken).ConfigureAwait(false);
@@ -2457,7 +2552,8 @@ internal sealed class ProductionBatteryPort :
         if (!ThermalModeProtocol.TryDecodeMatchingPair(
                 first.Span,
                 second.Span,
-                out ThermalModeState state))
+                out ThermalModeState state,
+                Capabilities.SupportsDirectManualFanTransitions))
         {
             session.RetainQueryFailure(0x0D, 0x82, FirmwareQueryOutcome.ContentRejected);
             poisoned = true;
@@ -2490,6 +2586,9 @@ internal sealed class ProductionBatteryPort :
             ThermalModeState.PerformanceAutomatic => new(
                 PerformancePreset.Performance,
                 FanMode.Automatic),
+            ThermalModeState.PerformanceManual => new(
+                PerformancePreset.Performance,
+                FanMode.Maximum),
             ThermalModeState.BatterySaverAutomatic => new(
                 PerformancePreset.BatterySaver,
                 FanMode.Automatic),
@@ -2516,7 +2615,7 @@ internal sealed class ProductionBatteryPort :
         ThermalModeState state,
         CancellationToken cancellationToken)
     {
-        if (state != ThermalModeState.CustomAutomatic)
+        if (state is not (ThermalModeState.CustomAutomatic or ThermalModeState.CustomManual))
         {
             return MapThermalState(state);
         }
@@ -2537,6 +2636,13 @@ internal sealed class ProductionBatteryPort :
         if (cpu == CustomPerformanceLevel.High && gpu == CustomPerformanceLevel.High)
         {
             session.RetainQueryFailure(0x0D, 0x87, FirmwareQueryOutcome.ModelAdmissionRejected);
+            if (state == ThermalModeState.CustomManual)
+            {
+                // The paired selector and manual flag are still confirmed.
+                // Keep the levels unknown so Automatic handback can proceed.
+                return new(PerformancePreset.Custom, FanMode.Maximum);
+            }
+
             poisoned = true;
             throw new RazerProtocolException(
                 "Custom performance returned a combination not admitted for this exact device.",
@@ -2551,7 +2657,7 @@ internal sealed class ProductionBatteryPort :
 
         return new ProductionPerformanceFanState(
             PerformancePreset.Custom,
-            FanMode.Automatic)
+            state == ThermalModeState.CustomManual ? FanMode.Maximum : FanMode.Automatic)
         {
             CustomPerformance = custom,
         };
@@ -2619,7 +2725,8 @@ internal sealed class ProductionBatteryPort :
             payload => ThermalModeProtocol.TryDecodeQuery(
                 payload.Span,
                 channel,
-                out _));
+                out _,
+                Capabilities.SupportsDirectManualFanTransitions));
         HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
             command,
             AllocateTransaction,
@@ -2631,7 +2738,8 @@ internal sealed class ProductionBatteryPort :
                 result.NativeRetirement);
         }
 
-        if (!ThermalModeProtocol.TryDecodeQuery(result.Value.Span, channel, out _))
+        if (!ThermalModeProtocol.TryDecodeQuery(result.Value.Span, channel, out _,
+                Capabilities.SupportsDirectManualFanTransitions))
         {
             poisoned = true;
             throw new RazerProtocolException(

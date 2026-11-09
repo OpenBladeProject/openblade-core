@@ -262,8 +262,12 @@ public sealed class Rz090528BatteryValidationFactoryTests
     {
         var session = new ScriptedSession(
             [1, 1, 2, 0], [1, 2, 2, 0],
-            [1, 1, 0, 1], [1, 2, 0, 1],
-            [1, 1, encodedRpm], [1, 2, encodedRpm]);
+            [0x11, 0x11], [1, 1, 2, 1],
+            [0x11, 0x11], [1, 2, 2, 1],
+            [1, 1, 2, 1], [1, 2, 2, 1],
+            [0x11, 0x11], [1, 1, encodedRpm],
+            [0x11, 0x11], [1, 2, encodedRpm],
+            [1, 1, 2, 1], [1, 2, 2, 1]);
         await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
 
         await port.SetFanControlAsync(new FanControlSettings(mode, rpm, ManualFanCurve.Default), default);
@@ -272,7 +276,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.False(port.Capabilities.ReportsPerformanceWithManualFans);
         Assert.Equal(new FanSpeedRange(2000, 5000, 100), port.Capabilities.FanSpeedRange);
         Assert.Equal(
-            ["01010001", "01020001", $"0101{encodedRpm:X2}", $"0102{encodedRpm:X2}"],
+            ["01010201", "01020201", $"0101{encodedRpm:X2}", $"0102{encodedRpm:X2}"],
             Writes(session));
     }
 
@@ -323,6 +327,60 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.Equal(custom
             ? new[] { "01010400", "01020400", "010101", "010200" }
             : new[] { "01010200", "01020200" }, Writes(session));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectHyperBoostExit_UsesRequestedPerformanceOrCustomWithoutBalanced(bool custom)
+    {
+        byte mode = custom ? (byte)4 : (byte)2;
+        byte[] first = [1, 1, mode, 0];
+        byte[] second = [1, 2, mode, 0];
+        byte[] cpu = [1, 1, 1];
+        byte[] gpu = [1, 2, 0];
+        byte[] fullPower = [0x11, 0x11];
+        var session = custom
+            ? new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0],
+                fullPower, first, fullPower, second, fullPower, cpu, fullPower, gpu,
+                first, second, cpu, gpu)
+            : new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0],
+                fullPower, first, fullPower, second, first, second);
+        await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
+
+        if (custom)
+        {
+            await port.SetCustomPerformanceAsync(new CustomPerformanceSettings(
+                CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low), default);
+        }
+        else
+        {
+            await port.SetPerformanceAsync(PerformancePreset.Performance, default);
+        }
+
+        Assert.Equal(custom
+            ? new[] { "01010400", "01020400", "010101", "010200" }
+            : new[] { "01010200", "01020200" }, Writes(session));
+        Assert.Equal(custom ? 14 : 8, session.Commands.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectHyperBoostExit_StopsOnLimitedAdapterPower(bool afterFirstWrite)
+    {
+        byte[] limited = [0x07, 0x11];
+        var session = afterFirstWrite
+            ? new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], [0x11, 0x11], [1, 1, 2, 0], limited)
+            : new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], limited);
+        await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Performance, default));
+
+        Assert.Equal(afterFirstWrite ? WriteSubmissionState.Indeterminate : WriteSubmissionState.KnownNotApplied,
+            error.SubmissionState);
+        Assert.Equal(afterFirstWrite ? new[] { "01010200" } : [], Writes(session));
     }
 
     [Theory]
