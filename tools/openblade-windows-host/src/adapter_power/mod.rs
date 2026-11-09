@@ -13,7 +13,7 @@ mod windows;
 use io::{FRAME_LENGTH, FeatureIo, Limit, Stop};
 use session::{AdapterPowerLevels, Failure as ExchangeFailure, Session};
 
-const EXACT_PRODUCT: &str = "Blade 16 - RZ09-0581";
+pub(super) const EXACT_PRODUCT: &str = "Blade 16 - RZ09-0581";
 const SETTLE_DELAY: Duration = Duration::from_millis(30);
 const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -26,7 +26,7 @@ pub(crate) struct HandleIdentity {
     pub(crate) feature_bytes: u16,
 }
 
-const CONTROL_COLLECTION: HandleIdentity = HandleIdentity {
+pub(super) const CONTROL_COLLECTION: HandleIdentity = HandleIdentity {
     vendor: 0x1532,
     product: 0x02E0,
     usage_page: 1,
@@ -60,7 +60,10 @@ pub(crate) trait OpenedHandle: FeatureIo {
     fn identity(&self) -> Option<HandleIdentity>;
 }
 
-pub(crate) trait FixtureSource {
+/// Owns the simulated exclusive lease until dropped. Only offline fixtures
+/// implement this contract. An operational provider would need the handoff
+/// and continuous ownership described in the runbook.
+pub(crate) trait FixtureLease {
     type Handle: OpenedHandle;
 
     /// Must represent a fresh platform check and both registry sources.
@@ -78,20 +81,24 @@ pub(crate) trait FixtureSource {
 /// Consume one fixture lease for one typed query, closing the selected handle
 /// before returning. There is no reopen or reconciliation path in this slice.
 pub(crate) fn query_once(
-    mut source: impl FixtureSource,
+    mut lease: impl FixtureLease,
     limit: Limit<'_>,
 ) -> Result<AdapterPowerLevels, QueryFailure> {
-    let handle = select_handle(&mut source, limit).map_err(QueryFailure::Admission)?;
+    let handle = select_handle(&mut lease, limit).map_err(QueryFailure::Admission)?;
     let limit = Limit {
         deadline: limit.deadline.min(Instant::now() + EXCHANGE_TIMEOUT),
         ..limit
     };
-    Session::new(handle, SETTLE_DELAY)
+    let session = Session::new(handle, SETTLE_DELAY);
+    let result = session
         .query_adapter_power(limit)
-        .map_err(QueryFailure::Exchange)
+        .map_err(QueryFailure::Exchange);
+    // Keep the lease through both terminal I/O drain and handle disposal.
+    drop(session);
+    result
 }
 
-fn select_handle<S: FixtureSource>(
+fn select_handle<S: FixtureLease>(
     source: &mut S,
     limit: Limit<'_>,
 ) -> Result<S::Handle, AdmissionFailure> {
@@ -110,18 +117,18 @@ fn select_handle<S: FixtureSource>(
     }
     let handle = exact.ok_or(AdmissionFailure::NoExactHandle)?;
 
-    // Discard the earlier host/controller observation after the scan. Recheck
-    // the selected handle itself before handing ownership to the exchange.
+    // Refresh authority after the scan, then validate the same handle as the
+    // last admission step. Cardinality is scoped to the complete scan above.
+    check_host_and_authority(source, limit)?;
+    check_stop(limit)?;
     if read_identity(&handle)? != CONTROL_COLLECTION {
         return Err(AdmissionFailure::SelectedHandleChanged);
     }
-    check_host_and_authority(source, limit)?;
-    check_stop(limit)?;
     Ok(handle)
 }
 
 fn check_host_and_authority(
-    source: &mut impl FixtureSource,
+    source: &mut impl FixtureLease,
     limit: Limit<'_>,
 ) -> Result<(), AdmissionFailure> {
     check_stop(limit)?;

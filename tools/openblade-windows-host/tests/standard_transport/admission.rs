@@ -1,6 +1,6 @@
 use crate::{
     adapter_power::{
-        AdmissionFailure as Denied, FixtureSource, HandleIdentity, OpenedHandle, QueryFailure,
+        AdmissionFailure as Denied, FixtureLease, HandleIdentity, OpenedHandle, QueryFailure,
         io::{Direction, FeatureIo, Frame, Limit, Stop, Transfer},
         query_once,
         session::{AdapterPowerLevels, Failure, ReplyFailure},
@@ -34,11 +34,14 @@ const EXACT_HOST: RegistryPair = (Some("Razer"), Some("Blade 16 - RZ09-0581"));
 struct Observations {
     opens: AtomicUsize,
     drops: AtomicUsize,
+    opened_live: AtomicUsize,
+    lease_released: AtomicBool,
     sets: AtomicUsize,
     gets: AtomicUsize,
 }
 
 struct FakeHandle {
+    opened: bool,
     identities: Cell<[Option<HandleIdentity>; 2]>,
     observed: Arc<Observations>,
     set_finished: Option<Instant>,
@@ -64,6 +67,8 @@ impl FeatureIo for FakeHandle {
         if let Some(reason) = budget.stop() {
             return Transfer::BeforeSubmission(reason);
         }
+        assert!(self.opened);
+        assert!(!self.observed.lease_released.load(Ordering::Relaxed));
         match direction {
             Direction::Set => {
                 assert_eq!(*buffer, frame(0, 1, [0, 0]));
@@ -87,7 +92,11 @@ impl FeatureIo for FakeHandle {
 
 impl Drop for FakeHandle {
     fn drop(&mut self) {
-        self.observed.drops.fetch_add(1, Ordering::Relaxed);
+        if self.opened {
+            assert!(!self.observed.lease_released.load(Ordering::Relaxed));
+            self.observed.opened_live.fetch_sub(1, Ordering::Relaxed);
+            self.observed.drops.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -99,7 +108,7 @@ struct FakeSource {
     cancel_on_final_check: Option<Arc<AtomicBool>>,
 }
 
-impl FixtureSource for FakeSource {
+impl FixtureLease for FakeSource {
     type Handle = FakeHandle;
 
     fn host(&mut self) -> (bool, RegistryIdentity<'_>) {
@@ -122,7 +131,24 @@ impl FixtureSource for FakeSource {
 
     fn open_candidates(&mut self, _: Limit<'_>) -> Result<Vec<FakeHandle>, Denied> {
         assert_eq!(self.observed.opens.fetch_add(1, Ordering::Relaxed), 0);
-        self.candidates.take().ok_or(Denied::CandidatesUnavailable)
+        let mut opened = self
+            .candidates
+            .take()
+            .ok_or(Denied::CandidatesUnavailable)?;
+        self.observed
+            .opened_live
+            .store(opened.len(), Ordering::Relaxed);
+        for handle in &mut opened {
+            handle.opened = true;
+        }
+        Ok(opened)
+    }
+}
+
+impl Drop for FakeSource {
+    fn drop(&mut self) {
+        assert_eq!(self.observed.opened_live.load(Ordering::Relaxed), 0);
+        self.observed.lease_released.store(true, Ordering::Relaxed);
     }
 }
 
@@ -131,6 +157,7 @@ fn fake(identities: impl IntoIterator<Item = [Option<HandleIdentity>; 2]>) -> Fa
     let candidates = identities
         .into_iter()
         .map(|identities| FakeHandle {
+            opened: false,
             identities: Cell::new(identities),
             observed: observed.clone(),
             set_finished: None,
@@ -155,7 +182,8 @@ fn assert_denied(source: FakeSource, expected: Denied, opens: usize) {
         Err(QueryFailure::Admission(expected))
     );
     assert_eq!(observed.opens.load(Ordering::Relaxed), opens);
-    assert_eq!(observed.drops.load(Ordering::Relaxed), candidates);
+    assert_eq!(observed.drops.load(Ordering::Relaxed), opens * candidates);
+    assert!(observed.lease_released.load(Ordering::Relaxed));
     assert_eq!(observed.sets.load(Ordering::Relaxed), 0);
     assert_eq!(observed.gets.load(Ordering::Relaxed), 0);
 }
@@ -258,10 +286,12 @@ fn refuses_stale_or_disappearing_handle_evidence() {
 
 #[test]
 fn queries_only_the_selected_handle_with_fixed_transaction_and_pacing() {
-    let source = fake([
+    let mut source = fake([
         [Some(HandleIdentity { usage: 1, ..EXACT }); 2],
         [Some(EXACT); 2],
     ]);
+    // A transfer to the other collection would return the wrong transaction.
+    source.candidates.as_mut().unwrap()[0].reply_transaction = 2;
     let observed = source.observed.clone();
     assert_eq!(
         query_once(source, limit(&AtomicBool::new(false))),
@@ -290,7 +320,7 @@ fn late_cancellation_blocks_submission_and_closes_the_handle() {
 }
 
 #[test]
-fn cancellation_after_set_retires_the_handle_without_get_or_replay() {
+fn cancellation_after_set_closes_the_handle_without_get_or_replay() {
     let mut source = fake([[Some(EXACT); 2]]);
     let cancel = Arc::new(AtomicBool::new(false));
     source.candidates.as_mut().unwrap()[0].stop_after_set = Some(cancel.clone());
@@ -312,7 +342,7 @@ fn cancellation_after_set_retires_the_handle_without_get_or_replay() {
 }
 
 #[test]
-fn independent_response_transaction_mismatch_retires_the_handle() {
+fn independent_response_transaction_mismatch_closes_the_handle() {
     let mut source = fake([[Some(EXACT); 2]]);
     source.candidates.as_mut().unwrap()[0].reply_transaction = 2;
     let observed = source.observed.clone();
@@ -326,4 +356,34 @@ fn independent_response_transaction_mismatch_retires_the_handle() {
     assert_eq!(observed.sets.load(Ordering::Relaxed), 1);
     assert_eq!(observed.gets.load(Ordering::Relaxed), 1);
     assert_eq!(observed.drops.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn exact_adapter_selector_agrees_with_the_managed_model_projection() {
+    use crate::adapter_power::{CONTROL_COLLECTION, EXACT_PRODUCT};
+
+    let inventory: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tests/OpenBlade.Protocol.Tests/Fixtures/windows-rust-model-evidence-inventory.json"
+    ))
+    .unwrap();
+    let model = inventory["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|model| model["modelNumber"] == "RZ09-0581")
+        .unwrap();
+    assert_eq!(model["windowsRegistryProductName"], EXACT_PRODUCT);
+    assert_eq!(
+        model["usbVendorId"],
+        format!("{:04X}", CONTROL_COLLECTION.vendor)
+    );
+    assert_eq!(
+        model["usbProductId"],
+        format!("{:04X}", CONTROL_COLLECTION.product)
+    );
+    assert_eq!(
+        model["windowsControlUsage"],
+        serde_json::json!([CONTROL_COLLECTION.usage_page, CONTROL_COLLECTION.usage])
+    );
+    assert_eq!(CONTROL_COLLECTION.feature_bytes, 91);
 }

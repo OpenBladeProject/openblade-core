@@ -111,10 +111,13 @@ controller authority provider, or service handoff is wired.
   from the same owned handle, then reads the collection caps with
   `HidP_GetCaps`. The fixture requires a complete candidate set. It fails
   closed on unreadable identity, ambiguity, or a changed selected handle.
-- Both host and strict execution/controller/owner checks are repeated after
-  the candidate scan. The fixture uses a new managed-style transaction context
-  beginning at `01`, report ID `00`, a 30 ms SET-to-GET delay, and a three-second
-  exchange cap. The existing codec independently matches the response. The
+  Cardinality comes from the completed scan. Re-reading the selected handle
+  does not refresh that scan.
+- The fixture repeats host and strict authority checks after the candidate
+  scan, then reads the selected handle again before submission. The simulated
+  lease stays held through native drain and handle closure. The fixture uses a
+  new managed transaction context beginning at `01`, report ID `00`, a 30 ms
+  SET-to-GET delay, and a three-second exchange cap. The existing codec independently matches the response. The
   two returned level bytes preserve firmware values, including levels the
   managed classifier maps to Unknown.
 - Fake handles exercise selection, refusal, cancellation, response matching
@@ -143,18 +146,20 @@ controller authority provider, or service handoff is wired.
    to firmware control. Record this impact before execution. Do not stop
    competing Razer software.
 3. On stable AC with the machine fully awake, record the pinned C# and Rust
-   builds, exact host and HID evidence, power source, the C# adapter-power
-   baseline, confirmed keyboard/fan state and saved intent, and service
-   health. Abort if any required evidence is missing or the C# baseline is
+   builds, exact host and HID evidence, power source, a fresh typed C#
+   adapter-power baseline, confirmed keyboard/fan state and saved intent,
+   and service health. Abort if any required evidence is missing or the C# baseline is
    Unknown. After the handoff, rescan and verify the selected handle, fresh
    host identity, stable power and session, strict controller absence, and
-   the live exclusive lease before the first SET. A change, ambiguity, or
-   refused check ends the run before submission.
+   the live exclusive lease before the first SET. Invalidate admission if a
+   topology change is reported after the scan. A change, ambiguity, or refused
+   check ends the run before submission.
 4. Execute exactly one typed adapter-power exchange. Record sanitized
    request/response correlation, transferred lengths, actual and recommended
    levels, pacing, and terminal outcome. Drain outstanding I/O and close the
    handle before relinquishing ownership. Compare the result with the
-   same-source C# baseline and a fresh C# read after the coordinated handback.
+   same-source C# baseline and a fresh typed C# read after the handback.
+   Cached status can provide service health and ownership context.
    Confirm service health, restored ownership, and keyboard/fan readback
    against the baseline and recorded cleanup expectations.
 5. If submission or readback is uncertain, retain the failure and native drain
@@ -169,5 +174,5 @@ per-model functional selectors (`ExperimentalBladeFactory` and
 `ValidateControlInterfaceAsync`), transport and transaction differences,
 SET-only and batch operations, the PID 02E0 matrix route, and accessory
 routes such as the cooling pad. Each mutating route also needs its own fresh
-admission, independent readback and durable restoration. This slice does not
-change product packaging or establish hardware-owner parity.
+admission, independent readback and durable restoration. Product packaging
+and the hardware-owner cutover belong to later phases.
