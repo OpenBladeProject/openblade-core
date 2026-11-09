@@ -71,9 +71,22 @@ internal sealed class FanRpmQueryRunFactory : IFanRpmQueryRunFactory
 
     internal SemaphoreSlim? SharedCommandGate => sharedCommandGate;
 
-    public async Task<HidSessionResult<IFanRpmQueryPort>> OpenAsync(
-        CancellationToken cancellationToken)
+    internal PendingDisposalRegistry PendingDisposals => pendingDisposals;
+
+    public Task<HidSessionResult<IFanRpmQueryPort>> OpenAsync(CancellationToken cancellationToken) =>
+        OpenAsync(null, cancellationToken);
+
+    internal async Task<HidSessionResult<IFanRpmQueryPort>> OpenAsync(
+        Func<bool>? ownerAdmission, CancellationToken cancellationToken)
     {
+        if (ownerAdmission is not null && sharedCommandGate is null)
+        {
+            throw new InvalidOperationException("Scoped owner admission requires a shared native retirement gate.");
+        }
+        if (ownerAdmission?.Invoke() == false)
+        {
+            return Failure(HidSessionFailureKind.ConflictBlocked);
+        }
         if (cancellationToken.IsCancellationRequested)
         {
             return Failure(HidSessionFailureKind.Canceled);
@@ -119,14 +132,16 @@ internal sealed class FanRpmQueryRunFactory : IFanRpmQueryRunFactory
             return Failure(opened.Failure ?? HidSessionFailureKind.NativeIoFailure);
         }
 
-        if (cancellationToken.IsCancellationRequested)
+        if (cancellationToken.IsCancellationRequested || ownerAdmission?.Invoke() == false)
         {
             await BatteryValidationRun.DisposeBoundedAsync(
                 opened.Value,
                 timeProvider,
                 cleanupDrainTimeout,
                 pendingDisposals).ConfigureAwait(false);
-            return Failure(HidSessionFailureKind.Canceled);
+            return Failure(cancellationToken.IsCancellationRequested
+                ? HidSessionFailureKind.Canceled
+                : HidSessionFailureKind.ConflictBlocked);
         }
 
         return new(new FanRpmQueryPort(
@@ -137,7 +152,8 @@ internal sealed class FanRpmQueryRunFactory : IFanRpmQueryRunFactory
             exchangeTimeout,
             cleanupDrainTimeout,
             pendingDisposals,
-            sharedCommandGate), null);
+            sharedCommandGate,
+            ownerAdmission), null);
     }
 
     private static HidSessionResult<IFanRpmQueryPort> Failure(
@@ -165,14 +181,15 @@ internal sealed class FanRpmQueryPort : IFanRpmQueryPort
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
         PendingDisposalRegistry pendingDisposals,
-        SemaphoreSlim? sharedCommandGate = null)
+        SemaphoreSlim? sharedCommandGate = null,
+        Func<bool>? ownerAdmission = null)
     {
         this.selector1TransactionId = selector1TransactionId;
         this.selector2TransactionId = selector2TransactionId;
         this.actor = actor ?? throw new ArgumentNullException(nameof(actor));
         session = sharedCommandGate is null
             ? actor.Session
-            : new RazerCommandSessionGate(actor.Session, sharedCommandGate);
+            : new RazerCommandSessionGate(actor.Session, sharedCommandGate, ownerAdmission: ownerAdmission);
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         this.pendingDisposals = pendingDisposals
             ?? throw new ArgumentNullException(nameof(pendingDisposals));

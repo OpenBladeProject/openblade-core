@@ -230,6 +230,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 
     internal SemaphoreSlim? SharedCommandGate => sharedCommandGate;
 
+    internal PendingDisposalRegistry PendingDisposals => pendingDisposals;
+
     public static IProductionBatteryPortFactory CreateWindows()
         => CreateWindowsCore(
             compatibilityPolicy: null,
@@ -310,9 +312,20 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             allowPadlessHyperBoostLifecycleValidation: false);
     }
 
-    public async Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
-        CancellationToken cancellationToken)
+    public Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(CancellationToken cancellationToken) =>
+        OpenAsync(null, cancellationToken);
+
+    internal async Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
+        Func<bool>? ownerAdmission, CancellationToken cancellationToken)
     {
+        if (ownerAdmission is not null && sharedCommandGate is null)
+        {
+            throw new InvalidOperationException("Scoped owner admission requires a shared native retirement gate.");
+        }
+        if (ownerAdmission?.Invoke() == false)
+        {
+            return Failure(HidSessionFailureKind.ConflictBlocked);
+        }
         if (cancellationToken.IsCancellationRequested)
         {
             return Failure(HidSessionFailureKind.Canceled);
@@ -357,14 +370,16 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 opened.Diagnostic);
         }
 
-        if (cancellationToken.IsCancellationRequested)
+        if (cancellationToken.IsCancellationRequested || ownerAdmission?.Invoke() == false)
         {
             await BatteryValidationRun.DisposeBoundedAsync(
                 opened.Value,
                 timeProvider,
                 cleanupDrainTimeout,
                 pendingDisposals).ConfigureAwait(false);
-            return Failure(HidSessionFailureKind.Canceled);
+            return Failure(cancellationToken.IsCancellationRequested
+                ? HidSessionFailureKind.Canceled
+                : HidSessionFailureKind.ConflictBlocked);
         }
 
         return new(
@@ -393,7 +408,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 supportsDirectManualFanTransitions,
                 thxAudioCapabilities,
                 supportsBatterySaverFanStop,
-                stopHardwareAdmission),
+                stopHardwareAdmission,
+                ownerAdmission,
+                pendingDisposals),
             null);
     }
 

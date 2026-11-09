@@ -7,7 +7,8 @@ namespace OpenBlade.Protocol;
 internal sealed class RazerCommandSessionGate(
     IRazerCommandSession inner,
     SemaphoreSlim gate,
-    bool ownsInner = false) : IRazerCommandSession, IRazerSetFeatureCommandSession
+    bool ownsInner = false,
+    Func<bool>? ownerAdmission = null) : IRazerCommandSession, IRazerSetFeatureCommandSession
 {
     public RazerCommandSessionDisposition Disposition => inner.Disposition;
 
@@ -19,7 +20,7 @@ internal sealed class RazerCommandSessionGate(
         Func<TransactionIdAssignment> assignTransactionId,
         TimeSpan exchangeTimeout,
         CancellationToken cancellationToken) => ExecuteGatedAsync(
-            () => inner.ExecuteAsync(command, assignTransactionId, exchangeTimeout, cancellationToken),
+            () => inner.ExecuteAsync(WithOwnerAdmission(command), assignTransactionId, exchangeTimeout, cancellationToken),
             exchangeTimeout, cancellationToken);
 
     public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitAsync(
@@ -29,7 +30,7 @@ internal sealed class RazerCommandSessionGate(
         CancellationToken cancellationToken) =>
         inner is IRazerSetFeatureCommandSession submitter
             ? ExecuteGatedAsync(
-                () => submitter.SubmitAsync(command, assignTransactionId, exchangeTimeout, cancellationToken),
+                () => submitter.SubmitAsync(WithOwnerAdmission(command), assignTransactionId, exchangeTimeout, cancellationToken),
                 exchangeTimeout, cancellationToken)
             : Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.ProtocolFailure));
 
@@ -40,9 +41,15 @@ internal sealed class RazerCommandSessionGate(
         CancellationToken cancellationToken) =>
         inner is IRazerSetFeatureCommandSession submitter
             ? ExecuteGatedAsync(
-                () => submitter.SubmitBatchAsync(commands, assignTransactionId, exchangeTimeout, cancellationToken),
+                () => submitter.SubmitBatchAsync(ownerAdmission is null ? commands : commands.Select(WithOwnerAdmission).ToArray(), assignTransactionId, exchangeTimeout, cancellationToken),
                 exchangeTimeout, cancellationToken)
             : Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.ProtocolFailure));
+
+    private RazerCommandSpec WithOwnerAdmission(RazerCommandSpec command) =>
+        ownerAdmission is null ? command : command with
+        {
+            SubmissionAllowed = () => ownerAdmission() && command.SubmissionAllowed?.Invoke() != false,
+        };
 
     private async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteGatedAsync(
         Func<Task<HidSessionResult<ReadOnlyMemory<byte>>>> execute,

@@ -15,6 +15,7 @@ internal static class BoundedValidationActorDisposal
         }
         catch
         {
+            pendingDisposals.RecordUnconfirmedDisposal();
             return;
         }
 
@@ -26,6 +27,10 @@ internal static class BoundedValidationActorDisposal
 
         if (disposal.IsCompleted)
         {
+            if (!disposal.IsCompletedSuccessfully)
+            {
+                pendingDisposals.RecordUnconfirmedDisposal();
+            }
             if (disposal.IsFaulted)
             {
                 _ = disposal.Exception;
