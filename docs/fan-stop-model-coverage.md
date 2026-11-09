@@ -36,7 +36,10 @@ separately; the new models do not inherit RZ09-0581's physical results.
 For the four models with additional channels, the [expanded scheduling model](fan-stop-it8320-trigger-investigation.md)
 finds no false read success from extra notifications alone under its writer and
 execution assumptions. It does find a stale callback that can erase a later
-Auto request. Trigger meaning and computed-writer exclusion remain unresolved.
+Auto request. The [interrupt store follow-up](fan-stop-reader-and-ec-followup.md#interrupt-writers-and-command-publication)
+bounds computed destinations within the retained interrupt graph. It also
+finds a direct lifecycle clear of actual duty 3. The exact-chip host-write
+trigger and interrupt drainage still need evidence.
 The [alternate reader](fan-stop-bram3-readback-review.md) has exact 302/303
 port-base evidence on all four images, but ordinary callbacks share its address
 bytes. A conditional staging race returns a wrong zero; reachability under an
@@ -60,3 +63,6 @@ traces six BIOSes beyond payload labels. The [later package and MCU
 review](fan-stop-reader-and-ec-followup.md#seven-models-with-missing-receiver-evidence)
 adds two older Blade 14 BIOSes, exact Intel ME selectors and the RZ09-0301
 thermal MCU path. The missing EC contracts remain receiver-side.
+The [receiver acquisition follow-up](fan-stop-reader-and-ec-followup.md#receiver-acquisition-and-pi490-speed-feedback)
+identifies separate flash candidates for DA530 and CH530 and traces PI490's
+cached speed read. CH530 is the highest-priority receiver image.

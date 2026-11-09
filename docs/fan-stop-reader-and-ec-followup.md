@@ -193,6 +193,49 @@ transport results and a guardian-held handback path. The present guardian
 has its port owner through caller exit. This source review has yet to
 establish an equivalent independent HID lifetime for the I²C route.
 
+### Interrupt writers and command publication
+
+The interrupt-rooted store review now accounts for the earlier unresolved
+computed stores, including the KI890 SMBus path. A second pass over the
+instruction graph found 94 scalar stores omitted by the function inventory.
+Their resolved destinations avoid both descriptors, the interrupt
+configuration, and the third fan's duty register. All four images also have
+stack-relative multiword stores. These bounds rely on the retained interrupt
+roots, valid stack and ABI, intact descriptor pointers, and I²C banks 0–7.
+Each image still has a bank-dependent I²C receive store, so this result does
+not prove mailbox ownership against another host master or a main-loop
+callback.
+
+| Model | Scalar stores in graph | Missing from earlier inventory | Lifecycle store to actual duty 3 |
+| --- | ---: | ---: | --- |
+| RZ09-0423 | 456 | 22 | `139DC` |
+| RZ09-0484 | 506 | 22 | `13ED8` |
+| RZ09-0509 | 799 | 25 | `24DEE` |
+| RZ09-0529 | 803 | 25 | `2551C` |
+
+The known stores near the primary descriptor touch `F02295..97` and the
+interrupt acknowledgement at `F0201B`. A lifecycle path on each image
+directly clears actual duty 3 at `F01808`. A zero duty read taken across
+that transition is insufficient to confirm Stop. Session and power admission
+must cover the full observation, including the subsequent Auto handback.
+
+The four images configure the BRAM comparator with `93`, write `31` to
+its control register, and acknowledge with bit `10`. ITE documents this
+pattern on the IT81202 as a host-write address match and a fixed high-level
+interrupt. If the same definition applies here, descriptor staging and
+EC-local stores cannot trigger command publication, and clearing the match
+flag removes the IRQ source. The Blade images use NDS32. The IT81202 is
+RISC-V and has a different chip ID layout. An exact-chip definition or
+equivalent evidence is still needed for both the host-write condition and
+interrupt drainage. [ITE IT81202 specification, pp. 186, 198, 434–435](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
+· [Pinned Chromium IT8320 configuration](https://chromium.googlesource.com/chromiumos/platform/ec/+/82d2822/chip/it83xx/config_chip_it8320.h)
+
+The exact keyboard images for 0423 (1.02.00), 0484 (1.04.00), 0509
+(1.01.00), and 0529 (1.07.00) send both named duty commands, `0D/0D` and
+`0D/8D`, to the unsupported handler with status `05`. The separate raw
+bridge still requires bank ownership and an independently retained HID
+handback path.
+
 ## Seven models with missing receiver evidence
 
 | Model | New evidence | Remaining EC evidence |
@@ -232,6 +275,40 @@ Package sources include the
 [RZ09-03519 downloads](https://mysupport.razer.com/app/answers/detail/a_id/5655/),
 and [OL510 repair report](https://vlab.su/viewtopic.php?f=35&p=1129927&t=151751).
 
+### Receiver acquisition and PI490 speed feedback
+
+RZ09-0300 has a separate original 8 MiB ITE8390 flash listing for the
+DA530 board in `03009E76-R3U1`. It is access-restricted and the donor did
+not POST. On RZ09-0301, the original CH530 FCS V3.0 paired reads identify
+the two physical flash packages. A second listing offers an 8 MiB image,
+but access and donor provenance are missing, and the 8 MiB package still
+needs to be tied to the receiver. CH530 is the first acquisition target
+because its exact keyboard transport already carries zero to the receiver.
+[DA530 original read](https://vinafix.com/threads/razer-rz09-03009e76-r3u1.44603/)
+· [CH530 original pair](https://vinafix.com/threads/bios-rz09-0301-9th-generation.38915/)
+· [Second CH530 listing](https://vinafix.com/threads/rz09-0301-ch530-mb-fsc-v3-0.41761/)
+
+DA550 MP V4.0 reports identify IT8390E. The superficially similar CH551
+original pair came from RZ09-0330. A separate OL510 PVT V1.0 board photo
+records distinct BIOS and EC flash locations on the owner's unit.
+The DA550 and OL510 searches still need attributable receiver bytes.
+[DA550 board reports](https://vinafix.com/threads/razer-da550-mb.46075/page-2)
+· [CH551 donor report](https://vinafix.com/threads/rz09-0328-ch551-mb.41122/)
+· [OL510 owner photo and report](https://winraid.level1techs.com/t/looking-for-ec-firmware-for-a-razor-blade-15-2020-base-rz09-03519/107897)
+
+PI490 keyboard firmware 1.04.00 feeds HID current speed (`0D/88`)
+from two bytes read at wire address `B0`, starting at register `08`.
+The worker updates its cache only on a successful transfer, and the
+HID getter neither forces that transfer nor reports the cache age.
+Synapse's Auto UI scales those values by 100 RPM per count. The
+receiver's tach producer and actual PWM remain unverified. The
+PI490 and PI4100 native firmware-version exports read the EC version
+from the Windows BIOS registry. They provide no independent EC read.
+The reviewed PI410/PI411 native library lacks that export.
+[PI490 keyboard updater](https://mysupport.razer.com/app/answers/detail/a_id/13877/)
+· [Exact device class](https://apps.razer.com/synapse/products/669/mw/rzDevice25.0b7f4b3291f821b73ff6.js)
+· [Synapse policy](https://apps.razer.com/synapse/products/669/mw/6737.5791b4f2132a8ffb5846.js)
+
 The older DA550 carrier has SHA-256
 `02e23deb63ef703dbdb5349e33590e7fa9fc9a3eb426a4d63e3fc3f6285e3d20`.
 All 15 NSIS blocks were accounted for. The batch selects a 16 MiB
@@ -254,7 +331,11 @@ Detailed local proof and input manifests are under
 `primary-reader-followup/`, `intel-missing-ec-followup/`, and
 `amd-missing-ec-followup/`. Later proof and acquisition results are under
 `bank-ownership-model/`, `bank-ownership-followup/`,
-`intel-receiver-next/` and `amd-receiver-next/`. The reader proof hashes all four EC images,
+`intel-receiver-next/` and `amd-receiver-next/`. The interrupt census,
+trigger documents, and most recent acquisition results are in
+`reader-resolution-next/`, `trigger-resolution-next/`,
+`intel-receiver-resolution/`, and `amd-receiver-resolution/` under the
+same artifact root. The reader proof hashes all four EC images,
 checks the opcode paths and calls, and reproduces the ordering model.
 The package work verified signatures or catalog membership and inspected
 the decoded contents offline. Runtime admission remains open for these
