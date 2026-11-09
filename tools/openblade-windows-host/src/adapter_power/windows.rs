@@ -1,9 +1,10 @@
 //! Event-based Win32 counterpart to the managed IOCP path. There is no
 //! handle opener here. The tests supply only a fresh non-HID kernel handle.
 
-use crate::io::{
+use super::io::{
     CancelResult, Completion, Direction, FeatureIo, Frame, Limit, Pending, Transfer, finish_pending,
 };
+use super::{HandleIdentity, OpenedHandle};
 use std::{
     cell::UnsafeCell,
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
@@ -12,6 +13,10 @@ use std::{
     time::Duration,
 };
 use windows_sys::Win32::{
+    Devices::HumanInterfaceDevice::{
+        HIDD_ATTRIBUTES, HIDP_CAPS, HIDP_STATUS_SUCCESS, HidD_FreePreparsedData,
+        HidD_GetAttributes, HidD_GetPreparsedData, HidP_GetCaps, PHIDP_PREPARSED_DATA,
+    },
     Foundation::{ERROR_IO_INCOMPLETE, ERROR_IO_PENDING, GetLastError, HANDLE, WAIT_FAILED},
     System::{
         IO::{CancelIoEx, DeviceIoControl, GetOverlappedResult, OVERLAPPED},
@@ -26,6 +31,52 @@ const IOCTL_HID_GET_FEATURE: u32 = 0x000B0192;
 
 struct Native {
     handle: OwnedHandle,
+}
+
+impl OpenedHandle for Native {
+    fn identity(&self) -> Option<HandleIdentity> {
+        let handle = self.handle.as_raw_handle();
+        let mut attributes = HIDD_ATTRIBUTES {
+            Size: size_of::<HIDD_ATTRIBUTES>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: The owned handle is live and the output has the declared size.
+        if !unsafe { HidD_GetAttributes(handle, &mut attributes) } {
+            return None;
+        }
+        let mut raw = 0;
+        // SAFETY: HIDClass writes an owned preparsed data pointer on success.
+        if !unsafe { HidD_GetPreparsedData(handle, &mut raw) } || raw == 0 {
+            return None;
+        }
+        let data = PreparsedData(raw);
+        let mut caps = HIDP_CAPS::default();
+        // SAFETY: The preparsed data stays live and caps is writable.
+        if unsafe { HidP_GetCaps(data.0, &mut caps) } != HIDP_STATUS_SUCCESS {
+            return None;
+        }
+        Some(HandleIdentity {
+            vendor: attributes.VendorID,
+            product: attributes.ProductID,
+            usage_page: caps.UsagePage,
+            usage: caps.Usage,
+            feature_bytes: caps.FeatureReportByteLength,
+        })
+    }
+}
+
+struct PreparsedData(PHIDP_PREPARSED_DATA);
+
+impl Drop for PreparsedData {
+    fn drop(&mut self) {
+        // SAFETY: The successful HIDClass allocation is freed exactly once.
+        unsafe { HidD_FreePreparsedData(self.0) };
+    }
+}
+
+#[test]
+fn win32_opened_handle_evidence_rejects_a_non_hid_handle() {
+    assert_eq!(fresh_pipe().identity(), None);
 }
 
 impl FeatureIo for Native {
@@ -204,7 +255,7 @@ fn last_error() -> u32 {
 fn win32_ioctls_link_and_a_non_hid_handle_rejects_get() {
     let mut native = fresh_pipe();
     let canceled = std::sync::atomic::AtomicBool::new(false);
-    let mut blank = [0; crate::io::FRAME_LENGTH];
+    let mut blank = [0; super::io::FRAME_LENGTH];
     let result = native.transfer(
         Direction::Get,
         &mut blank,
@@ -231,7 +282,7 @@ fn win32_pending_pipe_connect_completes_after_targeted_cancel() {
         canceled: &canceled,
         deadline: std::time::Instant::now() + Duration::from_secs(2),
     };
-    let mut unused = [0; crate::io::FRAME_LENGTH];
+    let mut unused = [0; super::io::FRAME_LENGTH];
     let result = native.run(&mut unused, limit, |handle, _, overlapped| {
         // SAFETY: handle is an overlapped named pipe. The fresh name has no
         // client, so this starts pending without device I/O.
@@ -240,7 +291,7 @@ fn win32_pending_pipe_connect_completes_after_targeted_cancel() {
     assert_eq!(
         result,
         Transfer::Canceled {
-            reason: crate::io::Stop::Deadline,
+            reason: super::io::Stop::Deadline,
             request: Ok(()),
             completion: Err(ERROR_OPERATION_ABORTED),
         }

@@ -1,3 +1,4 @@
+use crate::registry_identity::{RegistryIdentity, RegistryMatch};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -174,34 +175,36 @@ impl HostObservation {
         &'a self,
         inventory: &'a Inventory<'a>,
     ) -> (HostMatch<'a>, Option<&'a Model<'a>>) {
-        let (
-            Some(bios_manufacturer),
-            Some(bios_product),
-            Some(system_manufacturer),
-            Some(system_product),
-        ) = (
-            self.bios.manufacturer.value(),
-            self.bios.product_name.value(),
-            self.system_information.manufacturer.value(),
-            self.system_information.product_name.value(),
-        )
-        else {
-            return (
-                HostMatch::Incomplete {
-                    bios_manufacturer: self.bios.manufacturer.state(),
-                    bios_product_name: self.bios.product_name.state(),
-                    system_manufacturer: self.system_information.manufacturer.state(),
-                    system_product_name: self.system_information.product_name.state(),
-                },
-                None,
-            );
+        let registry = RegistryIdentity {
+            bios: (
+                self.bios.manufacturer.value(),
+                self.bios.product_name.value(),
+            ),
+            system: (
+                self.system_information.manufacturer.value(),
+                self.system_information.product_name.value(),
+            ),
         };
-        if bios_manufacturer != system_manufacturer || bios_product != system_product {
-            return (HostMatch::Contradictory, None);
-        }
-        let model = inventory.models.iter().find(|model| {
-            bios_manufacturer == "Razer" && bios_product == model.windows_registry_product_name
-        });
+        let product = match registry.resolve() {
+            RegistryMatch::Incomplete => {
+                return (
+                    HostMatch::Incomplete {
+                        bios_manufacturer: self.bios.manufacturer.state(),
+                        bios_product_name: self.bios.product_name.state(),
+                        system_manufacturer: self.system_information.manufacturer.state(),
+                        system_product_name: self.system_information.product_name.state(),
+                    },
+                    None,
+                );
+            }
+            RegistryMatch::Contradictory => return (HostMatch::Contradictory, None),
+            RegistryMatch::UnknownManufacturer => return (HostMatch::Unknown, None),
+            RegistryMatch::RazerProduct(product) => product,
+        };
+        let model = inventory
+            .models
+            .iter()
+            .find(|model| product == model.windows_registry_product_name);
         match model {
             Some(model) => (
                 HostMatch::Matched {
