@@ -89,6 +89,73 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
                 Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path))));
     }
 
+
+    [Fact]
+    public async Task WindowsReplay_ConfigurationInspectionMatchesManagedReader()
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        string fixtures = Path.Combine(AppContext.BaseDirectory, "WindowsReplay", "v1");
+        using JsonDocument aggregate = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(Path.Combine(fixtures, "configuration-aggregate.json")));
+        JsonElement committed = aggregate.RootElement.GetProperty("committed");
+        using JsonDocument vectors = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(Path.Combine(fixtures, "configuration-inspection.json")));
+        foreach (JsonElement vector in vectors.RootElement.EnumerateArray())
+        {
+            string profile = Document("profile", committed[0].GetString()!);
+            string preferences = Document("preferences", committed[1].GetString()!);
+            await File.WriteAllTextAsync(paths.Profiles, profile);
+            if (vector.TryGetProperty("profileOnly", out JsonElement only) && only.GetBoolean())
+            {
+                File.Delete(paths.Preferences);
+                File.Delete(paths.Marker);
+            }
+            else
+            {
+                string schema = vector.TryGetProperty("markerSchema", out JsonElement value)
+                    ? value.GetString()!
+                    : "25";
+                string marker = $$"""
+                    {"schemaVersion":{{schema}},"profileSha256":"{{Hash(profile)}}","preferencesSha256":"{{Hash(preferences)}}"}
+                    """;
+                await File.WriteAllTextAsync(paths.Preferences, preferences);
+                await File.WriteAllTextAsync(paths.Marker, marker);
+            }
+
+            string actual;
+            try
+            {
+                BatteryConfigurationInspection inspection = await CreateStore(paths).InspectAsync(CancellationToken.None);
+                actual = inspection.Configuration.IsAuthoritative
+                    ? "CommittedEnvelope"
+                    : inspection.Configuration.QuarantineReason.ToString();
+            }
+            catch (InvalidOperationException)
+            {
+                actual = nameof(InvalidOperationException);
+            }
+
+            Assert.True(vector.GetProperty("managed").GetString() == actual,
+                $"{vector.GetProperty("id").GetString()} returned {actual}.");
+
+            string Document(string name, string original)
+            {
+                if (vector.TryGetProperty(name, out JsonElement document))
+                {
+                    return document.GetString()!;
+                }
+                return vector.TryGetProperty(name + "Schema", out JsonElement schema)
+                    ? original.Replace("\"schemaVersion\": 25",
+                        $"\"schemaVersion\": {schema.GetString()}", StringComparison.Ordinal)
+                    : original;
+            }
+        }
+
+        static string Hash(string document) => Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(document)));
+    }
+
     [Fact]
     public async Task LoadAsync_MigratesLegacyProfileAndCommitsMarkerLast()
     {

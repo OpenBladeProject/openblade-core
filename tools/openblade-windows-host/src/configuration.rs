@@ -3,7 +3,7 @@
 //! No decision here authorizes initialization, migration, rollback, or activation.
 
 use serde::Deserialize;
-use serde::de::{MapAccess, Visitor};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde_json::value::RawValue;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -177,20 +177,15 @@ fn decode<'a, T: Deserialize<'a>>(value: Option<&'a RawValue>) -> Result<T, Reas
 struct Document<'a> {
     bytes: &'a [u8],
     root: Option<Object<'a>>,
-    unique: bool,
 }
 
 impl<'a> Document<'a> {
     fn new(bytes: &'a [u8]) -> Self {
-        let (root, unique) = serde_json::from_slice::<Object<'_>>(bytes)
+        let root = std::str::from_utf8(bytes)
             .ok()
-            .and_then(|root| root.audit(1).map(|unique| (Some(root), unique)))
-            .unwrap_or_default();
-        Self {
-            bytes,
-            root,
-            unique,
-        }
+            .and_then(|text| serde_json::from_str(text).ok())
+            .filter(|_| within_document_depth(bytes));
+        Self { bytes, root }
     }
 
     fn has_future_schema(&self) -> bool {
@@ -198,7 +193,7 @@ impl<'a> Document<'a> {
         // managed forward-schema scan. A quoted number is not evidence here.
         self.root.as_ref().is_some_and(|root| {
             root.0.iter().any(|(name, raw)| {
-                name == "schemaVersion"
+                name.as_deref() == Some("schemaVersion")
                     && serde_json::from_str::<i32>(raw.get()).is_ok_and(|n| n > CURRENT_SCHEMA)
             })
         })
@@ -211,58 +206,75 @@ impl<'a> Document<'a> {
     }
 
     fn strict_object(&self) -> Result<&Object<'a>, Reason> {
-        self.root
-            .as_ref()
-            .filter(|_| self.unique)
-            .ok_or(Reason::InvalidDocument)
+        let root = self.root.as_ref().ok_or(Reason::InvalidDocument)?;
+        serde_json::from_slice::<StrictJson>(self.bytes).map_err(|_| Reason::InvalidDocument)?;
+        Ok(root)
     }
 }
 
-// Keep raw values so inspection does not round large legacy numbers, collapse
-// duplicate members, or reserialize any document being hashed.
-struct Object<'a>(Vec<(String, &'a RawValue)>);
+// serde_json validates the syntax of borrowed raw values without a depth
+// ceiling. Count containers in that validated input to match JsonDocument.
+fn within_document_depth(bytes: &[u8]) -> bool {
+    let mut depth = 0;
+    let mut quoted = false;
+    let mut characters = bytes.iter().copied();
+    while let Some(byte) = characters.next() {
+        match byte {
+            b'\\' if quoted => {
+                characters.next();
+            }
+            b'"' => quoted = !quoted,
+            b'{' | b'[' if !quoted => {
+                depth += 1;
+                if depth > 64 {
+                    return false;
+                }
+            }
+            b'}' | b']' if !quoted => depth -= 1,
+            _ => {}
+        }
+    }
+    true
+}
+
+// JsonDocument can scan property names even when another name or value has an
+// unpaired UTF-16 escape. Keep such keys opaque during schema discovery. The
+// strict pass still rejects them before returning a payload envelope.
+struct DiscoveryKey(Option<String>);
+
+impl<'de> Deserialize<'de> for DiscoveryKey {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct KeyVisitor;
+
+        impl Visitor<'_> for KeyVisitor {
+            type Value = DiscoveryKey;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a configuration JSON property name")
+            }
+
+            fn visit_bytes<E: de::Error>(self, value: &[u8]) -> Result<Self::Value, E> {
+                Ok(DiscoveryKey(
+                    std::str::from_utf8(value).ok().map(str::to_owned),
+                ))
+            }
+        }
+
+        deserializer.deserialize_bytes(KeyVisitor)
+    }
+}
+
+struct Object<'a>(Vec<(Option<String>, &'a RawValue)>);
 
 impl<'a> Object<'a> {
     fn get(&self, key: &str) -> Option<&'a RawValue> {
         self.0
             .iter()
-            .find_map(|(name, raw)| (name == key).then_some(*raw))
+            .find_map(|(name, raw)| (name.as_deref() == Some(key)).then_some(*raw))
     }
 
     fn has_exact_members(&self, names: &[&str]) -> bool {
         self.0.len() == names.len() && names.iter().all(|name| self.get(name).is_some())
-    }
-
-    // A malformed or over-depth document cannot establish a schema. Duplicates
-    // prevent admission but can still establish that the file is future data.
-    fn audit(&self, depth: usize) -> Option<bool> {
-        let mut seen = HashSet::new();
-        let mut unique = true;
-        for (name, raw) in &self.0 {
-            unique &= seen.insert(name);
-            unique &= audit_value(raw.get(), depth)?;
-        }
-        Some(unique)
-    }
-}
-
-fn audit_value(raw: &str, parent_depth: usize) -> Option<bool> {
-    if parent_depth >= 64 && (raw.starts_with('{') || raw.starts_with('[')) {
-        return None;
-    }
-    match raw.as_bytes().first() {
-        Some(b'{') => serde_json::from_str::<Object<'_>>(raw)
-            .ok()?
-            .audit(parent_depth + 1),
-        Some(b'[') => {
-            let mut unique = true;
-            for item in serde_json::from_str::<Vec<&RawValue>>(raw).ok()? {
-                unique &= audit_value(item.get(), parent_depth + 1)?;
-            }
-            Some(unique)
-        }
-        Some(b'"') => serde_json::from_str::<String>(raw).ok().map(|_| true),
-        _ => Some(true),
     }
 }
 
@@ -279,13 +291,70 @@ impl<'de> Deserialize<'de> for Object<'de> {
 
             fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
                 let mut entries = Vec::new();
-                while let Some(entry) = map.next_entry()? {
-                    entries.push(entry);
+                while let Some((DiscoveryKey(name), raw)) = map.next_entry()? {
+                    entries.push((name, raw));
                 }
                 Ok(Object(entries))
             }
         }
 
         deserializer.deserialize_map(ObjectVisitor)
+    }
+}
+
+// Validate nested members in one streaming pass. No payload numbers are
+// interpreted here, including arbitrary-precision numbers.
+struct StrictJson;
+
+impl<'de> Deserialize<'de> for StrictJson {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(Self)
+    }
+}
+
+impl<'de> Visitor<'de> for StrictJson {
+    type Value = Self;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("configuration JSON without duplicate properties")
+    }
+
+    fn visit_bool<E: de::Error>(self, _: bool) -> Result<Self, E> {
+        Ok(self)
+    }
+
+    fn visit_i64<E: de::Error>(self, _: i64) -> Result<Self, E> {
+        Ok(self)
+    }
+
+    fn visit_u64<E: de::Error>(self, _: u64) -> Result<Self, E> {
+        Ok(self)
+    }
+
+    fn visit_f64<E: de::Error>(self, _: f64) -> Result<Self, E> {
+        Ok(self)
+    }
+
+    fn visit_str<E: de::Error>(self, _: &str) -> Result<Self, E> {
+        Ok(self)
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Self, E> {
+        Ok(self)
+    }
+
+    fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self, M::Error> {
+        let mut seen = HashSet::new();
+        while let Some((key, _)) = map.next_entry::<String, StrictJson>()? {
+            if !seen.insert(key) {
+                return Err(de::Error::custom("duplicate configuration property"));
+            }
+        }
+        Ok(self)
+    }
+
+    fn visit_seq<S: SeqAccess<'de>>(self, mut seq: S) -> Result<Self, S::Error> {
+        while seq.next_element::<StrictJson>()?.is_some() {}
+        Ok(self)
     }
 }

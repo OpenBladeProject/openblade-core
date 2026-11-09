@@ -129,12 +129,28 @@ fn opaque_records_and_unknown_reads_fail_closed() {
         inspect(snapshot),
         Inspection::Preserve(Reason::StorageUnavailable)
     );
-    snapshot.recovery = RecoveryRecord::Missing;
-    snapshot.profile = File::Unavailable;
-    assert_eq!(
-        inspect(snapshot),
-        Inspection::Preserve(Reason::StorageUnavailable)
-    );
+    for files in [
+        [File::Unavailable, snapshot.preferences, snapshot.commit],
+        [snapshot.profile, File::Unavailable, snapshot.commit],
+        [snapshot.profile, snapshot.preferences, File::Unavailable],
+    ] {
+        let [profile, preferences, commit] = files;
+        snapshot = Snapshot {
+            recovery: RecoveryRecord::Missing,
+            profile,
+            preferences,
+            commit,
+        };
+        assert_eq!(
+            inspect(snapshot),
+            Inspection::Preserve(Reason::StorageUnavailable)
+        );
+        snapshot.recovery = RecoveryRecord::Present;
+        assert_eq!(
+            inspect(snapshot),
+            Inspection::Preserve(Reason::RecoveryRequired)
+        );
+    }
 }
 
 #[test]
@@ -261,6 +277,70 @@ fn malformed_or_duplicate_hashed_documents_remain_invalid() {
             inspect(with_marker(broken, &f.committed[1], "25").observe()),
             Inspection::Preserve(Reason::InvalidDocument),
             "{broken}"
+        );
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InspectionVector {
+    id: String,
+    profile: Option<String>,
+    preferences: Option<String>,
+    profile_schema: Option<String>,
+    preferences_schema: Option<String>,
+    marker_schema: Option<String>,
+    #[serde(default)]
+    profile_only: bool,
+    managed: String,
+    rust: Option<String>,
+}
+
+#[test]
+fn inspection_matches_checked_managed_edge_cases() {
+    let f = fixture();
+    let vectors: Vec<InspectionVector> = serde_json::from_str(include_str!(
+        "../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-inspection.json"
+    ))
+    .unwrap();
+    for vector in vectors {
+        let document = |raw: Option<String>, schema: Option<String>, original: &str| {
+            raw.unwrap_or_else(|| match schema {
+                Some(schema) => original.replacen(
+                    r#""schemaVersion": 25"#,
+                    &format!(r#""schemaVersion": {schema}"#),
+                    1,
+                ),
+                None => original.to_owned(),
+            })
+        };
+        let profile = document(vector.profile, vector.profile_schema, &f.committed[0]);
+        let preferences = document(
+            vector.preferences,
+            vector.preferences_schema,
+            &f.committed[1],
+        );
+        let storage = if vector.profile_only {
+            let mut storage = FakeStorage::default();
+            storage.put(PROFILE, profile);
+            storage
+        } else {
+            with_marker(
+                &profile,
+                &preferences,
+                vector.marker_schema.as_deref().unwrap_or("25"),
+            )
+        };
+        let actual = match inspect(storage.observe()) {
+            Inspection::CommittedEnvelope { .. } => "CommittedEnvelope".to_owned(),
+            Inspection::Preserve(reason) => format!("{reason:?}"),
+            other => panic!("{} returned {other:?}", vector.id),
+        };
+        assert_eq!(
+            actual,
+            vector.rust.as_ref().unwrap_or(&vector.managed).as_str(),
+            "{}",
+            vector.id
         );
     }
 }
