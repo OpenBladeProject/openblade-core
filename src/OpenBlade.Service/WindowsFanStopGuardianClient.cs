@@ -14,6 +14,8 @@ internal sealed class WindowsFanStopGuardianClient : IFanStopGuardianClient, IAs
     private readonly Func<CancellationToken, Task<FanStopAdmission>> admission;
     private readonly Func<FanStopAdmission> continuationSnapshot;
     private readonly string executable;
+    private readonly FanStopFirmwareAvailability firmwareAvailability;
+    private readonly bool guardianAvailable;
     private FanStopGuardianSnapshot snapshot = new(Guid.Empty, 0, FanStopGuardianPhase.Idle);
     private Task? running;
     private bool autoRequested;
@@ -21,10 +23,12 @@ internal sealed class WindowsFanStopGuardianClient : IFanStopGuardianClient, IAs
 
     internal WindowsFanStopGuardianClient(string machineDataDirectory,
         Func<CancellationToken, Task<FanStopAdmission>> admission,
-        Func<FanStopAdmission> continuationSnapshot)
+        Func<FanStopAdmission> continuationSnapshot,
+        FanStopFirmwareAvailability? firmwareAvailability = null)
     {
         this.admission = admission;
         this.continuationSnapshot = continuationSnapshot;
+        this.firmwareAvailability = firmwareAvailability ?? FanStopFirmwareAvailability.CreateWindows();
         store = new(machineDataDirectory);
         executable = Path.Combine(AppContext.BaseDirectory, "OpenBlade.FanStop.Guardian.exe");
         StartupDisposition = store.InspectStartup();
@@ -33,12 +37,14 @@ internal sealed class WindowsFanStopGuardianClient : IFanStopGuardianClient, IAs
             FanStopGuardianTransport.RequireSystem();
             FanStopGuardianTransport.VerifyProtectedPath(executable, directory: false);
             FanStopGuardianTransport.VerifyProtectedPath(AppContext.BaseDirectory, directory: true);
-            UnavailableReason = FanStopUnavailableReason.None;
+            guardianAvailable = true;
         }
-        catch { UnavailableReason = FanStopUnavailableReason.GuardianUnavailable; }
+        catch { guardianAvailable = false; }
     }
 
-    public FanStopUnavailableReason UnavailableReason { get; }
+    public FanStopUnavailableReason UnavailableReason => guardianAvailable
+        ? firmwareAvailability.Read().Reason : FanStopUnavailableReason.GuardianUnavailable;
+    public string? UnavailableMessage => guardianAvailable ? firmwareAvailability.Read().Message : null;
     public FanStopStartupDisposition StartupDisposition { get; }
     public FanStopGuardianSnapshot Snapshot { get { lock (sync) { return snapshot; } } }
     public event Action? SnapshotChanged;
@@ -54,9 +60,11 @@ internal sealed class WindowsFanStopGuardianClient : IFanStopGuardianClient, IAs
         lock (sync)
         {
             token.ThrowIfCancellationRequested();
-            if (disposed || operationId == Guid.Empty || UnavailableReason != FanStopUnavailableReason.None
+            if (disposed || operationId == Guid.Empty || !guardianAvailable
                 || StartupDisposition != FanStopStartupDisposition.Clear || running is { IsCompleted: false }
                 || snapshot.OperationId != Guid.Empty && !snapshot.Released)
+            { return Task.FromResult(FanStopSubmission.NotSubmitted); }
+            if (firmwareAvailability.Read(refresh: true).Reason != FanStopUnavailableReason.None)
             { return Task.FromResult(FanStopSubmission.NotSubmitted); }
             using var self = Process.GetCurrentProcess();
             bool reserved = false;

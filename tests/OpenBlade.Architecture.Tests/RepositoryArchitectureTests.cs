@@ -28,6 +28,9 @@ public sealed class RepositoryArchitectureTests
                 && !pair.Key.EndsWith("BatteryValidationFactory.cs")
                 && !pair.Key.EndsWith("ProductionBatteryFactory.cs")
                 && !pair.Key.EndsWith("ProductionLightingFactory.cs")
+                // The delegated guardian reader admits only the exact-model
+                // adapter getter; its factory has no setter fixtures.
+                && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "FanStopAdapterPowerReader.cs")
                 && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "ExperimentalBladeFactory.cs")
                 && !pair.Key.EndsWith("GetterCandidateProbeRunner.cs")
                 && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "Rz090528HyperBoostValidation.cs")
@@ -49,6 +52,7 @@ public sealed class RepositoryArchitectureTests
             [
                 "BatteryValidationFactory.cs",
                 "ExperimentalBladeFactory.cs",
+                "FanStopAdapterPowerReader.cs",
                 "GetterCandidateProbeRunner.cs",
                 "ProductionBatteryFactory.cs",
                 "ProductionLightingFactory.cs",
@@ -65,7 +69,8 @@ public sealed class RepositoryArchitectureTests
             candidateProbePath,
             StringComparison.OrdinalIgnoreCase);
         string admission = sources[Path.Combine(sourceDirectory, "OpenBlade.FanStop.Core", "So6120WindowsSupervisedMetadata.cs")];
-        Assert.Contains("ReadHidMetadata(IReadOnlyList<string> paths, IHidCandidateNative native)", admission, StringComparison.Ordinal);
+        Assert.Contains("ReadHidMetadata(IReadOnlyList<string> paths, IHidCandidateNative native,", admission, StringComparison.Ordinal);
+        Assert.Contains("FanStopModelContract? serviceContract = null)", admission, StringComparison.Ordinal);
         Assert.DoesNotContain("OverlappedFeatureOperation", admission, StringComparison.Ordinal);
     }
 

@@ -1,0 +1,392 @@
+{
+  "schema_version": 1,
+  "id": "di780-ec-1.05",
+  "label": "DI780 EC 1.05 (Blade 17 2022)",
+  "model": "RZ09-0423",
+  "component": "EC",
+  "version": "1.05",
+  "architecture": "NDS32",
+  "endianness": "little-data/big-instruction",
+  "image": {
+    "sha256": "ada7830bcca91f0201d108386a4c4efde39197bd31719f810db4481fd0e58dea",
+    "size": 262144,
+    "base_address": 0
+  },
+  "carriers": [
+    {
+      "sha256": "3f096851bed1679a83630fa588daf0d977f0944634075e75493658cfad03c554",
+      "size": 7556096,
+      "format": "nsis-blocks-v1",
+      "block_index": 6,
+      "payload_format": "binary",
+      "payload_sha256": "ada7830bcca91f0201d108386a4c4efde39197bd31719f810db4481fd0e58dea"
+    }
+  ],
+  "bank_map": {
+    "pointer_table_offset": 183700,
+    "bank_count": 8,
+    "entries_per_bank": 256,
+    "entry_size": 8,
+    "metadata_offset": 0,
+    "metadata_size": 4,
+    "address_offset": 4,
+    "address_size": 4,
+    "byte_order": "little",
+    "access_values": {
+      "1": "read-only",
+      "2": "read-write"
+    }
+  },
+  "annotations": [
+    {
+      "bank": 0,
+      "index": 6,
+      "address": 525027,
+      "width_bits": 8,
+      "name": "Active state",
+      "category": "fan-control",
+      "description": "Bit 0 admits the direct PWM branch.",
+      "access": "read-only",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 171064,
+          "label": "Bank zero descriptor"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 8,
+      "address": 526358,
+      "width_bits": 8,
+      "name": "Fan 1 tachometer",
+      "category": "fan-control",
+      "description": "Firmware speed field.",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 171080,
+          "label": "Bank zero descriptor"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 9,
+      "address": 526359,
+      "width_bits": 8,
+      "name": "Fan 2 tachometer",
+      "category": "fan-control",
+      "description": "Firmware speed field.",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 171088,
+          "label": "Bank zero descriptor"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 15,
+      "address": 529480,
+      "width_bits": 8,
+      "name": "Keyboard bus bank selector",
+      "category": "fan-control",
+      "description": "Selects the descriptor bank for the keyboard I2C bridge. This is separate from the primary mailbox bank.",
+      "access": "read-write",
+      "units": "bank",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 171136,
+          "label": "Bank zero descriptor"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 26,
+      "address": 525151,
+      "width_bits": 8,
+      "name": "Thermal selector",
+      "category": "fan-control",
+      "description": "FE selects direct PWM when active state and override permission admit it.",
+      "access": "read-write",
+      "units": "selector",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 171224,
+          "label": "Bank zero descriptor"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 44,
+      "address": 526360,
+      "width_bits": 8,
+      "name": "Fan 3 tachometer",
+      "category": "fan-control",
+      "description": "Firmware speed field. Zero can also follow invalid or disabled tach feedback.",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 171368,
+          "label": "Bank zero descriptor"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 54,
+      "address": 525133,
+      "width_bits": 8,
+      "name": "Manual state",
+      "category": "fan-control",
+      "description": "Receiver can divert a write to this index when manual-state bit 7 is set.",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 171448,
+          "label": "Bank zero descriptor"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 156,
+      "address": 525198,
+      "width_bits": 8,
+      "name": "Fan 3 staged duty",
+      "category": "fan-control",
+      "description": "The FE worker copies this byte to actual PWM3. This field reports the stage.",
+      "access": "read-write",
+      "units": "PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 172264,
+          "label": "Bank zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 87316,
+          "label": "Direct duty copy"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 176,
+      "address": 15734791,
+      "width_bits": 8,
+      "name": "Fan 1 actual duty",
+      "category": "fan-control",
+      "description": "Actual PWM1 output register.",
+      "access": "read-only",
+      "units": "PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 172424,
+          "label": "Bank zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 87222,
+          "label": "Direct duty copy"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 177,
+      "address": 15734787,
+      "width_bits": 8,
+      "name": "Fan 2 actual duty",
+      "category": "fan-control",
+      "description": "Actual PWM2 output register.",
+      "access": "read-only",
+      "units": "PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 172432,
+          "label": "Bank zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 87270,
+          "label": "Direct duty copy"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 178,
+      "address": 15734849,
+      "width_bits": 8,
+      "name": "PWM cycle",
+      "category": "fan-control",
+      "description": "Shared cycle for the three FE duty outputs.",
+      "access": "read-only",
+      "units": "PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 172440,
+          "label": "Bank zero descriptor"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 184,
+      "address": 525204,
+      "width_bits": 8,
+      "name": "Fan 1 staged duty",
+      "category": "fan-control",
+      "description": "The FE worker copies this byte to actual PWM1. This field reports the stage.",
+      "access": "read-write",
+      "units": "PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 172488,
+          "label": "Bank zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 87222,
+          "label": "Direct duty copy"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 185,
+      "address": 525205,
+      "width_bits": 8,
+      "name": "Fan 2 staged duty",
+      "category": "fan-control",
+      "description": "The FE worker copies this byte to actual PWM2. This field reports the stage.",
+      "access": "read-write",
+      "units": "PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 172496,
+          "label": "Bank zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 87270,
+          "label": "Direct duty copy"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 240,
+      "address": 525349,
+      "width_bits": 8,
+      "name": "Override permission",
+      "category": "fan-control",
+      "description": "Bit 6 permits the FE direct PWM branch. Preserve unrelated bits during any reviewed handback.",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 172936,
+          "label": "Bank zero descriptor"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "title": "Three direct PWM outputs",
+      "description": "FE copies the three staged duty bytes to the actual PWM outputs. The third actual register F01808 has no entry in the eight bank tables. A mapped stage or tach zero alone cannot verify that output.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 87316,
+          "label": "Direct copy to the third actual output"
+        },
+        {
+          "kind": "table",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 183700,
+          "label": "Eight-bank pointer table"
+        }
+      ]
+    },
+    {
+      "title": "Candidate separate EC memory read",
+      "description": "The exact flasher contains a Super I/O depth-two read and firmware initializes the candidate I2EC control. Normal host decode, PWM address binding, and transaction ownership remain to be established.",
+      "evidence_status": "inferred",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "DI780 EC 1.05 firmware",
+          "address": 53112,
+          "label": "Write C3 to EC offset F0200D"
+        },
+        {
+          "kind": "document",
+          "source": "docs/fan-stop-reader-and-ec-followup.md",
+          "address": null,
+          "label": "Host indirect read and remaining evidence"
+        }
+      ]
+    }
+  ]
+}

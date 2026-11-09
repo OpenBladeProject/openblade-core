@@ -77,6 +77,8 @@ public sealed class IpcWireShapeManifestTests
             76 => "6259E2AF01F7E0351B5B9D98846046F14345DEFB0BA173DBEC8E7FB5577EB8DD",
             // Protocol 78 combines main CPU/cooling-pad/lighting contracts with Fan Stop policies.
             78 => "14F86C7DF2AB4C48E745B97A30D859835582B25A1DD149E570555FCDC73A4DF7",
+            // Protocol 79 distinguishes source-reviewed Fan Stop from physical trials.
+            79 => "9CCDE658405F2DA4E58E6D4FF00D5B2A9F5562974BE2AF74DDE53E848B45431D",
             _ => null,
         };
 

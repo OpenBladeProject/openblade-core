@@ -1,0 +1,491 @@
+{
+  "schema_version": 1,
+  "id": "ch551-ec-1.01",
+  "label": "CH551 EC 1.01",
+  "model": "RZ09-0330",
+  "component": "EC",
+  "version": "1.01",
+  "architecture": "Andes NDS32",
+  "endianness": "little",
+  "image": {
+    "sha256": "0487bd1357b6ac6c2c18b8e514b6a1098cb8e198b534e588045770a8c7140689",
+    "size": 262144,
+    "base_address": 0
+  },
+  "carriers": [
+    {
+      "sha256": "3ba19f72e3a53d88d2a8d1c2aa5c6e9a4b907e85e61a0b2803d5b9ca6cb78d44",
+      "size": 598032,
+      "format": "nsis-blocks-v1",
+      "block_index": 6,
+      "payload_format": "binary",
+      "payload_sha256": "0487bd1357b6ac6c2c18b8e514b6a1098cb8e198b534e588045770a8c7140689"
+    }
+  ],
+  "bank_map": {
+    "pointer_table_offset": 166316,
+    "bank_count": 8,
+    "entries_per_bank": 256,
+    "entry_size": 8,
+    "metadata_offset": 0,
+    "metadata_size": 4,
+    "address_offset": 4,
+    "address_size": 4,
+    "byte_order": "little",
+    "access_values": {
+      "1": "read-only",
+      "2": "read-write"
+    }
+  },
+  "annotations": [
+    {
+      "bank": 0,
+      "index": 6,
+      "address": 525027,
+      "width_bits": 8,
+      "name": "Active state",
+      "category": "state",
+      "description": "Bit 0 gates policy and feedback.",
+      "access": "read-only",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 81494,
+          "label": "Active state"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 8,
+      "address": 526358,
+      "width_bits": 8,
+      "name": "Fan 1 tachometer",
+      "category": "fan",
+      "description": "Measured-speed accumulator divided by 100, distinct from requested speed.",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 76162,
+          "label": "Fan 1 tachometer"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 9,
+      "address": 526359,
+      "width_bits": 8,
+      "name": "Fan 2 tachometer",
+      "category": "fan",
+      "description": "Measured-speed accumulator divided by 100, distinct from requested speed.",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 76166,
+          "label": "Fan 2 tachometer"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 10,
+      "address": 526656,
+      "width_bits": 8,
+      "name": "Policy command",
+      "category": "state",
+      "description": "Separate policy request; zero denotes idle. Not mailbox command 93.",
+      "access": "read-write",
+      "units": "command",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 36876,
+          "label": "Policy command"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 11,
+      "address": 526657,
+      "width_bits": 8,
+      "name": "Policy status",
+      "category": "state",
+      "description": "Status 4 follows evaluation; it is not proof of Automatic or settled PWM.",
+      "access": "read-only",
+      "units": "status",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 44240,
+          "label": "Policy status"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 26,
+      "address": 525151,
+      "width_bits": 8,
+      "name": "Thermal selector",
+      "category": "fan",
+      "description": "Normal selectors 0..7, FE direct duty and FF target path are distinct.",
+      "access": "read-write",
+      "units": "selector",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 81522,
+          "label": "Thermal selector"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 54,
+      "address": 525133,
+      "width_bits": 8,
+      "name": "Manual fan flags",
+      "category": "fan",
+      "description": "Bit 0 selects ordinary manual handling; Auto handback must observe zero.",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 81586,
+          "label": "Manual fan flags"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 176,
+      "address": 15734791,
+      "width_bits": 8,
+      "name": "Actual fan 1 PWM",
+      "category": "fan",
+      "description": "Actual peripheral PWM byte, distinct from staged B8 and measured 08.",
+      "access": "read-only",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 82782,
+          "label": "Actual fan 1 PWM"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 177,
+      "address": 15734787,
+      "width_bits": 8,
+      "name": "Actual fan 2 PWM",
+      "category": "fan",
+      "description": "Actual peripheral PWM byte, distinct from staged B9 and measured 09.",
+      "access": "read-only",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 82830,
+          "label": "Actual fan 2 PWM"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 178,
+      "address": 15734849,
+      "width_bits": 8,
+      "name": "PWM cycle",
+      "category": "fan",
+      "description": "Initialized to 183; read the live cycle and bound requests against it.",
+      "access": "read-only",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 74982,
+          "label": "PWM cycle"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 184,
+      "address": 525204,
+      "width_bits": 8,
+      "name": "Staged fan 1 duty",
+      "category": "fan",
+      "description": "Permitted FE copies this byte unchanged, including zero.",
+      "access": "read-write",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 82782,
+          "label": "Staged fan 1 duty"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 185,
+      "address": 525205,
+      "width_bits": 8,
+      "name": "Staged fan 2 duty",
+      "category": "fan",
+      "description": "Permitted FE copies this byte unchanged, including zero.",
+      "access": "read-write",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 82830,
+          "label": "Staged fan 2 duty"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 240,
+      "address": 525349,
+      "width_bits": 8,
+      "name": "Override flags",
+      "category": "state",
+      "description": "Bit 6 permits FE/FF and freezes a policy contributor; bit 5 suppresses sensor updates. Preserve other bits.",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Exact static source review; physical stop and recovery are untested."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 82712,
+          "label": "Override flags"
+        }
+      ],
+      "bits": [
+        {
+          "bit": 6,
+          "name": "Direct permission",
+          "description": "Permits FE/FF; also skips refresh of contributor 80493 before the common minimum selection.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "CH551 EC 1.01 firmware",
+              "address": 82716,
+              "label": "FE permission"
+            },
+            {
+              "kind": "instruction",
+              "source": "CH551 EC 1.01 firmware",
+              "address": 61140,
+              "label": "Policy contributor"
+            }
+          ]
+        },
+        {
+          "bit": 5,
+          "name": "Sensor override",
+          "description": "Suppresses sensor-update paths; baseline requires this bit clear.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "CH551 EC 1.01 firmware",
+              "address": 54612,
+              "label": "Sensor update guard"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "title": "Mapped completion",
+      "description": "Status 80 precedes copying. Caller clears command after handler return. Require command zero, status, descriptor consistency and a separate fresh readback.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 9106,
+          "label": "Early status"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 9266,
+          "label": "Mapped store"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 64062,
+          "label": "Handler call"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 64072,
+          "label": "Command clear"
+        }
+      ]
+    },
+    {
+      "title": "Selector-first Auto restoration",
+      "description": "FE requires permission 6. Normal feedback excludes only FE, allowing captured-selector restoration before permission clear. Independently observe manual zero, policy idle and all owned restored controls.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 81530,
+          "label": "FE dispatch"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 80268,
+          "label": "Feedback exclusion"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 82728,
+          "label": "Permission-absent fallback"
+        }
+      ]
+    },
+    {
+      "title": "Two configured fans",
+      "description": "All 32 factory records at 3B000..3EE00 encode two fan targets; loader publishes count and decoder zeros unused targets. Four generic FE peripheral slots do not establish four physical fans.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 76832,
+          "label": "Factory seeder"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 80512,
+          "label": "Configured count"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 77444,
+          "label": "Two-fan decoder"
+        }
+      ]
+    },
+    {
+      "title": "Zero does not prove physical stop",
+      "description": "FE copies zero unchanged. Actual duty, coarse tachometer zero and mechanical stop are distinct.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 82782,
+          "label": "First direct store"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 82830,
+          "label": "Second direct store"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 78658,
+          "label": "Normal zero store"
+        },
+        {
+          "kind": "instruction",
+          "source": "CH551 EC 1.01 firmware",
+          "address": 76170,
+          "label": "Measured speed division"
+        }
+      ]
+    }
+  ]
+}

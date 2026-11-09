@@ -1,0 +1,616 @@
+{
+  "schema_version": 1,
+  "id": "so695-lb-ec-1.01",
+  "label": "SO695 Lamborghini EC 1.01",
+  "model": "RZ09-0483 Lamborghini",
+  "component": "EC",
+  "version": "1.01",
+  "architecture": "NDS32",
+  "endianness": "little-data/big-instruction",
+  "image": {
+    "sha256": "486daab302359085b421c0c68d8092be910930a2ef3912ec39dd8f04c89464b8",
+    "size": 262144,
+    "base_address": 0
+  },
+  "carriers": [
+    {
+      "sha256": "6f6d2240b401ca117293f8565ecbf41458fb7ec0450351af20564f70214c7d84",
+      "size": 666472,
+      "format": "nsis-blocks-v1",
+      "block_index": 7,
+      "payload_format": "binary",
+      "payload_sha256": "486daab302359085b421c0c68d8092be910930a2ef3912ec39dd8f04c89464b8"
+    }
+  ],
+  "bank_map": {
+    "pointer_table_offset": 182468,
+    "bank_count": 8,
+    "entries_per_bank": 256,
+    "entry_size": 8,
+    "metadata_offset": 0,
+    "metadata_size": 4,
+    "address_offset": 4,
+    "address_size": 4,
+    "byte_order": "little",
+    "access_values": {
+      "1": "read-only",
+      "2": "read-write"
+    }
+  },
+  "annotations": [
+    {
+      "bank": 0,
+      "index": 6,
+      "address": 525027,
+      "width_bits": 8,
+      "name": "Active state",
+      "description": "Bit 0 gates policy and normal feedback.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 169904,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 85276,
+          "label": "Reviewed instruction"
+        }
+      ],
+      "bits": [
+        {
+          "bit": 0,
+          "name": "Active",
+          "description": "Gates policy and feedback.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO695 Lamborghini EC 1.01 firmware",
+              "address": 85284,
+              "label": "Active"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 8,
+      "address": 526358,
+      "width_bits": 8,
+      "name": "Fan 1 tachometer",
+      "description": "Measured first speed accumulator divided by 100; not staged duty.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 169920,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 80480,
+          "label": "Reviewed instruction"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 9,
+      "address": 526359,
+      "width_bits": 8,
+      "name": "Fan 2 tachometer",
+      "description": "Measured second speed accumulator divided by 100; not staged duty.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 169928,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 80492,
+          "label": "Reviewed instruction"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 10,
+      "address": 526656,
+      "width_bits": 8,
+      "name": "Policy command",
+      "description": "Separate policy command. Zero returns without dispatch; it is not a mailbox completion or deferred-work drain token.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "command",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 169936,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 36872,
+          "label": "Reviewed instruction"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 11,
+      "address": 526657,
+      "width_bits": 8,
+      "name": "Policy status",
+      "description": "Separate policy status, distinct from host mailbox status 94.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "status",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 169944,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 37012,
+          "label": "Reviewed instruction"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 26,
+      "address": 525151,
+      "width_bits": 8,
+      "name": "Thermal selector",
+      "description": "Normal selectors 0..7; FE direct duty requires active state and override bit 6.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "selector",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 170064,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 85304,
+          "label": "Reviewed instruction"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 54,
+      "address": 525133,
+      "width_bits": 8,
+      "name": "Manual fan flags",
+      "description": "Bit 0 selects ordinary manual handling. Observe zero independently during Auto handback.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 170288,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 85368,
+          "label": "Reviewed instruction"
+        }
+      ],
+      "bits": [
+        {
+          "bit": 0,
+          "name": "Manual",
+          "description": "Selects ordinary manual handling.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO695 Lamborghini EC 1.01 firmware",
+              "address": 85372,
+              "label": "Manual"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 176,
+      "address": 15734791,
+      "width_bits": 8,
+      "name": "Fan 1 actual PWM",
+      "description": "Hardware duty byte, separate from staged request B8.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 171264,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 86444,
+          "label": "Reviewed instruction"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 177,
+      "address": 15734787,
+      "width_bits": 8,
+      "name": "Fan 2 actual PWM",
+      "description": "Hardware duty byte, separate from staged request B9.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 171272,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 86492,
+          "label": "Reviewed instruction"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 178,
+      "address": 15734849,
+      "width_bits": 8,
+      "name": "PWM cycle",
+      "description": "Live shared cycle byte bounds duties; initialization 183 is not a live-value guarantee.",
+      "category": "fan-control",
+      "access": "read-only",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 171280,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 79494,
+          "label": "Reviewed instruction"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 184,
+      "address": 525204,
+      "width_bits": 8,
+      "name": "Fan 1 staged PWM",
+      "description": "FE copies unchanged to F01807, including zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 171328,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 86418,
+          "label": "Reviewed instruction"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 185,
+      "address": 525205,
+      "width_bits": 8,
+      "name": "Fan 2 staged PWM",
+      "description": "FE copies unchanged to F01803, including zero.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "counts",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 171336,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 86466,
+          "label": "Reviewed instruction"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 227,
+      "address": 525218,
+      "width_bits": 8,
+      "name": "EC family SSID low byte",
+      "description": "Updater identity field. Expected 0x09 for SO695; assemble (E4 << 8) | E3 == 0x3009 before admitting Lamborghini EC 1.01.",
+      "category": "identity",
+      "access": "read-only",
+      "units": "identifier byte",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 171672,
+          "label": "Exact read-only identity descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 44334,
+          "label": "Expected family-byte initialization"
+        },
+        {
+          "kind": "document",
+          "source": "docs/fan-stop-so695-source-review.md",
+          "label": "Pinned updater ShowEcVersion and ToolConfig comparison"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 228,
+      "address": 525219,
+      "width_bits": 8,
+      "name": "EC family SSID high byte",
+      "description": "Updater identity field. Expected 0x30 for SO695; assemble (E4 << 8) | E3 == 0x3009 before admitting Lamborghini EC 1.01.",
+      "category": "identity",
+      "access": "read-only",
+      "units": "identifier byte",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 171680,
+          "label": "Exact read-only identity descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 44338,
+          "label": "Expected family-byte initialization"
+        },
+        {
+          "kind": "document",
+          "source": "docs/fan-stop-so695-source-review.md",
+          "label": "Pinned updater ShowEcVersion and ToolConfig comparison"
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 240,
+      "address": 525349,
+      "width_bits": 8,
+      "name": "Override flags",
+      "description": "Whole-byte register. Bit6 permits FE and bypasses a separate policy contributor; preserve unrelated bits.",
+      "category": "fan-control",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "table",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 171776,
+          "label": "Exact bank-zero descriptor"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 86372,
+          "label": "Reviewed instruction"
+        }
+      ],
+      "bits": [
+        {
+          "bit": 6,
+          "name": "Direct duty permission",
+          "description": "FE permission and a separate normal-policy side effect.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO695 Lamborghini EC 1.01 firmware",
+              "address": 86376,
+              "label": "Direct duty permission"
+            }
+          ]
+        },
+        {
+          "bit": 5,
+          "name": "Sensor path override",
+          "description": "Suppresses reviewed sensor acquisition and derivation paths.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO695 Lamborghini EC 1.01 firmware",
+              "address": 72610,
+              "label": "Sensor path override"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "title": "Independent Lamborghini image",
+      "description": "Pins SO695 EC 1.01, not standard SO690 EC 2.01. The official carrier binds board 1A583009 and RZ09-0483. Reported firmware versions are compatibility gates, not live image attestation.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "document",
+          "source": "https://mysupport.razer.com/app/answers/detail/a_id/21282",
+          "label": "Official Lamborghini firmware"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 20644,
+          "label": "Exact ROM initialization"
+        }
+      ]
+    },
+    {
+      "title": "Mailbox completion follows the mapped operation",
+      "description": "Status 80 is stored before the mapped loop. Caller 11D30 clears command F02293 after handler 203C returns. Require command zero, status, descriptor integrity and a separate fresh mapped readback; no ownership lease follows from matching descriptors.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 8848,
+          "label": "Early status"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 9004,
+          "label": "Mapped write"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 73008,
+          "label": "Post-handler command clear"
+        }
+      ]
+    },
+    {
+      "title": "Direct zero duty and Auto handback",
+      "description": "FE copies B8/B9 unchanged, including zero. Restoring a captured normal selector permits feedback before permission is cleared; independently observe manual zero and restore owned override/staging bytes. No third PWM store occurs in this FE branch.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 86444,
+          "label": "First direct store"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 86492,
+          "label": "Second direct store"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 83834,
+          "label": "FE-only feedback exclusion"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 87246,
+          "label": "Conditional manual reset"
+        }
+      ]
+    },
+    {
+      "title": "Physical behavior remains untested",
+      "description": "Staged zero, hardware duty zero, coarse tach zero and physical fan stop are distinct. The data-only profile supplies no live access and no physical restoration or host-loss recovery guarantee.",
+      "evidence_status": "unknown",
+      "references": [
+        {
+          "kind": "document",
+          "source": "docs/fan-stop-so695-source-review.md",
+          "label": "Source contract and boundaries"
+        }
+      ]
+    },
+    {
+      "title": "Mapped read-only firmware-family discriminator",
+      "description": "Use model/HID, EC version 1.01 and fresh bank-zero E3/E4 ==09/30 together. Exact vendor ShowEcVersion reads these bytes and compares 0x3009 with ToolConfig. Standard SO690 initializes 06/30 instead. The discriminator is a firmware-reported family, not physical board or image attestation.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 44300,
+          "label": "Family low-byte constant9"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO695 Lamborghini EC 1.01 firmware",
+          "address": 44334,
+          "label": "Mapped family publication"
+        },
+        {
+          "kind": "document",
+          "source": "docs/fan-stop-so695-source-review.md",
+          "label": "Read-only admission sequence and provenance"
+        }
+      ]
+    }
+  ]
+}

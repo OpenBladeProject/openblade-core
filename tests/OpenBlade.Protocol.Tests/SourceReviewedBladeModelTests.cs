@@ -22,6 +22,9 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.DoesNotContain(PerformancePreset.Performance, capabilities.PerformancePresets);
         Assert.Equal(new[] { FanMode.Automatic }, capabilities.FanModes);
         Assert.Null(capabilities.FanSpeedRange);
+        Assert.Equal(product == 0x02B7, capabilities.HasFanStopSourceEvidence);
+        Assert.False(capabilities.HasFanStopTrialEvidence);
+        Assert.False(capabilities.SupportsFanStop); // The live guardian projects fresh availability.
         Assert.Empty(capabilities.LightingEffects);
         Assert.Empty(capabilities.LogoLightingModes);
         Assert.False(capabilities.SupportsKeyboardBrightness);

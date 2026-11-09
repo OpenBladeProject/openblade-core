@@ -5,8 +5,10 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed partial class MainViewModelTests
 {
-    [Fact]
-    public async Task FanStop_AcceptedRequestsPresentPendingUntilIndependentConfirmation()
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task FanStop_AcceptedRequestsPresentPendingUntilIndependentConfirmation(bool trialEvidence, bool sourceEvidence)
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
@@ -14,7 +16,17 @@ public sealed partial class MainViewModelTests
         await viewModel.StartAsync();
         var status = CreateFanStopStatus(new(State: FanStopState.Inactive,
             UnavailableReason: FanStopUnavailableReason.None, CanStop: true));
+        status = status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                HasFanStopTrialEvidence = trialEvidence,
+                HasFanStopSourceEvidence = sourceEvidence,
+            },
+        };
         await PushAsync(client, dispatcher, status);
+        Assert.True(viewModel.IsFanStopVisible);
+        Assert.True(viewModel.CanToggleFanStop);
         client.GetStatusResponse = status with
         {
             Revision = status.Revision + 1,
@@ -70,15 +82,25 @@ public sealed partial class MainViewModelTests
         Assert.Contains("tens of seconds", viewModel.FanStopDescription);
     }
 
-    [Fact]
-    public async Task FanStop_TrialEvidenceShowsUnavailableControlWithoutGrantingWrites()
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task FanStop_EvidenceShowsUnavailableControlWithoutGrantingWrites(bool trialEvidence, bool sourceEvidence)
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
         await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         var status = CreateFanStopStatus(new(UnavailableReason: FanStopUnavailableReason.RecoveryNotValidated));
-        status = status with { Capabilities = status.Capabilities! with { SupportsFanStop = false } };
+        status = status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                SupportsFanStop = false,
+                HasFanStopTrialEvidence = trialEvidence,
+                HasFanStopSourceEvidence = sourceEvidence,
+            },
+        };
         await PushAsync(client, dispatcher, status);
 
         Assert.True(viewModel.IsFanStopVisible);

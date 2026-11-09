@@ -12,6 +12,8 @@ namespace OpenBlade.FanStop;
 internal enum So6120MetadataStage { Platform, Host, Smbios, Hid, ConsoleAndPower, Driver, Controllers }
 internal sealed record So6120MetadataRead(So6120SupervisedMetadata? Metadata, So6120MetadataStage? FailedStage, int? Error,
     HostIdentityReadResult? HostFailure = null);
+internal sealed record So6120ServiceFirmwareMetadata(Architecture ProcessArchitecture,
+    HostIdentityReadResult Host, Version? ReportedEcVersion);
 internal sealed record So6120ServiceVolatileMetadata(long StartedTimestamp, long CompletedTimestamp,
     So6120SessionMetadata Session, IReadOnlyList<string> DetectedControllers,
     ServiceControllerStatus? OpenBladeStatus, IReadOnlyList<int> OpenBladeWriterPids);
@@ -35,8 +37,32 @@ internal static class So6120WindowsSupervisedMetadata
             So6120SupervisedAdmission.Manufacturer, So6120SupervisedAdmission.Product, So6120SupervisedAdmission.Sku,
             [So6120SupervisedAdmission.Bios]));
 
-    internal static So6120MetadataRead CaptureForService(Guid runId, TimeProvider clock) =>
-        Capture(runId, clock, WindowsHostIdentitySource.ProductionIdentity);
+    internal static So6120MetadataRead CaptureForService(Guid runId, TimeProvider clock,
+        FanStopModelContract contract) =>
+        Capture(runId, clock, contract.Host, serviceContract: contract);
+
+    // Compatibility preflight only: registry identity and the OS's boot SMBIOS
+    // table. No HID handles, driver hashing, controller enumeration or EC commands.
+    // The native owner still performs full fresh admission before acquisition.
+    internal static So6120ServiceFirmwareMetadata CaptureFirmwareForService(FanStopModelContract contract)
+    {
+        if (!OperatingSystem.IsWindows()) { throw new PlatformNotSupportedException(); }
+        var registry = new WindowsRegistryValueSource();
+        return CaptureFirmwareForService(contract,
+            () => new WindowsHostIdentitySource(registry, new RuntimeWindowsPlatformEvidenceSource(registry), contract.Host)
+                .ReadExactIdentity(),
+            () => TryReadBootReportedEcVersion(out var version, out var error) ? version
+                : throw new IOException($"The OS SMBIOS table is unavailable (error={error})."),
+            RuntimeInformation.ProcessArchitecture);
+    }
+
+    internal static So6120ServiceFirmwareMetadata CaptureFirmwareForService(FanStopModelContract contract,
+        Func<HostIdentityReadResult> readHost, Func<Version?> readVersion, Architecture architecture)
+    {
+        if (architecture != Architecture.X64) { throw new PlatformNotSupportedException(); }
+        HostIdentityReadResult host = readHost();
+        return new(architecture, host, contract.MatchesHost(host) ? readVersion() : null);
+    }
 
     // SMBIOS is the boot's reported table, not a live EC measurement. Reusing
     // its admitted version adds no weaker live-firmware claim. The deny-write/
@@ -44,11 +70,12 @@ internal static class So6120WindowsSupervisedMetadata
     // Host registry, HID, controller, configured-driver and DOS-target identity
     // are still captured afresh for every actual command admission.
     internal static So6120MetadataRead CaptureForService(Guid runId, TimeProvider clock,
-        FileStream driverPin, Version bootReportedEcVersion) =>
-        Capture(runId, clock, WindowsHostIdentitySource.ProductionIdentity, driverPin, bootReportedEcVersion);
+        FanStopModelContract contract, FileStream driverPin, Version bootReportedEcVersion) =>
+        Capture(runId, clock, contract.Host, driverPin, bootReportedEcVersion, contract);
 
     private static So6120MetadataRead Capture(Guid runId, TimeProvider clock, ExpectedHostIdentity expectedHost,
-        FileStream? driverPin = null, Version? bootReportedEcVersion = null)
+        FileStream? driverPin = null, Version? bootReportedEcVersion = null,
+        FanStopModelContract? serviceContract = null)
     {
         if (!OperatingSystem.IsWindows() || RuntimeInformation.ProcessArchitecture != Architecture.X64)
         { return new(null, So6120MetadataStage.Platform, null); }
@@ -62,17 +89,10 @@ internal static class So6120WindowsSupervisedMetadata
             if (host.Failure is not null) { return new(null, stage, null, host); }
             stage = So6120MetadataStage.Smbios;
             Version? ec = bootReportedEcVersion;
-            if (ec is null)
-            {
-                uint size = GetSystemFirmwareTable(RawSmbiosProvider, 0, null, 0);
-                if (size is < 8 or > MaxSmbiosBytes) { return new(null, stage, size == 0 ? Marshal.GetLastWin32Error() : null); }
-                byte[] smbios = new byte[size];
-                if (GetSystemFirmwareTable(RawSmbiosProvider, 0, smbios, size) != size)
-                { return new(null, stage, Marshal.GetLastWin32Error()); }
-                ec = ReadReportedEcVersion(smbios);
-            }
+            if (ec is null && !TryReadBootReportedEcVersion(out ec, out int? error))
+            { return new(null, stage, error); }
             stage = So6120MetadataStage.Hid;
-            var hid = ReadHidMetadata(ReadPresentHidPaths(), new WindowsHidNative());
+            var hid = ReadHidMetadata(ReadPresentHidPaths(), new WindowsHidNative(), serviceContract);
             stage = So6120MetadataStage.ConsoleAndPower;
             So6120SessionMetadata session = ReadSessionMetadata();
             uint console = session.ConsoleSession;
@@ -85,6 +105,26 @@ internal static class So6120WindowsSupervisedMetadata
                 controllers.Detected, controllers.OpenBlade, controllers.WriterPids), null, null);
         }
         catch (Exception exception) { return new(null, stage, exception.HResult); }
+    }
+
+    private static bool TryReadBootReportedEcVersion(out Version? version, out int? error)
+    {
+        version = null;
+        error = null;
+        uint size = GetSystemFirmwareTable(RawSmbiosProvider, 0, null, 0);
+        if (size is < 8 or > MaxSmbiosBytes)
+        {
+            error = size == 0 ? Marshal.GetLastWin32Error() : null;
+            return false;
+        }
+        byte[] smbios = new byte[size];
+        if (GetSystemFirmwareTable(RawSmbiosProvider, 0, smbios, size) != size)
+        {
+            error = Marshal.GetLastWin32Error();
+            return false;
+        }
+        version = ReadReportedEcVersion(smbios);
+        return true;
     }
 
     // Continuous monitoring has no command authority. Avoid SMBIOS, HID opens,
@@ -133,10 +173,14 @@ internal static class So6120WindowsSupervisedMetadata
         throw new IOException("Invalid HID interface list terminator.");
     }
 
-    internal static IReadOnlyList<So6120HidMetadata> ReadHidMetadata(IReadOnlyList<string> paths, IHidCandidateNative native)
+    internal static IReadOnlyList<So6120HidMetadata> ReadHidMetadata(IReadOnlyList<string> paths, IHidCandidateNative native,
+        FanStopModelContract? serviceContract = null)
     {
         List<So6120HidMetadata> candidates = [];
-        foreach (string path in paths.Where(So6120SupervisedAdmission.IsTargetHidPath))
+        // Developer capture retains its exact 0581 boundary. The installed
+        // owner supplies its separately reviewed immutable model contract.
+        foreach (string path in paths.Where(path => serviceContract is null
+                     ? So6120SupervisedAdmission.IsTargetHidPath(path) : serviceContract.IsTargetHidPath(path)))
         {
             // Keep any relevant unopenable candidate, so one good collection
             // cannot turn an incomplete identity inspection into uniqueness.

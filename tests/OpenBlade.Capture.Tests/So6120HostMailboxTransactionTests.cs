@@ -39,6 +39,16 @@ public sealed class So6120HostMailboxTransactionTests
     }
 
     [Fact]
+    public void ThirdStagingFieldDoesNotAcquireLiveMailboxAuthority()
+    {
+        var fake = new Fake();
+        Assert.Equal(So6120MailboxFailure.InvalidRequest, Core(fake).Read(So6120MailboxRegister.StagedDuty3).Failure);
+        Assert.Equal(So6120MailboxFailure.InvalidRequest, Core(fake).WriteAndConfirm(So6120MailboxRegister.StagedDuty3, 0).Failure);
+        Assert.Equal(0, fake.Calls);
+        Assert.Empty(fake.Prepared);
+    }
+
+    [Fact]
     public void SuccessfulHandlerButSkippedWriteDoesNotConfirmPayloadCache()
     {
         var fake = new Fake { SkipMappedWrite = true };
@@ -61,6 +71,28 @@ public sealed class So6120HostMailboxTransactionTests
         Assert.Equal(So6120MailboxFailure.InvalidRequest, Core(fake).Read((So6120MailboxRegister)register).Failure);
         Assert.Equal(0, fake.Calls);
         Assert.Empty(fake.Prepared);
+    }
+
+    [Theory]
+    [InlineData(0xE3)]
+    [InlineData(0xE4)]
+    public void FamilyIdentityReadNeedsSeparateAuthorityAndNeverPermitsWrites(int register)
+    {
+        var refused = new Fake();
+        Assert.Equal(So6120MailboxFailure.InvalidRequest, Core(refused).Read((So6120MailboxRegister)register).Failure);
+        Assert.Equal(0, refused.Calls);
+        var admitted = new Fake();
+        admitted.Registers[register] = 0x30;
+        var read = new So6120HostMailboxTransaction(admitted, admitted, allowBoardIdentityReads: true)
+            .Read((So6120MailboxRegister)register);
+        Assert.True(read.Success);
+        Assert.Equal((byte)0x30, read.Value);
+        Assert.Equal(new byte[] { 0xA0 }, admitted.Commands);
+        var write = new Fake();
+        Assert.Equal(So6120MailboxFailure.InvalidRequest,
+            new So6120HostMailboxTransaction(write, write, allowBoardIdentityReads: true)
+                .WriteAndConfirm((So6120MailboxRegister)register, 0).Failure);
+        Assert.Equal(0, write.Calls);
     }
 
     [Theory]

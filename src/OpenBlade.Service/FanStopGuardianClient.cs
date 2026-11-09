@@ -36,6 +36,7 @@ internal sealed record FanStopGuardianSnapshot(
 internal interface IFanStopGuardianClient
 {
     FanStopUnavailableReason UnavailableReason { get; }
+    string? UnavailableMessage => null;
     // Established without a device/mailbox read, before runtime construction.
     FanStopStartupDisposition StartupDisposition { get; }
     FanStopGuardianSnapshot Snapshot { get; }

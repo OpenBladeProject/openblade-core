@@ -1,0 +1,502 @@
+{
+  "schema_version": 1,
+  "id": "so6110-ec-1.09",
+  "label": "SO6110 EC 1.09",
+  "model": "RZ09-0528",
+  "component": "EC",
+  "version": "1.09",
+  "architecture": "RISC-V RV32 with compressed instructions",
+  "endianness": "little",
+  "image": {
+    "sha256": "44dc4e4c92ea4be9def93670a95b2bf859cb648b8dfe393fb5877735debbef5d",
+    "size": 262144,
+    "base_address": 2147483648
+  },
+  "carriers": [
+    {
+      "sha256": "3bf4dbec9555de4f784e9602b2fe982ec439924b946c412f46db4c53a769832b",
+      "size": 9110504,
+      "format": "nsis-blocks-v1",
+      "block_index": 15,
+      "payload_format": "binary",
+      "payload_sha256": "44dc4e4c92ea4be9def93670a95b2bf859cb648b8dfe393fb5877735debbef5d"
+    }
+  ],
+  "bank_map": {
+    "pointer_table_offset": 146710,
+    "bank_count": 8,
+    "entries_per_bank": 256,
+    "entry_size": 8,
+    "metadata_offset": 0,
+    "metadata_size": 4,
+    "address_offset": 4,
+    "address_size": 4,
+    "byte_order": "little",
+    "access_values": {
+      "1": "read-only",
+      "2": "read-write"
+    }
+  },
+  "annotations": [
+    {
+      "bank": 0,
+      "index": 6,
+      "address": 544483,
+      "width_bits": 8,
+      "name": "Active state",
+      "category": "state",
+      "description": "Bit 0 gates direct-duty policy and normal feedback.",
+      "access": "read-only",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147520862,
+          "label": "Active state"
+        }
+      ],
+      "bits": [
+        {
+          "bit": 0,
+          "name": "Active",
+          "description": "Required by policy and feedback dispatch.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6110 EC 1.09 firmware",
+              "address": 2147520866,
+              "label": "Active"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 8,
+      "address": 526358,
+      "width_bits": 8,
+      "name": "Fan 1 tachometer",
+      "category": "fan",
+      "description": "Published from the first measured-speed accumulator divided by 100.",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147513728,
+          "label": "Fan 1 tachometer"
+        }
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 9,
+      "address": 526359,
+      "width_bits": 8,
+      "name": "Fan 2 tachometer",
+      "category": "fan",
+      "description": "Published from the second measured-speed accumulator divided by 100.",
+      "access": "read-only",
+      "units": "100 RPM/count",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147513748,
+          "label": "Fan 2 tachometer"
+        }
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 10,
+      "address": 526656,
+      "width_bits": 8,
+      "name": "Policy command",
+      "category": "policy",
+      "description": "Separate policy request; command 5 schedules normal policy evaluation. Not host mailbox command 0x93.",
+      "access": "read-write",
+      "units": "command",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147540454,
+          "label": "Policy command"
+        }
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 11,
+      "address": 526657,
+      "width_bits": 8,
+      "name": "Policy status",
+      "category": "policy",
+      "description": "Policy status 4 follows an evaluator invocation; it does not prove Automatic or settled PWM.",
+      "access": "read-only",
+      "units": "status",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147547870,
+          "label": "Policy status"
+        }
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 26,
+      "address": 525151,
+      "width_bits": 8,
+      "name": "Thermal selector",
+      "category": "fan",
+      "description": "Normal selectors 0..7 are distinct from FE direct-duty and FF target paths.",
+      "access": "read-write",
+      "units": "selector",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147520906,
+          "label": "Thermal selector"
+        }
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 54,
+      "address": 525133,
+      "width_bits": 8,
+      "name": "Manual fan flags",
+      "category": "fan",
+      "description": "Bit 0 selects ordinary manual-target handling; Automatic handback must independently observe zero.",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147521232,
+          "label": "Manual fan flags"
+        }
+      ],
+      "bits": [
+        {
+          "bit": 0,
+          "name": "Ordinary manual control",
+          "description": "Requires manual-target processing rather than Automatic.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6110 EC 1.09 firmware",
+              "address": 2147521232,
+              "label": "Ordinary manual control"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "bank": 0,
+      "index": 176,
+      "address": 15734791,
+      "width_bits": 8,
+      "name": "Actual fan 1 PWM",
+      "category": "fan",
+      "description": "Actual peripheral PWM byte, distinct from staged request B8 and tachometer 08.",
+      "access": "read-only",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147522308,
+          "label": "Actual fan 1 PWM"
+        }
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 177,
+      "address": 15734787,
+      "width_bits": 8,
+      "name": "Actual fan 2 PWM",
+      "category": "fan",
+      "description": "Actual peripheral PWM byte, distinct from staged request B9 and tachometer 09.",
+      "access": "read-only",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147522358,
+          "label": "Actual fan 2 PWM"
+        }
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 178,
+      "address": 15734849,
+      "width_bits": 8,
+      "name": "PWM cycle",
+      "category": "fan",
+      "description": "Shared cycle byte; initialization writes 183, but runtime admission must read the live value.",
+      "access": "read-only",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147512844,
+          "label": "PWM cycle"
+        }
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 184,
+      "address": 525204,
+      "width_bits": 8,
+      "name": "Staged fan 1 duty",
+      "category": "fan",
+      "description": "The permitted FE branch copies this byte directly to actual PWM. Zero has no special-case rejection.",
+      "access": "read-write",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147522312,
+          "label": "Staged fan 1 duty"
+        }
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 185,
+      "address": 525205,
+      "width_bits": 8,
+      "name": "Staged fan 2 duty",
+      "category": "fan",
+      "description": "The permitted FE branch copies this byte directly to actual PWM. Zero has no special-case rejection.",
+      "access": "read-write",
+      "units": "raw PWM counts",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147522362,
+          "label": "Staged fan 2 duty"
+        }
+      ],
+      "bits": []
+    },
+    {
+      "bank": 0,
+      "index": 240,
+      "address": 525349,
+      "width_bits": 8,
+      "name": "Override flags",
+      "category": "policy",
+      "description": "Bit 6 permits FE/FF. Bit 5 suppresses sensor acquisition paths. Mapped writes replace the entire byte.",
+      "access": "read-write",
+      "units": "flags",
+      "evidence_status": "firmware-confirmed",
+      "notes": [
+        "Static exact-image evidence only; no live value or physical fan behavior is established."
+      ],
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147522294,
+          "label": "Override flags"
+        }
+      ],
+      "bits": [
+        {
+          "bit": 6,
+          "name": "Direct-duty permission",
+          "description": "Permits FE/FF; clearing it while FE is selected resets the selector to zero.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6110 EC 1.09 firmware",
+              "address": 2147522294,
+              "label": "Direct-duty permission"
+            }
+          ]
+        },
+        {
+          "bit": 5,
+          "name": "Sensor-update suppression",
+          "description": "Suppresses reviewed sensor acquisition and derivation paths.",
+          "evidence_status": "firmware-confirmed",
+          "references": [
+            {
+              "kind": "instruction",
+              "source": "SO6110 EC 1.09 firmware",
+              "address": 2147549276,
+              "label": "Sensor-update suppression"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "title": "Command clear follows mapped handler return",
+      "description": "The mapped handler sets status 80 before copying. Caller 8000ECB8 clears command F02293 only after the handler returns. Require command zero, status, descriptor consistency, and a separate fresh readback. This ordering does not itself establish ownership.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147544240,
+          "label": "Call then clear command"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147570160,
+          "label": "Early status store"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147570330,
+          "label": "Mapped byte store"
+        }
+      ]
+    },
+    {
+      "title": "Selector-first Automatic handback",
+      "description": "FE requires override bit 6. Restoring a captured normal selector leaves FE and permits normal feedback without clearing permission first. Confirm manual flags zero, policy command idle, and all restored owned controls; do not infer settled PWM.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147520906,
+          "label": "Selector dispatch"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147518860,
+          "label": "Feedback skips FE"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147522482,
+          "label": "Permission-clear fallback"
+        }
+      ]
+    },
+    {
+      "title": "Zero duty and measured stop are distinct",
+      "description": "FE copies zero unchanged and normal feedback also stores zero. Staged zero, actual PWM zero, coarse tachometer zero, and mechanical fan stop remain distinct.",
+      "evidence_status": "firmware-confirmed",
+      "references": [
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147522336,
+          "label": "First direct duty store"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147522386,
+          "label": "Second direct duty store"
+        },
+        {
+          "kind": "instruction",
+          "source": "SO6110 EC 1.09 firmware",
+          "address": 2147517074,
+          "label": "Normal zero store"
+        }
+      ]
+    },
+    {
+      "title": "Exact model and physical boundary",
+      "description": "The companion source review establishes the official 0528 updater host 300/301 mailbox route. This data-only profile admits neither live writes nor other AMD models. Physical stop and recovery remain untested. Thermal tables are omitted because the existing SO6120 decoder uses a different manual-extension layout.",
+      "evidence_status": "unknown",
+      "references": [
+        {
+          "kind": "document",
+          "source": "docs/fan-stop-so6110-source-review.md",
+          "label": "Exact source review and limitations"
+        }
+      ]
+    }
+  ]
+}
