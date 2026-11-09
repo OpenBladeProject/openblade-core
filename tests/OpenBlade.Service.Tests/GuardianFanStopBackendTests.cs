@@ -318,6 +318,30 @@ public sealed class GuardianFanStopBackendTests
         Assert.Equal(2, factory.OpenCount);
     }
 
+    [Fact]
+    public async Task AvailabilityKeepsOwnerUntilControllerObservesRelease()
+    {
+        const string unavailable = "Reported EC firmware is unsupported.";
+        var client = new Client();
+        var lease = new Lease();
+        var backend = new GuardianFanStopBackend(client);
+        backend.ConfigureHardwareDelegation(_ => Task.FromResult<IDisposable>(lease));
+        Assert.Equal(FanStopSubmission.Submitted, await backend.SubmitAsync(FanStopMode.Stop, default));
+        Assert.True(backend.Snapshot.StopConfirmed);
+        client.FirmwareAvailability = () => new(FanStopUnavailableReason.RecoveryNotValidated, unavailable);
+
+        client.Complete();
+        Assert.Equal(FanStopUnavailableReason.None, backend.UnavailableReason);
+        Assert.Null(backend.UnavailableMessage);
+        Assert.Equal(0, lease.Disposals);
+        Assert.True(backend.BlocksOrdinaryHardware);
+
+        Assert.True(backend.Snapshot.Released);
+        Assert.Equal(1, lease.Disposals);
+        Assert.Equal(FanStopUnavailableReason.RecoveryNotValidated, backend.UnavailableReason);
+        Assert.Equal(unavailable, backend.UnavailableMessage);
+    }
+
     private static FanStopController Controller(Client client, Lease lease)
     {
         var backend = new GuardianFanStopBackend(client);

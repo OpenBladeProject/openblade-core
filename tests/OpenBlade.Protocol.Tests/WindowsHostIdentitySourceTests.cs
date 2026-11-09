@@ -28,6 +28,22 @@ public sealed class WindowsHostIdentitySourceTests
     ];
 
     [Fact]
+    public void FanStopCatalogContractsAdmitExactHostWithoutSku()
+    {
+        foreach (FanStopModelContract contract in FanStopModelContract.All)
+        {
+            FakeRegistryValueSource registry = CreateExactRegistry();
+            registry.Values[$"{BiosKey}|SystemProductName"] = contract.Host.ProductName;
+            registry.Values[$"{SystemInformationKey}|SystemProductName"] = contract.Host.ProductName;
+            registry.Values.Remove($"{BiosKey}|SystemSKU");
+            var source = new WindowsHostIdentitySource(registry,
+                new FakeWindowsPlatformEvidenceSource(ExactPlatform), contract.Host);
+
+            Assert.True(contract.MatchesHost(source.ReadExactIdentity()), contract.FirmwareIdentity);
+        }
+    }
+
+    [Fact]
     public void WindowsRegistryValueSource_ReturnsNullForMissingKey()
     {
         if (!OperatingSystem.IsWindows())
