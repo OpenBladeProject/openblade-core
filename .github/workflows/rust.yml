@@ -11,6 +11,7 @@ on:
       - 'evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-adapter-power-readback-fixture.json'
       - 'src/OpenBlade.Tray.Core/ServiceClient.cs'
       - 'tests/OpenBlade.Tray.Tests/RustReadOnlyHostTests.cs'
+      - 'tests/OpenBlade.Service.Tests/ServiceControlRuntimeTests.RustBatteryParity.cs'
       - 'tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service*.json'
       - 'tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json'
       - 'src/OpenBlade.Core.Native/**'
@@ -47,6 +48,7 @@ on:
       - 'evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-adapter-power-readback-fixture.json'
       - 'src/OpenBlade.Tray.Core/ServiceClient.cs'
       - 'tests/OpenBlade.Tray.Tests/RustReadOnlyHostTests.cs'
+      - 'tests/OpenBlade.Service.Tests/ServiceControlRuntimeTests.RustBatteryParity.cs'
       - 'tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service*.json'
       - 'tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json'
       - 'src/OpenBlade.Core.Native/**'
@@ -204,6 +206,7 @@ jobs:
           $env:OPENBLADE_RUST_DEV_HOST_EXE = (Resolve-Path '../tools/openblade-windows-host/target/${{ matrix.target }}/debug/openblade-windows-host.exe').Path
           dotnet restore ../src/OpenBlade.Tray/OpenBlade.Tray.csproj
           dotnet test ../tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter FullyQualifiedName~RustReadOnlyHostTests
+          dotnet test ../tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter FullyQualifiedName~RustBatteryParity
 
       - name: Smoke Windows discovery metadata on the hosted VM
         if: runner.os == 'Windows' && runner.environment == 'github-hosted' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository

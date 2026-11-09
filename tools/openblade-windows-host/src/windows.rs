@@ -26,6 +26,11 @@ const SCM_ID: &str = "scm";
 const CLIENTS: usize = 8;
 const SUBSCRIPTIONS: usize = 4;
 
+enum Script {
+    RuntimeReplay(mpsc::Receiver<()>),
+    BatteryParity(mpsc::Receiver<()>),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
     Starting,
@@ -41,7 +46,8 @@ pub(super) fn entry() -> io::Result<()> {
         [mode, id]
             if mode == "foreground"
                 || mode == "foreground-background"
-                || mode == "foreground-replay" =>
+                || mode == "foreground-replay"
+                || mode == "foreground-battery-parity" =>
         {
             let id = id.to_str().filter(|id| valid_id(id)).ok_or_else(|| {
                 io::Error::new(
@@ -55,11 +61,16 @@ pub(super) fn entry() -> io::Result<()> {
                 Session::Background
             };
 
-            let (mut advance, replay) = if mode == "foreground-replay" {
-                let (sender, receiver) = mpsc::channel(1);
-                (Some(sender), Some(receiver))
-            } else {
-                (None, None)
+            let (mut advance, script) = match mode.to_str() {
+                Some("foreground-replay") => {
+                    let (sender, receiver) = mpsc::channel(1);
+                    (Some(sender), Some(Script::RuntimeReplay(receiver)))
+                }
+                Some("foreground-battery-parity") => {
+                    let (sender, receiver) = mpsc::channel(1);
+                    (Some(sender), Some(Script::BatteryParity(receiver)))
+                }
+                _ => (None, None),
             };
             let (stop_tx, stop_rx) = oneshot::channel();
             let mut stop_tx = Some(stop_tx);
@@ -67,7 +78,7 @@ pub(super) fn entry() -> io::Result<()> {
             runtime.block_on(run(
                 id,
                 session,
-                replay,
+                script,
                 |phase| {
                     if phase == Phase::Running {
                         // This thread owns stdin. EOF stops replay; one byte stops fixed modes.
@@ -107,7 +118,7 @@ pub(super) fn entry() -> io::Result<()> {
         }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "expected foreground <hex-id>, foreground-background <hex-id>, foreground-replay <hex-id>, or --scm",
+            "expected a foreground mode with a hex ID, or --scm",
         )),
     }
 }
@@ -122,18 +133,23 @@ fn valid_id(id: &str) -> bool {
 async fn run(
     id: &str,
     session: Session,
-    replay: Option<mpsc::Receiver<()>>,
+    script: Option<Script>,
     mut report: impl FnMut(Phase) -> io::Result<()>,
     stop: impl Future<Output = ()>,
 ) -> io::Result<()> {
     let result = async {
         report(Phase::Starting)?;
         let status = Status::fixture()?;
-        let (status, drive) = if let Some(replay) = replay {
-            let (status, drive) = status.with_replay(replay);
-            (status, Some(drive))
-        } else {
-            (status, None)
+        let (status, replay, battery) = match script {
+            Some(Script::RuntimeReplay(advance)) => {
+                let (status, drive) = status.with_replay(advance);
+                (status, Some(drive), None)
+            }
+            Some(Script::BatteryParity(advance)) => {
+                let (status, drive) = status.with_battery(advance)?;
+                (status, None, Some(drive))
+            }
+            None => (status, None, None),
         };
         let endpoint = pipe::Endpoint::new(format!("{PREFIX}{id}"))?;
         let claim = endpoint.claim()?;
@@ -153,7 +169,10 @@ async fn run(
             biased;
             result = serve => result,
             result = async {
-                if let Some(drive) = drive {
+                if let Some(drive) = replay {
+                    drive.await?;
+                }
+                if let Some(drive) = battery {
                     drive.await?;
                 }
                 std::future::pending().await

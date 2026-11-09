@@ -238,6 +238,133 @@ public sealed class RustReadOnlyHostTests
         Assert.IsType<ServiceWatchUpdate.Reconnecting>(watch.Current);
     }
 
+    [RustReadOnlyHostFact]
+    public async Task TrayClient_BatteryParityCommitsOnlyConfirmedTemporaryIntent()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = timeout.Token;
+        string endpointId = Guid.NewGuid().ToString("N");
+        await using var host = DevHost.Start(endpointId, "foreground-battery-parity");
+        await host.WaitUntilReadyAsync(token);
+        await using var client = new ServiceClient(PipeName(endpointId));
+
+        var initial = await client.GetStatusAsync(token);
+        Assert.Equal(80, initial.ConfirmedState!.Battery!.ChargeLimitPercent);
+        Assert.Equal(80, initial.Profiles.BatteryPolicy.ChargeLimitPercent);
+        Assert.True(initial.Capabilities!.SupportsBatteryProtectionOff);
+        Assert.True(initial.Capabilities!.SupportsTemporaryFullCharge);
+
+        const string id = "11111111-2222-4333-8444-555555555555";
+        foreach (string malformed in new[]
+        {
+            $$$"""{"operation":"setBatteryPolicy","version":79,"requestId":"{{{id}}}","value":{"chargeLimitPercent":100}}""",
+            $$$"""{"operation":"setBatteryPolicy","version":79,"requestId":"{{{id}}}","value":{"chargeLimitPercent":70,"chargeLimitPercent":75}}""",
+            $$"""{"operation":"setBatteryProtection","version":79,"requestId":"{{id}}"}""",
+        })
+        {
+            await using NamedPipeClientStream pipe = await ConnectAsync(endpointId, token);
+            await WriteFrameAsync(pipe, System.Text.Encoding.UTF8.GetBytes(malformed), token);
+            Assert.Equal(0, await pipe.ReadAsync(new byte[1], token));
+        }
+
+        await using (var anonymous = new NamedPipeClientStream(
+            ".", PipeName(endpointId), PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Anonymous))
+        {
+            await anonymous.ConnectAsync(token);
+            await IpcMessageCodec.WriteRequestAsync(anonymous,
+                new SetBatteryProtectionRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), false), token);
+            Assert.Equal(0, await anonymous.ReadAsync(new byte[1], token));
+        }
+
+        await using (NamedPipeClientStream legacy = await ConnectAsync(endpointId, token))
+        {
+            string request = $$"""{"operation":"setBatteryProtection","version":51,"requestId":"{{id}}","enabled":false}""";
+            await WriteFrameAsync(legacy, System.Text.Encoding.UTF8.GetBytes(request), token);
+            byte[] prefix = new byte[4];
+            await legacy.ReadExactlyAsync(prefix, token);
+            int length = BinaryPrimitives.ReadInt32LittleEndian(prefix);
+            Assert.InRange(length, 1, 4096);
+            byte[] payload = new byte[length];
+            await legacy.ReadExactlyAsync(payload, token);
+            using var response = JsonDocument.Parse(payload);
+            Assert.Equal(51, response.RootElement.GetProperty("version").GetInt32());
+            Assert.Equal(id, response.RootElement.GetProperty("requestId").GetString());
+            Assert.False(response.RootElement.GetProperty("success").GetBoolean());
+        }
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => client.SetFullChargeOverrideAsync(true, token));
+        Assert.Equal(initial.Revision, (await client.GetStatusAsync(token)).Revision);
+
+        async Task ExpectLimitAsync(int percent, ControlOperationStatus expected) =>
+            Assert.Equal(expected, (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(percent), token)).Status);
+
+        async Task ExpectProtectionAsync(bool enabled) =>
+            Assert.Equal(ControlOperationStatus.Applied, (await client.SetBatteryProtectionAsync(enabled, token)).Status);
+
+        await ExpectLimitAsync(75, ControlOperationStatus.Applied);
+        var limit = await client.GetStatusAsync(token);
+        Assert.Equal(BatteryPolicy.Create(75), limit.BatteryPolicyOverride);
+        Assert.Equal(75, limit.ConfirmedState!.Battery!.ChargeLimitPercent);
+        await ExpectLimitAsync(75, ControlOperationStatus.Applied);
+        await ExpectLimitAsync(76, ControlOperationStatus.Blocked);
+        await ExpectProtectionAsync(false);
+        var off = await client.GetStatusAsync(token);
+        Assert.False(off.BatteryProtectionOverride);
+        Assert.False(off.ConfirmedState!.Battery!.ProtectionEnabled);
+        Assert.Null(off.ConfirmedState.Battery.ChargeLimitPercent);
+        Assert.Equal(75, off.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent);
+        await ExpectLimitAsync(70, ControlOperationStatus.Blocked);
+        await ExpectProtectionAsync(true);
+        var on = await client.GetStatusAsync(token);
+        Assert.True(on.ConfirmedState!.Battery!.ProtectionEnabled);
+        Assert.Equal(75, on.ConfirmedState.Battery.ChargeLimitPercent);
+
+        await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+        Assert.Equal(on.Revision, (await ReadStatusAsync(watch, subscriptionOpened: true)).Revision);
+
+        await host.AdvanceAsync(token);
+        Assert.Contains("cancellation armed", (await ReadStatusAsync(watch, subscriptionOpened: false)).Message);
+        await Assert.ThrowsAnyAsync<IOException>(() => client.SetBatteryProtectionAsync(false, token));
+        var canceled = await client.GetStatusAsync(token);
+        Assert.Empty(canceled.UnconfirmedWrites);
+        Assert.Equal(on.ConfirmedState.Battery, canceled.ConfirmedState!.Battery);
+
+        await host.AdvanceAsync(token);
+        Assert.Contains("lost response armed", (await ReadStatusAsync(watch, subscriptionOpened: false)).Message);
+        await ExpectLimitAsync(70, ControlOperationStatus.Failed);
+        var pending = await ReadStatusAsync(watch, subscriptionOpened: false);
+        Assert.True(pending.WritesBlocked);
+        Assert.Equal(DeviceSubsystem.Battery, Assert.Single(pending.UnconfirmedWrites));
+        Assert.Equal(75, pending.ConfirmedState!.Battery!.ChargeLimitPercent);
+        Assert.Equal(75, pending.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent);
+        await ExpectLimitAsync(65, ControlOperationStatus.Blocked);
+        Assert.True((await ReadStatusAsync(watch, subscriptionOpened: false)).WritesBlocked);
+
+        await host.AdvanceAsync(token);
+        var recovered = await ReadStatusAsync(watch, subscriptionOpened: false);
+        Assert.Empty(recovered.UnconfirmedWrites);
+        Assert.Empty(recovered.ExternalChanges);
+        Assert.False(recovered.WritesBlocked);
+        Assert.Equal(70, recovered.ConfirmedState!.Battery!.ChargeLimitPercent);
+        Assert.Equal(70, recovered.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent);
+        Assert.Equal(BatteryPolicy.Create(70), recovered.BatteryPolicyOverride);
+        Assert.Equal(80, recovered.Profiles.BatteryPolicy.ChargeLimitPercent);
+
+        await ExpectProtectionAsync(false);
+        Assert.False((await ReadStatusAsync(watch, subscriptionOpened: false)).ConfirmedState!.Battery!.ProtectionEnabled);
+        await host.AdvanceAsync(token);
+        var battery = await ReadStatusAsync(watch, subscriptionOpened: false);
+        Assert.Equal(PowerSource.Battery, battery.ActivePowerSource);
+        Assert.Null(battery.BatteryProtectionOverride);
+        Assert.Equal(BatteryPolicy.Create(70), battery.BatteryPolicyOverride);
+        Assert.Equal(70, battery.ConfirmedState!.Battery!.ChargeLimitPercent);
+        Assert.Equal(battery.Revision, (await client.GetStatusAsync(token)).Revision);
+
+        await host.StopAsync(token);
+    }
+
+
+
     private static string PipeName(string endpointId) => $"OpenBlade.Rust.ReadOnly.Dev.{endpointId}";
 
     private static async Task<ServiceStatusSnapshot> ReadStatusAsync(
