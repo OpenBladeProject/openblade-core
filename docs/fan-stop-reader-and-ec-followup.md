@@ -516,6 +516,14 @@ check the fixed decode bit without touching an EC selector or mailbox.
 The standard public hw-probe PCI logs collect device descriptions
 without a config-space hex dump, so they cannot supply this word.
 [hw-probe PCI collection](https://github.com/linuxhw/hw-probe/blob/master/hw-probe.pl#L6035-L6111)
+Windows documents arbitrary PCI configuration reads through the bus
+driver interface or a kernel IRP. The investigation found no supported
+user-mode equivalent for this word. [Microsoft PCI configuration access](https://learn.microsoft.com/en-us/windows-hardware/drivers/pci/accessing-pci-device-configuration-space)
+
+The KI890 2.09 PCH DXE and SMM listings have no identified direct
+write to this word. The reviewed S3 save-state module walks boot-script
+records, so a direct-address scan cannot rule out a later write via a
+record or an indirect PCI helper.
 
 On a matching host already running Linux, the narrow capture is:
 
@@ -559,6 +567,15 @@ The separate `RECR` path submits `80` through ACPI EC offsets
 reach either `F01808` or the feedback copy at `80536`. The KI890 BIOS
 field called `PWMV` is used by a keyboard LED brightness method and
 supplies no fan-duty readback.
+
+The KI890 2.09 and KI8100 1.06 `TFN1._FST` methods use the
+`H_EC` template. Its `_STA` returns zero, `ECAV` starts at zero
+with no enabling assignment in the recovered tables, and `ECRD`
+returns zero. The KI8110 4.01 `TFN1/TFN2._FST` methods check for
+`H_EC.DPTF.GFNS`, which has no definition in the recovered tables.
+They pass fan IDs zero and one and preserve placeholder values if
+the hook is absent. These interfaces supply no independent third
+PWM reading.
 
 The local manifests, extracted DSDTs and replay scripts are under
 `artifacts/model-expansion/ki890-host-bios/`,
@@ -692,6 +709,50 @@ RZ09-0301.
 [Razer firmware index](https://mysupport.razer.com/app/answers/detail/a_id/4166/kw/Nari%20downloads)
 · [RZ09-0301 support and downloads](https://mysupport.razer.com/app/answers/detail/a_id/3683/)
 · [RZ09-0288 EC updater](https://mysupport.razer.com/app/answers/detail/a_id/1991/)
+
+The Charlotte2 payload is a 256 KiB NDS32 image, SHA-256
+`4459b0e053b12f32cc3c77f2df97491b039eab7c4ba1c6492e4b3c9390df0950`.
+Its `ITE8390EC-V01.03` marker at `90` and reset vectors provide a
+positive control. Neither fingerprint was found in the retained
+BIOS/ME binaries and unpacked volumes for DA530, CH530 or DA550, or
+the two retained OL510 ME binaries.
+
+The Charlotte2 receiver initialization at `E83E → 1DC0A → 1DB92`
+sets the seven-bit I²C receive address to `58`. That matches the
+RZ09-0301 keyboard's write-address byte `B0`. Charlotte2's bank-zero
+table at `228DC` also shares target indices `1B/1C`. In this image
+`B8/B9` stage to `80394/80395` and `9C` is read-only scratch.
+The FE branch at `127BC → 12C6C` copies
+`8038E` to third PWM `F01808` at `12D10`, yet none of the eight
+mapped banks exposes either address. A matching reset header or
+I²C address does not establish the full receiver contract.
+[ITE receive address definition, p. 306](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
+
+The archived DA550 download category lists only BIOS 1.06.
+Archived CH530 and OL510 support pages list the already reviewed
+packages. The local `Razer\Update Tool` directory reported for DA550
+matches the outer carrier's own extraction destination.
+[Archived DA550 category](https://web.archive.org/web/20220819164454id_/https://drivers.razersupport.com/index.php?_m=downloads&_a=view&parentcategoryid=1004&pcid=992&nav=0,350,992)
+· [Archived CH530 downloads](https://web.archive.org/web/20230304115003id_/https://mysupport.razer.com/app/answers/detail/a_id/3683)
+· [Archived OL510 downloads](https://web.archive.org/web/20220413011029id_/https://mysupport.razer.com/app/answers/detail/a_id/3919)
+
+The archived hardware categories also led to earlier signed C3 and
+D3 ME 12.0.38.1430 carriers. C3 binds RZ09-03017/03018 with SSID
+`1A582005`. D3 binds RZ09-03009/03006 with SSID `1A582004`.
+Both select the same 15-partition Intel ME payload, SHA-256
+`32ecbbd7e4003382e14c018ea97d61013ab58cd39d3ebe02e00883e76264ea8f`.
+All four selectors leave the EC version and executable fields empty.
+[Razer C3 ME carrier](https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20Mid%202019/RazerUpdater_v1.1.1.2_C3-MEv120381430.exe)
+· [Razer D3 ME carrier](https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20Mid%202019%20-%20Base/RazerUpdater_v1.1.1.2_D3-MEv120381430.exe)
+
+For acquisition, prefer a preserved original exact-board dump.
+ITE's published Linux download-board utility accepts an input
+image and uses its read routine internally for verification. It
+has no dump-only CLI. Chromium's `iteflash --read` enters debug
+mode and changes the target's execution state before reading.
+That requires separate bench review and board wiring evidence.
+[ITE tool source](https://www.ite.com.tw/upload/2024_01_23/6_20240123162336wu55j1Rjm4.bz2)
+· [Chromium ITE tool entry point](https://chromium.googlesource.com/chromiumos/platform/ec/+/d1e7a27efbc80e282b3917d1bef7a9a944c00eeb/util/iteflash.cc#2492)
 
 DA550 MP V4.0 reports identify IT8390E. The superficially similar CH551
 original pair came from RZ09-0330. A separate OL510 PVT V1.0 board photo
