@@ -39,7 +39,8 @@ execution assumptions. It does find a stale callback that can erase a later
 Auto request. The [interrupt store follow-up](fan-stop-reader-and-ec-followup.md#interrupt-writers-and-command-publication)
 bounds computed destinations within the retained interrupt graph. It also
 finds a direct lifecycle clear of actual duty 3. The exact-chip host-write
-trigger and interrupt drainage still need evidence.
+trigger and interrupt drainage still need evidence. One residual notification
+is enough to erase Auto in the bounded scheduling model.
 The [alternate reader](fan-stop-bram3-readback-review.md) has exact 302/303
 port-base evidence on all four images, but ordinary callbacks share its address
 bytes. A conditional staging race returns a wrong zero; reachability under an
@@ -50,6 +51,9 @@ The fence orders the D0 tail under serialized callbacks. The fixed primary
 map can observe the I²C bank and verify actual restore fields independently.
 The bounded model catches a false success that same-bank I²C readback can
 miss. Exclusive bank ownership and guardian handback remain prerequisites.
+The [keyboard bus trace](fan-stop-reader-and-ec-followup.md#keyboard-bridge-scheduling-and-bus-completion)
+finds shared transfer staging between the timer-driven HID bridge and the
+foreground worker. A bridge reply does not establish bus idle.
 
 For the other seven models, six have signed BIOS packages inspected through
 their complete extractable payload trees; RZ09-0351 still lacks a usable BIOS

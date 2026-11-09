@@ -215,6 +215,8 @@ banks 1–7 does point to the writable bank-selector byte in all four images.
 A bank-ownership argument must bound the whole transfer, including
 its length and any pending command.
 
+### Primary interrupt completion
+
 | Model | Scalar stores in graph | Missing from earlier inventory | Lifecycle store to actual duty 3 |
 | --- | ---: | ---: | --- |
 | RZ09-0423 | 456 | 22 | `139DC` |
@@ -239,11 +241,56 @@ equivalent evidence is still needed for both the host-write condition and
 interrupt drainage. [ITE IT81202 specification, pp. 186, 198, 434–435](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
 · [Pinned Chromium IT8320 configuration](https://chromium.googlesource.com/chromiumos/platform/ec/+/82d2822/chip/it83xx/config_chip_it8320.h)
 
+The scheduling model needs only one residual notification after D0
+copies its result. From an initially quiet dispatcher it explores 281
+states and accepts 10 fence states, with no false read success. In the
+failure case the residual callback starts before the A0 publication and
+loads the opcode afterward. A0's own pending event then starts an empty
+callback. After the host accepts the correct A0 data and publishes A1,
+that empty callback's unconditional outer clear erases A1. The observed
+command and status are both zero and Auto never applies. This is a
+conditional interleaving. Bounding residual delivery to one event does
+not establish quiescence.
+
 The exact keyboard images for 0423 (1.02.00), 0484 (1.04.00), 0509
 (1.01.00), and 0529 (1.07.00) send both named duty commands, `0D/0D` and
 `0D/8D`, to the unsupported handler with status `05`. The separate raw
 bridge still requires bank ownership and an independently retained HID
 handback path.
+
+### Keyboard bridge scheduling and bus completion
+
+The keyboard bus engine has two direct call sites in each pinned image,
+one from the read helper and one from the write helper. The three older
+images also have a single-byte write wrapper. Its 24 direct callers per
+image use fixed indexes `00/01/02/FD/FE`. The whole-image direct branch
+scan found no extra tail branches or literal Thumb function pointer to
+the engine. Computed entry and other physical bus controllers remain
+outside that result.
+
+| Model | Timer vector / call to HID dispatcher | Foreground call to thermal worker | Shared frame buffer | Write STOP request / result store |
+| --- | --- | --- | --- | --- |
+| RZ09-0423 | `B5CC / B69C` | `8F46 → 2544` | `10000324` | `3146 / 314C` |
+| RZ09-0484 | `B858 / B928` | `903A → 2544` | `10000326` | `31EA / 31F0` |
+| RZ09-0509 | `BACC / BBA4` | `91EE → 2544` | `1000032E` | `322A / 3230` |
+| RZ09-0529 | `35D8 / 3688` | `6B66 → 4E0C` | `10000200` | `25D0 / 25D4` |
+
+The timer dispatches the synchronous HID bridge. The foreground worker
+stages ordinary fan traffic in the same buffer and length fields before
+calling the bus engine. Neither helper checks a busy flag or saves the
+previous frame before staging. If the timer can interrupt a foreground
+call between staging and engine entry, even a bridge read can replace
+the staged frame and lengths before the worker submits them. The trace
+identifies the window, while runtime interrupt masking and scheduling
+still need to be established. Serializing host HID requests alone does
+not settle this firmware-side overlap.
+
+The write path stores success `0C` immediately after requesting the
+I²C STOP condition. The engine returns the software result and disables
+its IRQ without polling the bus. Its local timeout stores `0B` and
+disables that IRQ without an explicit STOP or peripheral reset in that
+path. The HID response supplies neither wire-idle evidence nor EC
+callback completion. Keep a timeout ambiguous. [NXP I²C specification, §3.1.4](https://www.nxp.com/docs/en/user-guide/UM10204.pdf)
 
 ## Seven models with missing receiver evidence
 
@@ -297,6 +344,12 @@ because its exact keyboard transport already carries zero to the receiver.
 · [CH530 original pair](https://vinafix.com/threads/bios-rz09-0301-9th-generation.38915/)
 · [Second CH530 listing](https://vinafix.com/threads/rz09-0301-ch530-mb-fsc-v3-0.41761/)
 
+Razer's public index lists BIOS and keyboard updates for RZ09-0301.
+The recheck identified no separate receiver package or additional
+public receiver bytes for the seven models.
+[Razer firmware index](https://mysupport.razer.com/app/answers/detail/a_id/4166/kw/Nari%20downloads)
+· [RZ09-0301 support and downloads](https://mysupport.razer.com/app/answers/detail/a_id/3683/)
+
 DA550 MP V4.0 reports identify IT8390E. The superficially similar CH551
 original pair came from RZ09-0330. A separate OL510 PVT V1.0 board photo
 records distinct BIOS and EC flash locations on the owner's unit.
@@ -344,7 +397,8 @@ Detailed local proof and input manifests are under
 trigger documents, and most recent acquisition results are in
 `reader-resolution-next/`, `trigger-resolution-next/`,
 `intel-receiver-resolution/`, and `amd-receiver-resolution/` under the
-same artifact root. The reader proof hashes all four EC images,
+same artifact root. `keyboard-bus-ownership/` retains the MCU byte
+checks and the one-notification model. The reader proof hashes all four EC images,
 checks the opcode paths and calls, and reproduces the ordering model.
 The package work verified signatures or catalog membership and inspected
 the decoded contents offline. Runtime admission remains open for these
