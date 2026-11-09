@@ -15,14 +15,16 @@ use crate::{
     registry_identity::RegistryIdentity,
     replay::frame,
 };
-use native::{FileIdentity, WorkerJob, attempt, exclusive, identity, isolate_child_stdio};
+use native::{
+    ChildProcess, FileIdentity, OwnerWatch, WorkerJob, attempt, child_endpoints, exclusive,
+    identity,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     env,
     fs::{self, File},
     io::{self, Read, Write},
     path::{Path, PathBuf},
-    process::{Child, ChildStdin, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, SyncSender},
@@ -32,7 +34,6 @@ use std::{
 };
 use windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION;
 
-const ROLE: &str = "OPENBLADE_HANDOFF_TEST_ROLE";
 const CONTROL: &str = "control.fixture";
 const MATRIX: &str = "matrix.fixture";
 const FENCE: &str = "owner.fixture";
@@ -46,6 +47,7 @@ enum Case {
     Cancel,
     Crash,
     LostReceipt,
+    MalformedReceipt,
     StaleAttempt,
     StaleIdentity,
     Controller,
@@ -68,6 +70,10 @@ enum Block {
     FenceUnavailable,
     RestartQuarantined,
     Protocol,
+    LaneUnavailable,
+    Quiesce,
+    Launch,
+    WorkerWaitFailed,
     WorkerExited,
     ReceiptLost,
     Refused(Outcome),
@@ -84,7 +90,8 @@ impl From<io::Error> for Block {
 enum Message {
     Active,
     Begin(Case),
-    Ready,
+    Ready([u8; 16]),
+    Leased,
     Grant {
         attempt: [u8; 16],
         control: FileIdentity,
@@ -160,35 +167,18 @@ impl Incoming {
 }
 
 struct Process {
-    child: Child,
-    input: ChildStdin,
+    child: ChildProcess,
+    input: File,
     output: Incoming,
 }
 
 impl Process {
-    fn start(root: &Path, role: &str, nonce: Option<[u8; 16]>) -> io::Result<Self> {
-        let mut command = Command::new(env::current_exe()?);
-        command
-            .args(["--exact", "ownership::child_role", "--test-threads=1"])
-            .current_dir(root)
-            .env(ROLE, role)
-            .env_remove("OPENBLADE_HANDOFF_TEST_ATTEMPT")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-        if let Some(nonce) = nonce {
-            command.env(
-                "OPENBLADE_HANDOFF_TEST_ATTEMPT",
-                serde_json::to_string(&nonce)?,
-            );
-        }
-        let mut child = command.spawn()?;
-        let input = child.stdin.take().expect("piped stdin");
-        let output = Incoming::new(child.stderr.take().expect("piped stderr"));
+    fn start(root: &Path, job: Option<&WorkerJob>) -> io::Result<Self> {
+        let (child, input, reply) = ChildProcess::launch(root, job)?;
         Ok(Self {
             child,
             input,
-            output,
+            output: Incoming::new(reply),
         })
     }
 
@@ -196,23 +186,17 @@ impl Process {
         send(&mut self.input, message)
     }
 
-    fn wait(&mut self) -> io::Result<bool> {
-        let deadline = Instant::now() + WAIT;
-        loop {
-            if let Some(status) = self.child.try_wait()? {
-                return Ok(status.success());
-            }
-            require(Instant::now() < deadline, "child did not exit")?;
-            thread::sleep(Duration::from_millis(5));
-        }
+    fn wait(&self) -> io::Result<bool> {
+        self.child
+            .wait(WAIT)?
+            .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "child did not exit"))
     }
 }
 
 impl Drop for Process {
     fn drop(&mut self) {
-        // Kill only the process created by this fixture. A supervisor's worker
-        // is also contained by the supervisor's non-inherited job handle.
-        if matches!(self.child.try_wait(), Ok(None)) && self.child.kill().is_ok() {
+        // Only the exact process created by the fixture can be terminated.
+        if matches!(self.child.wait(Duration::ZERO), Ok(None)) && self.child.kill().is_ok() {
             let _ = self.wait();
         }
     }
@@ -268,11 +252,9 @@ impl ActiveOwner {
         if Path::new(PAUSED).try_exists()? {
             return Err(Block::RestartQuarantined);
         }
-        Ok(Self::with_handles(
-            fence,
-            exclusive(CONTROL, false)?,
-            exclusive(MATRIX, false)?,
-        )?)
+        let control = exclusive(CONTROL, false).map_err(|_| Block::LaneUnavailable)?;
+        let matrix = exclusive(MATRIX, false).map_err(|_| Block::LaneUnavailable)?;
+        Ok(Self::with_handles(fence, control, matrix)?)
     }
 
     fn with_handles(fence: File, control: File, matrix: File) -> io::Result<Self> {
@@ -292,8 +274,7 @@ impl ActiveOwner {
         self.control.drain()?;
         self.matrix.drain()?;
         // Check closure using new kernel opens before the grant.
-        drop(exclusive(CONTROL, false)?);
-        drop(exclusive(MATRIX, false)?);
+        verify_lanes_closed()?;
         Ok(PausedOwner {
             control,
             matrix,
@@ -320,6 +301,12 @@ impl PausedOwner {
     }
 }
 
+fn verify_lanes_closed() -> io::Result<()> {
+    drop(exclusive(CONTROL, false)?);
+    drop(exclusive(MATRIX, false)?);
+    Ok(())
+}
+
 fn sharing_violation(path: impl AsRef<Path>) -> io::Result<bool> {
     match exclusive(path, false) {
         Ok(_) => Ok(false),
@@ -328,16 +315,18 @@ fn sharing_violation(path: impl AsRef<Path>) -> io::Result<bool> {
     }
 }
 
-fn transfer(owner: ActiveOwner, outer: &Incoming, case: Case) -> Result<ActiveOwner, Block> {
-    let paused = owner.quiesce()?;
-    let nonce = attempt()?;
-    let job = WorkerJob::new()?;
-    let mut worker = Process::start(&env::current_dir()?, "worker", Some(nonce))?;
-    job.contain(&worker.child)?;
-    require(
-        worker.output.next()? == Message::Ready,
-        "worker did not initialize",
-    )?;
+fn transfer(
+    owner: ActiveOwner,
+    outer: &Incoming,
+    reply: &File,
+    case: Case,
+) -> Result<ActiveOwner, Block> {
+    let paused = owner.quiesce().map_err(|_| Block::Quiesce)?;
+    let job = WorkerJob::new().map_err(|_| Block::Launch)?;
+    let mut worker = Process::start(&env::current_dir()?, Some(&job)).map_err(|_| Block::Launch)?;
+    let Message::Ready(nonce) = worker.output.next()? else {
+        return Err(Block::Protocol);
+    };
     let mut granted = nonce;
     if case == Case::StaleAttempt {
         granted[0] ^= 1;
@@ -353,6 +342,16 @@ fn transfer(owner: ActiveOwner, outer: &Incoming, case: Case) -> Result<ActiveOw
     })?;
 
     let mut terminal = worker.output.next();
+    if matches!(terminal, Ok(Message::Leased)) {
+        if case == Case::Return {
+            // Exercise a rival while the lease is live, before starting the
+            // real transport's three-second exchange timer.
+            send(reply, Message::Leased)?;
+            require(outer.next()? == Message::Continue, "expected query start")?;
+        }
+        worker.send(Message::Continue)?;
+        terminal = worker.output.next();
+    }
     let mut permitted_completion = false;
     if matches!(terminal, Ok(Message::Submitted)) {
         // The fixture SET is now in flight and the Rust child holds the only
@@ -362,7 +361,7 @@ fn transfer(owner: ActiveOwner, outer: &Incoming, case: Case) -> Result<ActiveOw
             "worker did not hold the control handle",
         )?;
         drop(exclusive(MATRIX, false)?);
-        send(io::stderr(), Message::Submitted)?;
+        send(reply, Message::Submitted)?;
         let directive = outer.next()?;
         require(
             matches!(directive, Message::Continue | Message::Cancel),
@@ -372,15 +371,18 @@ fn transfer(owner: ActiveOwner, outer: &Incoming, case: Case) -> Result<ActiveOw
         worker.send(directive)?;
         terminal = worker.output.next();
     }
-    if !worker.wait()? {
+    if !worker.wait().map_err(|_| Block::WorkerWaitFailed)? {
         return Err(Block::WorkerExited);
     }
     // The process handle is signaled. Independently check both fixture handles
     // are available even for terminal refusals. Any abnormal result quarantines.
-    drop(exclusive(CONTROL, false)?);
-    drop(exclusive(MATRIX, false)?);
-    let Message::Closed(outcome) = terminal.map_err(|_| Block::ReceiptLost)? else {
-        return Err(Block::Protocol);
+    verify_lanes_closed().map_err(|_| Block::LaneUnavailable)?;
+    let outcome = match terminal {
+        Ok(Message::Closed(outcome)) => outcome,
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
+            return Err(Block::ReceiptLost);
+        }
+        _ => return Err(Block::Protocol),
     };
     if outcome != Outcome::Levels(BASELINE[0], BASELINE[1]) {
         return Err(Block::Refused(outcome));
@@ -401,6 +403,8 @@ struct FakeControl<'a> {
     expected: FileIdentity,
     case: Case,
     input: &'a Incoming,
+    reply: &'a File,
+    owner: &'a OwnerWatch,
     canceled: &'a AtomicBool,
 }
 
@@ -415,10 +419,13 @@ impl FeatureIo for FakeControl<'_> {
         if let Some(stop) = limit.stop() {
             return Transfer::BeforeSubmission(stop);
         }
+        if !self.owner.alive().unwrap_or(false) {
+            return Transfer::PreparationFailed(995);
+        }
         match direction {
             Direction::Set => {
                 assert_eq!(*buffer, frame(0, 1, [0, 0]));
-                send(io::stderr(), Message::Submitted).expect("report fake submission");
+                send(self.reply, Message::Submitted).expect("report fake submission");
                 if self.case == Case::HoldUntilTerminated {
                     // Deliberately ignore pipe EOF to exercise job teardown,
                     // independently of the cooperative protocol.
@@ -450,6 +457,8 @@ struct QueryLease<'a> {
     case: Case,
     authority_checks: u8,
     input: &'a Incoming,
+    reply: &'a File,
+    owner: &'a OwnerWatch,
     canceled: &'a AtomicBool,
 }
 
@@ -468,7 +477,8 @@ impl<'a> FixtureLease for QueryLease<'a> {
     }
 
     fn check_authority(&mut self) -> Result<(), AdmissionFailure> {
-        if !Path::new(PAUSED).try_exists().unwrap_or(false)
+        if !self.owner.alive().unwrap_or(false)
+            || !Path::new(PAUSED).try_exists().unwrap_or(false)
             || !sharing_violation(FENCE).unwrap_or(false)
         {
             return Err(AdmissionFailure::OwnershipUnavailable);
@@ -491,15 +501,16 @@ impl<'a> FixtureLease for QueryLease<'a> {
             expected: self.control,
             case: self.case,
             input: self.input,
+            reply: self.reply,
+            owner: self.owner,
             canceled: self.canceled,
         }])
     }
 }
 
-fn worker(input: &Incoming) -> io::Result<()> {
-    let nonce = env::var("OPENBLADE_HANDOFF_TEST_ATTEMPT").map_err(io::Error::other)?;
-    let expected: [u8; 16] = serde_json::from_str(&nonce)?;
-    send(io::stderr(), Message::Ready)?;
+fn worker(input: &Incoming, reply: &File, owner: &OwnerWatch) -> io::Result<()> {
+    let expected = attempt()?;
+    send(reply, Message::Ready(expected))?;
     let Message::Grant {
         attempt,
         control,
@@ -510,12 +521,16 @@ fn worker(input: &Incoming) -> io::Result<()> {
     };
     let canceled = AtomicBool::new(false);
     let outcome = if attempt == expected {
+        send(reply, Message::Leased)?;
+        require(input.next()? == Message::Continue, "expected query start")?;
         let result = query_once(
             QueryLease {
                 control,
                 case,
                 authority_checks: 0,
                 input,
+                reply,
+                owner,
                 canceled: &canceled,
             },
             Limit {
@@ -541,39 +556,45 @@ fn worker(input: &Incoming) -> io::Result<()> {
         return Ok(());
     }
     // query_once has consumed the lease and disposed of the fake handle.
-    send(io::stderr(), Message::Closed(outcome))
+    send(reply, Message::Closed(outcome))?;
+    if case == Case::MalformedReceipt {
+        // Leave a partial extra frame after a valid terminal receipt.
+        let mut reply = reply;
+        reply.write_all(&[1])?;
+    }
+    Ok(())
 }
 
-fn supervisor(input: &Incoming) -> io::Result<()> {
+fn supervisor(input: &Incoming, reply: &File) -> io::Result<()> {
     let owner = match ActiveOwner::acquire() {
         Ok(owner) => owner,
-        Err(reason) => return send(io::stderr(), Message::Blocked(reason)),
+        Err(reason) => return send(reply, Message::Blocked(reason)),
     };
-    send(io::stderr(), Message::Active)?;
+    send(reply, Message::Active)?;
     let Message::Begin(case) = input.next()? else {
         return Err(io::Error::other("expected begin"));
     };
-    match transfer(owner, input, case) {
+    match transfer(owner, input, reply, case) {
         Ok(_owner) => {
-            send(io::stderr(), Message::Returned)?;
+            send(reply, Message::Returned)?;
             require(
                 input.next()? == Message::Continue,
                 "expected fixture shutdown",
             )
         }
-        Err(reason) => send(io::stderr(), Message::Blocked(reason)),
+        Err(reason) => send(reply, Message::Blocked(reason)),
     }
 }
 
 #[test]
 fn child_role() -> io::Result<()> {
-    match env::var(ROLE).as_deref() {
-        Ok("supervisor") => {
-            isolate_child_stdio()?;
-            supervisor(&Incoming::new(io::stdin()))
-        }
-        Ok("worker") => worker(&Incoming::new(io::stdin())),
-        _ => Ok(()),
+    let Some((reply, owner)) = child_endpoints()? else {
+        return Ok(());
+    };
+    let input = Incoming::new(io::stdin());
+    match owner {
+        Some(owner) => worker(&input, &reply, &owner),
+        None => supervisor(&input, &reply),
     }
 }
 
@@ -592,7 +613,7 @@ impl Fixture {
     }
 
     fn supervisor(&self) -> io::Result<Process> {
-        Process::start(&self.0, "supervisor", None)
+        Process::start(&self.0, None)
     }
 
     fn begin(&self, case: Case) -> io::Result<Process> {
@@ -605,7 +626,7 @@ impl Fixture {
     }
 
     fn assert_blocked(&self, reason: Block) -> io::Result<()> {
-        let mut rival = self.supervisor()?;
+        let rival = self.supervisor()?;
         assert_eq!(rival.output.next()?, Message::Blocked(reason));
         assert!(rival.wait()?);
         Ok(())
@@ -632,11 +653,13 @@ impl Drop for Fixture {
 fn transfers_once_and_returns_after_closure_and_readback() -> io::Result<()> {
     let fixture = Fixture::new()?;
     let mut owner = fixture.begin(Case::Return)?;
+    assert_eq!(owner.output.next()?, Message::Leased);
+    fixture.assert_blocked(Block::FenceUnavailable)?;
+    owner.send(Message::Continue)?;
     assert_eq!(owner.output.next()?, Message::Submitted);
     assert!(sharing_violation(fixture.0.join(CONTROL))?);
     assert!(!sharing_violation(fixture.0.join(MATRIX))?);
     assert!(sharing_violation(fixture.0.join(FENCE))?);
-    fixture.assert_blocked(Block::FenceUnavailable)?;
     owner.send(Message::Continue)?;
     assert_eq!(owner.output.next()?, Message::Returned);
     assert!(!fixture.0.join(PAUSED).try_exists()?);
@@ -658,7 +681,7 @@ fn stale_grants_and_changed_controller_fail_before_submission() -> io::Result<()
         (Case::ExecutionBlocked, Outcome::Denied),
     ] {
         let fixture = Fixture::new()?;
-        let mut owner = fixture.begin(case)?;
+        let owner = fixture.begin(case)?;
         assert_eq!(
             owner.output.next()?,
             Message::Blocked(Block::Refused(outcome))
@@ -679,6 +702,7 @@ fn canceled_crashed_lost_and_unreconciled_results_leave_the_fence_latched() -> i
         ),
         (Case::Crash, Message::Continue, Block::WorkerExited),
         (Case::LostReceipt, Message::Continue, Block::ReceiptLost),
+        (Case::MalformedReceipt, Message::Continue, Block::Protocol),
         (
             Case::ReconcileFailed,
             Message::Continue,
@@ -699,7 +723,7 @@ fn canceled_crashed_lost_and_unreconciled_results_leave_the_fence_latched() -> i
 #[test]
 fn supervisor_death_closes_the_worker_job_but_never_clears_quarantine() -> io::Result<()> {
     let fixture = Fixture::new()?;
-    let mut owner = fixture.begin(Case::HoldUntilTerminated)?;
+    let owner = fixture.begin(Case::HoldUntilTerminated)?;
     assert_eq!(owner.output.next()?, Message::Submitted);
     assert!(sharing_violation(fixture.0.join(CONTROL))?);
     owner.child.kill()?;

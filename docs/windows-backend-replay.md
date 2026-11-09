@@ -194,22 +194,21 @@ retiring either lane, stops admission, joins both lane operations, closes
 their handles and checks closure through fresh exclusive opens.
 
 The incumbent creates an unnamed, non-inherited job with kill-on-close and
-one active process. The worker waits on inherited pipes and cannot open its
-control file until the incumbent has assigned the exact child to that job.
-The test supervisor starts only that child, clears inheritance on its own
-standard handles, and uses a separate pair of pipes for the worker. The
-bounded protocol grants one attempt nonce and the old control file's volume
-and file index. The worker compares the nonce assigned to its launch and
-rechecks the identity from its own open handle. The nonce scopes the attempt.
-Pipe possession and the retained process and job handles bind the exchange to
-the child. The fixture assumes trusted executables running as the same user
-in the test-owned directory. A production service needs a restricted launch
-and explicit handle allowlist. [Windows handle inheritance](https://learn.microsoft.com/windows/win32/procthread/inheritance) · [Windows job objects](https://learn.microsoft.com/windows/win32/procthread/job-objects)
+one active process. Windows puts the worker in the job at creation. An
+explicit handle list passes its anonymous request and reply pipes and a
+wait-only handle to the exact incumbent. Test output has separate handles.
+The worker supplies a fresh attempt nonce, accepts a matching grant once and
+verifies the volume and full 128-bit file ID from its own open handle. It
+checks the incumbent handle during admission and before fake I/O. The
+fixture assumes trusted executables running as the same user in the
+test-owned directory. A production service also needs a restricted launch
+and service-protected state. [Windows process creation attributes](https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) · [Windows file identity](https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-file_id_info)
 
 The worker consumes the Phase 3c lease once through `query_once`. The fake
 SET stays in flight while the tests observe the worker's exclusive control
-handle, the released matrix handle and the refused competing incumbent. The
-query returns the two validated levels. The incumbent requires the expected
+handle and the released matrix handle. A separate incumbent is refused while
+the lease is live, before the timed query starts. The query returns the two
+validated levels. The incumbent requires the expected
 terminal receipt, successful exit of its exact child and independent file
 reopens and readback before clearing the restart block and returning to
 active. The Phase 3c fake host and collection data and scripted controller,
@@ -220,7 +219,7 @@ the test. The fake operations do not exercise physical driver drain.
 
 A stale attempt or file identity and a changed controller or execution
 decision refuse before SET. Cancellation after SET, abrupt worker exit, a
-lost receipt and failed readback preserve the restart block. A hung worker
+lost or malformed receipt and failed readback preserve the restart block. A hung worker
 ignores the channel when the test kills the incumbent. The job releases
 the worker's file, while a new incumbent still refuses the marked directory.
 The marker models fail-closed recovery across process death on a running
