@@ -366,8 +366,14 @@ on 0423/0484/0509/0529 respectively. This is distinct from each model's
 keyboard MCU product ID. The KI890 descriptor calls it Razer EC and
 declares two HID interfaces and one vendor interface.
 
-On KI890 the ordinary event table starts the USB initializer through
-`1D63A → 69A8 → 22424 → 222E0 → 7C06 → 79A0`. The USB SET_REPORT handler
+On KI890 the ordinary event table reaches USB state handling through
+`1D63A → 69A8`. The precheck at `C6A4` returns a constant `FF`.
+The pending flag `80CF` and zero state `80D4` select `22424`.
+With `80D6` zero, that routine reaches the initializer at
+`222E0 → 7C06 → 79A0` and sets `80D6` to one. Nonzero `80D4` or an
+`80D6` value of one takes the `7B10` route instead. The inspected path
+does not identify a board strap, a host-visible enable switch, or the
+state of those bytes during a retail boot. The USB SET_REPORT handler
 dispatches the 90-byte report before scheduling the status stage.
 The EC-local `0D/02` handler stores the selector at `8035F` and a fresh
 `0D/82` reads that byte directly. This path does not use the keyboard
@@ -384,6 +390,33 @@ identifies RZ09-0484 and SSID `1A583007`. A compressed section could
 only be decoded in part. The recovered BIOS bodies and decoded prefix
 contained no matching device identity, so this inspection does not
 settle host visibility. [Razer KI890 BIOS 2.09](https://mysupport.razer.com/app/answers/detail/a_id/14221/kw/RZ09%2Baudio%2Bdriver)
+
+Seven full Linux USB inventories from six RZ09-0423 hosts list the
+model's keyboard device `1532:028B`. None lists `1532:F003`. The
+matching DMI records report EC revisions 1.02 and 1.03. Two RZ09-0509
+hosts likewise list `1532:02B8` and no `1532:F003`, both at EC revision
+1.01. These are negative observations for normal enumeration at those
+revisions. The decoded DI780 1.05 and KI8100 1.02 images remain untested
+on their respective boards. [RZ09-0423 USB inventories](https://github.com/linuxhw/LsUSB/tree/3b1ee387e93df2a09ebc82df7a3cd0b2298a5265/Notebook/Razer/Blade/Blade%2017%20-%20RZ09-0423)
+· [Pinned DMI records](https://github.com/linuxhw/DMI/tree/57b21bc6fdd863380e99c228c22aafcd1509528c/Notebook/Razer/Blade)
+· [RZ09-0509 probe 46be4bc579](https://linux-hardware.org/?probe=46be4bc579&log=lsusb)
+· [RZ09-0509 probe d0e4380367](https://linux-hardware.org/?probe=d0e4380367&log=lsusb)
+
+The public RZ09-0529 owner report includes USB descriptors for the
+laptop and cooling pad. That excerpt cannot establish whether the EC
+endpoint enumerates. [OpenRazer RZ09-0529 report](https://github.com/openrazer/openrazer/issues/2488)
+
+### Three-channel workflow and journal
+
+The shared duty coordinator now stages all three channels before
+entering FE and requires observed actual duty for all three. The journal
+binds the third target at creation and rejects missing third-stage,
+third-duty or third-tach observations. Auto restores the captured
+selector, override and changed staging bytes in that order. Simulation
+covers the round trip and fencing when readback is lost after submission.
+The live guardian still admits only two-channel contracts. Connecting
+the three-channel workflow requires independent third-duty readback and
+a completion contract that protects Auto through handback.
 
 ## Seven models with missing receiver evidence
 
