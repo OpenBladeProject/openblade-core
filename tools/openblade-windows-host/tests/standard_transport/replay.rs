@@ -1,4 +1,4 @@
-use crate::{
+use crate::adapter_power::{
     io::{
         CancelResult, Completion, Direction, FeatureIo, Frame, Limit, Pending, Stop, Transfer,
         finish_pending,
@@ -82,8 +82,8 @@ fn replay_with_settle(
 
 // The capture freezes the typed command and observed payloads. Windows
 // framing and transferred-byte cases come from the managed transport tests.
-fn frame(status: u8, transaction: u8, payload: [u8; 2]) -> Frame {
-    let mut frame = [0; crate::io::FRAME_LENGTH];
+pub(crate) fn frame(status: u8, transaction: u8, payload: [u8; 2]) -> Frame {
+    let mut frame = [0; crate::adapter_power::io::FRAME_LENGTH];
     frame[1..11].copy_from_slice(&[
         status,
         transaction,
@@ -112,13 +112,13 @@ fn set(transaction: u8, result: Transfer) -> Step {
 fn get(reply: Frame, result: Transfer) -> Step {
     Step {
         direction: Direction::Get,
-        frame: [0; crate::io::FRAME_LENGTH],
+        frame: [0; crate::adapter_power::io::FRAME_LENGTH],
         reply: Some(reply),
         result,
     }
 }
 
-fn limit(canceled: &AtomicBool) -> Limit<'_> {
+pub(crate) fn limit(canceled: &AtomicBool) -> Limit<'_> {
     Limit {
         canceled,
         deadline: Instant::now() + Duration::from_secs(10),
@@ -252,7 +252,10 @@ fn malformed_get_never_replays_and_keeps_the_validation_stage() {
 fn failed_get_is_uncertain_even_if_get_itself_was_rejected_before_submission() {
     let (session, calls, retired) = replay([
         set(1, Transfer::Completed(Ok(0))),
-        get([0; crate::io::FRAME_LENGTH], Transfer::Rejected(5)),
+        get(
+            [0; crate::adapter_power::io::FRAME_LENGTH],
+            Transfer::Rejected(5),
+        ),
     ]);
     let canceled = AtomicBool::new(false);
     assert_eq!(

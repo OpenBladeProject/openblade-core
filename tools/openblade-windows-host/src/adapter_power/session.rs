@@ -1,4 +1,4 @@
-use crate::io::{Direction, FRAME_LENGTH, FeatureIo, Frame, Limit, Stop, Transfer};
+use super::io::{Direction, FRAME_LENGTH, FeatureIo, Frame, Limit, Stop, Transfer};
 use openblade_protocol::{REPORT_LENGTH, RazerReport};
 use openblade_types::ProtocolValidationFailure;
 use std::{

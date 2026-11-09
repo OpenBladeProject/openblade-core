@@ -1,5 +1,7 @@
 #[cfg(any(windows, test))]
 mod discovery;
+#[cfg(any(windows, test))]
+mod registry_identity;
 
 fn main() -> std::process::ExitCode {
     #[cfg(windows)]

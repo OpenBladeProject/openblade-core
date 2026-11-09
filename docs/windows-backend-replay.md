@@ -89,3 +89,90 @@ The integration test target is the only entry point to the transport. It has no 
 - Windows tests link the real APIs. A blank GET is rejected on a fresh private named pipe. A pending connect on a second fresh pipe exercises targeted cancellation and observes terminal `ERROR_OPERATION_ABORTED`. These kernel tests and the scripted races establish software behavior. Physical HID timing and device replies require separate evidence.
 
 The next Phase 3 gate is a reviewed, read-only activation slice. It needs an exact-model lease with fresh platform, host, collection, HID attributes and 91-byte feature geometry checks on the **opened** handle, the existing exact-command and competing-controller policy, and separately authorized single-owner verification of the query on Windows hardware. The metadata snapshot cannot supply this lease. Remaining transport work includes model-specific transaction and pacing policies, other typed commands, SET-only and batch feature operations, and separate matrix or accessory routes where the production backend uses them. Any mutating path also requires fresh per-write admission, independent readback and durable restoration.
+
+## Phase 3c RZ09-0581 opened-handle fixture
+
+The integration target above now imports the adapter from
+[`src/adapter_power`](../tools/openblade-windows-host/src/adapter_power/).
+The fixture consumes one simulated owner lease for one `07/8C` adapter-power
+query. Neither developer executable links the adapter. No native HID opener,
+controller authority provider, or service handoff is wired.
+
+- The supported Windows platform and both registry identities must agree on
+  `Razer` and `Blade 16 - RZ09-0581`. The fixture shares the ordinal
+  registry comparison with Phase 3a. SKU and BIOS are diagnostic. The
+  discovery snapshot and path text do not establish handle identity.
+- The fixed standard route selects exactly one opened `1532:02E0` collection
+  with usage page `0001`, usage `0002`, and a 91-byte feature report. This is
+  the RZ09-0581 selector from `WindowsRazerHidEvidenceEvaluator` and
+  `WindowsRazerHidSessionOpener`. The Win32 implementation queries
+  [attributes](https://learn.microsoft.com/windows-hardware/drivers/ddi/hidsdi/nf-hidsdi-hidd_getattributes)
+  and [preparsed collection data](https://learn.microsoft.com/windows-hardware/drivers/ddi/hidsdi/nf-hidsdi-hidd_getpreparseddata)
+  from the same owned handle, then reads the collection caps with
+  `HidP_GetCaps`. The fixture requires a complete candidate set. It fails
+  closed on unreadable identity, ambiguity, or a changed selected handle.
+  Cardinality comes from the completed scan. Re-reading the selected handle
+  does not refresh that scan.
+- The fixture repeats host and strict authority checks after the candidate
+  scan, then reads the selected handle again before submission. The simulated
+  lease stays held through native drain and handle closure. The fixture uses a
+  new managed transaction context beginning at `01`, report ID `00`, a 30 ms
+  SET-to-GET delay, and a three-second exchange cap. The existing codec independently matches the response. The
+  two returned level bytes preserve firmware values, including levels the
+  managed classifier maps to Unknown.
+- Fake handles exercise selection, refusal, cancellation, response matching
+  and disposal. Windows also links the real HID and overlapped I/O APIs and
+  exercises rejection on private non-HID pipes. These tests establish software
+  behavior. The device has not been exercised.
+
+### Physical verification runbook for a later authorized session
+
+1. Review a pinned activation build that implements a service-coordinated,
+   single-use handoff. The C# owner must quiesce and drain the control and
+   matrix lanes covered by `Rz090581FeatureCommandGate`, close their handles,
+   and prevent reacquisition while the Rust owner holds the lease. The process
+   that supervises the lease must verify Rust's terminal drain and handle
+   closure before returning ownership. Closing the tray, acquiring a
+   process-local semaphore, or successfully opening a shareable HID handle
+   does not prove exclusivity. Until this handoff and a strict
+   `WindowsHardwareAccessGuard`-equivalent authority provider exist, the
+   activation gate is blocked.
+2. Obtain separate attended authorization for the exact build, RZ09-0581
+   `1532:02E0`, one `07/8C` exchange and the ownership pause/recovery. The
+   query reads firmware state through a SET feature request followed by GET.
+   The handoff can briefly suspend OpenBlade controls and automation. If
+   coordinated service shutdown is part of the separately reviewed handoff,
+   its normal cleanup can return keyboard mode and OpenBlade-owned manual fans
+   to firmware control. Record this impact before execution. Do not stop
+   competing Razer software.
+3. On stable AC with the machine fully awake, record the pinned C# and Rust
+   builds, exact host and HID evidence, power source, a fresh typed C#
+   adapter-power baseline, confirmed keyboard/fan state and saved intent,
+   and service health. Abort if any required evidence is missing or the C# baseline is
+   Unknown. After the handoff, rescan and verify the selected handle, fresh
+   host identity, stable power and session, strict controller absence, and
+   the live exclusive lease before the first SET. Invalidate admission if a
+   topology change is reported after the scan. A change, ambiguity, or refused
+   check ends the run before submission.
+4. Execute exactly one typed adapter-power exchange. Record sanitized
+   request/response correlation, transferred lengths, actual and recommended
+   levels, pacing, and terminal outcome. Drain outstanding I/O and close the
+   handle before relinquishing ownership. Compare the result with the
+   same-source C# baseline and a fresh typed C# read after the handback.
+   Cached status can provide service health and ownership context.
+   Confirm service health, restored ownership, and keyboard/fan readback
+   against the baseline and recorded cleanup expectations.
+5. If submission or readback is uncertain, retain the failure and native drain
+   evidence, close the lane, and prohibit replay. After terminal closure is
+   verified, reconcile with the coordinated C# owner's read-only checks before
+   resuming automation. If closure, ownership, or restoration cannot be
+   confirmed, leave further submissions blocked and report the unresolved
+   state.
+
+Further parity work covers RZ09-0528 and the source-reviewed models'
+per-model functional selectors (`ExperimentalBladeFactory` and
+`ValidateControlInterfaceAsync`), transport and transaction differences,
+SET-only and batch operations, the PID 02E0 matrix route, and accessory
+routes such as the cooling pad. Each mutating route also needs its own fresh
+admission, independent readback and durable restoration. Product packaging
+and the hardware-owner cutover belong to later phases.
