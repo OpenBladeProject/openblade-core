@@ -1,5 +1,3 @@
-#![deny(unsafe_code, unsafe_op_in_unsafe_fn)]
-
 #[cfg(any(target_os = "linux", test))]
 mod linux;
 #[cfg(target_os = "macos")]

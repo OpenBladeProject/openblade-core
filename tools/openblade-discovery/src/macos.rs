@@ -9,6 +9,7 @@ use std::{
 };
 
 type CfRef = *const c_void;
+const CF_NUMBER_SINT64: isize = 4;
 #[cfg(target_arch = "x86_64")]
 type MachBoolean = c_uint;
 #[cfg(target_arch = "aarch64")]
@@ -34,6 +35,8 @@ unsafe extern "C" {
     fn CFStringCreateWithCString(allocator: CfRef, text: *const c_char, encoding: u32) -> CfRef;
     fn CFGetTypeID(value: CfRef) -> usize;
     fn CFNumberGetTypeID() -> usize;
+    #[cfg(test)]
+    fn CFNumberCreate(allocator: CfRef, kind: isize, value: *const c_void) -> CfRef;
     fn CFStringGetTypeID() -> usize;
     fn CFNumberIsFloatType(value: CfRef) -> c_uchar;
     fn CFNumberGetValue(value: CfRef, kind: isize, result: *mut c_void) -> c_uchar;
@@ -84,20 +87,19 @@ impl CfObject {
         })
     }
 
-    fn usb_id(&self) -> Option<u16> {
-        const SINT64: isize = 4;
+    fn integer(&self) -> Option<i64> {
         let mut value = 0_i64;
         // SAFETY: Check the CF type before using the number APIs; value has the
         // exact size and alignment selected by kCFNumberSInt64Type.
         unsafe {
             if CFGetTypeID(self.as_ref()) != CFNumberGetTypeID()
                 || CFNumberIsFloatType(self.as_ref()) != 0
-                || CFNumberGetValue(self.as_ref(), SINT64, (&raw mut value).cast()) == 0
+                || CFNumberGetValue(self.as_ref(), CF_NUMBER_SINT64, (&raw mut value).cast()) == 0
             {
                 return None;
             }
         }
-        u16::try_from(value).ok()
+        Some(value)
     }
 
     fn is_transport(&self, expected: &Self) -> Option<bool> {
@@ -172,6 +174,7 @@ fn enumerate() -> Hid {
         return Hid::unavailable();
     }
     let Some(iterator) = NonZeroU32::new(iterator).map(RegistryObject) else {
+        // IOKit documents success with a null iterator as no matching services.
         return Hid::from_entries([]);
     };
     let mut hid = Hid::from_entries(std::iter::from_fn(|| {
@@ -181,16 +184,19 @@ fn enumerate() -> Hid {
         Some(match CfObject::property(&entry, &vendor) {
             // Some services do not publish a vendor at all. We only scan published IDs.
             None => Entry::Irrelevant,
-            Some(value) => match value.usb_id() {
-                Some(RAZER_VID) => match CfObject::property(&entry, &transport)
-                    .and_then(|value| value.is_transport(&usb))
-                {
-                    Some(true) => CfObject::property(&entry, &product)
-                        .and_then(|value| value.usb_id())
-                        .map_or(Entry::Unreadable, Entry::Candidate),
-                    Some(false) => Entry::Irrelevant,
-                    None => Entry::Unreadable,
-                },
+            Some(value) => match value.integer() {
+                Some(id) if id == i64::from(RAZER_VID) => {
+                    match CfObject::property(&entry, &transport)
+                        .and_then(|value| value.is_transport(&usb))
+                    {
+                        Some(true) => CfObject::property(&entry, &product)
+                            .and_then(|value| value.integer())
+                            .and_then(|id| u16::try_from(id).ok())
+                            .map_or(Entry::Unreadable, Entry::Candidate),
+                        Some(false) => Entry::Irrelevant,
+                        None => Entry::Unreadable,
+                    }
+                }
                 Some(_) => Entry::Irrelevant,
                 None => Entry::Unreadable,
             },
@@ -202,4 +208,30 @@ fn enumerate() -> Hid {
         hid.invalidate();
     }
     hid
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_numbers_are_read_without_narrowing_or_coercion() {
+        for value in [i64::from(RAZER_VID), 0x1_1532, -1] {
+            // SAFETY: The pointer and CFNumberType describe the same i64 value.
+            let number = CfObject::from_owned(unsafe {
+                CFNumberCreate(ptr::null(), CF_NUMBER_SINT64, (&raw const value).cast())
+            })
+            .unwrap();
+            assert_eq!(number.integer(), Some(value));
+        }
+        const CF_NUMBER_FLOAT64: isize = 6;
+        let value = f64::from(RAZER_VID);
+        // SAFETY: The pointer and CFNumberType describe the same f64 value.
+        let number = CfObject::from_owned(unsafe {
+            CFNumberCreate(ptr::null(), CF_NUMBER_FLOAT64, (&raw const value).cast())
+        })
+        .unwrap();
+        assert_eq!(number.integer(), None);
+        assert_eq!(CfObject::string(c"5426").unwrap().integer(), None);
+    }
 }

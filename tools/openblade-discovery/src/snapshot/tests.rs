@@ -1,6 +1,6 @@
 use super::*;
 use serde_json::{Value, json};
-use std::{fs, path::PathBuf};
+use std::{fs, io::ErrorKind, path::PathBuf};
 
 fn assert_fixture(snapshot: Snapshot, json: &str) {
     assert_eq!(
@@ -42,10 +42,18 @@ struct Sysfs(PathBuf);
 
 impl Sysfs {
     fn new(case: &str) -> Self {
-        let path =
-            std::env::temp_dir().join(format!("openblade-discovery-{}-{case}", std::process::id()));
-        fs::create_dir(&path).unwrap();
-        Self(path)
+        for attempt in 0..16 {
+            let path = std::env::temp_dir().join(format!(
+                "openblade-discovery-{}-{case}-{attempt}",
+                std::process::id()
+            ));
+            match fs::create_dir(&path) {
+                Ok(()) => return Self(path),
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!("could not create synthetic sysfs: {error}"),
+            }
+        }
+        panic!("no free synthetic sysfs directory for {case}");
     }
 
     fn write(&self, path: &str, contents: impl AsRef<[u8]>) {
@@ -103,6 +111,19 @@ fn linux_distinguishes_no_candidates_from_missing_sysfs() {
         sys.snapshot(),
         include_str!("../../fixtures/linux-no-candidates.json"),
     );
+    sys.write("class/dmi/id/sys_vendor", "Fabricante Ñ\n");
+    assert_fixture(
+        sys.snapshot(),
+        include_str!("../../fixtures/linux-no-candidates.json"),
+    );
+
+    sys.write("class/dmi/id/sys_vendor", b"Razer\n");
+    for product in [b"RAZER BLADE 14\n".as_slice(), b"Blade\n"] {
+        sys.write("class/dmi/id/product_name", product);
+        let snapshot = serde_json::to_value(sys.snapshot()).unwrap();
+        assert_eq!(snapshot["hostMetadata"], "razerBladeReported");
+        assert!(snapshot["exactModel"].is_null());
+    }
 }
 
 #[test]

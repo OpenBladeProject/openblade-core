@@ -39,16 +39,14 @@ fn dmi_text(bytes: Option<&[u8]>) -> Option<&str> {
     host_text(bytes?.strip_suffix(b"\n")?)
 }
 
-pub(crate) fn classify_host(vendor: Option<&[u8]>, product: Option<&[u8]>) -> HostMetadata {
+fn classify_host(vendor: Option<&[u8]>, product: Option<&[u8]>) -> HostMetadata {
     match (dmi_text(vendor), dmi_text(product)) {
         (Some(vendor), product)
             if vendor.eq_ignore_ascii_case("Razer")
                 || vendor.eq_ignore_ascii_case("Razer Inc.")
                 || vendor.eq_ignore_ascii_case("Razer Inc") =>
         {
-            if product
-                .is_some_and(|name| name.starts_with("Blade ") || name.starts_with("Razer Blade "))
-            {
+            if product.is_some_and(is_blade_name) {
                 HostMetadata::RazerBladeReported
             } else {
                 HostMetadata::Unverified
@@ -57,6 +55,15 @@ pub(crate) fn classify_host(vendor: Option<&[u8]>, product: Option<&[u8]>) -> Ho
         (Some(_), _) => HostMetadata::OtherVendor,
         (None, _) => HostMetadata::Unavailable,
     }
+}
+
+fn is_blade_name(name: &str) -> bool {
+    let mut words = name.split_ascii_whitespace();
+    let mut model = words.next();
+    if model.is_some_and(|word| word.eq_ignore_ascii_case("Razer")) {
+        model = words.next();
+    }
+    model.is_some_and(|word| word.eq_ignore_ascii_case("Blade"))
 }
 
 fn parse_modalias(bytes: &[u8]) -> Entry {

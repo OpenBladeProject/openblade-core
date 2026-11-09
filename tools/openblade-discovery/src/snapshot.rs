@@ -27,11 +27,12 @@ pub enum HostMetadata {
 
 // No OS strings are retained in the output model.
 pub fn host_text(bytes: &[u8]) -> Option<&str> {
-    if bytes.len() > MAX_HOST_TEXT || !bytes.iter().all(|b| (b' '..=b'~').contains(b)) {
+    if bytes.len() > MAX_HOST_TEXT {
         return None;
     }
-    let text = std::str::from_utf8(bytes).ok()?.trim();
-    (!text.is_empty()).then_some(text)
+    let text = std::str::from_utf8(bytes).ok()?;
+    let trimmed = text.trim();
+    (!trimmed.is_empty() && !text.chars().any(char::is_control)).then_some(trimmed)
 }
 
 pub enum Entry {

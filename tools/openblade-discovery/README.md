@@ -34,7 +34,7 @@ They have the same shape as the CLI output. No fixture is a hardware result.
 
 - `platform`: `linux` or `macos`.
 - `hostMetadata`: `razerBladeReported` for a Linux DMI vendor and Blade-like
-  product name, `otherVendor` for another readable Linux DMI vendor,
+  product name, `otherVendor` for another valid Linux DMI vendor,
   `unverified` for a macOS model string or insufficient Razer DMI product
   evidence, and `unavailable` for a missing or invalid host identity source.
   These describe what the OS reports. `exactModel` is always JSON null.
@@ -76,7 +76,8 @@ snapshot authorizes hardware access or establishes product support.
   objects and copied properties. [IOHIDFamily 2222.0.24](https://github.com/apple-oss-distributions/IOHIDFamily/blob/IOHIDFamily-2222.0.24/IOHIDFamily/IOHIDDevice.cpp#L935-L938)
   publishes transport and numeric IDs on `IOHIDDevice`; its
   [keys header](https://github.com/apple-oss-distributions/IOHIDFamily/blob/IOHIDFamily-2222.0.24/IOHIDFamily/IOHIDKeys.h)
-  defines the USB transport value. The adapter copies only those properties
+  defines the USB transport value. The pinned [CoreFoundation number header](https://github.com/apple-oss-distributions/CF/blob/CF-1153.18/CFNumber.h)
+  defines the typed conversion used to read integer IDs. The adapter copies only those properties
   as needed; it does not open a device or user client, subscribe to input,
   or request privileges.
 
