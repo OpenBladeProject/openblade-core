@@ -576,7 +576,9 @@ public sealed partial class ServiceReactiveLightingLoopTests
         Task running = loop.RunAsync(cancellation.Token);
 
         client.Publish(Status(LightingRendererOwnershipState.Reactive));
-        await WaitUntilAsync(() => factory.CreateCount == 1);
+        // The startup source exists before the loop enables reactive pulses.
+        await WaitUntilAsync(() => client.DeliveryCount == 1);
+        Assert.Equal(1, factory.CreateCount);
         RecordingSource first = factory.Last!;
         first.Fail(new IOException("message loop stopped"));
 
@@ -1183,16 +1185,20 @@ public sealed partial class ServiceReactiveLightingLoopTests
 
     private sealed class RecordingSourceFactory : IReactiveKeyboardSourceFactory
     {
+        private int createCount;
+
         public bool CanTransferFunctionRowOwnership => Last?.CanTransferFunctionRowOwnership ?? true;
-        public int CreateCount { get; private set; }
+        public int CreateCount => Volatile.Read(ref createCount);
 
         public RecordingSource? Last { get; private set; }
 
         public IReactiveKeyboardSource Create(ReactiveKeyboardSourceOptions options)
         {
             ArgumentNullException.ThrowIfNull(options);
-            CreateCount++;
-            return Last = new RecordingSource(options);
+            var created = new RecordingSource(options);
+            Last = created;
+            Interlocked.Increment(ref createCount);
+            return created;
         }
     }
 
