@@ -125,6 +125,7 @@ internal static class ServiceStatusSnapshotComparer
                 && entry.Value == rightRange)
             && left.SupportsBatterySaverFanStop == right.SupportsBatterySaverFanStop
             && left.HasFanStopTrialEvidence == right.HasFanStopTrialEvidence
+            && left.HasFanStopSourceEvidence == right.HasFanStopSourceEvidence
             && left.SupportsFanStop == right.SupportsFanStop
             && left.ReportsPerformanceWithManualFans == right.ReportsPerformanceWithManualFans
             && left.SupportsManualFansOnLimitedPower == right.SupportsManualFansOnLimitedPower

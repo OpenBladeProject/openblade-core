@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 78;
+    public const int ProtocolVersion = 79;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -1194,6 +1194,7 @@ public static class IpcMessageCodec
                     property.Name.Equals("stopFansInBatterySaver", StringComparison.OrdinalIgnoreCase)
                     || property.Name.Equals("supportsBatterySaverFanStop", StringComparison.OrdinalIgnoreCase)
                     || property.Name.Equals("hasFanStopTrialEvidence", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("hasFanStopSourceEvidence", StringComparison.OrdinalIgnoreCase)
                     || property.Name.Equals("supportsFanStop", StringComparison.OrdinalIgnoreCase)
                     || property.Name.Equals("fanStopStatus", StringComparison.OrdinalIgnoreCase)
                     || property.Name.Equals("batterySaverFanStopStatus", StringComparison.OrdinalIgnoreCase)))

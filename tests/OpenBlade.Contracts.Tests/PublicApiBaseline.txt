@@ -1058,6 +1058,8 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.ThxAudioCapabilities get_ThxAudio()
   method System.Boolean SupportsBreathingMode(OpenBlade.Contracts.BreathingColorMode mode)
   method System.Boolean SupportsFanSpeedInAnyPerformancePreset(System.Int32 speedRpm)
+  method System.Boolean get_HasFanStopEvidence()
+  method System.Boolean get_HasFanStopSourceEvidence()
   method System.Boolean get_HasFanStopTrialEvidence()
   method System.Boolean get_ReportsPerformanceWithManualFans()
   method System.Boolean get_SupportsBatteryProtectionOff()
@@ -1100,6 +1102,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_FanSpeedRange(OpenBlade.Contracts.FanSpeedRange value)
   method System.Void set_FanSpeedRangesByPerformancePreset(System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> value)
   method System.Void set_GpuOverclock(OpenBlade.Contracts.GpuOverclockCapabilities value)
+  method System.Void set_HasFanStopSourceEvidence(System.Boolean value)
   method System.Void set_HasFanStopTrialEvidence(System.Boolean value)
   method System.Void set_HostManagedLaptopControls(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> value)
   method System.Void set_HyperBoostAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
@@ -1147,6 +1150,8 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property OpenBlade.Contracts.HyperBoostBaseModeCapabilities HyperBoostBaseModes { get; init; }
   property OpenBlade.Contracts.SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
   property OpenBlade.Contracts.ThxAudioCapabilities ThxAudio { get; init; }
+  property System.Boolean HasFanStopEvidence { get; }
+  property System.Boolean HasFanStopSourceEvidence { get; init; }
   property System.Boolean HasFanStopTrialEvidence { get; init; }
   property System.Boolean ReportsPerformanceWithManualFans { get; init; }
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
@@ -2291,7 +2296,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 78
+  field const System.Int32 ProtocolVersion = 79
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

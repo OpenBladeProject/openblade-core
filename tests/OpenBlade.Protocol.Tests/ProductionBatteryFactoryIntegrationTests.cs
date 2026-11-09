@@ -379,6 +379,56 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             null,
             compatibility);
 
+    [Theory]
+    [InlineData("RZ09-0581")]
+    [InlineData("RZ09-0528")]
+    [InlineData("RZ09-0483")]
+    [InlineData("RZ09-0510")]
+    [InlineData("RZ09-0530")]
+    [InlineData("RZ09-0421")]
+    [InlineData("RZ09-0427")]
+    [InlineData("RZ09-0330")]
+    public async Task GuardianAdapterReaderAdmitsOnlyReviewedQueryWithoutSetters(string model)
+    {
+        var session = new ControlledSession(Immediate(new(new byte[] { 0x07, 0x0D }, null)));
+        var actors = new RecordingActorFactory(session);
+        ProductionBatteryFactory factory = FanStopAdapterPowerReader.CreateFactory(
+            FanStopModelContract.ForModel(model)!, _ => actors);
+        await using IProductionBatteryPort port = Assert.IsAssignableFrom<IProductionBatteryPort>(
+            (await factory.OpenAsync(default)).Value);
+        Assert.Equal(AdapterPowerState.UsbCPower100W, await port.QueryAdapterPowerStateAsync(default));
+        Assert.Null(await port.QueryMcuVersionAsync(default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(80, default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.Automatic, default));
+        RazerCommandSpec command = Assert.Single(session.Commands);
+        Assert.Equal((0x07, 0x8C), (command.ClassId, command.CommandId));
+        Assert.Equal(1, actors.OpenCount);
+    }
+
+    [Theory]
+    [InlineData("RZ09-0581")]
+    [InlineData("RZ09-0528")]
+    [InlineData("RZ09-0483")]
+    [InlineData("RZ09-0510")]
+    [InlineData("RZ09-0530")]
+    [InlineData("RZ09-0421")]
+    [InlineData("RZ09-0427")]
+    [InlineData("RZ09-0330")]
+    public async Task GuardianAdapterReaderFencesFailedReadWithoutRetry(string model)
+    {
+        var session = new ControlledSession(Immediate(new(default, HidSessionFailureKind.Timeout)));
+        var actors = new RecordingActorFactory(session);
+        ProductionBatteryFactory factory = FanStopAdapterPowerReader.CreateFactory(
+            FanStopModelContract.ForModel(model)!, _ => actors);
+        IProductionBatteryPort port = Assert.IsAssignableFrom<IProductionBatteryPort>(
+            (await factory.OpenAsync(default)).Value);
+        await Assert.ThrowsAnyAsync<TimeoutException>(() => port.QueryAdapterPowerStateAsync(default));
+        await Assert.ThrowsAsync<IOException>(() => port.QueryAdapterPowerStateAsync(default));
+        Assert.Single(session.Commands);
+        await port.DisposeAsync();
+        Assert.Equal(1, session.DisposeCount);
+    }
+
     [Fact]
     public async Task ProductionCompositionPassesThirtyMillisecondSettleToOpenedActorFactory()
     {

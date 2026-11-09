@@ -18,6 +18,7 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
 {
     private static readonly List<So6120ServiceDutyPlatform> UnresolvedOwners = [];
     private readonly So6120JournalIdentity identity;
+    private readonly FanStopModelContract contract;
     private readonly int servicePid;
     private readonly long serviceStartUtcTicks;
     private readonly Func<bool> ownershipStillDelegated;
@@ -32,11 +33,13 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
     private long? powerTimestamp;
     private PowerSource observedPowerSource = PowerSource.ExternalUnknown;
 
-    private So6120ServiceDutyPlatform(So6120JournalIdentity identity, int servicePid, long serviceStartUtcTicks,
+    private So6120ServiceDutyPlatform(So6120JournalIdentity identity, FanStopModelContract contract,
+        int servicePid, long serviceStartUtcTicks,
         Func<bool> ownershipStillDelegated, TimeProvider clock, Semaphore run,
         FanStopSettings settings)
     {
         this.identity = identity;
+        this.contract = contract;
         this.servicePid = servicePid;
         this.serviceStartUtcTicks = serviceStartUtcTicks;
         this.ownershipStillDelegated = ownershipStillDelegated;
@@ -64,18 +67,20 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
 
     internal static SafeWindowsFanTemperatureSource CreateTemperatureSource() => new();
 
-    internal static So6120ServiceDutyPlatform Acquire(So6120JournalIdentity identity, int servicePid,
+    internal static So6120ServiceDutyPlatform Acquire(So6120JournalIdentity identity, FanStopModelContract contract,
+        int servicePid,
         long serviceStartUtcTicks, Func<bool> ownershipStillDelegated, IFanTemperatureSource temperatureSource,
         FanStopSettings settings, CancellationToken cancellationToken)
     {
         RequireSystemSession();
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(identity);
+        ArgumentNullException.ThrowIfNull(contract);
         ArgumentNullException.ThrowIfNull(ownershipStillDelegated);
         ArgumentNullException.ThrowIfNull(temperatureSource);
         if (!FanStopSettings.IsWellFormed(settings)) { throw new InvalidDataException("Invalid immutable Stop policy."); }
         if (identity.Owner.OperationId == Guid.Empty || servicePid <= 0 || serviceStartUtcTicks <= 0
-            || identity.CapturedProfile != PerformancePreset.Balanced || identity.RequestedDuty1 != 0 || identity.RequestedDuty2 != 0)
+            || !So6120ServiceModelAdmission.MatchesJournal(contract, identity, servicePid, serviceStartUtcTicks))
         { throw new InvalidOperationException("The service owner requires a fresh explicit Balanced Stop identity."); }
         var run = new Semaphore(1, 1, @"Global\OpenBlade.SO6120.SupervisedDirectDuty");
         bool reserved = false;
@@ -87,7 +92,7 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
             if (!run.WaitOne(0)) { throw new InvalidOperationException("An SO6120 owner is already active."); }
             reserved = true;
             VerifyDeveloperAttempt();
-            owner = new(identity, servicePid, serviceStartUtcTicks, ownershipStillDelegated, TimeProvider.System, run, settings);
+            owner = new(identity, contract, servicePid, serviceStartUtcTicks, ownershipStillDelegated, TimeProvider.System, run, settings);
             So6120SupervisedMetadata metadata = owner.ReadMetadata();
             // This inert challenge token satisfies shared identity binding only.
             // The service policy below does not interpret it as consent.
@@ -198,8 +203,8 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
     {
         RequireSystemSession();
         var read = driverPin is not null && bootReportedEcVersion is not null
-            ? So6120WindowsSupervisedMetadata.CaptureForService(identity.Owner.OperationId, clock, driverPin, bootReportedEcVersion)
-            : So6120WindowsSupervisedMetadata.CaptureForService(identity.Owner.OperationId, clock);
+            ? So6120WindowsSupervisedMetadata.CaptureForService(identity.Owner.OperationId, clock, contract, driverPin, bootReportedEcVersion)
+            : So6120WindowsSupervisedMetadata.CaptureForService(identity.Owner.OperationId, clock, contract);
         return read.Metadata ?? throw new InvalidOperationException($"Service owner metadata unavailable ({read.FailedStage}).");
     }
 
@@ -213,22 +218,9 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
             || metadata.StartedTimestamp > metadata.Stamp.Timestamp || metadata.Stamp.Timestamp > now
             || clock.GetElapsedTime(metadata.StartedTimestamp, now) > TimeSpan.FromSeconds(5))
         { return So6120AdmissionAssessment.StaleMetadata; }
-        if (metadata.ProcessArchitecture != Architecture.X64 || metadata.Host.Failure is not null
-            || metadata.Host.Evidence is not
-            {
-                Manufacturer: So6120SupervisedAdmission.Manufacturer,
-                ProductName: So6120SupervisedAdmission.Product
-            })
-        { return So6120AdmissionAssessment.HostMismatch; }
-        if (metadata.ReportedEcVersion != So6120SupervisedAdmission.EcVersion)
-        { return So6120AdmissionAssessment.EcVersionMismatch; }
-        if (metadata.HidCandidates.Count == 0 || metadata.HidCandidates.Any(candidate =>
-                !So6120SupervisedAdmission.IsTargetHidPath(candidate.Path) || candidate.Identity is not { } hid
-                || !TargetBladeDevice.Matches(hid.VendorId, hid.ProductId))
-            || metadata.HidCandidates.Count(candidate => candidate.Identity is { } hid
-                && hid.UsagePage == TargetBladeDevice.UsagePage && hid.Usage == TargetBladeDevice.Usage
-                && TargetBladeDevice.CanCarryProtocolReport(hid.FeatureReportByteLength)) != 1)
-        { return So6120AdmissionAssessment.HidIdentityUnavailable; }
+        So6120AdmissionAssessment model = So6120ServiceModelAdmission.Assess(contract, identity,
+            servicePid, serviceStartUtcTicks, metadata);
+        if (model != So6120AdmissionAssessment.InputsMatched) { return model; }
         if (metadata.Session.ProcessSession != 0 || metadata.Session.Interactive)
         { return So6120AdmissionAssessment.SessionOrPowerMismatch; }
         if (!So6120SupervisedAdmission.MatchesDriver(metadata.Driver))
@@ -402,16 +394,8 @@ internal sealed class So6120ServiceDutyPlatform : ISo6120SessionEvidenceSource, 
         }
     }
 
-    private static async Task<AdapterPowerState> ReadAdapterPowerStateAsync(CancellationToken token)
-    {
-        var opened = await ProductionBatteryFactory.CreateWindowsReadOnly().OpenAsync(token).ConfigureAwait(false);
-        if (opened.Value is not { } port) { throw new IOException("Independent adapter power open failed."); }
-        await using (port.ConfigureAwait(false))
-        {
-            if (opened.Failure is not null) { throw new IOException("Independent adapter power open is unresolved."); }
-            return await port.QueryAdapterPowerStateAsync(token).ConfigureAwait(false);
-        }
-    }
+    private Task<AdapterPowerState> ReadAdapterPowerStateAsync(CancellationToken token) =>
+        FanStopAdapterPowerReader.ReadAsync(contract, token);
 
     private static void RequireSystemSession()
     {

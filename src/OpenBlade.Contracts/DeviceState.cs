@@ -224,6 +224,13 @@ public sealed record DeviceCapabilities(
     /// not runtime command admission or crash-recovery evidence.</summary>
     public bool HasFanStopTrialEvidence { get; init; }
 
+    /// <summary>Exact-model firmware and host-transport review exists. This does
+    /// not claim physical validation or replace the guardian's live admission.</summary>
+    public bool HasFanStopSourceEvidence { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasFanStopEvidence => HasFanStopTrialEvidence || HasFanStopSourceEvidence;
+
     public bool SupportsFanStop { get; init; }
 
     /// <summary>Exact backend reports the real performance mode and Custom levels

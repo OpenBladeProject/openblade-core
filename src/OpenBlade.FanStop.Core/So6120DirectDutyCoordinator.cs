@@ -1,12 +1,95 @@
+using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.FanStop;
 
 internal sealed record So6120DutyControls(byte Selector, byte Manual, byte Override,
-    byte Staged1, byte Staged2, byte Cycle, byte PolicyCommand);
+    byte Staged1, byte Staged2, byte Cycle, byte PolicyCommand)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public byte? Staged3 { get; init; }
+
+    // Entry stages every owned duty before FE can apply it. Handback restores
+    // the normal selector before it touches the inactive staging bytes. Use
+    // these same orders when the durable journal validates every mutation.
+    internal static ReadOnlySpan<So6120MailboxRegister> EntryOrder(bool threeChannels) => threeChannels
+        ? [So6120MailboxRegister.StagedDuty1, So6120MailboxRegister.StagedDuty2, So6120MailboxRegister.StagedDuty3,
+            So6120MailboxRegister.Override, So6120MailboxRegister.Selector]
+        : [So6120MailboxRegister.StagedDuty1, So6120MailboxRegister.StagedDuty2,
+            So6120MailboxRegister.Override, So6120MailboxRegister.Selector];
+
+    internal static ReadOnlySpan<So6120MailboxRegister> HandbackOrder(bool threeChannels) => threeChannels
+        ? [So6120MailboxRegister.Selector, So6120MailboxRegister.Override,
+            So6120MailboxRegister.StagedDuty1, So6120MailboxRegister.StagedDuty2, So6120MailboxRegister.StagedDuty3]
+        : [So6120MailboxRegister.Selector, So6120MailboxRegister.Override,
+            So6120MailboxRegister.StagedDuty1, So6120MailboxRegister.StagedDuty2];
+
+    internal So6120DutyControls DirectTarget(byte duty1, byte duty2, byte? duty3 = null) => this with
+    {
+        Staged1 = duty1,
+        Staged2 = duty2,
+        Staged3 = duty3,
+        Override = (byte)(Override | 0x40),
+        Selector = 0xFE,
+    };
+
+    internal static So6120DutyOwnedFields OwnedField(So6120MailboxRegister register) => register switch
+    {
+        So6120MailboxRegister.StagedDuty1 => So6120DutyOwnedFields.Staged1,
+        So6120MailboxRegister.StagedDuty2 => So6120DutyOwnedFields.Staged2,
+        So6120MailboxRegister.StagedDuty3 => So6120DutyOwnedFields.Staged3,
+        So6120MailboxRegister.Override => So6120DutyOwnedFields.Override,
+        So6120MailboxRegister.Selector => So6120DutyOwnedFields.Selector,
+        _ => throw new InvalidDataException("Not a direct-duty control field."),
+    };
+
+    internal byte Read(So6120MailboxRegister register) => register switch
+    {
+        So6120MailboxRegister.StagedDuty1 => Staged1,
+        So6120MailboxRegister.StagedDuty2 => Staged2,
+        So6120MailboxRegister.StagedDuty3 when Staged3 is byte stage => stage,
+        So6120MailboxRegister.Override => Override,
+        So6120MailboxRegister.Selector => Selector,
+        _ => throw new InvalidDataException("Not a direct-duty control field."),
+    };
+
+    internal So6120DutyControls With(So6120MailboxRegister register, byte value) => register switch
+    {
+        So6120MailboxRegister.StagedDuty1 => this with { Staged1 = value },
+        So6120MailboxRegister.StagedDuty2 => this with { Staged2 = value },
+        So6120MailboxRegister.StagedDuty3 when Staged3.HasValue => this with { Staged3 = value },
+        So6120MailboxRegister.Override => this with { Override = value },
+        So6120MailboxRegister.Selector => this with { Selector = value },
+        _ => throw new InvalidDataException("Not a direct-duty control field."),
+    };
+}
 
 internal sealed record So6120DutySnapshot(So6120DutyControls Controls,
-    byte Actual1, byte Actual2, byte Tach1, byte Tach2, byte PolicyStatus, byte ActiveState);
+    byte Actual1, byte Actual2, byte Tach1, byte Tach2, byte PolicyStatus, byte ActiveState)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public byte? Actual3 { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public byte? Tach3 { get; init; }
+
+    internal bool HasValidReadback(bool threeChannels)
+    {
+        if (Controls is null) { return false; }
+        if (!threeChannels) { return Controls.Staged3 is null && Actual3 is null && Tach3 is null; }
+        // The independent reader must supply a fresh, valid cycle and
+        // actual duty even while entering or handing back Auto.
+        return Controls.Staged3.HasValue && Tach3.HasValue && Actual3 is byte duty3
+            && Controls.Cycle is > 0 and < 0xFF
+            && Actual1 <= Controls.Cycle && Actual2 <= Controls.Cycle && duty3 <= Controls.Cycle;
+    }
+
+    internal bool MatchesActualDuty(byte first, byte second, byte? third) =>
+        Actual1 == first && Actual2 == second && Actual3 == third;
+
+    internal bool AllTachStopped(bool threeChannels) =>
+        Tach1 == 0 && Tach2 == 0 && (threeChannels ? Tach3 == 0 : Tach3 is null);
+}
 
 // Same monotonic clock for this operation; a snapshot is an ordered set of fresh
 // A0 reads, NOT an atomic snapshot. Sequence/time record observation provenance.
@@ -19,7 +102,7 @@ internal sealed record So6120DutyWriteResult(So6120DutyIoDisposition Disposition
 internal sealed record So6120DutyMutation(So6120MailboxRegister Register, byte Value, So6120DutyControls Expected);
 
 [Flags]
-internal enum So6120DutyOwnedFields { None = 0, Staged1 = 1, Staged2 = 2, Override = 4, Selector = 8 }
+internal enum So6120DutyOwnedFields { None = 0, Staged1 = 1, Staged2 = 2, Override = 4, Selector = 8, Staged3 = 16 }
 
 internal sealed record So6120DutyCheckpoint(DirectDutyOwner Owner, long Generation,
     PerformancePreset Profile, So6120DutyControls Baseline, So6120DutyControls Expected,
@@ -77,13 +160,14 @@ internal interface ISo6120DirectDutyBoundary
 // One operation object is shared by entry and exit, including every checkpoint.
 // It prevents stale-checkpoint reuse in this process; the boundary still owns
 // durable fencing across instances/restarts. It is not a hardware ownership token.
-internal sealed class So6120DirectDutyOperation(DirectDutyOwner owner, ISo6120DirectDutyBoundary boundary)
+internal sealed class So6120DirectDutyOperation(DirectDutyOwner owner, ISo6120DirectDutyBoundary boundary, bool threeChannels = false)
 {
     private readonly object sync = new();
     private bool entryStarted, entryFinished, exitStarted, fenced;
     private long observationSequence, observationTimestamp;
     internal DirectDutyOwner Owner { get; } = owner ?? throw new ArgumentNullException(nameof(owner));
     internal ISo6120DirectDutyBoundary Boundary { get; } = boundary ?? throw new ArgumentNullException(nameof(boundary));
+    internal bool ThreeChannels { get; } = threeChannels;
     internal So6120DutyCheckpoint? Latest { get; private set; }
     internal bool DurableFenceConfirmed { get; private set; }
     internal bool Fenced { get { lock (sync) { return fenced; } } }
@@ -120,7 +204,7 @@ internal sealed class So6120DirectDutyOperation(DirectDutyOwner owner, ISo6120Di
             if (fenced || observation.Owner != Owner || observation.Sequence <= observationSequence
                 || observation.StartedTimestamp < observationTimestamp
                 || observation.CompletedTimestamp < observation.StartedTimestamp
-                || observation.Snapshot is null || observation.Snapshot.Controls is null)
+                || observation.Snapshot is null || !observation.Snapshot.HasValidReadback(ThreeChannels))
             {
                 return false;
             }
@@ -159,12 +243,16 @@ internal sealed class So6120DirectDutyCoordinator(So6120DirectDutyOperation oper
 
     public So6120DutyResult Enter(PerformancePreset capturedProfile, byte requested1, byte requested2,
         int maxPwmObservations = 8, CancellationToken cancellationToken = default) =>
-        EnterCore(capturedProfile, requested1, requested2, maxPwmObservations, cancellationToken, null);
+        EnterCore(capturedProfile, requested1, requested2, null, maxPwmObservations, cancellationToken, null);
+
+    internal So6120DutyResult EnterThreeChannel(PerformancePreset capturedProfile, byte requested1, byte requested2,
+        byte requested3, int maxPwmObservations = 8, CancellationToken cancellationToken = default) =>
+        EnterCore(capturedProfile, requested1, requested2, requested3, maxPwmObservations, cancellationToken, null);
 
     internal So6120DutyResult EnterPrepared(PerformancePreset capturedProfile, So6120SilentTrialPlan approvedPlan) =>
-        EnterCore(capturedProfile, approvedPlan.RequestedDuty1, approvedPlan.RequestedDuty2, 2, CancellationToken.None, approvedPlan);
+        EnterCore(capturedProfile, approvedPlan.RequestedDuty1, approvedPlan.RequestedDuty2, null, 2, CancellationToken.None, approvedPlan);
 
-    private So6120DutyResult EnterCore(PerformancePreset capturedProfile, byte requested1, byte requested2,
+    private So6120DutyResult EnterCore(PerformancePreset capturedProfile, byte requested1, byte requested2, byte? requested3,
         int maxPwmObservations, CancellationToken cancellationToken, So6120SilentTrialPlan? approvedPlan)
     {
         var flow = new So6120DutyWorkflow(operation, cancellationToken);
@@ -172,6 +260,7 @@ internal sealed class So6120DirectDutyCoordinator(So6120DirectDutyOperation oper
         try
         {
             if (!So6120DutyWorkflow.TrySelector(capturedProfile, out byte selector)
+                || operation.ThreeChannels != requested3.HasValue
                 || maxPwmObservations is < 1 or > 64 || !So6120DutyWorkflow.ValidOwner(operation.Owner))
             {
                 return flow.Result(So6120DutyFailure.InvalidRequest);
@@ -196,19 +285,21 @@ internal sealed class So6120DirectDutyCoordinator(So6120DirectDutyOperation oper
                 || (controls.Override & 0x60) != 0 || controls.Cycle == 0
                 || requested1 > controls.Cycle || requested2 > controls.Cycle
                 || baseline.Snapshot.Actual1 > controls.Cycle || baseline.Snapshot.Actual2 > controls.Cycle
+                || requested3 > controls.Cycle
                 || (baseline.Snapshot.ActiveState & 1) == 0)
             {
                 return flow.Result(So6120DutyFailure.BaselineRejected);
             }
             flow.Initialize(capturedProfile, baseline);
-            flow.Change(So6120MailboxRegister.StagedDuty1, requested1, So6120DutyOwnedFields.Staged1);
-            flow.Change(So6120MailboxRegister.StagedDuty2, requested2, So6120DutyOwnedFields.Staged2);
-            flow.Change(So6120MailboxRegister.Override, (byte)(controls.Override | 0x40), So6120DutyOwnedFields.Override);
-            flow.Change(So6120MailboxRegister.Selector, 0xFE, So6120DutyOwnedFields.Selector);
+            So6120DutyControls target = controls.DirectTarget(requested1, requested2, requested3);
+            foreach (So6120MailboxRegister register in So6120DutyControls.EntryOrder(operation.ThreeChannels))
+            {
+                flow.Change(register, target.Read(register));
+            }
             for (int attempt = 0; attempt < maxPwmObservations; attempt++)
             {
                 So6120DutyObservation observation = flow.ObserveExpected();
-                if (observation.Snapshot.Actual1 == requested1 && observation.Snapshot.Actual2 == requested2)
+                if (observation.Snapshot.MatchesActualDuty(requested1, requested2, requested3))
                 {
                     return flow.Result(So6120DutyFailure.None);
                 }
@@ -240,21 +331,20 @@ internal sealed class So6120DirectDutyAutoExit(So6120DirectDutyOperation operati
             if (!operation.Boundary.ClaimExit(checkpoint)) { return flow.Result(So6120DutyFailure.AdmissionRefused); }
             flow.Resume(checkpoint);
             flow.ObserveExpected();
-            if ((checkpoint.Owned & So6120DutyOwnedFields.Selector) != 0)
+            ReadOnlySpan<So6120MailboxRegister> order = So6120DutyControls.HandbackOrder(operation.ThreeChannels);
+            So6120MailboxRegister selector = order[0];
+            if ((checkpoint.Owned & So6120DutyControls.OwnedField(selector)) != 0)
             {
-                flow.Change(So6120MailboxRegister.Selector, checkpoint.Baseline.Selector,
-                    So6120DutyOwnedFields.Selector, restoring: true);
+                flow.Change(selector, checkpoint.Baseline.Read(selector), restoring: true);
             }
             flow.ObserveExpected();
             flow.NormalModeObserved = true; // Observed state, not a settled-policy or cooling guarantee.
-            flow.Change(So6120MailboxRegister.Override, checkpoint.Baseline.Override,
-                So6120DutyOwnedFields.Override, restoring: true);
             // Saved staging bytes may exceed the current cycle. After confirmed
             // non-FE Auto they are inactive data and must be restored exactly.
-            flow.Change(So6120MailboxRegister.StagedDuty1, checkpoint.Baseline.Staged1,
-                So6120DutyOwnedFields.Staged1, restoring: true);
-            flow.Change(So6120MailboxRegister.StagedDuty2, checkpoint.Baseline.Staged2,
-                So6120DutyOwnedFields.Staged2, restoring: true);
+            foreach (So6120MailboxRegister register in order[1..])
+            {
+                flow.Change(register, checkpoint.Baseline.Read(register), restoring: true);
+            }
             flow.ObserveExpected();
             flow.CleanupConfirmed = true;
             return flow.Result(So6120DutyFailure.None);
@@ -343,11 +433,12 @@ internal sealed class So6120DutyWorkflow(So6120DirectDutyOperation operation, Ca
     }
     internal void Resume(So6120DutyCheckpoint prior) { checkpoint = prior; }
 
-    internal void Change(So6120MailboxRegister register, byte value, So6120DutyOwnedFields field, bool restoring = false)
+    internal void Change(So6120MailboxRegister register, byte value, bool restoring = false)
     {
         So6120DutyCheckpoint current = checkpoint!;
-        byte old = Get(current.Expected, register);
+        byte old = current.Expected.Read(register);
         if (old == value) { return; } // No write and no ownership for an unchanged staging field.
+        So6120DutyOwnedFields field = So6120DutyControls.OwnedField(register);
         if (restoring && (current.Owned & field) == 0) { throw StopUnresolved(So6120DutyFailure.StateChanged); }
         So6120DutyObservation before = ObserveExpected();
         var mutation = new So6120DutyMutation(register, value, current.Expected);
@@ -397,7 +488,7 @@ internal sealed class So6120DutyWorkflow(So6120DirectDutyOperation operation, Ca
         {
             throw StopUnresolved(So6120DutyFailure.CommandUnresolved);
         }
-        So6120DutyControls next = Set(current.Expected, register, value);
+        So6120DutyControls next = current.Expected.With(register, value);
         // Once A1 is acknowledged, interrupted/missing full-state confirmation
         // is unresolved even if its own byte readback matched.
         So6120DutyObservation after;
@@ -415,7 +506,7 @@ internal sealed class So6120DutyWorkflow(So6120DirectDutyOperation operation, Ca
             Expected = next,
             // Stop-stage staging can return to its saved byte while FE is
             // still active, or touch staging that entry left unchanged.
-            Owned = value == Get(current.Baseline, register) ? current.Owned & ~field : current.Owned | field,
+            Owned = value == current.Baseline.Read(register) ? current.Owned & ~field : current.Owned | field,
             Observation = after,
         });
     }
@@ -460,20 +551,4 @@ internal sealed class So6120DutyWorkflow(So6120DirectDutyOperation operation, Ca
             operation.PermissionPublicationPossible, operation.PermissionEnabledConfirmed, operation.PermissionRestoredConfirmed,
             observations.AsReadOnly(), writes.AsReadOnly());
 
-    private static byte Get(So6120DutyControls state, So6120MailboxRegister register) => register switch
-    {
-        So6120MailboxRegister.StagedDuty1 => state.Staged1,
-        So6120MailboxRegister.StagedDuty2 => state.Staged2,
-        So6120MailboxRegister.Override => state.Override,
-        So6120MailboxRegister.Selector => state.Selector,
-        _ => throw new InvalidOperationException("Not a direct-duty coordinator field."),
-    };
-    private static So6120DutyControls Set(So6120DutyControls state, So6120MailboxRegister register, byte value) => register switch
-    {
-        So6120MailboxRegister.StagedDuty1 => state with { Staged1 = value },
-        So6120MailboxRegister.StagedDuty2 => state with { Staged2 = value },
-        So6120MailboxRegister.Override => state with { Override = value },
-        So6120MailboxRegister.Selector => state with { Selector = value },
-        _ => throw new InvalidOperationException("Not a direct-duty coordinator field."),
-    };
 }
