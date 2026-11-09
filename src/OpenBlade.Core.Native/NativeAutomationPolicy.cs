@@ -45,10 +45,14 @@ public sealed unsafe class NativeAutomationPolicy : IDisposable
                 throw new AutomationVersionException();
             }
             select = (delegate* unmanaged[Cdecl]<uint, NativeAutomationRequest*, NativeAutomationRecord*, uint*, NativeErrorRecord*, uint>)NativeLibrary.GetExport(handle, "ob_v1_select_automation");
-            if (requirePerformanceSourceEligibility)
+            const string eligibilityExport = "ob_v1_performance_source_eligible";
+            if (NativeLibrary.TryGetExport(handle, eligibilityExport, out nint eligibility))
             {
-                performanceSourceEligible = (delegate* unmanaged[Cdecl]<uint, int, int, uint*, uint*, NativeErrorRecord*, uint>)
-                    NativeLibrary.GetExport(handle, "ob_v1_performance_source_eligible");
+                performanceSourceEligible = (delegate* unmanaged[Cdecl]<uint, int, int, uint*, uint*, NativeErrorRecord*, uint>)eligibility;
+            }
+            else if (requirePerformanceSourceEligibility)
+            {
+                throw new EntryPointNotFoundException(eligibilityExport);
             }
         }
         finally

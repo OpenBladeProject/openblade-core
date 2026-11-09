@@ -7,11 +7,11 @@ namespace OpenBlade.Core.Native.Tests;
 
 public sealed class NativeAutomationPolicyTests
 {
-    private static NativeAutomationPolicy Load(bool requirePerformanceSourceEligibility = false)
+    private static NativeAutomationPolicy Load()
     {
         string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_LIBRARY")
             ?? throw new InvalidOperationException("Actual native artifact is required.");
-        NativeAutomationLoadResult loaded = NativeAutomationPolicy.Load(path, requirePerformanceSourceEligibility);
+        NativeAutomationLoadResult loaded = NativeAutomationPolicy.Load(path);
         Assert.True(loaded.IsSuccess, loaded.Error?.ToString());
         return loaded.Policy!;
     }
@@ -36,7 +36,7 @@ public sealed class NativeAutomationPolicyTests
     [Fact]
     public void DecodedPerformanceSourceMatchesSharedMatrixAndFrozenPredicate()
     {
-        using NativeAutomationPolicy policy = Load(requirePerformanceSourceEligibility: true);
+        using NativeAutomationPolicy policy = Load();
         using JsonDocument fixture = JsonDocument.Parse(File.ReadAllText(
             Path.Combine(AppContext.BaseDirectory, "Parity", "performance-source.json")));
         JsonElement root = fixture.RootElement;
@@ -44,7 +44,8 @@ public sealed class NativeAutomationPolicyTests
         Assert.Equal("8a6e49d7bcffc52c84e8d447711f9192385e9da6", root.GetProperty("sourceRevision").GetString());
         PowerSource[] sources = root.GetProperty("sources").EnumerateArray()
             .Select(item => (PowerSource)item.GetInt32()).ToArray();
-        Assert.Equal(Enum.GetValues<PowerSource>().Concat([(PowerSource)(-1), (PowerSource)int.MaxValue]), sources);
+        Assert.Equal(Enum.GetValues<PowerSource>().Concat(
+            [(PowerSource)(-1), (PowerSource)int.MinValue, (PowerSource)int.MaxValue]), sources);
 
         var presets = new List<PerformancePreset>();
         foreach (JsonElement row in root.GetProperty("cases").EnumerateArray())

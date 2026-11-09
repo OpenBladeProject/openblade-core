@@ -123,7 +123,7 @@ fn decoded_performance_source_matches_shared_matrix() {
         fixture.source_revision,
         "8a6e49d7bcffc52c84e8d447711f9192385e9da6"
     );
-    assert_eq!(fixture.sources, [0, 1, 2, 3, -1, i32::MAX]);
+    assert_eq!(fixture.sources, [0, 1, 2, 3, -1, i32::MIN, i32::MAX]);
     assert_eq!(fixture.cases.len(), 14);
     for (preset, expected) in fixture.cases {
         assert_eq!(expected.len(), fixture.sources.len());

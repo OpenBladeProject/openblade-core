@@ -1,4 +1,4 @@
-//! Stateless selection of host-owned values. No value, lifetime or device admission crosses here.
+//! Stateless selection and decoded performance eligibility. Host objects, lifetimes and device admission stay outside.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ValueOrigin {

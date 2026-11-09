@@ -112,7 +112,8 @@ public sealed class AutomationSelectionParityTests
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         var confirmed = new ConfirmedDeviceState((PerformancePreset)999, null, null, null);
-        foreach (PerformancePreset preset in Enum.GetValues<PerformancePreset>().Append((PerformancePreset)(-1)))
+        foreach (PerformancePreset preset in Enum.GetValues<PerformancePreset>().Concat(
+            [(PerformancePreset)(-1), (PerformancePreset)10, (PerformancePreset)int.MinValue, (PerformancePreset)int.MaxValue]))
         {
             foreach (string slot in new[] { "persistentPerformance", "temporaryPerformance", "recoveredHyperBoostPerformance" })
             {

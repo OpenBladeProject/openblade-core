@@ -493,8 +493,8 @@ cover layout, malformed inputs, publication, panic containment, independent
 negotiation and concurrent disposal. An isolated Windows failure probe checks
 host validation order and no published desired state after lifetime failure.
 
-Compatibility predicates and recovered HyperBoost priority remain C# because
-they select active candidates before these helpers. C# retains mutable state,
+This selection extraction originally left compatibility predicates and recovered
+HyperBoost priority in C#. Both determine which candidates reach these helpers. C# retains mutable state,
 override lifetimes, foreground/path matching, power transitions, validation
 order, observed fallback construction, saved intent and suppression. Read-only
 recovery may publish a power source before destination automation is consumed:
@@ -516,8 +516,8 @@ Observed fallback and saved profile values remain host data, including legacy
 scalars that never entered candidate filtering.
 
 The additive `ob_v1_performance_source_eligible` export uses automation ABI v1.
-The existing loader and selection exports still work with an automation v1
-library that has no eligibility export. The product explicitly requires the
+The loader probes the eligibility symbol and still admits an automation v1
+library with only the selection exports. The product explicitly requires the
 new symbol during the same hash-bound module admission and keeps that module
 through shutdown. Two signed decoded enum scalars go in and a validated 0/1
 result comes out. No record layout, buffer negotiation, or hardware encoding is
