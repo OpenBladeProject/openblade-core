@@ -391,6 +391,77 @@ All four exact images can now be inspected with the
 The profiles decode all mapped entries and annotate the staged duty,
 actual duty, tachometer, cycle and restore fields separately.
 
+### Signed BIOS host interfaces
+
+The Razer-signed KI890 BIOS 2.04 and 2.09 carriers target RZ09-0484 and
+SSID `1A583007`. Their BIOSME payloads are AMI PFAT containers. Each
+manifest accounts for 18 components. The earlier incomplete
+decompression treated BIOS Guard headers, scripts and signatures as
+compressed volume bytes. Reading the data span of each record and
+joining the seven `FV_MAIN_WRAPPER` blocks recovers the 6,619,136-byte
+wrapper on each revision. Its guided section at `310D8` then decompresses
+to the declared 15,323,152 bytes. A separate reconstruction of that
+section produced identical bytes. Each revision supplies one
+checksum-valid DSDT and 89 distinct SSDTs. This reconstruction treats
+all carrier and update scripts as data.
+[Razer BIOS 2.04 carrier](https://dl.razerzone.com/drivers/RazerBlade18RZ09-0484/RazerUpdater_v1.1.1.3_KI890-BIOSv0204.exe)
+· [Razer BIOS 2.09](https://mysupport.razer.com/app/answers/detail/a_id/14221/kw/RZ09%2Baudio%2Bdriver)
+· [AMI PFAT format reference](https://github.com/platomav/BIOSUtilities/blob/40553b32449644b3a83581870be491989a12de1d/biosutilities/ami_pfat_extract.py)
+
+The signed KI8100 BIOS 1.06 carrier targets RZ09-0509. Its 20-component
+PFAT manifest yields a 6,619,136-byte main wrapper. The guided section at
+`310D8` expands to 16,523,280 bytes, including one checksum-valid DSDT
+and 94 distinct SSDTs. [Razer KI8100 BIOS 1.06](https://mysupport.razer.com/app/answers/detail/a_id/14242/kw/security)
+
+The Razer-signed DI780 2.01 and KI8110 4.01 carriers target RZ09-0423
+and RZ09-0529 respectively. Reassembling their PFAT main wrappers
+recovers the guided sections at `310D8` and `A00A8`. The DI780 volume
+expands to 24,768,528 bytes, with one checksum-valid DSDT and 69
+distinct SSDTs. The KI8110 volume expands to 23,494,672 bytes, with
+one checksum-valid DSDT and 115 distinct SSDTs.
+[Razer DI780 BIOS 2.01](https://mysupport.razer.com/app/answers/detail/a_id/6197/)
+· [Razer KI8110 BIOS 4.01 carrier](https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-BIOSv0401.exe)
+
+| Exact model / BIOS | BIOSME SHA-256 | Expanded DSDT SHA-256 |
+| --- | --- | --- |
+| RZ09-0423 / 2.01 | `1f6bfa2cae3ee858ca430b6ea8d721990d8f92a3b47fd517cde284f0e1d223ef` | `87ce3fc355f57e8a23c6b2f09178f1890c81de33c3be131bd70cd1d7d3ce51e3` |
+| RZ09-0484 / 2.04 | `d91e19eda5c61c71fb3508b302c78f5e791ccb56d80f9c9aae732614173f5a95` | `4bde553f5a3f51878ec0017bde0ebb5d2ac8baf8d5443af4b6a9d838d9e67631` |
+| RZ09-0484 / 2.09 | `9d7a6ef09c878a86f77e3fffd49505fdefd552b1f43c6e65d483b1d90b06ef29` | `e386809b217c372361c2ccc96c3bcc22dab732ee7461df54425c43ee87c6a949` |
+| RZ09-0509 / 1.06 | `790801ff8ccc09606dbd56315968747d1a00919d7dd51a5595c60c8d982d29e4` | `33ad14c9b8a52bde77295a659a2a86c34709c2326e72a75a1e7af9c0e237dcb8` |
+| RZ09-0529 / 4.01 | `3d6ccdc674b135419843832929ef8844b9ec8035ba8d1aef6e7a8e0075f43072` | `c45b52341d996eeba9b1ee6554c598f872e799eca39dfdcbab180a8deba46820` |
+
+The recovered DSDTs define `RRIO` cases `0C/0D` that control `C1LE`
+when the base is `2E`. The field is bit 12 of the 16-bit word at PCI
+device 31, function 0, offset `82` (bit 4 of byte `83`). None of the
+four models' recovered main volumes contains an AML caller to `RRIO`.
+Intel documents that these Super I/O ports have a dedicated eSPI
+forwarding enable. An exact-host read of that PCI config word after a
+normal boot could resolve the fixed decode bit without touching any
+EC selector or mailbox. The recorded value would apply to the sampled
+host and firmware. [Intel 700-series PCH datasheet, table 9](https://cdrdv2-public.intel.com/743835/743835-004.pdf)
+
+The Blade 18 DSDTs bind `ECRR` to the same primary `300/301` mailbox.
+`TBCC` calls it for one byte at `80B82`. The method tries to acquire the ACPI
+mutex `ECMT`, then stages and publishes D0 regardless of the acquire
+result. It polls command zero and checks status `80`, with no separate
+callback drainage check. The recovered Blade 18 volumes contain no
+AML caller to `TBCC`. The DI780 Blade 17 DSDT has the `300/301`
+mailbox and its generic access helpers, without `TBCC` or `ECRR`.
+No AML caller to the generic command publishers `BMCR` or `BMCW` was
+found on any of the four. These observations constrain the AML path
+while leaving runtime access from other firmware or host code open.
+
+The separate `RECR` path submits `80` through ACPI EC offsets
+`F8/F9/FA`. All four pinned EC images handle it at `9484`, read
+`80700 + byteIndex`, and clear the command. This RAM window cannot
+reach either `F01808` or the feedback copy at `80536`. The KI890 BIOS
+field called `PWMV` is used by a keyboard LED brightness method and
+supplies no fan-duty readback.
+
+The local manifests, extracted DSDTs and replay scripts are under
+`artifacts/model-expansion/ki890-host-bios/`,
+`screen0423/host-bios/`, and `intel0529/bios-401/`.
+
 ### EC-native USB selector candidate
 
 The pinned images also contain a separate USB device descriptor for
@@ -416,13 +487,10 @@ speed or configuration RAM and supplies no actual third PWM reading.
 An exact-board enumeration is still needed to establish whether the
 EC USB endpoint is connected and visible to the host. The selector
 round trip would also leave the captured override and staged duties to
-restore through separately reviewed operations. The signed KI890 BIOS
-2.09 carrier (SHA-256
-`ea6b01417b8b868a60c7f85dc194aaa8e8ec0d117dedaa6f3689ff09fbde9741`)
-identifies RZ09-0484 and SSID `1A583007`. A compressed section could
-only be decoded in part. The recovered BIOS bodies and decoded prefix
-contained no matching device identity, so this inspection does not
-settle host visibility. [Razer KI890 BIOS 2.09](https://mysupport.razer.com/app/answers/detail/a_id/14221/kw/RZ09%2Baudio%2Bdriver)
+restore through separately reviewed operations. Neither KI890
+revision's recovered components or expanded main volume contain the
+EC USB device identity literals. That static scan leaves host
+enumeration open.
 
 Seven full Linux USB inventories from six RZ09-0423 hosts list the
 model's keyboard device `1532:028B`. None lists `1532:F003`. The
@@ -525,8 +593,10 @@ Synapse's Auto UI scales those values by 100 RPM per count. The
 receiver's tach producer and actual PWM remain unverified. The
 PI490 and PI4100 native firmware-version exports read the EC version
 from the Windows BIOS registry. They provide no independent EC read.
-The reviewed PI410/PI411 native library lacks that export.
-[PI490 keyboard updater](https://mysupport.razer.com/app/answers/detail/a_id/13877/)
+The reviewed PI410/PI411 native library lacks that export. SMBIOS
+Type 0 also carries the EC firmware version and supplies no receiver
+image or acquisition interface. [DMTF SMBIOS specification, §7.1](https://www.dmtf.org/sites/default/files/standards/documents/DSP0134_2.7.1.pdf)
+· [PI490 keyboard updater](https://mysupport.razer.com/app/answers/detail/a_id/13877/)
 · [Exact device class](https://apps.razer.com/synapse/products/669/mw/rzDevice25.0b7f4b3291f821b73ff6.js)
 · [Synapse policy](https://apps.razer.com/synapse/products/669/mw/6737.5791b4f2132a8ffb5846.js)
 
