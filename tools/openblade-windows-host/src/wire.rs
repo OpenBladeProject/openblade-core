@@ -14,7 +14,7 @@ const LEGACY_VERSION: i32 = 51;
 const MAX_FRAME_BYTES: i32 = 65_536;
 const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
 
-const CURRENT_FIXTURE: &str = include_str!(
+pub(crate) const CURRENT_FIXTURE: &str = include_str!(
     "../../../tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service-status-event.json"
 );
 const LEGACY_FIXTURE: &str =

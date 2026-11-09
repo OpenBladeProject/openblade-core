@@ -207,6 +207,8 @@ public sealed class RustReadOnlyHostTests
         ServiceStatusSnapshot onBattery = await ReadStatusAsync(watch, subscriptionOpened: false);
         Assert.Equal(3, onBattery.Revision);
         Assert.Equal(PowerSource.Battery, onBattery.ActivePowerSource);
+        Assert.Null(onBattery.FunctionKeyPrimary);
+        Assert.Equal(SettingValueSource.PowerProfile, onBattery.DesiredState.Performance.Source);
         Assert.Equal(onBattery.Profiles.Battery.Performance, onBattery.DesiredState.Performance.Value);
         Assert.NotEqual(initial.DesiredState.Performance.Value, onBattery.DesiredState.Performance.Value);
         Assert.Null(onBattery.ConfirmedState?.Performance);

@@ -4,7 +4,7 @@ use openblade_domain::{
     automation::{self, Provenance},
     recovery::{
         EntryChange, FunctionKeyMode, JournalRevision, LaptopGetter, LaptopJournal, LaptopReadback,
-        LaptopRecoveryPlan, LaptopValue, PendingEntry, plan_laptop_recovery,
+        LaptopRecoveryPlan, LaptopSettlement, LaptopValue, PendingEntry, plan_laptop_recovery,
     },
 };
 use serde_json::Value;
@@ -12,8 +12,9 @@ use std::{io, sync::Arc};
 use tokio::sync::{mpsc, watch};
 
 const IDENTITY: &str = "synthetic-device";
-const REVISION: JournalRevision = [1; 32];
 const REQUESTED: LaptopValue = LaptopValue::FunctionKeyPrimary(FunctionKeyMode::FunctionKeys);
+const BATTERY_SOURCE: i32 = 1;
+const POWER_PROFILE_PROVENANCE: i32 = 1;
 
 #[derive(Clone, Copy)]
 enum Observation {
@@ -21,10 +22,21 @@ enum Observation {
     Battery,
 }
 
-const SCRIPT: [Observation; 3] = [
-    Observation::Recovery(None),
-    Observation::Battery,
-    Observation::Recovery(Some(FunctionKeyMode::MultimediaKeys)),
+type TimedObservation = (u64, Option<Observation>);
+const SCRIPT: [&[TimedObservation]; 3] = [
+    &[(1, Some(Observation::Recovery(None)))],
+    &[
+        (3, None), // Cancel the pending observation and invalidate older results.
+        (
+            2,
+            Some(Observation::Recovery(Some(FunctionKeyMode::FunctionKeys))),
+        ),
+        (4, Some(Observation::Battery)),
+    ],
+    &[(
+        5,
+        Some(Observation::Recovery(Some(FunctionKeyMode::MultimediaKeys))),
+    )],
 ];
 
 #[derive(Debug, PartialEq, Eq)]
@@ -35,11 +47,63 @@ enum Effect {
     JournalSettled(LaptopGetter, EntryChange),
 }
 
+// The actor owns one synthetic record. These revision bytes are opaque tokens
+// for this test store. Protected persistence supplies real content hashes.
+struct MemoryJournal {
+    revision: JournalRevision,
+    entry: Option<PendingEntry>,
+}
+
+impl MemoryJournal {
+    fn load(&self) -> LaptopJournal<'_> {
+        LaptopJournal::Valid {
+            identity: IDENTITY,
+            revision: self.revision,
+            entries: self.entry.as_slice(),
+        }
+    }
+
+    fn settle(
+        &mut self,
+        settlement: LaptopSettlement,
+    ) -> io::Result<(FunctionKeyMode, EntryChange)> {
+        if settlement.expected_revision != self.revision {
+            return Err(io::Error::other("stale synthetic journal settlement"));
+        }
+        let [Some(change), None, None, None] = settlement.changes else {
+            return Err(io::Error::other(
+                "invalid synthetic journal settlement shape",
+            ));
+        };
+        let Some(LaptopValue::FunctionKeyPrimary(observed)) = change.observed else {
+            return Err(io::Error::other("invalid synthetic function-key readback"));
+        };
+        if self.entry
+            != Some(PendingEntry {
+                requested: change.requested,
+                reconciliation_required: true,
+            })
+        {
+            return Err(io::Error::other("synthetic journal intent changed"));
+        }
+        self.revision[0] = self.revision[0]
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("synthetic journal revision exhausted"))?;
+        self.entry = match change.change {
+            EntryChange::Remove => None,
+            EntryChange::KeepTombstone => Some(PendingEntry {
+                requested: change.requested,
+                reconciliation_required: false,
+            }),
+        };
+        Ok((observed, change.change))
+    }
+}
+
 struct Replay {
     last_tick: u64,
     current: Value,
-    // One validated, in-memory journal entry from the restart scenario.
-    entry: Option<PendingEntry>,
+    journal: MemoryJournal,
 }
 
 impl Replay {
@@ -49,10 +113,13 @@ impl Replay {
         Self {
             last_tick: 0,
             current,
-            entry: Some(PendingEntry {
-                requested: REQUESTED,
-                reconciliation_required: true,
-            }),
+            journal: MemoryJournal {
+                revision: [1; 32],
+                entry: Some(PendingEntry {
+                    requested: REQUESTED,
+                    reconciliation_required: true,
+                }),
+            },
         }
     }
 
@@ -61,80 +128,108 @@ impl Replay {
             return Ok(Effect::Ignored);
         }
         self.last_tick = tick;
+        let Some(observation) = observation else {
+            return Ok(Effect::Ignored);
+        };
 
+        let revision = self.current["revision"]
+            .as_i64()
+            .and_then(|revision| revision.checked_add(1))
+            .ok_or_else(|| io::Error::other("invalid replay status revision"))?;
         let effect = match observation {
-            Some(Observation::Recovery(readback)) => self.recover(readback),
-            Some(Observation::Battery) => self.select_battery_profile()?,
-            None => Effect::Ignored,
+            Observation::Recovery(readback) => self.recover(readback)?,
+            Observation::Battery => self.select_battery_profile()?,
         };
         if effect != Effect::Ignored {
-            let revision = self.current["revision"]
-                .as_i64()
-                .and_then(|revision| revision.checked_add(1))
-                .ok_or_else(|| io::Error::other("invalid replay status revision"))?;
             self.current["revision"] = revision.into();
         }
         Ok(effect)
     }
 
     fn select_battery_profile(&mut self) -> io::Result<Effect> {
-        let value = &self.current["profiles"]["battery"]["performance"];
+        let profiles = &self.current["profiles"];
+        let plugged_in = profiles["pluggedIn"].as_object();
+        let battery = profiles["battery"].as_object();
+        let value = &profiles["battery"]["performance"];
         let eligible = value
             .as_i64()
             .and_then(|preset| i32::try_from(preset).ok())
-            .is_some_and(|preset| automation::performance_source_eligible(preset, 1));
+            .is_some_and(|preset| automation::performance_source_eligible(preset, BATTERY_SOURCE));
+        let performance_override = &self.current["performanceOverride"];
+        let selection = automation::performance(
+            performance_override["lifetime"] == 0,
+            performance_override["lifetime"] == 1,
+            !self.current["activeApplicationProfileId"].is_null(),
+        );
+        let source = match selection.provenance {
+            Provenance::PowerProfile => POWER_PROFILE_PROVENANCE,
+            _ => {
+                return Err(io::Error::other(
+                    "profile override outside the battery replay",
+                ));
+            }
+        };
+        // This scenario projects a performance-only change. Fail closed if a
+        // fixture edit introduces other power-dependent settings or overrides.
+        let same_other_settings = plugged_in
+            .zip(battery)
+            .is_some_and(|(plugged_in, battery)| {
+                plugged_in.len() == battery.len()
+                    && plugged_in.iter().all(|(key, value)| match key.as_str() {
+                        "performance" | "customPerformance" => battery.contains_key(key),
+                        _ => battery.get(key) == Some(value),
+                    })
+            });
         if !eligible
-            || automation::performance(false, false, false).provenance != Provenance::PowerProfile
+            || !same_other_settings
+            || !performance_override.is_null()
+            || !self.current["desiredState"]["customPerformance"].is_null()
+            || self.current["fullChargeOverride"] != false
+            || [
+                "fanOverride",
+                "fanControlOverride",
+                "lightingOverride",
+                "batteryPolicyOverride",
+                "batteryProtectionOverride",
+            ]
+            .iter()
+            .any(|key| !self.current[*key].is_null())
         {
-            return Err(io::Error::other("invalid synthetic battery profile"));
+            return Err(io::Error::other("unsupported synthetic battery profile"));
         }
-        self.current["desiredState"]["performance"]["value"] = value.clone();
-        self.current["activePowerSource"] = 1.into();
+
+        self.current["desiredState"]["performance"] =
+            serde_json::json!({ "value": value, "source": source });
+        self.current["activePowerSource"] = BATTERY_SOURCE.into();
         Ok(Effect::ProfileSelected)
     }
 
-    fn recover(&mut self, function_key_primary: Option<FunctionKeyMode>) -> Effect {
-        let journal = LaptopJournal::Valid {
-            identity: IDENTITY,
-            revision: REVISION,
-            entries: self.entry.as_slice(),
-        };
-        let LaptopRecoveryPlan::ReadOnly(plan) =
-            plan_laptop_recovery(journal, Some(IDENTITY), None)
-        else {
-            return Effect::Ignored;
+    fn recover(&mut self, function_key_primary: Option<FunctionKeyMode>) -> io::Result<Effect> {
+        let plan = match plan_laptop_recovery(self.journal.load(), Some(IDENTITY), None) {
+            LaptopRecoveryPlan::NoPendingEntries => return Ok(Effect::Ignored),
+            LaptopRecoveryPlan::ReadOnly(plan) => plan,
+            _ => return Err(io::Error::other("unexpected synthetic recovery plan")),
         };
         let getter = LaptopGetter::FunctionKeyPrimary;
-        // The transport result is supplied by the script for the one admitted getter.
-        assert_eq!(plan.getters().next(), Some(getter));
+        // The script supplies the result of precisely this getter.
+        if !plan.getters().eq([getter]) {
+            return Err(io::Error::other("unexpected synthetic recovery getter"));
+        }
         let Some(settlement) = plan.finish(LaptopReadback {
             function_key_primary,
             ..Default::default()
         }) else {
             self.current["message"] = "Synthetic recovery readback unavailable.".into();
-            return Effect::ReadUnavailable(getter);
+            return Ok(Effect::ReadUnavailable(getter));
         };
-        let change = settlement.changes[0].expect("settlement for one journal entry");
-        let Some(LaptopValue::FunctionKeyPrimary(observed)) = change.observed else {
-            unreachable!("readback for the admitted function-key getter");
-        };
-        // The actor has exclusive ownership of the fake store. Apply the
-        // settlement only to the journal revision read in this turn.
-        assert_eq!(settlement.expected_revision, REVISION);
-        self.entry = match change.change {
-            EntryChange::Remove => None,
-            EntryChange::KeepTombstone => Some(PendingEntry {
-                requested: change.requested,
-                reconciliation_required: false,
-            }),
-        };
+        let (observed, change) = self.journal.settle(settlement)?;
         self.current["functionKeyPrimary"] = match observed {
             FunctionKeyMode::FunctionKeys => 0.into(),
             FunctionKeyMode::MultimediaKeys => 1.into(),
         };
         // The managed runtime keeps the presentation block until full observation.
         self.current["message"] = "Synthetic recovery readback observed.".into();
-        Effect::JournalSettled(getter, change.change)
+        Ok(Effect::JournalSettled(getter, change))
     }
 }
 
@@ -148,12 +243,14 @@ pub fn start(
     let mut replay = Replay::new(baseline);
     let (publish, status) = watch::channel(Arc::new(replay.current.clone()));
     let drive = async move {
-        for (index, observation) in SCRIPT.into_iter().enumerate() {
+        for batch in SCRIPT {
             if advance.recv().await.is_none() {
-                break;
+                return Ok(());
             }
-            if replay.step(index as u64 + 1, Some(observation))? != Effect::Ignored {
-                publish.send_replace(Arc::new(replay.current.clone()));
+            for &(tick, observation) in batch {
+                if replay.step(tick, observation)? != Effect::Ignored {
+                    publish.send_replace(Arc::new(replay.current.clone()));
+                }
             }
         }
         // Keep draining the bounded input and retain the last published snapshot.
