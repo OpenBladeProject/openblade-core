@@ -65,6 +65,12 @@ function global:dotnet {
     $global:OpenBladeMockDotNetCalls.Add([string[]]$args)
     $global:LASTEXITCODE = 0
 }
+$nativeCalls = [Collections.Generic.List[object]]::new()
+$nativeExitCode = 0
+function pwsh {
+    $nativeCalls.Add([string[]]$args)
+    $global:LASTEXITCODE = $nativeExitCode
+}
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) (
     'OpenBlade-AffectedCiRunner-' + [Guid]::NewGuid().ToString('N'))
 $serviceProtocol = Join-Path $temporaryRoot `
@@ -93,6 +99,28 @@ try {
     Assert-Equal 1 $testCall.Count 'Quality must test only declared test projects.'
     if (($testCall[0] -join '|') -notlike '*--no-build*--no-restore*') {
         throw 'Affected tests must reuse the selected build output.'
+    }
+    Assert-Equal 0 $nativeCalls.Count 'Unrelated projects must not run native interop.'
+
+    $global:OpenBladeMockDotNetCalls.Clear()
+    $nativeProject = 'tests/OpenBlade.Core.Native.Tests/OpenBlade.Core.Native.Tests.csproj'
+    $nativePlan = [ordered]@{
+        mode = 'affected'
+        qualityProjects = @($nativeProject)
+        testProjects = @($nativeProject)
+    } | ConvertTo-Json -Compress
+    & $runner -Lane Quality -PlanJson $nativePlan
+    Assert-Equal 1 $nativeCalls.Count 'Quality must execute the fixture-provisioned native runner once.'
+    $interopScript = Join-Path $repository 'rust/Test-NativeInterop.ps1'
+    Assert-Equal "-NoProfile|-File|$interopScript" ($nativeCalls[0] -join '|') `
+        'Quality must execute the existing native interop entry point in PowerShell 7.'
+    $nativeVerbs = @($global:OpenBladeMockDotNetCalls | ForEach-Object { $_[0] })
+    Assert-Equal 'restore,format,build' ($nativeVerbs -join ',') `
+        'The native project must still be built and formatted, with tests run by the interop runner.'
+    $nativeExitCode = 7
+    Assert-ThrowsLike -Pattern '*Native interop tests failed with exit code 7*' -Message `
+        'Quality must fail when the interop runner fails.' -Action {
+        & $runner -Lane Quality -PlanJson $nativePlan
     }
 
     $global:OpenBladeMockDotNetCalls.Clear()
