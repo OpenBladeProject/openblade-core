@@ -1,0 +1,374 @@
+{
+  "frame": "statusEvent",
+  "status": {
+    "revision": 1,
+    "deviceVerified": false,
+    "writesBlocked": false,
+    "potentialControllers": [
+      "RazerAppEngine"
+    ],
+    "controllerDetectionWarning": null,
+    "externalChanges": [],
+    "message": "Blocked",
+    "capabilities": {
+      "performancePresets": [],
+      "fanModes": [],
+      "lightingEffects": [],
+      "chargeLimits": [],
+      "supportsBatteryProtectionOff": false,
+      "supportsTemporaryFullCharge": false,
+      "supportsDirectManualFanTransitions": false,
+      "supportsBatterySaverFanStop": false,
+      "hasFanStopTrialEvidence": false,
+      "hasFanStopSourceEvidence": false,
+      "supportsFanStop": false,
+      "reportsPerformanceWithManualFans": false,
+      "supportsManualFansOnLimitedPower": false,
+      "supportsKeyboardBrightness": false,
+      "supportsBreathingColorSelection": true,
+      "supportedBreathingColorModes": null,
+      "supportsUniformLightingFrames": false,
+      "supportsWaveDirectionSelection": true,
+      "supportsPlaybackMuteIndicator": false,
+      "fanSpeedRange": null,
+      "fanSpeedRangesByPerformancePreset": {},
+      "customPerformance": null,
+      "cpuPowerLimit": null,
+      "cpuVoltageOptimizer": null,
+      "gpuOverclock": null,
+      "hyperBoostAccess": null,
+      "hyperBoostWithoutCoolingPadAccess": null,
+      "hyperBoostBaseModes": null,
+      "specialKeyBindingsAccess": null,
+      "writableSpecialKeySlots": 0,
+      "lampArrayLightingAccess": null,
+      "thxAudio": null,
+      "keyboardLightingLayoutId": null,
+      "blade18KeyboardLayoutId": null,
+      "supportedLightingRefreshRates": [],
+      "observedLightingEffects": [],
+      "observedPowerSourceBehaviors": [],
+      "logoLightingModes": [],
+      "hostManagedLaptopControls": [],
+      "oneShotLaptopControls": []
+    },
+    "confirmedState": {
+      "performance": null,
+      "fans": null,
+      "battery": null,
+      "lighting": null,
+      "hyperBoostActive": null,
+      "customPerformance": null,
+      "gpuClockOffsets": null,
+      "logoLighting": null
+    },
+    "profiles": {
+      "pluggedIn": {
+        "performance": 1,
+        "fans": 0,
+        "lighting": {
+          "effect": 0,
+          "color": {
+            "red": 0,
+            "green": 0,
+            "blue": 0
+          },
+          "brightness": 0,
+          "parameters": {
+            "kind": "off"
+          },
+          "logoMode": null
+        },
+        "display": {
+          "refreshRateKey": null,
+          "hdrEnabled": null,
+          "colorProfileKey": null,
+          "brightnessPercent": null,
+          "isConfigured": false
+        },
+        "stopFansInBatterySaver": false,
+        "customPerformance": {
+          "cpu": 1,
+          "gpu": 2,
+          "maximumFans": false,
+          "gpuClockOffsets": null
+        },
+        "gpuClockTuning": null,
+        "fanControl": null,
+        "lightingPowerPolicy": {
+          "turnOffWhenDisplayTurnsOff": false,
+          "idleTimeoutMinutes": null
+        },
+        "laptopBehavior": null,
+        "batteryProtectionEnabled": true,
+        "thxAudio": null
+      },
+      "battery": {
+        "performance": 3,
+        "fans": 0,
+        "lighting": {
+          "effect": 0,
+          "color": {
+            "red": 0,
+            "green": 0,
+            "blue": 0
+          },
+          "brightness": 0,
+          "parameters": {
+            "kind": "off"
+          },
+          "logoMode": null
+        },
+        "display": {
+          "refreshRateKey": null,
+          "hdrEnabled": null,
+          "colorProfileKey": null,
+          "brightnessPercent": null,
+          "isConfigured": false
+        },
+        "stopFansInBatterySaver": false,
+        "customPerformance": null,
+        "gpuClockTuning": null,
+        "fanControl": null,
+        "lightingPowerPolicy": {
+          "turnOffWhenDisplayTurnsOff": false,
+          "idleTimeoutMinutes": null
+        },
+        "laptopBehavior": null,
+        "batteryProtectionEnabled": true,
+        "thxAudio": null
+      },
+      "usbC": {
+        "performance": 1,
+        "fans": 0,
+        "lighting": {
+          "effect": 0,
+          "color": {
+            "red": 0,
+            "green": 0,
+            "blue": 0
+          },
+          "brightness": 0,
+          "parameters": {
+            "kind": "off"
+          },
+          "logoMode": null
+        },
+        "display": {
+          "refreshRateKey": null,
+          "hdrEnabled": null,
+          "colorProfileKey": null,
+          "brightnessPercent": null,
+          "isConfigured": false
+        },
+        "stopFansInBatterySaver": false,
+        "customPerformance": null,
+        "gpuClockTuning": null,
+        "fanControl": null,
+        "lightingPowerPolicy": {
+          "turnOffWhenDisplayTurnsOff": false,
+          "idleTimeoutMinutes": null
+        },
+        "laptopBehavior": null,
+        "batteryProtectionEnabled": true,
+        "thxAudio": null
+      },
+      "batteryPolicy": {
+        "chargeLimitPercent": 80
+      },
+      "lightingPowerPolicy": null,
+      "applicationProfiles": [],
+      "windowsPowerModes": {
+        "silent": null,
+        "balanced": null,
+        "performance": null,
+        "batterySaver": null,
+        "batteryBalanced": null,
+        "custom": null,
+        "turbo": null,
+        "maximumPower": null,
+        "gaming": null,
+        "creator": null
+      }
+    },
+    "desiredState": {
+      "performance": {
+        "value": 1,
+        "source": 1
+      },
+      "fans": {
+        "value": 0,
+        "source": 1
+      },
+      "lighting": {
+        "value": {
+          "effect": 0,
+          "color": {
+            "red": 0,
+            "green": 0,
+            "blue": 0
+          },
+          "brightness": 0,
+          "parameters": {
+            "kind": "off"
+          },
+          "logoMode": null
+        },
+        "source": 1
+      },
+      "battery": {
+        "configuredPolicy": {
+          "chargeLimitPercent": 80
+        },
+        "protectionEnabled": true,
+        "temporaryFullCharge": false
+      },
+      "customPerformance": null,
+      "gpuClockTuning": null,
+      "fanControl": null
+    },
+    "activePowerSource": 0,
+    "liveReadings": {
+      "batteryPowerFlowMilliwatts": -18400,
+      "fan1Rpm": 2300,
+      "fan2Rpm": 2500,
+      "cpuTemperatureCelsius": null,
+      "gpuTemperatureCelsius": null
+    },
+    "performanceOverride": null,
+    "fanOverride": null,
+    "lightingOverride": null,
+    "fullChargeOverride": false,
+    "firmware": null,
+    "serviceVersion": "0.1.0-test",
+    "lightingRendererOwnership": 0,
+    "lightingSuppressions": null,
+    "startupAnimationEnabled": null,
+    "functionKeyPrimary": null,
+    "gamingModeEnabled": null,
+    "alwaysOverrideExternalLightingChanges": false,
+    "keyboardDriverModeActive": true,
+    "batteryHealth": null,
+    "keyboardLightingControlMode": 0,
+    "controlAccess": 0,
+    "allowUntestedFirmware": false,
+    "firmwareCompatibility": 0,
+    "displayBrightnessHidAvailability": 0,
+    "lightingRefreshRate": 0,
+    "coolingPad": {
+      "connected": false,
+      "connection": 0,
+      "identity": null,
+      "requested": {
+        "fanMode": 0,
+        "fixedRpm": 1500,
+        "allowDemandApi": false,
+        "temperatureSource": 2,
+        "cpuCurve": [
+          {
+            "temperatureCelsius": 50,
+            "rpm": 500
+          },
+          {
+            "temperatureCelsius": 65,
+            "rpm": 1500
+          },
+          {
+            "temperatureCelsius": 80,
+            "rpm": 2500
+          },
+          {
+            "temperatureCelsius": 90,
+            "rpm": 3200
+          }
+        ],
+        "gpuCurve": [
+          {
+            "temperatureCelsius": 50,
+            "rpm": 500
+          },
+          {
+            "temperatureCelsius": 65,
+            "rpm": 1500
+          },
+          {
+            "temperatureCelsius": 80,
+            "rpm": 2500
+          },
+          {
+            "temperatureCelsius": 90,
+            "rpm": 3200
+          }
+        ],
+        "lightingMode": 0,
+        "brightnessPercent": 100,
+        "color": {
+          "r": 0,
+          "g": 255,
+          "b": 0
+        },
+        "secondaryColor": null,
+        "waveDirection": 2
+      },
+      "active": false,
+      "writesPaused": false,
+      "recoveryRequired": false,
+      "confirmedFanMode": null,
+      "confirmedTargetRpm": null,
+      "measuredRpm": null,
+      "confirmedBrightnessPercent": null,
+      "confirmedLightingMode": null,
+      "message": "Cooling pad control is stopped.",
+      "source": "Razer RC21-0230 source-backed experimental",
+      "experimental": true
+    },
+    "observationReason": 0,
+    "unconfirmedWrites": [],
+    "fanControlOverride": null,
+    "batterySaverFanStopStatus": null,
+    "fanStopStatus": {
+      "requestedMode": 0,
+      "state": 0,
+      "unavailableReason": 1,
+      "canStop": false,
+      "canReturnToAutomatic": false,
+      "normalFanControl": null,
+      "message": null,
+      "settings": {
+        "endMode": 0,
+        "cpuLimitCelsius": 55,
+        "gpuLimitCelsius": 55,
+        "cpuImmediateCutoffCelsius": 65,
+        "gpuImmediateCutoffCelsius": 65,
+        "secondsAboveLimit": 5,
+        "automaticEnabled": false,
+        "automaticCpuBelowCelsius": 50,
+        "automaticGpuBelowCelsius": 50,
+        "secondsBelowLimits": 30
+      },
+      "automationState": 0,
+      "automationPauseReason": 0
+    },
+    "performanceShortcutPreview": null,
+    "batteryPolicyOverride": null,
+    "batteryProtectionOverride": null,
+    "padlessHyperBoostEligibility": 0,
+    "hyperBoostRestorePending": false,
+    "hyperBoostBlockingControllers": null,
+    "thermalConvergence": null,
+    "allowExperimentalFeatures": false,
+    "experimentalWritesPaused": false,
+    "activeApplicationProfileId": null,
+    "effectiveLaptopBehavior": {
+      "startupAnimationEnabled": null,
+      "functionKeyPrimary": null,
+      "gamingModeEnabled": null,
+      "gamingModeKeyPolicy": null,
+      "isConfigured": false
+    },
+    "isExperimentalDevice": false,
+    "experimentalSupportSource": null,
+    "unsupportedLaptop": false
+  },
+  "version": 79
+}

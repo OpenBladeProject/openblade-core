@@ -1,0 +1,53 @@
+# Windows backend replay baseline
+
+The compatibility baseline was taken from `df4cbe096e8cace43ab527f6335afd9d705528ed`. It covers the Windows service, current-user Session Agent, and first-party helper boundaries. The current C# hosts establish the oracle. The replay runs codecs on memory streams, dispatch against synthetic clients and fake state, and persistence against test-owned temporary files. The existing Rust codec and decoded policy fixtures remain the source for their respective FFI contracts.
+
+## Running the managed oracle
+
+From the repository root with the usual Windows .NET, MSVC and pinned Rust build prerequisites:
+
+```powershell
+dotnet test tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj --filter 'FullyQualifiedName~WindowsReplay|FullyQualifiedName~RustStatusCli' -p:NuGetAudit=false
+dotnet test tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter 'FullyQualifiedName~WindowsReplay' -p:NuGetAudit=false
+dotnet test tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj --filter FullyQualifiedName~WindowsRustModelEvidenceInventory -p:NuGetAudit=false
+dotnet test tests/OpenBlade.Session.Tests/OpenBlade.Session.Tests.csproj --filter 'FullyQualifiedName~WindowsReplay' -p:NuGetAudit=false
+pwsh -NoProfile -File tests/Build.Tests/PublishPayloadValidation.Tests.ps1
+```
+
+The existing affected-project CI runs the test projects and the publish contract. The publish contract parses the seven explicit project and staging pairs in `Publish.ps1` and runs its existing synthetic payload checks.
+
+## Consuming the fixtures from Rust
+
+| File | Contract |
+| --- | --- |
+| [service.json](../tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service.json) | Service v79 envelope and limits, all 51 closed request discriminators grouped by family, both server frame types, request normalization and failure vectors, typed result numbers and status projection. |
+| [service-status-event.json](../tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service-status-event.json) | Full synthetic v79 `statusEvent` produced and read by the real managed codec. For a `getStatus` or initial `subscribeStatus` response, use its `status` body and the request ID with the successful response envelope. |
+| [v51 status fixtures](../rust/crates/openblade-status-cli/fixtures/) | Frozen compatibility request and a synthetic response used for the Rust status CLI's whitelist. The managed writer is checked on the whitelist fields. The deliberately synthetic private and unknown fields exercise the Rust reader. |
+| [service-runtime.json](../tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json) | Synthetic session and dispatcher scenarios, override migration and quarantine, pending-journal restart, and typed thermal completion and no-retry outcomes. |
+| [session.json](../tests/OpenBlade.Session.Tests/WindowsReplay/v1/session.json) | Every display, GPU apps, THX audio, and battery report request, with numeric fields, version and frame rejection, and an audio response with the older optional-field shape. |
+| [Model evidence](../tests/OpenBlade.Protocol.Tests/Fixtures/windows-rust-model-evidence-inventory.json) | All 19 catalog profiles, production feature-evidence rows for the 17 source-reviewed profiles, and separate physical-evidence pointers for the two physically validated models. |
+| [Inventory](windows-backend-replay-inventory.json) | Windows publish entry points, helper modes, persistence owners, and the phase responsible for remaining parity. |
+
+The JSON fixtures are independent of .NET. Preserve integer precision and the distinction between absent and null. In a wire vector, serialize `input` to UTF-8 JSON with the discriminator first where present. `json` is a literal body used for duplicate keys. Prepend the signed 32-bit little-endian payload length in bytes. `declaredLength` supplies a prefix with no payload. Compare successful re-encodings as JSON objects, preserving array order and numeric values. `output` is the expected canonical body when the input is a request. Failure categories describe the point of rejection and do not freeze localized or exception text. Session request vectors without `invalid` use the same object for input and output. The persistence vectors use the raw JSON object on disk and assert state after reconstruction of the store.
+
+For example, emit a binary test frame for the read-only host or inspect the operation inventory from a clean checkout using Python's standard library:
+
+```powershell
+python -c 'import pathlib, struct; p=pathlib.Path("tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service-status-event.json").read_bytes(); pathlib.Path("status-event.frame").write_bytes(struct.pack("<i", len(p)) + p)'
+python -m json.tool tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service.json
+```
+
+Phase 2 should load these files directly in Rust tests. Replay the v79 cached read and subscription with the full v79 status body and replay the v51 compatibility read with the existing CLI fixtures. Check the active/background/cancelled scenarios and malformed envelope cases against the separate development endpoint. Existing service named-pipe tests retain authority for Windows ACL, Identification QoS, persistent slots, bounded subscriptions and authentication order. The fixture dispatcher does not simulate the Windows security token, the named-pipe compatibility rewrite/edge rejection, service lifecycle timing or subscriber reconnect. Implement and verify those on the development pipe in Phase 2.
+
+## Remaining parity by phase
+
+| Phase | Owning behavior and evidence |
+| --- | --- |
+| 2 · Read-only service | Cached status, subscription initial/event frames, request correlation, no activation for v51 reads, active-session projection, capacity, authorization, readiness and shutdown. Owners are `IpcMessageCodec`, `NamedPipeControlServer`, `ServiceRequestAccessPolicy`, `ControlRequestHandler`, `StatusSubscriptionHub`, `Worker` and the C# service client. Diagnostics archive generation and hardware observation stay with the service parity work. |
+| 3 · Windows adapter | Catalog and exact identity, serialized typed report transport, command and transaction matching, per-write admission, cancellation, handle retirement and uncertain submission. `RazerBladeModelCatalog`, `ExperimentalBladeModels.FeatureEvidenceFor`, the exact backend admission manifests and [source-reviewed support](experimental-blade-support.md) own the capability evidence. Use the existing [shared parity fixtures](../tests/Fixtures/Parity/v1/) for report encoding and the protocol tests for model-specific command semantics. The thermal replay covers executor results from fake outcomes. Native cancel/completion races and independent readback belong to the adapter. |
+| 4 · Runtime and recovery | Profile selection and merge, application context, power/session and controller transitions, durable configuration, thermal convergence and one-shot/CPU/HyperBoost ownership. Use the inventory's store owners and existing `ProfileStoreTests`, `BatteryConfigurationStoreTests`, `PersistentOverrideStoreTests`, `ThermalTransitionExecutorTests` and `*OwnershipJournalStoreTests`. Aggregate commit/recovery, profile migration, boot epochs and ownership journal variants need portable replay before replacing their readers. |
+| 5 · Service feature parity | Performance, GPU clock/CPU tuning, HyperBoost, fan curves/stop/Guardian, battery protection and full-charge override, lighting ownership and frame modes, telemetry and CPU worker, diagnostics, one-shot controls, brightness HID usage, cooling-pad settings/leases and recovery. The service registry accounts for every IPC operation. Synthetic wire samples cover representative operations. Per-feature safety behavior still relies on existing focused tests and exact-device evidence. RC21-0230 is a separate source-backed integration. |
+| 6 · Session Agent and helpers | Display mode/HDR/ICC/brightness/power mode, GPU scan and safe termination, THX and optional provisioning, battery report, foreground context, input/Fn/SnapTap, interactive lighting/LampArray and worker isolation. The four codecs have frozen request vectors. Dispatch outcomes, protected worker pipes, restart behavior, user-side stores and platform trust still use their focused managed tests. WinUI and deployment tooling remain C#. |
+| 7 · Cutover | Package signing, helper composition, upgrade, rollback, uninstall and the single hardware-owner handoff. Use the package role inventory and existing setup/publish gates. |
+
+Updating a frozen result requires review of the owning managed boundary and the impact on Rust consumers. macOS, Linux and SwiftUI are outside this Windows baseline.

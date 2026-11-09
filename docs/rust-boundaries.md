@@ -5,6 +5,8 @@ through a required packaged native component. WinUI 3, the service, Session Agen
 and hardware ownership remain in C#. See the [active contract](#active-codec-and-selected-profile-merge-stage-7)
 and [workspace guide](../rust/README.md) for current behavior and build requirements.
 
+The [Windows backend replay baseline](windows-backend-replay.md) freezes the host contracts for the Windows service and Session Agent migration.
+
 Sections describing stages 1–6 preserve the migration history. Their dormant,
 developer-only and deferred-loading limits describe those original stages;
 they are superseded by stage 7 for the active product.

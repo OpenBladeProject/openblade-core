@@ -1,0 +1,395 @@
+{
+  "schema": 1,
+  "protocol": {
+    "version": 79,
+    "compatibilityVersion": 51,
+    "pipeName": "OpenBlade.Service.v2",
+    "maxMessageBytes": 65536,
+    "maxDiagnosticArchiveBytes": 16777216,
+    "maxDiagnosticResponseBytes": 25165824
+  },
+  "operationFamilies": {
+    "status": [
+      "getStatus",
+      "observeState",
+      "subscribeStatus",
+      "exportDiagnostics"
+    ],
+    "coolingPad": [
+      "setCoolingPadSettings",
+      "setCoolingPadDemandLease",
+      "removeCoolingPadDemandLease",
+      "readCoolingPadStatus",
+      "releaseCoolingPadControl"
+    ],
+    "thermal": [
+      "updateProfiles",
+      "setPerformanceOverride",
+      "setHyperBoost",
+      "validatePadlessHyperBoostLifecycle",
+      "validateThermalExternalDrift",
+      "cyclePerformanceShortcut",
+      "setPerformanceShortcutPreview",
+      "setFanOverride",
+      "setBatterySaverFanStop",
+      "setFanStopMode",
+      "setFanStopSettings",
+      "resumeAutomaticFanStop",
+      "reapplyChangedSettings",
+      "recoverHyperBoostRestore",
+      "setThermalControlPolicy",
+      "acknowledgeThermalPolicyUpgradeDisclosure"
+    ],
+    "tuning": [
+      "setGpuClockTuning",
+      "setCpuTuning",
+      "observeCpuTuning",
+      "restoreCpuTuning"
+    ],
+    "lighting": [
+      "setLightingOverride",
+      "setIndependentLightingOverride",
+      "stepKeyboardBrightness",
+      "setKeyboardLightingControlMode",
+      "setExternalLightingOverridePolicy",
+      "setLightingRefreshRate",
+      "setLightingSuppression",
+      "pulseReactiveKey",
+      "pushAmbientLightingFrame",
+      "pushUniformLightingFrame",
+      "setPlaybackMuteIndicator"
+    ],
+    "battery": [
+      "setBatteryPolicy",
+      "setBatteryProtection",
+      "setFullChargeOverride"
+    ],
+    "lifecycle": [
+      "reportSessionPowerTransition",
+      "reportApplicationContext",
+      "shutdownOpenBlade"
+    ],
+    "admission": [
+      "setFirmwareCompatibilityOverride",
+      "setExperimentalFeatures",
+      "resumeExperimentalWrites"
+    ],
+    "oneShot": [
+      "applyOneShotLaptopControl",
+      "setDisplayBrightnessHidUsage"
+    ]
+  },
+  "serverFrames": [
+    "response",
+    "statusEvent"
+  ],
+  "requests": [
+    {
+      "id": "cached-status",
+      "input": {
+        "operation": "getStatus",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "output": {
+        "operation": "getStatus",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      }
+    },
+    {
+      "id": "legacy-observation-mask",
+      "input": {
+        "operation": "observeState",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "includeLiveReadings": true
+      },
+      "output": {
+        "operation": "observeState",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "includeLiveReadings": true,
+        "requestedLiveReadings": 15,
+        "effectiveLiveReadings": 15
+      }
+    },
+    {
+      "id": "explicit-empty-observation-mask",
+      "input": {
+        "operation": "observeState",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "includeLiveReadings": true,
+        "requestedLiveReadings": 0
+      },
+      "output": {
+        "operation": "observeState",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "includeLiveReadings": true,
+        "requestedLiveReadings": 0,
+        "effectiveLiveReadings": 0
+      }
+    },
+    {
+      "id": "unsupported-observation-mask",
+      "input": {
+        "operation": "observeState",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "includeLiveReadings": true,
+        "requestedLiveReadings": 16
+      },
+      "failure": "invalidData"
+    },
+    {
+      "id": "numeric-fan-stop",
+      "input": {
+        "operation": "setFanStopMode",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "mode": 1
+      },
+      "output": {
+        "operation": "setFanStopMode",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "mode": 1
+      }
+    },
+    {
+      "id": "unknown-fan-mode",
+      "input": {
+        "operation": "setFanStopMode",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "mode": 2
+      },
+      "failure": "invalidData"
+    },
+    {
+      "id": "missing-fan-mode",
+      "input": {
+        "operation": "setFanStopMode",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "failure": "invalidData"
+    },
+    {
+      "id": "battery-protection-false",
+      "input": {
+        "operation": "setBatteryProtection",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "enabled": false
+      },
+      "output": {
+        "operation": "setBatteryProtection",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "enabled": false
+      }
+    },
+    {
+      "id": "battery-protection-missing",
+      "input": {
+        "operation": "setBatteryProtection",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "failure": "invalidData"
+    },
+    {
+      "id": "nested-legacy-battery-member",
+      "input": {
+        "operation": "setBatteryPolicy",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "value": {
+          "chargeLimitPercent": 80,
+          "temporaryFullCharge": true
+        }
+      },
+      "failure": "invalidData"
+    },
+    {
+      "id": "unknown-outer-field",
+      "input": {
+        "operation": "getStatus",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "futureExtension": {
+          "sample": "synthetic"
+        }
+      },
+      "failure": "invalidData"
+    },
+    {
+      "id": "unknown-operation",
+      "input": {
+        "operation": "futureOperation",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "failure": "invalidData"
+    },
+    {
+      "id": "incompatible-version",
+      "input": {
+        "operation": "getStatus",
+        "version": 78,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "failure": "versionMismatch"
+    },
+    {
+      "id": "empty-id",
+      "input": {
+        "operation": "getStatus",
+        "version": 79,
+        "requestId": "00000000-0000-0000-0000-000000000000"
+      },
+      "failure": "invalidData"
+    },
+    {
+      "id": "duplicate-version",
+      "json": "{\"operation\":\"getStatus\",\"version\":79,\"version\":78,\"requestId\":\"11111111-2222-4333-8444-555555555555\"}",
+      "failure": "invalidData"
+    },
+    {
+      "id": "oversize-prefix-only",
+      "declaredLength": 65537,
+      "failure": "invalidData"
+    },
+    {
+      "id": "negative-prefix-only",
+      "declaredLength": -1,
+      "failure": "invalidData"
+    },
+    {
+      "id": "short-body",
+      "declaredLength": 1,
+      "failure": "endOfStream"
+    }
+  ],
+  "responses": [
+    {
+      "id": "stored",
+      "input": {
+        "frame": "response",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "success": true,
+        "error": null,
+        "status": null,
+        "result": {
+          "status": 0,
+          "message": "Synthetic stored"
+        },
+        "archive": null,
+        "errorCode": null
+      }
+    },
+    {
+      "id": "applied",
+      "input": {
+        "frame": "response",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "success": true,
+        "error": null,
+        "status": null,
+        "result": {
+          "status": 1,
+          "message": "Synthetic applied"
+        },
+        "archive": null,
+        "errorCode": null
+      }
+    },
+    {
+      "id": "blocked",
+      "input": {
+        "frame": "response",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "success": true,
+        "error": null,
+        "status": null,
+        "result": {
+          "status": 2,
+          "message": "Synthetic blocked"
+        },
+        "archive": null,
+        "errorCode": null
+      }
+    },
+    {
+      "id": "failed",
+      "input": {
+        "frame": "response",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "success": true,
+        "error": null,
+        "status": null,
+        "result": {
+          "status": 3,
+          "message": "Synthetic failed"
+        },
+        "archive": null,
+        "errorCode": null
+      }
+    },
+    {
+      "id": "capacity-failure",
+      "input": {
+        "frame": "response",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "success": false,
+        "error": "Synthetic capacity exhausted",
+        "status": null,
+        "result": null,
+        "archive": null,
+        "errorCode": 0
+      }
+    },
+    {
+      "id": "invalid-dual-outcome",
+      "input": {
+        "frame": "response",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "success": false,
+        "error": "Synthetic failure",
+        "status": null,
+        "result": {
+          "status": 1,
+          "message": "Synthetic result"
+        },
+        "archive": null,
+        "errorCode": null
+      },
+      "failure": "invalidData"
+    }
+  ],
+  "statusProjection": [
+    {
+      "protocol": 79,
+      "writeBlocked": false,
+      "confirmedHyperBoostActive": null,
+      "desiredPerformance": 1,
+      "confirmedPerformance": null
+    },
+    {
+      "protocol": 51,
+      "writeBlocked": true,
+      "confirmedHyperBoostActive": false,
+      "desiredPerformance": 1,
+      "confirmedPerformance": null
+    }
+  ]
+}

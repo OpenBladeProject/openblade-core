@@ -1,0 +1,320 @@
+{
+  "schema": 1,
+  "dispatch": [
+    {
+      "id": "v79-active-status",
+      "input": {
+        "operation": "getStatus",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "session": "active",
+      "expected": {
+        "success": true,
+        "activations": 1,
+        "calls": [
+          "GetStatus"
+        ],
+        "controlAccess": 0
+      }
+    },
+    {
+      "id": "v79-background-status",
+      "input": {
+        "operation": "getStatus",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "session": "inactive",
+      "expected": {
+        "success": true,
+        "activations": 0,
+        "calls": [
+          "GetStatus"
+        ],
+        "controlAccess": 1
+      }
+    },
+    {
+      "id": "v79-active-observation",
+      "input": {
+        "operation": "observeState",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "includeLiveReadings": true,
+        "requestedLiveReadings": 2
+      },
+      "session": "active",
+      "expected": {
+        "success": true,
+        "activations": 1,
+        "calls": [
+          "Observe",
+          "GetStatus"
+        ],
+        "controlAccess": 0,
+        "sensors": 2
+      }
+    },
+    {
+      "id": "v79-active-write-stored",
+      "input": {
+        "operation": "setBatteryProtection",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "enabled": false
+      },
+      "session": "active",
+      "expected": {
+        "success": true,
+        "activations": 1,
+        "calls": [
+          "SetBatteryProtection"
+        ],
+        "operationStatus": 0
+      }
+    },
+    {
+      "id": "v79-background-write-denied",
+      "input": {
+        "operation": "setBatteryProtection",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "enabled": false
+      },
+      "session": "inactive",
+      "expected": {
+        "success": false,
+        "activations": 0,
+        "calls": []
+      }
+    },
+    {
+      "id": "v79-pre-dispatch-cancel",
+      "input": {
+        "operation": "setBatteryProtection",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "enabled": false
+      },
+      "session": "active",
+      "cancelBeforeDispatch": true,
+      "expected": {
+        "failure": "canceled",
+        "activations": 0,
+        "calls": []
+      }
+    },
+    {
+      "id": "v51-cached-status",
+      "input": {
+        "operation": "getStatus",
+        "version": 51,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "session": "active",
+      "expected": {
+        "success": true,
+        "activations": 0,
+        "calls": [
+          "GetStatus"
+        ],
+        "controlAccess": 0
+      }
+    },
+    {
+      "id": "v51-subscribe-initial-status",
+      "input": {
+        "operation": "subscribeStatus",
+        "version": 51,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "session": "active",
+      "expected": {
+        "success": true,
+        "activations": 0,
+        "calls": [
+          "GetStatus"
+        ],
+        "controlAccess": 0
+      }
+    }
+  ],
+  "overrides": [
+    {
+      "id": "legacy-gpu-tuning-restart",
+      "input": {
+        "schemaVersion": 5,
+        "overrides": {
+          "performance": 5,
+          "fans": null,
+          "lighting": null,
+          "customPerformance": {
+            "cpu": 2,
+            "gpu": 1,
+            "gpuClockOffsets": {
+              "coreMegahertz": 125,
+              "memoryMegahertz": 500
+            }
+          },
+          "fanControl": null
+        }
+      },
+      "expected": {
+        "schemaVersion": 8,
+        "disposition": "Admitted",
+        "quarantineReason": "None",
+        "performance": 5,
+        "gpuOffsets": {
+          "coreMegahertz": 125,
+          "memoryMegahertz": 500
+        }
+      }
+    },
+    {
+      "id": "future-schema-preserved",
+      "input": {
+        "schemaVersion": 999,
+        "overrides": {
+          "futureMember": 1
+        }
+      },
+      "expected": {
+        "schemaVersion": 999,
+        "disposition": "Quarantined",
+        "quarantineReason": "FutureSchema",
+        "performance": null,
+        "gpuOffsets": null
+      }
+    },
+    {
+      "id": "unknown-override-field-preserved",
+      "input": {
+        "schemaVersion": 8,
+        "overrides": {
+          "performance": 5,
+          "futureMember": 1
+        }
+      },
+      "expected": {
+        "schemaVersion": 8,
+        "disposition": "Quarantined",
+        "quarantineReason": "InvalidDocument",
+        "performance": null,
+        "gpuOffsets": null
+      }
+    }
+  ],
+  "journals": [
+    {
+      "id": "missing",
+      "input": null,
+      "expected": {
+        "reconciliation": false,
+        "readable": false,
+        "saveAllowed": true
+      }
+    },
+    {
+      "id": "pending-observation-after-restart",
+      "input": {
+        "Version": 1,
+        "Machine": "synthetic-host",
+        "Identity": "synthetic-device",
+        "Entries": [
+          {
+            "Requested": {
+              "Control": 1,
+              "Enabled": null,
+              "FunctionKeyMode": 0
+            },
+            "ReconciliationRequired": true
+          }
+        ]
+      },
+      "expected": {
+        "reconciliation": true,
+        "readable": true,
+        "saveAllowed": true
+      }
+    },
+    {
+      "id": "unknown-journal-version-fails-closed",
+      "input": {
+        "Version": 2,
+        "Machine": "synthetic-host",
+        "Identity": "synthetic-device",
+        "Entries": [
+          {
+            "Requested": {
+              "Control": 1,
+              "Enabled": null,
+              "FunctionKeyMode": 0
+            },
+            "ReconciliationRequired": true
+          }
+        ]
+      },
+      "expected": {
+        "reconciliation": true,
+        "readable": false,
+        "saveAllowed": false
+      }
+    },
+    {
+      "id": "duplicate-control-fails-closed",
+      "input": {
+        "Version": 1,
+        "Machine": "synthetic-host",
+        "Identity": "synthetic-device",
+        "Entries": [
+          {
+            "Requested": {
+              "Control": 1,
+              "Enabled": null,
+              "FunctionKeyMode": 0
+            },
+            "ReconciliationRequired": true
+          },
+          {
+            "Requested": {
+              "Control": 1,
+              "Enabled": null,
+              "FunctionKeyMode": 0
+            },
+            "ReconciliationRequired": true
+          }
+        ]
+      },
+      "expected": {
+        "reconciliation": true,
+        "readable": false,
+        "saveAllowed": false
+      }
+    }
+  ],
+  "thermal": [
+    {
+      "id": "indeterminate-confirmation",
+      "input": "indeterminate",
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Submitted",
+        "certainty": "Indeterminate",
+        "disposition": "ReconciliationUnavailable"
+      }
+    },
+    {
+      "id": "confirmed-write",
+      "input": "confirmed",
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Acknowledged",
+        "certainty": null,
+        "disposition": "Confirmed"
+      }
+    }
+  ]
+}
