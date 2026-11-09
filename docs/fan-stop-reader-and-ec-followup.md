@@ -294,6 +294,22 @@ different model. The source comparison and aggregate journal
 observations are reproducible from the local
 `artifacts/model-expansion/trigger-resolution-next/` evidence.
 
+The mapped-write scratch and changed flag cannot acknowledge Auto.
+On all four images, one successful bank-zero `1A` write leaves
+`80064..66 = 01 02 1A` and `8000E = 01`, whether it enters FE or
+restores the selector. A one-byte A0 fence leaves the same tuple.
+If an empty callback erases the Auto publication, the previous Stop
+tuple remains and is indistinguishable from successful Auto on those
+bytes. The keyboard I²C receive path can also set `8000E`, and none
+of the 8,192 reviewed descriptors maps those scratch fields. The
+offline replay is under `artifacts/model-expansion/mapped-auto-state-ack/`.
+
+The EC thermal policy can independently change the selector if the
+override is cleared while FE is still active. The exact stores are
+`15480/1599C/268BE/270C2` on 0423/0484/0509/0529. Keeping the
+override until the selector exit is verified avoids that competing
+change and preserves the intended restore order.
+
 The exact keyboard images for 0423 (1.02.00), 0484 (1.04.00), 0509
 (1.01.00), and 0529 (1.07.00) send both named duty commands, `0D/0D` and
 `0D/8D`, to the unsupported handler with status `05`. The separate raw
@@ -416,6 +432,23 @@ ownership through every read, including Auto handback. If those checks
 pass, Stop can use independent actual PWM without submitting D0.
 The A1 publication and verified Auto handback still require their
 separate completion proof.
+
+For that comparison, all four exact fan initializers set the cycle
+register `F01841` to `B7`. Compare the candidate `1841` read to
+fresh mapped `B2`, and compare candidate `1807/1803` to mapped
+`B0/B1` while Automatic produces distinguishable nonzero duty
+samples. This checks the PWM block itself and avoids using the SPI
+ID data register outside its own operation. A zero at candidate
+`1808` alone cannot establish third-duty readback.
+
+The Razer FCC exhibits distinguish the 2024 Blade 18's `APF23004_MB1/MB2`
+from the 2025 Blade 18's `APF24003_MB` with `KI8110` silkscreen. The
+original embedded photos do not resolve the EC part number. Pair each
+exhibit with its test project and model since the FCC ID is shared.
+[0509 photo exhibit](https://fccid.io/RWO-RZ090510/Internal-Photos/Internal-Photos-1-7171147)
+· [0509 test report](https://fcc.report/FCC-ID/RWO-RZ090510/7171266.pdf)
+· [0529 photo exhibit](https://fccid.io/RWO-RZ090510/Internal-Photos/Internal-Photos-1-8056578)
+· [0529 test report](https://fccid.io/m/7479f7b0462d4ac455361e9850118d151801303a8b3dfc991efb423760d1fdeb.pdf)
 
 The EC can temporarily close Super I/O host access during PNPCFG
 programming. The general table writers are `AC06/B084/B4D0/B31A` on
@@ -598,10 +631,14 @@ With `80D6` zero, that routine reaches the initializer at
 does not identify a board strap, a host-visible enable switch, or the
 state of those bytes during a retail boot. The USB SET_REPORT handler
 dispatches the 90-byte report before scheduling the status stage.
-The EC-local `0D/02` handler stores the selector at `8035F` and a fresh
-`0D/82` reads that byte directly. This path does not use the keyboard
-MCU's I²C staging or selector cache. The separate `0D/84` table reads
-speed or configuration RAM and supplies no actual third PWM reading.
+The EC-local `0D/02` handler stores the selector at `8035F`. A fresh
+`0D/82` reads that byte directly on all four images at
+`11308/1202C/1257C/128EC` on 0423/0484/0509/0529. If the endpoint
+enumerates, that can establish the selector at dispatch time.
+It carries no transaction ID and cannot verify restored override or
+staged duty. This path bypasses the keyboard MCU's I²C staging and
+selector cache. On KI890, the separate `0D/84` table reads speed
+or configuration RAM and supplies no actual third PWM reading.
 
 The KI890 SET_REPORT parser at `120D4` dispatches class `00` at
 `11EB0` and class `0D` at `11FCE`. Its accepted classes
@@ -657,6 +694,18 @@ a completion contract that protects Auto through handback.
 | RZ09-0370 | Two older Razer-signed updaters contain the same P1106 BIOS image. Exact selectors include SSIDs `1A582013` and `1A582014`. | Both packages select BIOS only. The EC side of the BIOS mailbox remains unidentified. |
 | RZ09-0482 | Microsoft-signed public catalog capsule for PI490 BIOS 1.06, with verified INF and ROM membership. | The older image retains the conditional OEM fan hook and the generic EC mailbox. The [keyboard MCU bridge](fan-stop-pi490-mcu-bridge-review.md) still ends at the receiver. |
 | RZ09-0508 | Exact Synapse product 694 advertises firmware through the already reviewed BIOS 1.06 article. | PI4100's EC implementation and its fan contract. |
+
+Razer's certification report identifies `PI411_MB` for its RZ09-0370
+sample. The matching 2101C089B board photos confirm that silkscreen but
+do not resolve the EC marking. A repair thread labeled RZ09-0370 shows
+`APF21008_MB` in its original photo and lists an RTX 3070 Ti. Those
+identifiers match the RZ09-0427 filing and specifications, so the photo
+cannot identify the RZ09-0370 receiver.
+[0370 test report](https://fcc.report/FCC-ID/RWO-RZ090368/5566905.pdf)
+· [0370 photo exhibit](https://fccid.io/RWORZ090368/Internal-Photos/Internal-Photos-5566766)
+· [Repair board photo](https://appatt.chinafix.com/pic/20250703/175150517415748_523.jpg)
+· [0427 filing](https://fccid.io/RWO-RZ090368QCNFA/User-Manual/User-Manual-5876422.pdf)
+· [0427 specifications](https://mysupport.razer.com/app/answers/detail/a_id/5915/)
 
 The RZ09-0301 keyboard carrier has SHA-256
 `58f880cc46a64379131e7edc3d1a8c63418dc2989179d3a514d6d79ea38e49e5`.
