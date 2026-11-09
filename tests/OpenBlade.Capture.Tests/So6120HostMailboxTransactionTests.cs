@@ -39,6 +39,16 @@ public sealed class So6120HostMailboxTransactionTests
     }
 
     [Fact]
+    public void ThirdStagingFieldDoesNotAcquireLiveMailboxAuthority()
+    {
+        var fake = new Fake();
+        Assert.Equal(So6120MailboxFailure.InvalidRequest, Core(fake).Read(So6120MailboxRegister.StagedDuty3).Failure);
+        Assert.Equal(So6120MailboxFailure.InvalidRequest, Core(fake).WriteAndConfirm(So6120MailboxRegister.StagedDuty3, 0).Failure);
+        Assert.Equal(0, fake.Calls);
+        Assert.Empty(fake.Prepared);
+    }
+
+    [Fact]
     public void SuccessfulHandlerButSkippedWriteDoesNotConfirmPayloadCache()
     {
         var fake = new Fake { SkipMappedWrite = true };

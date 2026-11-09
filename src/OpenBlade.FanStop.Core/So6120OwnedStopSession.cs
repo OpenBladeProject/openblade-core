@@ -104,7 +104,7 @@ internal sealed partial class So6120DirectDutySession
             var observed = VerifyOwnedStop();
             if (observed.Disposition != So6120DutyIoDisposition.Confirmed || observed.Observation is null)
             { return So6120StopCoastResult.Unresolved; }
-            if (observed.Observation.Snapshot.Tach1 == 0 && observed.Observation.Snapshot.Tach2 == 0)
+            if (observed.Observation.Snapshot.AllTachStopped(operation.ThreeChannels))
             { return So6120StopCoastResult.Stopped; }
         }
         return So6120StopCoastResult.AutomaticRequired;
@@ -131,7 +131,7 @@ internal sealed partial class So6120DirectDutySession
                 try
                 {
                     So6120DutyObservation observation = flow.ObserveExpected();
-                    if (observation.Snapshot.Actual1 != 0 || observation.Snapshot.Actual2 != 0 ||
+                    if (!observation.Snapshot.MatchesActualDuty(0, 0, operation.ThreeChannels ? (byte)0 : null) ||
                         (observation.Snapshot.ActiveState & 1) == 0)
                     {
                         Fence(So6120DutyFailure.StateChanged);

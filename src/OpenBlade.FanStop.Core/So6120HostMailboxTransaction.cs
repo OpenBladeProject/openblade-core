@@ -9,6 +9,9 @@ internal enum So6120MailboxRegister : byte
     Selector = 0x1A, Manual = 0x36, ActualDuty1 = 0xB0, ActualDuty2 = 0xB1,
     Cycle = 0xB2, StagedDuty1 = 0xB8, StagedDuty2 = 0xB9,
     BoardSsidLow = 0xE3, BoardSsidHigh = 0xE4, Override = 0xF0,
+    // Typed workflow field for the three-fan firmware. The live mailbox
+    // allowlists exclude it until the exact-model transport is established.
+    StagedDuty3 = 0x9C,
 }
 
 internal enum So6120PortEffect { NotPerformed, MayHavePerformed, Performed }

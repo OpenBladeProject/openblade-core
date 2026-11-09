@@ -291,15 +291,18 @@ public sealed class So6120DirectDutyJournalTests
         return plan;
     }
 
-    [Fact]
-    public void ConfirmedRoundTripRetainsBindingAndNeverGrantsRestart()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConfirmedRoundTripRetainsBindingAndNeverGrantsRestart(bool threeChannels)
     {
-        using var fixture = new Fixture();
+        using var fixture = new Fixture(threeChannels);
         using (var journal = fixture.Create())
         {
             fixture.Initialize(journal);
             fixture.Change(journal, So6120MailboxRegister.StagedDuty1, 30, So6120DutyOwnedFields.Staged1);
             fixture.Change(journal, So6120MailboxRegister.StagedDuty2, 40, So6120DutyOwnedFields.Staged2);
+            if (threeChannels) { fixture.Change(journal, So6120MailboxRegister.StagedDuty3, 0, So6120DutyOwnedFields.Staged3); }
             fixture.Change(journal, So6120MailboxRegister.Override, 0x51, So6120DutyOwnedFields.Override);
             fixture.Change(journal, So6120MailboxRegister.Selector, 0xFE, So6120DutyOwnedFields.Selector);
             journal.ClaimExit(fixture.Checkpoint!);
@@ -307,6 +310,7 @@ public sealed class So6120DirectDutyJournalTests
             fixture.Change(journal, So6120MailboxRegister.Override, 0x11, So6120DutyOwnedFields.Override, true);
             fixture.Change(journal, So6120MailboxRegister.StagedDuty1, 10, So6120DutyOwnedFields.Staged1, true);
             fixture.Change(journal, So6120MailboxRegister.StagedDuty2, 20, So6120DutyOwnedFields.Staged2, true);
+            if (threeChannels) { fixture.Change(journal, So6120MailboxRegister.StagedDuty3, 30, So6120DutyOwnedFields.Staged3, true); }
             fixture.Observe(journal);
             journal.Complete(fixture.Identity.Owner, fixture.Checkpoint!.Generation, fixture.Latest!.Sequence);
         }
@@ -319,8 +323,33 @@ public sealed class So6120DirectDutyJournalTests
         Assert.True(recovered.PermissionRestoredConfirmed);
         Assert.Equal(fixture.Identity, recovered.Identity);
         Assert.Equal(fixture.Baseline, recovered.LastConfirmedControls);
-        Assert.Equal(9, recovered.CheckpointGeneration);
+        Assert.Equal(threeChannels ? 3 : 1, recovered.FormatVersion);
+        Assert.Equal(threeChannels ? 11 : 9, recovered.CheckpointGeneration);
         Assert.Throws<IOException>(() => fixture.Create());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void JournalRejectsObservationWithWrongChannelCount(bool threeChannels)
+    {
+        using var fixture = new Fixture(threeChannels);
+        using var journal = fixture.Create();
+        journal.ClaimEntry(fixture.Identity.Owner, fixture.Identity.CapturedProfile);
+        var snapshot = new So6120DutySnapshot(fixture.Controls with { Staged3 = threeChannels ? null : (byte)30 },
+            50, 60, 20, 20, 0, 1)
+        { Actual3 = threeChannels ? null : (byte)70, Tach3 = threeChannels ? null : (byte)20 };
+        Assert.Throws<InvalidDataException>(() => journal.RecordObservation(new(fixture.Identity.Owner, 1, 10, 11, snapshot)));
+    }
+
+    [Fact]
+    public void TwoChannelJournalRejectsThirdStageTransfer()
+    {
+        using var fixture = new Fixture();
+        using var journal = fixture.Create();
+        fixture.Initialize(journal);
+        Assert.Throws<InvalidDataException>(() =>
+            journal.BeginTransfer(new(Guid.NewGuid(), So6120MailboxRegister.StagedDuty3, null)));
     }
 
     [Theory]
@@ -742,13 +771,23 @@ public sealed class So6120DirectDutyJournalTests
     // All device observations below are synthetic caller evidence; no port/native boundary is constructed.
     private sealed class Fixture : IDisposable
     {
+        public Fixture(bool threeChannels = false)
+        {
+            if (threeChannels)
+            {
+                Identity = Identity with { RequestedDuty3 = 0 };
+                Baseline = Baseline with { Staged3 = 30 };
+            }
+            Controls = Baseline;
+        }
+
         public string Root { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ob-journal-" + Guid.NewGuid().ToString("N"));
         public string Path => System.IO.Path.Combine(Root, So6120DirectDutyJournal.FileName);
         public So6120JournalIdentity Identity { get; } = new(
             new(Guid.NewGuid(), "SO6120 synthetic device", "EC1.04 synthetic evidence", Guid.NewGuid()),
             PerformancePreset.Silent, 30, 40, new('a', 64), new('b', 64), Guid.NewGuid(), new('c', 64), "synthetic-boot");
         public So6120DutyControls Baseline { get; } = new(5, 0, 0x11, 10, 20, 183, 0);
-        public So6120DutyControls Controls { get; private set; } = new(5, 0, 0x11, 10, 20, 183, 0);
+        public So6120DutyControls Controls { get; private set; }
         public So6120DutyObservation? Latest { get; private set; }
         public So6120DutyCheckpoint? Checkpoint { get; private set; }
         public So6120DirectDutyJournal Create() => So6120DirectDutyJournal.Create(Root, Identity);
@@ -762,7 +801,9 @@ public sealed class So6120DirectDutyJournalTests
         public void Observe(So6120DirectDutyJournal journal)
         {
             long sequence = (Latest?.Sequence ?? 0) + 1;
-            Latest = new(Identity.Owner, sequence, sequence * 10, sequence * 10 + 1, new(Controls, 50, 60, 20, 20, 0, 1));
+            var snapshot = new So6120DutySnapshot(Controls, 50, 60, 20, 20, 0, 1);
+            if (Identity.RequestedDuty3.HasValue) { snapshot = snapshot with { Actual3 = 70, Tach3 = 20 }; }
+            Latest = new(Identity.Owner, sequence, sequence * 10, sequence * 10 + 1, snapshot);
             journal.RecordObservation(Latest);
         }
         public So6120MailboxRequest BeginRead(So6120DirectDutyJournal journal)
@@ -794,6 +835,7 @@ public sealed class So6120DirectDutyJournalTests
             {
                 So6120MailboxRegister.StagedDuty1 => Controls with { Staged1 = value },
                 So6120MailboxRegister.StagedDuty2 => Controls with { Staged2 = value },
+                So6120MailboxRegister.StagedDuty3 => Controls with { Staged3 = value },
                 So6120MailboxRegister.Override => Controls with { Override = value },
                 So6120MailboxRegister.Selector => Controls with { Selector = value },
                 _ => throw new InvalidOperationException(),

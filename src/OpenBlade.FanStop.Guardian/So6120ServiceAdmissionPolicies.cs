@@ -36,7 +36,7 @@ internal static class So6120ServiceModelAdmission
         && identity.ConsentId == identity.Owner.OperationId && identity.ConsentSha256 == contract.ContractSha256
         && identity.BootIdentity == $"service:{servicePid}:{serviceStartUtcTicks}"
         && identity.CapturedProfile == PerformancePreset.Balanced
-        && identity.RequestedDuty1 == 0 && identity.RequestedDuty2 == 0;
+        && identity is { RequestedDuty1: 0, RequestedDuty2: 0, RequestedDuty3: null };
 
     internal static So6120AdmissionAssessment Assess(FanStopModelContract contract, So6120JournalIdentity identity,
         int servicePid, long serviceStartUtcTicks, So6120SupervisedMetadata metadata)

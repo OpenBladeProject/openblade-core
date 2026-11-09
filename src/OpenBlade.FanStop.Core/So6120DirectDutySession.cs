@@ -86,6 +86,8 @@ internal sealed partial class So6120DirectDutySession : IDisposable
         if (options.TransactionTimeout <= TimeSpan.Zero || options.TransactionTimeout > TimeSpan.FromSeconds(5)
             || options.SnapshotTimeout < options.TransactionTimeout || options.SnapshotTimeout > TimeSpan.FromMinutes(1)
             || options.MaxPolls is < 1 or > 1000 || binding.ConsoleSession is 0 or uint.MaxValue
+            // This transport supplies independent readback for two fans only.
+            || binding.Identity.RequestedDuty3.HasValue
             || !MatchesStamp(binding.Challenge.Stamp, binding, clock) || !MatchesStamp(binding.Handoff.Stamp, binding, clock))
         { throw new ArgumentException("Invalid session bounds or binding."); }
         try
