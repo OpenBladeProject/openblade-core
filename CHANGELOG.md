@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.58.1] - 2026-11-09
+
 ### Added
 
 - Add Stop/Auto for Blade 14 RZ09-0427/0530, Blade 15 RZ09-0330/0421 and Blade 16 RZ09-0483/0510/0528 on reviewed EC versions, including the Lamborghini variant. ([#901](https://github.com/OSSBlade/openblade-core/pull/901))
@@ -2366,7 +2368,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.57.1-nightly.109...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.58.1...HEAD
+[0.58.1]: https://github.com/OSSBlade/openblade-core/compare/v0.57.1-nightly.109...v0.58.1
 [0.57.1-nightly.109]: https://github.com/OSSBlade/openblade-core/compare/v0.51.0-nightly.107-attempt.2...v0.57.1-nightly.109
 [0.51.0-nightly.107]: https://github.com/OSSBlade/openblade-core/compare/v0.50.3...v0.51.0-nightly.107-attempt.2
 [0.44.1-nightly.105]: https://github.com/OSSBlade/openblade-core/compare/v0.44.0-nightly.104...v0.44.1-nightly.105
