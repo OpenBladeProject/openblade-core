@@ -262,8 +262,12 @@ public sealed class Rz090528BatteryValidationFactoryTests
     {
         var session = new ScriptedSession(
             [1, 1, 2, 0], [1, 2, 2, 0],
-            [1, 1, 0, 1], [1, 2, 0, 1],
-            [1, 1, encodedRpm], [1, 2, encodedRpm]);
+            [0x11, 0x11], [1, 1, 2, 1],
+            [0x11, 0x11], [1, 2, 2, 1],
+            [1, 1, 2, 1], [1, 2, 2, 1],
+            [0x11, 0x11], [1, 1, encodedRpm],
+            [0x11, 0x11], [1, 2, encodedRpm],
+            [1, 1, 2, 1], [1, 2, 2, 1]);
         await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
 
         await port.SetFanControlAsync(new FanControlSettings(mode, rpm, ManualFanCurve.Default), default);
@@ -272,7 +276,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.False(port.Capabilities.ReportsPerformanceWithManualFans);
         Assert.Equal(new FanSpeedRange(2000, 5000, 100), port.Capabilities.FanSpeedRange);
         Assert.Equal(
-            ["01010001", "01020001", $"0101{encodedRpm:X2}", $"0102{encodedRpm:X2}"],
+            ["01010201", "01020201", $"0101{encodedRpm:X2}", $"0102{encodedRpm:X2}"],
             Writes(session));
     }
 

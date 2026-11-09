@@ -27,8 +27,9 @@ internal enum ThermalModeState
     // enabled. Keep these distinct so readback retains the active selector.
     BatterySaverManual,
     BatteryBalancedManual,
-    // Read-only recognition of Product736's Silent selector with manual fans.
     SilentManual,
+    PerformanceManual,
+    CustomManual,
 }
 
 internal readonly record struct ThermalModeReading(
@@ -38,6 +39,7 @@ internal readonly record struct ThermalModeReading(
 internal static class ThermalModeProtocol
 {
     internal const byte CommandClass = 0x0D;
+    internal const byte SetCommandId = 0x02;
     internal const byte QueryCommandId = 0x82;
     private const byte ThermalClass = 0x01;
 
@@ -62,14 +64,15 @@ internal static class ThermalModeProtocol
     public static bool TryDecodeQuery(
         ReadOnlySpan<byte> payload,
         ThermalChannel expectedChannel,
-        out ThermalModeReading reading)
+        out ThermalModeReading reading,
+        bool decodePresetManualStates = false)
     {
         reading = default;
         if (!Enum.IsDefined(expectedChannel)
             || payload.Length != 4
             || payload[0] != ThermalClass
             || payload[1] != (byte)expectedChannel
-            || !TryDecodeState(payload[2], payload[3], out ThermalModeState state))
+            || !TryDecodeState(payload[2], payload[3], decodePresetManualStates, out ThermalModeState state))
         {
             return false;
         }
@@ -81,11 +84,12 @@ internal static class ThermalModeProtocol
     public static bool TryDecodeMatchingPair(
         ReadOnlySpan<byte> firstPayload,
         ReadOnlySpan<byte> secondPayload,
-        out ThermalModeState state)
+        out ThermalModeState state,
+        bool decodePresetManualStates = false)
     {
         state = default;
-        if (!TryDecodeQuery(firstPayload, ThermalChannel.First, out ThermalModeReading first)
-            || !TryDecodeQuery(secondPayload, ThermalChannel.Second, out ThermalModeReading second)
+        if (!TryDecodeQuery(firstPayload, ThermalChannel.First, out ThermalModeReading first, decodePresetManualStates)
+            || !TryDecodeQuery(secondPayload, ThermalChannel.Second, out ThermalModeReading second, decodePresetManualStates)
             || first.State != second.State)
         {
             return false;
@@ -98,6 +102,7 @@ internal static class ThermalModeProtocol
     private static bool TryDecodeState(
         byte mode,
         byte fanValue,
+        bool decodePresetManualStates,
         out ThermalModeState state)
     {
         state = default;
@@ -113,8 +118,10 @@ internal static class ThermalModeProtocol
             (0x03, 0x01) => Assign(ThermalModeState.BatterySaverManual, out state),
             (0x06, 0x01) => Assign(ThermalModeState.BatteryBalancedManual, out state),
             (0x07, 0x00) => Assign(ThermalModeState.HyperBoostObserved, out state),
-            // The direct, validated setter remains 00/01. Synapse's own path
-            // can normalize the same fixed state to 04/01 on subsequent reads.
+            // Only the RZ09-0581 and RZ09-0528 production paths distinguish Performance
+            // and Custom manual selectors. Legacy validators retain their vocabulary.
+            (0x02, 0x01) when decodePresetManualStates => Assign(ThermalModeState.PerformanceManual, out state),
+            (0x04, 0x01) when decodePresetManualStates => Assign(ThermalModeState.CustomManual, out state),
             (0x00, 0x01) => Assign(ThermalModeState.FixedMaximum, out state),
             (0x04, 0x01) => Assign(ThermalModeState.FixedMaximum, out state),
             _ => false,

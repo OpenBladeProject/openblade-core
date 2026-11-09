@@ -913,29 +913,6 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
-    public async Task DirectMaximumFanSetter_EntersFromPerformanceAutomaticThenWritesTargets()
-    {
-        var session = new ScriptedSession(
-            Success([0x01, 0x01, 0x02, 0x00]),
-            Success([0x01, 0x02, 0x02, 0x00]),
-            Success([0x01, 0x01, 0x00, 0x01]),
-            Success([0x01, 0x02, 0x00, 0x01]),
-            Success([0x01, 0x01, 0x36]),
-            Success([0x01, 0x02, 0x36]));
-        await using var port = CreatePort(
-            session,
-            Catalog(MaximumCapabilityFixtures()),
-            supportsDirectManualFanTransitions: true);
-
-        await port.SetFanModeAsync(FanMode.Maximum, default);
-
-        Assert.Equal(
-            ["01010000", "01020000", "01010001", "01020001", "010136", "010236"],
-            session.Commands.Select(command =>
-                Convert.ToHexString(command.Arguments.Span)).ToArray());
-    }
-
-    [Fact]
     public async Task DirectMaximumFanSetter_AlreadyManualWritesOnlyTargets()
     {
         var session = new ScriptedSession(
@@ -990,30 +967,126 @@ public sealed class ProductionBatteryPortTests
                 Convert.ToHexString(command.Arguments.Span)).ToArray());
     }
 
-    [Fact]
-    public async Task DirectManualFanSetter_EntersFromPerformanceAutomaticThenWritesTarget()
+    [Theory]
+    [InlineData(0x02, FanMode.Fixed, 4000)]
+    [InlineData(0x02, FanMode.Maximum, 5400)]
+    [InlineData(0x02, FanMode.ManualCurve, 5400)]
+    [InlineData(0x05, FanMode.Fixed, 4000)]
+    public async Task DirectManualFanSetter_PreservesFullPowerPreset(byte mode, FanMode fans, int rpm)
     {
+        byte target = (byte)(rpm / 100);
+        byte[] firstManual = [0x01, 0x01, mode, 0x01];
+        byte[] secondManual = [0x01, 0x02, mode, 0x01];
         var session = new ScriptedSession(
-            Success([0x01, 0x01, 0x02, 0x00]),
-            Success([0x01, 0x02, 0x02, 0x00]),
-            Success([0x01, 0x01, 0x00, 0x01]),
-            Success([0x01, 0x02, 0x00, 0x01]),
-            Success([0x01, 0x01, 0x28]),
-            Success([0x01, 0x02, 0x28]));
+            Success([0x01, 0x01, mode, 0x00]),
+            Success([0x01, 0x02, mode, 0x00]),
+            Success([0x11, 0x11]), Success(firstManual),
+            Success([0x11, 0x11]), Success(secondManual),
+            Success(firstManual), Success(secondManual),
+            Success([0x11, 0x11]), Success([0x01, 0x01, target]),
+            Success([0x11, 0x11]), Success([0x01, 0x02, target]),
+            Success(firstManual), Success(secondManual));
         await using var port = CreatePort(
             session,
             Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
             supportsDirectManualFanTransitions: true);
 
-        await port.SetFanControlAsync(
-            new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default),
-            default);
+        if (fans == FanMode.Maximum)
+        {
+            await port.SetFanModeAsync(fans, default);
+        }
+        else
+        {
+            await port.SetFanControlAsync(new FanControlSettings(fans, rpm, ManualFanCurve.Default), default);
+        }
 
-        Assert.True(port.Capabilities.SupportsDirectManualFanTransitions);
         Assert.Equal(
-            ["01010000", "01020000", "01010001", "01020001", "010128", "010228"],
-            session.Commands.Select(command =>
-                Convert.ToHexString(command.Arguments.Span)).ToArray());
+            [0x82, 0x82, 0x8C, 0x02, 0x8C, 0x02, 0x82, 0x82, 0x8C, 0x01, 0x8C, 0x01, 0x82, 0x82],
+            session.Commands.Select(command => command.CommandId).ToArray());
+        Assert.Equal(
+            [$"0101{mode:X2}01", $"0102{mode:X2}01", $"0101{target:X2}", $"0102{target:X2}"],
+            session.Commands.Where(command => command.CommandId is 0x02 or 0x01)
+                .Select(command => Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DirectCustomManualFanSetter_ReappliesAndConfirmsCpuAndGpuLevels(bool retainsGpu)
+    {
+        byte[] firstManual = [0x01, 0x01, 0x04, 0x01];
+        byte[] secondManual = [0x01, 0x02, 0x04, 0x01];
+        byte[] cpu = [0x01, 0x01, 0x01];
+        byte[] gpu = [0x01, 0x02, 0x02];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success(cpu), Success(gpu),
+            Success([0x11, 0x11]), Success(firstManual),
+            Success([0x11, 0x11]), Success(secondManual),
+            Success(firstManual), Success(secondManual),
+            Success([0x11, 0x11]), Success([0x01, 0x01, 0x28]),
+            Success([0x11, 0x11]), Success([0x01, 0x02, 0x28]),
+            Success([0x11, 0x11]), Success(cpu),
+            Success([0x11, 0x11]), Success(gpu),
+            Success(firstManual), Success(secondManual),
+            Success(cpu), Success(retainsGpu ? gpu : [0x01, 0x02, 0x00]));
+        await using var port = CreatePort(
+            session,
+            Catalog([.. MaximumCapabilityFixtures(), .. CustomPerformanceFixtures()]),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true);
+
+        Task apply = port.SetFanControlAsync(
+            new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default), default);
+        if (retainsGpu)
+        {
+            await apply;
+        }
+        else
+        {
+            BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() => apply);
+            Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        }
+
+        Assert.Equal(
+            ["01010401", "01020401", "010128", "010228", "010101", "010202"],
+            session.Commands.Where(command => command.CommandId is 0x02 or 0x01 or 0x07)
+                .Select(command => Convert.ToHexString(command.Arguments.Span)).ToArray());
+        Assert.Equal(22, session.Commands.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectManualFanSetter_StopsBeforeTargetsIfPresetOrPowerChanges(bool powerChanges)
+    {
+        byte[] firstManual = [0x01, 0x01, 0x02, 0x01];
+        byte[] secondManual = [0x01, 0x02, 0x02, 0x01];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x02, 0x00]),
+            Success([0x01, 0x02, 0x02, 0x00]),
+            Success([0x11, 0x11]), Success(firstManual),
+            Success([0x11, 0x11]), Success(secondManual),
+            Success(powerChanges ? firstManual : [0x01, 0x01, 0x00, 0x01]),
+            Success(powerChanges ? secondManual : [0x01, 0x02, 0x00, 0x01]),
+            Success([0x07, 0x11]));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanControlAsync(new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default), default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x01);
+        Assert.Equal(powerChanges ? 9 : 8, session.Commands.Count);
     }
 
     [Theory]
@@ -1174,8 +1247,8 @@ public sealed class ProductionBatteryPortTests
     public async Task DirectManualFanSetter_SecondEntryFailureRemainsIndeterminate()
     {
         var session = new ScriptedSession(
-            Success([0x01, 0x01, 0x02, 0x00]),
-            Success([0x01, 0x02, 0x02, 0x00]),
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
             Success([0x01, 0x01, 0x00, 0x01]),
             new HidSessionResult<ReadOnlyMemory<byte>>(
                 default,
