@@ -18,7 +18,8 @@ internal sealed record ScopedApplyOutcome(
     ConfirmedDeviceState? PreWriteState = null,
     DesiredDeviceState? EffectiveDesired = null,
     WriteSubmissionState? WriteSubmissionState = null,
-    BladeWriteFailurePhase? WriteFailurePhase = null);
+    BladeWriteFailurePhase? WriteFailurePhase = null,
+    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
 
 internal sealed record FullTransitionApplyOutcome(
     SubsystemApplyResults Results,
@@ -31,7 +32,8 @@ internal sealed record FullTransitionApplyOutcome(
     IReadOnlySet<DeviceSubsystem>? ConfirmationUnavailable = null,
     ConfirmedDeviceState? PreWriteState = null,
     DesiredDeviceState? EffectiveDesired = null,
-    IReadOnlySet<DeviceSubsystem>? DeferredNotSubmitted = null);
+    IReadOnlySet<DeviceSubsystem>? DeferredNotSubmitted = null,
+    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
 
 internal sealed class IntentionalWriteCanceledException(
     IReadOnlySet<DeviceSubsystem> writeAttempted,
@@ -563,14 +565,19 @@ public sealed class ControlCoordinator
             admittedCapabilities = capabilities;
             supportsDirectManualFanTransitions =
                 capabilities.SupportsDirectManualFanTransitions;
-            return capabilities.FanModes.Contains(value.Mode)
+            return (value.Mode == FanMode.Stop
+                ? capabilities.SupportsBatterySaverFanStop
+                : capabilities.FanModes.Contains(value.Mode))
                 && (value.Mode != FanMode.Fixed
                     || capabilities.SupportsFanSpeedInAnyPerformancePreset(
                         value.FixedSpeedRpm));
         }
         Func<ConfirmedDeviceState, string?>? manualEntryBlockReason =
             DeviceSubsystemOrder.IsManualFanMode(value.Mode)
-                ? state => value.Mode == FanMode.Fixed
+                ? state => value.Mode == FanMode.Stop
+                    ? state.Performance == PerformancePreset.BatterySaver && state.HyperBoostActive == false
+                        ? null : "Fan stop requires confirmed Battery Saver with HyperBoost off."
+                    : value.Mode == FanMode.Fixed
                         && state.Performance is { } performance
                         && admittedCapabilities?.FanSpeedRangesByPerformancePreset.Count > 0
                         ? admittedCapabilities.GetFanSpeedRange(performance)
@@ -602,7 +609,7 @@ public sealed class ControlCoordinator
             combinedBlockReason,
             writeAllowed: writeAllowed,
             acceptSetterCompletionWithoutReadback:
-                DeviceSubsystemOrder.IsManualFanMode(value.Mode),
+                value.Mode != FanMode.Stop && DeviceSubsystemOrder.IsManualFanMode(value.Mode),
             setterCompletionEvidence: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
                 ? state => DeviceSubsystemOrder.IsManualFanMode(state.Fans)
                 : null,
@@ -827,7 +834,9 @@ public sealed class ControlCoordinator
                 DeviceAccessFailed: true);
         }
 
-        if (!transitionCapabilities.FanModes.Contains(requested.Mode))
+        if (!(requested.Mode == FanMode.Stop
+            ? transitionCapabilities.SupportsBatterySaverFanStop
+            : transitionCapabilities.FanModes.Contains(requested.Mode)))
         {
             return new ScopedApplyOutcome(
                 Unsupported("Fans"),
@@ -851,6 +860,37 @@ public sealed class ControlCoordinator
                 writeAttempted,
                 confirmedCoupledWrites,
                 cancellationToken).ConfigureAwait(false);
+        }
+
+        // Preset-ranged backends report the independent performance and manual
+        // flag, and use the same typed targets for Fixed and host curves. A
+        // subtype change within their admitted preset needs no Automatic or
+        // Balanced write. Recheck the actual preset in the requested step;
+        // unknown state must block rather than select the historical bridge.
+        FanSpeedRange? presetRange = transitionCapabilities.GetFanSpeedRange(performanceIntent);
+        bool directPresetRangedSubtype = previousManual && requestedManual
+            && transitionCapabilities.ReportsPerformanceWithManualFans
+            && transitionCapabilities.FanSpeedRangesByPerformancePreset.Count > 0;
+        if (directPresetRangedSubtype)
+        {
+            if (presetRange is not { IsWellFormed: true }
+                || !(requested.Mode == FanMode.Fixed && presetRange.Supports(requested.FixedSpeedRpm)
+                    || requested.Mode == FanMode.ManualCurve && performanceIntent == PerformancePreset.Balanced))
+            {
+                return new ScopedApplyOutcome(
+                    Unsupported("Fans"), null, WriteAttempted: false, ReadbackMatched: false,
+                    Capabilities: transitionCapabilities, DeviceAccessFailed: false);
+            }
+            ScopedApplyOutcome direct = await ApplyRequestedFanControlStepOutcomeAsync(
+                requested,
+                cancellationToken,
+                initialStateBlockReason: state => state.Performance == performanceIntent
+                    && IsConfirmedDirectManualFanWriteBaseline(state)
+                        ? null
+                        : "Manual subtype changes require the freshly confirmed admitted performance preset and fan state.")
+                .ConfigureAwait(false);
+            RecordWriteAttempt(writeAttempted, DeviceSubsystem.Fans, direct);
+            return direct;
         }
 
         bool requiresAutomaticBridge = !supportsDirectManualFanTransitions
@@ -1184,27 +1224,49 @@ public sealed class ControlCoordinator
                 confirmed),
             cancellationToken);
 
-    internal Task<ScopedApplyOutcome> ApplyLightingOutcomeAsync(
+    internal async Task<ScopedApplyOutcome> ApplyLightingOutcomeAsync(
         LightingSettings value,
         CancellationToken cancellationToken,
         bool forceWrite = false,
         Func<bool>? writeAllowed = null,
-        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null) =>
-        ApplyScopedAsync(
+        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null)
+    {
+        bool independent = false;
+        ConfirmedDeviceState? baseline = null;
+        ScopedApplyOutcome outcome = await ApplyScopedAsync(
             DeviceSubsystem.Lighting,
             "Lighting",
             IsLightingValid(value),
-            capabilities => LightingSupported(capabilities, value),
-            state => LightingMatches(state, value),
-            token => device.SetLightingAsync(value, token),
+            capabilities =>
+            {
+                independent = capabilities.SupportsIndependentLightingControls;
+                return LightingSupported(capabilities, value);
+            },
+            state => LightingMatches(state, value, independent),
+            token => independent
+                ? value.IndependentControls is { } fields
+                    ? device.SetIndependentLightingAsync(fields, token) : Task.CompletedTask
+                : device.SetLightingAsync(value, token),
             cancellationToken,
             initialStateBlockReason,
-            acceptSetterCompletionWithoutReadback: value.Effect != LightingEffect.Off,
-            setterCompletionEvidence: state => LogoMatches(state, value),
+            acceptSetterCompletionWithoutReadback: value.IndependentControls is null && value.Effect != LightingEffect.Off,
+            setterCompletionEvidence: state => !independent && LogoMatches(state, value),
             forceWrite: forceWrite,
             writeAllowed: writeAllowed,
-            stateReader: device.ReadLightingStateAsync);
-
+            stateReader: async token =>
+            {
+                ConfirmedDeviceState state = independent && value.IndependentControls is { } fields
+                    ? await device.ReadIndependentLightingStateAsync(fields, token)
+                    : await device.ReadLightingStateAsync(token);
+                baseline ??= state;
+                return state;
+            });
+        // Each admitted independent field needs its own observed confirmation.
+        // A successful setter or a readable different value cannot allow replay.
+        return independent && outcome.WriteAttempted && !outcome.ReadbackMatched
+            ? outcome with { ConfirmationUnavailable = true, PreWriteState = baseline }
+            : outcome;
+    }
     internal async Task<FullTransitionApplyOutcome> ApplyDesiredStateOutcomeAsync(
         DesiredDeviceState desired,
         CancellationToken cancellationToken,
@@ -1339,7 +1401,8 @@ public sealed class ControlCoordinator
                     capabilities,
                     DeviceAccessFailed: false,
                     effectiveDesired: desired,
-                    deferredNotSubmitted: transition.DeferredNotSubmitted);
+                    deferredNotSubmitted: transition.DeferredNotSubmitted,
+                    batteryConfirmation: states[DeviceSubsystem.Battery].BatteryConfirmation);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -1405,7 +1468,8 @@ public sealed class ControlCoordinator
                     confirmationUnavailable: confirmationUnavailable,
                     preWriteState: initial,
                     effectiveDesired: desired,
-                    deferredNotSubmitted: transition.DeferredNotSubmitted);
+                    deferredNotSubmitted: transition.DeferredNotSubmitted,
+                    batteryConfirmation: states[DeviceSubsystem.Battery].BatteryConfirmation);
             }
 
             var finalReadUnavailable = new HashSet<DeviceSubsystem>();
@@ -1459,7 +1523,8 @@ public sealed class ControlCoordinator
                     ? initial
                     : null,
                 effectiveDesired: desired,
-                deferredNotSubmitted: transition.DeferredNotSubmitted);
+                deferredNotSubmitted: transition.DeferredNotSubmitted,
+                batteryConfirmation: states[DeviceSubsystem.Battery].BatteryConfirmation);
         }
         catch (OperationCanceledException exception)
             when (cancellationToken.IsCancellationRequested
@@ -1557,7 +1622,9 @@ public sealed class ControlCoordinator
                 "Fans",
                 thermalCombinationSupported
                     && IsDefined(desired.Fans.Value)
-                    && capabilities.FanModes.Contains(desired.Fans.Value),
+                    && (desired.Fans.Value == FanMode.Stop
+                        ? capabilities.SupportsBatterySaverFanStop
+                        : capabilities.FanModes.Contains(desired.Fans.Value)),
                 FanModeMatches(initial.Fans, desired.Fans.Value),
                 token => SetFanControlAsync(
                     desired.FanControl
@@ -1575,16 +1642,23 @@ public sealed class ControlCoordinator
                     capabilities,
                     initial.Battery,
                     token),
-                state => BatteryOperationPlanner.BatteryMatches(desiredBattery, state.Battery)),
+                state => BatteryOperationPlanner.BatteryMatches(desiredBattery, state.Battery,
+                    allowUnmanagedOverride: !capabilities.SupportsTemporaryFullCharge))
+            {
+                BatteryConfirmation = batteryPlan.ConfirmationScope,
+            },
             [DeviceSubsystem.Lighting] = new(
                 "Lighting",
                 IsLightingValid(desired.Lighting.Value)
                     && LightingSupported(capabilities, desired.Lighting.Value),
-                LightingMatches(initial, desired.Lighting.Value),
-                token => device.SetLightingAsync(desired.Lighting.Value, token),
-                state => LightingMatches(state, desired.Lighting.Value),
+                LightingMatches(initial, desired.Lighting.Value, capabilities.SupportsIndependentLightingControls),
+                token => capabilities.SupportsIndependentLightingControls
+                    ? desired.Lighting.Value.IndependentControls is { } fields
+                        ? device.SetIndependentLightingAsync(fields, token) : Task.CompletedTask
+                    : device.SetLightingAsync(desired.Lighting.Value, token),
+                state => LightingMatches(state, desired.Lighting.Value, capabilities.SupportsIndependentLightingControls),
                 AcceptSetterCompletionWithoutReadback:
-                    desired.Lighting.Value.Effect != LightingEffect.Off),
+                    !capabilities.SupportsIndependentLightingControls && desired.Lighting.Value.Effect != LightingEffect.Off),
         };
     }
 
@@ -2174,6 +2248,7 @@ public sealed class ControlCoordinator
         DeviceCapabilities? capabilities = null;
         bool submissionIndeterminate = false;
         bool setterCompleted = false;
+        BatteryConfirmationScope batteryConfirmation = BatteryConfirmationScope.All;
         ConfirmedDeviceState? initial = null;
         try
         {
@@ -2186,6 +2261,7 @@ public sealed class ControlCoordinator
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             BatteryOperationPlan plan = createPlan(capabilities, initial.Battery);
+            batteryConfirmation = plan.ConfirmationScope;
             if (!plan.Supported)
             {
                 return new ScopedApplyOutcome(
@@ -2194,7 +2270,8 @@ public sealed class ControlCoordinator
                     WriteAttempted: false,
                     ReadbackMatched: false,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: false,
+                    BatteryConfirmation: batteryConfirmation);
             }
 
             if (plan.InitiallyMatching)
@@ -2205,7 +2282,8 @@ public sealed class ControlCoordinator
                     WriteAttempted: false,
                     ReadbackMatched: true,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: false,
+                    BatteryConfirmation: batteryConfirmation);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -2223,7 +2301,8 @@ public sealed class ControlCoordinator
                     WriteAttempted: false,
                     ReadbackMatched: false,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: false,
+                    BatteryConfirmation: batteryConfirmation);
             }
             catch (BladeWriteException exception)
                 when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
@@ -2238,7 +2317,8 @@ public sealed class ControlCoordinator
                     capabilities,
                     DeviceAccessFailed: preWriteReadFailed,
                     WriteSubmissionState: exception.SubmissionState,
-                    WriteFailurePhase: exception.FailurePhase);
+                    WriteFailurePhase: exception.FailurePhase,
+                    BatteryConfirmation: batteryConfirmation);
             }
             catch (BladeWriteException exception)
                 when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
@@ -2257,7 +2337,8 @@ public sealed class ControlCoordinator
                     ConfirmationUnavailable: true,
                     PreWriteState: initial,
                     WriteSubmissionState: exception.SubmissionState,
-                    WriteFailurePhase: exception.FailurePhase);
+                    WriteFailurePhase: exception.FailurePhase,
+                    BatteryConfirmation: batteryConfirmation);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -2274,7 +2355,8 @@ public sealed class ControlCoordinator
                     WriteAttempted: true,
                     ReadbackMatched: true,
                     capabilities,
-                    DeviceAccessFailed: false);
+                    DeviceAccessFailed: false,
+                    BatteryConfirmation: batteryConfirmation);
             }
 
             return new ScopedApplyOutcome(
@@ -2284,8 +2366,10 @@ public sealed class ControlCoordinator
                 ReadbackMatched: false,
                 capabilities,
                 DeviceAccessFailed: false,
-                ConfirmationUnavailable: final.Battery?.TemporaryFullCharge is null,
-                PreWriteState: initial);
+                ConfirmationUnavailable: final.Battery is null
+                    || capabilities.SupportsTemporaryFullCharge && final.Battery.TemporaryFullCharge is null,
+                PreWriteState: initial,
+                BatteryConfirmation: batteryConfirmation);
         }
         catch (OperationCanceledException exception)
             when (cancellationToken.IsCancellationRequested && submissionIndeterminate)
@@ -2312,7 +2396,8 @@ public sealed class ControlCoordinator
                 capabilities,
                 DeviceAccessFailed: true,
                 ConfirmationUnavailable: setterCompleted,
-                PreWriteState: setterCompleted ? initial : null);
+                PreWriteState: setterCompleted ? initial : null,
+                BatteryConfirmation: batteryConfirmation);
         }
     }
 
@@ -2769,7 +2854,8 @@ public sealed class ControlCoordinator
         IReadOnlySet<DeviceSubsystem>? confirmationUnavailable = null,
         ConfirmedDeviceState? preWriteState = null,
         DesiredDeviceState? effectiveDesired = null,
-        IReadOnlySet<DeviceSubsystem>? deferredNotSubmitted = null) => new(
+        IReadOnlySet<DeviceSubsystem>? deferredNotSubmitted = null,
+        BatteryConfirmationScope batteryConfirmation = BatteryConfirmationScope.All) => new(
             new SubsystemApplyResults(
                 results[DeviceSubsystem.Performance],
                 results[DeviceSubsystem.Fans],
@@ -2784,7 +2870,8 @@ public sealed class ControlCoordinator
             confirmationUnavailable,
             preWriteState,
             effectiveDesired,
-            deferredNotSubmitted is null ? null : new HashSet<DeviceSubsystem>(deferredNotSubmitted));
+            deferredNotSubmitted is null ? null : new HashSet<DeviceSubsystem>(deferredNotSubmitted),
+            batteryConfirmation);
 
     private static bool IsLightingValid(LightingSettings value)
         => LightingSettingsValidation.IsWellFormed(value);
@@ -2792,14 +2879,26 @@ public sealed class ControlCoordinator
     private static bool LightingSupported(
         DeviceCapabilities capabilities,
         LightingSettings value) =>
-        capabilities.LightingEffects.Contains(value.Effect)
-        && (value.LogoMode is null
-            || capabilities.LogoLightingModes.Contains(value.LogoMode.Value));
+        capabilities.SupportsIndependentLightingControls
+            ? value.IndependentControls is null
+                || value.IndependentControls is { IsWellFormed: true } fields
+                    && (!fields.Brightness.HasValue || capabilities.SupportsKeyboardBrightness)
+                    && (fields.LogoMode is null || capabilities.LogoLightingModes.Contains(fields.LogoMode.Value))
+            : value.IndependentControls is null
+                && capabilities.LightingEffects.Contains(value.Effect)
+                && (value.LogoMode is null || capabilities.LogoLightingModes.Contains(value.LogoMode.Value));
 
     private static bool LightingMatches(
         ConfirmedDeviceState confirmed,
-        LightingSettings desired)
+        LightingSettings desired,
+        bool independent = false)
     {
+        if (independent)
+        {
+            return desired.IndependentControls is not { } fields
+                || (!fields.Brightness.HasValue || confirmed.IndependentLighting?.Brightness == fields.Brightness)
+                    && (fields.LogoMode is null || (confirmed.IndependentLighting?.LogoMode ?? confirmed.LogoLighting) == fields.LogoMode);
+        }
         LightingSettings desiredKeyboard = desired with { LogoMode = null };
         LightingSettings? confirmedKeyboard = confirmed.Lighting is { } lighting
             ? lighting with { LogoMode = null }
@@ -2898,7 +2997,9 @@ public sealed class ControlCoordinator
         PerformancePreset performance,
         FanMode fans,
         DeviceCapabilities capabilities) =>
-        (capabilities.FanSpeedRangesByPerformancePreset.Count > 0
+        (fans == FanMode.Stop && performance == PerformancePreset.BatterySaver
+            && capabilities.SupportsBatterySaverFanStop)
+        || (capabilities.FanSpeedRangesByPerformancePreset.Count > 0
             && fans == FanMode.Fixed
             && capabilities.GetFanSpeedRange(performance) is not null)
         || (capabilities.SupportsDirectManualFanTransitions
@@ -2910,6 +3011,10 @@ public sealed class ControlCoordinator
         (PerformancePreset.Silent, FanMode.Automatic)
         or (PerformancePreset.Balanced, FanMode.Automatic)
         or (PerformancePreset.Performance, FanMode.Automatic)
+        or (PerformancePreset.Turbo, FanMode.Automatic)
+        or (PerformancePreset.MaximumPower, FanMode.Automatic)
+        or (PerformancePreset.Gaming, FanMode.Automatic)
+        or (PerformancePreset.Creator, FanMode.Automatic)
         or (PerformancePreset.Custom, FanMode.Automatic)
         or (PerformancePreset.Balanced, FanMode.Maximum)
         or (PerformancePreset.Balanced, FanMode.Fixed)
@@ -2946,6 +3051,10 @@ public sealed class ControlCoordinator
         PerformancePreset.Silent
         or PerformancePreset.Balanced
         or PerformancePreset.Performance
+        or PerformancePreset.Turbo
+        or PerformancePreset.MaximumPower
+        or PerformancePreset.Gaming
+        or PerformancePreset.Creator
         or PerformancePreset.Custom
         or PerformancePreset.BatterySaver
         or PerformancePreset.BatteryBalanced;
@@ -2967,7 +3076,9 @@ public sealed class ControlCoordinator
                 && IsAutomaticPerformancePreset(performance));
 
     private static bool FanModeMatches(FanMode? confirmed, FanMode desired) =>
-        desired == FanMode.Automatic
+        desired == FanMode.Stop || confirmed == FanMode.Stop
+            ? confirmed == desired
+            : desired == FanMode.Automatic
             ? confirmed == FanMode.Automatic
             : DeviceSubsystemOrder.IsManualFanMode(desired)
                 && DeviceSubsystemOrder.IsManualFanMode(confirmed);
@@ -3191,6 +3302,8 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, bool> Matches,
         bool AcceptSetterCompletionWithoutReadback = false)
     {
+        public BatteryConfirmationScope BatteryConfirmation { get; init; } = BatteryConfirmationScope.All;
+
         public Func<ConfirmedDeviceState, CancellationToken, Task>? StateAwareSetter
         {
             get;

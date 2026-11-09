@@ -511,15 +511,6 @@ Reported failures:
   <data name="MainWindow_ItemsControlTrayDashboardStatusItems.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Tray dashboard status items</value>
   </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>About Lab features</value>
-  </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>About Lab features</value>
-  </data>
-  <data name="MainWindow_LabFeaturesToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Enable Lab experimental features</value>
-  </data>
   <data name="MainWindow_LaptopLogoModeSelectorText.AccessibleName" xml:space="preserve">
     <value>Laptop logo lighting</value>
   </data>
@@ -596,9 +587,6 @@ Reported failures:
   </data>
   <data name="MainWindow_ListViewTaskbarHoverLabelContents.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Taskbar hover label contents</value>
-  </data>
-  <data name="MainWindow_MainNavigationText.Header" xml:space="preserve">
-    <value>False</value>
   </data>
   <data name="MainWindow_NavigationMenuExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Navigation menu order</value>
@@ -1043,7 +1031,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Choose how long pressed keys remain lit.</value>
   </data>
   <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
-    <value>Choose how often OpenBlade refreshes temperatures, fan speed, and net battery power while the window is open or the tray icon is hovered.</value>
+    <value>Choose how often to refresh live readings and check for battery discharge while plugged in.</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
     <value>Choose the controls and live details shown when you click the tray icon.</value>
@@ -1104,9 +1092,6 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_TextBlockCPU.Text" xml:space="preserve">
     <value>CPU</value>
-  </data>
-  <data name="MainWindow_TextBlockCurrentLabFeatures.Text" xml:space="preserve">
-    <value>Current Lab features</value>
   </data>
   <data name="MainWindow_TextBlockCustomColor.Text" xml:space="preserve">
     <value>Custom color</value>
@@ -1237,9 +1222,6 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockHDR2.Text" xml:space="preserve">
     <value>HDR</value>
   </data>
-  <data name="MainWindow_TextBlockImportOblightAndRazerChromaFiles.Text" xml:space="preserve">
-    <value>Import .oblight and Razer .chroma files.</value>
-  </data>
   <data name="MainWindow_TextBlockImportPreset.Text" xml:space="preserve">
     <value>Import preset</value>
   </data>
@@ -1273,14 +1255,23 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
     <value>Keyboard lighting</value>
   </data>
-  <data name="MainWindow_TextBlockKeyboardLightingPresetImport.Text" xml:space="preserve">
-    <value>Keyboard lighting preset import</value>
+  <data name="MainWindow_LabsNavigationItem.Content" xml:space="preserve">
+    <value>Labs</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeatures.Text" xml:space="preserve">
-    <value>Lab features</value>
+  <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
+    <value>Labs</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
-    <value>Lab features may change or be removed.</value>
+  <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
+    <value>Explore experimental OpenBlade features.</value>
+  </data>
+  <data name="MainWindow_LabsImportTitle.Text" xml:space="preserve">
+    <value>Import a lighting preset</value>
+  </data>
+  <data name="MainWindow_LabsImportDescription.Text" xml:space="preserve">
+    <value>Load an OpenBlade or Razer Chroma file, review the effect before applying it, and save it to your active power profile.</value>
+  </data>
+  <data name="MainWindow_LabsLightingRateDescription.Text" xml:space="preserve">
+    <value>Make supported keyboard animations smoother at the cost of more CPU and power.</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>Laptop</value>
@@ -1462,9 +1453,6 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockReleaseNotes.Text" xml:space="preserve">
     <value>Release notes</value>
   </data>
-  <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
-    <value>Render supported effects more smoothly on admitted keyboards.</value>
-  </data>
   <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
     <value>Report a problem</value>
   </data>
@@ -1518,9 +1506,6 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_TextBlockShutDownOpenBlade.Text" xml:space="preserve">
     <value>Shut down OpenBlade</value>
-  </data>
-  <data name="MainWindow_TextBlockSixtyHzKeyboardLighting.Text" xml:space="preserve">
-    <value>60 Hz keyboard lighting</value>
   </data>
   <data name="MainWindow_TextBlockSixtyHzLighting.Text" xml:space="preserve">
     <value>60 Hz lighting</value>
@@ -1602,9 +1587,6 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_TextBlockTroubleshooting.Text" xml:space="preserve">
     <value>Troubleshooting</value>
-  </data>
-  <data name="MainWindow_TextBlockTurnOnExperimentalFeatures.Text" xml:space="preserve">
-    <value>Turn on experimental features.</value>
   </data>
   <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
     <value>Unsaved</value>
@@ -2030,13 +2012,13 @@ OpenBlade did not retry any stop request.</value>
     <value>Check current state</value>
   </data>
   <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Experimental laptop support</value>
+    <value>Laptop support</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Resume experimental controls</value>
+    <value>Resume laptop controls</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
-    <value>Resume experimental controls</value>
+    <value>Resume laptop controls</value>
   </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Help add support</value>
@@ -2210,7 +2192,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Game compatibility has not been verified.</value>
   </data>
   <data name="SnapTap_InfoInput.Text" xml:space="preserve">
-    <value>SnapTap uses the Razer keyboard driver for the laptop’s built-in keyboard.</value>
+    <value>Razer driver handles the built-in keyboard. Windows hook applies to all keyboards.</value>
   </data>
   <data name="SnapTap_InfoTitle.Text" xml:space="preserve">
     <value>About SnapTap</value>
@@ -2339,13 +2321,7 @@ OpenBlade did not retry any stop request.</value>
     <value>Full charge {0} · Design {1} · Health {2} · Cycles {3}</value>
   </data>
   <data name="BatteryHistory_Interval" xml:space="preserve">
-    <value>{0} – {1} · {2} · {3} · Charge {4} · Discharged {5}</value>
-  </data>
-  <data name="BatteryHistory_Load.Content" xml:space="preserve">
-    <value>Load battery history</value>
-  </data>
-  <data name="BatteryHistory_NotLoaded" xml:space="preserve">
-    <value>Load Windows' battery report to inspect the last 24 hours.</value>
+    <value>{0} – {1} · {2} · {3} · Start charge {4} · Discharged {5}</value>
   </data>
   <data name="BatteryHistory_SourceTime" xml:space="preserve">
     <value>Windows battery report · Generated {0}</value>
@@ -2356,44 +2332,11 @@ OpenBlade did not retry any stop request.</value>
   <data name="BatteryHistory_Suspended" xml:space="preserve">
     <value>Suspended</value>
   </data>
-  <data name="BatteryHistory_Title.Text" xml:space="preserve">
-    <value>Battery history</value>
-  </data>
   <data name="BatteryHistory_Unknown" xml:space="preserve">
     <value>Unknown</value>
   </data>
-  <data name="BatteryPreset_Cancel" xml:space="preserve">
-    <value>Cancel</value>
-  </data>
-  <data name="BatteryPreset_Change" xml:space="preserve">
-    <value>{0}: {1} → {2}</value>
-  </data>
-  <data name="BatteryPreset_Description" xml:space="preserve">
-    <value>Save these changes to the battery profile. Manual controls and application overrides keep their priority.</value>
-  </data>
-  <data name="BatteryPreset_Heading.Text" xml:space="preserve">
-    <value>Long battery life</value>
-  </data>
-  <data name="BatteryPreset_Hint.Text" xml:space="preserve">
-    <value>Preview supported battery-profile changes before saving.</value>
-  </data>
-  <data name="BatteryPreset_NoChanges" xml:space="preserve">
-    <value>The supported battery settings already match this preset.</value>
-  </data>
-  <data name="BatteryPreset_Preview.Content" xml:space="preserve">
-    <value>Preview preset</value>
-  </data>
-  <data name="BatteryPreset_Save" xml:space="preserve">
-    <value>Save to battery profile</value>
-  </data>
-  <data name="BatteryPreset_SaveFailed" xml:space="preserve">
-    <value>The battery profile changed or could not be saved. Close this preview and try again.</value>
-  </data>
-  <data name="BatteryPreset_Title" xml:space="preserve">
-    <value>Long battery life</value>
-  </data>
   <data name="BatteryTimeline_AC" xml:space="preserve">
-    <value>AC</value>
+    <value>AC power</value>
   </data>
   <data name="BatteryTimeline_Battery" xml:space="preserve">
     <value>Battery</value>
@@ -2784,5 +2727,371 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="Telemetry_EnableToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Enable telemetry</value>
+  </data>
+  <data name="MainWindow_ButtonWhatsNew.Content" xml:space="preserve">
+    <value>What's new</value>
+  </data>
+  <data name="WhatsNew_Added" xml:space="preserve">
+    <value>Added</value>
+  </data>
+  <data name="WhatsNew_Changed" xml:space="preserve">
+    <value>Changed</value>
+  </data>
+  <data name="WhatsNew_Close" xml:space="preserve">
+    <value>Got it</value>
+  </data>
+  <data name="WhatsNew_Deprecated" xml:space="preserve">
+    <value>Deprecated</value>
+  </data>
+  <data name="WhatsNew_Fixed" xml:space="preserve">
+    <value>Fixed</value>
+  </data>
+  <data name="WhatsNew_FullChangelog" xml:space="preserve">
+    <value>Full changelog</value>
+  </data>
+  <data name="WhatsNew_NoSummary" xml:space="preserve">
+    <value>See the full changelog for this release.</value>
+  </data>
+  <data name="WhatsNew_Removed" xml:space="preserve">
+    <value>Removed</value>
+  </data>
+  <data name="WhatsNew_Security" xml:space="preserve">
+    <value>Security</value>
+  </data>
+  <data name="WhatsNew_Title" xml:space="preserve">
+    <value>What's new</value>
+  </data>
+  <data name="KeyboardBackend_DriverMissing" xml:space="preserve">
+    <value>The Razer keyboard driver is missing.</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.AccessibleName" xml:space="preserve">
+    <value>Multimedia key input</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.PlaceholderText" xml:space="preserve">
+    <value>Choose input method</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowTitle.Text" xml:space="preserve">
+    <value>Multimedia key input</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.Content" xml:space="preserve">
+    <value>Install driver</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Install the Razer keyboard driver</value>
+  </data>
+  <data name="KeyboardBackend_ManualSetup" xml:space="preserve">
+    <value>Install this laptop’s Razer keyboard driver, then switch input methods to retry.</value>
+  </data>
+  <data name="KeyboardBackend_Paused" xml:space="preserve">
+    <value>Input handling is paused. Export diagnostics for details.</value>
+  </data>
+  <data name="KeyboardBackend_RazerDriver" xml:space="preserve">
+    <value>Razer driver</value>
+  </data>
+  <data name="KeyboardBackend_Recovery" xml:space="preserve">
+    <value>Restart Windows before using this input method again.</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.AccessibleName" xml:space="preserve">
+    <value>SnapTap input</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.PlaceholderText" xml:space="preserve">
+    <value>Choose input method</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapTitle.Text" xml:space="preserve">
+    <value>SnapTap input</value>
+  </data>
+  <data name="KeyboardBackend_Unknown" xml:space="preserve">
+    <value>Choose an input method to resume.</value>
+  </data>
+  <data name="KeyboardBackend_Unsupported" xml:space="preserve">
+    <value>This input method is unavailable for this laptop.</value>
+  </data>
+  <data name="KeyboardBackend_Waiting" xml:space="preserve">
+    <value>Waiting for the selected input method…</value>
+  </data>
+  <data name="KeyboardBackend_WindowsHook" xml:space="preserve">
+    <value>Windows hook</value>
+  </data>
+  <data name="KeyboardBackend_DriverInstalled" xml:space="preserve">
+    <value>Driver installed. Switch input methods to retry.</value>
+  </data>
+  <data name="KeyboardBackend_PrimeFn" xml:space="preserve">
+    <value>Press Fn once to activate multimedia keys.</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeBody" xml:space="preserve">
+    <value>Battery power is being used while external power is connected. Reduce the workload or check the charger and cable.</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeTitle" xml:space="preserve">
+    <value>Battery discharging while plugged in</value>
+  </data>
+  <data name="MainWindow_TextBlockExternalPowerDischarge.Text" xml:space="preserve">
+    <value>Battery discharge while plugged in</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchExternalPowerDischarge.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Notify when the battery discharges while plugged in</value>
+  </data>
+  <data name="BatteryHistory_Details.Header" xml:space="preserve">
+    <value>Interval details</value>
+  </data>
+  <data name="BatteryHistory_PowerSource.Text" xml:space="preserve">
+    <value>Power source</value>
+  </data>
+  <data name="BatteryHistory_Report.Header" xml:space="preserve">
+    <value>Windows battery report</value>
+  </data>
+  <data name="BatteryHistory_SnapshotError" xml:space="preserve">
+    <value>Battery history is unavailable. Try loading it again.</value>
+  </data>
+  <data name="BatteryHistory_LoadLabel.Text" xml:space="preserve">
+    <value>Load battery history</value>
+  </data>
+  <data name="KeyboardBackend_FunctionBehaviorDescription.Text" xml:space="preserve">
+    <value>Choose whether F1–F12 or multimedia keys work without Fn.</value>
+  </data>
+  <data name="KeyboardBackend_FunctionBehaviorExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Function key behavior</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>SnapTap (A/D)</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
+    <value>Try Razer driver first. If it doesn’t work, switch to Windows hook (some games may trigger extra function-key actions).</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
+    <value>Try Razer driver first. If it doesn’t work, switch to Windows hook (SnapTap may not work in some games).</value>
+  </data>
+  <data name="MainWindow_BatterySaverFanStop.Text" xml:space="preserve">
+    <value>Stop fans</value>
+  </data>
+  <data name="MainWindow_BatterySaverFanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Stop fans</value>
+  </data>
+  <data name="MainWindow_FanStop.Text" xml:space="preserve">
+    <value>Stop fans</value>
+  </data>
+  <data name="MainWindow_FanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Stop fans</value>
+  </data>
+  <data name="FanStop_EndTitle.Text" xml:space="preserve">
+    <value>End Stop</value>
+  </data>
+  <data name="FanStop_AutomaticTitle.Text" xml:space="preserve">
+    <value>Automatic Stop</value>
+  </data>
+  <data name="FanStop_EndDescription.Text" xml:space="preserve">
+    <value>Choose when the fans return to Auto.</value>
+  </data>
+  <data name="FanStop_Auto.Content" xml:space="preserve">
+    <value>Auto</value>
+  </data>
+  <data name="FanStop_Custom.Content" xml:space="preserve">
+    <value>Custom</value>
+  </data>
+  <data name="FanStop_CpuEnd.Text" xml:space="preserve">
+    <value>CPU average limit (°C)</value>
+  </data>
+  <data name="FanStop_GpuEnd.Text" xml:space="preserve">
+    <value>GPU average limit (°C)</value>
+  </data>
+  <data name="FanStop_ExitDelay.Text" xml:space="preserve">
+    <value>Averaging window (seconds)</value>
+  </data>
+  <data name="FanStop_CustomDescription.Text" xml:space="preserve">
+    <value>Return to Auto when either time-weighted average over a full window is above its limit, or a current temperature is above its immediate cutoff. If a sensor’s limits are equal, exceeding that limit ends Stop immediately. Safety conditions can end Stop sooner.</value>
+  </data>
+  <data name="FanStop_EnableAutomatic.Text" xml:space="preserve">
+    <value>Stop automatically when cool</value>
+  </data>
+  <data name="FanStop_CpuStart.Text" xml:space="preserve">
+    <value>CPU below (°C)</value>
+  </data>
+  <data name="FanStop_GpuStart.Text" xml:space="preserve">
+    <value>GPU below (°C)</value>
+  </data>
+  <data name="FanStop_EntryDelay.Text" xml:space="preserve">
+    <value>Time below both limits (seconds)</value>
+  </data>
+  <data name="FanStop_AutomaticDescription.Text" xml:space="preserve">
+    <value>Both temperatures must stay below their limits for the full interval. Returning to Auto manually pauses automatic Stop until you resume it.</value>
+  </data>
+  <data name="FanStop_Resume.Content" xml:space="preserve">
+    <value>Resume automatic Stop</value>
+  </data>
+  <data name="FanStop_AutomaticTitle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Automatic Stop</value>
+  </data>
+  <data name="FanStop_CpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU average limit (°C)</value>
+  </data>
+  <data name="FanStop_CpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU below (°C)</value>
+  </data>
+  <data name="FanStop_EnableAutomatic.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Stop automatically when cool</value>
+  </data>
+  <data name="FanStop_EndMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>End Stop mode</value>
+  </data>
+  <data name="FanStop_EndTitle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>End Stop</value>
+  </data>
+  <data name="FanStop_EntryDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Time below both limits (seconds)</value>
+  </data>
+  <data name="FanStop_ExitDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Averaging window (seconds)</value>
+  </data>
+  <data name="FanStop_GpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU average limit (°C)</value>
+  </data>
+  <data name="FanStop_GpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU below (°C)</value>
+  </data>
+  <data name="FanStop_UnsavedSettings.Text" xml:space="preserve">
+    <value>Unsaved Stop settings</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.Text" xml:space="preserve">
+    <value>CPU immediate cutoff (°C)</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU immediate cutoff (°C)</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.Text" xml:space="preserve">
+    <value>GPU immediate cutoff (°C)</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU immediate cutoff (°C)</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
+    <value>Use Razer driver to change F1–F12 behavior. Windows hook keeps the default Fn shortcuts.</value>
+  </data>
+  <data name="GlobalSearchBox.PlaceholderText" xml:space="preserve">
+    <value>Search pages and settings</value>
+  </data>
+  <data name="GlobalSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Search pages and settings</value>
+  </data>
+  <data name="GlobalSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Search pages and settings</value>
+  </data>
+  <data name="GlobalSearch_NoResults" xml:space="preserve">
+    <value>No matching pages or settings</value>
+  </data>
+  <data name="GlobalSearch_BatteryAliases" xml:space="preserve">
+    <value>charge limit battery health</value>
+  </data>
+  <data name="GlobalSearch_SnapTapAliases" xml:space="preserve">
+    <value>A/D SOCD counter-strafe</value>
+  </data>
+  <data name="GlobalSearch_UpdateChannelAliases" xml:space="preserve">
+    <value>nightly stable releases</value>
+  </data>
+  <data name="GlobalSearch_BrightnessAliases" xml:space="preserve">
+    <value>screen backlight</value>
+  </data>
+  <data name="GlobalSearch_FansAliases" xml:space="preserve">
+    <value>cooling RPM</value>
+  </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve">
+    <value>CPU Voltage Optimizer</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>All-core optimizer offset</value>
+  </data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve">
+    <value>Off uses zero and keeps your offset. Choose Apply to make changes.</value>
+  </data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve">
+    <value>Restore prior optimizer</value>
+  </data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU Voltage Optimizer</value>
+  </data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve">
+    <value>All-core offset</value>
+  </data>
+  <data name="MainWindow_CoolingPadApplyHelpText.Text" xml:space="preserve">
+    <value>Apply starts control for this session. Release restores the captured pad settings.</value>
+  </data>
+  <data name="MainWindow_CoolingPadApplyText.Content" xml:space="preserve">
+    <value>Apply</value>
+  </data>
+  <data name="MainWindow_CoolingPadBrightnessText.Header" xml:space="preserve">
+    <value>Requested brightness (%)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCpuCurveText.Text" xml:space="preserve">
+    <value>CPU</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveHelpText.Text" xml:space="preserve">
+    <value>Use increasing temperatures and nondecreasing targets in 50 RPM steps. Both uses the higher target.</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveRpmText.Header" xml:space="preserve">
+    <value>Target (RPM)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveTemperatureText.Header" xml:space="preserve">
+    <value>Temperature (°C)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurvesText.Header" xml:space="preserve">
+    <value>CPU/GPU curves</value>
+  </data>
+  <data name="MainWindow_CoolingPadExperimentalText.Text" xml:space="preserve">
+    <value>Source-backed experimental · Razer RC21-0230</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanLabelText.Text" xml:space="preserve">
+    <value>Fan</value>
+  </data>
+  <data name="MainWindow_CoolingPadFixedRpmText.Header" xml:space="preserve">
+    <value>Requested fan target (RPM)</value>
+  </data>
+  <data name="MainWindow_CoolingPadGpuCurveText.Text" xml:space="preserve">
+    <value>GPU</value>
+  </data>
+  <data name="MainWindow_CoolingPadHeadingText.Text" xml:space="preserve">
+    <value>Cooling pad</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingLabelText.Text" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="MainWindow_CoolingPadPrimaryColorText.Header" xml:space="preserve">
+    <value>Color (RGB hex)</value>
+  </data>
+  <data name="MainWindow_CoolingPadRefreshText.Content" xml:space="preserve">
+    <value>Refresh status</value>
+  </data>
+  <data name="MainWindow_CoolingPadReleaseText.Content" xml:space="preserve">
+    <value>Release control</value>
+  </data>
+  <data name="MainWindow_CoolingPadSecondaryColorText.Header" xml:space="preserve">
+    <value>Second breathing color (RGB hex)</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionLabel.Text" xml:space="preserve">
+    <value>Direction</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceLabel.Text" xml:space="preserve">
+    <value>Temperature source</value>
+  </data>
+  <data name="MainWindow_CoolingPadNavigationItemText.Content" xml:space="preserve">
+    <value>Cooling pad</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanSelectorText.AccessibleName" xml:space="preserve">
+    <value>Cooling-pad fan mode</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingSelectorText.AccessibleName" xml:space="preserve">
+    <value>Cooling-pad lighting effect</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceText.AccessibleName" xml:space="preserve">
+    <value>Cooling-pad temperature source</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionText.AccessibleName" xml:space="preserve">
+    <value>Cooling-pad wave direction</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandLabelText.Text" xml:space="preserve">
+    <value>Allow apps to request more cooling</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Allow apps to request more cooling</value>
   </data>
 </root>

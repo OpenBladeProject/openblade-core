@@ -200,15 +200,31 @@ public sealed class FanCurveCalculatorTests
                 .TryConvertHighPrecisionKelvin(value));
     }
 
-    [Fact]
-    public void RazerThermalZoneRetainsBothExactModelCounterPaths()
+    [Theory]
+    [InlineData(false, 5400)]
+    [InlineData(true, 5000)]
+    public async Task ConstantBackedThermalZonesCannotDriveFanCurves(bool gpuInactive, int maximumRpm)
     {
+        using var zone = new SafeWindowsFanTemperatureSource.WindowsThermalZone();
+        Assert.Empty(SafeWindowsFanTemperatureSource.WindowsThermalZone.RazerEcCounterPaths);
+        int gpuReads = 0;
+        using var source = new SafeWindowsFanTemperatureSource(
+            new FixedGpuActivitySource(IsActive: !gpuInactive),
+            cpuTemperatureReader: zone.TryRead,
+            gpuTemperatureReader: () =>
+            {
+                gpuReads++;
+                return 52;
+            });
+
+        FanTemperatureReadings readings = await source.ReadAsync(CancellationToken.None);
+        Assert.Null(readings.CpuCelsius);
+        Assert.Equal(gpuInactive ? null : (int?)52, readings.GpuCelsius);
+        Assert.Equal(gpuInactive, readings.GpuInactive);
+        Assert.Equal(gpuInactive ? 0 : 1, gpuReads);
         Assert.Equal(
-            [
-                @"\Thermal Zone Information(\_SB.PCI0.SBRG.EC0.TZRZ)\High Precision Temperature",
-                @"\Thermal Zone Information(\_SB.PC00.LPCB.EC0.TZRZ)\High Precision Temperature",
-            ],
-            SafeWindowsFanTemperatureSource.WindowsThermalZone.RazerEcCounterPaths);
+            new FanTargetSpeeds(maximumRpm, maximumRpm, FailSafe: true),
+            FanCurveCalculator.Calculate(ManualFanCurve.Default, readings, maximumRpm));
     }
 
     [Fact]
@@ -240,6 +256,93 @@ public sealed class FanCurveCalculatorTests
         Assert.Null(inactive.GpuCelsius);
         Assert.True(inactive.GpuInactive);
         Assert.Equal(2, session.Reads);
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+    }
+
+    [Fact]
+    public async Task FanStopBorrowsActiveCurveSessionWithoutExtendingItsIdleDeadline()
+    {
+        var activity = new SettableGpuActivitySource { Active = true };
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(activity, () => 48, session, time,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        await source.ReadAsync(CancellationToken.None);
+        time.Advance(TimeSpan.FromSeconds(1));
+        FanTemperatureReadings reading = await source.ReadForFanStopAsync(CancellationToken.None);
+
+        Assert.Equal(52, reading.GpuCelsius);
+        Assert.Equal(2, session.Reads);
+        Assert.Equal(0, session.Releases);
+        Assert.Equal(SafeWindowsFanTemperatureSource.GpuSessionIdleTimeout, time.LastDueTime);
+        time.Advance(TimeSpan.FromSeconds(4));
+        time.FireTimers(advanceToDueTime: false);
+        Assert.Equal(1, session.Releases); // Original ordinary-reader deadline.
+    }
+
+    [Fact]
+    public async Task FanStopAloneNeverRetainsAnActiveGpuSession()
+    {
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = true },
+            () => 48, session, time, gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        await source.ReadForFanStopAsync(CancellationToken.None);
+        await source.ReadForFanStopAsync(CancellationToken.None);
+
+        Assert.Equal(2, session.Reads);
+        Assert.Equal(2, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+    }
+
+    [Fact]
+    public async Task FanStopReleasesBorrowedSessionAsSoonAsGpuWorkloadEnds()
+    {
+        var activity = new SettableGpuActivitySource { Active = true };
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(activity, () => 48, session, time,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        await source.ReadAsync(CancellationToken.None);
+        activity.Active = false;
+        Assert.Equal(52, (await source.ReadForFanStopAsync(CancellationToken.None)).GpuCelsius);
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+    }
+
+    [Fact]
+    public async Task FanStopCannotRenewAnExpiredCurveSession()
+    {
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = true },
+            () => 48, session, time, gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        await source.ReadAsync(CancellationToken.None);
+        time.Advance(SafeWindowsFanTemperatureSource.GpuSessionIdleTimeout);
+        await source.ReadForFanStopAsync(CancellationToken.None);
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+    }
+
+    [Fact]
+    public async Task PowerTransitionInvalidatesBorrowedSessionAndTemperature()
+    {
+        var session = new CountingGpuTemperatureSession(52);
+        var time = new ManualTimeProvider();
+        int powerReads = 0;
+        using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = true },
+            () => 48, session, time, gpuPowerState: () => ++powerReads == 1
+                ? FanStopGpuPowerState.PoweredOn : FanStopGpuPowerState.PoweredDown);
+
+        await source.ReadAsync(CancellationToken.None);
+        FanTemperatureReadings reading = await source.ReadForFanStopAsync(CancellationToken.None);
+        Assert.Null(reading.GpuCelsius);
+        Assert.False(reading.GpuPoweredDown);
         Assert.Equal(1, session.Releases);
         Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
     }

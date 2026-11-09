@@ -511,15 +511,6 @@
   <data name="MainWindow_ItemsControlTrayDashboardStatusItems.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Элементы состояния панели в области уведомлений</value>
   </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>О функциях Lab</value>
-  </data>
-  <data name="MainWindow_LabFeaturesInfoButtonText.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>О функциях Lab</value>
-  </data>
-  <data name="MainWindow_LabFeaturesToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Включить экспериментальные функции Lab</value>
-  </data>
   <data name="MainWindow_LaptopLogoModeSelectorText.AccessibleName" xml:space="preserve">
     <value>Подсветка логотипа ноутбука</value>
   </data>
@@ -596,9 +587,6 @@
   </data>
   <data name="MainWindow_ListViewTaskbarHoverLabelContents.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Содержимое подсказки при наведении на панель задач</value>
-  </data>
-  <data name="MainWindow_MainNavigationText.Header" xml:space="preserve">
-    <value>False</value>
   </data>
   <data name="MainWindow_NavigationMenuExpanderText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Порядок меню навигации</value>
@@ -1043,7 +1031,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>Выберите, как долго нажатые клавиши остаются подсвеченными.</value>
   </data>
   <data name="MainWindow_TextBlockChooseHowOftenOpenBladeRefreshesTemperaturesFan.Text" xml:space="preserve">
-    <value>Выберите, как часто OpenBlade обновляет температуру, скорость вентиляторов и мощность зарядки или разрядки аккумулятора, пока открыто окно или указатель наведён на значок в области уведомлений.</value>
+    <value>Выберите интервал обновления показаний и проверки разряда батареи при подключённом питании.</value>
   </data>
   <data name="MainWindow_TextBlockChooseTheControlsAndLiveDetailsShown.Text" xml:space="preserve">
     <value>Выберите элементы управления и текущие сведения, которые отображаются при нажатии значка в области уведомлений.</value>
@@ -1104,9 +1092,6 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_TextBlockCPU.Text" xml:space="preserve">
     <value>CPU</value>
-  </data>
-  <data name="MainWindow_TextBlockCurrentLabFeatures.Text" xml:space="preserve">
-    <value>Текущие функции Lab</value>
   </data>
   <data name="MainWindow_TextBlockCustomColor.Text" xml:space="preserve">
     <value>Пользовательский цвет</value>
@@ -1237,9 +1222,6 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_TextBlockHDR2.Text" xml:space="preserve">
     <value>HDR</value>
   </data>
-  <data name="MainWindow_TextBlockImportOblightAndRazerChromaFiles.Text" xml:space="preserve">
-    <value>Импортируйте файлы .oblight и Razer .chroma.</value>
-  </data>
   <data name="MainWindow_TextBlockImportPreset.Text" xml:space="preserve">
     <value>Импорт предустановки</value>
   </data>
@@ -1276,14 +1258,23 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_TextBlockKeyboardLighting.Text" xml:space="preserve">
     <value>Подсветка клавиатуры</value>
   </data>
-  <data name="MainWindow_TextBlockKeyboardLightingPresetImport.Text" xml:space="preserve">
-    <value>Импорт предустановки подсветки клавиатуры</value>
+  <data name="MainWindow_LabsNavigationItem.Content" xml:space="preserve">
+    <value>Лаборатория</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeatures.Text" xml:space="preserve">
-    <value>Функции Lab</value>
+  <data name="MainWindow_LabsTitle.Text" xml:space="preserve">
+    <value>Лаборатория</value>
   </data>
-  <data name="MainWindow_TextBlockLabFeaturesMayChangeOrBeRemoved.Text" xml:space="preserve">
-    <value>Функции Lab могут быть изменены или удалены.</value>
+  <data name="MainWindow_LabsDescription.Text" xml:space="preserve">
+    <value>Знакомьтесь с экспериментальными функциями OpenBlade.</value>
+  </data>
+  <data name="MainWindow_LabsImportTitle.Text" xml:space="preserve">
+    <value>Импорт пресета подсветки</value>
+  </data>
+  <data name="MainWindow_LabsImportDescription.Text" xml:space="preserve">
+    <value>Загрузите файл OpenBlade или Razer Chroma, проверьте эффект перед применением и сохраните его в активном профиле питания.</value>
+  </data>
+  <data name="MainWindow_LabsLightingRateDescription.Text" xml:space="preserve">
+    <value>Поддерживаемые анимации подсветки клавиатуры становятся плавнее. Это повышает нагрузку на процессор и расход энергии.</value>
   </data>
   <data name="MainWindow_TextBlockLaptop.Text" xml:space="preserve">
     <value>Ноутбук</value>
@@ -1465,9 +1456,6 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_TextBlockReleaseNotes.Text" xml:space="preserve">
     <value>Примечания к выпуску</value>
   </data>
-  <data name="MainWindow_TextBlockRenderSupportedEffectsMoreSmoothly.Text" xml:space="preserve">
-    <value>Плавнее воспроизводить поддерживаемые эффекты на проверенных клавиатурах.</value>
-  </data>
   <data name="MainWindow_TextBlockReportAProblem.Text" xml:space="preserve">
     <value>Сообщить о проблеме</value>
   </data>
@@ -1521,9 +1509,6 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_TextBlockShutDownOpenBlade.Text" xml:space="preserve">
     <value>Завершить работу OpenBlade</value>
-  </data>
-  <data name="MainWindow_TextBlockSixtyHzKeyboardLighting.Text" xml:space="preserve">
-    <value>Подсветка клавиатуры 60 Гц</value>
   </data>
   <data name="MainWindow_TextBlockSixtyHzLighting.Text" xml:space="preserve">
     <value>Подсветка 60 Гц</value>
@@ -1605,9 +1590,6 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_TextBlockTroubleshooting.Text" xml:space="preserve">
     <value>Устранение неполадок</value>
-  </data>
-  <data name="MainWindow_TextBlockTurnOnExperimentalFeatures.Text" xml:space="preserve">
-    <value>Включить экспериментальные функции.</value>
   </data>
   <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
     <value>Не сохранено</value>
@@ -2030,13 +2012,13 @@ OpenBlade повторно проверит этот список и остан�
     <value>Проверить текущее состояние</value>
   </data>
   <data name="MainWindow_ExperimentalSupportInfoBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Экспериментальная поддержка ноутбука</value>
+    <value>Поддержка ноутбука</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Возобновить экспериментальное управление</value>
+    <value>Возобновить управление ноутбуком</value>
   </data>
   <data name="MainWindow_ResumeExperimentalWritesLabel.Text" xml:space="preserve">
-    <value>Возобновить экспериментальное управление</value>
+    <value>Возобновить управление ноутбуком</value>
   </data>
   <data name="MainWindow_UnsupportedLaptopHelpAddSupportButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Помочь добавить поддержку</value>
@@ -2210,7 +2192,7 @@ OpenBlade повторно проверит этот список и остан�
     <value>О SnapTap</value>
   </data>
   <data name="SnapTap_InfoInput.Text" xml:space="preserve">
-    <value>SnapTap использует драйвер Razer для встроенной клавиатуры ноутбука.</value>
+    <value>Драйвер Razer обрабатывает встроенную клавиатуру. Перехват Windows действует на все клавиатуры.</value>
   </data>
   <data name="SnapTap_InfoCompatibility.Text" xml:space="preserve">
     <value>Совместимость с играми не проверена.</value>
@@ -2339,13 +2321,10 @@ OpenBlade повторно проверит этот список и остан�
     <value>Ёмкость при полной зарядке {0} · Расчётная ёмкость {1} · Состояние {2} · Циклы зарядки {3}</value>
   </data>
   <data name="BatteryHistory_Interval" xml:space="preserve">
-    <value>{0} – {1} · {2} · {3} · Заряд {4} · Разряжено {5}</value>
+    <value>{0} – {1} · {2} · {3} · Заряд в начале {4} · Израсходовано {5}</value>
   </data>
-  <data name="BatteryHistory_Load.Content" xml:space="preserve">
+  <data name="BatteryHistory_LoadLabel.Text" xml:space="preserve">
     <value>Загрузить историю аккумулятора</value>
-  </data>
-  <data name="BatteryHistory_NotLoaded" xml:space="preserve">
-    <value>Загрузите отчёт Windows об аккумуляторе, чтобы просмотреть последние 24 часа.</value>
   </data>
   <data name="BatteryHistory_SourceTime" xml:space="preserve">
     <value>Отчёт Windows об аккумуляторе · Создан {0}</value>
@@ -2356,44 +2335,11 @@ OpenBlade повторно проверит этот список и остан�
   <data name="BatteryHistory_Suspended" xml:space="preserve">
     <value>Спящий режим</value>
   </data>
-  <data name="BatteryHistory_Title.Text" xml:space="preserve">
-    <value>История аккумулятора</value>
-  </data>
   <data name="BatteryHistory_Unknown" xml:space="preserve">
     <value>Неизвестно</value>
   </data>
-  <data name="BatteryPreset_Cancel" xml:space="preserve">
-    <value>Отмена</value>
-  </data>
-  <data name="BatteryPreset_Change" xml:space="preserve">
-    <value>{0}: {1} → {2}</value>
-  </data>
-  <data name="BatteryPreset_Description" xml:space="preserve">
-    <value>Сохраните эти изменения в профиле питания от аккумулятора. Ручные настройки и переопределения приложений сохраняют приоритет.</value>
-  </data>
-  <data name="BatteryPreset_Heading.Text" xml:space="preserve">
-    <value>Длительная работа от аккумулятора</value>
-  </data>
-  <data name="BatteryPreset_Hint.Text" xml:space="preserve">
-    <value>Просмотрите поддерживаемые изменения профиля питания от аккумулятора перед сохранением.</value>
-  </data>
-  <data name="BatteryPreset_NoChanges" xml:space="preserve">
-    <value>Поддерживаемые параметры питания от аккумулятора уже соответствуют этому набору.</value>
-  </data>
-  <data name="BatteryPreset_Preview.Content" xml:space="preserve">
-    <value>Предпросмотр набора настроек</value>
-  </data>
-  <data name="BatteryPreset_Save" xml:space="preserve">
-    <value>Сохранить в профиль питания от аккумулятора</value>
-  </data>
-  <data name="BatteryPreset_SaveFailed" xml:space="preserve">
-    <value>Профиль питания от аккумулятора изменился или его не удалось сохранить. Закройте это окно предпросмотра и повторите попытку.</value>
-  </data>
-  <data name="BatteryPreset_Title" xml:space="preserve">
-    <value>Длительная работа от аккумулятора</value>
-  </data>
   <data name="BatteryTimeline_AC" xml:space="preserve">
-    <value>Сеть</value>
+    <value>От сети</value>
   </data>
   <data name="BatteryTimeline_Battery" xml:space="preserve">
     <value>Аккумулятор</value>
@@ -2784,5 +2730,350 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="Telemetry_Disabled.Text" xml:space="preserve">
     <value>Включите телеметрию, чтобы собирать историю показаний и записывать данные в CSV.</value>
+  </data>
+  <data name="MainWindow_ButtonWhatsNew.Content" xml:space="preserve">
+    <value>Что нового</value>
+  </data>
+  <data name="WhatsNew_Title" xml:space="preserve">
+    <value>Что нового</value>
+  </data>
+  <data name="WhatsNew_Close" xml:space="preserve">
+    <value>Понятно</value>
+  </data>
+  <data name="WhatsNew_FullChangelog" xml:space="preserve">
+    <value>Полный список изменений</value>
+  </data>
+  <data name="WhatsNew_NoSummary" xml:space="preserve">
+    <value>Изменения в этой версии доступны в полном списке.</value>
+  </data>
+  <data name="WhatsNew_Added" xml:space="preserve">
+    <value>Добавлено</value>
+  </data>
+  <data name="WhatsNew_Changed" xml:space="preserve">
+    <value>Изменено</value>
+  </data>
+  <data name="WhatsNew_Fixed" xml:space="preserve">
+    <value>Исправлено</value>
+  </data>
+  <data name="WhatsNew_Removed" xml:space="preserve">
+    <value>Удалено</value>
+  </data>
+  <data name="WhatsNew_Deprecated" xml:space="preserve">
+    <value>Устаревшие функции</value>
+  </data>
+  <data name="WhatsNew_Security" xml:space="preserve">
+    <value>Безопасность</value>
+  </data>
+  <data name="KeyboardBackend_DriverMissing" xml:space="preserve">
+    <value>Драйвер клавиатуры Razer не установлен.</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.AccessibleName" xml:space="preserve">
+    <value>Ввод мультимедийных клавиш</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowTitle.Text" xml:space="preserve">
+    <value>Ввод мультимедийных клавиш</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.AccessibleName" xml:space="preserve">
+    <value>Ввод SnapTap</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapTitle.Text" xml:space="preserve">
+    <value>Ввод SnapTap</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowSelector.PlaceholderText" xml:space="preserve">
+    <value>Выберите способ ввода</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapSelector.PlaceholderText" xml:space="preserve">
+    <value>Выберите способ ввода</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.Content" xml:space="preserve">
+    <value>Установить драйвер</value>
+  </data>
+  <data name="KeyboardBackend_InstallFunctionRowDriver.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Установить драйвер клавиатуры Razer</value>
+  </data>
+  <data name="KeyboardBackend_ManualSetup" xml:space="preserve">
+    <value>Установите драйвер клавиатуры Razer для этого ноутбука, затем переключите способ ввода для повторной попытки.</value>
+  </data>
+  <data name="KeyboardBackend_Paused" xml:space="preserve">
+    <value>Обработка ввода приостановлена. Экспортируйте диагностику для получения подробностей.</value>
+  </data>
+  <data name="KeyboardBackend_RazerDriver" xml:space="preserve">
+    <value>Драйвер Razer</value>
+  </data>
+  <data name="KeyboardBackend_Recovery" xml:space="preserve">
+    <value>Перезагрузите Windows перед повторным использованием этого способа ввода.</value>
+  </data>
+  <data name="KeyboardBackend_Unknown" xml:space="preserve">
+    <value>Выберите способ ввода, чтобы продолжить.</value>
+  </data>
+  <data name="KeyboardBackend_Unsupported" xml:space="preserve">
+    <value>Этот способ ввода недоступен для данного ноутбука.</value>
+  </data>
+  <data name="KeyboardBackend_Waiting" xml:space="preserve">
+    <value>Ожидание выбранного способа ввода…</value>
+  </data>
+  <data name="KeyboardBackend_WindowsHook" xml:space="preserve">
+    <value>Перехват Windows</value>
+  </data>
+  <data name="KeyboardBackend_DriverInstalled" xml:space="preserve">
+    <value>Драйвер установлен. Переключите способ ввода для повторной попытки.</value>
+  </data>
+  <data name="KeyboardBackend_PrimeFn" xml:space="preserve">
+    <value>Нажмите Fn один раз, чтобы активировать мультимедийные клавиши.</value>
+  </data>
+  <data name="MainWindow_TextBlockExternalPowerDischarge.Text" xml:space="preserve">
+    <value>Разряд батареи при подключённом питании</value>
+  </data>
+  <data name="MainWindow_ToggleSwitchExternalPowerDischarge.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Уведомлять о разряде батареи при подключённом питании</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeTitle" xml:space="preserve">
+    <value>Батарея разряжается при подключённом питании</value>
+  </data>
+  <data name="MainWindow_Notification_ExternalPowerDischargeBody" xml:space="preserve">
+    <value>Внешнее питание подключено, но используется энергия батареи. Снизьте нагрузку или проверьте зарядное устройство и кабель.</value>
+  </data>
+  <data name="BatteryHistory_Report.Header" xml:space="preserve">
+    <value>Отчёт Windows о батарее</value>
+  </data>
+  <data name="BatteryHistory_Details.Header" xml:space="preserve">
+    <value>Подробности по интервалам</value>
+  </data>
+  <data name="BatteryHistory_SnapshotError" xml:space="preserve">
+    <value>История батареи недоступна. Попробуйте загрузить её снова.</value>
+  </data>
+  <data name="BatteryHistory_PowerSource.Text" xml:space="preserve">
+    <value>Источник питания</value>
+  </data>
+  <data name="KeyboardBackend_FunctionBehaviorDescription.Text" xml:space="preserve">
+    <value>Выберите, что работает без Fn: F1–F12 или мультимедийные функции.</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowDescription.Text" xml:space="preserve">
+    <value>Сначала попробуйте драйвер Razer. Если он не работает, переключитесь на перехват Windows (в некоторых играх нажатия функциональных клавиш могут вызывать дополнительные действия).</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapDescription.Text" xml:space="preserve">
+    <value>Сначала попробуйте драйвер Razer. Если он не работает, переключитесь на перехват Windows (в некоторых играх SnapTap может не работать).</value>
+  </data>
+  <data name="KeyboardBackend_FunctionBehaviorExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Поведение функциональных клавиш</value>
+  </data>
+  <data name="KeyboardBackend_SnapTapExpander.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>SnapTap (A/D)</value>
+  </data>
+  <data name="MainWindow_BatterySaverFanStop.Text" xml:space="preserve"><value>Остановить вентиляторы</value></data>
+  <data name="MainWindow_BatterySaverFanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Остановить вентиляторы</value></data>
+  <data name="MainWindow_FanStop.Text" xml:space="preserve">
+    <value>Остановить вентиляторы</value>
+  </data>
+  <data name="MainWindow_FanStopToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Остановить вентиляторы</value>
+  </data>
+  <data name="FanStop_EndTitle.Text" xml:space="preserve">
+    <value>Выход из остановки</value>
+  </data>
+  <data name="FanStop_AutomaticTitle.Text" xml:space="preserve">
+    <value>Автоматическая остановка</value>
+  </data>
+  <data name="FanStop_EndDescription.Text" xml:space="preserve">
+    <value>Выберите условия возврата вентиляторов в автоматический режим.</value>
+  </data>
+  <data name="FanStop_Auto.Content" xml:space="preserve">
+    <value>Авто</value>
+  </data>
+  <data name="FanStop_Custom.Content" xml:space="preserve">
+    <value>Свои условия</value>
+  </data>
+  <data name="FanStop_CpuEnd.Text" xml:space="preserve">
+    <value>Средний порог CPU (°C)</value>
+  </data>
+  <data name="FanStop_GpuEnd.Text" xml:space="preserve">
+    <value>Средний порог GPU (°C)</value>
+  </data>
+  <data name="FanStop_ExitDelay.Text" xml:space="preserve">
+    <value>Окно усреднения (секунды)</value>
+  </data>
+  <data name="FanStop_CustomDescription.Text" xml:space="preserve">
+    <value>Возврат в Авто, если средневзвешенная по времени температура за полное окно выше своего порога или текущая температура выше порога немедленного завершения. При совпадении порогов превышение температуры немедленно завершает остановку. Условия безопасности могут завершить остановку раньше.</value>
+  </data>
+  <data name="FanStop_EnableAutomatic.Text" xml:space="preserve">
+    <value>Останавливать после охлаждения</value>
+  </data>
+  <data name="FanStop_CpuStart.Text" xml:space="preserve">
+    <value>CPU ниже (°C)</value>
+  </data>
+  <data name="FanStop_GpuStart.Text" xml:space="preserve">
+    <value>GPU ниже (°C)</value>
+  </data>
+  <data name="FanStop_EntryDelay.Text" xml:space="preserve">
+    <value>Время ниже обоих порогов (секунды)</value>
+  </data>
+  <data name="FanStop_AutomaticDescription.Text" xml:space="preserve">
+    <value>Обе температуры должны оставаться ниже своих порогов весь интервал. Ручной возврат в автоматический режим приостанавливает автоматическую остановку до возобновления.</value>
+  </data>
+  <data name="FanStop_Resume.Content" xml:space="preserve">
+    <value>Возобновить автоматическую остановку</value>
+  </data>
+  <data name="FanStop_AutomaticTitle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Автоматическая остановка</value>
+  </data>
+  <data name="FanStop_CpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Средний порог CPU (°C)</value>
+  </data>
+  <data name="FanStop_CpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>CPU ниже (°C)</value>
+  </data>
+  <data name="FanStop_EnableAutomatic.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Останавливать после охлаждения</value>
+  </data>
+  <data name="FanStop_EndMode.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Режим завершения остановки</value>
+  </data>
+  <data name="FanStop_EndTitle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Выход из остановки</value>
+  </data>
+  <data name="FanStop_EntryDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Время ниже обоих порогов (секунды)</value>
+  </data>
+  <data name="FanStop_ExitDelay.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Окно усреднения (секунды)</value>
+  </data>
+  <data name="FanStop_GpuEnd.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Средний порог GPU (°C)</value>
+  </data>
+  <data name="FanStop_GpuStart.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>GPU ниже (°C)</value>
+  </data>
+  <data name="FanStop_UnsavedSettings.Text" xml:space="preserve">
+    <value>Настройки остановки не сохранены</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.Text" xml:space="preserve">
+    <value>Немедленный порог CPU (°C)</value>
+  </data>
+  <data name="FanStop_CpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Немедленный порог CPU (°C)</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.Text" xml:space="preserve">
+    <value>Немедленный порог GPU (°C)</value>
+  </data>
+  <data name="FanStop_GpuImmediateCutoff.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Немедленный порог GPU (°C)</value>
+  </data>
+  <data name="KeyboardBackend_FunctionRowRequiresDriver" xml:space="preserve">
+    <value>Используйте драйвер Razer, чтобы изменить поведение клавиш F1–F12. Перехват Windows сохраняет стандартные сочетания с Fn.</value>
+  </data>
+  <data name="GlobalSearchBox.PlaceholderText" xml:space="preserve">
+    <value>Поиск по страницам и настройкам</value>
+  </data>
+  <data name="GlobalSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Поиск по страницам и настройкам</value>
+  </data>
+  <data name="GlobalSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Поиск по страницам и настройкам</value>
+  </data>
+  <data name="GlobalSearch_NoResults" xml:space="preserve">
+    <value>Подходящих страниц и настроек нет</value>
+  </data>
+  <data name="GlobalSearch_BatteryAliases" xml:space="preserve">
+    <value>лимит заряда состояние аккумулятора</value>
+  </data>
+  <data name="GlobalSearch_SnapTapAliases" xml:space="preserve">
+    <value>A/D SOCD контрстрейф</value>
+  </data>
+  <data name="GlobalSearch_UpdateChannelAliases" xml:space="preserve">
+    <value>Nightly ночные сборки стабильные выпуски</value>
+  </data>
+  <data name="GlobalSearch_BrightnessAliases" xml:space="preserve">
+    <value>подсветка экрана</value>
+  </data>
+  <data name="GlobalSearch_FansAliases" xml:space="preserve">
+    <value>охлаждение обороты RPM</value>
+  </data>
+  <data name="MainWindow_CpuTuningTitle.Text" xml:space="preserve"><value>Оптимизатор напряжения CPU</value></data>
+  <data name="MainWindow_CpuTuningCurveValue.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Смещение оптимизатора всех ядер</value></data>
+  <data name="MainWindow_CpuTuningUnmanagedHint.Text" xml:space="preserve"><value>Выключение использует ноль и сохраняет смещение. Нажмите «Применить», чтобы изменить настройки.</value></data>
+  <data name="MainWindow_CpuTuningRefresh.Content" xml:space="preserve"><value>Обновить</value></data>
+  <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>Восстановить прежние значения оптимизатора</value></data>
+  <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Оптимизатор напряжения CPU</value></data>
+  <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve"><value>Смещение всех ядер</value></data>
+  <data name="MainWindow_CoolingPadApplyHelpText.Text" xml:space="preserve">
+    <value>«Применить» включает управление до конца сеанса. «Передать управление» восстанавливает исходные настройки подставки.</value>
+  </data>
+  <data name="MainWindow_CoolingPadApplyText.Content" xml:space="preserve">
+    <value>Применить</value>
+  </data>
+  <data name="MainWindow_CoolingPadBrightnessText.Header" xml:space="preserve">
+    <value>Выбранная яркость (%)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCpuCurveText.Text" xml:space="preserve">
+    <value>ЦП</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveHelpText.Text" xml:space="preserve">
+    <value>Температуры должны возрастать, а заданная скорость — не убывать и изменяться с шагом 50 об/мин. Если выбраны оба датчика, используется более высокая скорость.</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveRpmText.Header" xml:space="preserve">
+    <value>Заданная скорость (об/мин)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveTemperatureText.Header" xml:space="preserve">
+    <value>Температура (°C)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurvesText.Header" xml:space="preserve">
+    <value>Кривые ЦП/ГП</value>
+  </data>
+  <data name="MainWindow_CoolingPadExperimentalText.Text" xml:space="preserve">
+    <value>Экспериментальная поддержка на основе исходного кода · Razer RC21-0230</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanLabelText.Text" xml:space="preserve">
+    <value>Вентилятор</value>
+  </data>
+  <data name="MainWindow_CoolingPadFixedRpmText.Header" xml:space="preserve">
+    <value>Выбранная скорость вентилятора (об/мин)</value>
+  </data>
+  <data name="MainWindow_CoolingPadGpuCurveText.Text" xml:space="preserve">
+    <value>ГП</value>
+  </data>
+  <data name="MainWindow_CoolingPadHeadingText.Text" xml:space="preserve">
+    <value>Охлаждающая подставка</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingLabelText.Text" xml:space="preserve">
+    <value>Подсветка</value>
+  </data>
+  <data name="MainWindow_CoolingPadPrimaryColorText.Header" xml:space="preserve">
+    <value>Цвет (RGB-код)</value>
+  </data>
+  <data name="MainWindow_CoolingPadRefreshText.Content" xml:space="preserve">
+    <value>Обновить состояние</value>
+  </data>
+  <data name="MainWindow_CoolingPadReleaseText.Content" xml:space="preserve">
+    <value>Передать управление</value>
+  </data>
+  <data name="MainWindow_CoolingPadSecondaryColorText.Header" xml:space="preserve">
+    <value>Второй цвет эффекта «Дыхание» (RGB-код)</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionLabel.Text" xml:space="preserve">
+    <value>Направление</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceLabel.Text" xml:space="preserve">
+    <value>Источник температуры</value>
+  </data>
+  <data name="MainWindow_CoolingPadNavigationItemText.Content" xml:space="preserve">
+    <value>Охлаждающая подставка</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanSelectorText.AccessibleName" xml:space="preserve">
+    <value>Режим вентилятора охлаждающей подставки</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingSelectorText.AccessibleName" xml:space="preserve">
+    <value>Эффект подсветки охлаждающей подставки</value>
+  </data>
+  <data name="MainWindow_CoolingPadTemperatureSourceText.AccessibleName" xml:space="preserve">
+    <value>Датчик температуры для охлаждающей подставки</value>
+  </data>
+  <data name="MainWindow_CoolingPadWaveDirectionText.AccessibleName" xml:space="preserve">
+    <value>Направление волны подсветки охлаждающей подставки</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandLabelText.Text" xml:space="preserve">
+    <value>Разрешить приложениям запрашивать усиленное охлаждение</value>
+  </data>
+  <data name="MainWindow_CoolingPadDemandToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Разрешить приложениям запрашивать усиленное охлаждение</value>
   </data>
 </root>

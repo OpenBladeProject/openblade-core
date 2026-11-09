@@ -7,6 +7,9 @@ before changing hardware, IPC, setup, or process boundaries.
 For bounded refactor priorities and autonomous delivery criteria, see the
 [maintainability roadmap](maintainability-roadmap.md).
 
+For the proposed portable core and its shared test baseline, see
+[Rust migration boundaries](rust-boundaries.md).
+
 ## Architecture
 
 ```mermaid
@@ -56,7 +59,7 @@ OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
 - The protocol layer encodes validated 90-byte Razer reports. Service IPC
   exposes typed operations only; there is no raw-command endpoint.
 - Physically validated writes retain their captured command and confirmation
-  contracts. Experimental setters use separately reviewed, pinned upstream
+  contracts. Source-reviewed setters use separately reviewed, pinned upstream
   definitions with decoded baselines and independent readback. Both retain fresh
   exact-device and controller checks.
 - Temporary pipe, enumeration, or read failures preserve the last confirmed UI
@@ -74,23 +77,25 @@ admitted model to verify, then checks only that model's exact identity. SKU and
 BIOS version are optional diagnostic metadata: configuration variants are not
 rejected by SKU, and a missing, unreadable, or disagreeing BIOS version does not
 block admission. Hardware-specific backends retain their own device and driver
-checks. BIOS, EC, and MCU
-versions remain evidence provenance: no shipped capability is restricted to a
-firmware version, so an untested BIOS is admitted and reported as model-scoped.
-Only an identity that explicitly pins exact versions checks SKU and BIOS
-version. Capture tools are kept outside the installed product, may pin an exact
-BIOS version for reproducibility, and raw captures are never production
+checks. BIOS and EC versions remain evidence provenance; an untested BIOS is
+admitted and reported as model-scoped. HyperBoost on RZ09-0482 and
+RZ09-0483 additionally checks its reviewed minimum MCU version before entry;
+see [source-reviewed support](experimental-blade-support.md). Only an identity
+that explicitly pins exact versions checks SKU and BIOS version. Capture tools
+are kept outside the installed product, may pin an exact BIOS version for
+reproducibility, and raw captures are never production
 admission artifacts.
 
-Experimental profiles are recognized automatically by `ExperimentalBladeFactory`
+Source-reviewed supported profiles are recognized automatically by `ExperimentalBladeFactory`
 and use `ExperimentalBladePort` with their own bounded capabilities and source
 provenance. They have no Settings consent switch or release-channel gate.
 Pre-releases are the testing route, not a new hardware-admission rule. The
-[experimental support guide](experimental-blade-support.md) lists the five exact
-models and remaining physical validation. Each profile admits its own thermal,
-battery, and lighting commands. The Blade 16 (2023) also admits typed uniform
+[source-reviewed support guide](experimental-blade-support.md) lists the nine exact
+models and remaining physical validation. Each profile admits only its own reviewed commands; the
+[four added 2024/2025 models](source-reviewed-blade-models.md) have narrower initial
+thermal and battery controls and no admitted lighting or driver integration. The Blade 16 (2023) also admits typed uniform
 host-rendered frames; it does not use another model's key map or brightness
-driver. Experimental evidence stays separate from capture-backed support.
+driver. Source review and physical validation remain separate evidence statuses.
 
 When an admitted laptop's exact Razer driver stack is already present,
 OpenBlade can use it for the native Windows brightness flyout. RZ09-0581 and
@@ -98,9 +103,13 @@ RZ09-0528 have separate, model-specific stacks. WMI remains the fallback. See
 the [Razer driver package notes](razer-brightness-driver-package.md) for the
 validation and redistribution limits.
 
-The [optional THX audio integration](thx-audio.md) uses the separately installed,
-pinned `rznb12` audio stack on RZ09-0581. It is off by default and does not use
-the laptop HID transport. Standalone native and audio validation is pending.
+The [optional THX audio integration](thx-audio.md) uses trusted, model-bound
+`rznb12` APIs on RZ09-0581 and `rznb11` APIs on RZ09-0528/RZ09-0530. The
+[legacy integration](thx-legacy-interface.md) offers a manual spatial toggle on
+RZ09-0482/RZ09-0483/RZ09-0484 with an admitted installed stack. Both are off by
+default and use current-user audio IPC rather than the laptop HID transport.
+RZ09-0581 has physical read/write/readback and restoration evidence; the THX
+guides distinguish that evidence from other models and unvalidated fresh setup.
 
 ## Direct fan-entry validation
 
@@ -127,6 +136,10 @@ state read-only; otherwise restore the saved override through typed service IPC.
 This test confirms direct entry and exit; generic manual readback does not
 establish that the Performance preset remains effective while manual fans are
 active. See the [recorded physical result](direct-fan-transition-validation.md).
+
+The separately authorized [Battery Saver 1,500 RPM experiment](battery-saver-low-fan-validation.md)
+uses a named developer-only probe with independent stored-target and actual-RPM
+readback. Its recorded result preserves the installed fan ranges.
 
 ### Other direct-transition checks
 
@@ -201,7 +214,7 @@ by this verification record. The USB IDs in `device.json` identify the catalog
 model and do not establish successful HID verification.
 
 When the latest probe read a BIOS manufacturer or product name that matches
-neither the physically validated nor experimental exact-model catalogs, the service status sets `UnsupportedLaptop`. Registry read
+neither the physically validated nor source-reviewed exact-model catalogs, the service status sets `UnsupportedLaptop`. Registry read
 failures, platform failures, firmware blocks, and failed checks on an admitted
 model leave it false. The tray then
 shows **This laptop isn't supported yet** with **Help add support**. That action
@@ -234,7 +247,7 @@ repeating thermal queries. Tray startup does not wait for the optional sign-in
 registration query; display, audio and other Session Agent observers keep their
 existing independent failure handling.
 `firmware-queries.json` retains results from supported firmware state queries
-on validated and experimental models. Each query and selector has its own
+on physically validated and source-reviewed models. Each query and selector has its own
 latest observation, first and last failure, and last failure with a reply.
 Successful recovery, port disposal and ordinary log rotation do not erase
 that failure evidence. The collection lasts for the current service run;
@@ -253,20 +266,23 @@ first. The reply contains both connected and recommended wattage; insufficient
 power does not identify a connector. Use retained diagnostics when vendor data
 is missing or a device's reply does not match it.
 
-Experimental devices also export `experimental-support.json` with source
+Source-reviewed devices also export `experimental-support.json` with source
 provenance, write-pause state, and the last 32 typed command-stage observations,
 alongside cached telemetry. Exports remain local until a user shares them.
-Collect diagnostics before choosing **Resume experimental controls**. Recovery
+Collect diagnostics before choosing **Resume laptop controls**. Recovery
 drains the old session, rechecks identity and authority, then reads and reconciles
 current state without sending a setter or replaying the uncertain request. A new
 lighting choice releases the old lighting hold; unrelated profile edits do not.
 See the [tester workflow](experimental-blade-support.md#send-a-useful-test-report)
-for baseline and follow-up reports. The [experimental implementation reference](experimental-blade-reference.md)
+for baseline and follow-up reports. The [source-reviewed implementation reference](experimental-blade-reference.md)
 records model identities, command limits, and pinned source provenance.
 
 ## Build and test
 
-You need Windows 11 x64 and the .NET 10 SDK.
+You need Windows 11 x64, the .NET 10 SDK, rustup with the toolchain pinned in
+`rust/rust-toolchain.toml`, and Visual Studio C++ x64 Build Tools with a Windows
+SDK. Add Cargo's bin directory to `PATH`. Ordinary .NET builds now compile and
+copy the required native core; see [Rust development](../rust/README.md).
 
 ```powershell
 dotnet restore OpenBlade.slnx -p:NuGetAudit=false
@@ -307,9 +323,9 @@ entry. `-DotNetRuntimePath` supplies an explicit installer instead of the cache.
 - Quiet installation: setup does not launch OpenBlade; the caller must start
   `OpenBlade.Tray.exe` from its original normal-integrity process and confirm
   that the Tray and Session Agent are running
-- Microsoft Store quiet-install lifecycle remains incomplete until
-  [issue #25](https://github.com/OSSBlade/openblade-core/issues/25) is resolved;
-  see the [submission notes](microsoft-store-submission.md)
+- Microsoft Store quiet installs still lack the caller-owned relaunch above;
+  see the [submission notes](microsoft-store-submission.md) and the original
+  [launch-gap report](https://github.com/OSSBlade/openblade-core/issues/25)
 
 See [build, installation, and Nightly releases](build-install-and-nightly.md)
 for development revisions, recovery commands, signing, Store constraints, and
@@ -380,7 +396,7 @@ runs:
   the product names the other settings that are on. Developer validation reports
   the refusal as `EnableFailed` or `CancelFailed`. Captured full-charge writes
   remain limited to bare `00` and `04`.
-- Experimental Maximum Fans on `029F` and `02A0` uses upstream-backed `00` and
+- Source-reviewed Maximum Fans on `029F` and `02A0` uses upstream-backed `00` and
   `02` writes. Its fresh guard refuses CPU boost, temporary full charge, or
   local dimming bits, so replacing the byte cannot clear another enabled option.
   This does not admit combined writes or a local dimming control.
@@ -470,11 +486,12 @@ restoration after every authorized write.
 Users can write and share data-only `.oblight` presets for effects already
 supported by their laptop. The same importer accepts Razer `.chroma` version 1
 keyboard files. Uniform files convert losslessly; classic Keyboard per-key
-animations use a bounded, exact-model logical-key projection on the verified
-RZ09-0581 and RZ09-0528 layouts. Unsupported colored cells are reported, and
-per-key KeyboardExtended files are rejected instead of cropped. Enable **Lab
-features** in Settings to show the importer. The versioned format, schema,
-compatibility rules, and example are in
+animations use a bounded, exact-model logical-key projection on the validated
+RZ09-0581/RZ09-0528 layouts and the source-reviewed RZ09-0484 layout. Unsupported
+colored cells are reported, and per-key KeyboardExtended files are rejected
+instead of cropped. Open **Labs** in the sidebar and choose **Import a lighting
+preset** to jump to the importer under **Lighting â†’ Keyboard**. The versioned
+format, schema, compatibility rules, and example are in
 [`keyboard-lighting-file-format.md`](keyboard-lighting-file-format.md).
 
 ## Contributing
@@ -489,6 +506,10 @@ Manual CI runs and the weekly Sunday run at 00:00 UTC validate the full solution
 build contracts, and installer. Release builds also retain full validation.
 The weekly run uses a separate concurrency group so a main push cannot cancel it.
 
+The RZ09-0528's separate saved and live CPU tuning paths, admission status, and
+attended validation are described in
+[`rz09-0528-cpu-tuning.md`](rz09-0528-cpu-tuning.md).
+
 Keep changes narrow, add focused tests, and run the affected project tests
 before the full solution. Hardware support is not complete until its
 read/query, apply, readback, and restoration workflow has passed on the exact
@@ -500,4 +521,8 @@ pseudo-localization review workflow are in [localization.md](localization.md).
 
 ## SnapTap input helper
 
-The opt-in A/D priority feature uses the admitted Razer laptop keyboard driver through a supervised current-user worker. See [SnapTap](snap-tap.md) for exact driver admission, hook ownership, failure handling and validation.
+The opt-in A/D priority feature offers Windows-hook and Razer-driver input
+methods. Users choose the method separately for SnapTap and the function row.
+One supervised current-user driver helper owns the selected A/D and F1â€“F12 hook
+set. See [keyboard input methods](keyboard-input-backends.md) for selection and
+[SnapTap](snap-tap.md) for driver setup, admission, ownership and recovery.

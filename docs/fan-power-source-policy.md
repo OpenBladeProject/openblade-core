@@ -12,7 +12,7 @@ power policy:
 
 | Power source | Automatic | Fixed target | Smart curve | Maximum Fans |
 | --- | --- | --- | --- | --- |
-| Full external power | Yes | Yes | Production backends only | Only where separately admitted |
+| Full external power | Yes | Yes | Production backends; Blade 18 in Balanced | Only where separately admitted |
 | Confirmed limited external power, including classified USB-C | Yes | Production backends only | Production backends only | Only where separately admitted |
 | Battery | Yes | Yes where fixed targets are admitted | No | No separate Maximum Fans switch |
 
@@ -49,15 +49,28 @@ That makes both battery fixed forms source-backed:
 
 There is no Battery Saver branch that removes or clears the manual flag. Only
 Balanced AC is substituted with Balanced DC, again without changing that flag.
-These two fixed forms are vendor-source semantics; neither has yet been
-confirmed by an OpenBlade physical write/readback/restore round trip.
+These two fixed forms are vendor-source semantics. Battery Saver manual control
+was subsequently exercised on RZ09-0581 in the bounded
+[low-target round trips](battery-saver-low-fan-validation.md); that result does
+not establish another model's physical behavior or Battery Balanced operation.
+
+The developer Battery Saver trial retained a requested 1,500 RPM target and
+later measured zero RPM, but its short 2,000 RPM preparation had no held control
+or reversal. That association does not establish a causal or reliable fan-stop
+command. A literal-zero target was not tested in Battery Saver. Production
+fan-stop admission is withheld on RZ09-0581 and all other models; the retained
+prototype preference is dormant and its switch is hidden. Ordinary fixed-target
+ranges and direct manual transitions remain unchanged. See the
+[corrected evidence assessment](battery-saver-low-fan-validation.md#withheld-production-capability).
 
 Smart curves are external-power-only. The vendor policy stores and reads smart
 curve state under `performance.plugged` and starts its temperature monitor only
 while `isOnBatteryPower` is false. Its battery settings contain Battery Saver,
-Battery Balanced, and `manualFanSpeed`, but no battery curve. OpenBlade's
-experimental backends have no admitted temperature source, so they expose no
-curve on any power source.
+Battery Balanced, and `manualFanSpeed`, but no battery curve. OpenBlade also
+exposes an experimental host curve on Blade 18 in Balanced,
+using the existing Windows CPU-temperature reader. It holds the admitted
+3,800 RPM maximum when that reading is unavailable; variable behavior remains
+physically unverified. The other experimental models expose no curve.
 
 ## Exact model scope
 
@@ -72,10 +85,12 @@ the underlying fan command. The resulting scope is:
 | `Blade 14 - RZ09-0482` | `1532:029D` | `669` | Automatic only | Automatic, fixed, 2,200-5,000 RPM | Experimental exact-model fixed control is source-backed extrapolation. The battery path preserves the manual flag. The limited-external vendor path clears it before sending speed, so USB-C fixed remains blocked. Curves are unavailable. |
 | `Blade 14 - RZ09-0530` | `1532:02C5` | `709` | No adjustable fan control admitted | No adjustable fan control admitted | Battery performance modes are admitted, but there is no exact-model fixed-target evidence. |
 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | `597` | No fan control admitted | No fan control admitted | No exact-model fan evidence. |
-| `Blade 18 - RZ09-0484` | `1532:02A0` | `672` | Automatic only | Automatic, shared fixed target in Balanced, 2,200-3,800 RPM | Exact Balanced setters and a rising fan-1 RPM stream are observed. The pinned class-1 stored-target getter is source-backed and must succeed before writes. The earlier ignored-RPM report concerned HyperBoost. Curves and fixed targets in other presets remain unavailable. See [Observer evidence](blade18-observer-evidence.md#follow-up-bundle-2026-10-17). |
+| `Blade 18 - RZ09-0484` | `1532:02A0` | `672` | Automatic only | Automatic, shared fixed target in Balanced, 2,200-3,800 RPM | Exact Balanced setters and a rising fan-1 RPM stream are observed. The pinned class-1 stored-target getter is source-backed and must succeed before writes. The earlier ignored-RPM report concerned HyperBoost. Silent also admits linked 3,700-5,300 RPM targets on full external power. Balanced host curves preserve separate target requests and hold 3,800 RPM without temperature data; variable curves and physical RPM independence remain unverified. Custom and Performance manual fans remain unavailable. See [Observer evidence](blade18-observer-evidence.md#follow-up-bundle-2026-10-17). |
 
-The intended experimental policy admits Fixed on battery for RZ09-0483 and
-RZ09-0482, plus Balanced-only shared fixed targets on RZ09-0484, and keeps curves unavailable. Confirmed limited external power admits
+The experimental policy admits Fixed on battery for RZ09-0483 and
+RZ09-0482, plus Balanced-only shared fixed targets on RZ09-0484. Blade 18 also
+admits Balanced curves on full external power; the other experimental models
+keep curves unavailable. Confirmed limited external power admits
 Automatic handback only for those models because their exact vendor bundles do
 not preserve the manual flag there. The normal exact-device, power, ownership,
 write, and recovery gates still apply.
@@ -125,8 +140,8 @@ any of the corresponding firmware selector/flag pairs.
   per-model fan evidence; lines 62-80 map the five experimental exact models
   to their official Synapse products.
 - `src/OpenBlade.Protocol/ExperimentalBladePort.Fans.cs` limits adjustable
-  fixed targets to PID `029F` and `029D` and exposes Automatic and Fixed through
-  that backend.
+  fixed targets to PID `029F`, `029D`, and `02A0`. Blade 18 uses preset-specific
+  Balanced/Silent ranges and admits host curves only in Balanced.
 - `src/OpenBlade.Protocol/ExperimentalBladePort.cs` derives fan capabilities
   and power admission from the exact model's range and source policy.
 - `src/OpenBlade.Protocol/BatteryValidationFactory.cs` lines 574-580 list the
@@ -142,6 +157,6 @@ any of the corresponding firmware selector/flag pairs.
 
 `SupportsManualFansOnLimitedPower` is advertised only by the two exact production
 backends. Missing capability data defaults to false. The strict JSON codec
-rejects unknown members, so this field requires service IPC 66 and a coordinated
-component update; it is omitted from the protocol-51 read-only projection.
+rejects unknown members. This field was introduced in service IPC 66 and requires
+a coordinated component update; it is omitted from the protocol-51 read-only projection.
 Session Agent IPC and persisted profile schemas are unchanged.

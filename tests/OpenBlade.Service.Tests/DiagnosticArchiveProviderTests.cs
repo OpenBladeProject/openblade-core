@@ -12,6 +12,30 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class DiagnosticArchiveProviderTests
 {
+    [Theory]
+    [InlineData("RZ09-0528", "Supported", "PhysicallyValidated", "Validated")]
+    [InlineData("RZ09-0509", "Supported", "SourceReviewed", "Pending")]
+    [InlineData("RZ09-9999", "NotEstablished", "NotEstablished", "NotEstablished")]
+    public async Task CreateAsync_ExportsModelSupportSeparatelyFromPhysicalEvidence(
+        string modelNumber, string status, string basis, string physicalValidation)
+    {
+        ServiceStatusSnapshot snapshot = CreateStatus();
+        var runtime = new SnapshotOnlyRuntime(snapshot with
+        {
+            Firmware = snapshot.Firmware! with { ModelNumber = modelNumber },
+        });
+        var provider = new DiagnosticArchiveProvider(runtime, new DiagnosticHistory(), new FixedMetadataSource());
+
+        DiagnosticArchive result = await provider.CreateAsync(false, default);
+
+        Assert.Equal(0, runtime.HardwareOrMutationCalls);
+        using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
+        using JsonDocument json = JsonDocument.Parse(await ReadEntryAsync(archive, "configuration.json"));
+        Assert.Equal(status, json.RootElement.GetProperty("support.status").GetString());
+        Assert.Equal(basis, json.RootElement.GetProperty("support.basis").GetString());
+        Assert.Equal(physicalValidation, json.RootElement.GetProperty("support.physicalValidation").GetString());
+    }
+
     [Fact]
     public async Task CreateAsync_ExportsRetainedFirmwareRepliesWithoutHardwareAccessOrHexRedaction()
     {
@@ -70,6 +94,9 @@ public sealed class DiagnosticArchiveProviderTests
         using JsonDocument json = JsonDocument.Parse(content);
         Assert.True(json.RootElement.GetProperty("support").GetProperty("writesPaused").GetBoolean());
         Assert.Equal("UpstreamDerived", json.RootElement.GetProperty("support").GetProperty("evidenceLevel").GetString());
+        Assert.Equal("Supported", json.RootElement.GetProperty("support").GetProperty("supportStatus").GetString());
+        Assert.Equal("SourceReviewed", json.RootElement.GetProperty("support").GetProperty("supportBasis").GetString());
+        Assert.Equal("Pending", json.RootElement.GetProperty("support").GetProperty("physicalValidation").GetString());
         Assert.Equal("Mismatch", json.RootElement.GetProperty("support").GetProperty("observations")[0].GetProperty("outcome").GetString());
         Assert.Equal(liveReadingsEnabled ? JsonValueKind.Object : JsonValueKind.Null,
             json.RootElement.GetProperty("liveReadings").ValueKind);

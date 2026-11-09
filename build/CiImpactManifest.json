@@ -15,6 +15,11 @@
     "build/Run-AffectedCi.ps1"
   ],
   "fullInstallerPatterns": [
+    "src/OpenBlade.Core.Native/*",
+    "rust/*",
+    "build/NativePayload.ps1",
+    "build/Build-NativeDevelopment.ps1",
+    "build/Prepare-NativeToolchain.ps1",
     "build/installer/*",
     "build/BuildIdentity.ps1",
     "build/identity/*",
@@ -39,6 +44,16 @@
     "src/OpenBlade.Tray/OpenBlade.Tray.csproj"
   ],
   "testInputRules": [
+    {
+      "patterns": ["rust/crates/openblade-status-cli/fixtures/request.json", "rust/crates/openblade-status-cli/fixtures/response.json"],
+      "testProjects": ["tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj"],
+      "reason": "Contracts tests compare the independent Rust CLI request and response fixtures with the real read-only IPC contract."
+    },
+    {
+      "patterns": ["tests/OpenBlade.NativeFailureProbe/*"],
+      "testProjects": ["tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj"],
+      "reason": "The offline production actor probe runs in the quality lane with Protocol tests."
+    },
     {
       "patterns": ["tests/OpenBlade.Testing/WindowsVisualTestDesktop.cs"],
       "testProjects": ["tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj", "build/installer/OpenBlade.Installer.UI.Tests/OpenBlade.Installer.UI.Tests.csproj"],
@@ -149,6 +164,10 @@
   ],
   "contractRules": [
     {
+      "test": "tests/Build.Tests/NativePayload.Tests.ps1",
+      "patterns": ["build/NativePayload.ps1", "build/Build-NativeDevelopment.ps1", "build/Prepare-NativeToolchain.ps1", "build/Publish.ps1", "rust/*", ".github/workflows/build.yml", ".github/workflows/ci.yml", ".github/workflows/pr-version.yml"]
+    },
+    {
       "test": "tests/Build.Tests/AffectedCiRunner.Tests.ps1",
       "patterns": ["build/Run-AffectedCi.ps1"]
     },
@@ -157,8 +176,40 @@
       "patterns": ["build/BuildIdentity.ps1"]
     },
     {
+      "test": "tests/Build.Tests/FanStopGuardianPayload.Tests.ps1",
+      "patterns": ["build/PublishPayloadValidation.ps1", "build/Publish.ps1", "src/OpenBlade.FanStop.Guardian/OpenBlade.FanStop.Guardian.csproj"]
+    },
+    {
+      "test": "tests/Build.Tests/PawnIoPrerequisite.Tests.ps1",
+      "patterns": ["build/PawnIoPrerequisite.ps1", "build/Publish.ps1", "build/third-party/PawnIO-NOTICE.txt", "src/OpenBlade.CpuTemperature/OpenBlade.CpuTemperature.csproj", "third_party/LibreHardwareMonitor/*"]
+    },
+    {
+      "test": "tests/Build.Tests/So6120CompletedAttemptArchive.Tests.ps1",
+      "patterns": ["build/So6120CompletedAttemptArchive.ps1", "build/Archive-So6120CompletedDeveloperAttempt.ps1"]
+    },
+    {
+      "test": "tests/Build.Tests/LowFanValidationInstalledState.Tests.ps1",
+      "patterns": ["build/LowFanValidationInstalledState.ps1", "build/Invoke-BatterySaverLowFanValidation.ps1", "build/Invoke-SilentLowFanValidation.ps1", "src/OpenBlade.Contracts/Overrides.cs", "src/OpenBlade.Contracts/ServiceMessages.cs", "src/OpenBlade.Contracts/Profiles.cs", "src/OpenBlade.Contracts/DeviceState.cs", "src/OpenBlade.Service/ServiceControlRuntime.cs", "src/OpenBlade.Tray.Core/ServiceClient.cs"]
+    },
+    {
       "test": "tests/Build.Tests/PadlessHyperBoostLifecycleValidationBuild.Tests.ps1",
       "patterns": ["build/Build-PadlessHyperBoostLifecycleValidation.ps1", "src/OpenBlade.Service/OpenBlade.Service.csproj", "src/OpenBlade.Service/PadlessHyperBoostLifecycleValidationBuild.cs", "src/OpenBlade.Protocol/HyperBoostWithoutCoolingPadEvidence.cs", "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_4_00_HyperBoostWithoutCoolingPadAdmission.json"]
+    },
+    {
+      "test": "tests/Build.Tests/CpuVoltageValidationBuild.Tests.ps1",
+      "patterns": [
+        "build/BuildIdentity.ps1",
+        "build/Publish.ps1",
+        "Directory.Build.props"
+      ]
+    },
+    {
+      "test": "tests/Build.Tests/CpuVoltageDeployment.Tests.ps1",
+      "patterns": [
+        "build/development-deployment/Invoke-LocalDevDeployment.ps1",
+        "build/development-deployment/Publish-CpuVoltageValidation.ps1",
+        "build/Publish.ps1"
+      ]
     },
     {
       "test": "tests/Build.Tests/ThermalExternalDriftValidationBuild.Tests.ps1",

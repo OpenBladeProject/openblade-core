@@ -37,8 +37,10 @@ public enum PageSectionKind
     AboutDeviceInformation,
     AboutSupport,
     AboutTroubleshooting,
+    // Retained for old string-enum preferences; no longer a Laptop section.
     LaptopBatteryHistory,
     ProfilesApplications,
+    SettingsNotifications,
 }
 
 public sealed record PageSectionPreference(
@@ -131,11 +133,6 @@ public static class PageLayoutPreferenceDefaults
             TrayText.Get("Manage battery protection and temporary full charge.")),
         new(
             CustomizablePageKind.Laptop,
-            PageSectionKind.LaptopBatteryHistory,
-            TrayText.Get("Battery history"),
-            TrayText.Get("Review Windows battery history and preview a long battery life preset.")),
-        new(
-            CustomizablePageKind.Laptop,
             PageSectionKind.LaptopKeyboardBehavior,
             TrayText.Get("Keyboard behavior"),
             TrayText.Get("Set function-key behavior and gaming mode.")),
@@ -169,6 +166,11 @@ public static class PageLayoutPreferenceDefaults
             PageSectionKind.SettingsBehavior,
             TrayText.Get("Behavior"),
             TrayText.Get("Configure live readings, sign-in, and lighting ownership.")),
+        new(
+            CustomizablePageKind.Settings,
+            PageSectionKind.SettingsNotifications,
+            TrayText.Get("Notifications"),
+            TrayText.Get("Notifications")),
         new(
             CustomizablePageKind.Settings,
             PageSectionKind.SettingsAppearance,
@@ -323,6 +325,18 @@ public static class PageLayoutPreferenceDefaults
             }
         }
 
+        // Notifications formerly shared Behavior's position and visibility.
+        if (page == CustomizablePageKind.Settings && !sections.Any(section =>
+                section.Kind == PageSectionKind.SettingsNotifications))
+        {
+            int notificationIndex = normalized.FindIndex(section =>
+                section.Kind == PageSectionKind.SettingsNotifications);
+            normalized.RemoveAt(notificationIndex);
+            int behaviorIndex = normalized.FindIndex(section =>
+                section.Kind == PageSectionKind.SettingsBehavior);
+            normalized.Insert(behaviorIndex + 1, new PageSectionPreference(
+                PageSectionKind.SettingsNotifications, normalized[behaviorIndex].IsVisible));
+        }
         return normalized;
     }
 

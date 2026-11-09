@@ -2,16 +2,20 @@ using System.ComponentModel;
 
 namespace OpenBlade.SessionAgent;
 
-/// <summary>The fixed A/D contract of the trusted, model-bound RzCommon keyboard endpoint.</summary>
+/// <summary>A closed selector set on the trusted, model-bound RzCommon keyboard endpoint.</summary>
 internal sealed class RazerSnapTapDriverTransport : IRazerSnapTapHookTransport, IDisposable
 {
     private readonly RazerSnapTapNativeIo io;
     private readonly Func<bool>? canEnable;
     private readonly Func<bool>? canOutput;
+    private readonly RazerKeyboardHookPurpose purpose;
 
     internal RazerSnapTapDriverTransport(string path, Func<bool> isCurrent,
-        Func<bool>? canEnable = null, Func<bool>? canOutput = null)
+        Func<bool>? canEnable = null, Func<bool>? canOutput = null,
+        RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap)
     {
+        _ = RazerSnapTapDriverProtocol.ScanCodes(purpose);
+        this.purpose = purpose;
         this.canEnable = canEnable;
         this.canOutput = canOutput;
         io = new(path, isCurrent);
@@ -47,7 +51,7 @@ internal sealed class RazerSnapTapDriverTransport : IRazerSnapTapHookTransport, 
     public void SetHook(byte[] record)
     {
         if (!RazerSnapTapDriverProtocol.TryDecodeHook(record, record.Length, out var snapshot)
-            || snapshot is null || !RazerSnapTapDriverProtocol.IsOwnedAdHook(snapshot))
+            || snapshot is null || !RazerSnapTapDriverProtocol.IsOwnedHook(snapshot, purpose))
         {
             throw new InvalidDataException("Only the fixed keyboard hooks are admitted.");
         }
@@ -56,8 +60,8 @@ internal sealed class RazerSnapTapDriverTransport : IRazerSnapTapHookTransport, 
 
     public void ClearHook(byte[] record)
     {
-        if (record.Length != 32 || !(record.AsSpan().SequenceEqual(RazerSnapTapDriverProtocol.EncodeClearHook(0x1E))
-            || record.AsSpan().SequenceEqual(RazerSnapTapDriverProtocol.EncodeClearHook(0x20))))
+        if (record.Length != 32 || !RazerSnapTapDriverProtocol.ScanCodes(purpose).Any(
+                scan => record.AsSpan().SequenceEqual(RazerSnapTapDriverProtocol.EncodeClearHook(scan, purpose))))
         {
             throw new InvalidDataException("Only the fixed keyboard hooks are admitted.");
         }
@@ -88,7 +92,7 @@ internal sealed class RazerSnapTapDriverTransport : IRazerSnapTapHookTransport, 
         {
             return false;
         }
-        var decoded = RazerSnapTapDriverProtocol.DecodeInput(packet, packet.Length, out stroke);
+        var decoded = RazerSnapTapDriverProtocol.DecodeInput(packet, packet.Length, out stroke, purpose);
         if (decoded == RazerSnapTapInputDecodeResult.Malformed)
         {
             throw new InvalidDataException("Unexpected keyboard driver event.");
@@ -98,7 +102,7 @@ internal sealed class RazerSnapTapDriverTransport : IRazerSnapTapHookTransport, 
 
     internal void Send(SnapTapKeyStroke stroke) =>
         io.Request(RazerSnapTapDriverProtocol.SendInputIoControlCode,
-            RazerSnapTapDriverProtocol.EncodeOutput(stroke), 0, 250, false,
+            RazerSnapTapDriverProtocol.EncodeOutput(stroke, purpose), 0, 250, false,
             canOutput ?? (() => false));
 
     private void Mutate(uint code, byte[] packet) => io.Request(code, packet, 0, 250, false);

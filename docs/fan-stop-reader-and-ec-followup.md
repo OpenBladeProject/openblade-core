@@ -1,0 +1,951 @@
+# Fan Stop reader and EC follow-up
+
+This follow-up incorporates the evidence through `69b4af1b`. It covers the four
+three-channel Blade 17/18 ECs and seven models that still need receiver-side
+EC evidence. The retained vendor inputs were parsed as data. The results
+below are from offline analysis and models of firmware ordering.
+
+## Blade 17/18 read completion
+
+The four pinned images expose a legacy read that uses different scratch
+fields from [the legacy raw-address reader](fan-stop-bram3-readback-review.md).
+Command `11` reads a byte from `80200 + index30`, writes it to result `32`,
+then clears legacy command `12`. This arm leaves `13..15` alone. A zero
+opcode branches directly to return and skips the clear. Index `E3` reaches
+the same active-state byte as primary bank 0, index `06`.
+
+| Model | Opcode `11` arm entry | Shared result store / command clear | Calls from scheduled event 6 to dispatcher |
+| --- | --- | --- | --- |
+| RZ09-0423 | `11A1A` | `11A2C` / `11DDA` | `1D02E → 1D01E → BA74` |
+| RZ09-0484 | `12740` | `12752` / `12AFE` | `1D66E → 1D65E → C130` |
+| RZ09-0509 | `12CDE` | `12CF0` / `130A6` | `1C1B6 → 1C1A6 → C62C` |
+| RZ09-0529 | `1305C` | `1306E` / `13440` | `1C8F4 → 1C8E4 → C91C` |
+
+Event 6 and the primary mailbox event 13 are dispatched from the same
+firmware loop. If those callbacks execute serially, a fresh command `11`
+reply to a request published after the D0 copy proves the D0 wrapper has
+returned. The host does not have to publish a primary A0 fence while D0
+still has its second clear pending. The candidate is one compound
+observation with its complete sequence chosen before the first publication.
+
+The initial zero-only model clears primary status, seeds its payload with
+`FF`, and keeps the third-duty zero provisional after D0. It clears legacy
+result `32` to zero before the fixed `11/E3` publication. Legacy command zero
+and a reply with active bit 0 set complete the observation.
+The opcode `11` arm jumps over the opcode `12` call before joining the
+shared result store. See the [fixed-query dispatch table](fan-stop-bram3-readback-review.md#fixed-queries-and-a-scratch-marker).
+
+| Model conditions | Explored states | Acceptances | Result |
+| --- | ---: | ---: | --- |
+| Serialized callbacks, intact staging, exclusive host | 171 | 8 | Each accepted read has both copies and D0 has returned. |
+| Same, with an independent success-status writer | 242 | 8 | The payload sentinel still excludes acceptance without the D0 copy. |
+| Independent status writer, stale zero payload allowed | 368 | 16 | False acceptance without D0 copy. |
+| Cross-callback reentry allowed | 288 | 20 | Acceptance can precede the D0 return. |
+
+The model permits extra primary notifications. In the first two rows a later
+empty event 13 can still erase a subsequent Auto publication. A legacy
+completion proves the end of the specific D0 wrapper under serialization.
+The primary notification source still needs an applicable trigger contract
+or an independent, preselected Auto route. An erased or ambiguous command
+ends the attempt. The candidate never switches transports after a failed
+publication.
+
+The constant-address inventory found legacy reply and command stores in the
+dispatcher. It also rejected apparent offset `230/232` matches that resolve
+to `87230/87232` scratch and `80232` RAM. All 8,192 mapped descriptors were
+checked for exact aliases to `F02212/30/32`. Startup clears and computed
+stores remain outside that limited inventory. The staged fields and sentinels
+need verified ownership across both windows, including exclusion of other
+commands that can write the primary payload. The reader's time bound and
+actual port behavior remain unmeasured. The `90` reader still has its
+previously identified descriptor-sharing race.
+
+### Duty values beyond zero
+
+All four images program cycle register `F01841` to `B7` (183). The
+identical instruction sequences start at `137E6`, `13CDA`, `24BCE` and
+`2530E` in model order 0423/0484/0509/0529. Their bank-zero `B2` descriptors
+read that register. A candidate full-range observation can reserve `FF`
+in the reply and require a fresh cycle in `01..FE` and duty at or below
+that cycle. The payload predicate accepts nonzero duties. A baseline or
+post-Auto sample still needs a separate freshness proof if the active bit
+used by the `11/E3` fence can be clear.
+
+The exhaustive byte-domain check passed 131,072 combinations of cycle,
+result and whether the copy occurred. Under intact staging and payload
+ownership, a lost copy leaves `FF` outside the accepted range even if an
+unrelated writer sets success status. Cycle zero and cycle `FF` fail this
+predicate. The check separates the sentinel from legitimate duty values.
+The compound observation still requires the callback ordering and
+completion conditions above.
+
+## Independent EC I²C route
+
+The asynchronous store review traced the IRQ formatting branch to three
+fixed ROM formats. The longest writes at most 92 bytes including its NUL
+into a 260-byte stack buffer. Decoding GP-relative instructions also resolved
+nine previously unknown store addresses per image to ordinary RAM. These
+results close those particular alias leads. The dynamic destination in the
+I²C receive handler requires its own bound.
+
+Each exact image initializes an eight-bank descriptor pointer table from
+ROM. The I²C receive and transmit handlers use that table. In bank 0,
+`1A` addresses selector `8035F` and `F0` addresses override `80425`, both
+with metadata `2`. These accesses do not use primary command `93`. The
+valid descriptors have no alias to third actual PWM `F01808`, primary
+`93/94/A0`, or legacy `12/30/32`.
+
+| Model | RAM descriptor pointer table | I²C RX data store / TX data load | Address `58` at setup call / store to `F01C48` |
+| --- | --- | --- | --- |
+| RZ09-0423 | `81120` | `2512` / `2494` | `15DC2` / `2457A` |
+| RZ09-0484 | `81120` | `2512` / `2494` | `162E2` / `24BF2` |
+| RZ09-0509 | `8113C` | `2AEA` / `2A6C` | `271D8` / `2373A` |
+| RZ09-0529 | `81140` | `2B4E` / `2AD0` | `279C0` / `23E7A` |
+
+Register `0F` maps to the I²C bank selector in every valid bank. The
+receive path can write that byte without a local `<8` check. The alias
+conclusion therefore depends on a valid bank value and intact pointer table.
+Exact master-side request construction and exclusive ownership are material
+to the proof. Initialization sets bank zero and address `58`, matching
+write address byte `B0` on the keyboard MCU bus.
+
+The exact keyboard images establish the other side of the endpoint. The
+first three are in their respective [pinned EC carriers](fan-stop-blade18-source-findings.md#exact-inputs).
+RZ09-0529 uses its separately signed keyboard updater, which targets
+SSID `1A58300F` and PID `02C7`. Its carrier SHA-256 is
+`30c06ba3d2d057593bbf3c812249d4edd020d17fc157a8cc7c29264a9e72f9dc`.
+[Razer RZ09-0529 keyboard updater](https://mysupport.razer.com/app/answers/detail/a_id/19865)
+
+| Model | Decoded MCU version and SHA-256 | Queued selector / commit / mode calls | Gated immediate read / write calls |
+| --- | --- | --- | --- |
+| RZ09-0423 | 1.02.00 `abe4b5db22faa2d73d7da390fc6b00844ab48d4e957519dcf62d666dd22bb350` | `278E` / `27A4` / `2660` | `B3E6` / `B408` |
+| RZ09-0484 | 1.04.00 `e19171df923e0c786f9a0ee19f3080b3fc121842d7697d7fdc68cdd02b83fb5e` | `278E` / `27A4` / `2660` | `B682` / `B6A4` |
+| RZ09-0509 | 1.01.00 `32bb690b242b524be8432e838e587e1ffd495df413eafb93341d4479d750fc1f` | `278E` / `27A4` / `2660` | `B8F4` / `B916` |
+| RZ09-0529 | 1.07.00 `c0ebb3b40d3ac763a50d7301457d73f1a84a3e2c951730454d848b13ca3f3578` | `4FE2` / `4FF8` / `4F00` | `7860` / `7872` |
+
+On each keyboard MCU, HID `0D/02` queues selector and mode. The worker
+uses `B0:1A`, then `B0:0A` with value `05`, then `B0:36`. The
+`0D/82` reply comes from the shared cache. SET can update it before the
+bus write. A matching reply therefore cannot confirm Auto application.
+Bank 0 maps `0A` to `80940`. The shared jump table at `902C` dispatches
+value 5 to `9032`, where the handler zeros reply `80941` and sets bit 0
+of `8033F`. Event 6 tests that bit before invoking the thermal worker.
+The bus acknowledgement and this scheduling flag precede independent
+confirmation of the applied thermal state.
+
+The class `00` read/write arms use the same bus helpers synchronously and
+propagate bus status. `00/22` sets a Boolean gate and `00/A2` reads it.
+Startup sets the gate to zero. The immediate read uses a combined
+address/read transfer and writes the reply bytes into the HID response.
+It does not write EC register data. The gate admits both read and write
+arms. The caller-controlled write can reach the I²C bank selector.
+
+The known autonomous constant-address writes to `B0` avoid register
+`0F`. One four-byte transfer begins at `90`. In bank zero, those logical
+indexes address RAM `803C0..803C3`. None of the valid mapped descriptors
+in any bank points into primary mailbox `F02290..F022A0`. The long
+table-addressed LED writes use slave bytes `40/5E/4A`, with `54` also
+present on KI8110. The fixed and RAM-indexed callers bound the selected
+entries to those values. Indirect paths and forwarding callers still
+limit the ownership conclusion.
+
+This establishes an independent EC byte transport for these exact MCU
+images. Its gate and bank ownership need a bounded contract.
+Verified Auto also needs independent confirmation of the captured normal
+selector, stage bytes and override permission. A guardian using this
+transport must retain its handback ability if the caller exits.
+
+### Observe the bank and verify the applied restore independently
+
+Primary A0 with bank zero, logical `0F` and count one reads the I²C bank
+byte through the primary table. It selects that table from `F02290`,
+independent of the selected I²C bank. This makes a non-mutating bank
+observation possible while keeping the exact primary completion and
+payload checks. A confirmed zero is a point-in-time observation.
+
+Across all four images, bank zero maps the six possible restore fields
+`1A/36/B8/B9/9C/F0` to the selector, manual state, three stage bytes and
+override, all with metadata 2. Banks 1 through 7 give those six indexes
+metadata 1. The I²C RX path diverts writes for metadata 1 to scratch. For
+bank 1 the six read descriptors all alias a single reset-cleared RAM byte:
+`81449` on 0423 and 0484, `8144D` on 0509, and `81451` on 0529.
+
+The model starts in FE with override bit 6 set and a captured all-zero
+normal baseline. If another master selects bank 1 after the initial
+bank-zero check, the I²C writes can leave FE and the override intact while
+the same-bank reads return zero for every field. Returning the bank to
+zero before the final bank check makes both checks pass. This witness
+appears in the 64-state model for each image. Verifying each affected
+field through fresh primary bank-zero A0 removes that false acceptance
+in the 33-state model. The model permits valid bank drift alone and
+assumes intact primary reads. Out-of-range bank selection remains an
+addressing hazard before any readback can detect it.
+
+The RX handler also diverts a single write starting at logical `36` in
+bank zero if current manual-state bit 7 is set. The 0529 branch is
+`2B1E..2B42`. The operation must preserve a matching field and verify
+the actual byte if restoration needs to change it. The map alone cannot
+establish that the write applied.
+
+The only constant-address bank store found in the retained instruction
+inventory is the setup write of zero. The 0529 watcher at `279D4` can
+re-enter setup, which may interrupt a transfer. A later zero observation
+does not settle an earlier ambiguous write. The I²C bank selector and
+primary writes can still change the same byte. The route needs exclusive
+ownership, bounded
+transport results and a guardian-held handback path. The present guardian
+has its port owner through caller exit. This source review has yet to
+establish an equivalent independent HID lifetime for the I²C route.
+
+### Interrupt writers and command publication
+
+The interrupt-rooted store review now accounts for the earlier unresolved
+computed stores, including the KI890 SMBus path. A second pass over the
+instruction graph found 94 scalar stores omitted by the function inventory.
+Their resolved destinations avoid both descriptors, the interrupt
+configuration, and the third fan's duty register. All four images also have
+stack-relative multiword stores. These bounds rely on the retained interrupt
+roots, valid stack and ABI, intact descriptor pointers, and I²C banks 0–7.
+Each image still has a bank-dependent I²C receive store, so this result does
+not prove mailbox ownership against another host master or a main-loop
+callback.
+
+The I²C handler adds a byte-sized start index to a transfer counter.
+The receive counter saturates at `0x100`, allowing `0xFF + 0x100 = 0x1FF`
+even with a valid bank. The transmit counter saturates at `0xFF`.
+The pinned images were checked at indexes `000..1FF` for all eight banks.
+None of those pointers targets either mailbox descriptor, actual duty 3, or
+the I²C pointer and counter slots. The extended descriptor at `10F` in
+banks 1–7 does point to the writable bank-selector byte in all four images.
+A bank-ownership argument must bound the whole transfer, including
+its length and any pending command.
+
+### Primary interrupt completion
+
+| Model | Scalar stores in graph | Missing from earlier inventory | Lifecycle store to actual duty 3 |
+| --- | ---: | ---: | --- |
+| RZ09-0423 | 456 | 22 | `139DC` |
+| RZ09-0484 | 506 | 22 | `13ED8` |
+| RZ09-0509 | 799 | 25 | `24DEE` |
+| RZ09-0529 | 803 | 25 | `2551C` |
+
+The known stores near the primary descriptor touch `F02295..97` and the
+interrupt acknowledgement at `F0201B`. A lifecycle path on each image
+directly clears actual duty 3 at `F01808`. A zero duty read taken across
+that transition is insufficient to confirm Stop. Session and power admission
+must cover the full observation, including the subsequent Auto handback.
+
+The four images configure the BRAM comparator with `93`, write `31` to
+its control register, and acknowledge with bit `10`. ITE documents this
+pattern on the IT81202 as a host-write address match and a fixed high-level
+interrupt. If the same definition applies here, descriptor staging and
+EC-local stores cannot trigger command publication, and clearing the match
+flag removes the IRQ source. The Blade images use NDS32. The IT81202 is
+RISC-V and has a different chip ID layout. An exact-chip definition or
+equivalent evidence is still needed for both the host-write condition and
+interrupt drainage. [ITE IT81202 specification, pp. 186, 198, 434–435](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
+· [Pinned Chromium IT8320 configuration](https://chromium.googlesource.com/chromiumos/platform/ec/+/82d2822/chip/it83xx/config_chip_it8320.h)
+
+The scheduling model needs only one residual notification after D0
+copies its result. From an initially quiet dispatcher it explores 281
+states and accepts 10 fence states, with no false read success. In the
+failure case the residual callback starts before the A0 publication and
+loads the opcode afterward. A0's own pending event then starts an empty
+callback. After the host accepts the correct A0 data and publishes A1,
+that empty callback's unconditional outer clear erases A1. The observed
+command and status are both zero and Auto never applies. This is a
+conditional interleaving. Bounding residual delivery to one event does
+not establish quiescence.
+
+The ITE memory-snoop reference describes I2EC reads preserving the
+contents of read-to-clear registers. If that behavior and low-address
+binding are established on the installed Blade, `2019` can check the
+known `93` comparator value, `201B` can observe the address-match flag,
+and `1124` can observe the interrupt pending bit without publishing a
+primary command. Those observations can distinguish a pending source
+from a quiet sample. A quiet sample does not prove callback completion.
+IRQ 71 first sets event 13, then clears interrupt and match status, and
+the scheduler clears event 13 before invoking the callback. The host
+can therefore see clear status while the callback is still in flight.
+[ITE IT81202 specification, pp. 533–534](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
+
+#### Compare the mapped commands with the supervised Blade 16
+
+The four exact Blade 17/18 images and the RZ09-0581 SO6120 EC 1.04
+image have byte-identical primary interrupt setup (44 bytes), IRQ
+handler (40 bytes), and wrapper clear and return (12 bytes). In each
+image IRQ 71 reaches that handler through its relocated vector entry,
+and the wrapper calls the command handler at `203C`. The 128-byte
+span from the A1 opcode test through the handler's final return is
+also identical, including the mapped store loop. The outer wrapper
+does the command clear after those stores.
+
+| EC | Interrupt setup | IRQ 71 handler | A0 opcode test | A1 opcode test | Outer clear |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SO6120 1.04 | `12D54` | `BEE6` | `22F8` | `233A` | `12D8C` |
+| DI780 1.05 | `115B0` | `B360` | `228E` | `22D4` | `115E8` |
+| KI890 1.07 | `122D4` | `BA18` | `2294` | `22D6` | `1230C` |
+| KI8100 1.02 | `12868` | `BEE8` | `2294` | `22D6` | `128A0` |
+| KI8110 1.06 | `12BB8` | `C1A0` | `22F8` | `233A` | `12BF0` |
+
+The Blade 18 A0 loops are byte-identical to the SO6120 loop. DI780
+uses different registers to carry the same count, start index and
+payload pointer through the loop. The validation code retains each
+model's descriptor table. The byte comparison supplies evidence about
+the dispatcher and completion order, and each model's register map
+still determines which fan fields it can read and write.
+
+The retained, hash-checked RZ09-0581 Stop/Auto journal reports both
+states confirmed and contains 238 completed A0 publications and four
+completed A1 publications. The A1 writes cover selector `1A` and
+override `F0`. Each A1 has a completed mapped readback and the trace
+contains no D0 publication. The journal binds to the reviewed SO6120
+EC 1.04 source hash and records the hardware outcome for RZ09-0581.
+
+This supports keeping mapped A0/A1 as the candidate write and Auto
+path once a separate third-duty reader is available. It narrows the
+comparison to the exact code used for the known round trip. The
+retained journal does not exercise the extra D0 clear, observe
+interrupt edges, or establish ownership of the host ports on a
+different model. The source comparison and aggregate journal
+observations are reproducible from the local
+`artifacts/model-expansion/trigger-resolution-next/` evidence.
+
+The mapped-write scratch and changed flag cannot acknowledge Auto.
+On all four images, one successful bank-zero `1A` write leaves
+`80064..66 = 01 02 1A` and `8000E = 01`, whether it enters FE or
+restores the selector. A one-byte A0 fence leaves the same tuple.
+If an empty callback erases the Auto publication, the previous Stop
+tuple remains and is indistinguishable from successful Auto on those
+bytes. The keyboard I²C receive path can also set `8000E`, and none
+of the 8,192 reviewed descriptors maps those scratch fields. The
+offline replay is under `artifacts/model-expansion/mapped-auto-state-ack/`.
+
+The EC thermal policy can independently change the selector if the
+override is cleared while FE is still active. The exact stores are
+`15480/1599C/268BE/270C2` on 0423/0484/0509/0529. Keeping the
+override until the selector exit is verified avoids that competing
+change and preserves the intended restore order.
+
+The exact keyboard images for 0423 (1.02.00), 0484 (1.04.00), 0509
+(1.01.00), and 0529 (1.07.00) send both named duty commands, `0D/0D` and
+`0D/8D`, to the unsupported handler with status `05`. The separate raw
+bridge still requires bank ownership and an independently retained HID
+handback path.
+
+### Keyboard bridge scheduling and bus completion
+
+The keyboard bus engine has two direct call sites in each pinned image,
+one from the read helper and one from the write helper. The three older
+images also have a single-byte write wrapper. Its 24 direct callers per
+image use fixed indexes `00/01/02/FD/FE`. The whole-image direct branch
+scan found no extra tail branches or literal Thumb function pointer to
+the engine. Computed entry and other physical bus controllers remain
+outside that result.
+
+| Model | Timer vector / call to HID dispatcher | Foreground call to thermal worker | Shared frame buffer | Write STOP request / result store |
+| --- | --- | --- | --- | --- |
+| RZ09-0423 | `B5CC / B69C` | `8F46 → 2544` | `10000324` | `3146 / 314C` |
+| RZ09-0484 | `B858 / B928` | `903A → 2544` | `10000326` | `31EA / 31F0` |
+| RZ09-0509 | `BACC / BBA4` | `91EE → 2544` | `1000032E` | `322A / 3230` |
+| RZ09-0529 | `35D8 / 3688` | `6B66 → 4E0C` | `10000200` | `25D0 / 25D4` |
+
+The startup path on each image starts the timer at `4000C000` and
+enables IRQ 16 through `E000E100`. In the foreground loop the
+watchdog-refresh helper executes `CPSIE i` before the thermal worker.
+The queued selector path can reach the bus helper while this interrupt
+is enabled. Its normal-operation conditions also permit the timer to
+dispatch the HID bridge. The selector helper has no interrupt mask or
+lock between staging its last byte and calling the bus engine.
+[Arm Cortex-M0 user guide](https://documentation-service.arm.com/static/5ea6ce5e9931941038def8c1)
+· [NXP timer and interrupt reference](https://community.nxp.com/pwmxy87654/attachments/pwmxy87654/lpc/28119/2/UM10398.pdf)
+
+| Model | Timer start / IRQ 16 enable | Foreground `CPSIE i` | Submit staged selector write | Immediate bridge read |
+| --- | --- | --- | --- | --- |
+| RZ09-0423 | `B6E2 / B774` | `CD1E` | `3390` | `B3E6 → 33A0` |
+| RZ09-0484 | `B96E / BA00` | `CF9E` | `3434` | `B682 → 3444` |
+| RZ09-0509 | `BBEA / BC7C` | `D326` | `3474` | `B8F4 → 3484` |
+| RZ09-0529 | `3758 / 3756` | `C3A4` | `5C8C` | `7860 → 5C18` |
+
+On RZ09-0529 the adjacent stores run in address order, enabling IRQ 16
+before starting the timer. The preemption case needs both to have run
+before the foreground write and does not depend on their startup order.
+
+A completed HID request can leave a selector write queued. If IRQ 16
+dispatches a later gated read after that write stages its frame and
+before it enters the engine, the read replaces the global frame and
+both lengths. The read helper returns without restoring them. The
+foreground engine then consumes the combined-read frame in place of
+the intended selector write. This is a firmware scheduling
+counterexample to exclusive ownership through host-side serialization.
+It needs a queued write, an enabled bridge gate and interrupt delivery
+in that window. It does not establish a failure rate or a captured
+failure. The exact bytes and call edges were checked offline in all
+four images.
+
+The write path stores success `0C` immediately after requesting the
+I²C STOP condition. The engine returns the software result and disables
+its IRQ without polling the bus. Its local timeout stores `0B` and
+disables that IRQ without an explicit STOP or peripheral reset in that
+path. The HID response supplies neither wire-idle evidence nor EC
+callback completion. Keep a timeout ambiguous. [NXP I²C specification, §3.1.4](https://www.nxp.com/docs/en/user-guide/UM10204.pdf)
+
+### Candidate direct read through Super I/O
+
+All four exact EC carriers contain the same managed flasher, SHA-256
+`3de34bf3f5e57e0c11e76f45b773642ae3816f4a645040cf3b0602dcd30e79ed`.
+Its `Embedded_Controller_Get_Ram_Byte` method (RVA `3CC4`) selects
+16-bit addresses through the Super I/O depth-two index and data
+registers, then reads the selected byte. This method publishes no BRAM
+command and calls no keyboard transport. Its only direct caller in the
+retained assembly is the separate SPI ID helper at `392C`, which uses
+it at indirect flash register `103F`. The reviewed managed call
+inventory does not reach that helper from the updater entry. The
+method establishes a vendor transport definition and register example,
+with normal-mode availability still open.
+
+| Model | Shared flasher block | EC store of `C3` at `F0200D` | EC SPI ID opcode / data read |
+| --- | ---: | --- | --- |
+| RZ09-0423 | 25 | `CF78` | `2944 / 295A` |
+| RZ09-0484 | 28 | `DCD0` | `2944 / 295A` |
+| RZ09-0509 | 12 | `E3D2` | `27A4 / 27BA` |
+| RZ09-0529 | 7 | `E692` | `2808 / 281E` |
+
+The managed SPI ID helper and each EC's SPI ID routine perform the
+same `9F` flash operation. The host helper supplies `103F` to the
+depth-two reader. The EC builds the address from `F01000 + 3F` and
+reads the result there. All four pinned images have the same
+instruction bytes for the address construction, opcode load and data
+read. This gives an exact-image example supporting the low-16-bit
+address mapping in the flash block. It leaves the PWM block's decode
+and normal-operation host access open.
+
+Each EC's initialization code sets the low two bits of `F0200D`.
+Chromium's IT83xx code names offset `0D` SPCTRL1. ITE's IT81202 manual
+and the exact Razer helper independently agree on the depth-two
+register layout. The manual identifies SPCTRL1 bits 1:0 as memory-snoop
+permission and describes external-memory access through this path.
+That helps explain the firmware setting without proving that every
+16-bit address resolves as expected on the installed Blade controller.
+Coreboot's separate IT5570E driver also supplies the high and low bytes
+to the depth-two interface before reading its data register. The
+cross-chip agreement establishes the shape of the transaction. The
+Blade's address mapping and host decode still need their own evidence.
+[Chromium IT83xx LPC code](https://chromium.googlesource.com/chromiumos/platform/ec/+/08f5a1e6fc2c9467230444ac9b582dcf4d9f0068/chip/it83xx/lpc.c)
+· [ITE IT81202 specification, pp. 78, 433, 533–534](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
+· [Coreboot IT5570E depth-two reader](https://github.com/coreboot/coreboot/blob/e1e65cb0f1cad6117d48503f2f78d115caecc55b/src/ec/clevo/it5570e/i2ec.c)
+
+The IT81202 reference assigns `2E/2F` to the reset value of BADRSEL and
+describes a separately enabled programmable port. A bounded constant
+propagation scan of the four exact Blade EC images resolved the known
+`F0200D` writes and found no resolved writes to `F0200A`, `F02012`, or
+`F02014/15`. Some store destinations remain unresolved. Together with
+the exact BIOS initialization below, this makes `2E/2F` the first route
+to check on an installed host. [ITE IT81202 specification, pp. 432–434](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
+
+The remaining readback evidence is the installed controller's ordinary
+host decode and its 16-bit address binding to `F01808`. A read-only
+comparison needs exact device and firmware identity, a known-answer
+control, independent mapped duty and cycle comparisons, and a third
+channel observation that can distinguish a real duty value from a
+constant, a shadow, or a wrong address. The nested selectors also need
+ownership through every read, including Auto handback. If those checks
+pass, Stop can use independent actual PWM without submitting D0.
+The A1 publication and verified Auto handback still require their
+separate completion proof.
+
+For that comparison, all four exact fan initializers set the cycle
+register `F01841` to `B7`. Compare the candidate `1841` read to
+fresh mapped `B2`, and compare candidate `1807/1803` to mapped
+`B0/B1` while Automatic produces distinguishable nonzero duty
+samples. This checks the PWM block itself and avoids using the SPI
+ID data register outside its own operation. A zero at candidate
+`1808` alone cannot establish third-duty readback.
+
+The Razer FCC exhibits distinguish the 2024 Blade 18's `APF23004_MB1/MB2`
+from the 2025 Blade 18's `APF24003_MB` with `KI8110` silkscreen. The
+original embedded photos do not resolve the EC part number. Pair each
+exhibit with its test project and model since the FCC ID is shared.
+[0509 photo exhibit](https://fccid.io/RWO-RZ090510/Internal-Photos/Internal-Photos-1-7171147)
+· [0509 test report](https://fcc.report/FCC-ID/RWO-RZ090510/7171266.pdf)
+· [0529 photo exhibit](https://fccid.io/RWO-RZ090510/Internal-Photos/Internal-Photos-1-8056578)
+· [0529 test report](https://fccid.io/m/7479f7b0462d4ac455361e9850118d151801303a8b3dfc991efb423760d1fdeb.pdf)
+
+The EC can temporarily close Super I/O host access during PNPCFG
+programming. The general table writers are `AC06/B084/B4D0/B31A` on
+0423/0484/0509/0529. They set `F01202` bit 0 while programming and clear
+it at exit. The direct callers traced on these images are startup and
+power-sequence paths. For example, KI8110's event-6 dispatcher reaches
+the writer via power states `06/0A/0B`, while its steady state dispatch
+does not reach that writer in the reviewed call graph. The emitted
+tables use no depth-two index or data registers. The secondary writers
+also avoid those registers and have no direct or literal-pointer caller
+in the pinned images. These findings narrow steady-state contention.
+They leave the need to exclude lifecycle crossings and competing host
+access during the entire nested selector operation. [Chromium EC2I register access](https://chromium.googlesource.com/chromiumos/platform/ec/+/08f5a1e6fc2c9467230444ac9b582dcf4d9f0068/chip/it83xx/ec2i.c)
+
+The four images also copy actual PWM3 to RAM `80536` during ordinary
+feedback. That copy is skipped in FE, and no mapped descriptor exposes
+it. The mapped third tachometer is separate. Its producer can return
+zero after missing or disabled feedback, so neither field substitutes
+for actual PWM readback during Stop.
+
+All four exact images can now be inspected with the
+[offline firmware CLI and register explorer](../tools/firmware/README.md).
+The profiles decode all mapped entries and annotate the staged duty,
+actual duty, tachometer, cycle and restore fields separately.
+
+### Signed BIOS host interfaces
+
+The Razer-signed KI890 BIOS 2.04 and 2.09 carriers target RZ09-0484 and
+SSID `1A583007`. Their BIOSME payloads are AMI PFAT containers. Each
+manifest accounts for 18 components. The earlier incomplete
+decompression treated BIOS Guard headers, scripts and signatures as
+compressed volume bytes. Reading the data span of each record and
+joining the seven `FV_MAIN_WRAPPER` blocks recovers the 6,619,136-byte
+wrapper on each revision. Its guided section at `310D8` then decompresses
+to the declared 15,323,152 bytes. A separate reconstruction of that
+section produced identical bytes. Each revision supplies one
+checksum-valid DSDT and 89 distinct SSDTs. This reconstruction treats
+all carrier and update scripts as data.
+[Razer BIOS 2.04 carrier](https://dl.razerzone.com/drivers/RazerBlade18RZ09-0484/RazerUpdater_v1.1.1.3_KI890-BIOSv0204.exe)
+· [Razer BIOS 2.09](https://mysupport.razer.com/app/answers/detail/a_id/14221/kw/RZ09%2Baudio%2Bdriver)
+· [AMI PFAT format reference](https://github.com/platomav/BIOSUtilities/blob/40553b32449644b3a83581870be491989a12de1d/biosutilities/ami_pfat_extract.py)
+
+The signed KI8100 BIOS 1.06 carrier targets RZ09-0509. Its 20-component
+PFAT manifest yields a 6,619,136-byte main wrapper. The guided section at
+`310D8` expands to 16,523,280 bytes, including one checksum-valid DSDT
+and 94 distinct SSDTs. [Razer KI8100 BIOS 1.06](https://mysupport.razer.com/app/answers/detail/a_id/14242/kw/security)
+
+The Razer-signed DI780 2.01 and KI8110 4.01 carriers target RZ09-0423
+and RZ09-0529 respectively. Reassembling their PFAT main wrappers
+recovers the guided sections at `310D8` and `A00A8`. The DI780 volume
+expands to 24,768,528 bytes, with one checksum-valid DSDT and 69
+distinct SSDTs. The KI8110 volume expands to 23,494,672 bytes, with
+one checksum-valid DSDT and 115 distinct SSDTs.
+[Razer DI780 BIOS 2.01](https://mysupport.razer.com/app/answers/detail/a_id/6197/)
+· [Razer KI8110 BIOS 4.01 carrier](https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-BIOSv0401.exe)
+
+| Exact model / BIOS | BIOSME SHA-256 | Expanded DSDT SHA-256 |
+| --- | --- | --- |
+| RZ09-0423 / 2.01 | `1f6bfa2cae3ee858ca430b6ea8d721990d8f92a3b47fd517cde284f0e1d223ef` | `87ce3fc355f57e8a23c6b2f09178f1890c81de33c3be131bd70cd1d7d3ce51e3` |
+| RZ09-0484 / 2.04 | `d91e19eda5c61c71fb3508b302c78f5e791ccb56d80f9c9aae732614173f5a95` | `4bde553f5a3f51878ec0017bde0ebb5d2ac8baf8d5443af4b6a9d838d9e67631` |
+| RZ09-0484 / 2.09 | `9d7a6ef09c878a86f77e3fffd49505fdefd552b1f43c6e65d483b1d90b06ef29` | `e386809b217c372361c2ccc96c3bcc22dab732ee7461df54425c43ee87c6a949` |
+| RZ09-0509 / 1.06 | `790801ff8ccc09606dbd56315968747d1a00919d7dd51a5595c60c8d982d29e4` | `33ad14c9b8a52bde77295a659a2a86c34709c2326e72a75a1e7af9c0e237dcb8` |
+| RZ09-0529 / 4.01 | `3d6ccdc674b135419843832929ef8844b9ec8035ba8d1aef6e7a8e0075f43072` | `c45b52341d996eeba9b1ee6554c598f872e799eca39dfdcbab180a8deba46820` |
+
+All five signed BIOS revisions program the fixed `2E/2F` PCI decode bit
+from `OemBoardPei` in the boot-block firmware volume `FV_BB`. This module
+uses a TE image under GUID `E90CF8BD-D50C-40D5-9D5F-1F8D340B86C8`.
+Its entry jumps directly to the initialization code, which passes
+`2E` to the fixed-decode helper. The helper selects mask `1000`
+for bit 12 of the 16-bit PCI word at `00:1f.0` offset `82`.
+DI780 and KI890 also OR the mask into DMI private register `2774`.
+KI8100 writes the same updated PCI word to both registers. KI8110
+uses an MMIO PCI helper that writes the aggregate enable word when
+it changes. The KI8110 trace has yet to establish a matching DMI write,
+so the PCI store alone does not establish forwarding on RZ09-0529.
+[Intel PCH fixed decode and sideband target table](https://cdrdv2-public.intel.com/743835/743835-004.pdf)
+· [Intel Alder Lake EDK2 register definitions](https://www.mail-archive.com/devel%40edk2.groups.io/msg63786.html)
+
+The offsets below are relative to the TE `.text` section, which begins
+at RVA `220` and TE file offset `A0` in each image. The last column
+identifies the subsequent early-boot sequence that selects `40` and
+`41` through port `302` and writes zero to each through port `303`.
+
+| Model / BIOS | `OemBoardPei` TE SHA-256 | `2E` setup → decode helper | PCI write / DMI write | `302/303` setup |
+| --- | --- | --- | --- | --- |
+| RZ09-0423 / 2.01 | `fd8fa993c1d018b6700846a0061b273a236588e527b9fbc613b31b7d0b2f8e86` | `347 → B40` | `C06 / C19` | `380–39F` |
+| RZ09-0484 / 2.04 | `e35cf4e78432a81a807311115bbb282801d6c0668c981c3d1ff78b3b24ee360a` | `33C → AF1` | `BB6 / BC9` | `375–394` |
+| RZ09-0484 / 2.09 | `28379a02684f52e6750ec6f79c49e3b24894994b448fecaf669eec4b16c26e8c` | `33C → AF1` | `BB6 / BC9` | `375–394` |
+| RZ09-0509 / 1.06 | `178c19616966699dbb4edcd1bfba6ef5f96fdbeb20e75cb9e41ebfa03d342cc8` | `34B → B14` | `BF1 / BE8` | `384–3A3` |
+| RZ09-0529 / 4.01 | `1f36973310ddefbaf36e50f405dd590a7565d55a568424b18c20fabc531dfc2a` | `2EF → 479` | `A83 → 1A66 / open` | `321–346` |
+
+The recovered DSDTs also define `RRIO` cases `0C/0D` for this bit.
+None of the four models' recovered main volumes contains an AML caller
+to `RRIO`. The PEI path establishes boot-time configuration and
+secondary mailbox initialization independently of AML. It leaves the
+installed post-boot decode, ongoing selector ownership, and third PWM
+readback open. An exact-host PCI config read after a normal boot can
+check the fixed decode bit without touching an EC selector or mailbox.
+The standard public hw-probe PCI logs collect device descriptions
+without a config-space hex dump, so they cannot supply this word.
+[hw-probe PCI collection](https://github.com/linuxhw/hw-probe/blob/master/hw-probe.pl#L6035-L6111)
+Windows documents arbitrary PCI configuration reads through the bus
+driver interface or a kernel IRP. The investigation found no supported
+user-mode equivalent for this word. [Microsoft PCI configuration access](https://learn.microsoft.com/en-us/windows-hardware/drivers/pci/accessing-pci-device-configuration-space)
+
+The KI890 2.09 PCH DXE and SMM listings have no identified direct
+write to this word. The reviewed S3 save-state module walks boot-script
+records, so a direct-address scan cannot rule out a later write via a
+record or an indirect PCI helper.
+
+On a matching host already running Linux, the narrow capture is:
+
+```bash
+cat /sys/class/dmi/id/{sys_vendor,product_name,bios_version,ec_firmware_release}
+sudo setpci -s 0000:00:1f.0 VENDOR_ID DEVICE_ID 82.W
+```
+
+Keep the vendor/device pair with the 16-bit word and the BIOS and EC
+versions. The mask for fixed `2E/2F` forwarding is `0x1000`. A set bit
+shows that fixed forwarding is enabled at the time of the sample. A
+clear bit only describes that fixed route. A missing or failed read,
+or an all-ones value, leaves decode unknown. The capture does not
+enter Super I/O configuration, issue an EC command, or record machine
+serials. [pciutils setpci manual](https://github.com/pciutils/pciutils/blob/master/setpci.man)
+· [Linux DMI attributes](https://github.com/torvalds/linux/blob/master/drivers/firmware/dmi-id.c)
+
+The KI890 2.09 and DI780 2.01 BIOS default stores also contain
+`PchSetup` under GUID `4570B7F1-ADE8-4943-8DC3-406472842384`. In
+KI890, `PolicyInitAdvancedDxe` has a conditional path that reads
+that variable at RVA `1AB0` and updates two configuration blocks.
+The recovered consumers use those blocks in the DXE NHLT audio path
+and the PCI device override table path. That trace did not reach a
+write to the Super I/O decode bit. The policy modules and disassembly
+are retained with the KI890 evidence.
+
+The Blade 18 DSDTs bind `ECRR` to the same primary `300/301` mailbox.
+`TBCC` calls it for one byte at `80B82`. The method tries to acquire the ACPI
+mutex `ECMT`, then stages and publishes D0 regardless of the acquire
+result. It polls command zero and checks status `80`, with no separate
+callback drainage check. The recovered Blade 18 volumes contain no
+AML caller to `TBCC`. The DI780 Blade 17 DSDT has the `300/301`
+mailbox and its generic access helpers, without `TBCC` or `ECRR`.
+No AML caller to the generic command publishers `BMCR` or `BMCW` was
+found on any of the four. These observations constrain the AML path
+while leaving runtime access from other firmware or host code open.
+
+#### Display-mux firmware shares both mailboxes
+
+All five expanded BIOS revisions contain the `TpvSmm` module with GUID
+`8AB1D576-5977-4A89-9414-099D90B53E79`. Its software-SMI callback uses
+the same primary and legacy windows as the candidate Fan Stop path.
+The recovered SSDTs on every revision contain a byte-identical `MXDM`
+method. For modes 1–4 it stores the requested display-mux mode and writes
+`B8` to the software-SMI field. On KI890 2.09 the field is in DSDT
+region `SPRT` and the trace runs from `SSDT-B3B838.dsl:103–123` to the
+SMM registration and callback. The table and module evidence identify
+a conditional runtime path. It has not been observed during a physical
+Fan Stop trial.
+[EDK II software-SMI dispatch definition](https://github.com/tianocore/edk2/blob/master/MdePkg/MdePkg.dec#L1286-L1287)
+
+| Model / BIOS | SMI registration call RVA | Callback call to primary publisher | Primary A1 publication instruction | Legacy port setup |
+| --- | --- | --- | --- | --- |
+| RZ09-0423 / 2.01 | `1AAE` | `1900 → 1D0C` | `1D8D` | `1777` |
+| RZ09-0484 / 2.04 and 2.09 | `1AA2` | `18F4 → 1D00` | `1D81` | `176B` |
+| RZ09-0509 / 1.06 | `1AA2` | `18F4 → 1D00` | `1D81` | `176B` |
+| RZ09-0529 / 4.01 | `196B` | `18A5 → 1A10` | `1AAC` | `170D` |
+
+The primary publisher polls command zero, clears and stages the shared
+descriptor, writes the bank-zero `C0` payload, publishes `A1`, then polls
+and checks status `80`. Its distinct target index still uses the same
+selectors, descriptor, payload and status as Fan Stop. The callback
+also has a legacy `10/0A` request with the same index and reply registers
+as the proposed `11/E3` fence. The command-zero poll can pass while a
+different caller has staged a descriptor or selected a port index and
+has yet to publish. Closing Synapse or holding an application mutex
+cannot establish exclusivity against this firmware path. A mailbox-based
+implementation needs a coordination mechanism that covers display-mux
+invocation through Auto handback, or an independently established route
+that avoids these windows. The extracted module pins, checksum-verified
+SSDT spans and disassembly checks are under
+`artifacts/model-expansion/ki890-host-bios/`.
+
+KI890's `SSMP` field uses AML's `Lock` rule. That does not place the
+raw host mailbox I/O under the ACPI Global Lock. Windows reserves its
+acquire and release requests for internal use, and the traced SMM
+publisher shows no corresponding lock around its mailbox sequence.
+[ACPI Global Lock specification](https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html)
+· [Microsoft ACPI driver interfaces](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/)
+
+The separate `RECR` path submits `80` through ACPI EC offsets
+`F8/F9/FA`. All four pinned EC images handle it at `9484`, read
+`80700 + byteIndex` inline, and clear the command. The legacy
+opcode `12` reaches the same address window through its separate
+helper at `9468`. This RAM window cannot
+reach either `F01808` or the feedback copy at `80536`. The KI890 BIOS
+field called `PWMV` is used by a keyboard LED brightness method and
+supplies no fan-duty readback.
+
+The KI890 2.09 and KI8100 1.06 `TFN1._FST` methods use the
+`H_EC` template. Its `_STA` returns zero, `ECAV` starts at zero
+with no enabling assignment in the recovered tables, and `ECRD`
+returns zero. The KI8110 4.01 `TFN1/TFN2._FST` methods check for
+`H_EC.DPTF.GFNS`, which has no definition in the recovered tables.
+They pass fan IDs zero and one and preserve placeholder values if
+the hook is absent. These interfaces supply no independent third
+PWM reading.
+
+The local manifests, extracted DSDTs and replay scripts are under
+`artifacts/model-expansion/ki890-host-bios/`,
+`screen0423/host-bios/`, and `intel0529/bios-401/`.
+
+### EC-native USB selector candidate
+
+The pinned images also contain a separate USB device descriptor for
+`1532:F003`, device release `0100`, at `2AE00/2B258/2A0E4/2A874`
+on 0423/0484/0509/0529 respectively. This is distinct from each model's
+keyboard MCU product ID. The KI890 descriptor calls it Razer EC and
+declares two HID interfaces and one vendor interface.
+
+On KI890 the ordinary event table reaches USB state handling through
+`1D63A → 69A8`. The precheck at `C6A4` returns a constant `FF`.
+The pending flag `80CF` and zero state `80D4` select `22424`.
+With `80D6` zero, that routine reaches the initializer at
+`222E0 → 7C06 → 79A0` and sets `80D6` to one. Nonzero `80D4` or an
+`80D6` value of one takes the `7B10` route instead. The inspected path
+does not identify a board strap, a host-visible enable switch, or the
+state of those bytes during a retail boot. The USB SET_REPORT handler
+dispatches the 90-byte report before scheduling the status stage.
+The EC-local `0D/02` handler stores the selector at `8035F`. A fresh
+`0D/82` reads that byte directly on all four images at
+`11308/1202C/1257C/128EC` on 0423/0484/0509/0529. If the endpoint
+enumerates, that can establish the selector at dispatch time.
+It carries no transaction ID and cannot verify restored override or
+staged duty. This path bypasses the keyboard MCU's I²C staging and
+selector cache. On KI890, the separate `0D/84` table reads speed
+or configuration RAM and supplies no actual third PWM reading.
+
+The KI890 SET_REPORT parser at `120D4` dispatches class `00` at
+`11EB0` and class `0D` at `11FCE`. Its accepted classes
+`02/03/04/0A` have no getter implementation in this path. Class
+`00/02` stages 22 bytes from the request and `00/82` echoes those
+staged bytes. The implemented thermal getters return constants,
+selector state, or thermal configuration. This trace found no path
+from a native USB getter to actual PWM3 at `F01808` on KI890.
+
+An exact-board enumeration is still needed to establish whether the
+EC USB endpoint is connected and visible to the host. The selector
+round trip would also leave the captured override and staged duties to
+restore through separately reviewed operations. Neither KI890
+revision's recovered components or expanded main volume contain the
+EC USB device identity literals. That static scan leaves host
+enumeration open.
+
+Seven full Linux USB inventories from six RZ09-0423 hosts list the
+model's keyboard device `1532:028B`. None lists `1532:F003`. The
+matching DMI records report EC revisions 1.02 and 1.03. Two RZ09-0509
+hosts likewise list `1532:02B8` and no `1532:F003`, both at EC revision
+1.01. These are negative observations for normal enumeration at those
+revisions. The decoded DI780 1.05 and KI8100 1.02 images remain untested
+on their respective boards. [RZ09-0423 USB inventories](https://github.com/linuxhw/LsUSB/tree/3b1ee387e93df2a09ebc82df7a3cd0b2298a5265/Notebook/Razer/Blade/Blade%2017%20-%20RZ09-0423)
+· [Pinned DMI records](https://github.com/linuxhw/DMI/tree/57b21bc6fdd863380e99c228c22aafcd1509528c/Notebook/Razer/Blade)
+· [RZ09-0509 probe 46be4bc579](https://linux-hardware.org/?probe=46be4bc579&log=lsusb)
+· [RZ09-0509 probe d0e4380367](https://linux-hardware.org/?probe=d0e4380367&log=lsusb)
+
+The public RZ09-0529 owner report includes USB descriptors for the
+laptop and cooling pad. That excerpt cannot establish whether the EC
+endpoint enumerates. [OpenRazer RZ09-0529 report](https://github.com/openrazer/openrazer/issues/2488)
+
+### Three-channel workflow and journal
+
+The shared duty coordinator now stages all three channels before
+entering FE and requires observed actual duty for all three. The journal
+binds the third target at creation and rejects missing third-stage,
+third-duty or third-tach observations. Auto restores the captured
+selector, override and changed staging bytes in that order. Simulation
+covers the round trip and fencing when readback is lost after submission.
+The live guardian still admits only two-channel contracts. Connecting
+the three-channel workflow requires independent third-duty readback and
+a completion contract that protects Auto through handback.
+
+## Seven models with missing receiver evidence
+
+| Model | New evidence | Remaining EC evidence |
+| --- | --- | --- |
+| RZ09-0300 | Two exact DA530 selectors, SSID `1A582004`, in the signed Intel ME carriers. | D3 BIOS and the additional Intel ME packages have yielded no laptop EC implementation. |
+| RZ09-0301 | Official keyboard firmware `1.00.01` for USB `1532:0245`, decoded and traced through the thermal I²C peer. | Receiver zero handling, fresh actual duty, tach provenance, and verified Auto. |
+| RZ09-0328 | Razer-signed DA550 BIOS 1.03 with SSIDs `1A582011` and `1A58200C`. The carrier includes BIOS and Intel ME. | An exact EC implementation or equivalent vendor contract. |
+| RZ09-0351 | Two signed OL510 selectors pin SSID `1A58200D`. They select Intel ME payloads. | An attributable, usable OL510 EC image. The exact-board dump mentioned in the repair post is restricted and comes from a board reported unable to start. |
+| RZ09-0370 | Two older Razer-signed updaters contain the same P1106 BIOS image. Exact selectors include SSIDs `1A582013` and `1A582014`. | Both packages select BIOS only. The EC side of the BIOS mailbox remains unidentified. |
+| RZ09-0482 | Microsoft-signed public catalog capsule for PI490 BIOS 1.06, with verified INF and ROM membership. | The older image retains the conditional OEM fan hook and the generic EC mailbox. The [keyboard MCU bridge](fan-stop-pi490-mcu-bridge-review.md) still ends at the receiver. |
+| RZ09-0508 | Exact Synapse product 694 advertises firmware through the already reviewed BIOS 1.06 article. | PI4100's EC implementation and its fan contract. |
+
+Razer's certification report identifies `PI411_MB` for its RZ09-0370
+sample. The matching 2101C089B board photos confirm that silkscreen but
+do not resolve the EC marking. A repair thread labeled RZ09-0370 shows
+`APF21008_MB` in its original photo and lists an RTX 3070 Ti. Those
+identifiers match the RZ09-0427 filing and specifications, so the photo
+cannot identify the RZ09-0370 receiver.
+[0370 test report](https://fcc.report/FCC-ID/RWO-RZ090368/5566905.pdf)
+· [0370 photo exhibit](https://fccid.io/RWORZ090368/Internal-Photos/Internal-Photos-5566766)
+· [Repair board photo](https://appatt.chinafix.com/pic/20250703/175150517415748_523.jpg)
+· [0427 filing](https://fccid.io/RWO-RZ090368QCNFA/User-Manual/User-Manual-5876422.pdf)
+· [0427 specifications](https://mysupport.razer.com/app/answers/detail/a_id/5915/)
+
+An original repair close-up from a unit reported as RZ09-0370 shows
+`IT8320VG-256` on the ITE package. The photo does not include the board
+silkscreen, so retain this as a controller lead for PI411. The IT8320
+uses embedded flash. Dataman lists the exact marked BGA144 part for
+its socket programmer. Chromium's IT8320 route uses an external I²C
+debug adapter and a waveform that enters DFU. This makes a preserved
+original read from an exact PI411 board the acquisition target. Neither
+route establishes a normal-boot, in-system read on this laptop.
+[Repair photo and model report](https://www.reddit.com/r/AskElectronics/comments/1iahi00/what_are_these_components_and_are_they_difficult/)
+· [Original close-up](https://i.redd.it/5k6z8uhxxcfe1.jpg)
+· [Dataman exact device listing](https://www.dataman.com/blogs/latest-news/new-database-released-11-april-2024)
+· [Chromium IT8320 reference](https://chromium.googlesource.com/chromiumos/platform/ec/+/08f5a1e6fc2c9467230444ac9b582dcf4d9f0068/util/iteflash.md)
+
+The retained BIOS, UEFI and PSP members for 0370, 0482 and 0508 were
+rechecked using four firmware fingerprints present in all four pinned
+Blade 17/18 EC images. None matched the `ITE8320EC` tag, the boot magic,
+the vector prefix or the reset prologue. The same check covered all 15
+decoded blocks of 0370 BIOS 1.08_v3 and both older 0370 BIOS payloads.
+This excludes those fingerprints in the scanned contents. A receiver
+built with a different layout could lack them.
+[Razer 0370 BIOS 1.08_v3](https://mysupport.razer.com/app/answers/detail/a_id/5502/)
+
+The RZ09-0301 keyboard carrier has SHA-256
+`58f880cc46a64379131e7edc3d1a8c63418dc2989179d3a514d6d79ea38e49e5`.
+The 3,673 Intel HEX records yield 58,892 bytes, SHA-256
+`2b0073e46d07119027a44136f9cc9ca25d8ebd072418193e9a6f36c267720c98`.
+The keyboard parser's class `0D` handler at `9C42` stages zone 1/2 targets
+and forwards their raw bytes to wire address `B0`, registers `1B/1C`.
+This includes zero. The mode worker writes the staged profile to `1A`,
+commit value 5 to `0A`, then the staged mode to `36`. The current-speed
+command `0D/88` at `9E44` reads a separate cache populated by a two-byte
+I²C read of register `08` at `2960`. The target GET returns the same
+cache that target SET populates. Current-speed GET itself does not initiate
+a fresh transfer. [Razer keyboard updater](https://mysupport.razer.com/app/answers/detail/a_id/1967/)
+· [Exact Synapse command definitions](https://apps.razer.com/synapse/products/581/mw/rzDevice25.f668146da6ee1d0b3b6c.js)
+
+Exact product 624/669/694 Synapse resources expose ordinary fan mode and
+speed paths. The shared duty method definitions do not establish a working
+exact-model duty interface. In particular, the PI490 MCU's named duty
+command is rejected. [Product 624](https://apps.razer.com/synapse/products/624/mw/installer-manifest.json)
+· [Product 669](https://apps.razer.com/synapse/products/669/mw/installer-manifest.json)
+· [Product 694](https://apps.razer.com/synapse/products/694/mw/manifest.json)
+
+Package sources include the
+[older PI410/PI411 updater](https://dl.razerzone.com/drivers/Razer%20Blade%2014%22%20%282021%29%20%7C%20RZ09-0370/RazerUpdater_v1.1.1.3_PI410_PI411-BIOSv0106v2.exe),
+[PI490 catalog capsule](https://www.catalog.update.microsoft.com/ScopedViewInline.aspx?updateid=7dba8797-85b4-4d79-91b7-5f524c75ad21),
+[RZ09-03519 downloads](https://mysupport.razer.com/app/answers/detail/a_id/5655/),
+and [OL510 repair report](https://vlab.su/viewtopic.php?f=35&p=1129927&t=151751).
+
+### Receiver acquisition and PI490 speed feedback
+
+RZ09-0300 has a separate original 8 MiB ITE8390 flash listing for the
+DA530 board in `03009E76-R3U1`. It is access-restricted and the donor did
+not POST. On RZ09-0301, the original paired reads from the CH530 FCS V3.0
+thread identify two physical flash packages. A separate listing titled
+FSC V3.0 offers an 8 MiB image,
+but access and donor provenance are missing, and the 8 MiB package still
+needs to be tied to the receiver. CH530 is the first acquisition target
+because its exact keyboard transport already carries zero to the receiver.
+[DA530 original read](https://vinafix.com/threads/razer-rz09-03009e76-r3u1.44603/)
+· [CH530 original pair](https://vinafix.com/threads/bios-rz09-0301-9th-generation.38915/)
+· [Second CH530 listing](https://vinafix.com/threads/rz09-0301-ch530-mb-fsc-v3-0.41761/)
+
+Razer's public index lists BIOS and keyboard updates for RZ09-0301.
+The recheck identified no separate receiver package or additional
+public receiver bytes for the seven models. The adjacent signed
+Charlotte2 EC 1.03 carrier, SHA-256
+`bc61e2b1024ef3e6fffa1da4ad55788213044c92d4df9d76ddbccd0b1f260b22`,
+contains an EC image. Its three selectors bind only RZ09-02886,
+RZ09-02887 and RZ09-02888 with SSID `1A582002`. They do not include
+RZ09-0301.
+[Razer firmware index](https://mysupport.razer.com/app/answers/detail/a_id/4166/kw/Nari%20downloads)
+· [RZ09-0301 support and downloads](https://mysupport.razer.com/app/answers/detail/a_id/3683/)
+· [RZ09-0288 EC updater](https://mysupport.razer.com/app/answers/detail/a_id/1991/)
+
+The Charlotte2 payload is a 256 KiB NDS32 image, SHA-256
+`4459b0e053b12f32cc3c77f2df97491b039eab7c4ba1c6492e4b3c9390df0950`.
+Its `ITE8390EC-V01.03` marker at `90` and reset vectors provide a
+positive control. Neither fingerprint was found in the retained
+BIOS/ME binaries and unpacked volumes for DA530, CH530 or DA550, or
+the two retained OL510 ME binaries.
+
+The Charlotte2 receiver initialization at `E83E → 1DC0A → 1DB92`
+sets the seven-bit I²C receive address to `58`. That matches the
+RZ09-0301 keyboard's write-address byte `B0`. Charlotte2's bank-zero
+table at `228DC` also shares target indices `1B/1C`. In this image
+`B8/B9` stage to `80394/80395` and `9C` is read-only scratch.
+The FE branch at `127BC → 12C6C` copies
+`8038E` to third PWM `F01808` at `12D10`, yet none of the eight
+mapped banks exposes either address. A matching reset header or
+I²C address does not establish the full receiver contract.
+[ITE receive address definition, p. 306](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
+
+The archived DA550 download category lists only BIOS 1.06.
+Archived CH530 and OL510 support pages list the already reviewed
+packages. The local `Razer\Update Tool` directory reported for DA550
+matches the outer carrier's own extraction destination.
+[Archived DA550 category](https://web.archive.org/web/20220819164454id_/https://drivers.razersupport.com/index.php?_m=downloads&_a=view&parentcategoryid=1004&pcid=992&nav=0,350,992)
+· [Archived CH530 downloads](https://web.archive.org/web/20230304115003id_/https://mysupport.razer.com/app/answers/detail/a_id/3683)
+· [Archived OL510 downloads](https://web.archive.org/web/20220413011029id_/https://mysupport.razer.com/app/answers/detail/a_id/3919)
+
+The archived hardware categories also led to earlier signed C3 and
+D3 ME 12.0.38.1430 carriers. C3 binds RZ09-03017/03018 with SSID
+`1A582005`. D3 binds RZ09-03009/03006 with SSID `1A582004`.
+Both select the same 15-partition Intel ME payload, SHA-256
+`32ecbbd7e4003382e14c018ea97d61013ab58cd39d3ebe02e00883e76264ea8f`.
+All four selectors leave the EC version and executable fields empty.
+[Razer C3 ME carrier](https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20Mid%202019/RazerUpdater_v1.1.1.2_C3-MEv120381430.exe)
+· [Razer D3 ME carrier](https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20Mid%202019%20-%20Base/RazerUpdater_v1.1.1.2_D3-MEv120381430.exe)
+
+For acquisition, prefer a preserved original exact-board dump.
+ITE's published Linux download-board utility accepts an input
+image and uses its read routine internally for verification. It
+has no dump-only CLI. Chromium's `iteflash --read` enters debug
+mode and changes the target's execution state before reading.
+That requires separate bench review and board wiring evidence.
+[ITE tool source](https://www.ite.com.tw/upload/2024_01_23/6_20240123162336wu55j1Rjm4.bz2)
+· [Chromium ITE tool entry point](https://chromium.googlesource.com/chromiumos/platform/ec/+/d1e7a27efbc80e282b3917d1bef7a9a944c00eeb/util/iteflash.cc#2492)
+
+DA550 MP V4.0 reports identify IT8390E. The CH551 donor post identifies
+its original pair as RZ09-0330 within a thread titled RZ09-0328.
+A separate OL510 PVT V1.0 board photo
+records distinct BIOS and EC flash locations on the owner's unit.
+The DA550 and OL510 searches still need attributable receiver bytes.
+[DA550 board reports](https://vinafix.com/threads/razer-da550-mb.46075/page-2)
+· [CH551 donor report, post 8](https://vinafix.com/threads/rz09-0328-ch551-mb.41122/post-279527)
+· [OL510 owner photo and report](https://winraid.level1techs.com/t/looking-for-ec-firmware-for-a-razor-blade-15-2020-base-rz09-03519/107897)
+
+PI490 keyboard firmware 1.04.00 feeds HID current speed (`0D/88`)
+from two bytes read at wire address `B0`, starting at register `08`.
+The worker updates its cache only on a successful transfer, and the
+HID getter neither forces that transfer nor reports the cache age.
+Synapse's Auto UI scales those values by 100 RPM per count. The
+receiver's tach producer and actual PWM remain unverified. The
+PI490 and PI4100 native firmware-version exports read the EC version
+from the Windows BIOS registry. They provide no independent EC read.
+The reviewed PI410/PI411 native library lacks that export. SMBIOS
+Type 0 also carries the EC firmware version and supplies no receiver
+image or acquisition interface. [DMTF SMBIOS specification, §7.1](https://www.dmtf.org/sites/default/files/standards/documents/DSP0134_2.7.1.pdf)
+· [PI490 keyboard updater](https://mysupport.razer.com/app/answers/detail/a_id/13877/)
+· [Exact device class](https://apps.razer.com/synapse/products/669/mw/rzDevice25.0b7f4b3291f821b73ff6.js)
+· [Synapse policy](https://apps.razer.com/synapse/products/669/mw/6737.5791b4f2132a8ffb5846.js)
+
+The older DA550 carrier has SHA-256
+`02e23deb63ef703dbdb5349e33590e7fa9fc9a3eb426a4d63e3fc3f6285e3d20`.
+All 15 NSIS blocks were accounted for. The batch selects a 16 MiB
+`Dana5_0103.bin` and an Intel ME image. The DSDT matches BIOS 1.06, and
+the 55 new body hashes did not identify a receiver payload.
+[Razer DA550 BIOS 1.03 carrier](https://dl.razerzone.com/drivers/Razer%20Blade%2015%E2%80%9D%20Base%20%282020%29%20%7C%20RZ09-0328x/RazerUpdater_v1.1.1.2_DA550-BIOSv0103.exe)
+
+The public Microsoft catalog returned the previously examined PI490
+BIOS 1.06 as the positive control. Exact capsule GUID searches and LVFS
+stable and testing metadata yielded no new attributable AMD receiver
+artifact. Eight signed exact-model Synapse host resources exposed
+firmware-version and touchpad tooling. Their bounded static inventories
+identified no receiver image. Razer's recovery service requires account
+and serial binding and documents Windows recovery. These results bound
+the public sources checked. [Microsoft Update Catalog](https://www.catalog.update.microsoft.com/Search.aspx?q=Razer%20Firmware)
+· [Razer recovery service](https://mysupport.razer.com/app/answers/detail/a_id/6300/)
+
+Detailed local proof and input manifests are under
+`artifacts/model-expansion/bram3-followup/`,
+`primary-reader-followup/`, `intel-missing-ec-followup/`, and
+`amd-missing-ec-followup/`. Later proof and acquisition results are under
+`bank-ownership-model/`, `bank-ownership-followup/`,
+`intel-receiver-next/` and `amd-receiver-next/`. The interrupt census,
+trigger documents, and most recent acquisition results are in
+`reader-resolution-next/`, `trigger-resolution-next/`,
+`intel-receiver-resolution/`, and `amd-receiver-resolution/` under the
+same artifact root. `keyboard-bus-ownership/` retains the MCU byte
+checks and the one-notification model. The reader proof hashes all four EC images,
+checks the opcode paths and calls, and reproduces the ordering model.
+The package work verified signatures or catalog membership and inspected
+the decoded contents offline. Runtime admission remains open for these
+eleven models.

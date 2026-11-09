@@ -32,15 +32,26 @@ OpenBlade 是一款免费的 Razer Blade 笔记本管理工具，在 Windows 系
 | --- | --- |
 | Razer Blade 16 (2026) | `RZ09-0581` |
 | Razer Blade 16 (2025) | `RZ09-0528` |
-| Razer Blade 14 (2025)，实验性支持 | `RZ09-0530` |
-| Razer Blade 16 (2023)，实验性支持 | `RZ09-0483` |
-| Razer Blade 14 (2023)，实验性支持 | `RZ09-0482` |
-| Razer Blade 18 (2023)，实验性支持 | `RZ09-0484` |
-| Razer Blade 15 Base (Early 2020)，实验性支持 | `RZ09-0328` |
+| Razer Blade 18 (2025) | `RZ09-0529` |
+| Razer Blade 14 (2025) | `RZ09-0530` |
+| Razer Blade 14 (2024) | `RZ09-0508` |
+| Razer Blade 16 (2024) | `RZ09-0510` |
+| Razer Blade 18 (2024) | `RZ09-0509` |
+| Razer Blade 16 (2023) | `RZ09-0483` |
+| Razer Blade 14 (2023) | `RZ09-0482` |
+| Razer Blade 18 (2023) | `RZ09-0484` |
+| Razer Blade 14 (2022) | `RZ09-0427` |
+| Razer Blade 15 (2022) | `RZ09-0421` |
+| Razer Blade 17 (2022) | `RZ09-0423` |
+| Razer Blade 14 (2021) | `RZ09-0370` |
+| Razer Blade 15 Base (Early 2020) | `RZ09-0328` |
+| Razer Blade 15 Advanced (Early 2020) | `RZ09-0330` |
+| Razer Blade 15 Base (Late 2020) | `RZ09-0351` |
+| Razer Blade 15 Advanced (Mid 2019) | `RZ09-0301` |
+| Razer Blade 15 Base (2019) | `RZ09-0300` |
 
-可用功能因型号而异。OpenBlade 会自动启用实验性型号上的可用功能。
-兼容性信息见[使用指南](https://openblade.sh/zh-CN/)，
-各型号的具体功能和测试方法见[实验性支持](docs/zh-CN/experimental-blade-support.md)。
+OpenBlade 会根据你的型号显示可用设置。兼容性信息见[使用指南](https://openblade.sh/zh-CN/)，
+各型号的功能和测试详情见[型号支持指南](docs/zh-CN/experimental-blade-support.md)。
 
 如果你的 Razer 笔记本尚未列出，请在 OpenBlade 中选择**协助添加支持**。
 保存设备身份报告，然后按照
@@ -53,11 +64,13 @@ OpenBlade 是一款免费的 Razer Blade 笔记本管理工具，在 Windows 系
 
 - 电源模式、自动或固定风扇转速、自定义风扇曲线，以及 NVIDIA GPU 频率偏移。
 - 使用全功率电源适配器供电时，可开启 HyperBoost，支持搭配 Razer 散热底座或单独使用。
+- [Razer 散热底座](docs/cooling-pad.md)的目标转速、温度曲线、灯效及键盘灯光同步，
+  基于经审查的资料提供实验性支持。
 - 充电上限、电池健康信息，以及按供电方式分别保存设置。
 - [应用配置](docs/application-profiles.md)：按游戏或应用的完整可执行文件路径匹配，
   支持 HDR，并可为不同供电方式分别设置覆盖项。
-- [传感器历史图表和本地 CSV 记录](docs/telemetry-and-battery-history.md)、
-  Windows 电池历史，以及可先预览再保存的长续航预设。
+- [传感器历史图表和本地 CSV 记录](docs/telemetry-and-battery-history.md)，
+  并可查看 Windows 电池历史。
 - 键盘和顶盖标志灯效、响应灯效、静音指示，
   并支持 Razer `.chroma` 文件和可分享的 `.oblight` 预设。
 - 显示配置、亮度调节、功能键行的行为设置，以及通过 Fn 使用的 M1 至 M5 快捷键。

@@ -133,6 +133,7 @@ function New-LocalizationFixture {
             'build\installer\Bundle.wxs',
             'build\Extract-InstallerLocalization.ps1',
             'build\Extract-WinUiLocalization.ps1',
+            'build\localization\WinUiLocalization.psm1',
             'build\Update-LocalizationResources.ps1',
             'build\Update-PseudoLocalization.ps1',
             'src\OpenBlade.Tray.Core\DashboardCards.cs',
@@ -220,6 +221,74 @@ internal static class VariableFallbackFixture
 }
 '@,
         [Text.UTF8Encoding]::new($false))
+}
+
+function Set-FixtureXamlText {
+    param([string]$Fixture, [string]$Before, [string]$After)
+    $path = Join-Path $Fixture 'src\OpenBlade.Tray\MainWindow.xaml'
+    $text = [IO.File]::ReadAllText($path, $utf8)
+    if (-not $text.Contains($Before)) { throw "XAML fixture could not find '$Before'." }
+    [IO.File]::WriteAllText($path, $text.Replace($Before, $After), $utf8)
+}
+
+Assert-ValidatorFails -Expected 'without CustomResource' -Mutate {
+    param($fixture)
+    Set-FixtureXamlText $fixture '{CustomResource MainWindow_TextBlockPerformance.Text}' 'Performance'
+}
+Assert-ValidatorFails -Expected 'contains x:Uid' -Mutate {
+    param($fixture)
+    Set-FixtureXamlText $fixture 'Text="{CustomResource MainWindow_TextBlockPerformance.Text}"' `
+        'x:Uid="LegacyLookup" Text="{CustomResource MainWindow_TextBlockPerformance.Text}"'
+}
+Assert-ValidatorFails -Expected 'missing en-US resource' -Mutate {
+    param($fixture)
+    Set-FixtureXamlText $fixture '{CustomResource MainWindow_TextBlockPerformance.Text}' `
+        '{CustomResource MissingFixtureResource.Text}'
+}
+Assert-ValidatorFails -Expected 'property mismatch' -Mutate {
+    param($fixture)
+    Set-FixtureXamlText $fixture '{CustomResource MainWindow_ButtonCheckNow.Content}' `
+        '{CustomResource MainWindow_TextBlockPerformance.Text}'
+}
+Assert-ValidatorFails -Expected 'mixes CustomResource element keys' -Mutate {
+    param($fixture)
+    Set-FixtureXamlText $fixture 'MainWindow_ButtonCheckNow.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name' `
+        'MainWindow_ButtonExportProfiles.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name'
+}
+Assert-ValidatorFails -Expected 'malformed CustomResource' -Mutate {
+    param($fixture)
+    Set-FixtureXamlText $fixture '{CustomResource MainWindow_TextBlockPerformance.Text}' `
+        '{CustomResource MainWindow_TextBlockPerformance.Text, Fallback=Performance}'
+}
+Assert-ValidatorFails -Expected 'unsupported localization markup' -Mutate {
+    param($fixture)
+    Set-FixtureXamlText $fixture '{CustomResource MainWindow_TextBlockPerformance.Text}' `
+        '{CustomResourc MainWindow_TextBlockPerformance.Text}'
+}
+
+Import-Module (Join-Path $repository 'build\localization\WinUiLocalization.psm1') -Force
+$grammarFixture = @'
+<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:local="using:OpenBlade.Tray">
+    <!-- <TextBlock Text="Ignored comment" /> -->
+    <TextBlock Text='{CustomResource Grammar.Text}' local:CardReorder.IsHeader="True" />
+    <Button AutomationProperties.Name="{CustomResource Attached.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+            ToolTipService.ToolTip="{CustomResource Attached.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip}" />
+    <TextBlock Text="{x:Bind Value, Mode=OneWay}" />
+    <TextBlock Text="&#176;C" />
+    <TextBlock Text="&#215;" />
+    <TextBlock Text="&#183;" />
+    <TextBlock Text="Owner's choice, &quot;quoted&quot; {{braces}} &amp; more&#10;next line" />
+</Grid>
+'@
+$grammarProperties = @((Get-WinUiLocalizationTags $grammarFixture 'grammar fixture') | ForEach-Object Properties)
+if ($grammarProperties.Count -ne 4 -or
+    $grammarProperties[0].Key -cne 'Grammar.Text' -or
+    $grammarProperties[1].ResourceProperty -cne '[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name' -or
+    $grammarProperties[2].ResourceProperty -cne '[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip' -or
+    $grammarProperties[3].Value -cne "Owner's choice, `"quoted`" {{braces}} & more`nnext line") {
+    throw 'Shared WinUI localization parsing lost an attached property, entity, or punctuation literal.'
 }
 Assert-ValidatorFails -Expected 'duplicate key' -Mutate {
     param($fixture)
@@ -389,11 +458,18 @@ try {
     $newUid = 'MainWindow_TextBlockPERFORMANCE'
     $xaml = [IO.File]::ReadAllText($caseRenameXamlPath, $utf8)
     $updatedXaml = $xaml.Replace(
-        "x:Uid=`"$oldUid`"",
-        "x:Uid=`"$newUid`"")
+        "{CustomResource $oldUid.Text}",
+        "{CustomResource $newUid.Text}")
     if ($updatedXaml -ceq $xaml) {
-        throw "Case-only x:Uid fixture could not find '$oldUid'."
+        throw "Case-only CustomResource fixture could not find '$oldUid'."
     }
+    $boundaryFixture = @'
+    <TextBlock x:Uid="LocalizationAttributeBoundary" Text="Real title" local:CardReorder.IsHeader="True" />
+    <Expander x:Uid="LocalizationNativeHeader" Header="Real section" />
+'@
+    $rootEnd = $updatedXaml.LastIndexOf('</Grid>', [StringComparison]::Ordinal)
+    if ($rootEnd -lt 0) { throw 'Localization attribute fixture could not find the root grid.' }
+    $updatedXaml = $updatedXaml.Insert($rootEnd, $boundaryFixture)
     [IO.File]::WriteAllText(
         $caseRenameXamlPath,
         $updatedXaml,
@@ -410,7 +486,21 @@ try {
     $newEntries = @($renamedCatalog.root.data |
         Where-Object { [string]$_.name -ceq $newKey })
     if ($oldEntries.Count -ne 0 -or $newEntries.Count -ne 1) {
-        throw 'Case-only x:Uid rename did not replace the preserved resource key casing.'
+        throw 'Case-only CustomResource rename did not replace the preserved resource key casing.'
+    }
+    $boundaryText = @($renamedCatalog.root.data | Where-Object name -eq 'LocalizationAttributeBoundary.Text')
+    $boundaryHeader = @($renamedCatalog.root.data | Where-Object name -eq 'LocalizationAttributeBoundary.Header')
+    $nativeHeader = @($renamedCatalog.root.data | Where-Object name -eq 'LocalizationNativeHeader.Header')
+    if ($boundaryText.Count -ne 1 -or [string]$boundaryText[0].value -cne 'Real title' -or
+        $boundaryHeader.Count -ne 0 -or $nativeHeader.Count -ne 1 -or
+        [string]$nativeHeader[0].value -cne 'Real section') {
+        throw 'Localization must extract real Text/Header attributes without matching the IsHeader suffix.'
+    }
+    $extractedXaml = [IO.File]::ReadAllText($caseRenameXamlPath, $utf8)
+    if ($extractedXaml.Contains('x:Uid=') -or
+        -not $extractedXaml.Contains('Text="{CustomResource LocalizationAttributeBoundary.Text}"') -or
+        -not $extractedXaml.Contains('Header="{CustomResource LocalizationNativeHeader.Header}"')) {
+        throw 'WinUI extraction must convert new literal text to CustomResource without reintroducing x:Uid.'
     }
 }
 finally {

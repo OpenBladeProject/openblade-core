@@ -17,11 +17,15 @@ internal sealed class ExperimentalLightingOwnershipState
 
 internal sealed partial class ExperimentalBladePort
 {
+    private IReadOnlyList<RgbColor>? keyboardMirrorFrame;
+    private int keyboardMirrorColumns;
+    private int keyboardMirrorRows;
+    private bool keyboardMirrorTransitionPending;
     public LightingRendererOwnershipState OwnershipState =>
         (LightingRendererOwnershipState)Volatile.Read(ref lightingOwnership.Ownership);
 
     internal static bool SupportsExperimentalLighting(ExperimentalBladeModel model) =>
-        model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x0255 or 0x02A0;
+        model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x0255 or 0x02A0 or 0x0245;
 
     internal static bool SupportsExperimentalKeyboardBrightness(
         ExperimentalBladeModel model,
@@ -31,7 +35,7 @@ internal sealed partial class ExperimentalBladePort
         ExperimentalBladeModel model,
         bool enabled)
     {
-        if (!enabled || !SupportsExperimentalLighting(model))
+        if (!enabled || !SupportsExperimentalLighting(model) || model.ProductId == 0x0245)
         {
             return new HashSet<LightingEffect>();
         }
@@ -71,6 +75,18 @@ internal sealed partial class ExperimentalBladePort
     internal static IReadOnlySet<LightingEffect> CreateObservedExperimentalLightingEffects(
         ExperimentalBladeModel model)
     {
+        if (model.ProductId == 0x0245)
+        {
+            // Exact581 UI catalog, discovery only. The separate writable-effects
+            // factory above returns empty for0245; no effect setter is admitted.
+            return new HashSet<LightingEffect>
+            {
+                LightingEffect.AmbientAwareness, LightingEffect.AudioMeter,
+                LightingEffect.Breathing, LightingEffect.Fire, LightingEffect.Reactive,
+                LightingEffect.Ripple, LightingEffect.Spectrum, LightingEffect.Starlight,
+                LightingEffect.Static, LightingEffect.Wave, LightingEffect.Wheel, LightingEffect.Tidal,
+            };
+        }
         var effects = new HashSet<LightingEffect>(CreateExperimentalLightingEffects(model, enabled: true));
         effects.Remove(LightingEffect.Sequence);
         if (model.ProductId == 0x02A0)
@@ -116,7 +132,7 @@ internal sealed partial class ExperimentalBladePort
                 : new HashSet<BreathingColorMode> { BreathingColorMode.Random };
 
     private static bool SupportsExperimentalLogo(ExperimentalBladeModel model) =>
-        model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x02A0;
+        model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x02A0 or 0x0245;
 
     private static bool SupportsUniformFrame(ExperimentalBladeModel model) =>
         model.ProductId is 0x029F or 0x02A0;
@@ -124,6 +140,11 @@ internal sealed partial class ExperimentalBladePort
     public async Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken)
     {
         RequireLightingModel();
+        if (model.ProductId == 0x0245)
+        {
+            // Its old matrix setter has no reviewed corresponding effect getter.
+            return null;
+        }
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -160,7 +181,7 @@ internal sealed partial class ExperimentalBladePort
     internal async Task<(LightingSettings? Lighting, LogoLightingMode? Logo)>
         ReadRecoveryLightingStateAsync(CancellationToken cancellationToken)
     {
-        if (!SupportsExperimentalLighting(model))
+        if (!SupportsExperimentalLighting(model) || model.ProductId == 0x0245)
         {
             return (null, null);
         }
@@ -429,6 +450,7 @@ internal sealed partial class ExperimentalBladePort
         LightingSettings settings,
         CancellationToken cancellationToken)
     {
+        recoveryWriteGate.ThrowIfBlocked();
         RequireLightingModel();
         if (!IsSupportedLightingSetting(settings))
         {
@@ -464,6 +486,10 @@ internal sealed partial class ExperimentalBladePort
                 ?? standardEffect?.RenderFrame(TimeSpan.Zero)
                 ?? Blade18LightingAnimation.Render(settings, TimeSpan.Zero) : null;
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        bool mirrorCommitted = false;
+        keyboardMirrorTransitionPending = true;
+        keyboardMirrorFrame = null;
+        KeyboardLightingFrameStream.Clear(this);
         bool stoppedAnimation = animationCancellation is not null;
         bool submitted = false;
         bool frameWriteAttempted = false;
@@ -757,12 +783,17 @@ internal sealed partial class ExperimentalBladePort
 
             if (setOnlyFrame)
             {
+                if (settings.Effect == LightingEffect.Static)
+                {
+                    RecordKeyboardMirrorFrame([settings.Color], 1, 1);
+                }
                 if (animationRequest)
                 {
                     StartAnimationCore(lightingOwnership.Intent!, spatialEffect, sequenceEffect, standardEffect);
                 }
                 policy.Record("KeyboardLighting", "Readback", "Unavailable", submitted,
                     requested, "OwnedFrameIntent", "FrameColorReadbackUnavailable");
+                mirrorCommitted = true;
                 return;
             }
 
@@ -775,6 +806,7 @@ internal sealed partial class ExperimentalBladePort
             }
             policy.Record("KeyboardLighting", "Readback", "Confirmed", submitted,
                 requested, requested);
+            mirrorCommitted = true;
         }
         catch (DeviceStateContentRejectedException)
             when (startingHostFrameFromFault && !submitted)
@@ -811,6 +843,9 @@ internal sealed partial class ExperimentalBladePort
         }
         finally
         {
+            keyboardMirrorTransitionPending = false;
+            if (mirrorCommitted) { PublishKeyboardMirrorCore(); }
+            else { KeyboardLightingFrameStream.Clear(this); }
             operationGate.Release();
         }
     }
@@ -896,7 +931,7 @@ internal sealed partial class ExperimentalBladePort
     // RZ09-0484 capture observes selector 0 for setters. Queries follow that
     // pinned register for independent readback. See docs/blade18-observer-evidence.md.
     private static byte LogoStorageSelector(ExperimentalBladeModel model) =>
-        model.ProductId == 0x02A0 ? (byte)0 : LogoLightingProtocol.PersistentStorage;
+        model.ProductId is 0x02A0 or 0x0245 ? (byte)0 : LogoLightingProtocol.PersistentStorage;
 
     private static bool KeyboardSettingsMatch(
         LightingSettings confirmed,
@@ -906,8 +941,32 @@ internal sealed partial class ExperimentalBladePort
         && confirmed.Color == requested.Color
         && Equals(confirmed.Parameters, requested.Parameters);
 
-    private void SetLightingOwnership(LightingRendererOwnershipState value) =>
+    private void SetLightingOwnership(LightingRendererOwnershipState value)
+    {
         Volatile.Write(ref lightingOwnership.Ownership, (int)value);
+        if (value is LightingRendererOwnershipState.None or LightingRendererOwnershipState.Faulted)
+        {
+            keyboardMirrorFrame = null;
+            KeyboardLightingFrameStream.Clear(this);
+        }
+    }
+
+    private void RecordKeyboardMirrorFrame(IReadOnlyList<RgbColor> colors, int columns, int rows)
+    {
+        keyboardMirrorFrame = colors;
+        keyboardMirrorColumns = columns;
+        keyboardMirrorRows = rows;
+        PublishKeyboardMirrorCore();
+    }
+
+    private void PublishKeyboardMirrorCore()
+    {
+        if (!keyboardMirrorTransitionPending && !disposed && IsOwnedFrameOwnership(OwnershipState)
+            && keyboardMirrorFrame is { } colors)
+        {
+            KeyboardLightingFrameStream.Publish(colors, keyboardMirrorColumns, keyboardMirrorRows, this);
+        }
+    }
 
     private void SetLightingFaulted()
     {
@@ -1009,6 +1068,7 @@ internal sealed partial class ExperimentalBladePort
         UniformLightingFrame frame,
         CancellationToken cancellationToken)
     {
+        recoveryWriteGate.ThrowIfBlocked();
         ArgumentNullException.ThrowIfNull(frame);
         if (!SupportsExperimentalUniformFrames(model, enabled: true))
         {
@@ -1107,6 +1167,7 @@ internal sealed partial class ExperimentalBladePort
             requireEcho: false,
             recordAcknowledgedSubmission: false).ConfigureAwait(false);
         onSubmitted();
+        RecordKeyboardMirrorFrame([color], 1, 1);
     }
 
     public Task SetPlaybackMuteIndicatorAsync(
@@ -1119,6 +1180,11 @@ internal sealed partial class ExperimentalBladePort
         CancellationToken cancellationToken)
     {
         RequireLightingModel();
+        if (model.ProductId == 0x0245)
+        {
+            // Independent controls never acquire an effect renderer.
+            return OwnershipState;
+        }
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool submitted = false;
         LightingRendererOwnershipState observed = OwnershipState;

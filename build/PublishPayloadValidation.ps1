@@ -171,13 +171,64 @@ function Assert-DynamicLightingIdentityAuthoringArtifacts {
     }
 }
 
+function Add-GuardianPublishPayload {
+    param(
+        [Parameter(Mandatory)][string]$Guardian,
+        [Parameter(Mandatory)][string]$Payload
+    )
+
+    # The helper references shared service types, but must never overwrite the
+    # independently published service apphost, dependencies or configuration.
+    $owned = @('OpenBlade.FanStop.Guardian.exe', 'OpenBlade.FanStop.Guardian.dll',
+        'OpenBlade.FanStop.Guardian.deps.json', 'OpenBlade.FanStop.Guardian.runtimeconfig.json')
+    $root = [IO.Path]::GetFullPath($Guardian).TrimEnd([IO.Path]::DirectorySeparatorChar)
+    $prefix = $root + [IO.Path]::DirectorySeparatorChar
+    foreach ($name in $owned) {
+        if (-not (Test-Path -LiteralPath (Join-Path $root $name) -PathType Leaf) -or
+            (Test-Path -LiteralPath (Join-Path $Payload $name))) {
+            throw "Guardian publish requires one new complete helper payload: $name"
+        }
+    }
+    foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse -Force) {
+        if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            -not $file.FullName.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Guardian publish contains an unexpected file identity.'
+        }
+        $relative = $file.FullName.Substring($prefix.Length)
+        if ($relative -in $owned) { continue }
+        $existing = Join-Path $Payload $relative
+        if (-not (Test-Path -LiteralPath $existing -PathType Leaf) -or
+            (Get-FileHash -LiteralPath $existing -Algorithm SHA256).Hash -ne
+            (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash) {
+            throw "Guardian shared dependency differs from the service payload: $relative"
+        }
+    }
+    # No copies occur until every shared dependency agrees byte for byte.
+    foreach ($name in $owned) {
+        [IO.File]::Copy((Join-Path $root $name), (Join-Path $Payload $name), $false)
+    }
+}
+
 function Assert-ServicePublishPayload {
     param([Parameter(Mandatory)][string]$Payload)
 
     Assert-DynamicLightingIdentityPayload -Payload $Payload
 
     $requiredSessionAgentFiles = @(
+        'OpenBlade.CpuTemperature.exe',
+        'OpenBlade.CpuTemperature.dll',
+        'OpenBlade.CpuTemperature.deps.json',
+        'OpenBlade.CpuTemperature.runtimeconfig.json',
+        'LibreHardwareMonitorLib.dll',
+        'PawnIO_setup.exe',
+        'PawnIO-NOTICE.txt',
+        'licenses\LibreHardwareMonitor-source.zip',
         'OpenBlade.Platform.dll',
+        'OpenBlade.FanStop.Core.dll',
+        'OpenBlade.FanStop.Guardian.exe',
+        'OpenBlade.FanStop.Guardian.dll',
+        'OpenBlade.FanStop.Guardian.deps.json',
+        'OpenBlade.FanStop.Guardian.runtimeconfig.json',
         'OpenBlade.SessionAgent.exe',
         'OpenBlade.SessionAgent.dll',
         'OpenBlade.SessionAgent.deps.json',
@@ -353,7 +404,7 @@ function Assert-FrameworkDependentProductPayload {
 
     [xml]$properties = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Directory.Build.props')
     $minimumVersion = [string]$properties.Project.PropertyGroup.OpenBladeMinimumDotNetRuntimeVersion
-    foreach ($application in @('OpenBlade.Service', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
+    foreach ($application in @('OpenBlade.Service', 'OpenBlade.FanStop.Guardian', 'OpenBlade.CpuTemperature', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
         $configurationPath = Join-Path $Payload ($application + '.runtimeconfig.json')
         $configuration = Get-Content -LiteralPath $configurationPath -Raw | ConvertFrom-Json
         $options = $configuration.runtimeOptions
@@ -430,6 +481,8 @@ function Assert-ProductionBundleFootprint {
         + [IO.Path]::DirectorySeparatorChar
     $forbiddenFileNames = @(
         'appsettings.Development.json',
+        'openblade-discovery.exe',
+        'openblade-status-cli.exe',
         'DirectML.dll',
         'onnxruntime.dll',
         'Microsoft.ML.OnnxRuntime.dll'

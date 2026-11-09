@@ -15,7 +15,36 @@ public sealed class ExperimentalEvidenceCatalogTests
             Assert.All(snapshot.FeatureEvidence, feature =>
             {
                 Assert.NotEmpty(feature.Sources);
-                if (feature.Feature == "AdapterPowerClassification")
+                if (feature.Feature == "FanStopAndGuardianAuto")
+                {
+                    Assert.Equal("FirmwareSourceBackedWithoutPhysicalValidation", feature.Basis);
+                    FanStopModelContract[] contracts = FanStopModelContract.All.Where(contract =>
+                        contract.Model == model.ModelNumber).ToArray();
+                    Assert.NotEmpty(contracts);
+                    Assert.Equal(contracts.Length + 1, feature.Sources.Count);
+                    Assert.Equal("https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
+                        feature.Sources[0]);
+                    foreach (FanStopModelContract contract in contracts)
+                    {
+                        Assert.False(contract.PhysicallyValidated);
+                        Assert.Equal(model.ProductId, contract.ProductId);
+                        Assert.Equal(model.ProductName, contract.Host.ProductName);
+                        string source = $"{contract.FirmwareIdentity};SHA256={contract.FirmwareSha256}";
+                        Assert.Contains(source, feature.Sources);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    }
+                }
+                else if (model.ThermalPolicy is not null)
+                {
+                    Assert.Equal("Supported", snapshot.SupportStatus);
+                    Assert.Equal("Pending", snapshot.PhysicalValidation);
+                    Assert.All(feature.Sources, source =>
+                    {
+                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
+                else if (feature.Feature == "AdapterPowerClassification")
                 {
                     Assert.Equal("SynapseSourceBacked", feature.Basis);
                     Assert.Equal(model.AdapterPowerEvidenceSource, Assert.Single(feature.Sources));

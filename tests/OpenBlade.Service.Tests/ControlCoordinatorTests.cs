@@ -1231,6 +1231,135 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(FanMode.Fixed, device.State.Fans);
     }
 
+    [Theory]
+    [InlineData(3700, 5300, FanMode.Fixed, FanMode.ManualCurve)]
+    [InlineData(3700, 5300, FanMode.ManualCurve, FanMode.Fixed)]
+    [InlineData(2200, 3800, FanMode.Fixed, FanMode.ManualCurve)]
+    [InlineData(2200, 3800, FanMode.ManualCurve, FanMode.Fixed)]
+    public async Task PresetRangedManualSubtypeTransition_ChangesTargetsWithoutAutomaticOrBalanced(
+        int minimum, int maximum, FanMode previous, FanMode requested)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var range = new FanSpeedRange(minimum, maximum, 100);
+        device.Capabilities = device.Capabilities with
+        {
+            ReportsPerformanceWithManualFans = true,
+            SupportsDirectManualFanTransitions = false,
+            FanSpeedRange = range,
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = range,
+            },
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Fixed,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            new(previous, maximum, ManualFanCurve.Default),
+            new(requested, maximum, ManualFanCurve.Default),
+            PerformancePreset.Balanced, null, default);
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Equal([requested], device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal(PerformancePreset.Balanced, device.State.Performance);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent, false)]
+    [InlineData(PerformancePreset.Balanced, null)]
+    public async Task PresetRangedManualSubtypeTransition_UnconfirmedBaselineBlocksWithoutBridge(
+        PerformancePreset reported, bool? hyperBoost)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var range = new FanSpeedRange(3700, 5300, 100);
+        device.Capabilities = device.Capabilities with
+        {
+            ReportsPerformanceWithManualFans = true,
+            FanSpeedRange = range,
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = range,
+            },
+        };
+        device.State = device.State with { Performance = reported, Fans = FanMode.Fixed, HyperBoostActive = hyperBoost };
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            new(FanMode.Fixed, 4500, ManualFanCurve.Default),
+            new(FanMode.ManualCurve, 4500, ManualFanCurve.Default),
+            PerformancePreset.Balanced, null, default);
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.Empty(device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+    }
+
+    [Fact]
+    public async Task PresetRangedManualSubtypeTransition_IndeterminateTargetStopsWithoutBridgeOrReplay()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var range = new FanSpeedRange(3700, 5300, 100);
+        device.Capabilities = device.Capabilities with
+        {
+            ReportsPerformanceWithManualFans = true,
+            FanSpeedRange = range,
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = range,
+            },
+        };
+        device.State = device.State with { Performance = PerformancePreset.Balanced, Fans = FanMode.Fixed, HyperBoostActive = false };
+        device.FanFailure = new BladeWriteException(WriteSubmissionState.Indeterminate, "uncertain target");
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            new(FanMode.Fixed, 4500, ManualFanCurve.Default),
+            new(FanMode.ManualCurve, 4500, ManualFanCurve.Default),
+            PerformancePreset.Balanced, null, default);
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.Equal(WriteSubmissionState.Indeterminate, outcome.WriteSubmissionState);
+        Assert.Equal([FanMode.ManualCurve], device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+    }
+
+    [Theory]
+    [InlineData(3700, 4300, 4500)]
+    [InlineData(2200, 3800, 4500)]
+    public async Task PresetRangedCurveToFixed_OutOfRangeTargetRejectsWithoutAutomaticOrBalanced(
+        int minimum, int maximum, int requestedRpm)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var confirmedRange = new FanSpeedRange(minimum, maximum, 100);
+        device.Capabilities = device.Capabilities with
+        {
+            ReportsPerformanceWithManualFans = true,
+            SupportsDirectManualFanTransitions = false,
+            FanSpeedRange = confirmedRange,
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = confirmedRange,
+            },
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Fixed,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            new(FanMode.ManualCurve, maximum, ManualFanCurve.Default),
+            new(FanMode.Fixed, requestedRpm, ManualFanCurve.Default),
+            PerformancePreset.Balanced, null, default);
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.False(outcome.WriteAttempted);
+        Assert.Empty(device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal(FanMode.Fixed, device.State.Fans);
+        Assert.Equal(PerformancePreset.Balanced, device.State.Performance);
+    }
+
     [Fact]
     public async Task DirectManualSubtypeTransition_DoesNotWriteAutomaticOrBalanced()
     {

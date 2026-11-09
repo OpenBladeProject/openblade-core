@@ -195,11 +195,19 @@ public sealed class WindowsBrokerInstalledStateVerifier(
     public async Task<BrokerPostInstallVerification> VerifyAfterInstallAsync(
         BrokerInstalledState before,
         OpenBladeVerifiedRelease expectedRelease,
-        CancellationToken cancellationToken) => await VerifyCurrentStateAsync(
-            before,
-            expectedRelease.Manifest.Version,
-            expectedRelease.Manifest.SourceRevision,
-            cancellationToken).ConfigureAwait(false);
+        CancellationToken cancellationToken)
+    {
+        if (expectedRelease.Manifest.SchemaVersion == 2)
+        {
+            BrokerInstalledState after = ReadInstalledState();
+            bool healthy = await ObserveServiceAsync(false, cancellationToken).ConfigureAwait(false)
+                == BrokerServiceObservation.Healthy;
+            return new(after.ProductVersion == expectedRelease.Manifest.CpuVoltageServiceVersion, healthy,
+                after.PayloadSha256 == before.PayloadSha256 && after.Version == before.Version && healthy);
+        }
+        return await VerifyCurrentStateAsync(before, expectedRelease.Manifest.Version,
+            expectedRelease.Manifest.SourceRevision, cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<BrokerPostInstallVerification> VerifyCurrentStateAsync(
         BrokerInstalledState before,
@@ -449,7 +457,8 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
     IBrokerInstallerProcessRunner processRunner,
     BrokerPaths paths,
     TimeProvider timeProvider,
-    ILogger<ApplyFixedInboxBrokerRequestHandler> logger) : IBrokerRequestHandler
+    ILogger<ApplyFixedInboxBrokerRequestHandler> logger,
+    IBrokerCpuVoltageDeployment? cpuVoltage = null) : IBrokerRequestHandler
 {
     public async Task<BrokerResponse> HandleAsync(
         BrokerRequest request,
@@ -460,10 +469,31 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
         ArgumentNullException.ThrowIfNull(enrollment);
         if (request.ProtocolVersion != BrokerRequestCodec.ProtocolVersion
             || request.RequestId == Guid.Empty
-            || request.Action != BrokerAction.ApplyFixedInbox)
+            || request.Action is not (BrokerAction.ApplyFixedInbox or BrokerAction.ApplyCpuVoltageInbox))
         {
             return Reject(request.RequestId, "invalid-request-contract");
         }
+
+        bool cpu = request.Action == BrokerAction.ApplyCpuVoltageInbox;
+        if (cpu && (!enrollment.CpuVoltageValidationEnabled || cpuVoltage is null))
+        { return Reject(request.RequestId, "cpu-voltage-not-enrolled"); }
+        // Acquiring a closed CPU lease can remove its previous staging. The
+        // unresolved deployment still owns that evidence, even after host exit.
+        if (await inFlightStore.LoadAsync(cancellationToken).ConfigureAwait(false) is not null)
+        {
+            return new BrokerResponse(
+                BrokerRequestCodec.ProtocolVersion,
+                request.RequestId,
+                BrokerResponseStatus.Indeterminate,
+                "unresolved-deployment");
+        }
+
+        IDisposable? installLease;
+        try { installLease = cpuVoltage?.AcquireInstallLease(); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or InvalidDataException or System.ComponentModel.Win32Exception)
+        { return Reject(request.RequestId, "cpu-voltage-host-unresolved"); }
+        using IDisposable? heldInstallLease = installLease;
 
         OpenBladeReleaseTrustPolicy trust = new(
             Enabled: true,
@@ -484,15 +514,6 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
         {
             logger.LogWarning(exception, "A deployment request was rejected because local development trust is invalid.");
             return Reject(request.RequestId, "local-dev-trust-invalid");
-        }
-
-        if (await inFlightStore.LoadAsync(cancellationToken).ConfigureAwait(false) is not null)
-        {
-            return new BrokerResponse(
-                BrokerRequestCodec.ProtocolVersion,
-                request.RequestId,
-                BrokerResponseStatus.Indeterminate,
-                "unresolved-deployment");
         }
 
         try
@@ -526,10 +547,9 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
                 timeProvider.GetUtcNow());
             string staging = paths.CreateRequestStagingDirectory(request.RequestId);
             stagingCreated = true;
-            downloaded = await inboxSource.StageAsync(
-                staging,
-                trust,
-                cancellationToken).ConfigureAwait(false);
+            downloaded = await (cpu
+                ? inboxSource.StageCpuVoltageAsync(staging, trust, cancellationToken)
+                : inboxSource.StageAsync(staging, trust, cancellationToken)).ConfigureAwait(false);
             OpenBladeVerifiedRelease independentlyVerified = OpenBladeSignedReleaseVerifier.Verify(
                 downloaded.ManifestBytes,
                 downloaded.SignatureBytes,
@@ -542,6 +562,9 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
                 throw new InvalidDataException(
                     "The local development deployment identity changed across verification boundaries.");
             }
+
+            if ((independentlyVerified.Manifest.SchemaVersion == 2) != cpu)
+            { throw new InvalidDataException("The signed release profile does not match the fixed action."); }
 
             if (independentlyVerified.Manifest.InstallationId != enrollment.InstallationId
                 || !string.Equals(
@@ -561,7 +584,8 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
                 BrokerDurableRecordStore.ComputeSha256(downloaded.ManifestBytes),
                 independentlyVerified.SigningKeyId,
                 independentlyVerified.Manifest.Sequence,
-                timeProvider.GetUtcNow());
+                timeProvider.GetUtcNow(),
+                independentlyVerified.Manifest.CpuVoltageServiceVersion);
             downloaded = downloaded with { VerifiedRelease = independentlyVerified };
             string expectedInstallerPath = Path.Combine(
                 staging,
@@ -629,6 +653,8 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
                     cancellationToken).ConfigureAwait(false);
             }
 
+            if (cpu) { cpuVoltage!.Prepare(request.RequestId, enrollment, downloaded.VerifiedRelease.Manifest); }
+
             await acceptedSequenceStore.ConsumeAsync(
                 downloaded.VerifiedRelease.Manifest.Sequence,
                 cancellationToken).ConfigureAwait(false);
@@ -695,7 +721,9 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
         }
 
         string installerResultDetail = execution.ExitObserved
-            ? "installer-exit-observed"
+            ? execution.ExitCode == 3010
+                ? "installer-exit-observed-reboot-required"
+                : "installer-exit-observed"
             : "installer-result-unknown";
         if (installerExitWasObserved && installerResultBindingFailed)
         {
@@ -746,13 +774,56 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
             postInstall.ExactTargetInstalled,
             postInstall.ServiceHealthy,
             postInstall.ExactPreviousStateRestored);
-        if (disposition is BrokerDeploymentDisposition.Succeeded
-            or BrokerDeploymentDisposition.RolledBack)
+        bool logsRetained = false;
+        if (disposition is BrokerDeploymentDisposition.Succeeded or BrokerDeploymentDisposition.RolledBack)
+        {
+            logsRetained = await BrokerInstallerLogRetention.RetainAndRecordAsync(
+                paths, durableRecords, request.RequestId, timeProvider.GetUtcNow(), logger)
+                .ConfigureAwait(false);
+        }
+        bool cpuStarted = false;
+        if (cpu && disposition == BrokerDeploymentDisposition.RolledBack && execution.ExitCode == 0)
+        {
+            // A prepared CPU package is not evidence of a failed installer.
+            disposition = BrokerDeploymentDisposition.Indeterminate;
+        }
+        if (cpu && logsRetained && disposition == BrokerDeploymentDisposition.RolledBack)
         {
             try
             {
-                paths.DeleteRequestStagingDirectory(request.RequestId);
+                cpuVoltage!.AbandonVerifiedRollback(request.RequestId);
                 stagingCreated = false;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                logger.LogError(exception, "Verified CPU installer rollback has unresolved preparation records.");
+                disposition = BrokerDeploymentDisposition.Indeterminate;
+            }
+        }
+        if (cpu && disposition == BrokerDeploymentDisposition.Succeeded)
+        {
+            try
+            {
+                cpuVoltage!.Launch(request.RequestId, enrollment, downloaded.VerifiedRelease.Manifest, installLease!);
+                cpuStarted = true;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                or InvalidDataException or InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                logger.LogError(exception, "CPU host launch is unresolved; package and intent retained.");
+                disposition = BrokerDeploymentDisposition.Indeterminate;
+            }
+        }
+        if (!cpu && disposition is (BrokerDeploymentDisposition.Succeeded
+            or BrokerDeploymentDisposition.RolledBack))
+        {
+            try
+            {
+                if (logsRetained)
+                {
+                    paths.DeleteRequestStagingDirectory(request.RequestId);
+                    stagingCreated = false;
+                }
             }
             catch (Exception exception) when (exception is
                 IOException or UnauthorizedAccessException or InvalidDataException)
@@ -796,7 +867,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
 
         if (disposition is not BrokerDeploymentDisposition.Indeterminate
             && execution.ExitObserved
-            && !stagingCreated)
+            && logsRetained && (!stagingCreated || cpuStarted))
         {
             try
             {
@@ -822,7 +893,7 @@ public sealed class ApplyFixedInboxBrokerRequestHandler(
                 BrokerRequestCodec.ProtocolVersion,
                 request.RequestId,
                 BrokerResponseStatus.Succeeded,
-                "install-succeeded"),
+                cpuStarted ? "cpu-voltage-host-started" : "install-succeeded"),
             BrokerDeploymentDisposition.RolledBack => new BrokerResponse(
                 BrokerRequestCodec.ProtocolVersion,
                 request.RequestId,

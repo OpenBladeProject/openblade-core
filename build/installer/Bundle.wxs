@@ -179,6 +179,7 @@
         <Payloads Include="!(bindpath.OpenBladeBundle)\**">
           <Exclude Files="!(bindpath.OpenBladeBundle)\OpenBlade.Setup.exe" />
         </Payloads>
+        <ExitCode Value="3010" Behavior="scheduleReboot" />
       </ExePackage>
     </Chain>
   </Bundle>

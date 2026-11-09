@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -88,6 +89,77 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
                 && ReferenceEquals(entry.Exception, runtime.ObserveFailure));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InitializeAsync_NativeReconciliationFailureReachesWorkerBeforeBackgroundStartup(bool recovery)
+    {
+        string path = Path.Combine(directory, "profiles.json");
+        var marker = new ServiceRunMarkerStore(Path.Combine(directory, "service-running.json"));
+        if (recovery)
+        {
+            await marker.BeginRunAsync(CancellationToken.None);
+        }
+        var failure = new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
+        var runtime = new RecordingRuntime(path) { ReconcileFailure = failure };
+        var logger = new RecordingLogger();
+        var coordinator = CreateCoordinator(path, runtime, logger, marker);
+        var events = new List<string>();
+        bool backgroundStarted = false;
+
+        NativeComponentException actual = await Assert.ThrowsAsync<NativeComponentException>(() =>
+            Worker.RunWithShutdownCleanupAsync(
+                token => Worker.RunAfterSuccessfulStartupAsync(coordinator.InitializeAsync,
+                    _ => { backgroundStarted = true; return Task.CompletedTask; }, token),
+                async (intentional, token) =>
+                {
+                    Assert.False(intentional);
+                    Assert.False(token.IsCancellationRequested);
+                    bool? clearMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+                        coordinator.RuntimeInitialized,
+                        intentional,
+                        _ =>
+                        {
+                            events.Add("cleanup");
+                            return Task.FromResult(new ControlOperationResult(
+                                ControlOperationStatus.Applied, "Guarded cleanup completed."));
+                        },
+                        logger,
+                        token);
+                    Assert.False(clearMarker);
+                },
+                CancellationToken.None,
+                error => { Assert.Same(failure, error); events.Add("report"); }));
+
+        Assert.Same(failure, actual);
+        Assert.False(backgroundStarted);
+        Assert.True(coordinator.RuntimeInitialized);
+        Assert.Equal(["report", "cleanup"], events);
+        Assert.Equal(["Initialize", "Observe", "MaintainDriverMode",
+            recovery ? "ReconcileUnexpectedExit" : "ReconcileStartupProfile"], runtime.Calls);
+        Assert.DoesNotContain(logger.Entries, entry => entry.Level == LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_RuntimeInitializationFailureDoesNotPermitHardwareCleanup()
+    {
+        string path = Path.Combine(directory, "profiles.json");
+        var failure = new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
+        var runtime = new RecordingRuntime(path) { Initialized = () => throw failure };
+        var logger = new RecordingLogger();
+        var coordinator = CreateCoordinator(path, runtime, logger);
+
+        Assert.Same(failure, await Assert.ThrowsAsync<NativeComponentException>(
+            () => coordinator.InitializeAsync(CancellationToken.None)));
+        Assert.False(coordinator.RuntimeInitialized);
+        bool? clearMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
+            coordinator.RuntimeInitialized, intentionalStop: false,
+            _ => throw new InvalidOperationException("Uninitialized runtime must not clean hardware."),
+            logger, CancellationToken.None);
+        Assert.Null(clearMarker);
+        Assert.Equal(["Initialize"], runtime.Calls);
+    }
+
     [Fact]
     public async Task InitializeAsync_ObservationCancellationPropagates()
     {
@@ -144,6 +216,50 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         Assert.Equal(expected, runtime.PersistentOverrides);
     }
 
+    [Fact]
+    public async Task InitializeAsync_RecoveryRequiredRefusesBeforeRuntimeOrBackgroundWork()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "profiles.json");
+        string markerPath = Path.Combine(directory, "battery-configuration.commit.json");
+        var store = new BatteryConfigurationStore(
+            path, Path.Combine(directory, "battery-preferences.json"), markerPath);
+        await store.LoadAsync(CancellationToken.None);
+        string recoveryPath = markerPath + ".recovery-required";
+        await File.WriteAllTextAsync(recoveryPath, "unresolved machine transaction");
+        var prior = Directory.GetFiles(directory).ToDictionary(
+            file => file, File.ReadAllBytes, StringComparer.OrdinalIgnoreCase);
+        var runtime = new RecordingRuntime(path);
+        var logger = new RecordingLogger();
+        ServiceStartupCoordinator coordinator = CreateCoordinator(path, runtime, logger);
+        bool? initialized = null;
+        bool backgroundStarted = false;
+
+        await Worker.RunAfterSuccessfulStartupAsync(async token =>
+        {
+            initialized = await coordinator.InitializeAsync(token);
+            return initialized.Value;
+        }, _ =>
+        {
+            backgroundStarted = true;
+            return Task.CompletedTask;
+        }, CancellationToken.None);
+
+        Assert.False(initialized);
+        Assert.False(coordinator.RuntimeInitialized);
+        Assert.False(backgroundStarted);
+        Assert.Empty(runtime.Calls);
+        Assert.Null(runtime.Configuration);
+        Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Error
+            && entry.Exception is ConfigurationQuarantinedException
+            && entry.Exception.Message.Contains(recoveryPath, StringComparison.Ordinal));
+        Assert.Equal(prior.Keys.Order(), Directory.GetFiles(directory).Order());
+        foreach ((string file, byte[] contents) in prior)
+        {
+            Assert.Equal(contents, await File.ReadAllBytesAsync(file));
+        }
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))
@@ -177,6 +293,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
     {
         public List<string> Calls { get; } = [];
         public Exception? ObserveFailure { get; init; }
+        public Exception? ReconcileFailure { get; init; }
         public Action? Initialized { get; init; }
         public int ObserveCount { get; private set; }
         public bool ProfileFileExistedDuringInitialize { get; private set; }
@@ -237,13 +354,13 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         public Task ReconcileStartupProfileAsync(CancellationToken cancellationToken)
         {
             Calls.Add("ReconcileStartupProfile");
-            return Task.CompletedTask;
+            return ReconcileFailure is null ? Task.CompletedTask : Task.FromException(ReconcileFailure);
         }
 
         public Task ReconcileUnexpectedExitAsync(CancellationToken cancellationToken)
         {
             Calls.Add("ReconcileUnexpectedExit");
-            return Task.CompletedTask;
+            return ReconcileFailure is null ? Task.CompletedTask : Task.FromException(ReconcileFailure);
         }
 
         public Task MaintainFanCurveAsync(CancellationToken cancellationToken)

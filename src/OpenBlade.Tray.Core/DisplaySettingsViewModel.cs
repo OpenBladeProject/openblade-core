@@ -453,185 +453,144 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                 StringComparison.Ordinal))
         && (!ActiveProfileSettings.HdrEnabled.HasValue
             || ActiveProfileSettings.HdrEnabled == IsHdrEnabled)
-        && (!ActiveProfileSettings.BrightnessPercent.HasValue
-            || ResolveBrightnessLevel(ActiveProfileSettings.BrightnessPercent.Value) == BrightnessPercent)
-        && (ActiveProfileSettings.ColorProfileKey is null
-            || ActiveProfileSettings.HdrEnabled is true
-            || (!IsHdrEnabled
-                && string.Equals(
-                    ActiveProfileSettings.ColorProfileKey,
-                    SelectedColorProfile?.Key,
-                    StringComparison.Ordinal)));
+        && BrightnessMatches(ActiveProfileSettings.BrightnessPercent, BrightnessPercent, SupportedBrightnessLevels)
+        && ColorProfileMatches(ActiveProfileSettings.ColorProfileKey, IsHdrEnabled, SelectedColorProfile?.Key);
 
-    public async Task RefreshAsync(CancellationToken token = default)
+    public Task RefreshAsync(CancellationToken token = default)
     {
-        string? previousRefreshRate = SelectedRefreshRate?.Key;
-        string? previousColorProfile = SelectedColorProfile?.Key;
-        bool previousHdr = IsHdrEnabled;
-        bool hadPriorState = IsAvailable;
-        bool refreshSucceeded = false;
+        string? previousRefreshRate = null;
+        string? previousColorProfile = null;
+        bool previousHdr = false;
+        bool hadPriorState = false;
 
-        await RunSerializedAsync(
+        return RunSerializedAsync(
             DisplayOperation.Refresh,
-            adapter.GetStateAsync,
+            operationToken =>
+            {
+                previousRefreshRate = SelectedRefreshRate?.Key;
+                previousColorProfile = SelectedColorProfile?.Key;
+                previousHdr = IsHdrEnabled;
+                hadPriorState = IsAvailable;
+                return adapter.GetStateAsync(operationToken);
+            },
             token,
-            state => refreshSucceeded = state.OperationSucceeded,
+            state =>
+            {
+                if (!state.OperationSucceeded || !IsAvailable)
+                {
+                    return;
+                }
+
+                bool refreshChanged = hadPriorState &&
+                    !string.Equals(previousRefreshRate, SelectedRefreshRate?.Key, StringComparison.Ordinal);
+                bool colorChanged = hadPriorState &&
+                    !string.Equals(previousColorProfile, SelectedColorProfile?.Key, StringComparison.OrdinalIgnoreCase);
+                bool hdrChanged = hadPriorState && previousHdr != IsHdrEnabled;
+                int changedCount = (refreshChanged ? 1 : 0) + (colorChanged ? 1 : 0) + (hdrChanged ? 1 : 0);
+                if (changedCount > 0)
+                {
+                    StatusMessage = changedCount > 1
+                        ? TrayText.Get("Display settings changed outside OpenBlade.")
+                        : refreshChanged
+                            ? TrayText.Get("Refresh rate changed outside OpenBlade.")
+                            : hdrChanged
+                                ? TrayText.Get("HDR changed outside OpenBlade.")
+                                : TrayText.Get("Color profile changed outside OpenBlade.");
+                }
+            },
             showBusy: false);
-
-        if (!refreshSucceeded || !IsAvailable)
-        {
-            return;
-        }
-
-        bool refreshChanged = hadPriorState &&
-            !string.Equals(previousRefreshRate, SelectedRefreshRate?.Key, StringComparison.Ordinal);
-        bool colorChanged = hadPriorState &&
-            !string.Equals(previousColorProfile, SelectedColorProfile?.Key, StringComparison.Ordinal);
-        bool hdrChanged = hadPriorState && previousHdr != IsHdrEnabled;
-        int changedCount = (refreshChanged ? 1 : 0) + (colorChanged ? 1 : 0) + (hdrChanged ? 1 : 0);
-        if (changedCount > 0)
-        {
-            StatusMessage = changedCount > 1
-                ? TrayText.Get("Display settings changed outside OpenBlade.")
-                : refreshChanged
-                    ? TrayText.Get("Refresh rate changed outside OpenBlade.")
-                    : hdrChanged
-                        ? TrayText.Get("HDR changed outside OpenBlade.")
-                        : TrayText.Get("Color profile changed outside OpenBlade.");
-        }
     }
 
     public Task SelectRefreshRateAsync(
         DisplayRefreshRateOption? option,
         CancellationToken token = default)
     {
-        if (option is null
-            || !HasConfirmedPowerSource
-            || string.Equals(option.Key, SelectedRefreshRate?.Key, StringComparison.Ordinal))
+        if (option is null || !HasConfirmedPowerSource)
         {
             return Task.CompletedTask;
         }
 
         PowerSource sourceAtStart = ActivePowerSource;
-        DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
-        return RunSerializedAsync(
+        return RunUserMutationAsync(
             DisplayOperation.RefreshRateChange,
-            operationToken =>
-            {
-                previous = CurrentProfileSettings;
-                return adapter.SetRefreshRateAsync(
-                    sourceAtStart,
-                    option.Key,
-                    operationToken);
-            },
-            token,
-            state =>
-            {
-                if (state.OperationSucceeded
-                    && string.Equals(
-                        state.SelectedRefreshRateKey,
-                        option.Key,
-                        StringComparison.Ordinal))
-                {
-                    RaiseUserSettingsChanged(sourceAtStart, previous);
-                }
-            });
+            sourceAtStart,
+            () => !string.Equals(option.Key, SelectedRefreshRate?.Key, StringComparison.Ordinal),
+            operationToken => adapter.SetRefreshRateAsync(sourceAtStart, option.Key, operationToken),
+            state => string.Equals(state.SelectedRefreshRateKey, option.Key, StringComparison.Ordinal),
+            token);
     }
 
     public Task SetHdrEnabledAsync(bool enabled, CancellationToken token = default)
     {
-        if (!HasConfirmedPowerSource || enabled == IsHdrEnabled)
+        if (!HasConfirmedPowerSource)
         {
             return Task.CompletedTask;
         }
 
         PowerSource sourceAtStart = ActivePowerSource;
-        DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
-        return RunSerializedAsync(
+        return RunUserMutationAsync(
             DisplayOperation.HdrChange,
-            operationToken =>
-            {
-                previous = CurrentProfileSettings;
-                return adapter.SetHdrEnabledAsync(
-                    sourceAtStart,
-                    enabled,
-                    operationToken);
-            },
-            token,
-            state =>
-            {
-                if (state.OperationSucceeded && state.IsHdrEnabled == enabled)
-                {
-                    RaiseUserSettingsChanged(sourceAtStart, previous);
-                }
-            });
+            sourceAtStart,
+            () => enabled != IsHdrEnabled,
+            operationToken => adapter.SetHdrEnabledAsync(sourceAtStart, enabled, operationToken),
+            state => state.IsHdrEnabled == enabled,
+            token);
     }
 
     public Task SetBrightnessAsync(byte percent, CancellationToken token = default)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThan(percent, (byte)100);
-        if (!CanChangeBrightness)
+        if (!HasConfirmedPowerSource || IsBusy)
         {
             return Task.CompletedTask;
         }
-        byte target = ResolveBrightnessLevel(percent);
-        if (target == BrightnessPercent)
-        {
-            return Task.CompletedTask;
-        }
+        byte target = percent;
         PowerSource sourceAtStart = ActivePowerSource;
-        DisplayProfileSettings previous = CurrentProfileSettings;
-        return RunSerializedAsync(DisplayOperation.BrightnessChange,
-            operationToken => adapter.SetBrightnessAsync(sourceAtStart, target, operationToken), token,
-            state =>
+        return RunUserMutationAsync(
+            DisplayOperation.BrightnessChange,
+            sourceAtStart,
+            () =>
             {
-                if (state.OperationSucceeded && state.BrightnessPercent == target)
+                if (!IsAvailable || !BrightnessPercent.HasValue || SupportedBrightnessLevels.Count == 0)
                 {
-                    RaiseUserSettingsChanged(sourceAtStart, previous);
+                    return false;
                 }
-            });
+                target = ResolveBrightnessLevel(percent);
+                return target != BrightnessPercent;
+            },
+            operationToken => adapter.SetBrightnessAsync(sourceAtStart, target, operationToken),
+            state => state.BrightnessPercent == target,
+            token);
     }
 
-    private byte ResolveBrightnessLevel(byte requested) => SupportedBrightnessLevels
+    private byte ResolveBrightnessLevel(byte requested) =>
+        FindNearestBrightnessLevel(requested, SupportedBrightnessLevels) ?? requested;
+
+    private static byte? FindNearestBrightnessLevel(byte requested, IReadOnlyList<byte>? levels) => (levels ?? [])
         .Where(level => level <= 100).OrderBy(level => Math.Abs(level - requested))
-        .ThenBy(level => level).Select(level => (byte?)level).FirstOrDefault() ?? requested;
+        .ThenBy(level => level).Select(level => (byte?)level).FirstOrDefault();
+
+    private static bool BrightnessMatches(byte? expected, byte? current, IReadOnlyList<byte>? levels) =>
+        !expected.HasValue || current.HasValue && FindNearestBrightnessLevel(expected.Value, levels) == current;
 
     public Task SelectColorProfileAsync(
         DisplayColorProfileOption? option,
         CancellationToken token = default)
     {
-        if (option is null
-            || !HasConfirmedPowerSource
-            || IsHdrEnabled
-            || string.Equals(option.Key, SelectedColorProfile?.Key, StringComparison.Ordinal))
+        if (option is null || !HasConfirmedPowerSource)
         {
             return Task.CompletedTask;
         }
 
         PowerSource sourceAtStart = ActivePowerSource;
-        DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
-        return RunSerializedAsync(
+        return RunUserMutationAsync(
             DisplayOperation.ColorProfileChange,
-            operationToken =>
-            {
-                previous = CurrentProfileSettings;
-                return adapter.SetColorProfileAsync(
-                    sourceAtStart,
-                    option.Key,
-                    operationToken);
-            },
-            token,
-            state =>
-            {
-                if (state.OperationSucceeded
-                    && string.Equals(
-                        state.SelectedColorProfileKey,
-                        option.Key,
-                        StringComparison.Ordinal))
-                {
-                    RaiseUserSettingsChanged(sourceAtStart, previous);
-                }
-            });
+            sourceAtStart,
+            () => !IsHdrEnabled
+                && !string.Equals(option.Key, SelectedColorProfile?.Key, StringComparison.OrdinalIgnoreCase),
+            operationToken => adapter.SetColorProfileAsync(sourceAtStart, option.Key, operationToken),
+            state => string.Equals(state.SelectedColorProfileKey, option.Key, StringComparison.OrdinalIgnoreCase),
+            token);
     }
 
     public async Task<bool> ApplyProfileAsync(
@@ -670,12 +629,40 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         operationGate.Dispose();
     }
 
+    private Task RunUserMutationAsync(
+        DisplayOperation operationKind,
+        PowerSource sourceAtStart,
+        Func<bool> shouldRun,
+        Func<CancellationToken, Task<DisplaySettingsSnapshot>> operation,
+        Func<DisplaySettingsSnapshot, bool> confirmsTarget,
+        CancellationToken token)
+    {
+        DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
+        return RunSerializedAsync(
+            operationKind,
+            operationToken =>
+            {
+                previous = CurrentProfileSettings;
+                return operation(operationToken);
+            },
+            token,
+            state =>
+            {
+                if (state.OperationSucceeded && confirmsTarget(state))
+                {
+                    RaiseUserSettingsChanged(sourceAtStart, previous);
+                }
+            },
+            shouldRun: shouldRun);
+    }
+
     private async Task RunSerializedAsync(
         DisplayOperation operationKind,
         Func<CancellationToken, Task<DisplaySettingsSnapshot>> operation,
         CancellationToken token,
         Action<DisplaySettingsSnapshot>? applied = null,
-        bool showBusy = true)
+        bool showBusy = true,
+        Func<bool>? shouldRun = null)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         using CancellationTokenSource linkedCancellation =
@@ -692,6 +679,12 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         {
             await operationGate.WaitAsync(linkedCancellation.Token);
             enteredGate = true;
+            // A queued refresh may change both the current value and supported
+            // ranges. Decide whether to write only after its readback is applied.
+            if (shouldRun is not null && !shouldRun())
+            {
+                return;
+            }
             DisplaySettingsSnapshot state = await operation(linkedCancellation.Token);
             Apply(state, isRefresh: operationKind == DisplayOperation.Refresh);
             applied?.Invoke(state);
@@ -745,9 +738,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             DisplayOperation.Refresh => "refresh",
             DisplayOperation.RefreshRateChange => "refresh-rate change",
             DisplayOperation.HdrChange => "HDR change",
+            DisplayOperation.BrightnessChange => "brightness change",
             DisplayOperation.ColorProfileChange => "color-profile change",
             DisplayOperation.ProfileApply => "profile apply",
-            _ => throw new ArgumentOutOfRangeException(nameof(operationKind)),
+            _ => operationKind.ToString(),
         };
         string message = DiagnosticTrace.FormatException(
             "OpenBlade.Tray.DisplaySettingsViewModel",
@@ -828,17 +822,14 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                 StringComparison.Ordinal))
         && (!settings.HdrEnabled.HasValue
             || settings.HdrEnabled == state.IsHdrEnabled)
-        && (!settings.BrightnessPercent.HasValue
-            || state.BrightnessPercent == state.SupportedBrightnessLevels
-                .Where(level => level <= 100).OrderBy(level => Math.Abs(level - settings.BrightnessPercent.Value))
-                .ThenBy(level => level).Select(level => (byte?)level).FirstOrDefault())
-        && (settings.ColorProfileKey is null
-            || settings.HdrEnabled is true
-            || (!state.IsHdrEnabled
-                && string.Equals(
-                    settings.ColorProfileKey,
-                    state.SelectedColorProfileKey,
-                    StringComparison.Ordinal)));
+        && BrightnessMatches(settings.BrightnessPercent, state.BrightnessPercent, state.SupportedBrightnessLevels)
+        && ColorProfileMatches(settings.ColorProfileKey, state.IsHdrEnabled, state.SelectedColorProfileKey);
+
+    // Match the Session Agent's confirmation contract: SDR profiles are dormant
+    // while the observed output is HDR, and Windows profile identities ignore case.
+    private static bool ColorProfileMatches(string? expectedKey, bool hdrEnabled, string? currentKey) =>
+        expectedKey is null || hdrEnabled
+        || string.Equals(expectedKey, currentKey, StringComparison.OrdinalIgnoreCase);
 
     private void Apply(DisplaySettingsSnapshot state, bool isRefresh)
     {
@@ -870,7 +861,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             option => string.Equals(
                 option.Key,
                 state.SelectedColorProfileKey,
-                StringComparison.Ordinal));
+                StringComparison.OrdinalIgnoreCase));
         IsAvailable = state.IsAvailable;
         IsHdrSupported = state.IsHdrSupported;
         IsHdrEnabled = state.IsHdrEnabled;
@@ -940,7 +931,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                 option => string.Equals(
                     option.Key,
                     state.SelectedColorProfileKey,
-                    StringComparison.Ordinal));
+                    StringComparison.OrdinalIgnoreCase));
             if (colorProfile is not null)
             {
                 details.Add(colorProfile.Label);

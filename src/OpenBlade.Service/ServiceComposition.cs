@@ -22,8 +22,33 @@ internal static class ServiceComposition
 
         services.AddSingleton<IHyperBoostOwnershipJournalStore>(
             _ => new HyperBoostOwnershipJournalStore(journalPath));
+        services.AddSingleton<ICpuTuningOwnershipJournalStore>(_ => new CpuTuningOwnershipJournalStore(
+            Path.Combine(Path.GetDirectoryName(journalPath)!, "cpu-tuning-ownership.json")));
+        services.AddSingleton<ICpuLiveCurveOwnershipJournalStore>(_ => new CpuLiveCurveOwnershipJournalStore(
+            Path.Combine(Path.GetDirectoryName(journalPath)!, "cpu-live-curve-ownership.json")));
+        services.AddSingleton<ICpuLivePowerOwnershipJournalStore>(_ => new CpuLivePowerOwnershipJournalStore(
+            Path.Combine(Path.GetDirectoryName(journalPath)!, "cpu-live-power-ownership.json")));
+        services.AddSingleton(provider => new WindowsCpuLiveTuningTrustedNativeProvider(
+            WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession(),
+            () => provider.GetRequiredService<CpuTuningController>(), new WindowsCpuTuningObservationSource()));
+        services.AddSingleton(provider => new CpuTuningController(new WindowsCpuTuningObservationSource(),
+            provider.GetRequiredService<ICpuTuningOwnershipJournalStore>(),
+            curveBackend: new CpuLiveCurveNativeBackend(WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession(),
+                provider.GetRequiredService<WindowsCpuLiveTuningTrustedNativeProvider>()),
+            curveStore: provider.GetRequiredService<ICpuLiveCurveOwnershipJournalStore>(),
+            powerBackend: new CpuLivePowerNativeBackend(WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession(),
+                provider.GetRequiredService<WindowsCpuLiveTuningTrustedNativeProvider>()),
+            powerStore: provider.GetRequiredService<ICpuLivePowerOwnershipJournalStore>(),
+            readRecoveryBoot: new WindowsCpuBootSequenceReader().Read,
+            recoveryWorkerIdle: () => CpuNativeWorkerCoordinator.ForSession(WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession()).Status
+                is { WorkerOutstanding: false, Invalid: false }));
         services.AddSingleton<IServiceControlRuntime>(provider =>
-            new ServiceControlRuntime(
+        {
+            ServiceControlRuntime? runtime = null;
+            var guardian = new GuardianFanStopBackend(new WindowsFanStopGuardianClient(
+                machineDataDirectory, token => runtime!.ReadFanStopServiceAdmissionAsync(token),
+                () => runtime!.ReadFanStopContinuationAdmission()));
+            runtime = new ServiceControlRuntime(
                 provider.GetRequiredService<BatteryConfigurationStore>(),
                 provider.GetRequiredService<PersistentOverrideStore>(),
                 provider.GetRequiredService<IPowerStateProvider>(),
@@ -40,7 +65,15 @@ internal static class ServiceComposition
                 displayBrightnessHidController:
                     provider.GetRequiredService<IDisplayBrightnessHidController>(),
                 hyperBoostOwnershipJournalStore:
-                    provider.GetRequiredService<IHyperBoostOwnershipJournalStore>()));
+                    provider.GetRequiredService<IHyperBoostOwnershipJournalStore>(),
+                laptopControlPendingStore: new LaptopControlPendingStore(
+                    Path.Combine(machineDataDirectory, "laptop-control-pending.json")),
+                fanStopBackend: guardian,
+                cpuTuningController: provider.GetRequiredService<CpuTuningController>(),
+                coolingPadDeviceProvider: new WindowsCoolingPadDeviceProvider(),
+                coolingPadStateDirectory: Path.Combine(machineDataDirectory, "cooling-pad"));
+            return runtime;
+        });
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();
         return services;
     }

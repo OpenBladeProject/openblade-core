@@ -10,6 +10,7 @@ if ([string]::IsNullOrWhiteSpace($Repository)) {
     $Repository = Split-Path -Parent $PSScriptRoot
 }
 $Repository = [IO.Path]::GetFullPath($Repository)
+Import-Module (Join-Path $PSScriptRoot 'localization\WinUiLocalization.psm1') -Force
 
 function Get-RepositoryRelativePath {
     param(
@@ -352,76 +353,27 @@ foreach ($culture in $supportedTranslationCultures) {
     }
 }
 
-$seenUids = @{}
 $requiredTrayKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 foreach ($path in @(Get-ChildItem (Join-Path $Repository 'src\OpenBlade.Tray') `
         -Filter '*.xaml' -File -Recurse | Where-Object FullName -notmatch '\\(?:bin|obj)\\')) {
     $relativePath = Get-RepositoryRelativePath $Repository $path.FullName
     $text = [IO.File]::ReadAllText($path.FullName, [Text.UTF8Encoding]::new($false, $true))
-    $startTagPattern = '(?s)<(?<tag>[A-Za-z][\w:.]*)(?<attributes>(?:[^>"'']|"[^"]*"|''[^'']*'')*)>'
-    foreach ($tag in [regex]::Matches($text, $startTagPattern)) {
-        $attributes = $tag.Groups['attributes'].Value
-        $localizable = @([regex]::Matches(
-            $attributes,
-            '(?<property>Text|Header|Content|PlaceholderText|Title|AccessibleName|AccessKey|AutomationProperties\.(?:Name|HelpText)|ToolTipService\.ToolTip)="(?<value>[^"{}]+)"') |
-            Where-Object {
-                $value = $_.Groups['value'].Value
-                -not [string]::IsNullOrWhiteSpace($value) -and
-                $value -ne 'OpenBlade' -and
-                $value -notmatch '^\s*(?:%|°C|RPM|MHz|W|ms|s|dB|Kbps|Hz|×|·)\s*$' -and
-                $value -notmatch '^\d+(?:\.\d+)?$'
-            })
-        $windowTitle = @($localizable | Where-Object {
-            $_.Groups['property'].Value -eq 'Title' -and
-            ($tag.Groups['tag'].Value -replace '^.*:', '') -eq 'Window'
-        })
-        $localizable = @($localizable | Where-Object { $windowTitle -notcontains $_ })
-        foreach ($title in $windowTitle) {
-            $windowTitleKey = [IO.Path]::GetFileNameWithoutExtension($relativePath) +
-                '_WindowTitle'
-            $sourceTitle = [Net.WebUtility]::HtmlDecode($title.Groups['value'].Value)
-            if (-not $trayEnglish.Contains($windowTitleKey) -or
-                $trayEnglish[$windowTitleKey] -ne $sourceTitle) {
-                throw "$relativePath requires matching en-US resource '$windowTitleKey'."
+    foreach ($tag in @(Get-WinUiLocalizationTags $text $relativePath)) {
+        if ($null -ne $tag.Uid) {
+            throw "$relativePath contains x:Uid '$($tag.Uid)'; use CustomResource property references."
+        }
+        foreach ($property in $tag.Properties) {
+            if ($property.Kind -ne 'Resource') {
+                throw "$relativePath contains a user-facing XAML literal without CustomResource: $($property.Property)='$($property.Value)'."
             }
-            [void]$requiredTrayKeys.Add($windowTitleKey)
-        }
-        if ($localizable.Count -eq 0) { continue }
-        $uidMatch = [regex]::Match($attributes, 'x:Uid="(?<uid>[^"]+)"')
-        if (-not $uidMatch.Success) {
-            throw "$relativePath contains a user-facing XAML literal without x:Uid: $($tag.Value)"
-        }
-        $uid = $uidMatch.Groups['uid'].Value
-        if ($seenUids.ContainsKey($uid)) {
-            throw "WinUI localization x:Uid '$uid' is duplicated."
-        }
-        $seenUids[$uid] = $true
-        foreach ($attribute in $localizable) {
-            $property = switch ($attribute.Groups['property'].Value) {
-                'AutomationProperties.Name' {
-                    '[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name'
-                }
-                'AutomationProperties.HelpText' {
-                    '[using:Microsoft.UI.Xaml.Automation]AutomationProperties.HelpText'
-                }
-                'ToolTipService.ToolTip' {
-                    '[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip'
-                }
-                default { $_ }
-            }
-            $key = $uid + '.' + $property
+            $key = $property.Key
             if (-not $trayEnglish.Contains($key)) {
                 throw "$relativePath requires missing en-US resource '$key'."
             }
             [void]$requiredTrayKeys.Add($key)
-            $sourceValue = [Net.WebUtility]::HtmlDecode($attribute.Groups['value'].Value)
-            if ($trayEnglish[$key] -ne $sourceValue) {
-                throw "$relativePath fallback text does not match authoritative resource '$key'."
-            }
         }
     }
 }
-
 $installerXaml = [IO.File]::ReadAllText(
     (Join-Path $Repository 'build\installer\OpenBlade.Installer.UI\InstallerWindow.xaml'),
     [Text.UTF8Encoding]::new($false, $true))

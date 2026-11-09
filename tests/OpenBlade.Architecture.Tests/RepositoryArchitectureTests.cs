@@ -28,11 +28,18 @@ public sealed class RepositoryArchitectureTests
                 && !pair.Key.EndsWith("BatteryValidationFactory.cs")
                 && !pair.Key.EndsWith("ProductionBatteryFactory.cs")
                 && !pair.Key.EndsWith("ProductionLightingFactory.cs")
+                // The delegated guardian reader admits only the exact-model
+                // adapter getter; its factory has no setter fixtures.
+                && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "FanStopAdapterPowerReader.cs")
                 && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "ExperimentalBladeFactory.cs")
                 && !pair.Key.EndsWith("GetterCandidateProbeRunner.cs")
                 && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "Rz090528HyperBoostValidation.cs")
                 && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "Rz090528PadlessHyperBoostValidation.cs")
-                && !pair.Key.EndsWith("HidInputAccessProbe.cs")),
+                // The attended Capture runner uses only candidate identity metadata;
+                // this does not admit another feature-report composition point.
+                && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.FanStop.Core", "So6120WindowsSupervisedMetadata.cs")
+                && !pair.Key.EndsWith("HidInputAccessProbe.cs")
+                && pair.Key != Path.Combine(sourceDirectory, "OpenBlade.Protocol", "WindowsCoolingPadDeviceProvider.cs")),
             pair => pair.Value.Contains("new WindowsHidNative("));
         string[] composition = sources
             .Where(pair => pair.Value.Contains("OverlappedFeatureOperation")
@@ -45,11 +52,13 @@ public sealed class RepositoryArchitectureTests
             [
                 "BatteryValidationFactory.cs",
                 "ExperimentalBladeFactory.cs",
+                "FanStopAdapterPowerReader.cs",
                 "GetterCandidateProbeRunner.cs",
                 "ProductionBatteryFactory.cs",
                 "ProductionLightingFactory.cs",
                 "Rz090528HyperBoostValidation.cs",
                 "Rz090528PadlessHyperBoostValidation.cs",
+                "WindowsCoolingPadDeviceProvider.cs",
             ],
             composition);
         string candidateProbePath = Assert.Single(
@@ -59,6 +68,10 @@ public sealed class RepositoryArchitectureTests
             $"{separator}OpenBlade.Capture{separator}",
             candidateProbePath,
             StringComparison.OrdinalIgnoreCase);
+        string admission = sources[Path.Combine(sourceDirectory, "OpenBlade.FanStop.Core", "So6120WindowsSupervisedMetadata.cs")];
+        Assert.Contains("ReadHidMetadata(IReadOnlyList<string> paths, IHidCandidateNative native,", admission, StringComparison.Ordinal);
+        Assert.Contains("FanStopModelContract? serviceContract = null)", admission, StringComparison.Ordinal);
+        Assert.DoesNotContain("OverlappedFeatureOperation", admission, StringComparison.Ordinal);
     }
 
     [Fact]

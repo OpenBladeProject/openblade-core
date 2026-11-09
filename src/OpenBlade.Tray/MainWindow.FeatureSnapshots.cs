@@ -1,7 +1,10 @@
 #if OPENBLADE_DEVELOPER_HARNESS
 using System.Reflection;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using OpenBlade.Contracts;
 using OpenBlade.Session;
 using Button = Microsoft.UI.Xaml.Controls.Button;
@@ -16,6 +19,51 @@ public sealed partial class MainWindow
 {
     private static readonly DateTimeOffset FeatureSnapshotTime =
         new(2026, 10, 21, 12, 0, 0, TimeSpan.Zero);
+
+    internal void InvokeLabsGuideSnapshot(bool showRefreshRate)
+    {
+        // Snapshot mode skips loading saved preferences; initialize its isolated layout first.
+        ApplyPageLayoutPreferences([]);
+        // Exercise a guide from a user layout that has hidden its destination section.
+        pageSections[CustomizablePageKind.Lighting]
+            .Single(section => section.Kind == PageSectionKind.LightingKeyboard).IsVisible = false;
+        Button guide = showRefreshRate ? LabsLightingRateGuideButton : LabsImportGuideButton;
+        var peer = new ButtonAutomationPeer(guide);
+        if (string.IsNullOrWhiteSpace(peer.GetName()) || peer.GetPattern(PatternInterface.Invoke) is not IInvokeProvider invoke)
+        {
+            throw new InvalidOperationException("The Labs guide requires an accessible navigation action.");
+        }
+
+        invoke.Invoke();
+    }
+
+    internal void VerifyLabsGuideSnapshot(bool showRefreshRate)
+    {
+        Button guide = showRefreshRate ? LabsLightingRateGuideButton : LabsImportGuideButton;
+        if (!ReferenceEquals(MainNavigation.SelectedItem, LightingNavigationItem)
+            || guide.Tag is not string targetName
+            || FindDescendant<Microsoft.UI.Xaml.Controls.Control>(LightingCard, targetName) is not { } target)
+        {
+            throw new InvalidOperationException("The Labs guide did not open its Lighting control.");
+        }
+
+        if (!IsSearchLightingSectionShown(PageSectionKind.LightingKeyboard)
+            || !HasVisibleSearchPath(target, LightingPage.Content))
+        {
+            throw new InvalidOperationException("The Labs guide did not reveal its hidden Keyboard section.");
+        }
+        if (!target.IsEnabled && !ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), LightingNavigationItem))
+        {
+            throw new InvalidOperationException("The disabled Labs destination did not focus Lighting navigation.");
+        }
+
+        Windows.Foundation.Rect bounds = target.TransformToVisual(LightingPage).TransformBounds(
+            new Windows.Foundation.Rect(0, 0, target.ActualWidth, target.ActualHeight));
+        if (bounds.Height <= 0 || bounds.Top < -1 || bounds.Bottom > LightingPage.ViewportHeight + 1)
+        {
+            throw new InvalidOperationException($"The Labs guide target is outside the Lighting viewport: {bounds}.");
+        }
+    }
 
     internal void ShowLocalizationSnapshotFeature(string destination)
     {
@@ -74,8 +122,25 @@ public sealed partial class MainWindow
                     destination == "telemetry-hover-edge" ? 1 : 0.4);
                 TelemetryPlot.ShowLocalizationSnapshotLayout(destination);
                 break;
-            case "laptop-battery-history":
-                ApplyBatteryHistoryFixture();
+            case "telemetry-battery-report":
+            case "telemetry-battery-report-narrow":
+            case "telemetry-battery-report-dark":
+            case "telemetry-battery-report-details":
+            case "telemetry-battery-report-empty":
+            case "telemetry-battery-report-loading":
+            case "telemetry-battery-report-error":
+            case "telemetry-battery-report-refresh-error":
+            case "telemetry-battery-report-gaps":
+                if (destination is not ("telemetry-battery-report-empty" or "telemetry-battery-report-loading" or "telemetry-battery-report-error"))
+                {
+                    ApplyBatteryHistoryFixture(gaps: destination == "telemetry-battery-report-gaps");
+                }
+                SetBatteryHistorySnapshotField("isLoading", destination == "telemetry-battery-report-loading");
+                SetBatteryHistorySnapshotField("error", destination is "telemetry-battery-report-error" or "telemetry-battery-report-refresh-error"
+                    ? LocalizedResources.Get("BatteryHistory_SnapshotError", "Battery history is unavailable. Try loading it again.") : null);
+                RefreshBatteryHistoryPresentation();
+                BatteryHistorySection.IsExpanded = true;
+                BatteryHistoryDetails.IsExpanded = destination is "telemetry-battery-report-details" or "telemetry-battery-report-gaps";
                 BatteryHistorySection.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
                 break;
             case "display-brightness-known":
@@ -90,6 +155,92 @@ public sealed partial class MainWindow
         }
     }
 
+    private void SetBatteryHistorySnapshotField(string name, object? value) =>
+        (typeof(WindowsBatteryHistoryViewModel).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"Battery fixture field {name} was not found."))
+        .SetValue(BatteryHistoryViewModel, value);
+
+    internal void VerifyLocalizationSnapshotBatteryHistory(string destination)
+    {
+        bool loaded = BatteryHistoryViewModel.Report is not null;
+        if (ViewModel.TelemetryEnabled || TelemetryEnabledToggle.IsOn || TelemetryContent.Visibility != Visibility.Collapsed
+            || !BatteryHistorySection.IsExpanded || BatteryHistoryReportBody.Visibility != (loaded ? Visibility.Visible : Visibility.Collapsed)
+            || BatteryHistoryProgress.Visibility != (BatteryHistoryViewModel.IsLoading ? Visibility.Visible : Visibility.Collapsed)
+            || BatteryHistoryProgress.IsActive != BatteryHistoryViewModel.IsLoading
+            || BatteryHistoryLoadButton.IsEnabled == BatteryHistoryViewModel.IsLoading
+            || BatteryHistoryError.Visibility != (BatteryHistoryViewModel.Error is null ? Visibility.Collapsed : Visibility.Visible))
+        {
+            throw new InvalidOperationException("Battery report loading, failure, or empty presentation is inconsistent.");
+        }
+        if (loaded)
+        {
+            if (BatteryHistoryRows.Items.Count != 5 || string.IsNullOrWhiteSpace(BatteryHistorySummary.Text)
+                || string.IsNullOrWhiteSpace(BatteryHealthText.Text)
+                || BatteryHistoryDetails.IsExpanded != (destination is "telemetry-battery-report-details" or "telemetry-battery-report-gaps"))
+            {
+                throw new InvalidOperationException("Battery report metadata or interval details are missing.");
+            }
+            BatteryHistoryTimeline.VerifySnapshotLayout();
+            WindowsBatteryReport report = BatteryHistoryViewModel.Report!;
+            string[] expectedRows = WindowsBatteryReportCoverage.CreateIntervals(report).Select(FormatBatteryInterval).ToArray();
+            if (!BatteryHistoryRows.Items.Cast<string>().SequenceEqual(expectedRows)
+                || (destination == "telemetry-battery-report-gaps" && report.Intervals.Count != 2))
+            {
+                throw new InvalidOperationException("Battery interval details do not preserve source data and unknown coverage.");
+            }
+            VerifyBatteryHistoryTransientPresentation();
+        }
+        else if (BatteryHistoryReportBody.ActualHeight > 0 || BatteryHistoryTimeline.ActualHeight > 0)
+        {
+            throw new InvalidOperationException("Unloaded battery report reserves empty graph space.");
+        }
+        if (BatteryHistoryViewModel.IsLoading)
+        {
+            // Assert the production busy state above, then use a static native arc for
+            // deterministic frames in this disposable disconnected snapshot process.
+            BatteryHistoryProgress.IsIndeterminate = false;
+            BatteryHistoryProgress.Value = 35;
+        }
+    }
+
+    private void VerifyBatteryHistoryTransientPresentation()
+    {
+        object rows = BatteryHistoryRows.ItemsSource;
+        object[] segments = BatteryHistoryTimeline.SnapshotSegments();
+        bool wasLoading = BatteryHistoryViewModel.IsLoading;
+        string? error = BatteryHistoryViewModel.Error;
+        try
+        {
+            SetBatteryHistorySnapshotField("isLoading", true);
+            RefreshBatteryHistoryPresentation();
+            if (BatteryHistoryLoadButton.IsEnabled || !BatteryHistoryProgress.IsActive
+                || BatteryHistoryProgress.Visibility != Visibility.Visible)
+            {
+                throw new InvalidOperationException("Retained battery report did not expose its busy state.");
+            }
+            SetBatteryHistorySnapshotField("isLoading", false);
+            SetBatteryHistorySnapshotField("error", "Disconnected refresh failure fixture");
+            RefreshBatteryHistoryPresentation();
+            if (!BatteryHistoryLoadButton.IsEnabled || BatteryHistoryProgress.IsActive
+                || BatteryHistoryError.Visibility != Visibility.Visible)
+            {
+                throw new InvalidOperationException("Retained battery report did not expose its refresh failure.");
+            }
+            object[] retainedSegments = BatteryHistoryTimeline.SnapshotSegments();
+            if (!ReferenceEquals(rows, BatteryHistoryRows.ItemsSource)
+                || segments.Length != retainedSegments.Length
+                || !segments.Zip(retainedSegments).All(pair => ReferenceEquals(pair.First, pair.Second)))
+            {
+                throw new InvalidOperationException("Transient battery report state replaced confirmed rows or plot segments.");
+            }
+        }
+        finally
+        {
+            SetBatteryHistorySnapshotField("isLoading", wasLoading);
+            SetBatteryHistorySnapshotField("error", error);
+            RefreshBatteryHistoryPresentation();
+        }
+    }
     internal void VerifyLocalizationSnapshotTelemetry()
     {
         TelemetryPageHeader.VerifyLocalizationSnapshotLayout();
@@ -310,14 +461,18 @@ public sealed partial class MainWindow
                 ?? throw new InvalidOperationException("Telemetry history fixture hook was not found.");
             var history = (TelemetryHistory)(historyField.GetValue(ViewModel)
                 ?? throw new InvalidOperationException("Telemetry history was unavailable."));
+            // Keep connected fixture segments horizontal: native diagonal
+            // stroke antialiasing can vary by one channel across processes.
+            // Separate levels, gaps, missing readings and both power-flow
+            // directions still exercise the real chart and inspection UI.
             TelemetrySample[] samples =
             [
                 Sample(0, PowerSource.Battery, "Battery profile", 42_000, 2_350, 2_280, 67, 59),
-                Sample(2, PowerSource.Battery, "Creative rendering profile", 48_500, 2_780, 2_690, 73, 64),
+                Sample(2, PowerSource.Battery, "Creative rendering profile", 42_000, 2_350, 2_280, 67, 59),
                 Sample(14, PowerSource.Battery, "Creative rendering profile", 45_000, 2_920, 2_840, 75, 66)
                     with { CpuTemperatureCelsius = null, Fan2Rpm = null },
                 Sample(20, PowerSource.PluggedIn, "Creative rendering profile", -18_000, 3_120, 3_050, 78, 69),
-                Sample(22, PowerSource.PluggedIn, "Plugged-in profile", -24_000, 2_600, 2_520, 70, 62),
+                Sample(22, PowerSource.PluggedIn, "Plugged-in profile", -18_000, 3_120, 3_050, 78, 69),
                 Sample(28, PowerSource.PluggedIn, "Plugged-in profile", -22_000, 2_450, 2_400, 68, 61),
             ];
             foreach (TelemetrySample sample in samples)
@@ -353,7 +508,7 @@ public sealed partial class MainWindow
                 gpu);
     }
 
-    private void ApplyBatteryHistoryFixture()
+    private void ApplyBatteryHistoryFixture(bool gaps = false)
     {
         DateTimeOffset start = FeatureSnapshotTime.AddHours(-24);
         var report = new WindowsBatteryReport(
@@ -362,6 +517,13 @@ public sealed partial class MainWindow
             start,
             FeatureSnapshotTime,
             new WindowsBatteryStatus(95_200, 82_600, 86.8, 184),
+            gaps ?
+            [
+                Interval(2, 8, WindowsBatteryPowerSource.Battery,
+                    WindowsBatteryActivity.Active, 86, 11_700),
+                Interval(10, 22, WindowsBatteryPowerSource.Ac,
+                    WindowsBatteryActivity.Active, 61, null),
+            ] :
             [
                 Interval(0, 4, WindowsBatteryPowerSource.Battery,
                     WindowsBatteryActivity.Active, 86, 11_700),

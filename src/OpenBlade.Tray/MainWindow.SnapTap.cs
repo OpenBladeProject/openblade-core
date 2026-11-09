@@ -40,6 +40,9 @@ public sealed partial class MainWindow
             };
             // Set the backing state first so the preview toggle cannot queue a preference save.
             snapTapEnabled = showFailure || showEnabled || showDriverMissing;
+#if OPENBLADE_DEVELOPER_HARNESS
+            SetLocalizationSnapshotKeyboardBackends();
+#endif
             SnapTapToggle.IsOn = snapTapEnabled;
             RefreshSnapTapStatus();
             KeyboardSection.StartBringIntoView(new BringIntoViewOptions
@@ -81,7 +84,7 @@ public sealed partial class MainWindow
     private async Task InstallSnapTapDriverAsync()
     {
         if (localizationSnapshotMode || Volatile.Read(ref disposed) != 0 || snapTapDriverInstalling
-            || !snapTapEnabled || !CanOfferSnapTapDriverSetup(SnapTapStatusStore.Read()?.State))
+            || !CanInstallSelectedKeyboardDriver())
         {
             return;
         }
@@ -108,10 +111,12 @@ public sealed partial class MainWindow
         SnapTapRuntimeStatus? status = localizationSnapshotMode
             ? new SnapTapRuntimeStatus(localizationSnapshotSnapTapState, DateTimeOffset.UnixEpoch,
                 ExperimentalDriver: localizationSnapshotSnapTapExperimental)
-            : SnapTapStatusStore.Read();
-        SnapTapStatusText.Text = snapTapDriverInstalling
+            : SelectedBackendStatus(SnapTapStatusStore.Read(), snapTapBackend);
+        SnapTapStatusText.Text = snapTapBackend == KeyboardInputBackend.Unknown
+            ? LocalizedResources.Get("KeyboardBackend_Unknown", "Choose an input method to resume.")
+            : snapTapDriverInstalling && snapTapBackend == KeyboardInputBackend.RazerDriver
             ? LocalizedResources.Get("SnapTap_Driver_Installing", "Installing driver…")
-            : snapTapDriverInstallOutcome is { } outcome ? DriverSetupResultText(outcome)
+            : snapTapDriverInstallOutcome is { } outcome && snapTapBackend == KeyboardInputBackend.RazerDriver ? DriverSetupResultText(outcome)
             : status?.State switch
             {
                 SnapTapRuntimeState.DriverMissing => LocalizedResources.Get(
@@ -122,13 +127,17 @@ public sealed partial class MainWindow
                     "SnapTap_Status_ManualDriverSetup", "Install this laptop’s Razer keyboard driver through Synapse, then turn SnapTap off and on."),
                 SnapTapRuntimeState.RecoveryRequired => LocalizedResources.Get(
                     "SnapTap_Status_RecoveryRequired", "Restart Windows before enabling SnapTap again."),
-                SnapTapRuntimeState.Unavailable => LocalizedResources.Get(
+                SnapTapRuntimeState.Unavailable when snapTapBackend == KeyboardInputBackend.RazerDriver => LocalizedResources.Get(
                     "SnapTap_Status_DriverUnavailable", "The supported Razer keyboard driver is unavailable."),
+                SnapTapRuntimeState.Unavailable => LocalizedResources.Get(
+                    "KeyboardBackend_Paused", "Input handling is paused. Export diagnostics for details."),
                 SnapTapRuntimeState.Starting => LocalizedResources.Get(
                     "SnapTap_Status_Starting", "Starting…"),
+                SnapTapRuntimeState.WaitingForFunctionKey => LocalizedResources.Get(
+                    "KeyboardBackend_PrimeFn", "Press Fn once to activate multimedia keys."),
                 SnapTapRuntimeState.WaitingForRelease => LocalizedResources.Get(
                     "SnapTap_Status_WaitingForRelease", "Release keys and mouse buttons to activate."),
-                SnapTapRuntimeState.Armed or SnapTapRuntimeState.Active when status.ExperimentalDriver => LocalizedResources.Get(
+                SnapTapRuntimeState.Armed or SnapTapRuntimeState.Active when status.Backend == KeyboardInputBackend.RazerDriver && status.ExperimentalDriver => LocalizedResources.Get(
                     "SnapTap_Status_Experimental", "Experimental driver support"),
                 SnapTapRuntimeState.Armed or SnapTapRuntimeState.Active => string.Empty,
                 SnapTapRuntimeState.Paused => LocalizedResources.Get(
@@ -140,7 +149,7 @@ public sealed partial class MainWindow
                     "SnapTap_Status_Unavailable", "Waiting for the input helper…"),
                 _ => string.Empty,
             };
-        SnapTapDriverActions.Visibility = snapTapEnabled && CanOfferSnapTapDriverSetup(status?.State)
+        SnapTapDriverActions.Visibility = snapTapEnabled && snapTapBackend == KeyboardInputBackend.RazerDriver && CanOfferSnapTapDriverSetup(status?.State)
             && snapTapDriverInstallOutcome != RazerDriverInstallOutcome.Installed
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -154,6 +163,7 @@ public sealed partial class MainWindow
         SnapTapStatusText.Visibility = string.IsNullOrEmpty(SnapTapStatusText.Text)
             ? Visibility.Collapsed
             : Visibility.Visible;
+        RefreshKeyboardBackendStatus();
     }
 
     private static string DriverSetupResultText(RazerDriverInstallOutcome outcome) => outcome switch

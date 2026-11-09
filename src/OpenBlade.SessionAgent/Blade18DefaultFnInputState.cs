@@ -35,6 +35,9 @@ internal sealed class Blade18DefaultFnInputState
 {
     private readonly Dictionary<KeyIdentity, ActivePress> activePresses = [];
 
+    internal bool HasActiveFunctionRowKeys => activePresses.Keys.Any(key =>
+        key.ScanCode is >= 0x3B and <= 0x44 or 0x57 or 0x58);
+
     public bool Process(
         uint scanCode,
         bool extended,
@@ -141,6 +144,7 @@ internal sealed class Blade18DefaultFnInputState
         uint scanCode,
         bool extended,
         bool keyDown,
+        bool allowUntrackedEdge,
         out Blade18DefaultFnInputEvent? inputEvent)
     {
         inputEvent = null;
@@ -150,6 +154,11 @@ internal sealed class Blade18DefaultFnInputState
         }
 
         var key = new KeyIdentity(scanCode, extended);
+        if (!allowUntrackedEdge && !activePresses.ContainsKey(key))
+        {
+            return false;
+        }
+
         if (keyDown)
         {
             // The physical edge already reached its foreground target. Drop

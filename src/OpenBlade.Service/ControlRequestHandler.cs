@@ -12,6 +12,11 @@ public sealed class ControlRequestHandler
     private readonly IServiceShutdownSignal shutdownSignal;
     private readonly IInteractiveSessionAuthority sessionAuthority;
     private readonly ServiceSessionPowerTransitionCoordinator? powerTransitions;
+    // The singleton handler owns this managed-only semaphore for the service
+    // lifetime; AvailableWaitHandle is never requested. Keep activation and
+    // finite dispatch together so another client cannot replace their stores.
+    private readonly SemaphoreSlim userRequestGate = new(1, 1);
+    private ServiceUserRequestOwner? userRequestOwner;
 
     internal ControlRequestHandler(
         IServiceControlRuntime runtime,
@@ -109,18 +114,18 @@ public sealed class ControlRequestHandler
         {
             return Failure(Guid.Empty, "IPC request ID is missing.");
         }
-
-        ServiceRequestAccessDecision accessDecision = ServiceRequestAccessPolicy.Evaluate(
-            request,
-            client,
-            sessionAuthority);
-        if (accessDecision.Rejection is not null)
-        {
-            return Failure(request.RequestId, accessDecision.Rejection);
-        }
+        Func<bool> stillControlsSession = () =>
+            ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
+                == SessionControlAccess.Active;
 
         if (request is ReportSessionPowerTransitionRequest transition)
         {
+            ServiceRequestAccessDecision transitionAccess = ServiceRequestAccessPolicy.Evaluate(
+                request, client, sessionAuthority);
+            if (transitionAccess.Rejection is not null)
+            {
+                return Failure(request.RequestId, transitionAccess.Rejection);
+            }
             // Lifecycle ingress must latch admission before activation can load
             // a profile and perform unrelated hardware work.
             return powerTransitions is null
@@ -132,6 +137,76 @@ public sealed class ControlRequestHandler
                     cancellationToken).ConfigureAwait(false));
         }
 
+        // The compatibility entry point admits status reads only and never
+        // activates user configuration. Its cached view needs no dispatch gate.
+        if (!activateUserConfiguration)
+        {
+            return await HandleUserRequestAsync(
+                request, client, activateUserConfiguration, stillControlsSession, cancellationToken).ConfigureAwait(false);
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // A completed current-user context can return its immutable cached
+        // snapshot while a finite mutation or export is busy. A handoff or
+        // deferred recovery still takes the guarded activation path below.
+        if (request is GetStatusRequest or SubscribeStatusRequest
+            && client.IsInteractive
+            && runtime is IServiceUserAdmission statusAdmission
+            && statusAdmission.TryReadCurrentUserStatus(client.UserSid, stillControlsSession, out ServiceStatusSnapshot? cached))
+        {
+            return Status(request.RequestId, client, cached);
+        }
+
+        // Preserve the runtime's early different-user barrier while another
+        // finite request owns the dispatch gate. Cancellation releases the
+        // pending count but never restores an older thermal authority epoch.
+        using IDisposable? pendingAdmission = activateUserConfiguration
+            && request is not ShutdownOpenBladeRequest
+            && client.IsInteractive
+            && runtime is IServiceUserAdmission userAdmission
+                ? userAdmission.BeginUserAdmission(client, stillControlsSession, Volatile.Read(ref userRequestOwner))
+                : null;
+        await userRequestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Release may win SemaphoreSlim's cancellation race. Observe the
+            // canceled request before dispatch, while finally still owns the permit.
+            cancellationToken.ThrowIfCancellationRequested();
+            Volatile.Write(ref userRequestOwner,
+                client.IsInteractive && request is not ShutdownOpenBladeRequest
+                    ? new ServiceUserRequestOwner(client, stillControlsSession)
+                    : null);
+            // The prior request has finished. Activation below takes its own
+            // admission before its first wait, so its writes do not see this
+            // request's ingress lease as a competing pending user.
+            pendingAdmission?.Dispose();
+            // Gate acquisition can win a concurrent cancellation. Check at the
+            // dispatch boundary after retiring the pending admission lease.
+            cancellationToken.ThrowIfCancellationRequested();
+            return await HandleUserRequestAsync(
+                request, client, activateUserConfiguration, stillControlsSession, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref userRequestOwner, null);
+            userRequestGate.Release();
+        }
+    }
+
+    private async Task<ServiceResponse> HandleUserRequestAsync(
+        ServiceRequest request,
+        ServiceClientContext client,
+        bool activateUserConfiguration,
+        Func<bool> stillControlsSession,
+        CancellationToken cancellationToken)
+    {
+        ServiceRequestAccessDecision accessDecision = ServiceRequestAccessPolicy.Evaluate(
+            request, client, sessionAuthority);
+        if (accessDecision.Rejection is not null)
+        {
+            return Failure(request.RequestId, accessDecision.Rejection);
+        }
+
         if (activateUserConfiguration
             && request is not ShutdownOpenBladeRequest
             && client.IsInteractive
@@ -141,13 +216,19 @@ public sealed class ControlRequestHandler
             {
                 await runtime.ActivateUserAsync(
                     client.UserSid,
-                    () => ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
-                        == SessionControlAccess.Active,
+                    stillControlsSession,
                     cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
+            }
+            catch (ConfigurationQuarantinedException exception)
+            {
+                DiagnosticTrace.TraceException(nameof(ControlRequestHandler), nameof(HandleCoreAsync), exception,
+                    "Active-user configuration transaction recovery is required.");
+                return Failure(request.RequestId,
+                    $"The active user's configuration requires recovery: {exception.Message}");
             }
             catch (Exception exception) when (exception is
                 InvalidDataException or IOException or JsonException or UnauthorizedAccessException)
@@ -160,9 +241,18 @@ public sealed class ControlRequestHandler
             }
         }
 
-        Func<bool> stillControlsSession = () =>
-            ServiceRequestAccessPolicy.GetAccess(client, sessionAuthority)
-                == SessionControlAccess.Active;
+        // Loading and applying a user's profile can await device or storage
+        // work. Refuse stale mutations before dispatching through that context.
+        // Status projects access freshly itself, including inactive read-only
+        // views. Mutations need the same check before their runtime dispatch.
+        if (request is not (GetStatusRequest or SubscribeStatusRequest)
+            && ServiceRequestAccessPolicy.Evaluate(request, client, sessionAuthority).Rejection is not null)
+        {
+            return Result(request.RequestId, new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "The active Windows session changed before the request could be dispatched."));
+        }
+
         Func<bool> stillControlsActiveLocalSession = () =>
             ServiceRequestAccessPolicy.IsActiveLocalInteractiveClient(
                 client,
@@ -178,9 +268,31 @@ public sealed class ControlRequestHandler
                 observe.EffectiveLiveReadings,
                 client,
                 cancellationToken),
+            SetCoolingPadSettingsRequest set => Result(request.RequestId,
+                await runtime.SetCoolingPadSettingsAsync(set.Settings, client.UserSid, stillControlsActiveLocalSession, cancellationToken)),
+            ReadCoolingPadStatusRequest => await ReadCoolingPadStatusAsync(request.RequestId, client, cancellationToken),
+            ReleaseCoolingPadControlRequest => Result(request.RequestId,
+                await runtime.ReleaseCoolingPadControlAsync(client.UserSid, stillControlsActiveLocalSession, cancellationToken)),
+            SetCoolingPadDemandLeaseRequest lease => Result(request.RequestId,
+                await runtime.SetCoolingPadDemandLeaseAsync(lease, client, stillControlsActiveLocalSession, cancellationToken)),
+            RemoveCoolingPadDemandLeaseRequest lease => Result(request.RequestId,
+                await runtime.RemoveCoolingPadDemandLeaseAsync(lease, client, cancellationToken)),
             UpdateProfilesRequest update => Result(
                 request.RequestId,
                 await runtime.UpdateProfilesAsync(update.Profiles, cancellationToken)),
+            SetBatterySaverFanStopRequest set => Result(
+                request.RequestId,
+                await runtime.SetBatterySaverFanStopAsync(
+                    set.Enabled, stillControlsSession, cancellationToken)),
+            SetFanStopModeRequest set => Result(
+                request.RequestId,
+                await runtime.SetFanStopModeAsync(set.Mode, stillControlsSession, cancellationToken)),
+            SetFanStopSettingsRequest set => Result(
+                request.RequestId,
+                await runtime.SetFanStopSettingsAsync(set.Settings, stillControlsSession, cancellationToken)),
+            ResumeAutomaticFanStopRequest => Result(
+                request.RequestId,
+                await runtime.ResumeAutomaticFanStopAsync(stillControlsSession, cancellationToken)),
             ReportApplicationContextRequest report => Result(
                 request.RequestId,
                 await runtime.ReportApplicationContextAsync(
@@ -203,6 +315,15 @@ public sealed class ControlRequestHandler
                     set.Lifetime,
                     stillControlsSession,
                     cancellationToken)),
+            ObserveCpuTuningRequest observe => Result(request.RequestId,
+                await runtime.ObserveCpuTuningAsync(observe.UseInstalledBackend,
+                    stillControlsSession, cancellationToken)),
+            SetCpuTuningRequest set => Result(request.RequestId,
+                await runtime.SetCpuTuningAsync(set.Target, set.Settings,
+                    stillControlsSession, cancellationToken)),
+            RestoreCpuTuningRequest restore => Result(request.RequestId,
+                await runtime.RestoreCpuTuningAsync(restore.Target,
+                    stillControlsSession, cancellationToken)),
             ValidatePadlessHyperBoostLifecycleRequest validate => Result(
                 request.RequestId,
                 await runtime.ValidatePadlessHyperBoostLifecycleAsync(
@@ -237,6 +358,9 @@ public sealed class ControlRequestHandler
             SetLightingOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetLightingOverrideAsync(set.Value, cancellationToken)),
+            SetIndependentLightingOverrideRequest set => Result(
+                request.RequestId,
+                await runtime.SetIndependentLightingOverrideAsync(set.Value, cancellationToken)),
             StepKeyboardBrightnessRequest step => Result(
                 request.RequestId,
                 await runtime.StepKeyboardBrightnessAsync(
@@ -365,12 +489,13 @@ public sealed class ControlRequestHandler
         return Status(requestId, client);
     }
 
-    private ServiceResponse Status(Guid requestId, ServiceClientContext client) => new(
+    private ServiceResponse Status(Guid requestId, ServiceClientContext client,
+        ServiceStatusSnapshot? snapshot = null) => new(
         OpenBladeIpc.ProtocolVersion,
         requestId,
         Success: true,
         Error: null,
-        Status: ProjectStatus(runtime.GetStatus(), client),
+        Status: ProjectStatus(snapshot ?? runtime.GetStatus(), client),
         Result: null,
         Archive: null);
 
@@ -421,6 +546,12 @@ public sealed class ControlRequestHandler
             ThermalConvergence = null,
             ControlAccess = access,
         };
+    }
+
+    private async Task<ServiceResponse> ReadCoolingPadStatusAsync(Guid requestId, ServiceClientContext client, CancellationToken token)
+    {
+        await runtime.ReadCoolingPadStatusAsync(client.UserSid, token).ConfigureAwait(false);
+        return Status(requestId, client);
     }
 
     private static ServiceResponse Result(Guid requestId, ControlOperationResult result) => new(

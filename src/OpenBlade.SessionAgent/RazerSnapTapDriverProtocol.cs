@@ -28,7 +28,7 @@ internal sealed class RazerSnapTapHookSnapshot
     internal bool RecordEquals(ReadOnlySpan<byte> candidate) => candidate.SequenceEqual(record);
 }
 
-/// <summary>Fixed A/D codecs for the source-reviewed RzCommon API contract.</summary>
+/// <summary>Closed selector-set codecs for the source-reviewed RzCommon API contract.</summary>
 internal static class RazerSnapTapDriverProtocol
 {
     internal const uint NotificationIoControlCode = 0x88883018;
@@ -56,25 +56,39 @@ internal static class RazerSnapTapDriverProtocol
     private const ushort AScanCode = 0x1E;
     private const ushort DScanCode = 0x20;
 
-    internal static byte[] EncodeHook(ushort scanCode)
+    internal static IReadOnlyList<ushort> ScanCodes(RazerKeyboardHookPurpose purpose) => purpose switch
     {
-        ValidateAdScanCode(scanCode);
+        RazerKeyboardHookPurpose.SnapTap => AdScanCodes,
+        RazerKeyboardHookPurpose.FunctionRow => FunctionScanCodes,
+        RazerKeyboardHookPurpose.Combined => CombinedScanCodes,
+        _ => throw new ArgumentOutOfRangeException(nameof(purpose)),
+    };
+
+    private static readonly IReadOnlyList<ushort> AdScanCodes = Array.AsReadOnly<ushort>([0x1E, 0x20]);
+    private static readonly IReadOnlyList<ushort> FunctionScanCodes = Array.AsReadOnly<ushort>(
+        [0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, 0x57, 0x58]);
+    private static readonly IReadOnlyList<ushort> CombinedScanCodes = Array.AsReadOnly<ushort>(
+        [0x1E, 0x20, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, 0x57, 0x58]);
+
+    internal static byte[] EncodeHook(ushort scanCode, RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap)
+    {
+        ValidateScanCode(scanCode, purpose);
         byte[] record = new byte[HookRecordLength];
         WriteKeyboardRecord(record, scanCode, isDown: true);
         return record;
     }
 
-    internal static byte[] EncodeClearHook(ushort scanCode)
+    internal static byte[] EncodeClearHook(ushort scanCode, RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap)
     {
-        ValidateAdScanCode(scanCode);
+        ValidateScanCode(scanCode, purpose);
         byte[] record = new byte[ClearHookLength];
         WriteKeyboardRecord(record, scanCode, isDown: true);
         return record;
     }
 
-    internal static byte[] EncodeOutput(SnapTapKeyStroke stroke)
+    internal static byte[] EncodeOutput(SnapTapKeyStroke stroke, RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap)
     {
-        ValidateAdScanCode(stroke.ScanCode);
+        ValidateScanCode(stroke.ScanCode, purpose);
         byte[] record = new byte[OutputLength];
         WriteKeyboardRecord(record, stroke.ScanCode, stroke.IsDown);
         return record;
@@ -121,10 +135,17 @@ internal static class RazerSnapTapDriverProtocol
         return IsAdHook(hook) && hook.RecordEquals(EncodeHook(hook.ScanCode));
     }
 
+    internal static bool IsPurposeHook(RazerSnapTapHookSnapshot hook, RazerKeyboardHookPurpose purpose) =>
+        hook.HookType == KeyboardHookType && ScanCodes(purpose).Contains(hook.ScanCode);
+
+    internal static bool IsOwnedHook(RazerSnapTapHookSnapshot hook, RazerKeyboardHookPurpose purpose) =>
+        IsPurposeHook(hook, purpose) && hook.RecordEquals(EncodeHook(hook.ScanCode, purpose));
+
     internal static RazerSnapTapInputDecodeResult DecodeInput(
         ReadOnlySpan<byte> buffer,
         int bytesTransferred,
-        out SnapTapKeyStroke stroke)
+        out SnapTapKeyStroke stroke,
+        RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap)
     {
         stroke = default;
         if (bytesTransferred != NotificationLength || buffer.Length < NotificationLength)
@@ -141,8 +162,14 @@ internal static class RazerSnapTapDriverProtocol
         uint hookType = BinaryPrimitives.ReadUInt32LittleEndian(buffer[16..]);
         ushort scanCode = BinaryPrimitives.ReadUInt16LittleEndian(buffer[22..]);
         ushort flags = BinaryPrimitives.ReadUInt16LittleEndian(buffer[24..]);
-        if (hookType != KeyboardHookType || !IsAdScanCode(scanCode) || flags > 1)
+        if (hookType != KeyboardHookType || flags > 1)
         {
+            return RazerSnapTapInputDecodeResult.Malformed;
+        }
+        if (!ScanCodes(purpose).Contains(scanCode))
+        {
+            // One worker owns the selected union. Another selector indicates
+            // an unexpected global hook: never silently discard its input.
             return RazerSnapTapInputDecodeResult.Malformed;
         }
 
@@ -159,9 +186,9 @@ internal static class RazerSnapTapDriverProtocol
 
     private static bool IsAdScanCode(ushort scanCode) => scanCode is AScanCode or DScanCode;
 
-    private static void ValidateAdScanCode(ushort scanCode)
+    private static void ValidateScanCode(ushort scanCode, RazerKeyboardHookPurpose purpose)
     {
-        if (!IsAdScanCode(scanCode))
+        if (!ScanCodes(purpose).Contains(scanCode))
         {
             throw new ArgumentOutOfRangeException(nameof(scanCode));
         }

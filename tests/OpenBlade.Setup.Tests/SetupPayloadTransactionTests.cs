@@ -8,6 +8,71 @@ namespace OpenBlade.Setup.Tests;
 public sealed class SetupPayloadTransactionTests
 {
     [Fact]
+    public async Task GuardianAppearancePreventsActivationAndRetainsStagedFiles()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.txt", [1]);
+        var guard = new MutableGuardianGuard();
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(guardianGuard: guard).StagePayloadAsync(CancellationToken.None);
+        guard.Blocked = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => transaction.ActivateAsync(CancellationToken.None));
+
+        Assert.True(File.Exists(Path.Combine(tree.Install, "old.txt")));
+        Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+    }
+
+    [Fact]
+    public async Task GuardianAppearancePreventsRollbackAndRetainsBothPayloads()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.txt", [1]);
+        var guard = new MutableGuardianGuard();
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(guardianGuard: guard).StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+        guard.Blocked = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => transaction.RollbackAsync(CancellationToken.None));
+
+        Assert.True(File.Exists(Path.Combine(tree.Install, "OpenBlade.FanStop.Guardian.exe")));
+        string backup = Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+        Assert.True(File.Exists(Path.Combine(backup, "old.txt")));
+    }
+
+    [Fact]
+    public async Task GuardianAppearanceRetainsBackupDuringCommitCleanup()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.txt", [1]);
+        var guard = new MutableGuardianGuard();
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(guardianGuard: guard).StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+        guard.Blocked = true;
+
+        await transaction.CommitAsync(CancellationToken.None);
+
+        Assert.NotNull(transaction.CommitWarning);
+        string backup = Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+        Assert.True(File.Exists(Path.Combine(backup, "old.txt")));
+    }
+
+    private sealed class MutableGuardianGuard : ISetupGuardianQuiescenceGuard
+    {
+        internal bool Blocked { get; set; }
+        public void EnsureClear()
+        {
+            if (Blocked) { throw new InvalidOperationException("Synthetic retained guardian ownership."); }
+        }
+    }
+
+    [Fact]
     public async Task StagePayload_ReportsEveryCopiedRelativePathAndTransactionPhase()
     {
         using TestTree tree = new();
@@ -40,6 +105,11 @@ public sealed class SetupPayloadTransactionTests
     [InlineData("OpenBlade.Service.dll")]
     [InlineData("OpenBlade.Service.deps.json")]
     [InlineData("OpenBlade.Service.runtimeconfig.json")]
+    [InlineData("OpenBlade.FanStop.Core.dll")]
+    [InlineData("OpenBlade.FanStop.Guardian.exe")]
+    [InlineData("OpenBlade.FanStop.Guardian.dll")]
+    [InlineData("OpenBlade.FanStop.Guardian.deps.json")]
+    [InlineData("OpenBlade.FanStop.Guardian.runtimeconfig.json")]
     [InlineData("OpenBlade.Platform.dll")]
     [InlineData("OpenBlade.SessionAgent.exe")]
     [InlineData("OpenBlade.SessionAgent.dll")]
@@ -873,10 +943,23 @@ public sealed class SetupPayloadTransactionTests
     {
         private static readonly string[] RequiredFiles =
         [
+            "PawnIO_setup.exe",
+            "PawnIO-NOTICE.txt",
+            @"licenses\LibreHardwareMonitor-source.zip",
+            "LibreHardwareMonitorLib.dll",
+            "OpenBlade.CpuTemperature.exe",
+            "OpenBlade.CpuTemperature.dll",
+            "OpenBlade.CpuTemperature.deps.json",
+            "OpenBlade.CpuTemperature.runtimeconfig.json",
             "OpenBlade.Service.exe",
             "OpenBlade.Service.dll",
             "OpenBlade.Service.deps.json",
             "OpenBlade.Service.runtimeconfig.json",
+            "OpenBlade.FanStop.Core.dll",
+            "OpenBlade.FanStop.Guardian.exe",
+            "OpenBlade.FanStop.Guardian.dll",
+            "OpenBlade.FanStop.Guardian.deps.json",
+            "OpenBlade.FanStop.Guardian.runtimeconfig.json",
             "OpenBlade.Platform.dll",
             "OpenBlade.SessionAgent.exe",
             "OpenBlade.SessionAgent.dll",
@@ -931,12 +1014,14 @@ public sealed class SetupPayloadTransactionTests
 
         public WindowsSetupPlatform CreatePlatform(
             ISetupPayloadFileSystem? files = null,
-            ISetupProgressReporter? progressReporter = null) =>
+            ISetupProgressReporter? progressReporter = null,
+            ISetupGuardianQuiescenceGuard? guardianGuard = null) =>
             WindowsSetupPlatformTestFactory.Create(
                 paths: Paths,
                 payloadDirectory: Payload,
                 payloadFileSystem: files,
-                progressReporter: progressReporter);
+                progressReporter: progressReporter,
+                guardianQuiescenceGuard: guardianGuard);
 
         public void Dispose()
         {
@@ -1010,6 +1095,8 @@ public sealed class SetupPayloadTransactionTests
 
     private sealed class CaptureFailingSetupPlatform(ISetupPayloadTransaction transaction) : ISetupPlatform
     {
+        public Task<bool> EnsureCpuTemperaturePrerequisiteAsync(string stagedPayloadDirectory, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
         public string CurrentUserSid => throw new NotSupportedException();
 
         public Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken) =>

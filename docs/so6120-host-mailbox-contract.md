@@ -1,0 +1,409 @@
+# SO6120 host mailbox ownership and completion
+
+The offline follow-up resolves the vendor mailbox's software completion rule:
+for an isolated mapped request with stable fields and no intervening lifecycle
+reset, the command is cleared after the EC handler returns. That is useful
+ordering, but neither the command nor status identifies the request or its
+owner. The updater does not supply the exclusion needed to rely on that rule
+when another actor can change the mailbox.
+
+This is exact SO6120 evidence. It does not establish physical fan behavior or
+another model's command contract. A separate, developer-only
+[supervised PWM increase runner](so6120-supervised-pwm-trial.md) now binds
+the transport and generic Auto coordinator for an explicitly approved test.
+That implementation is not evidence that the physical test has run.
+
+The developer [one-byte transaction core](../src/OpenBlade.Capture/So6120HostMailboxTransaction.cs)
+implements the mapped request sequence over an injected fixed-port boundary.
+It restricts the register set, publishes the command last, and rechecks live
+descriptor/status/idle fields and any staged payload after fresh publication
+admission. A write is confirmed only after a separate newly admitted `A0`
+read matches. Its bounded ledger retains native outcomes, possible publication
+and completed-handler counts across confirmation failures. No failure causes
+a retry or cleanup command.
+
+The [fixed-port adapter](../src/OpenBlade.Capture/So6120InpOutBytePort.cs)
+encodes the reviewed byte IOCTLs for ports `300`/`301` and preserves native
+Boolean/count/error results. Its handle-lifetime lock is not mailbox exclusion.
+The fixed Windows platform can attach one reviewed, already-running driver
+handle after attended admission. Unscoped acquisition still refuses. The
+session composes durable intent and admission through injected sources; the
+live owner supplies verified inputs and explicitly accepted residual
+transport/field ownership conditions. A matching read does
+not prove a transition or establish ownership if the byte was already present.
+Policy-command/status registers are read-only in this interface; writing full
+override bytes still requires reviewed bit preservation outside the byte
+protocol. Focused fake-port/native tests cover these boundaries without
+accessing hardware.
+
+## Typed entry and Auto handback
+
+The developer [entry and Auto-exit coordinators](../src/OpenBlade.Capture/So6120DirectDutyCoordinator.cs)
+sequence the host-mailbox path independently of the MCU gate/bank backend.
+The fixed prepared experiments admit Balanced or Silent through their outer
+admission, preserving the selected profile; the generic exit restores
+the captured, separately admitted Balanced, Performance, Battery Saver,
+Silent or Battery Balanced profile. It does not switch through Balanced or
+offer an arbitrary new destination. Custom requires a retained-settings
+contract that this slice does not supply.
+
+Entry captures Automatic (`36=00`), an idle policy command (`0A=00`), a nonzero
+PWM cycle, and an override with bits 5 and 6 clear. Read-only bank-zero index
+`06` maps to `802E3`; its bit 0 gates the `FE` path at `15E4A..15E54`.
+Requested duties must fit the observed cycle; they are counts, not percentages
+or RPM. These checks do not independently authorize a cooling level.
+
+1. Stage changed `B8/B9` values, then set only override bit 6, confirming each
+   write through a separately admitted read. Unchanged fields are not claimed.
+2. Recheck the full expected controls and enter `FE` last. Observe actual duty
+   separately; matching samples do not prove a mechanical effect or causality.
+3. For Auto exit, restore the captured normal selector directly and observe
+   both that selector and `Manual=00`. Restore the changed owned override and
+   staged bytes, then confirm the final controls. There is no redundant manual,
+   policy-command, gate, bank or paired-HID write. Original inactive staged
+   bytes are restored exactly, even if they exceed the current cycle.
+
+Before `FE`, a confirmed partial-entry checkpoint permits an explicitly claimed
+cleanup of its changed prefix. Ambiguous commands, field drift or journal
+uncertainty fence all further commands, including `A0`. A failed durable fence
+is reported separately from the in-process fence. Observation sequence and time
+advance across entry and exit, including polls after the last checkpoint, so
+cached entry observations cannot qualify a later exit.
+
+Mapped writes queue event 14. An idle `0A` does not establish that earlier work
+drained, and same-profile reload can restore saved manual settings at
+`165EE..165F2`. Fresh post-handback and final observations must still show
+Automatic and idle `0A`. Override bit 6 also affects a gated policy contributor
+at `1101A..11022`; exposure starts when its publication becomes possible and
+ends only after its original value is confirmed. The result records observed
+handback and owned-byte cleanup, not complete internal-policy restoration.
+
+Snapshots are ordered reads, not atomic exclusion. Expected mapped controls
+are checked before staging `A1`; its publication callback must not issue nested
+`A0` requests over the staged command. The session connects these components
+under one owner. The separate live runner adds native acquisition and verified
+caller conditions; its attended procedure explicitly retains unproven physical
+recovery from a stalled or ambiguous command.
+
+## Durable records and admission
+
+The [developer journal](../src/OpenBlade.Capture/So6120DirectDutyJournal.cs)
+records one operation's binding, claims, intent, request publication, results
+and checkpoints. Each bounded, sequenced frame is flushed before its append
+returns. A failed write or flush poisons the in-process journal; it cannot
+record a fictitious successful fence afterward. Its held file excludes other
+file access, not mailbox writers. The trusted outer owner must select the one
+agreed run root; a different directory is not excluded by this mechanism.
+The live platform separately holds a named runner guard and a fixed,
+create-once machine attempt latch to prevent bypass with another run root.
+
+Existing journals are never reopened for writing. Post-release inspection
+checks framing, hashes, required fields, duplicates and state transitions.
+A successful result must retain its separate `A0` completion-byte evidence.
+Inspection reports confirmed and unresolved milestones but never grants
+restart or recovery authority. Valid bytes after interruption do not prove
+the old caller received the flush acknowledgement.
+
+The [supervised admission component](../src/OpenBlade.Capture/So6120SupervisedAdmission.cs)
+collects exact host, reported EC version, present HID descriptor, power/console,
+configured driver and known-controller metadata. Failed relevant HID reads and
+inventory failures remain visible. Its policy separately requires trusted,
+same-run caller-challenge acceptance and OpenBlade handoff evidence. A supplied
+digest does not authenticate that evidence, and an accepted assessment grants
+no hardware authority. Current context freshness does not require repeating
+unchanged source or caller-challenge evidence solely because it is older.
+
+An already stopped OpenBlade baseline needs no invented exit record. If this
+run stopped it, the supplied handoff must identify the original process and
+observed exit; either path still requires a fresh stopped-service/no-writer
+observation. This component does not perform that handoff. The prepared live
+runner requires the already-stopped path after normal attended UI shutdown;
+it also verifies absence of the tray and Session Agent.
+
+## Session composition
+
+The [session](../src/OpenBlade.Capture/So6120DirectDutySession.cs) connects the
+coordinators, byte transaction core, journal and admission policy through
+injected dependencies. One serialized owner holds the operation and its port
+lifetime through entry, explicit Auto restoration and disposal. Restoration
+uses only that operation's current checkpoint; inspected journals cannot
+resume a session. Disposal closes resources without issuing cleanup commands.
+
+Each observation records thirteen sequential mapped reads with start and end
+timestamps. They are not an atomic snapshot. Every command, including each
+read and a write's independent readback, records its intent before publication
+and passes fresh admission. Admission callbacks do not issue mailbox commands.
+An uncertain command, failed journal or lost admission prevents subsequent
+commands. A definitely unsubmitted operation needs durable evidence before
+the existing coordinator can allow explicit cleanup of a confirmed prefix.
+
+The session binds the run, clock, console and evidence identities rather than
+accepting a new set of mutually matching inputs mid-operation. It separately
+binds caller-risk acceptance and hardware-test consent fields. These checks
+do not authenticate the injected evidence or grant authority to touch hardware.
+The journal retains its operation, device, firmware and consent binding;
+the session also pins challenge evidence in memory. A live runner must retain
+the reviewed caller evidence alongside the run instead of inferring it from
+the command journal.
+Tests exercise the real composition with memory ports and temporary journals.
+The separate Windows platform and fixed CLI supply live construction without
+adding installed-service handoff or product controls to this layer. An
+explicit unplanned journal phase permits only baseline reads, then binds one
+immutable derived plan and its separate write approval before any A1.
+
+The [live procedure](so6120-supervised-pwm-trial.md) binds the fixed test and
+consent, finite caller-risk acceptance, observed stopped OpenBlade state,
+pinned native handle and attended response to a stalled command or failed
+handback. Execution still requires separate attended approval. Software
+deadlines cannot interrupt synchronous kernel I/O or guarantee thermal recovery.
+The snapshot time bound is checked between transfers and before accepting an
+observation; an in-flight transaction can overrun it, even without a native stall.
+Exposure begins at possible override-bit publication, before direct mode is
+confirmed. Passing offline tests does not establish physical PWM or RPM control.
+
+## Inputs and verification
+
+The [host mailbox investigation](so6120-host-mailbox-alternatives.md#exact-inputs-and-method)
+pins the original carrier and extraction. This follow-up rechecks:
+
+| Input | Size | SHA-256 |
+|---|---:|---|
+| EC 1.04 image | 262,144 | `8537e9fd55b7b35504d8d87b0191acc4391b67365b3fe72f6e1029a424c9e707` |
+| Updater block 3 | 390,856 | `e3b25313595d1fd2a7c47fa46d6cbda45ae596e783eaa3fd771dafcf495d3358` |
+| Bundled x64 InpOut library, block 11 | 98,304 | `5f27ed4d5cd58a1ee23deeb802e09e73f3a1d884ce2135f6e827f67b171269e7` |
+| Embedded x64 driver, DLL offset `0x13BC0` | 15,008 | `f8965fdce668692c3785afa3559159f9a18287bc0d53abb21902895a8ecf221b` |
+
+EC instruction spans and little-endian table words were checked against that
+image. PEReader regenerated the updater metadata, including implementation
+flags, signatures, direct callers and exception regions. All 269 instructions
+of `RWIoI2C.I2C_Read_Write` match the earlier verified IL dump. Method offsets
+below are IL offsets within the specified metadata token, not file addresses.
+No vendor assembly, firmware or native driver was loaded or executed; there
+was no hardware access. Raw inputs and working dumps remain ignored artifacts.
+
+A separate read-only `Win32_BIOS` query on 2026-11-06 reported manufacturer
+Razer, BIOS `4.01`, and embedded-controller major/minor `1/4` on the investigated
+laptop. This matches the reviewed EC version label `1.04`; it does not hash the
+running EC image. The ignored metadata report has SHA-256
+`ace4dd00ca4883ca39080c9cbd4433219991cd817b339e53db8c91c0ffcbef03`.
+The query opened no InpOut device and published no mailbox command. A live
+session must still acquire its own fresh, correctly bound admission evidence.
+
+The separately reviewed metadata collector then completed a read-only check in
+79.3416 ms. It read all ten present matching VID/PID HID candidates and found
+one `1532:02E0`, usage `0001:0002`, 91-byte control collection. Host identity and
+reported EC version matched the experiment pins; the process was on the active
+local console with AC power. The configured driver was running, matched the
+pinned size/hash and resolved to `\Device\inpoutx64`. There were no known
+Razer-controller detections;
+OpenBlade was running with one writer process. No handoff, admission acceptance,
+InpOut device open or mailbox command occurred. The ignored report SHA-256 is
+`db242a8b38e09b7e50d59c136196ac7334f23d6c7d9f2e1c62556715b0bd9e34`.
+The host helper's `Tested` label means the BIOS matched this experiment's
+explicit pin; it is not new physical validation of fan commands.
+
+## Request publication and ownership
+
+The updater publishes bank, index and count, then write data if applicable,
+and finally command `A0` or `A1` at mailbox index `93`. Each mailbox-byte
+access itself takes two native calls: write index to port `300`, then read or
+write port `301` (`0600001F/20`). Command-last publication orders this caller's
+stores; it does not make either the index/data pair or the request atomic.
+
+A mutex does exist. `MainWindow..cctor` (`060000C2:0000..000B`) constructs
+`Mutex(true, "Razer Update Tool")`; the constructor checks it with
+`WaitOne(TimeSpan.Zero, true)` (`06000086:007B..008E`). These are the only
+direct references to that mutex field. It is an application-instance mechanism,
+not acquisition around a mailbox transaction. The reviewed port wrappers and
+`I2C_Read_Write` have no synchronization implementation flag, managed lock,
+idle acquisition, owner token or response generation. This IL does not
+establish cooperation by other processes; the native path is reviewed below.
+
+`EC_BANK` and `I2CBUF` are public static fields (`0400003C/3D`). Payload loops
+access the shared buffer byte by byte; split requests reload the bank for the
+second transaction. There is no immutable request snapshot. A short write
+starting exactly at register `0F` changes the cached bank before submission
+or success, even for zero count. Long writes and spans merely containing `0F`
+do not perform that cache update. This is not a reusable bank-coherence rule.
+
+The actual direct use is narrower than the generic helper. The only two direct
+calls to `I2C_Read_Write` are in `MainWindow.Qevent` (`06000089:001B/0037`):
+two sequential one-byte writes. Its caller invokes it synchronously before
+starting the queued update worker. No concurrent in-process requests or uses
+of the generic read/split branches are established by this call inventory.
+External, reflected and unrecovered calls are outside that scope.
+
+## Native port API boundary
+
+Static inspection of the bundled x64 DLL narrows the native uncertainty. In
+its driver-backed branch, `Out32` at RVA `0x1040` makes one synchronous
+`DeviceIoControl` call at `0x108C`, with a two-byte port and one-byte value.
+It discards the Boolean result and returns no outcome. `Inp32` at RVA
+`0x10A0` similarly submits one port read at `0x1113`, using the same buffer
+for the input port and output byte. Failure is logged, but execution still
+returns that buffer's first byte at `0x1147`. The updater cannot distinguish
+that failed-read return from an actual device byte through this API.
+
+Neither reviewed export acquires a mailbox lock or begins/ends a multi-call
+mailbox transaction. Lock-related imports elsewhere in the library do not establish
+such protection. The driver-open path requests share mode zero in
+`CreateFileA` calls at RVA `0x1CEB/0x1D59`; that request alone does not prove
+the driver's create/open path enforces exclusive ownership. It also cannot
+establish exclusion of independent firmware field writers.
+
+Static analysis of the embedded x64 driver resolves that create/open question.
+At driver RVA `0x15FF`, the code supplies `Exclusive = false` to
+`IoCreateDevice` at `0x160C`. Its create dispatch, installed at
+`0x162A..0x1631`, is routine `0x1010..0x1031`: set success and zero information,
+complete the request, return success. That path has no owner state or share
+check. Device-control dispatch is separately installed at `0x1635..0x163C`.
+Its byte-read branch performs `IN` at `0x135A`; the byte-write branch performs
+`OUT` at `0x1382`. Each goes to ordinary request completion at `0x14AC`, with
+no ownership held across the index and data operations. These RVAs use the
+driver's preferred image base `0x10000`, distinct from the DLL's base.
+
+The driver was analyzed directly from the original DLL resource in memory as
+data, without loading it into Windows. This is a bounded review of the create
+and byte-I/O paths, not a full driver trust/security audit. These driver paths
+do not enforce a sole owner or protect the index/data pair, and the DLL API
+fails to preserve usable per-operation failure results. Live Windows access
+policy, actual competing handles and installed driver binaries were not inspected.
+
+## EC scheduling and live request fields
+
+The interrupt-dispatch table word at `0x611C` points to `0x20A7E`, which
+calls `0xBEE6`. That routine sets the single pending byte `0x8000D` to one
+at `0xBEEC`. Main event dispatcher `0x2115E` clears a pending byte at
+`0x2118A` before calling its table entry at `0x21192`. Slot 13, word
+`0x2E688`, selects `0xCD64 -> 0x12D80 -> 0x203C`.
+
+The pending byte is a flag, not a count or a copy of a request. Repeated event
+notifications while it is already one do not create separate software queue
+records. This does not prove how every hardware notification is delivered.
+
+| Mapped handler state | Recovered sampling behavior |
+|---|---|
+| Command | Loaded once at `0x2042` for the mapped branch. |
+| Bank/table | Bank checked at `0x22D6`; table pointer selected once at `0x22EC`. |
+| Count | Initially bounded at `0x22DE..0x22E6`, then reread for every loop test at `0x2318` or `0x236C`. |
+| Register index | Reread at `0x231E` or `0x2372` for each byte. |
+| Write data | Read from the live mailbox at `0x238C` immediately before each mapped store. |
+
+The index is narrowed to a byte at `0x2322/0x2376`; a stable two-byte request
+starting at `FF` addresses `FF` then `00` in the selected bank. Zero count
+passes validation and performs no mapped access. A changed count is not
+revalidated against 32 in the loop. The initial bound is therefore conditional
+on the fields remaining stable; it is not protection against a concurrent
+replacement. No overwritten-field experiment was performed.
+
+After the handler returns, `0x12D8C` clears command `93` unconditionally.
+It does not check that the current command still belongs to the handled
+request. Under a hypothetical competing submission, an old handler could
+therefore clear a replacement command. A newly pending event could then find
+command zero and do no work. This is a conditional instruction-backed example,
+not a measured race or a claim that such timing is unavoidable.
+
+## What completion does and does not mean
+
+| Actual register observation | Supported interpretation for an isolated, stable mapped `A0/A1` request without reset |
+|---|---|
+| Status `80` while command remains nonzero | Not completion: `0x22F4` sets it before the mapped loop. |
+| Submitted command changes to zero | The selected handler returned; the byte itself does not identify which request completed. |
+| Command zero plus status `80` | Handler-level success, including zero-length requests and skipped read-only writes. |
+| Matching mapped read | A separate value observation; it needs its own intact request and response. It does not prove fan rotation or continuing ownership. |
+
+Mapped status `84` means bank above 7, `82` count above 32, and `83` an
+unsupported command reaching this mapped-command fallback (`0x23A4..0x23B8`).
+For `A1`, metadata value `1` skips the write at `0x2388` without replacing
+status `80`; otherwise the handler stores the whole byte. Successful writable
+stores also set event byte `0x8000E` at `0x2394`. That later event has its own
+slot (`0x2E68C -> 0xCD6C -> 0x9008`); clearing command `93` does not wait for
+that subsequent handler. No particular fan effect is inferred from this event.
+
+Command zero is also a lifecycle value. Initialization clears it at `0x12D7A`,
+the alternate startup branch at `0xBDA4` clears it without clearing status in
+that routine, and bulk initialization `0x12D92` clears the entire mailbox
+range. These are not proposed recovery commands. They show why a zero command
+alone cannot distinguish ordinary completion from lifecycle interruption.
+
+The updater further weakens completion handling:
+
+- All branches read status only once at `06000051:02D2..02E6`. A split
+  request sends its second command after the first command clears without
+  examining the first status. Success of the second chunk can hide failure of
+  the first; failure of the second does not undo the first.
+- Reads copy mailbox data into shared `I2CBUF` before that final status check.
+  A failed read may already have changed the output buffer.
+- Unsupported address/operation or count above 64 goes directly to the
+  existing status without submitting a command. Stale `80` can return integer
+  `1` for a no-op. Valid zero count instead publishes an empty request.
+- Polling has no deadline, cancellation or cleanup. Adding a host deadline
+  would limit waiting, but would not cancel or establish the result of an
+  already submitted EC request.
+- `Qevent` discards both integer results (`06000089:0020/003C`) and catches
+  exceptions without publishing failure. Its fixed sleeps are not polling
+  timeouts. Its presence is vendor-use evidence, not validation of the generic
+  helper's failure handling.
+
+## Consequence for an adapter
+
+A 2026-11-05 read-only Windows driver-service inventory reported an already
+running `inpoutx64` service with automatic start. Its configured driver file
+has the same 15,008-byte size and SHA-256
+`f8965fdce668692c3785afa3559159f9a18287bc0d53abb21902895a8ecf221b`
+as the embedded driver reviewed above. Windows Authenticode reported Valid,
+Red Fox UK Limited. This extends the byte-level audit to the configured file
+on this development laptop; it is not loaded-memory attestation, a handle-owner
+inventory or runtime API admission. No device was opened and no driver was
+installed, started or changed.
+
+This observation removes the assumption that investigating a port-access
+route necessarily needs a new driver installation here. It does not change
+the reviewed nonexclusive create handler, separate byte requests or absence
+of transaction ownership. Other users and any cooperation/exclusion mechanism
+remain to be established before using that existing service.
+
+The useful boundary is now clearer: this mailbox avoids the MCU shared
+descriptor and has command-last publication followed by handler-return clear.
+It still lacks an established owner and request/response correlation. A host
+mutex can serialize cooperating callers; it cannot establish exclusion of
+other port users, lifecycle resets or independent writers of the target fields.
+
+Before a live adapter can use this path, evidence must establish a supported
+access mechanism that protects the index/data pair and complete transaction,
+identify the other actors it excludes, and distinguish completion from reset
+or replacement. A typed implementation would also need immutable bounded
+requests, per-transaction status validation and independent mapped readback.
+It must stop after timeout or ambiguity rather than retry, clear the command,
+or copy the updater's second-chunk behavior. There is no new live adapter or
+port-access dependency in this change.
+
+Even a solved mailbox contract would leave the separate requirements for
+[direct-duty restoration and cooling recovery](so6120-direct-duty-safety.md#decision-and-remaining-evidence).
+This audit does not establish those properties or justify a fan-stop switch.
+
+The subsequent [ACPI and installed-driver investigation](so6120-acpi-vendor-transport.md)
+identifies a defined AML client of the same ports, checks its private mutex and
+different raw-address completion branch, and traces the exact 02E0 driver's
+feature forwarding. Neither route establishes the missing transaction owner;
+defined ACPI methods are not evidence of observed runtime contention.
+
+That investigation also traces the installed Intel IPF transport and the exact
+BIOS 4.01 image. IPF serializes individual ACPI primitives but has no established
+lease across SET, independent readback and restoration. Its normal setter
+confirms transport completion only. The BIOS's Razer initializer uses a
+distinct secondary `302/303` bulk-transfer sequence with bounded individual
+polls, no local continuation counter in the BIOS client and unconfirmed cleanup. Its `F0/F1/F2`
+rules must not be substituted for this mailbox's `A0/A1/D0/D1` contract.
+The recovered software-SMI command 3 is a panel setup-variable operation, not
+a fan or mailbox ownership API. The subsequent
+[secondary EC analysis](so6120-secondary-mailbox-contract.md) establishes a
+conditional 32-chunk bound for isolated stored-record reads. It also shows
+that a new start can displace an active transfer, cleanup supplies no fan
+handback, and the related write family programs persistent thermal tables.
+Those source findings do not close ownership or restoration, and add no live writes.
+
+The [passive runtime follow-up](so6120-mailbox-runtime-observation.md) checks
+the installed IPF catalog, ACPI method tracing and Windows handle metadata.
+It separates observed callers from tracing coverage and from an enforceable
+reservation of the mailbox; those are different requirements.

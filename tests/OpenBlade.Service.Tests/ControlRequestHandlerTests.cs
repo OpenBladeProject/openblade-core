@@ -30,6 +30,11 @@ public sealed class ControlRequestHandlerTests
                 PerformanceShortcutSource.FunctionP),
             new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
+            new SetBatterySaverFanStopRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
+            new SetFanStopModeRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), FanStopMode.Stop),
+            new SetFanStopSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
+                FanStopSettings.Default with { AutomaticEnabled = true, SecondsBelowLimits = 17 }),
+            new ResumeAutomaticFanStopRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), null),
             new StepKeyboardBrightnessRequest(
                 OpenBladeIpc.ProtocolVersion,
@@ -125,7 +130,8 @@ public sealed class ControlRequestHandlerTests
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "ReportApplicationContext",
             "SetPerformanceOverride",
-            "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
+            "CyclePerformanceShortcut", "SetFanOverride", "SetBatterySaverFanStop", "SetFanStopMode",
+            "SetFanStopSettings", "ResumeAutomaticFanStop", "SetLightingOverride",
             "StepKeyboardBrightness", "SetDisplayBrightnessHidUsage",
             "SetExternalLightingOverridePolicy", "SetLightingRefreshRate",
             "SetFirmwareCompatibilityOverride",
@@ -318,6 +324,8 @@ public sealed class ControlRequestHandlerTests
         ServiceRequest[] requests =
         [
             new ResumeExperimentalWritesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            new SetFanStopSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), FanStopSettings.Default),
+            new ResumeAutomaticFanStopRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             new SetThermalControlPolicyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -586,7 +594,48 @@ public sealed class ControlRequestHandlerTests
         Assert.Null(response.Result);
     }
 
-    private sealed class RecordingRuntime : IServiceControlRuntime
+    [Fact]
+    public async Task HandleAsync_CancellationAtAcquiredAdmissionBoundaryCannotDispatchAndReleasesGate()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var runtime = new CancelingAdmissionRuntime(cancellation);
+        var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => handler.HandleAsync(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), cancellation.Token));
+
+        Assert.Equal(0, runtime.ActivationCalls);
+        Assert.Empty(runtime.Calls);
+        ServiceResponse later = await handler.HandleAsync(
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), CancellationToken.None);
+        Assert.True(later.Success);
+        Assert.Equal(1, runtime.ActivationCalls);
+    }
+
+    private sealed class CancelingAdmissionRuntime(CancellationTokenSource cancellation)
+        : RecordingRuntime, IServiceUserAdmission
+    {
+        public IDisposable BeginUserAdmission(ServiceClientContext client, Func<bool> stillControlsSession,
+            ServiceUserRequestOwner? requestOwner) => new CancelingAdmissionLease(cancellation);
+
+        public bool TryReadCurrentUserStatus(SecurityIdentifier userSid, Func<bool> stillControlsSession,
+            out ServiceStatusSnapshot? snapshot)
+        {
+            snapshot = null;
+            return false;
+        }
+
+        private sealed class CancelingAdmissionLease(CancellationTokenSource cancellation) : IDisposable
+        {
+            private int disposed;
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref disposed, 1) == 0) { cancellation.Cancel(); }
+            }
+        }
+    }
+
+    private class RecordingRuntime : IServiceControlRuntime
     {
         private long revision;
 
@@ -671,6 +720,37 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) =>
             Record("SetFanOverride");
+
+        public Task<ControlOperationResult> SetBatterySaverFanStopAsync(
+            bool enabled, Func<bool> stillControlsSession, CancellationToken token)
+        {
+            Assert.True(enabled);
+            Assert.True(stillControlsSession());
+            return Record("SetBatterySaverFanStop");
+        }
+
+        public Task<ControlOperationResult> SetFanStopModeAsync(
+            FanStopMode mode, Func<bool> stillControlsSession, CancellationToken token)
+        {
+            Assert.Equal(FanStopMode.Stop, mode);
+            Assert.True(stillControlsSession());
+            return Record("SetFanStopMode");
+        }
+
+        public Task<ControlOperationResult> SetFanStopSettingsAsync(
+            FanStopSettings settings, Func<bool> stillControlsSession, CancellationToken token)
+        {
+            Assert.Equal(FanStopSettings.Default with { AutomaticEnabled = true, SecondsBelowLimits = 17 }, settings);
+            Assert.True(stillControlsSession());
+            return Record("SetFanStopSettings");
+        }
+
+        public Task<ControlOperationResult> ResumeAutomaticFanStopAsync(
+            Func<bool> stillControlsSession, CancellationToken token)
+        {
+            Assert.True(stillControlsSession());
+            return Record("ResumeAutomaticFanStop");
+        }
 
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) =>
             Record("SetLightingOverride");

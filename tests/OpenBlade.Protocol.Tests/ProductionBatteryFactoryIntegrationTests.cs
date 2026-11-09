@@ -324,6 +324,35 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     }
 
     [Fact]
+    public void Rz090581FanAdmission_WithholdsUnprovenStopAndPreservesOrdinaryManualControls()
+    {
+        DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
+            ProductionFixtureSource.Read()!.Value,
+            TrustedFixtureHashRegistry.Production);
+        (bool directManual, bool fanStop) = ProductionBatteryFactory.GetRz090581FanCapabilityAdmission(
+            ExactRz090581Identity("4.01"), catalog, trustedExactFixture: true);
+        var actors = new RecordingActorFactory();
+        var factory = new ProductionBatteryFactory(
+            catalog,
+            ProductionBatteryReadEvidence.Rz090581ModelScoped,
+            static () => new ValidationRunContext(),
+            _ => actors,
+            TimeProvider.System,
+            ExchangeTimeout,
+            DrainTimeout,
+            new PendingDisposalRegistry(),
+            supportsDirectManualFanTransitions: directManual,
+            supportsBatterySaverFanStop: fanStop);
+
+        Assert.True(factory.Capabilities.SupportsDirectManualFanTransitions);
+        Assert.False(factory.Capabilities.SupportsBatterySaverFanStop);
+        Assert.True(factory.Capabilities.FanModes.SetEquals(
+            [FanMode.Automatic, FanMode.Maximum, FanMode.Fixed, FanMode.ManualCurve]));
+        Assert.Equal(FanSpeedRange.Standard, factory.Capabilities.FanSpeedRange);
+        Assert.Equal(0, actors.OpenCount);
+    }
+
+    [Fact]
     public void Rz090581AdapterAdmission_UsesSynapseDefinitionsForTheExactModel()
     {
         foreach (string bios in new[] { "3.01", "4.00", "99.99" })
@@ -349,6 +378,56 @@ public sealed class ProductionBatteryFactoryIntegrationTests
                 biosVersion),
             null,
             compatibility);
+
+    [Theory]
+    [InlineData("RZ09-0581")]
+    [InlineData("RZ09-0528")]
+    [InlineData("RZ09-0483")]
+    [InlineData("RZ09-0510")]
+    [InlineData("RZ09-0530")]
+    [InlineData("RZ09-0421")]
+    [InlineData("RZ09-0427")]
+    [InlineData("RZ09-0330")]
+    public async Task GuardianAdapterReaderAdmitsOnlyReviewedQueryWithoutSetters(string model)
+    {
+        var session = new ControlledSession(Immediate(new(new byte[] { 0x07, 0x0D }, null)));
+        var actors = new RecordingActorFactory(session);
+        ProductionBatteryFactory factory = FanStopAdapterPowerReader.CreateFactory(
+            FanStopModelContract.ForModel(model)!, _ => actors);
+        await using IProductionBatteryPort port = Assert.IsAssignableFrom<IProductionBatteryPort>(
+            (await factory.OpenAsync(default)).Value);
+        Assert.Equal(AdapterPowerState.UsbCPower100W, await port.QueryAdapterPowerStateAsync(default));
+        Assert.Null(await port.QueryMcuVersionAsync(default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(80, default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.Automatic, default));
+        RazerCommandSpec command = Assert.Single(session.Commands);
+        Assert.Equal((0x07, 0x8C), (command.ClassId, command.CommandId));
+        Assert.Equal(1, actors.OpenCount);
+    }
+
+    [Theory]
+    [InlineData("RZ09-0581")]
+    [InlineData("RZ09-0528")]
+    [InlineData("RZ09-0483")]
+    [InlineData("RZ09-0510")]
+    [InlineData("RZ09-0530")]
+    [InlineData("RZ09-0421")]
+    [InlineData("RZ09-0427")]
+    [InlineData("RZ09-0330")]
+    public async Task GuardianAdapterReaderFencesFailedReadWithoutRetry(string model)
+    {
+        var session = new ControlledSession(Immediate(new(default, HidSessionFailureKind.Timeout)));
+        var actors = new RecordingActorFactory(session);
+        ProductionBatteryFactory factory = FanStopAdapterPowerReader.CreateFactory(
+            FanStopModelContract.ForModel(model)!, _ => actors);
+        IProductionBatteryPort port = Assert.IsAssignableFrom<IProductionBatteryPort>(
+            (await factory.OpenAsync(default)).Value);
+        await Assert.ThrowsAnyAsync<TimeoutException>(() => port.QueryAdapterPowerStateAsync(default));
+        await Assert.ThrowsAsync<IOException>(() => port.QueryAdapterPowerStateAsync(default));
+        Assert.Single(session.Commands);
+        await port.DisposeAsync();
+        Assert.Equal(1, session.DisposeCount);
+    }
 
     [Fact]
     public async Task ProductionCompositionPassesThirtyMillisecondSettleToOpenedActorFactory()

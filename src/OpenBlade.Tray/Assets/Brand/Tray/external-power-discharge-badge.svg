@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>OpenBlade battery discharge badge</title>
+  <desc>Apply discharge-clearance to the existing mode and source icon, then draw this badge above it.</desc>
+  <defs><mask id="discharge-clearance" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16" style="mask-type:luminance">
+    <rect width="16" height="16" fill="white"/>
+    <path d="M13 11.1  L13 14.8 M11.2 13  L13 14.8  L14.8 13" fill="none" stroke="black" stroke-width="2.9" stroke-linecap="round" stroke-linejoin="round"/>
+  </mask></defs>
+  <path d="M13 11.1  L13 14.8 M11.2 13  L13 14.8  L14.8 13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

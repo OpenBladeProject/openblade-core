@@ -129,8 +129,12 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
     }
 }
 
-internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
+internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, ILightingRecoveryWriteAdmission
 {
+    private readonly LightingRecoveryWriteGate recoveryWriteGate = new();
+
+    public void SetRecoveryWriteAdmission(Func<bool> admission) => recoveryWriteGate.Set(admission);
+
     private const byte StepPercent = 10;
     private const byte LogoStorageSelector = 0x00;
     private readonly ValidationActor actor;
@@ -140,6 +144,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     private readonly SemaphoreSlim featureIoGate = new(1, 1);
     private readonly SemaphoreSlim streamWake = new(0, 1);
     private readonly object effectSync = new();
+    private RgbColor[]? keyboardMirrorFrame;
+    private bool keyboardMirrorTransitionPending;
     private readonly object lifecycleSync = new();
     private readonly TimeProvider timeProvider;
     private readonly TimeSpan cleanupDrainTimeout;
@@ -313,6 +319,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     public async Task<bool?> MaintainDriverModeAsync(
         CancellationToken cancellationToken)
     {
+        recoveryWriteGate.ThrowIfBlocked();
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -376,6 +383,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         Func<bool>? stillSuspending,
         CancellationToken cancellationToken)
     {
+        recoveryWriteGate.ThrowIfBlocked();
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -386,6 +394,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                     return null;
                 }
                 await StopStreamCoreAsync().ConfigureAwait(false);
+                KeyboardLightingFrameStream.Clear(this);
             }
             RazerDeviceMode current = await QueryDeviceModeCoreAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -521,6 +530,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         Func<bool> stillSuspending,
         CancellationToken cancellationToken)
     {
+        recoveryWriteGate.ThrowIfBlocked();
         ArgumentNullException.ThrowIfNull(stillSuspending);
         LightingRendererOwnershipState before = OwnershipState;
         if (!stillSuspending() || cancellationToken.IsCancellationRequested
@@ -598,6 +608,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         LightingSettings settings,
         CancellationToken cancellationToken)
     {
+        recoveryWriteGate.ThrowIfBlocked();
         ArgumentNullException.ThrowIfNull(settings);
         settings = LightingSettingsFactory.NormalizeLegacyOff(settings);
         if (!LightingSettingsValidation.IsWellFormed(settings)
@@ -610,6 +621,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         }
 
         await EnterAsync(cancellationToken).ConfigureAwait(false);
+        bool mirrorCommitted = false;
+        lock (effectSync) { keyboardMirrorTransitionPending = true; }
         try
         {
             byte baselineRaw = await QueryRawCoreAsync(cancellationToken)
@@ -626,6 +639,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
             if (!wakingFromDark && CanRetainRenderer(previous.Settings, settings))
             {
+                bool brightnessSubmitted = false;
                 try
                 {
                     if (baselineRaw != requestedRaw)
@@ -633,6 +647,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                         await SetAndConfirmRawCoreAsync(
                             requestedRaw,
                             cancellationToken).ConfigureAwait(false);
+                        brightnessSubmitted = true;
                     }
 
                     if (settings.LogoMode is { } retainedLogo
@@ -647,9 +662,16 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                         lastDeliveredState = settings;
                     }
 
+                    mirrorCommitted = true;
                     return;
                 }
-                catch (Exception exception)
+                catch (BladeWriteException exception) when (brightnessSubmitted && LightingRecoveryWriteGate.IsDeferral(exception))
+                {
+                    throw new BladeWriteException(WriteSubmissionState.Indeterminate,
+                        BladeWriteFailurePhase.ControlRecoveryAdmission,
+                        "Brightness was applied before recovery admission closed.", exception);
+                }
+                catch (Exception exception) when (!LightingRecoveryWriteGate.IsRejection(exception))
                 {
                     DiagnosticTrace.TraceException(nameof(Rz090528BrightnessLightingPort), nameof(SetLightingAsync), exception,
                         "Brightness-only lighting transition failed.");
@@ -674,6 +696,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             // On wake, keep the keyboard dark until the selected frame is ready.
             // Raising brightness first exposes stale firmware/transition colors.
             bool brightnessAttempted = false;
+            bool transitionSubmitted = false;
             await StopStreamCoreAsync().ConfigureAwait(false);
             try
             {
@@ -683,6 +706,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                     await SetAndConfirmRawCoreAsync(
                         requestedRaw,
                         cancellationToken).ConfigureAwait(false);
+                    transitionSubmitted = true;
                 }
 
                 if (settings.Effect == LightingEffect.Off)
@@ -696,6 +720,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                     await WriteMatrixFrameCoreAsync(
                         effect.RenderFrame(TimeSpan.Zero),
                         cancellationToken).ConfigureAwait(false);
+                    transitionSubmitted = true;
 
                     if (wakingFromDark)
                     {
@@ -723,7 +748,24 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                         .ConfigureAwait(false);
                 }
             }
-            catch (Exception exception)
+            catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsRejection(exception))
+            {
+                if (exception.SubmissionState == WriteSubmissionState.Indeterminate || transitionSubmitted)
+                {
+                    ClearOwnedEffectCore(settings: null);
+                    SetOwnership(LightingRendererOwnershipState.Faulted);
+                    throw new BladeWriteException(WriteSubmissionState.Indeterminate,
+                        BladeWriteFailurePhase.ControlRecoveryAdmission,
+                        "The lighting transition stopped after partial submission.", exception);
+                }
+                if (previous.Effect is { RequiresContinuousRendering: true } retainedEffect)
+                {
+                    effectStartedTimestamp = previous.StartedTimestamp;
+                    StartStreamCore(retainedEffect);
+                }
+                throw;
+            }
+            catch (Exception exception) when (!LightingRecoveryWriteGate.IsRejection(exception))
             {
                 DiagnosticTrace.TraceException(nameof(Rz090528BrightnessLightingPort), nameof(SetLightingAsync), exception,
                     "Lighting transition failed.");
@@ -753,9 +795,16 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 
                 throw;
             }
+            mirrorCommitted = true;
         }
         finally
         {
+            lock (effectSync)
+            {
+                keyboardMirrorTransitionPending = false;
+                if (mirrorCommitted) { PublishKeyboardMirrorCore(); }
+                else { KeyboardLightingFrameStream.Clear(this); }
+            }
             operationGate.Release();
         }
     }
@@ -890,6 +939,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         AmbientLightingFrame frame,
         CancellationToken cancellationToken)
     {
+        recoveryWriteGate.ThrowIfBlocked();
         ArgumentNullException.ThrowIfNull(frame);
         if (!frame.IsWellFormed())
         {
@@ -950,6 +1000,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 activeEffect = null;
                 lastDeliveredState = null;
                 ownershipState = LightingRendererOwnershipState.None;
+                keyboardMirrorFrame = null;
+                KeyboardLightingFrameStream.Clear(this);
                 return observed;
             }
         }
@@ -982,6 +1034,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         lock (lifecycleSync)
         {
             closing = true;
+            KeyboardLightingFrameStream.Clear(this);
             return closeTask ??= CloseCoreAsync(restoreDriverMode);
         }
     }
@@ -998,6 +1051,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 activeEffect = null;
                 lastDeliveredState = null;
                 ownershipState = LightingRendererOwnershipState.None;
+                keyboardMirrorFrame = null;
+                KeyboardLightingFrameStream.Clear(this);
             }
             if (restoreDriverMode)
             {
@@ -1173,32 +1228,44 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             return;
         }
 
-        for (int row = 0; row < Rz090528MatrixFrame.RowCount; row++)
+        bool rowSubmitted = false;
+        try
         {
-            byte[] arguments = Rz090528MatrixRowProtocol.EncodeRow(row, frame);
-            var command = new RazerCommandSpec(
+            for (int row = 0; row < Rz090528MatrixFrame.RowCount; row++)
+            {
+                byte[] arguments = Rz090528MatrixRowProtocol.EncodeRow(row, frame);
+                var command = new RazerCommandSpec(
+                    Rz090528MatrixRowProtocol.CommandClass,
+                    Rz090528MatrixRowProtocol.RowCommandId,
+                    arguments,
+                    arguments.Length,
+                    payload => payload.Span.SequenceEqual(arguments));
+                _ = await ExecuteCoreAsync(
+                    command,
+                    write: true,
+                    cancellationToken).ConfigureAwait(false);
+                rowSubmitted = true;
+            }
+
+            byte[] latch = Rz090528MatrixRowProtocol.LatchArguments.ToArray();
+            var latchCommand = new RazerCommandSpec(
                 Rz090528MatrixRowProtocol.CommandClass,
-                Rz090528MatrixRowProtocol.RowCommandId,
-                arguments,
-                arguments.Length,
-                payload => payload.Span.SequenceEqual(arguments));
+                Rz090528MatrixRowProtocol.LatchCommandId,
+                latch,
+                latch.Length,
+                payload => payload.Span.SequenceEqual(latch));
             _ = await ExecuteCoreAsync(
-                command,
+                latchCommand,
                 write: true,
                 cancellationToken).ConfigureAwait(false);
+            RecordKeyboardMirrorFrame(frame);
         }
-
-        byte[] latch = Rz090528MatrixRowProtocol.LatchArguments.ToArray();
-        var latchCommand = new RazerCommandSpec(
-            Rz090528MatrixRowProtocol.CommandClass,
-            Rz090528MatrixRowProtocol.LatchCommandId,
-            latch,
-            latch.Length,
-            payload => payload.Span.SequenceEqual(latch));
-        _ = await ExecuteCoreAsync(
-            latchCommand,
-            write: true,
-            cancellationToken).ConfigureAwait(false);
+        catch (BladeWriteException exception) when (rowSubmitted && LightingRecoveryWriteGate.IsDeferral(exception))
+        {
+            throw new BladeWriteException(WriteSubmissionState.Indeterminate,
+                BladeWriteFailurePhase.ControlRecoveryAdmission,
+                "The lighting frame was partially submitted before recovery admission closed.", exception);
+        }
     }
 
     private async Task SubmitMatrixFrameCoreAsync(
@@ -1234,8 +1301,21 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             Rz090528MatrixRowProtocol.LatchCommandId,
             latch,
             latch.Length);
-        await SubmitStreamBatchCoreAsync(commands, cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            await SubmitStreamBatchCoreAsync(commands, cancellationToken)
+                .ConfigureAwait(false);
+            RecordKeyboardMirrorFrame(frame);
+        }
+        catch (Exception exception) when (!LightingRecoveryWriteGate.IsDeferral(exception))
+        {
+            lock (effectSync)
+            {
+                keyboardMirrorFrame = null;
+                KeyboardLightingFrameStream.Clear(this);
+            }
+            throw;
+        }
     }
 
     private void StartStreamCore(IRz090528LightingEffect effect)
@@ -1290,11 +1370,19 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                await WriteMatrixFrameCoreAsync(
+                try
+                {
+                    recoveryWriteGate.ThrowIfBlocked();
+                    await WriteMatrixFrameCoreAsync(
                     frame,
                     CancellationToken.None,
                     expectResponse: false)
                     .ConfigureAwait(false);
+                }
+                catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsDeferral(exception))
+                {
+                    // Skip the unsent frame without resetting or replaying it.
+                }
 
                 TimeSpan observedAfterWrite = timeProvider.GetElapsedTime(
                     effectStartedTimestamp);
@@ -1322,6 +1410,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                     activeEffect = null;
                     lastDeliveredState = null;
                     ownershipState = LightingRendererOwnershipState.Faulted;
+                    keyboardMirrorFrame = null;
+                    KeyboardLightingFrameStream.Clear(this);
                 }
             }
         }
@@ -1471,6 +1561,8 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             activeEffect = null;
             lastDeliveredState = settings;
             ownershipState = LightingRendererOwnershipState.None;
+            keyboardMirrorFrame = null;
+            KeyboardLightingFrameStream.Clear(this);
         }
     }
 
@@ -1479,6 +1571,34 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         lock (effectSync)
         {
             ownershipState = ownership;
+            if (ownership is LightingRendererOwnershipState.None or LightingRendererOwnershipState.Faulted)
+            {
+                keyboardMirrorFrame = null;
+                KeyboardLightingFrameStream.Clear(this);
+            }
+        }
+    }
+
+    // Observe only complete successful keyboard submissions; this never performs I/O.
+    private void RecordKeyboardMirrorFrame(Rz090528MatrixFrame frame)
+    {
+        var colors = new RgbColor[Rz090528MatrixFrame.SlotCount];
+        for (int slot = 0; slot < colors.Length; slot++) { colors[slot] = frame[slot]; }
+        lock (effectSync)
+        {
+            keyboardMirrorFrame = colors;
+            PublishKeyboardMirrorCore();
+        }
+    }
+
+    // Called with effectSync held. Initial frames wait for their full transition.
+    private void PublishKeyboardMirrorCore()
+    {
+        if (!keyboardMirrorTransitionPending && !closing
+            && OwnershipState is not (LightingRendererOwnershipState.None or LightingRendererOwnershipState.Faulted)
+            && keyboardMirrorFrame is { } colors)
+        {
+            KeyboardLightingFrameStream.Publish(colors, Rz090528MatrixFrame.ColumnCount, Rz090528MatrixFrame.RowCount, this);
         }
     }
 
@@ -1531,7 +1651,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                     "PID 02C6 brightness did not match independent readback.");
             }
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!LightingRecoveryWriteGate.IsRejection(exception))
         {
             bool restored = await TryRestoreCoreAsync(baselineRaw).ConfigureAwait(false);
             if (!restored)
@@ -1652,7 +1772,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                     "PID 02C6 brightness did not match the target readback.");
             }
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!LightingRecoveryWriteGate.IsRejection(exception))
         {
             applyFailure = exception;
         }
@@ -1768,40 +1888,51 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         LogoLightingMode mode,
         CancellationToken cancellationToken)
     {
-        if (mode != LogoLightingMode.Off)
+        bool effectSubmitted = false;
+        try
         {
-            byte[] effect = LogoLightingProtocol.SetEffectArguments(
+            if (mode != LogoLightingMode.Off)
+            {
+                byte[] effect = LogoLightingProtocol.SetEffectArguments(
+                    mode,
+                    LogoStorageSelector);
+                _ = await ExecuteCoreAsync(
+                    new RazerCommandSpec(
+                        LogoLightingProtocol.CommandClass,
+                        LogoLightingProtocol.SetEffectCommandId,
+                        effect,
+                        expectedPayloadLength: effect.Length,
+                        payload => payload.Span.SequenceEqual(effect)),
+                    write: true,
+                    cancellationToken).ConfigureAwait(false);
+                effectSubmitted = true;
+            }
+
+            byte[] state = LogoLightingProtocol.SetStateArguments(
                 mode,
                 LogoStorageSelector);
             _ = await ExecuteCoreAsync(
                 new RazerCommandSpec(
                     LogoLightingProtocol.CommandClass,
-                    LogoLightingProtocol.SetEffectCommandId,
-                    effect,
-                    expectedPayloadLength: effect.Length,
-                    payload => payload.Span.SequenceEqual(effect)),
+                    LogoLightingProtocol.SetStateCommandId,
+                    state,
+                    expectedPayloadLength: state.Length,
+                    payload => payload.Span.SequenceEqual(state)),
                 write: true,
                 cancellationToken).ConfigureAwait(false);
+
+            if (await QueryLogoCoreAsync(cancellationToken).ConfigureAwait(false) != mode)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "PID 02C6 logo mode did not match independent readback.");
+            }
         }
-
-        byte[] state = LogoLightingProtocol.SetStateArguments(
-            mode,
-            LogoStorageSelector);
-        _ = await ExecuteCoreAsync(
-            new RazerCommandSpec(
-                LogoLightingProtocol.CommandClass,
-                LogoLightingProtocol.SetStateCommandId,
-                state,
-                expectedPayloadLength: state.Length,
-                payload => payload.Span.SequenceEqual(state)),
-            write: true,
-            cancellationToken).ConfigureAwait(false);
-
-        if (await QueryLogoCoreAsync(cancellationToken).ConfigureAwait(false) != mode)
+        catch (BladeWriteException exception) when (effectSubmitted && LightingRecoveryWriteGate.IsDeferral(exception))
         {
-            throw new BladeWriteException(
-                WriteSubmissionState.Indeterminate,
-                "PID 02C6 logo mode did not match independent readback.");
+            throw new BladeWriteException(WriteSubmissionState.Indeterminate,
+                BladeWriteFailurePhase.ControlRecoveryAdmission,
+                "The logo effect was submitted before recovery admission closed.", exception);
         }
     }
 
@@ -1865,12 +1996,18 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         bool write,
         CancellationToken cancellationToken)
     {
+        LightingRecoveryWriteGate.SubmissionGuard? recoveryGuard = write ? recoveryWriteGate.CreateSubmissionGuard(command.SubmissionAllowed) : null;
+        if (recoveryGuard is not null)
+        {
+            command = command with { SubmissionAllowed = recoveryGuard.Allow };
+        }
         await featureIoGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         HidSessionResult<ReadOnlyMemory<byte>> result;
         try
         {
             if (command.SubmissionAllowed?.Invoke() == false)
             {
+                recoveryGuard?.ThrowIfRefused();
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "The device-mode write was blocked by a changed power boundary.");
             }
@@ -1885,6 +2022,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             featureIoGate.Release();
         }
 
+        recoveryGuard?.ThrowIfRefused(result.Diagnostic);
         if (result.Failure is null)
         {
             return result.Value;
@@ -1954,10 +2092,16 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
                 "PID 02C6 SET-only matrix streaming is unavailable.");
         }
 
+        LightingRecoveryWriteGate.SubmissionGuard recoveryGuard = recoveryWriteGate.CreateSubmissionGuard();
+        commands = commands.Select(command => command with { SubmissionAllowed = recoveryGuard.Allow }).ToArray();
         await featureIoGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         HidSessionResult<ReadOnlyMemory<byte>> result;
         try
         {
+            if (!recoveryGuard.Allow())
+            {
+                recoveryGuard.ThrowIfRefused();
+            }
             result = await submitter.SubmitBatchAsync(
                 commands,
                 () => TransactionIdAssignment.Valid(AllocateTransaction()),
@@ -1969,6 +2113,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             featureIoGate.Release();
         }
 
+        recoveryGuard.ThrowIfRefused(result.Diagnostic);
         if (result.Failure is null)
         {
             return;

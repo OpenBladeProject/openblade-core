@@ -115,7 +115,17 @@ public static class ServiceRequestAccessPolicy
                     : "Session automation reports require the active local interactive Windows session.");
         }
 
+        if (request is SetCoolingPadSettingsRequest or ReadCoolingPadStatusRequest or ReleaseCoolingPadControlRequest
+            or SetCoolingPadDemandLeaseRequest or RemoveCoolingPadDemandLeaseRequest)
+        {
+            return new ServiceRequestAccessDecision(GetAccess(client, authority),
+                IsActiveLocalInteractiveClient(client, authority) ? null
+                    : "Cooling pad control requires the active local interactive Windows session.");
+        }
+
         if (request is SetThermalControlPolicyRequest
+            or SetFanStopSettingsRequest
+            or ResumeAutomaticFanStopRequest
             or AcknowledgeThermalPolicyUpgradeDisclosureRequest
             or ResumeExperimentalWritesRequest)
         {

@@ -46,7 +46,9 @@ internal static class ThermalConvergenceClassifier
             ThermalConvergenceContradiction.None;
 
         if (confirmed.Fans is { } observedFans
-            && desiredManual != IsManual(observedFans))
+            && (desiredManual != IsManual(observedFans)
+                || (desiredFans == FanMode.Stop || observedFans == FanMode.Stop)
+                    && desiredFans != observedFans))
         {
             contradiction |= ThermalConvergenceContradiction.FanTopology;
         }
@@ -54,7 +56,7 @@ internal static class ThermalConvergenceClassifier
         // Firmware hides the separate performance selector while both sides are
         // in generic manual fan topology. Do not invent a contradiction from a
         // missing or retained performance sample in that state.
-        if (!bothManual)
+        if (!bothManual || desiredFans == FanMode.Stop || confirmed.Fans == FanMode.Stop)
         {
             if (confirmed.Performance is not { } observedPerformance)
             {
@@ -118,5 +120,5 @@ internal static class ThermalConvergenceClassifier
     }
 
     private static bool IsManual(FanMode? mode) => mode is
-        FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum;
+        FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum or FanMode.Stop;
 }

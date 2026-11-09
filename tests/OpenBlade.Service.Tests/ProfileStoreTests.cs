@@ -12,6 +12,37 @@ public sealed class ProfileStoreTests : IDisposable
         "OpenBlade.Tests",
         Guid.NewGuid().ToString("N"));
 
+    [Theory]
+    [InlineData(22, false)]
+    [InlineData(23, true)]
+    public void BatterySaverStopPreference_MigratesOffAndPreservesOrdinaryIntent(int schema, bool expected)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with { Battery = profiles.Battery with { StopFansInBatterySaver = true } };
+        var store = new ProfileStore(Path.Combine(storeDirectory, "stop-profiles.json"));
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(new ProfileDocument(schema, profiles),
+            ProfileStore.SerializerOptions);
+        ProfileSet result = store.ReadDocument(json);
+        Assert.Equal(expected, result.Battery.StopFansInBatterySaver);
+        Assert.Equal(profiles.Battery.Fans, result.Battery.Fans);
+        Assert.Equal(profiles.Battery.FanControl, result.Battery.FanControl);
+    }
+
+    [Fact]
+    public void OperationalStopCannotBeSavedAsOrdinaryFanMode()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            Battery = profiles.Battery with
+            {
+                Fans = FanMode.Stop,
+                FanControl = FanControlSettings.FromLegacy(FanMode.Stop),
+            },
+        };
+        Assert.Throws<InvalidDataException>(() => ProfileSetValidator.CreateUnverifiedSafeDefaults().Validate(profiles));
+    }
+
     [Fact]
     public async Task SaveThenLoad_RoundTripsProfiles()
     {
@@ -50,6 +81,64 @@ public sealed class ProfileStoreTests : IDisposable
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.Equal(expected, result.Profiles);
         Assert.False(File.Exists(path + ".tmp"));
+    }
+
+    [Theory]
+    [InlineData(22)]
+    [InlineData(23)]
+    [InlineData(ProfileStore.CurrentSchemaVersion)]
+    public async Task PreviousAndCurrentSchemas_PreserveSettingsAndUseOptionalIndependentAssociations(int schema)
+    {
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var definition = new ApplicationProfileDefinition(Guid.NewGuid(), "Game", @"C:\Games\game.exe",
+            ApplicationActivationMode.WhileRunningAfterActivation, new ApplicationProfileOverrideSet
+            {
+                PluggedIn = new ApplicationPowerProfileOverride
+                {
+                    Performance = schema >= 23 ? PerformancePreset.Creator : PerformancePreset.Performance,
+                },
+            });
+        ProfileSet configured = defaults with
+        {
+            ApplicationProfiles = [definition],
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = schema >= 23 ? PerformancePreset.Gaming : PerformancePreset.Balanced,
+                Display = new DisplayProfileSettings(null, true, null) { BrightnessPercent = 65 },
+            },
+            WindowsPowerModes = defaults.WindowsPowerModes with
+            {
+                Performance = WindowsPowerMode.BestPowerEfficiency,
+                Turbo = WindowsPowerMode.BestPerformance,
+                MaximumPower = WindowsPowerMode.Balanced,
+                Gaming = WindowsPowerMode.BestPerformance,
+                Creator = WindowsPowerMode.BestPowerEfficiency,
+            },
+        };
+        JsonObject document = JsonSerializer.SerializeToNode(new ProfileDocument(schema, configured),
+            ProfileStore.SerializerOptions)!.AsObject();
+        if (schema == 22)
+        {
+            JsonObject associations = document["profiles"]!["windowsPowerModes"]!.AsObject();
+            Assert.True(associations.Remove("turbo"));
+            Assert.True(associations.Remove("maximumPower"));
+            Assert.True(associations.Remove("gaming"));
+            Assert.True(associations.Remove("creator"));
+        }
+        await File.WriteAllTextAsync(path, document.ToJsonString());
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(CancellationToken.None);
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Equal(definition, Assert.Single(result.Profiles.ApplicationProfiles));
+        Assert.Equal((byte)65, result.Profiles.PluggedIn.Display!.BrightnessPercent);
+        Assert.Equal(configured.PluggedIn.Performance, result.Profiles.PluggedIn.Performance);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, result.Profiles.WindowsPowerModes.Performance);
+        Assert.Equal(schema == 22 ? null : WindowsPowerMode.BestPerformance, result.Profiles.WindowsPowerModes.Turbo);
+        Assert.Equal(schema == 22 ? null : WindowsPowerMode.Balanced, result.Profiles.WindowsPowerModes.MaximumPower);
+        Assert.Equal(schema == 22 ? null : WindowsPowerMode.BestPerformance, result.Profiles.WindowsPowerModes.Gaming);
+        Assert.Equal(schema == 22 ? null : WindowsPowerMode.BestPowerEfficiency, result.Profiles.WindowsPowerModes.Creator);
+        Assert.Equal(ProfileStore.CurrentSchemaVersion, JsonNode.Parse(await File.ReadAllTextAsync(path))!["schemaVersion"]!.GetValue<int>());
     }
 
     [Fact]
@@ -174,8 +263,10 @@ public sealed class ProfileStoreTests : IDisposable
             StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Load_Schema12MigratesDistinctPresetAssociations()
+    [Theory]
+    [InlineData(WindowsPowerMode.BestPerformance)]
+    [InlineData(WindowsPowerMode.BestPowerEfficiency)]
+    public async Task Load_Schema12MigratesDistinctPresetAssociations(WindowsPowerMode performanceMode)
     {
         Directory.CreateDirectory(storeDirectory);
         string path = Path.Combine(storeDirectory, "profiles.json");
@@ -185,7 +276,7 @@ public sealed class ProfileStoreTests : IDisposable
             PluggedIn = defaults.PluggedIn with
             {
                 Performance = PerformancePreset.Performance,
-                WindowsPowerMode = WindowsPowerMode.BestPerformance,
+                WindowsPowerMode = performanceMode,
             },
             Battery = defaults.Battery with
             {
@@ -207,8 +298,12 @@ public sealed class ProfileStoreTests : IDisposable
 
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.Equal(
-            WindowsPowerMode.BestPerformance,
+            performanceMode,
             result.Profiles.WindowsPowerModes.Performance);
+        Assert.Null(result.Profiles.WindowsPowerModes.ForPerformance(PerformancePreset.Turbo));
+        Assert.Null(result.Profiles.WindowsPowerModes.ForPerformance(PerformancePreset.MaximumPower));
+        Assert.Null(result.Profiles.WindowsPowerModes.ForPerformance(PerformancePreset.Gaming));
+        Assert.Null(result.Profiles.WindowsPowerModes.ForPerformance(PerformancePreset.Creator));
         Assert.Equal(
             WindowsPowerMode.BestPowerEfficiency,
             result.Profiles.WindowsPowerModes.BatterySaver);

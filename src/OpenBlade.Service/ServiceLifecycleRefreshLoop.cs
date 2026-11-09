@@ -1,3 +1,5 @@
+using OpenBlade.Core.Native;
+
 namespace OpenBlade.Service;
 
 public static class ServiceBackgroundTaskGroup
@@ -191,7 +193,7 @@ public sealed class ServiceLifecycleRefreshLoop
                 {
                     return;
                 }
-                catch (Exception exception)
+                catch (Exception exception) when (exception is not NativeComponentException)
                 {
                     logger.LogError(
                         exception,

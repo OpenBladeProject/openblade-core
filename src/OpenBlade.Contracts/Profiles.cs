@@ -8,6 +8,10 @@ public enum PerformancePreset
     BatterySaver,
     BatteryBalanced,
     Custom,
+    Turbo,
+    MaximumPower,
+    Gaming,
+    Creator,
 }
 
 /// <summary>
@@ -29,6 +33,15 @@ public sealed record WindowsPowerModeAssociations(
     WindowsPowerMode? BatteryBalanced,
     WindowsPowerMode? Custom)
 {
+    // Optional additive associations preserve the original six-argument constructor.
+    public WindowsPowerMode? Turbo { get; init; }
+
+    public WindowsPowerMode? MaximumPower { get; init; }
+
+    public WindowsPowerMode? Gaming { get; init; }
+
+    public WindowsPowerMode? Creator { get; init; }
+
     public static WindowsPowerModeAssociations LeaveUnchanged { get; } = new(
         null,
         null,
@@ -43,6 +56,10 @@ public sealed record WindowsPowerModeAssociations(
             PerformancePreset.Silent => Silent,
             PerformancePreset.Balanced => Balanced,
             PerformancePreset.Performance => Performance,
+            PerformancePreset.Turbo => Turbo,
+            PerformancePreset.MaximumPower => MaximumPower,
+            PerformancePreset.Gaming => Gaming,
+            PerformancePreset.Creator => Creator,
             PerformancePreset.BatterySaver => BatterySaver,
             PerformancePreset.BatteryBalanced => BatteryBalanced,
             PerformancePreset.Custom => Custom,
@@ -56,6 +73,10 @@ public sealed record WindowsPowerModeAssociations(
             PerformancePreset.Silent => this with { Silent = windowsPowerMode },
             PerformancePreset.Balanced => this with { Balanced = windowsPowerMode },
             PerformancePreset.Performance => this with { Performance = windowsPowerMode },
+            PerformancePreset.Turbo => this with { Turbo = windowsPowerMode },
+            PerformancePreset.MaximumPower => this with { MaximumPower = windowsPowerMode },
+            PerformancePreset.Gaming => this with { Gaming = windowsPowerMode },
+            PerformancePreset.Creator => this with { Creator = windowsPowerMode },
             PerformancePreset.BatterySaver => this with { BatterySaver = windowsPowerMode },
             PerformancePreset.BatteryBalanced => this with { BatteryBalanced = windowsPowerMode },
             PerformancePreset.Custom => this with { Custom = windowsPowerMode },
@@ -179,6 +200,9 @@ public enum FanMode
     // Kept for profiles written before adjustable fixed speed was added.
     // It is equivalent to Fixed at 5,400 RPM.
     Maximum,
+
+    // Operational state only; selected through the Battery Saver preference.
+    Stop,
 }
 
 public sealed record FanCurvePoint
@@ -460,6 +484,15 @@ public enum KeyboardBrightnessDirection
 
 public readonly record struct RgbColor(byte Red, byte Green, byte Blue);
 
+/// <summary>Only the requested independent fields are changed; null leaves a field alone.</summary>
+public sealed record IndependentLightingSettings(byte? Brightness = null, LogoLightingMode? LogoMode = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsWellFormed => (Brightness.HasValue || LogoMode.HasValue)
+        && Brightness is not > 100
+        && (LogoMode is null || Enum.IsDefined(LogoMode.Value));
+}
+
 public sealed record LightingSettings(
     LightingEffect Effect,
     RgbColor Color,
@@ -473,6 +506,11 @@ public sealed record LightingSettings(
     // OpenBlade leaves the firmware-persistent lid logo setting unchanged until
     // the user explicitly chooses a mode.
     public LogoLightingMode? LogoMode { get; init; }
+
+    // Null preserves old profiles without opting in to independent mutations.
+    // Effect remains saved intent; it is never synthesized as confirmed state.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IndependentLightingSettings? IndependentControls { get; init; }
 }
 
 public sealed record PowerProfile(
@@ -481,6 +519,9 @@ public sealed record PowerProfile(
     LightingSettings Lighting,
     DisplayProfileSettings? Display = null)
 {
+    // Base battery preference; ordinary and application fan intent stays intact.
+    public bool StopFansInBatterySaver { get; init; }
+
     // Retained while another preset is selected so switching back to Custom
     // restores the user's last valid CPU/GPU pair.
     public CustomPerformanceSettings? CustomPerformance { get; init; }

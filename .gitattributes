@@ -3,12 +3,21 @@ src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_3_01_TidalOracle.json text eol=cr
 src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_3_01_WaveWheelOracle.json text eol=crlf
 src/OpenBlade.Protocol/*.cs text eol=lf
 src/OpenBlade.Contracts/DeviceState.cs text eol=lf
+src/OpenBlade.Contracts/IpcMessageCodec.cs text eol=lf
 src/OpenBlade.Contracts/Lighting.cs text eol=lf
 src/OpenBlade.Contracts/AmbientLightingFrame.cs text eol=lf
 src/OpenBlade.Contracts/Profiles.cs text eol=lf
 src/OpenBlade.Contracts/ReactiveKeyPulse.cs text eol=lf
 build/Export-RazerBrightnessDriverPackage.ps1 text eol=lf
 src/OpenBlade.Contracts/Fixtures/Blade18KeyboardLightingLayout.json text eol=crlf
+tests/Fixtures/Parity/**/*.json text eol=lf
 
 # Legacy sanitized evidence is hash-bound. Preserve the imported Git blob bytes.
 evidence/legacy-captures/**/*.json text eol=lf
+src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.*.svg text eol=lf
+
+# Preserve upstream whitespace and exact bytes covered by the source manifest.
+third_party/LibreHardwareMonitor/** -text -whitespace
+# Rust tooling uses LF on every platform.
+rust/** text eol=lf
+tools/openblade-discovery/** text eol=lf

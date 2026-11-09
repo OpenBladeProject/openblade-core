@@ -65,7 +65,7 @@ internal sealed record DeviceObservationState
             WritesBlocked: true,
             ActivePowerSource: PowerSource.PluggedIn or PowerSource.UsbC,
             ObservationReason: DeviceObservationReason.RetainedPowerSource,
-        };
+        } && status.FanStopStatus.State != FanStopState.RecoveryRequired;
 
     public static bool IsCheckingLaptopConnection(ServiceStatusSnapshot? status) =>
         status?.ObservationReason is

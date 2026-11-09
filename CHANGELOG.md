@@ -7,6 +7,121 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Add Stop/Auto for Blade 14 RZ09-0427/0530, Blade 15 RZ09-0330/0421 and Blade 16 RZ09-0483/0510/0528 on reviewed EC versions, including the Lamborghini variant. ([#901](https://github.com/OSSBlade/openblade-core/pull/901))
+
+## [0.57.1-nightly.109] - 2026-11-08
+
+### Added
+
+- Add experimental Stop/Auto fan controls for the Blade 16 RZ09-0581 in USB-C Balanced, with rolling average temperature limits, immediate cutoffs and automatic stopping below 50°C. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Bundle CPU temperature monitoring through LibreHardwareMonitor and PawnIO. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Add an offline firmware CLI, register explorer and developer diagnostics. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Control Razer Laptop Cooling Pad fan targets, temperature curves, lighting and keyboard lighting sync from its own page, shown when connected. Support is experimental and based on reviewed vendor definitions. ([#889](https://github.com/OpenBladeProject/openblade-core/pull/889))
+- Support Blade 15 Advanced (Mid 2019) RZ09-0301 with Balanced/Custom performance, Balanced fixed fans and host curves on full-power AC, independent keyboard brightness and logo controls. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Search OpenBlade pages and settings from the title bar. Press Ctrl+K to open search and jump to a result. ([#883](https://github.com/OpenBladeProject/openblade-core/pull/883))
+- Adjust the running CPU's all-core Voltage Optimizer on Blade 16 (2025, RZ09-0528) with the supported AMD driver already running. Off preserves the remembered offset. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
+- Support Blade 15 Base (2019) RZ09-0300, Blade 15 Advanced (Early 2020) RZ09-0330 and Blade 15 Base (Late 2020) RZ09-0351 with reviewed preset controls and Automatic fans. Advanced Custom CPU/GPU levels are bounded to Low/Medium/High; physical validation remains pending. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Support Blade 14 (2024) RZ09-0508, Blade 16 (2024) RZ09-0510, Blade 18 (2024) RZ09-0509 and Blade 18 (2025) RZ09-0529 with reviewed model-specific controls. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Support Blade 14 (2021) RZ09-0370, Blade 14 (2022) RZ09-0427, Blade 15 (2022) RZ09-0421 and Blade 17 (2022) RZ09-0423 with reviewed performance controls and model-specific charge limits. Physical validation is tracked separately. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Add model-specific Turbo, Maximum Power, Gaming and Creator presets, each with separate Windows power-mode preferences. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+
+### Changed
+
+- Use a source-verified Rust component for reports and selected profile merges. The Windows UI and service remain C#. ([#895](https://github.com/OpenBladeProject/openblade-core/pull/895), [#897](https://github.com/OpenBladeProject/openblade-core/pull/897))
+- Shorten the README support section in English, Chinese and Russian, with model details in the support guide. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Document exact BIOS/EC source findings for Blade 16 RZ09-0581 and RZ09-0528. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Open Labs from the sidebar to learn about experimental features and jump to their controls. A beaker marks experimental controls on the Lighting page. ([#885](https://github.com/OpenBladeProject/openblade-core/pull/885))
+- List source-reviewed laptops as officially supported and track physical validation separately. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+
+### Fixed
+
+- Fix CPU temperatures stuck at 45°C. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879), [#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Use Custom temperature cutoffs for Stop entry and improve fan-state diagnostics and recovery. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
+- Change directly between Fixed fans and host curves in an admitted preset on source-reviewed backends. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Stop treating constant ACPI values as CPU temperature, so custom fan curves use the existing maximum-speed fallback when no CPU sensor is available. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
+- Preserve cancellation when a queued service request resumes. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
+- Preserve the original diagnostic stage when a CPU read times out. ([#887](https://github.com/OpenBladeProject/openblade-core/pull/887))
+- Keep older app clients in a readable, read-only upgrade view when the service exposes newer presets and settings. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Recover thermal controls when unrelated charge-limit readings are unavailable, while retaining strict confirmation for pending battery operations. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Clear Maximum Fans before applying Battery Balanced on Blade 14, 16 and 18 (2024), including after disconnecting AC power. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Allow paused charge-limit controls to resume after successful recovery on source-reviewed models. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Preserve saved Windows power modes, app rules and brightness when migrating profiles. ([#888](https://github.com/OSSBlade/openblade-core/pull/888))
+- Apply and verify the internal display's active signal rate when selecting a fixed refresh rate. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
+- Keep Dynamic Refresh Rate available after choosing a low fixed rate when the panel and driver support a higher timing. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
+- Apply an app profile's refresh rate only when OpenBlade can restore the previous rate. ([#886](https://github.com/OpenBladeProject/openblade-core/pull/886))
+
+## [0.51.0-nightly.107] - 2026-11-05
+
+### Added
+
+- Choose F1–F12 or multimedia keys as the default on Blade 18 (2023) with the Razer driver. This input path is experimental. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
+
+### Fixed
+
+- Keep confirmed fixed-fan settings when reapplying the current performance preset. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
+- Preserve saved function-key and Gaming Mode preferences when saving or discarding other laptop edits. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
+- Show Blade 18's default Fn shortcuts without a paused warning and keep status checks from interrupting Razer-driver remapping. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
+- Reduce memory growth when changing app language by sharing localized resource lookups across the main window and quick controls. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Avoid native event-argument memory growth when closing main and quick-controls windows to the tray. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Preserve window size limits while reducing memory growth during language changes. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Reuse native windows, backdrops and icons when changing language, and release retired views and their event subscriptions. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Release generated XAML bindings and native title-bar resources when closing main and quick-controls windows, and complete cleanup after failed window initialization. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Keep display edits and refresh messages in order and use current brightness levels. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Preserve brightness-failure diagnostics and allow display automation to recover after a canceled manual change. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Avoid refreshing unrelated controls when THX audio settings have not changed. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Preserve overlapping profile edits, refresh service state before later saves, and retain drafts when a save is rejected or its result is uncertain. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Honor the latest telemetry replay selection and keep intermittent readings visible without drawing chart lines across missing readings. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Remove failed driver-download attempt files before installation begins, while retaining packages after any installation intent or uncertain result. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
+- Keep driver installation recovery required for malformed journals or missing THX packages, preserve extraction files after uncertain termination, and distinguish timeouts from cancellation. ([#877](https://github.com/OpenBladeProject/openblade-core/pull/877))
+- Preserve invalid configuration and the original files when a save and its rollback both fail. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Keep settings tied to the correct Windows user across interrupted activation and overlapping requests. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Report incomplete profile application accurately and retain uncertain laptop-control writes across restarts without replaying them automatically. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Keep lighting recovery admission consistent across supported backends. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Retain keyboard-hook ownership when replacement cleanup fails and stop replacements until cleanup is confirmed. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Follow playback-device changes in Audio Meter lighting and preserve configured THX profile values through saving and loading. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Preserve display-automation pauses after partially submitted changes and retain the latest activated app profile. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Stop developer firmware-validation writes after unconfirmed changes or restoration failures, bound CPU probe callback buffering, and report matching native failures without waiting. ([#878](https://github.com/OpenBladeProject/openblade-core/pull/878))
+
+### Changed
+
+- Reduce telemetry chart allocations and redraw each accepted live sample once, while keeping freshness labels and missing-sample time progression current. ([#874](https://github.com/OpenBladeProject/openblade-core/pull/874))
+- Release worker threads between GPU activity samples and cancel pending sample waits promptly. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+- Reduce service and battery IPC decoding overhead with shared streaming validation. ([#876](https://github.com/OpenBladeProject/openblade-core/pull/876))
+
+## [0.50.3] - 2026-11-01
+
+### Added
+
+- Choose Windows hook or Razer driver separately for SnapTap and multimedia keys. ([#867](https://github.com/OSSBlade/openblade-core/pull/867))
+- Warn as soon as battery discharge is detected while plugged in, with a tray badge and configurable notification. ([#866](https://github.com/OSSBlade/openblade-core/pull/866), [#871](https://github.com/OpenBladeProject/openblade-core/pull/871))
+- Reorder customizable cards and side-menu items by dragging them directly, with changes saved immediately. ([#861](https://github.com/OpenBladeProject/openblade-core/pull/861))
+- Show what's new automatically on the first launch of each version, with offline release notes and a button to reopen them from About. ([#862](https://github.com/OSSBlade/openblade-core/pull/862))
+
+### Changed
+
+- Explain which keyboard input method to try first, with game compatibility notes for Windows hook. ([#872](https://github.com/OpenBladeProject/openblade-core/pull/872))
+- Group multimedia key input and SnapTap input beneath their related keyboard settings, with collapsible sections and brief descriptions. ([#870](https://github.com/OpenBladeProject/openblade-core/pull/870))
+- Reorder cards within their section and move complete sections by their headings. The dragged item follows the cursor at half opacity while nearby items move into place. ([#868](https://github.com/OpenBladeProject/openblade-core/pull/868))
+- Move Windows battery reports into Telemetry with a labeled power-source timeline, explicit unknown periods and a compact empty state, and remove the Long battery life preset. ([#869](https://github.com/OpenBladeProject/openblade-core/pull/869))
+- Refine the application icon's laptop proportions and replace the white README logo with a dark-display, silver-deck color treatment. ([#860](https://github.com/OpenBladeProject/openblade-core/pull/860))
+- Refresh the application and installer icons with the Monolith laptop design and add matching light/dark logos. ([#859](https://github.com/OpenBladeProject/openblade-core/pull/859))
+
+### Fixed
+
+- Fix a dashboard loading crash during application language changes. ([#867](https://github.com/OSSBlade/openblade-core/pull/867))
+- Make tray power sources and performance modes easier to distinguish, with clearer monochrome icons and a dedicated HyperBoost symbol. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
+- Preserve local-development installer logs after rollback and recognize Session Agent helpers during deployment and relaunch. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
+
+## [0.44.1-nightly.105] - 2026-10-28
+
+### Fixed
+
+- Let SnapTap recover automatically from a brief loss of foreground focus while idle, after verified hook cleanup and a fresh key-release check. Preserve safety stops for held keys and uncertain input. ([#854](https://github.com/OpenBladeProject/openblade-core/pull/854))
+
+## [0.44.0-nightly.104] - 2026-10-26
+
+### Added
+
 - Install SnapTap drivers through Windows Update first on all reviewed Blade models, with pinned-package fallback when the initial scan finds no matching offer. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
 
 ### Fixed
@@ -2247,7 +2362,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.43.0-nightly.103...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.57.1-nightly.109...HEAD
+[0.57.1-nightly.109]: https://github.com/OSSBlade/openblade-core/compare/v0.51.0-nightly.107-attempt.2...v0.57.1-nightly.109
+[0.51.0-nightly.107]: https://github.com/OSSBlade/openblade-core/compare/v0.50.3...v0.51.0-nightly.107-attempt.2
+[0.44.1-nightly.105]: https://github.com/OSSBlade/openblade-core/compare/v0.44.0-nightly.104...v0.44.1-nightly.105
+[0.44.0-nightly.104]: https://github.com/OSSBlade/openblade-core/compare/v0.43.0-nightly.103...v0.44.0-nightly.104
 [0.43.0-nightly.103]: https://github.com/OSSBlade/openblade-core/compare/v0.42.2-nightly.102...v0.43.0-nightly.103
 [0.42.2-nightly.102]: https://github.com/OSSBlade/openblade-core/compare/v0.42.1-nightly.101...v0.42.2-nightly.102
 [0.42.1-nightly.101]: https://github.com/OSSBlade/openblade-core/compare/v0.42.0-nightly.100...v0.42.1-nightly.101
@@ -2294,3 +2413,5 @@ All notable changes to OpenBlade are documented in this file. The project follow
 [0.1.0-nightly.6]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0-nightly.5...v0.1.0-nightly.6
 [0.1.0-nightly.5]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...v0.1.0-nightly.5
 [0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0
+
+[0.50.3]: https://github.com/OSSBlade/openblade-core/compare/v0.44.1-nightly.105...v0.50.3

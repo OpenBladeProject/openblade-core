@@ -87,6 +87,9 @@ Assert-Contains $contracts.QualityProjects `
 Assert-Contains $contracts.QualityProjects `
     'src/OpenBlade.Tray/OpenBlade.Tray.csproj' `
     'Contracts changes must include Tray consumers.'
+Assert-Contains $contracts.TestProjects `
+    'tests/OpenBlade.Core.Native.Tests/OpenBlade.Core.Native.Tests.csproj' `
+    'Contracts changes must select native interop tests through Core.Native.'
 foreach ($consumer in @(
         'src/OpenBlade.Display/OpenBlade.Display.csproj',
         'src/OpenBlade.Platform/OpenBlade.Platform.csproj',
@@ -298,6 +301,30 @@ Assert-Equal $false $testMetadata.RunInstaller 'Test metadata must not publish t
 Assert-Equal 0 @($testMetadata.ContractTests).Count 'Test metadata must not select unrelated contracts.'
 Assert-Equal 0 @($testMetadata.PublishProjects).Count 'Test metadata must not publish product binaries.'
 
+foreach ($cliFixture in @('request.json', 'response.json')) {
+    $fixturePlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+        "rust/crates/openblade-status-cli/fixtures/$cliFixture")
+    Assert-Equal 'affected' $fixturePlan.Mode 'Rust-only IPC fixture edits must use affected validation.'
+    Assert-Contains $fixturePlan.QualityProjects `
+        'tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj' `
+        'Rust IPC fixture edits must build the real C# contract comparison.'
+    Assert-Contains $fixturePlan.TestProjects `
+        'tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj' `
+        'Rust IPC fixture edits must run the real C# contract comparison.'
+    Assert-Contains $fixturePlan.ContractTests 'tests/Build.Tests/NativePayload.Tests.ps1' `
+        'Rust IPC fixture routing must retain the native payload contract checks.'
+    Assert-Equal $true $fixturePlan.RunInstaller `
+        'Rust IPC fixture routing must retain actual installer payload validation.'
+}
+
+foreach ($nativeInput in @(
+        'src/OpenBlade.Core.Native/ProductNativeRuntime.cs',
+        'src/OpenBlade.Core.Native/OpenBlade.Core.Native.csproj')) {
+    $nativeInstaller = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($nativeInput)
+    Assert-Equal $true $nativeInstaller.RunInstaller `
+        'Native admission and manifest wiring changes require actual installer payload validation.'
+}
+
 $serviceMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
     'src/OpenBlade.Service/OpenBlade.Service.csproj')
 Assert-Equal 'full' $serviceMetadata.Mode 'Production metadata must keep exhaustive validation.'
@@ -338,7 +365,53 @@ $actualContracts = @(Get-ChildItem -LiteralPath (Join-Path $repository 'tests\Bu
     } | Sort-Object)
 $contractDifference = @(Compare-Object $declaredContracts $actualContracts)
 if ($contractDifference.Count -ne 0) {
-    throw "Every build-contract suite must have an explicit input rule: $($contractDifference -join ', ')"
+    throw "Every build-contract suite must have an explicit input rule: $((@($contractDifference | ForEach-Object { "$($_.SideIndicator) $($_.InputObject)" })) -join ', ')"
+}
+
+foreach ($contractInput in @(
+        @{ Path = 'build/PublishPayloadValidation.ps1'; Test = 'FanStopGuardianPayload' },
+        @{ Path = 'build/Publish.ps1'; Test = 'FanStopGuardianPayload' },
+        @{ Path = 'src/OpenBlade.FanStop.Guardian/OpenBlade.FanStop.Guardian.csproj'; Test = 'FanStopGuardianPayload' },
+        @{ Path = 'build/PawnIoPrerequisite.ps1'; Test = 'PawnIoPrerequisite' },
+        @{ Path = 'build/Publish.ps1'; Test = 'PawnIoPrerequisite' },
+        @{ Path = 'build/third-party/PawnIO-NOTICE.txt'; Test = 'PawnIoPrerequisite' },
+        @{ Path = 'src/OpenBlade.CpuTemperature/OpenBlade.CpuTemperature.csproj'; Test = 'PawnIoPrerequisite' },
+        @{ Path = 'third_party/LibreHardwareMonitor/LICENSE'; Test = 'PawnIoPrerequisite' },
+        @{ Path = 'build/So6120CompletedAttemptArchive.ps1'; Test = 'So6120CompletedAttemptArchive' },
+        @{ Path = 'build/Archive-So6120CompletedDeveloperAttempt.ps1'; Test = 'So6120CompletedAttemptArchive' })) {
+    $contractPlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($contractInput.Path)
+    if ($contractInput.Path.EndsWith('.csproj', [StringComparison]::OrdinalIgnoreCase)) {
+        Assert-Equal 'full' $contractPlan.Mode 'Production project metadata must retain exhaustive contract coverage.'
+    } else {
+        Assert-Equal 'affected' $contractPlan.Mode 'Payload and archive inputs must have explicit affected coverage.'
+        Assert-Contains $contractPlan.ContractTests `
+            "tests/Build.Tests/$($contractInput.Test).Tests.ps1" `
+            "Input '$($contractInput.Path)' must select its payload or archive contract suite."
+    }
+}
+
+foreach ($lowFanInput in @(
+        'build/LowFanValidationInstalledState.ps1',
+        'build/Invoke-BatterySaverLowFanValidation.ps1',
+        'build/Invoke-SilentLowFanValidation.ps1',
+        'tests/Build.Tests/LowFanValidationInstalledState.Tests.ps1',
+        'src/OpenBlade.Contracts/Overrides.cs',
+        'src/OpenBlade.Service/ServiceControlRuntime.cs',
+        'src/OpenBlade.Tray.Core/ServiceClient.cs')) {
+    $lowFan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($lowFanInput)
+    Assert-Contains $lowFan.ContractTests `
+        'tests/Build.Tests/LowFanValidationInstalledState.Tests.ps1' `
+        'Low-fan workflow and installed-state contracts must run their restoration safety checks.'
+}
+
+foreach ($cpuContractInput in @(
+        @{ Path = 'build/development-deployment/Publish-CpuVoltageValidation.ps1'; Test = 'tests/Build.Tests/CpuVoltageDeployment.Tests.ps1' },
+        @{ Path = 'build/development-deployment/Invoke-LocalDevDeployment.ps1'; Test = 'tests/Build.Tests/CpuVoltageDeployment.Tests.ps1' },
+        @{ Path = 'build/Publish.ps1'; Test = 'tests/Build.Tests/CpuVoltageValidationBuild.Tests.ps1' },
+        @{ Path = 'build/BuildIdentity.ps1'; Test = 'tests/Build.Tests/CpuVoltageValidationBuild.Tests.ps1' })) {
+    $cpuPlan = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @($cpuContractInput.Path)
+    Assert-Equal 'affected' $cpuPlan.Mode 'CPU packaging inputs must have explicit affected coverage.'
+    Assert-Contains $cpuPlan.ContractTests $cpuContractInput.Test 'CPU source changes must select their contract suite.'
 }
 
 foreach ($legacyThxInput in @(

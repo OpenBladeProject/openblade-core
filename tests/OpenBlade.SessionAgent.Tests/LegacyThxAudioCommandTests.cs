@@ -19,12 +19,38 @@ public sealed class LegacyThxAudioCommandTests
         };
 
     [Fact]
-    public void EverySupportedModelHasAnExplicitThxOrNonThxDecision()
+    public void EverySupportedModelHasAnExplicitReviewedThxAdmissionDecision()
     {
+        // These exact source-reviewed models have no admitted THX runtime/setup API
+        // contract. Missing contract evidence is distinct from a non-THX exclusion.
+        // See evidence/source-reviewed-blades/2026-11-07-models{,-2021-2022,-2019-2020}.json
+        // and evidence/source-reviewed-blades/2026-11-07-rz09-0301.json.
+        (string ModelNumber, string UsbProductId)[] notAdmitted =
+        [
+            ("RZ09-0508", "02B6"),
+            ("RZ09-0510", "02B7"),
+            ("RZ09-0509", "02B8"),
+            ("RZ09-0529", "02C7"),
+            ("RZ09-0370", "0270"),
+            ("RZ09-0427", "028C"),
+            ("RZ09-0421", "028A"),
+            ("RZ09-0423", "028B"),
+            ("RZ09-0301", "0245"),
+            ("RZ09-0300", "0246"),
+            ("RZ09-0330", "0253"),
+            ("RZ09-0351", "0268"),
+        ];
         var admitted = ThxAudioCompatibility.Profiles.Select(profile => (profile.ModelNumber, profile.UsbProductId));
         var excluded = ThxAudioCompatibility.ExcludedModels.Select(profile => (profile.ModelNumber, profile.UsbProductId));
         Assert.Equal(RazerBladeModelCatalog.All.Select(model => (model.ModelNumber, model.UsbProductId))
-            .OrderBy(model => model.ModelNumber), admitted.Concat(excluded).OrderBy(model => model.ModelNumber));
+            .OrderBy(model => model.ModelNumber), admitted.Concat(excluded).Concat(notAdmitted).OrderBy(model => model.ModelNumber));
+        foreach (var decision in notAdmitted)
+        {
+            Assert.DoesNotContain(ThxAudioCompatibility.Profiles,
+                profile => profile.ModelNumber == decision.ModelNumber || profile.UsbProductId == decision.UsbProductId);
+            Assert.DoesNotContain(ThxAudioCompatibility.ExcludedModels,
+                profile => profile.ModelNumber == decision.ModelNumber || profile.UsbProductId == decision.UsbProductId);
+        }
         Assert.DoesNotContain(ThxAudioCompatibility.Profiles, profile => profile.ModelNumber == "RZ09-0328");
     }
 

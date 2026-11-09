@@ -8,6 +8,30 @@ namespace OpenBlade.Tray.Tests;
 [Collection(LocalizationTestCollection.Name)]
 public sealed class TrayTextTests
 {
+    [Theory]
+    [InlineData("ru-RU")]
+    [InlineData("zh-CN")]
+    [InlineData("qps-ploc")]
+    public void FanStopPendingAndGuardianMessagesAreLocalized(string cultureName)
+    {
+        using var culture = new CultureScope(cultureName);
+        string[] keys =
+        [
+            "Waiting for fan stop confirmation",
+            "Returning to Auto",
+            "Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto.",
+            "Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds.",
+            "Fan stop is unavailable because its safety guardian is not ready.",
+            "Custom: {2} s average CPU {0} °C / GPU {1} °C; immediate CPU {3} °C / GPU {4} °C",
+            "Each immediate cutoff must be at least its corresponding average limit.",
+            "A longer averaging window responds more slowly to rising temperatures. Immediate cutoffs still apply.",
+        ];
+        foreach (string key in keys)
+        {
+            Assert.NotEqual(key, TrayText.Get(key));
+        }
+    }
+
     [Fact]
     public void Get_MissingCultureFallsBackToAuthoritativeEnglish()
     {

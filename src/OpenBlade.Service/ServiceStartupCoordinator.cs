@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 
 namespace OpenBlade.Service;
 
@@ -10,10 +11,25 @@ public sealed class ServiceStartupCoordinator(
     IPowerStateProvider powerStateProvider,
     ILogger logger)
 {
+    // Post-initialization startup can already own Driver mode before later
+    // reconciliation fails. It still needs the normal guarded shutdown cleanup.
+    internal bool RuntimeInitialized { get; private set; }
+
     public async Task<bool> InitializeAsync(CancellationToken cancellationToken)
     {
-        BatteryConfiguration configuration =
-            await profileBootstrapper.InitializeAsync(cancellationToken);
+        BatteryConfiguration configuration;
+        try
+        {
+            configuration = await profileBootstrapper.InitializeAsync(cancellationToken);
+        }
+        catch (ConfigurationQuarantinedException exception)
+        {
+            // No authoritative bootstrap intent exists. Do not initialize a
+            // default-valued runtime: nonthermal paths also need known intent.
+            logger.LogError(exception,
+                "Machine configuration transaction recovery is required; service initialization was refused before runtime or background work. Preserve the recovery record and original transaction artifacts.");
+            return false;
+        }
         if (configuration.Disposition == ConfigurationLoadDisposition.Quarantined)
         {
             logger.LogWarning(
@@ -53,6 +69,7 @@ public sealed class ServiceStartupCoordinator(
             powerSource,
             persistentOverrides.Overrides,
             recoveringUnexpectedExit);
+        RuntimeInitialized = true;
 
         try
         {
@@ -74,7 +91,7 @@ public sealed class ServiceStartupCoordinator(
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             logger.LogError(
                 exception,

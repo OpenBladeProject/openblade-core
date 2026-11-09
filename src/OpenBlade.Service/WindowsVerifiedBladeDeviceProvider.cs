@@ -75,6 +75,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
         experimentalFactory = batteryFactory as ExperimentalBladeFactory;
+        LaptopControlRecoveryIdentity = batteryFactory switch
+        {
+            ProductionBatteryFactory production => production.LaptopControlRecoveryIdentity,
+            ExperimentalBladeFactory experimental => experimental.LaptopControlRecoveryIdentity,
+            _ => null,
+        };
         this.compatibilityPolicy = compatibilityPolicy
             ?? new FirmwareCompatibilityPolicy();
         device = new SerializedBladeDevice(
@@ -90,6 +96,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             lowPowerGate);
     }
 
+    public void SetBatterySaverFanStopContext(bool readbackRequested, Func<bool>? writeAdmission) =>
+        device.SetBatterySaverFanStopContext(readbackRequested, writeAdmission);
+
     public void SetAllowUntestedFirmware(bool enabled)
     {
         compatibilityPolicy.AllowUntestedFirmware = enabled;
@@ -102,6 +111,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     }
 
     public bool IsExperimentalDevice => experimentalFactory is not null;
+
+    public string? LaptopControlRecoveryIdentity { get; }
+
+    public void SetRecoveryWriteAdmission(Func<bool> admission) =>
+        device.SetRecoveryWriteAdmission(admission);
+
+    public Task<IDisposable> AcquireFanStopHardwareLeaseAsync(CancellationToken cancellationToken) =>
+        device.AcquireFanStopHardwareLeaseAsync(cancellationToken);
 
     public string? ExperimentalSupportSource => experimentalFactory?.EvidenceSource;
 
@@ -129,6 +146,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
     public DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics() =>
         Volatile.Read(ref verificationDiagnostics);
+
+    // Only a bounded CPU getter that has already obtained a fresh exact device
+    // may use this lifetime check; USB devnode continuity is independently held
+    // by its native provider. This does not authorize device commands.
+    internal bool IsCpuGetterDeviceCurrent(IBladeDevice retained)
+    {
+        lock (providerLifecycleSync) { return disposed == 0 && ReferenceEquals(retained, device); }
+    }
 
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
     {
@@ -425,6 +450,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         IThermalExternalDriftValidationDevice,
         IDisposable
     {
+        private int batterySaverFanStopReadbackRequested;
+        private Func<bool>? batterySaverFanStopWriteAdmission;
+
+        internal void SetBatterySaverFanStopContext(bool requested, Func<bool>? admission)
+        {
+            Volatile.Write(ref batterySaverFanStopWriteAdmission, admission);
+            Volatile.Write(ref batterySaverFanStopReadbackRequested, requested ? 1 : 0);
+        }
+
+        private Task<ProductionPerformanceFanState> ReadThermalStateAsync(
+            IProductionBatteryPort port, CancellationToken cancellationToken) =>
+            Volatile.Read(ref batterySaverFanStopReadbackRequested) != 0
+                && port.Capabilities.SupportsBatterySaverFanStop
+                ? port.QueryBatterySaverFanStopStateAsync(cancellationToken)
+                : port.QueryPerformanceFanStateAsync(cancellationToken);
+
         private const int MaximumStateReadAttempts = 3;
         // A failed thermal pre-write exchange can leave the EC busy through the
         // full protocol timeout. Wait that window plus a bounded settling margin
@@ -444,6 +485,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         private readonly object lifecycleSync = new();
         private readonly object gpuClockOffsetManagementSync = new();
         private readonly SemaphoreSlim hardwareOperationGate = new(1, 1);
+        private bool fanStopDelegated;
         private Task? deferredDisposal;
         private bool closing;
         private bool disposed;
@@ -593,6 +635,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         LampArrayLightingAccess =
                             lighting.Capabilities.LampArrayLightingAccess,
                         LogoLightingModes = lighting.Capabilities.LogoLightingModes,
+                        SupportsIndependentLightingControls = lighting.Capabilities.SupportsIndependentLightingControls,
                         SupportsKeyboardBrightness =
                             lighting.Capabilities.SupportsKeyboardBrightness,
                         SupportsBreathingColorSelection = lighting.Capabilities.SupportsBreathingColorSelection,
@@ -650,7 +693,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             await using (port.ConfigureAwait(false))
             {
                 return opened.Failure is null
-                    ? port.Capabilities
+                    ? port.Capabilities with
+                    {
+                        HasFanStopTrialEvidence = batteryFactory.Capabilities.HasFanStopTrialEvidence,
+                        HasFanStopSourceEvidence = batteryFactory.Capabilities.HasFanStopSourceEvidence,
+                    }
                     : DeviceCapabilities.Unavailable();
             }
         }
@@ -869,6 +916,26 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
+        public async Task<ConfirmedDeviceState> ReadIndependentLightingStateAsync(
+            IndependentLightingSettings fields, CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                IndependentLightingSettings? observed = await lightingSession
+                    .ReadIndependentLightingStateCoreAsync(cancellationToken, fields).ConfigureAwait(false);
+                return new ConfirmedDeviceState(null, null, null, null)
+                {
+                    IndependentLighting = observed,
+                    LogoLighting = observed?.LogoMode,
+                };
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         public async Task<ConfirmedDeviceState> ReadLightingStateAsync(
             CancellationToken cancellationToken)
         {
@@ -887,6 +954,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     Lighting: lighting)
                 {
                     LogoLighting = logo,
+                    IndependentLighting = await lightingSession.ReadIndependentLightingStateCoreAsync(cancellationToken)
+                        .ConfigureAwait(false),
                 };
             }
             finally
@@ -931,10 +1000,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     // Without the protection baseline the battery subsystem is
                     // already unknown, so the dependent override is not queried.
                     IProductionBatteryPort port = await lease.GetAsync().ConfigureAwait(false);
-                    // Models without an admitted override query use the protection
-                    // register alone. An admitted query must establish its real flag.
-                    bool? temporary = batteryFactory is ExperimentalBladeFactory
-                        && !port.SupportsTemporaryFullChargeQuery ? false : null;
+                    // The protection register does not report the override. Keep
+                    // that field unknown unless its own admitted query succeeds.
+                    bool? temporary = null;
                     if (port.SupportsTemporaryFullChargeQuery)
                     {
                         (_, temporary) = await ReadIsolatedStateQueryAsync(
@@ -961,7 +1029,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         lease,
                         DeviceStateQuery.PerformanceAndFans,
                         ThermalStateSubsystems,
-                        port => port.QueryPerformanceFanStateAsync(cancellationToken),
+                        port => ReadThermalStateAsync(port, cancellationToken),
                         failures).ConfigureAwait(false);
                 ProductionPerformanceFanState? performanceFan =
                     performanceFanRead ? performanceFanState : null;
@@ -988,6 +1056,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     CustomPerformance = performanceFan?.CustomPerformance,
                     GpuClockOffsets = gpuOffsets,
                     LogoLighting = logo,
+                    IndependentLighting = await lightingSession.ReadIndependentLightingStateCoreAsync(cancellationToken)
+                        .ConfigureAwait(false),
                 };
                 if (failures.Count == 0)
                 {
@@ -1156,7 +1226,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
 
                 ProductionPerformanceFanState performanceFan =
-                    await port.QueryPerformanceFanStateAsync(cancellationToken)
+                    await ReadThermalStateAsync(port, cancellationToken)
                         .ConfigureAwait(false);
                 GpuClockOffsetCapabilities? managedGpuClockOffsets =
                     await ReadManagedGpuClockOffsetsAsync(cancellationToken)
@@ -2166,6 +2236,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             DeviceCapabilities capabilities = batteryFactory.Capabilities;
             Func<IProductionBatteryPort, Task>? continueAfterSecondFanManualEntry = null;
             if (allowSecondManualEntryContinuation
+                && value.Mode != FanMode.Stop
                 && DeviceSubsystemOrder.IsManualFanMode(value.Mode)
                 && capabilities.FanSpeedRange is { } fanSpeedRange)
             {
@@ -2178,16 +2249,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     cancellationToken);
             }
 
-            return capabilities.FanModes.Contains(value.Mode)
+            return (capabilities.FanModes.Contains(value.Mode)
+                    || value.Mode == FanMode.Stop && capabilities.SupportsBatterySaverFanStop)
                 && (value.Mode != FanMode.Fixed
                     || capabilities.SupportsFanSpeedInAnyPerformancePreset(
                         value.FixedSpeedRpm))
                 ? ExecuteProductionWriteAsync(
-                    port => port.SetFanControlAsync(value, cancellationToken),
+                    port =>
+                    {
+                        port.SetBatterySaverFanStopWriteAdmission(
+                            () => Volatile.Read(ref batterySaverFanStopWriteAdmission)?.Invoke() == true);
+                        return port.SetFanControlAsync(value, cancellationToken);
+                    },
                     cancellationToken,
                     continueAfterSecondFanManualEntry:
                         continueAfterSecondFanManualEntry,
-                    allowFreshSessionRetry: allowFreshSessionRetry)
+                    allowFreshSessionRetry: allowFreshSessionRetry && value.Mode != FanMode.Stop)
                 : RejectProductionWrite("The requested fan control is not admitted.");
         }
 
@@ -2299,6 +2376,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             LightingSettings value,
             CancellationToken cancellationToken) =>
             lightingSession.SetLightingAsync(value, cancellationToken);
+
+        public Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken token) =>
+            lightingSession.SetIndependentLightingAsync(value, token);
+
+        internal void SetRecoveryWriteAdmission(Func<bool> admission) =>
+            lightingSession.SetRecoveryWriteAdmission(admission);
 
         internal void SetDesiredLightingRefreshRate(LightingRefreshRate refreshRate) =>
             lightingSession.SetDesiredLightingRefreshRate(refreshRate);
@@ -2516,6 +2599,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             bool isManualEntryContinuation = false)
         {
             ArgumentNullException.ThrowIfNull(write);
+            // Capture before queueing. Scope exit may clear read interest while this
+            // restoration waits, but must not remove its per-native hardware gate.
+            bool requireStopRestorationAdmission =
+                Volatile.Read(ref batterySaverFanStopReadbackRequested) != 0;
             BladeWriteException? afterWriteFailure = null;
             BladeWriteException? exhaustedRetriablePreWrite = null;
             BladeWriteException? canceledRetriablePreWrite = null;
@@ -2597,6 +2684,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
                             cancellationToken.ThrowIfCancellationRequested();
                             retryPreWriteOpen = false;
+                            if (requireStopRestorationAdmission)
+                            {
+                                port.RequireBatterySaverFanStopRestorationAdmission();
+                            }
                             writeDelegateEntered = true;
                             await attemptWrite(port).ConfigureAwait(false);
                             try
@@ -2779,12 +2870,49 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
+        internal async Task<IDisposable> AcquireFanStopHardwareLeaseAsync(CancellationToken cancellationToken)
+        {
+            lock (lifecycleSync)
+            {
+                ObjectDisposedException.ThrowIf(closing || disposed, this);
+                if (fanStopDelegated) { throw new InvalidOperationException("Fan guardian hardware is already delegated."); }
+                fanStopDelegated = true;
+            }
+            bool acquired = false;
+            try
+            {
+                await hardwareOperationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                acquired = true;
+                ThrowIfClosingOrDisposed();
+                return new FanStopHardwareLease(this);
+            }
+            catch
+            {
+                lock (lifecycleSync) { fanStopDelegated = false; }
+                if (acquired) { hardwareOperationGate.Release(); }
+                throw;
+            }
+        }
+
+        private sealed class FanStopHardwareLease(SerializedBladeDevice owner) : IDisposable
+        {
+            private SerializedBladeDevice? retained = owner;
+            public void Dispose()
+            {
+                SerializedBladeDevice? current = Interlocked.Exchange(ref retained, null);
+                if (current is null) { return; }
+                lock (current.lifecycleSync) { current.fanStopDelegated = false; }
+                current.hardwareOperationGate.Release();
+            }
+        }
+
         private async Task EnterHardwareOperationAsync(CancellationToken cancellationToken)
         {
             Task waitForHardware;
             lock (lifecycleSync)
             {
                 ObjectDisposedException.ThrowIf(closing || disposed, this);
+                if (fanStopDelegated) { throw new CapabilityUnavailableException("Ordinary hardware access is blocked by the fan guardian delegation."); }
                 waitForHardware = hardwareOperationGate.WaitAsync(cancellationToken);
             }
 
@@ -2792,6 +2920,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             try
             {
                 ThrowIfClosingOrDisposed();
+                lock (lifecycleSync)
+                {
+                    if (fanStopDelegated) { throw new CapabilityUnavailableException("Ordinary hardware access is blocked by the fan guardian delegation."); }
+                }
             }
             catch
             {

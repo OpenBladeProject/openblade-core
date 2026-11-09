@@ -50,7 +50,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         menu = BuildTrayMenu(openTray, exitTray);
         currentIcon = OpenBladeIconAssets.LoadTrayIcon(
             viewModel.TrayIconState,
-            themeSource.UseLightTrayIconGlyphs);
+            themeSource.UseLightTrayIconGlyphs,
+            viewModel.IsExternalPowerDischarging);
         trayIcon = new NotifyIcon
         {
             Text = viewModel.TrayHoverLabelText,
@@ -105,7 +106,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             && !notificationDeduplicator.ShouldEmit(
                 notification.ReplacementTag,
                 notification.Title,
-                notification.Body))
+                notification.Body,
+                notification.OccurrenceId))
         {
             return;
         }
@@ -120,7 +122,9 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             timeout: 2000,
             notification.Title,
             notification.Body,
-            ToolTipIcon.None);
+            notification.Severity == TrayNotificationSeverity.Warning
+                ? ToolTipIcon.Warning
+                : ToolTipIcon.None);
     }
 
     private void OnBalloonTipClicked(object? sender, EventArgs args)
@@ -150,7 +154,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         {
             trayIcon.Text = viewModel.TrayHoverLabelText;
         }
-        else if (args.PropertyName == nameof(MainViewModel.TrayIconState))
+        else if (args.PropertyName is nameof(MainViewModel.TrayIconState)
+            or nameof(MainViewModel.IsExternalPowerDischarging))
         {
             UpdateTrayIcon();
         }
@@ -229,7 +234,8 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     {
         Icon replacement = OpenBladeIconAssets.LoadTrayIcon(
             viewModel.TrayIconState,
-            themeSource.UseLightTrayIconGlyphs);
+            themeSource.UseLightTrayIconGlyphs,
+            viewModel.IsExternalPowerDischarging);
         Icon? previous = currentIcon;
         currentIcon = replacement;
         trayIcon.Icon = replacement;

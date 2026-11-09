@@ -2,14 +2,34 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-/// <summary>Upstream evidence permits experimental controls, not a physical-validation claim.</summary>
+/// <summary>Reviewed exact-model sources permit controls without claiming physical validation.</summary>
 internal sealed record ExperimentalBladeModel(
     string ModelNumber,
     string ProductName,
     ushort ProductId,
     bool SupportsBatteryProtection,
     string EvidenceSource,
-    string? AdapterPowerEvidenceSource = null);
+    string? AdapterPowerEvidenceSource = null,
+    SourceReviewedThermalPolicy? ThermalPolicy = null);
+
+/// <summary>Exact-model Synapse policy; no fan range or lighting transport is inherited.</summary>
+internal sealed record SourceReviewedThermalPolicy(
+    string CommandEvidenceSource,
+    bool SupportsMaximumFans,
+    bool SupportsCpuBoost,
+    bool SupportsBatterySaver,
+    bool SupportsMaximumPower,
+    System.Collections.Immutable.ImmutableArray<string> EvidenceSources,
+    bool SupportsTurbo = true,
+    bool SupportsSilent = true,
+    bool SupportsBalancedDc = true,
+    bool SupportsCustom = true,
+    bool SupportsGaming = false,
+    bool SupportsCreator = false)
+{
+    internal byte QueryProfile => 1;
+    internal byte MaximumTransactionId => 0x1F;
+}
 
 internal static class ExperimentalBladeModels
 {
@@ -34,6 +54,32 @@ internal static class ExperimentalBladeModels
 
     internal static IReadOnlyList<ExperimentalFeatureEvidence> FeatureEvidenceFor(ExperimentalBladeModel model)
     {
+        if (model.ThermalPolicy is { } thermal)
+        {
+            IReadOnlyList<string> sources = thermal.EvidenceSources;
+            return [
+                new(!thermal.SupportsCustom ? "ThermalPresetsOnlyBalancedGamingCreator"
+                    : thermal.SupportsCpuBoost ? "PerformanceAndCustomCpu0To3Gpu0To2" : "PerformanceAndCustomLevels0To2",
+                    "SynapseSourceBackedWithoutPhysicalValidation", sources),
+                .. (model.ProductId == 0x0245
+                    ? new ExperimentalFeatureEvidence[] { new("CustomGpuWattageLevels0To2",
+                        "SynapseSourceBackedWithoutPhysicalValidation", sources),
+                        new("ManualFanEnvelope3700To5300Step100", "SourceDerivedOuterEnvelopeRequiresFreshFirmwareIntersection", sources),
+                        new("IndependentKeyboardBrightnessAndLogo", "SynapseSourceBackedWithoutPhysicalValidation", sources) }
+                    : []),
+                new("AutomaticFanHandback", "SynapseSourceBackedWithoutPhysicalValidation", sources),
+                new("FixedAndCurveFanWrites", model.ProductId == 0x0245
+                    ? "SynapseSourceBackedBalancedOnlyWithFreshDynamicRange" : "NotEstablishedDynamicFanRangesRequireReview", sources),
+                new("ManualBaselinePerformanceChanges", model.ProductId == 0x0245
+                    ? "BalancedOnlyCustomRequiresAutomatic" : "BlockedUntilFanTargetPreservationIsAdmitted", sources),
+                new("ChargeLimits50To80Step5AndOff", model.SupportsBatteryProtection
+                    ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
+                new("MaximumFans", thermal.SupportsMaximumFans ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
+                new("AdapterPowerClassification", "SynapseSourceBacked", sources),
+                .. FanStopEvidenceFor(model),
+                new(model.ProductId == 0x0245 ? "KeyboardEffectsFramesAndHyperBoost" : "LightingAndHyperBoost", "NotEstablished", sources),
+            ];
+        }
         IReadOnlyList<ExperimentalFeatureEvidence> features = model.ProductId switch
         {
             0x029F => [
@@ -122,9 +168,20 @@ internal static class ExperimentalBladeModels
                 new("CustomAndChargeLimits50To100", "SourceBackedExtrapolation", [Blade18Source])],
             _ => [],
         };
+        features = [.. features, .. FanStopEvidenceFor(model)];
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
+    }
+
+    private static IReadOnlyList<ExperimentalFeatureEvidence> FanStopEvidenceFor(ExperimentalBladeModel model)
+    {
+        IReadOnlyList<FanStopModelContract> contracts = FanStopModelContract.ForProfile(
+            model.ModelNumber, model.ProductId, model.ProductName);
+        return contracts.Count == 0 ? [] :
+            [new("FanStopAndGuardianAuto", "FirmwareSourceBackedWithoutPhysicalValidation",
+                ["https://github.com/OSSBlade/openblade-core/blob/main/docs/fan-stop-model-coverage.md",
+                    .. contracts.Select(contract => $"{contract.FirmwareIdentity};SHA256={contract.FirmwareSha256}")])];
     }
 
     public static IReadOnlyList<ExperimentalBladeModel> All { get; } = Array.AsReadOnly<ExperimentalBladeModel>(
@@ -145,7 +202,145 @@ internal static class ExperimentalBladeModels
         // Windows product: https://browser.geekbench.com/v6/cpu/6428586
         new("RZ09-0484", "Blade 18 - RZ09-0484", 0x02A0, true, Blade18Source,
             "https://apps.razer.com/synapse/products/672/mw/main.57245df0507455a5119e.js"),
+        CreateSourceReviewed("RZ09-0508", "Blade 14 - RZ09-0508", 0x02B6,
+            "main.1b1b68e07824e5af9833.js", "rzDevice25.06135650b7453937e0e8.js",
+            "0E5BD5C21DD610E5D889F608B2EBB1D80BFC7CA90237FBBC3A292ADBAF06EF90", true, cpuBoost: true),
+        CreateSourceReviewed("RZ09-0510", "Blade 16 - RZ09-0510", 0x02B7,
+            "main.27df2e7ddab0b6bc34cc.js", "rzDevice25.60bfcef58690c8bb715d.js",
+            "2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491", true, cpuBoost: true),
+        CreateSourceReviewed("RZ09-0509", "Blade 18 - RZ09-0509", 0x02B8,
+            "main.ded18de8aee09a8f8238.js", "rzDevice25.6339454cb5b2fe587300.js",
+            "8780AA380D11665A2D551174D162C7278404465772219D0530A29B09E297BC81", true),
+        CreateSourceReviewed("RZ09-0529", "Blade 18 - RZ09-0529", 0x02C7,
+            "main.1f8e0c604f19af3ea24c.js", "rzDevice25.c8da1ead63e6cf002d32.js",
+            "02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9", false,
+            batteryPresets: true, maximumPower: true),
+        CreateSourceReviewed("RZ09-0370", "Blade 14 - RZ09-0370", 0x0270,
+            "main.c661207b6abe5eb319cb.js", "rzDevice25.1672779ed3e58b9415ca.js",
+            "F696504C78559A2E04E503F8CF7B069D87F1298BFB767677912CD649EEB49456", false, cpuBoost: true, turbo: false,
+            batteryProtection: false, silent: false, balancedDc: false),
+        CreateSourceReviewed("RZ09-0427", "Blade 14 (2022) - RZ09-0427", 0x028C,
+            "main.825dec01b9aefa0b84ac.js", "rzDevice25.ceef38d32121535173d9.js",
+            "D94B40BB4B1AEDD17C0028A625C28D00D8BC14B26361CBF25133A3CE4E5B0C67", false, cpuBoost: true, turbo: false),
+        CreateSourceReviewed("RZ09-0421", "Blade 15 (2022) - RZ09-0421", 0x028A,
+            "main.3650e97f35689328d442.js", "rzDevice25.33bbbe9e1d2d72bdf1a1.js",
+            "CEF5D482E96F2833C84998E2FE998D0A41AA7CA4483E4E69156424F76475D513", false, cpuBoost: true, turbo: false),
+        CreateSourceReviewed("RZ09-0423", "Blade 17 (2022) - RZ09-0423", 0x028B,
+            "main.8378c0c79039a3f2ba23.js", "rzDevice25.7ffcfe7d1ddb6103ac44.js",
+            "A9442C86AB7D8F0549E18016324462A52A040E5578410F296BDF72884A383962", false, cpuBoost: true, turbo: false),
+        // CPU Boost requires an EC update; no readable exact-model EC admission is established.
+        CreateSourceReviewed("RZ09-0330", "Blade 15 Advanced Model (Early 2020) - RZ09-033", 0x0253,
+            "main.11dfb9173b8a1c795ffd.js", "rzDevice25.1dbf16d259718708f12a.js",
+            "ED1BEF8C07D7E5BBFEEFE235179B351B85BFAE6F1BCC3A0A131F7A99BB157E1C", false, turbo: false, silent: false, balancedDc: false,
+            batteryProtection: false),
+        // Only typed HID thermal presets; vendor native GPU clock changes are not admitted.
+        CreateSourceReviewed("RZ09-0351", "Blade 15 Base Model (Late 2020)", 0x0268,
+            "main.f9ef043eaf3feceba719.js", "rzDevice25.9c9299b0f9660c882e16.js",
+            "330835150F88BC505B181EAC4828506750CD7365F9F4CB242437CF3CFC133A24", false, turbo: false, silent: false, balancedDc: false,
+            batteryProtection: false, custom: false, gaming: true, creator: true),
+        // RZ09-0301 is Mid 2019 Advanced (Razer answer 1580). Product 581
+        // explicitly admits ordinary and Mercury editions; the original Mid 2019
+        // Advanced owner report corroborates 0245 (OpenRGB issue 199).
+        // Its GPU "wattage" selector independently uses the same bounded 0D/07
+        // bytes as advanced levels. Vendor DLL GPU clocks remain unadmitted.
+        CreateSourceReviewed("RZ09-0301", "Blade", 0x0245,
+            "main.450b813b36b314f7abf0.js", "rzDevice25.f668146da6ee1d0b3b6c.js",
+            "8459C76B984DDF5894CC7C7E00A40B76EEDE5E32D65DF2F7D6D75A541C36DAC7", false,
+            turbo: false, silent: false, balancedDc: false, batteryProtection: false),
+        // The exact DMI name and product 582 guide jointly identify RZ09-0300.
+        CreateSourceReviewed("RZ09-0300", "Blade 15 Mid 2019-Base", 0x0246,
+            "main.c9ac81170313d8740ddc.js", "rzDevice25.56d11fe9830f93920735.js",
+            "A5F75408C2D859ACF0F3418B950989271E98DFEE5056DD17DCA6BA5557FDD4C6", false,
+            turbo: false, silent: false, balancedDc: false, batteryProtection: false,
+            custom: false, gaming: true, creator: true),
     ]);
+
+    private static ExperimentalBladeModel CreateSourceReviewed(string number, string name, ushort product,
+        string mainFile, string commandFile, string commandHash, bool maximumFans,
+        bool batteryPresets = false, bool maximumPower = false, bool cpuBoost = false,
+        bool turbo = true, bool silent = true, bool balancedDc = true, bool batteryProtection = true,
+        bool custom = true, bool gaming = false, bool creator = false)
+    {
+        string root = $"https://apps.razer.com/synapse/products/{product}/mw/";
+        return new(number, name, product, batteryProtection, root + mainFile, root + mainFile,
+            new(root + commandFile + ";SHA256=" + commandHash, maximumFans, cpuBoost, batteryPresets, maximumPower,
+                SourceReviewedEvidence(product), turbo, silent, balancedDc, custom, gaming, creator));
+    }
+
+    private static System.Collections.Immutable.ImmutableArray<string> SourceReviewedEvidence(ushort product) =>
+        product switch
+        {
+            581 => [
+                "https://apps.razer.com/synapse/products/581/mw/main.450b813b36b314f7abf0.js;SHA256=F7A863CF5E95D94539ABD3F4C29076E1710901B5D02624EFDC0275265C651D7A",
+                "https://apps.razer.com/synapse/products/581/mw/6737.f49b9965ecd5cf011e43.js;SHA256=5B11C5CD3E26BBD74DAC7A98413AB31315DAFEFAD5B783DBF0CF014E6A33D017",
+                "https://apps.razer.com/synapse/products/581/mw/rzDevice25.f668146da6ee1d0b3b6c.js;SHA256=8459C76B984DDF5894CC7C7E00A40B76EEDE5E32D65DF2F7D6D75A541C36DAC7",
+                "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrixBladeWattage.09358e38f5994093ae20.js;SHA256=EB94694DBB49AE38AD1837AC926D3D78515F9F501B249B68FE48C200250036F5",
+                "https://apps.razer.com/synapse/products/581/ui/static/js/main.98cf2efe.js;SHA256=C29CE6F4E66E5658B9B7FC4443AE27057EFA4C06DF3A96F6C0E70B79E712DB85",
+                "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrix.dadaa67383371e256a18.js;SHA256=BEB240485210034445236483B1226DBCCEC67A5C8AB216C9CF976B57F604A1E6",
+                "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrixBlade.211294bf38840fcb516b.js;SHA256=7F25B39B209807B8582E30717B90129AAB0B3B20B01DE5B0465C2819D4FD99DF",
+                "https://apps.razer.com/synapse/products/581/mw/3159.f364bf525336e07016a6.js;SHA256=9099AB575124FDDCE557262C2D6DD4A67F872F678127D89AFBE8DF8781A4EDDF",
+                "https://apps.razer.com/synapse/products/581/mw/3689.30a0792a28654ef8ef1c.js;SHA256=E9CFC508E4D6C81671C7A57081DA3DD640398B191AF87B761A17CCDF04B0440C"],
+            582 => [
+                "https://apps.razer.com/synapse/products/582/mw/6737.3d32e8efb681572a4d05.js;SHA256=EFFE1404E33611F8B26AA248B64A7B25A1F9283217BE1CC5C85DEEC98AB10B6E",
+                "https://apps.razer.com/synapse/products/582/mw/main.c9ac81170313d8740ddc.js;SHA256=EAEE32B144B086165E43FC97446378D22919FB19360826028A0434B03D7190C4",
+                "https://apps.razer.com/synapse/products/582/mw/rzDevice25.56d11fe9830f93920735.js;SHA256=A5F75408C2D859ACF0F3418B950989271E98DFEE5056DD17DCA6BA5557FDD4C6",
+                "https://apps.razer.com/synapse/products/582/mw/rzDevice25LedMatrixBladeWattage.45c847b37f79a031cbaf.js;SHA256=71D91DFF87CB617384535C5DEC4643A2CC551C3CDE63EE691A29D7282FF96AB2",
+                "https://apps.razer.com/synapse/products/582/ui/static/js/main.6ce6c0b6.js;SHA256=B4BEB1A616F01AE0F9DD29741B6AE6A66ED794CD2E109C92E57D9BBF232FDF1F"],
+            595 => [
+                "https://apps.razer.com/synapse/products/595/mw/6737.6a4f810f43bf4dd7ea5d.js;SHA256=AC6F2091BC3ABE952B1AA7D8F156F2C6859E3195112A06D15AA03BB41FA81F6A",
+                "https://apps.razer.com/synapse/products/595/mw/main.11dfb9173b8a1c795ffd.js;SHA256=95A5CB17A346AC87CBF033E734EC18955E8B42BBFD572B666AAED36FBB3342D1",
+                "https://apps.razer.com/synapse/products/595/mw/rzDevice25.1dbf16d259718708f12a.js;SHA256=ED1BEF8C07D7E5BBFEEFE235179B351B85BFAE6F1BCC3A0A131F7A99BB157E1C",
+                "https://apps.razer.com/synapse/products/595/mw/rzDevice25LedMatrixBladeWattage.372543c0af163eb3248d.js;SHA256=E2212888DAC1E9026061079E38464221F38E72A17B71EE059902C6065851FE3F",
+                "https://apps.razer.com/synapse/products/595/ui/static/js/main.cb0bb66b.js;SHA256=F18BBCF3BB5A24FEC8272213DE8AA93E55FFA8E9952F90F5556C3DE62E79EE08"],
+            616 => [
+                "https://apps.razer.com/synapse/products/616/mw/2592.2faacaabe55016689a38.js;SHA256=D7C0644CA124900DB2A57812E85CF94C0C75A75ACE11CAB903B11A81438B4B92",
+                "https://apps.razer.com/synapse/products/616/mw/main.f9ef043eaf3feceba719.js;SHA256=ABC074EB488E0848E4751D8417D6B3EF3BA02FAC06C9C98ED32B5E1E1350B2C7",
+                "https://apps.razer.com/synapse/products/616/mw/rzDevice25.9c9299b0f9660c882e16.js;SHA256=330835150F88BC505B181EAC4828506750CD7365F9F4CB242437CF3CFC133A24",
+                "https://apps.razer.com/synapse/products/616/mw/rzDevice25LedMatrixBladeWattage.f57ee707817ebfa7e2d8.js;SHA256=51BC8EF2FEFDA5FE8263E26F175F20B25BF0703CF0EEA8E9DE0D7B8AB1959426",
+                "https://apps.razer.com/synapse/products/616/ui/static/js/main.700be592.js;SHA256=A802348F6BA596483A820A90D583C3680903C74AEB1CCB559174CBEB47C0E2F2"],
+            624 => [
+                "https://apps.razer.com/synapse/products/624/mw/6737.6b47e5cb8059a1bdacfb.js;SHA256=C36EFB8BD1F15DC65F8C235895EFA5F20A59D71D45BC6D22BF92D88C9C8D79F7",
+                "https://apps.razer.com/synapse/products/624/mw/main.c661207b6abe5eb319cb.js;SHA256=50DFF3488639F22BD3890596A047378D14CB52334A49EDDCEDDAFC7EAF0669C2",
+                "https://apps.razer.com/synapse/products/624/mw/rzDevice25.1672779ed3e58b9415ca.js;SHA256=F696504C78559A2E04E503F8CF7B069D87F1298BFB767677912CD649EEB49456",
+                "https://apps.razer.com/synapse/products/624/ui/static/js/main.2709843a.js;SHA256=48359BAFE13C56156017A81A72E82CEDB3F44BAD5A52BB921D4FBE96E1F1A1FE"],
+            652 => [
+                "https://apps.razer.com/synapse/products/652/mw/6737.4b526d5a88f50676de59.js;SHA256=B1A181C2F4A95C1871A5AEEDC5F820DBC991A61A067CB060BAC9ABEBF04EE488",
+                "https://apps.razer.com/synapse/products/652/mw/main.825dec01b9aefa0b84ac.js;SHA256=77AD6A8F51278C2950D07AAB3CA4E98EC67001527067F4118F50AF00954EABA1",
+                "https://apps.razer.com/synapse/products/652/mw/rzDevice25.ceef38d32121535173d9.js;SHA256=D94B40BB4B1AEDD17C0028A625C28D00D8BC14B26361CBF25133A3CE4E5B0C67",
+                "https://apps.razer.com/synapse/products/652/ui/static/js/main.ca1e43bb.js;SHA256=9C640FF7F3359DFB8F8D7AA005DB01336F5C05A4EFB25C219550BA6D05A6C407"],
+            650 => [
+                "https://apps.razer.com/synapse/products/650/mw/6737.1cc98c1e1650ffce7912.js;SHA256=8B31CFB0033A9C75F5E6E69D914A3A36BAE0A4944886B5CC6D076329434D1DF9",
+                "https://apps.razer.com/synapse/products/650/mw/main.3650e97f35689328d442.js;SHA256=270D5D4E4AF9674D2219EFBE609294DC46E1BAF4E08A14AF32306D4495CB5A98",
+                "https://apps.razer.com/synapse/products/650/mw/rzDevice25.33bbbe9e1d2d72bdf1a1.js;SHA256=CEF5D482E96F2833C84998E2FE998D0A41AA7CA4483E4E69156424F76475D513",
+                "https://apps.razer.com/synapse/products/650/ui/static/js/main.90e358d5.js;SHA256=06C52972C023B65B11DDF1C379671526E96C68B46105FC3EDCC714F0EF4944B0"],
+            651 => [
+                "https://apps.razer.com/synapse/products/651/mw/6737.003892ae34f5de0292c0.js;SHA256=E8A2CFF2F19A59B8F425E7EC70BFF5873551479560005435E1B04B34F9CC7454",
+                "https://apps.razer.com/synapse/products/651/mw/main.8378c0c79039a3f2ba23.js;SHA256=F227CBA8959DFEE0B898077D4CC77651066B7BFFF8CAA20910E9B3946E026AC4",
+                "https://apps.razer.com/synapse/products/651/mw/rzDevice25.7ffcfe7d1ddb6103ac44.js;SHA256=A9442C86AB7D8F0549E18016324462A52A040E5578410F296BDF72884A383962",
+                "https://apps.razer.com/synapse/products/651/ui/static/js/main.8fce5f78.js;SHA256=FF4ACE62F536DAD8E14A674177638FAC74ED462C74FECC7A42D66B2F3616C254"],
+            694 => [
+                "https://apps.razer.com/synapse/products/694/mw/6737.63910b6756fd6d249dc6.js;SHA256=488D72368F0EBFB2A4DD80BE68E8C2BAB8020CBBCC65CA786757FEA79507B997",
+                "https://apps.razer.com/synapse/products/694/mw/main.1b1b68e07824e5af9833.js;SHA256=F1AEEAFF4BBDB631B4E66BF8B2B6415FB0EADDF24343A146787B091F89AA7BDC",
+                "https://apps.razer.com/synapse/products/694/mw/rzDevice25.06135650b7453937e0e8.js;SHA256=0E5BD5C21DD610E5D889F608B2EBB1D80BFC7CA90237FBBC3A292ADBAF06EF90",
+                "https://apps.razer.com/synapse/products/694/ui/static/js/main.415cc878.js;SHA256=C22750AAD6E54EE86E04B3D7F7D7DA520636293C209734358FC26A744D84F6B1"],
+            695 => [
+                "https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js;SHA256=22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA",
+                "https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js;SHA256=A12CD7047CC1CF093DBB458D703BA4D18CFE77110F47391B180EA5B33BA5E379",
+                "https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js;SHA256=2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491",
+                "https://apps.razer.com/synapse/products/695/ui/static/js/main.65ed4ee5.js;SHA256=74ECA71816B57B4C9BE3F83D3E5D894F95A2050D88FB2DF4B63A5AFFF5271612"],
+            696 => [
+                "https://apps.razer.com/synapse/products/696/mw/6737.2463f7361e4d145671a2.js;SHA256=4EF6AFB6402DD50CD6DE07CA96E191F475797903507C82CAE194F0AF63E32ECC",
+                "https://apps.razer.com/synapse/products/696/mw/main.ded18de8aee09a8f8238.js;SHA256=1A9CC3E1E8E28BB827AD17A720A03E6C62BA7A37F27774E8FA1B1B8E827E281F",
+                "https://apps.razer.com/synapse/products/696/mw/rzDevice25.6339454cb5b2fe587300.js;SHA256=8780AA380D11665A2D551174D162C7278404465772219D0530A29B09E297BC81",
+                "https://apps.razer.com/synapse/products/696/ui/static/js/main.cb24c0fc.js;SHA256=C882F2130FC41DC73EDA31A141BA82F8786B84F45992C490CC0DC5AC3EC28DCD"],
+            711 => [
+                "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js;SHA256=3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88",
+                "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js;SHA256=C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E",
+                "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js;SHA256=02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9",
+                "https://apps.razer.com/synapse/products/711/ui/static/js/892.12b29c32.chunk.js;SHA256=FE1298AD9FAAE66301E76B439311F19393E4A46E1F8C5EB42B65350DA88F9100",
+                "https://apps.razer.com/synapse/products/711/ui/static/js/main.a649ed49.js;SHA256=4B42EF4995470865B7D02587B85724247B886BDF2376EB6A78DA38BB9B6CBF99"],
+            _ => [],
+        };
 
     internal static IHostIdentitySource CreateIdentity(
         ExperimentalBladeModel model,
@@ -168,6 +363,12 @@ internal static class ExperimentalBladeModels
     }
 }
 
+internal enum ExperimentalRecoveryScope
+{
+    All,
+    ThermalOnly,
+}
+
 internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
 {
     private readonly object sync = new();
@@ -177,16 +378,70 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     private long uniformFrameSuccessCount;
     private LinkedListNode<ExperimentalControlObservation>? animationFrameSuccess;
     private long animationFrameSuccessCount;
+    private FanSpeedRange? confirmedFanRange;
     private int recoveryRequired;
+    private ExperimentalRecoveryScope recoveryScope = ExperimentalRecoveryScope.All;
+
+    // Observed capability metadata only; never a saved fan target or write admission.
+    internal FanSpeedRange? ConfirmedFanRange => Volatile.Read(ref confirmedFanRange);
+
+    internal void ConfirmFanRange(FanSpeedRange range) => Volatile.Write(ref confirmedFanRange, range);
 
     internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
 
     internal bool WritesAllowed => !IsPaused;
 
-    internal void RequireRecovery() => Volatile.Write(ref recoveryRequired, 1);
+    internal ExperimentalRecoveryScope RecoveryScope
+    {
+        get
+        {
+            lock (sync)
+            {
+                return recoveryScope;
+            }
+        }
+    }
+
+    internal void RequireRecovery(ExperimentalRecoveryScope scope = ExperimentalRecoveryScope.All)
+    {
+        lock (sync)
+        {
+            // Only a known thermal operation can omit unrelated limiter state.
+            // A later thermal fault cannot narrow an existing battery/unknown obligation.
+            if (!IsPaused || scope != ExperimentalRecoveryScope.ThermalOnly)
+            {
+                recoveryScope = scope == ExperimentalRecoveryScope.ThermalOnly
+                    ? ExperimentalRecoveryScope.ThermalOnly : ExperimentalRecoveryScope.All;
+            }
+            Volatile.Write(ref recoveryRequired, 1);
+        }
+    }
 
     // The caller owns the provider hardware gate and has reconciled fresh readback.
-    internal void CompleteRecovery() => Volatile.Write(ref recoveryRequired, 0);
+    internal void CompleteRecovery()
+    {
+        lock (sync)
+        {
+            recoveryScope = ExperimentalRecoveryScope.All;
+            Volatile.Write(ref recoveryRequired, 0);
+        }
+    }
+
+    internal bool TryCompleteRecovery(ExperimentalRecoveryScope observedScope, Func<bool> acceptObservedState)
+    {
+        lock (sync)
+        {
+            // Keep runtime acceptance and pause release together. A widened
+            // obligation cannot be discharged by an earlier partial observation.
+            if (!IsPaused || recoveryScope != observedScope || !acceptObservedState()
+                || recoveryScope != observedScope)
+            {
+                return false;
+            }
+            CompleteRecovery();
+            return true;
+        }
+    }
 
     internal void Record(string operation, string stage, string outcome, bool submitted = false,
         string? requested = null, string? confirmed = null, string? failure = null)

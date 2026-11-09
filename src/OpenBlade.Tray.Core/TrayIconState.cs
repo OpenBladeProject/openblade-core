@@ -12,6 +12,7 @@ public enum TrayIconState
     UsbCBalanced,
     BatteryBalanced,
     BatterySaver,
+    AcHyperBoost,
 }
 
 public static class TrayIconStateResolver
@@ -20,7 +21,8 @@ public static class TrayIconStateResolver
         bool isConnected,
         bool deviceVerified,
         PowerSource powerSource,
-        PerformancePreset? effectivePerformance)
+        PerformancePreset? effectivePerformance,
+        bool hyperBoostActive = false)
     {
         if (!isConnected
             || !deviceVerified
@@ -30,13 +32,30 @@ public static class TrayIconStateResolver
             return TrayIconState.GenericError;
         }
 
+        if (hyperBoostActive)
+        {
+            return powerSource == PowerSource.PluggedIn
+                && effectivePerformance is PerformancePreset.Balanced
+                    or PerformancePreset.Silent
+                    or PerformancePreset.Performance
+                    or PerformancePreset.Turbo
+                    or PerformancePreset.MaximumPower
+                    or PerformancePreset.Gaming
+                    or PerformancePreset.Creator
+                    or PerformancePreset.Custom
+                ? TrayIconState.AcHyperBoost
+                : TrayIconState.GenericError;
+        }
+
         return (powerSource, effectivePerformance.Value) switch
         {
             (PowerSource.PluggedIn, PerformancePreset.Balanced) =>
                 TrayIconState.AcBalanced,
             (PowerSource.PluggedIn, PerformancePreset.Silent) =>
                 TrayIconState.AcSilent,
-            (PowerSource.PluggedIn, PerformancePreset.Performance) =>
+            (PowerSource.PluggedIn, PerformancePreset.Performance
+                or PerformancePreset.Turbo or PerformancePreset.MaximumPower
+                or PerformancePreset.Gaming or PerformancePreset.Creator) =>
                 TrayIconState.AcPerformance,
             (PowerSource.PluggedIn, PerformancePreset.Custom) =>
                 TrayIconState.AcCustom,
@@ -51,4 +70,8 @@ public static class TrayIconStateResolver
             _ => TrayIconState.GenericError,
         };
     }
+
+    public static bool CanShowDischargeBadge(TrayIconState state) => state is
+        TrayIconState.AcBalanced or TrayIconState.AcSilent or TrayIconState.AcPerformance
+        or TrayIconState.AcCustom or TrayIconState.AcHyperBoost or TrayIconState.UsbCBalanced;
 }

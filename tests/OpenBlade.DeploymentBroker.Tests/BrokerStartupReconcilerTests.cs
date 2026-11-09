@@ -36,6 +36,41 @@ public sealed class BrokerStartupReconcilerTests : IDisposable
     }
 
     [Fact]
+    public async Task Reconciliation_RetainsNestedLogsBeforeRemovingResolvedStaging()
+    {
+        ReconciliationFixture fixture = await CreateFixtureAsync(
+            BrokerRecordedInstallerProcessStatus.NotRunning,
+            new BrokerPostInstallVerification(false, true, true), installerExitCode: 1);
+        string nested = Path.Combine(fixture.StagingDirectory, "burn-temp", ".be");
+        Directory.CreateDirectory(nested);
+        await File.WriteAllTextAsync(Path.Combine(nested, "setup.log"), "startup cause");
+        Assert.True(await fixture.Reconciler.TryReconcileAsync(fixture.Enrollment, CancellationToken.None));
+        string archive = Assert.Single(Directory.GetDirectories(fixture.Paths.InstallerLogDirectory));
+        Assert.Equal("startup cause", await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(archive, "*.log"))));
+        Assert.False(Directory.Exists(fixture.StagingDirectory));
+    }
+
+    [Fact]
+    public async Task Reconciliation_DiagnosticFailureRetainsSourceAndVerifiedTerminalOutcome()
+    {
+        ReconciliationFixture fixture = await CreateFixtureAsync(
+            BrokerRecordedInstallerProcessStatus.NotRunning,
+            new BrokerPostInstallVerification(false, true, true), installerExitCode: 1);
+        string log = Path.Combine(fixture.StagingDirectory, "setup.log");
+        await File.WriteAllTextAsync(log, "retain source");
+        await using (FileStream locked = new(log, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.False(await fixture.Reconciler.TryReconcileAsync(fixture.Enrollment, CancellationToken.None));
+        }
+        Assert.True(File.Exists(fixture.Paths.InFlightPath));
+        Assert.Equal("retain source", await File.ReadAllTextAsync(log));
+        Assert.Contains("RolledBack", await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(fixture.Paths.ReportDirectory))));
+        Assert.Contains("installer-logs-unavailable", await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(fixture.Paths.JournalDirectory))));
+        Assert.True(await fixture.Reconciler.TryReconcileAsync(fixture.Enrollment, CancellationToken.None));
+        Assert.False(Directory.Exists(fixture.StagingDirectory));
+    }
+
+    [Fact]
     public async Task Reconciliation_GoneProcessClearsOnlyExactCompleteRollback()
     {
         ReconciliationFixture fixture = await CreateFixtureAsync(

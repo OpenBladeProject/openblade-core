@@ -39,6 +39,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private readonly bool allowPadlessHyperBoostLifecycleValidation;
     private readonly PerformancePreset padlessHyperBoostLifecycleBaseMode;
     private readonly bool supportsDirectManualFanTransitions;
+    private readonly bool supportsBatterySaverFanStop;
+    private readonly Func<bool>? stopHardwareAdmission;
     private readonly ThxAudioCapabilities? thxAudioCapabilities;
 
     internal ProductionBatteryFactory(
@@ -67,9 +69,15 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         bool allowPadlessHyperBoostLifecycleValidation = false,
         PerformancePreset padlessHyperBoostLifecycleBaseMode = PerformancePreset.Balanced,
         bool supportsDirectManualFanTransitions = false,
-        ThxAudioCapabilities? thxAudioCapabilities = null)
+        ThxAudioCapabilities? thxAudioCapabilities = null,
+        string? laptopControlRecoveryIdentity = null,
+        bool supportsBatterySaverFanStop = false,
+        Func<bool>? stopHardwareAdmission = null,
+        bool hasFanStopTrialEvidence = false,
+        bool hasFanStopSourceEvidence = false)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        LaptopControlRecoveryIdentity = laptopControlRecoveryIdentity;
         this.hyperBoostCatalog = hyperBoostCatalog ?? DeviceCommandCatalog.Empty;
         this.readEvidence = readEvidence ?? throw new ArgumentNullException(nameof(readEvidence));
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
@@ -112,6 +120,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             allowPadlessHyperBoostLifecycleValidation;
         this.padlessHyperBoostLifecycleBaseMode = padlessHyperBoostLifecycleBaseMode;
         this.supportsDirectManualFanTransitions = supportsDirectManualFanTransitions;
+        this.supportsBatterySaverFanStop = supportsBatterySaverFanStop;
+        this.stopHardwareAdmission = stopHardwareAdmission;
         this.thxAudioCapabilities = thxAudioCapabilities;
         ValidateHyperBoostBaseModes(
             this.hyperBoostAccess,
@@ -177,10 +187,17 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             this.hyperBoostWithoutCoolingPadAccess,
             this.hyperBoostBaseModes,
             this.supportsDirectManualFanTransitions,
-            this.thxAudioCapabilities);
+            this.thxAudioCapabilities,
+            this.supportsBatterySaverFanStop) with
+        {
+            HasFanStopTrialEvidence = hasFanStopTrialEvidence,
+            HasFanStopSourceEvidence = hasFanStopSourceEvidence,
+        };
     }
 
     public DeviceCapabilities Capabilities { get; }
+
+    internal string? LaptopControlRecoveryIdentity { get; }
 
     private static void ValidateHyperBoostBaseModes(
         DeviceFeatureAccess? overallAccess,
@@ -374,7 +391,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 allowPadlessHyperBoostLifecycleValidation,
                 padlessHyperBoostLifecycleBaseMode,
                 supportsDirectManualFanTransitions,
-                thxAudioCapabilities),
+                thxAudioCapabilities,
+                supportsBatterySaverFanStop,
+                stopHardwareAdmission),
             null);
     }
 
@@ -437,8 +456,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 : null;
         IReadOnlySet<AdapterPowerState> admittedAdapterPowerStates =
             GetRz090581AdmittedAdapterPowerStates(exactIdentity);
-        bool supportsDirectManualFanTransitions =
-            GetRz090581SupportsDirectManualFanTransitions(
+        (bool supportsDirectManualFanTransitions, bool supportsBatterySaverFanStop) =
+            GetRz090581FanCapabilityAdmission(
                 exactIdentity,
                 catalog,
                 directManualFanTransitionEvidenceAdmitted);
@@ -471,8 +490,33 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             allowPadlessHyperBoostLifecycleValidation:
                 allowPadlessHyperBoostLifecycleValidation,
             supportsDirectManualFanTransitions: supportsDirectManualFanTransitions,
-            thxAudioCapabilities: thxAudioCapabilities);
+            supportsBatterySaverFanStop: supportsBatterySaverFanStop,
+            // Source and physical evidence are separate metadata. The guardian
+            // independently admits the live device, EC and owned mailbox session.
+            hasFanStopTrialEvidence: IsExactModelScopedRz090581Identity(exactIdentity),
+            hasFanStopSourceEvidence: FanStopModelContract.ForProfile(TargetBladeDevice.Model,
+                TargetBladeDevice.ProductId, WindowsHostIdentitySource.ProductionIdentity.ProductName).Count != 0,
+            // Ordinary controls remain advisory. Stopping cooling requires a fresh
+            // competing-controller and exact-host check at each native submission.
+            stopHardwareAdmission: () => hardwareAccessGuard.Check().Safe
+                && IsExactModelScopedRz090581Identity(hostIdentity.ReadExactIdentity()),
+            thxAudioCapabilities: thxAudioCapabilities,
+            laptopControlRecoveryIdentity: $"{TargetBladeDevice.Model}|{TargetBladeDevice.VendorId:X4}:{TargetBladeDevice.ProductId:X4}");
     }
+
+    internal static (bool DirectManualTransitions, bool BatterySaverFanStop)
+        GetRz090581FanCapabilityAdmission(
+            HostIdentityReadResult exactIdentity,
+            DeviceCommandCatalog catalog,
+            bool trustedExactFixture) =>
+        (
+            GetRz090581SupportsDirectManualFanTransitions(exactIdentity, catalog, trustedExactFixture),
+            // Fans stopped after the developer 1500 RPM request, but the brief
+            // 2000 RPM preparation had no held control or reversal. This does not
+            // establish causal or reliable fan stop. Keep that separate capability
+            // unadmitted without changing ordinary manual controls or saved intent.
+            false
+        );
 
     internal static bool GetRz090581SupportsDirectManualFanTransitions(
         HostIdentityReadResult exactIdentity,

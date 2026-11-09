@@ -38,6 +38,13 @@ internal static class OwnedRendererOffObservation
 /// Closed, typed production lighting surface. Raw Razer commands and matrix
 /// buffers never cross the protocol boundary.
 /// </summary>
+// Retained renderers must carry the service's recovery admission through their
+// native queue, independently of the low-power Driver-mode cleanup exception.
+internal interface ILightingRecoveryWriteAdmission
+{
+    void SetRecoveryWriteAdmission(Func<bool> admission);
+}
+
 public interface IProductionLightingPort : IAsyncDisposable
 {
     DeviceCapabilities Capabilities { get; }
@@ -85,6 +92,16 @@ public interface IProductionLightingPort : IAsyncDisposable
         Task.FromResult<bool?>(null);
 
     Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken);
+
+    Task<IndependentLightingSettings?> ReadIndependentLightingAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IndependentLightingSettings?>(null);
+
+    Task<IndependentLightingSettings?> ReadIndependentLightingAsync(
+        IndependentLightingSettings fields, CancellationToken cancellationToken) =>
+        ReadIndependentLightingAsync(cancellationToken);
+
+    Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken cancellationToken) =>
+        Task.FromException(new CapabilityUnavailableException("Independent lighting controls are unavailable."));
 
     Task<LogoLightingMode?> ReadLogoStateAsync(CancellationToken cancellationToken) =>
         Task.FromResult<LogoLightingMode?>(null);

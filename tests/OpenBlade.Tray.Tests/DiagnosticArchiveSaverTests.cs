@@ -411,6 +411,36 @@ public sealed class DiagnosticArchiveSaverTests
     }
 
     [Fact]
+    public async Task SaveAsync_ExportsFunctionRowBackendAndIsolatesCaptureFailure()
+    {
+        string directory = CreateTemporaryDirectory();
+        string path = Path.Combine(directory, "diagnostics.zip");
+        try
+        {
+            var status = new SnapTapRuntimeStatus(SnapTapRuntimeState.Paused, DateTimeOffset.UtcNow)
+            { Backend = KeyboardInputBackend.WindowsHook };
+            var saver = new DiagnosticArchiveSaver(new StubDestination(path), Path.Combine(directory, "absent"), null,
+                functionRowDiagnostics: () => new(DateTimeOffset.UtcNow, status, null));
+            await saver.SaveAsync(CreateValidArchive(), CancellationToken.None);
+            using (ZipArchive archive = ZipFile.OpenRead(path))
+            using (JsonDocument report = await JsonDocument.ParseAsync(archive.GetEntry("function-row.json")!.Open()))
+            {
+                Assert.Equal("WindowsHook", report.RootElement.GetProperty("status").GetProperty("backend").GetString());
+            }
+            saver = new DiagnosticArchiveSaver(new StubDestination(path), Path.Combine(directory, "absent"), null,
+                functionRowDiagnostics: () => throw new IOException(@"C:\Users\private-owner\Documents\private.txt"));
+            await saver.SaveAsync(CreateValidArchive(), CancellationToken.None);
+            using ZipArchive failed = ZipFile.OpenRead(path);
+            using var reader = new StreamReader(failed.GetEntry("function-row.json")!.Open());
+            string json = await reader.ReadToEndAsync();
+            Assert.Contains("CaptureFailed", json);
+            Assert.DoesNotContain("private-owner", json);
+            Assert.NotNull(failed.GetEntry("versions.json"));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
     public async Task SaveExactAsync_WritesInputBytesWithoutAppendingUserModeLogs()
     {
         string directory = CreateTemporaryDirectory();

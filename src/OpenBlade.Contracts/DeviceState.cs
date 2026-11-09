@@ -218,6 +218,21 @@ public sealed record DeviceCapabilities(
     /// </summary>
     public bool SupportsDirectManualFanTransitions { get; init; }
 
+    public bool SupportsBatterySaverFanStop { get; init; }
+
+    /// <summary>Attended exact-model evidence exists. This is display metadata,
+    /// not runtime command admission or crash-recovery evidence.</summary>
+    public bool HasFanStopTrialEvidence { get; init; }
+
+    /// <summary>Exact-model firmware and host-transport review exists. This does
+    /// not claim physical validation or replace the guardian's live admission.</summary>
+    public bool HasFanStopSourceEvidence { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasFanStopEvidence => HasFanStopTrialEvidence || HasFanStopSourceEvidence;
+
+    public bool SupportsFanStop { get; init; }
+
     /// <summary>Exact backend reports the real performance mode and Custom levels
     /// while manual fans are active, rather than a shared manual selector.</summary>
     public bool ReportsPerformanceWithManualFans { get; init; }
@@ -227,6 +242,11 @@ public sealed record DeviceCapabilities(
     public bool SupportsManualFansOnLimitedPower { get; init; }
 
     public bool SupportsKeyboardBrightness { get; init; }
+
+    // Independent fields have their own typed path and do not imply that an
+    // effect or RGB restoration baseline can be read. Older frames default off.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool SupportsIndependentLightingControls { get; init; }
 
     // Older/full implementations support the complete parameter pickers by default.
     public bool SupportsBreathingColorSelection { get; init; } = true;
@@ -397,7 +417,7 @@ public sealed record DeviceCapabilities(
 
     public static DeviceCapabilities SafeTargetDefaults() => new(
         new HashSet<PerformancePreset>(Enum.GetValues<PerformancePreset>()),
-        new HashSet<FanMode>(Enum.GetValues<FanMode>()),
+        new HashSet<FanMode>(Enum.GetValues<FanMode>().Where(mode => mode != FanMode.Stop)),
         new HashSet<LightingEffect> { LightingEffect.Off },
         new HashSet<int>(),
         SupportsBatteryProtectionOff: false,
@@ -424,7 +444,7 @@ public sealed record DeviceCapabilities(
     }
 
     private static bool IsManualFanMode(FanMode mode) =>
-        mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum;
+        mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum or FanMode.Stop;
 
     private static bool IsValidEnumSet<TEnum>(IReadOnlySet<TEnum>? values)
         where TEnum : struct, Enum =>
@@ -447,6 +467,9 @@ public sealed record ConfirmedDeviceState(
     public GpuClockOffsetCapabilities? GpuClockOffsets { get; init; }
 
     public LogoLightingMode? LogoLighting { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IndependentLightingSettings? IndependentLighting { get; init; }
 }
 
 public sealed record GpuClockOffsetRange(

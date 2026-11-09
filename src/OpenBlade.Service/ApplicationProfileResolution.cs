@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 
 namespace OpenBlade.Service;
 
@@ -14,45 +15,46 @@ internal static class ApplicationProfileResolution
             return baseline;
         }
 
-        FanMode fans = value.Fans ?? value.FanControl?.Mode ?? baseline.Fans;
-        DisplayProfileSettings baselineDisplay = baseline.Display
-            ?? DisplayProfileSettings.Unconfigured();
-        DisplayProfileSettings display = ApplyDisplay(baselineDisplay, value.Display);
-        LaptopBehaviorProfileSettings behavior = baseline.EffectiveLaptopBehavior;
-        if (value.GamingModeEnabled.HasValue || value.GamingModeKeyPolicy is not null)
+        // This is the original host constructor validation, not whole-profile
+        // normalization. Preserve its error before entering the native boundary.
+        if (value.FanControl is null && value.Fans is FanMode mode && !Enum.IsDefined(mode))
         {
-            behavior = behavior with
-            {
-                GamingModeEnabled = value.GamingModeEnabled ?? behavior.GamingModeEnabled,
-                GamingModeKeyPolicy = value.GamingModeKeyPolicy ?? behavior.GamingModeKeyPolicy,
-            };
+            _ = FanControlSettings.FromLegacy(mode);
         }
-
-        return baseline with
+        NativeProfileResult result = ProductNativeRuntime.Policy.Apply(baseline, value);
+        if (result.Error is not null)
         {
-            Performance = value.Performance ?? baseline.Performance,
-            CustomPerformance = value.CustomPerformance ?? baseline.CustomPerformance,
-            GpuClockTuning = value.GpuClockTuning ?? baseline.GpuClockTuning,
-            Fans = fans,
-            FanControl = value.FanControl
-                ?? (value.Fans.HasValue
-                    ? FanControlSettings.FromLegacy(fans)
-                    : baseline.FanControl),
-            Lighting = value.Lighting ?? baseline.Lighting,
-            Display = display,
-            LaptopBehavior = behavior,
-        };
+            throw new NativeComponentException(result.Error);
+        }
+        return result.Profile ?? throw new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
     }
 
     internal static DisplayProfileSettings ApplyDisplay(
         DisplayProfileSettings baseline,
-        DisplayProfileSettings? value) => value is null
-            ? baseline
-            : new DisplayProfileSettings(
-                value.RefreshRateKey ?? baseline.RefreshRateKey,
-                value.HdrEnabled ?? baseline.HdrEnabled,
-                value.ColorProfileKey ?? baseline.ColorProfileKey)
+        DisplayProfileSettings? value)
+    {
+        if (value is null)
+        {
+            return baseline;
+        }
+
+        // The former ?? expressions only dereferenced a null baseline when an
+        // override field was absent. Retain that legacy branch and exception.
+        if (baseline is null)
+        {
+            if (value.RefreshRateKey is null || value.HdrEnabled is null
+                || value.ColorProfileKey is null || value.BrightnessPercent is null)
             {
-                BrightnessPercent = value.BrightnessPercent ?? baseline.BrightnessPercent,
-            };
+                throw new NullReferenceException();
+            }
+            baseline = DisplayProfileSettings.Unconfigured();
+        }
+
+        NativeDisplayResult result = ProductNativeRuntime.Policy.ApplyDisplay(baseline, value);
+        if (result.Error is not null)
+        {
+            throw new NativeComponentException(result.Error);
+        }
+        return result.Display ?? throw new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
+    }
 }

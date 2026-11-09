@@ -4,6 +4,34 @@ namespace OpenBlade.Setup.Tests;
 
 public sealed class SetupCommandRunnerTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PawnIoRebootRequiredCommitsAndReturns3010ThroughBothFullInstallRoutes(bool bundleManaged)
+    {
+        RecordingSetupPlatform platform = new() { PrerequisiteRebootRequired = true };
+        int result = await new SetupCommandRunner(platform).RunAsync(
+            bundleManaged ? BundleManaged("install") : ["install"], CancellationToken.None);
+        Assert.Equal(3010, result);
+        Assert.Equal(["payload-stage", "lifecycle-capture"], platform.OperationsAtPrerequisite);
+        Assert.Equal("payload-commit", platform.Operations[^1]);
+    }
+
+    [Fact]
+    public async Task PawnIoFailurePreservesRunningInstallationBeforeAnyProductMutation()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            PrerequisiteFails = true,
+            ServiceExists = true,
+            Transaction = new RecordingPayloadTransaction(true)
+        };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new SetupCommandRunner(platform)
+            .RunAsync(["install"], CancellationToken.None));
+        Assert.Equal(["payload-stage", "lifecycle-capture", "payload-rollback"], platform.Operations);
+        Assert.DoesNotContain("service-prepare", platform.Operations);
+        Assert.DoesNotContain("payload-activate", platform.Operations);
+    }
     private const string BundleOwnerId = "01234567-89ab-cdef-0123-456789abcdef";
 
     private static string[] BundleManaged(string command, params string[] options) =>
@@ -901,6 +929,15 @@ public sealed class SetupCommandRunnerTests
 
     private sealed class RecordingSetupPlatform : ISetupPlatform
     {
+        public bool PrerequisiteFails { get; init; }
+        public bool PrerequisiteRebootRequired { get; init; }
+        public string[] OperationsAtPrerequisite { get; private set; } = [];
+        public Task<bool> EnsureCpuTemperaturePrerequisiteAsync(string stagedPayloadDirectory, CancellationToken cancellationToken)
+        {
+            OperationsAtPrerequisite = Operations.ToArray();
+            return PrerequisiteFails ? Task.FromException<bool>(new InvalidOperationException("PawnIO failed"))
+                : Task.FromResult(PrerequisiteRebootRequired);
+        }
         public List<string> Operations { get; } = [];
         public List<CancellationToken> CleanupTokens { get; } = [];
         public bool FailPayloadStage { get; init; }
@@ -1173,6 +1210,7 @@ public sealed class SetupCommandRunnerTests
     {
         public List<string> Operations { private get; set; } = [];
         public bool HadExistingInstall => hadExistingInstall;
+        public string StagedPayloadDirectory => @"C:\Fake\OpenBlade.installing.00000000000000000000000000000000";
         public bool IsActivated { get; private set; }
         public string? CommitWarning => commitWarning;
         public bool DisposeCleanupFailureObserved { get; private set; }

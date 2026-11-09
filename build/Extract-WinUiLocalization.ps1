@@ -31,23 +31,16 @@ function ConvertTo-Identifier {
     return $identifier
 }
 
-function ConvertTo-ResourceProperty {
-    param([Parameter(Mandatory)][string]$Property)
-
-    switch ($Property) {
-        'AutomationProperties.Name' {
-            return '[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name'
-        }
-        'AutomationProperties.HelpText' {
-            return '[using:Microsoft.UI.Xaml.Automation]AutomationProperties.HelpText'
-        }
-        'ToolTipService.ToolTip' {
-            return '[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip'
-        }
-        default { return $Property }
+Import-Module (Join-Path $PSScriptRoot 'localization\WinUiLocalization.psm1') -Force
+$canonical = [ordered]@{}
+if (Test-Path -LiteralPath $resourcePath -PathType Leaf) {
+    [xml]$existingDocument = [IO.File]::ReadAllText($resourcePath, [Text.UTF8Encoding]::new($false, $true))
+    foreach ($entry in @($existingDocument.root.data)) {
+        $key = [string]$entry.name
+        if ($canonical.Contains($key)) { throw "WinUI catalog contains duplicate key '$key'." }
+        $canonical[$key] = [string]$entry.value
     }
 }
-
 $resources = [ordered]@{}
 $codePattern = 'LocalizedResources\.(?:Get|Format)\(\s*"(?<key>(?:[^"\\]|\\.)*)"\s*,\s*"(?<value>(?:[^"\\]|\\.)*)"'
 foreach ($codeFile in @(Get-ChildItem (Join-Path $repository 'src\OpenBlade.Tray') `
@@ -62,80 +55,69 @@ foreach ($codeFile in @(Get-ChildItem (Join-Path $repository 'src\OpenBlade.Tray
         $resources[$key] = $value
     }
 }
-$usedUids = @{}
+$usedPrefixes = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($key in $canonical.Keys) { [void]$usedPrefixes.Add(($key -split '\.', 2)[0]) }
 foreach ($relativePath in $files) {
     $path = Join-Path $repository $relativePath
     $text = [IO.File]::ReadAllText($path, [Text.UTF8Encoding]::new($false, $true))
     $filePrefix = [IO.Path]::GetFileNameWithoutExtension($path)
-    $startTagPattern = '(?s)<(?<tag>[A-Za-z][\w:.]*)(?<attributes>(?:[^>"'']|"[^"]*"|''[^'']*'')*)>'
-    $updated = [regex]::Replace($text, $startTagPattern, {
-        param($tagMatch)
-
-        $attributes = $tagMatch.Groups['attributes'].Value
-        $localizable = @([regex]::Matches(
-            $attributes,
-            '(?<property>Text|Header|Content|PlaceholderText|Title|AccessibleName|AccessKey|AutomationProperties\.(?:Name|HelpText)|ToolTipService\.ToolTip)="(?<value>[^"{}]+)"') |
-            Where-Object {
-                $value = $_.Groups['value'].Value
-                -not [string]::IsNullOrWhiteSpace($value) -and
-                $value -ne 'OpenBlade' -and
-                $value -notmatch '^\s*(?:%|°C|RPM|MHz|W|ms|s|dB|Kbps|Hz|×|·)\s*$' -and
-                $value -notmatch '^\d+(?:\.\d+)?$'
-            })
-        $windowTitle = @($localizable | Where-Object {
-            $_.Groups['property'].Value -eq 'Title' -and
-            ($tagMatch.Groups['tag'].Value -replace '^.*:', '') -eq 'Window'
-        })
-        $localizable = @($localizable | Where-Object { $windowTitle -notcontains $_ })
-        foreach ($title in $windowTitle) {
-            $resources[$filePrefix + '_WindowTitle'] =
-                [Net.WebUtility]::HtmlDecode($title.Groups['value'].Value)
-        }
-        if ($localizable.Count -eq 0) {
-            return $tagMatch.Value
-        }
-
-        $uidMatch = [regex]::Match($attributes, 'x:Uid="(?<uid>[^"]+)"')
-        if ($uidMatch.Success) {
-            $uid = $uidMatch.Groups['uid'].Value
-        }
-        else {
-            $nameMatch = [regex]::Match($attributes, 'x:Name="(?<name>[^"]+)"')
-            $base = if ($nameMatch.Success) {
-                $nameMatch.Groups['name'].Value + 'Text'
+    $edits = [Collections.Generic.List[object]]::new()
+    foreach ($tag in @(Get-WinUiLocalizationTags $text $relativePath)) {
+        $prefix = $tag.Uid
+        $references = @($tag.Properties | Where-Object Kind -eq 'Resource')
+        if ($references.Count -gt 0) { $prefix = $references[0].Prefix }
+        foreach ($property in $tag.Properties) {
+            if ($property.Kind -eq 'Resource') {
+                $key = $property.Key
+                if (-not $canonical.Contains($key)) {
+                    throw "$relativePath requires missing en-US resource '$key'; add its authoritative English value first."
+                }
+                $value = $canonical[$key]
             }
             else {
-                ($tagMatch.Groups['tag'].Value -replace '^.*:', '') +
-                    (ConvertTo-Identifier $localizable[0].Groups['value'].Value)
+                $value = $property.Value
+                if ($property.Property -eq 'Title' -and ($tag.Tag -replace '^.*:', '') -eq 'Window') {
+                    $resources[$filePrefix + '_WindowTitle'] = $value
+                    continue
+                }
+                if ([string]::IsNullOrWhiteSpace($prefix)) {
+                    $base = if ($tag.Name) { $tag.Name + 'Text' }
+                        else { ($tag.Tag -replace '^.*:', '') + (ConvertTo-Identifier $value) }
+                    $prefix = $filePrefix + '_' + $base
+                    $suffix = 2
+                    while (-not $usedPrefixes.Add($prefix)) {
+                        $prefix = $filePrefix + '_' + $base + $suffix
+                        $suffix++
+                    }
+                }
+                $key = $prefix + '.' + $property.ResourceProperty
+                $edits.Add([pscustomobject]@{
+                    Index = $property.Index; Length = $property.Length
+                    Value = '{CustomResource ' + $key + '}'
+                })
             }
-            $uid = $filePrefix + '_' + $base
-            $suffix = 2
-            while ($usedUids.ContainsKey($uid)) {
-                $uid = $filePrefix + '_' + $base + $suffix
-                $suffix++
-            }
-            $usedUids[$uid] = $true
-            $tagName = $tagMatch.Groups['tag'].Value
-            $replacement = '<' + $tagName + ' x:Uid="' + $uid + '"' + $attributes + '>'
-            $tagMatch = [regex]::Match($replacement, $startTagPattern)
-        }
-
-        foreach ($attribute in $localizable) {
-            $property = ConvertTo-ResourceProperty $attribute.Groups['property'].Value
-            $key = $uid + '.' + $property
-            $value = [Net.WebUtility]::HtmlDecode($attribute.Groups['value'].Value)
-            if ($resources.Contains($key) -and $resources[$key] -ne $value) {
+            if ($resources.Contains($key) -and $resources[$key] -cne $value) {
                 throw "Resource key '$key' maps to conflicting values."
             }
             $resources[$key] = $value
         }
-        return $tagMatch.Value
-    })
+        if ($tag.UidIndex -ge 0) {
+            # Consume the preceding space as well; preserve all other XAML layout.
+            $index = $tag.UidIndex
+            if ($index -gt 0 -and $text[$index - 1] -eq ' ') { $index-- }
+            $edits.Add([pscustomobject]@{
+                Index = $index; Length = $tag.UidLength + $tag.UidIndex - $index; Value = ''
+            })
+        }
+    }
+    $updated = $text
+    foreach ($edit in @($edits | Sort-Object Index -Descending)) {
+        $updated = $updated.Remove($edit.Index, $edit.Length).Insert($edit.Index, $edit.Value)
+    }
     if ($updated -cne $text) {
         [IO.File]::WriteAllText($path, $updated, [Text.UTF8Encoding]::new($false))
     }
 }
-
 [IO.Directory]::CreateDirectory($resourceDirectory) | Out-Null
 $settings = [Xml.XmlWriterSettings]::new()
 $settings.Encoding = [Text.UTF8Encoding]::new($false)

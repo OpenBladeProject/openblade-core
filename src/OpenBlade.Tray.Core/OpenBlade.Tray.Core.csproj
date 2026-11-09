@@ -8,6 +8,9 @@
     <ProjectReference Include="..\OpenBlade.Session\OpenBlade.Session.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="OpenBlade.Changelog.md" />
+  </ItemGroup>
+  <ItemGroup>
     <None Update="ThirdParty\LzmaSdk\LICENSE.txt" Link="Licenses\LzmaSdk.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup Condition="'$(OpenBladeIncludePseudoLocalization)' == 'false'">

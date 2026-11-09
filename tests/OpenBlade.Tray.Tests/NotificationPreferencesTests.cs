@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace OpenBlade.Tray.Tests;
 
 public sealed class NotificationPreferencesTests
@@ -13,6 +15,7 @@ public sealed class NotificationPreferencesTests
         Assert.True(preferences.FirmwareUpdatesEnabled);
         Assert.True(preferences.ControllerAdvisoriesEnabled);
         Assert.True(preferences.OperationFailuresEnabled);
+        Assert.True(preferences.ExternalPowerDischargeEnabled);
     }
 
     [Theory]
@@ -22,6 +25,7 @@ public sealed class NotificationPreferencesTests
     [InlineData(NotificationCategory.FirmwareUpdates)]
     [InlineData(NotificationCategory.ControllerAdvisories)]
     [InlineData(NotificationCategory.OperationFailures)]
+    [InlineData(NotificationCategory.ExternalPowerDischarge)]
     public void CategoriesCanBeChangedIndependently(NotificationCategory category)
     {
         NotificationPreferences before = NotificationPreferences.Default;
@@ -37,6 +41,45 @@ public sealed class NotificationPreferencesTests
                     : before.IsEnabled(candidate),
                 after.IsEnabled(candidate));
         }
+    }
+
+    [Fact]
+    public void ExistingJsonWithoutDischargePreferenceKeepsWarningEnabled()
+    {
+        NotificationPreferences? preferences = JsonSerializer.Deserialize<NotificationPreferences>(
+            """
+            {
+              "PerformanceChangesEnabled": false,
+              "ProfileAndPowerSourceChangesEnabled": true,
+              "AppUpdatesEnabled": false,
+              "FirmwareUpdatesEnabled": false,
+              "ControllerAdvisoriesEnabled": false,
+              "OperationFailuresEnabled": false
+            }
+            """);
+
+        Assert.NotNull(preferences);
+        Assert.False(preferences.PerformanceChangesEnabled);
+        Assert.True(preferences.ProfileAndPowerSourceChangesEnabled);
+        Assert.False(preferences.AppUpdatesEnabled);
+        Assert.False(preferences.FirmwareUpdatesEnabled);
+        Assert.False(preferences.ControllerAdvisoriesEnabled);
+        Assert.False(preferences.OperationFailuresEnabled);
+        Assert.True(preferences.ExternalPowerDischargeEnabled);
+    }
+
+    [Fact]
+    public void DischargePreferenceRoundTripsWhenDisabled()
+    {
+        NotificationPreferences expected = NotificationPreferences.Default with
+        {
+            ExternalPowerDischargeEnabled = false,
+        };
+
+        NotificationPreferences? actual = JsonSerializer.Deserialize<NotificationPreferences>(
+            JsonSerializer.Serialize(expected));
+
+        Assert.Equal(expected, actual);
     }
 
     [Fact]
@@ -67,6 +110,19 @@ public sealed class NotificationPreferencesTests
 
         Assert.True(deduplicator.ShouldEmit("updates", "Update", "Version 1.2"));
         Assert.True(deduplicator.ShouldEmit("updates", "Update", "Version 1.3"));
+    }
+
+    [Fact]
+    public void NewOccurrencesReplaceIdenticalContentInsideTheRepeatWindow()
+    {
+        var time = new SettableTimeProvider(DateTimeOffset.UnixEpoch);
+        var deduplicator = new NotificationDeduplicator(time);
+
+        Assert.True(deduplicator.ShouldEmit("discharge", "Battery", "Discharging", occurrenceId: 1));
+        Assert.False(deduplicator.ShouldEmit("discharge", "Battery", "Discharging", occurrenceId: 1));
+        time.Advance(TimeSpan.FromSeconds(14));
+        Assert.True(deduplicator.ShouldEmit("discharge", "Battery", "Discharging", occurrenceId: 2));
+        Assert.False(deduplicator.ShouldEmit("discharge", "Battery", "Discharging", occurrenceId: 2));
     }
 
     [Fact]

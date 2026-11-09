@@ -95,6 +95,50 @@ public sealed class SpecialKeyBindingSourceTests : IDisposable
     }
 
     [Fact]
+    public async Task BackendSelectionsRemainIndependentAndOnlyConfirmedChangesArePublished()
+    {
+        UiPreferences preferences = UiPreferences.Default with
+        {
+            SnapTapEnabled = true,
+            SnapTapBackend = KeyboardInputBackend.WindowsHook,
+            FunctionRowBackend = KeyboardInputBackend.RazerDriver,
+        };
+        bool failRead = false;
+        var transitions = new List<KeyboardInputBackend>();
+        var source = new SpecialKeyBindingSource(Path.Combine(directory, "preferences.json"),
+            _ => failRead ? Task.FromException<UiPreferences>(new IOException("unavailable")) : Task.FromResult(preferences));
+        source.SnapTapBackendChanged += transitions.Add;
+        Assert.True(await source.ReloadIfChangedAsync(true, CancellationToken.None));
+        Assert.Equal(KeyboardInputBackend.WindowsHook, source.SnapTapBackend);
+        Assert.Equal(KeyboardInputBackend.RazerDriver, source.FunctionRowBackend);
+        failRead = true;
+        Assert.False(await source.ReloadIfChangedAsync(true, CancellationToken.None));
+        Assert.Equal(KeyboardInputBackend.WindowsHook, source.SnapTapBackend);
+        Assert.Equal(KeyboardInputBackend.RazerDriver, source.FunctionRowBackend);
+        failRead = false;
+        preferences = preferences with { SnapTapBackend = (KeyboardInputBackend)99, FunctionRowBackend = KeyboardInputBackend.WindowsHook };
+        Assert.True(await source.ReloadIfChangedAsync(true, CancellationToken.None));
+        Assert.True(source.SnapTapEnabled);
+        Assert.Equal(KeyboardInputBackend.Unknown, source.SnapTapBackend);
+        Assert.Equal(KeyboardInputBackend.WindowsHook, source.FunctionRowBackend);
+        Assert.Equal([KeyboardInputBackend.WindowsHook, KeyboardInputBackend.Unknown], transitions);
+    }
+
+    [Fact]
+    public async Task RealInputPreferencesCarryBothBackendChoicesThroughNarrowLoader()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, """
+            {"snapTapBackend":"WindowsHook","functionRowBackend":"RazerDriver"}
+            """);
+        var source = new SpecialKeyBindingSource(path);
+        Assert.True(await source.ReloadIfChangedAsync(true, CancellationToken.None));
+        Assert.Equal(KeyboardInputBackend.WindowsHook, source.SnapTapBackend);
+        Assert.Equal(KeyboardInputBackend.RazerDriver, source.FunctionRowBackend);
+    }
+
+    [Fact]
     public async Task ReloadIfChangedAsync_TransientReadFailureRetainsAndRetriesBindings()
     {
         Directory.CreateDirectory(directory);

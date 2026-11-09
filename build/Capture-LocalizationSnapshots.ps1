@@ -75,6 +75,7 @@ $previousPseudo = $env:OPENBLADE_PSEUDO_LOCALIZATION
 $previousLanguage = $env:OPENBLADE_LOCALIZATION_LANGUAGE
 $previousSnapshotState = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE
 $previousSnapshotPage = $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE
+$previousControlAvailability = $env:OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE
 $previousFailureEvidenceDirectory = $env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR
 $previousCompatibilityLayer = $env:__COMPAT_LAYER
 try {
@@ -139,21 +140,35 @@ try {
             'telemetry-metrics',
             'telemetry-color',
             'laptop',
-            'laptop-battery-history',
+            'cooling-pad-connected',
+            'cooling-pad-curves',
+            'cooling-pad-paused',
+            'telemetry-battery-report',
+            'telemetry-battery-report-narrow',
+            'telemetry-battery-report-details',
             'laptop-snap-tap-info',
             'thx-audio',
             'thx-audio-headphones',
             'thx-audio-enhancements',
             'thx-audio-applications',
             'lighting',
+            'labs',
+            'labs-import-target',
+            'labs-60hz-target',
             'display',
             'display-brightness-known',
             'display-brightness-unavailable',
             'settings',
             'settings-appearance',
             'about',
+            'whats-new',
             'tray-dashboard')) {
         $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $trayPage
+        $env:OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE = if ($trayPage -in 'labs-import-target', 'labs-60hz-target') {
+            'labs-lighting'
+        } else {
+            $previousControlAvailability
+        }
         $startInfo = New-Object System.Diagnostics.ProcessStartInfo
         $startInfo.FileName = $trayExecutable
         $startInfo.WorkingDirectory = [IO.Path]::GetDirectoryName($trayExecutable)
@@ -195,6 +210,7 @@ finally {
     $env:OPENBLADE_LOCALIZATION_LANGUAGE = $previousLanguage
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_STATE = $previousSnapshotState
     $env:OPENBLADE_LOCALIZATION_SNAPSHOT_PAGE = $previousSnapshotPage
+    $env:OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE = $previousControlAvailability
     $env:OPENBLADE_LOCALIZATION_FAILURE_EVIDENCE_DIR = $previousFailureEvidenceDirectory
     $env:__COMPAT_LAYER = $previousCompatibilityLayer
     $desktop.Dispose()
@@ -218,7 +234,7 @@ $manifest = [ordered]@{
         timeZone = 'UTC-for-snapshot-timestamps'
         dpi = '96-process-local-DPIUNAWARE'
         installerRendering = 'software'
-        pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4'
+        pixelCanonicalization = 'bgra8-4-bit-midpoint-local-majority-edge-alpha-accent-fringe-v5'
         frameStabilization = 'two-consecutive-canonical-frames-v1'
         windowActivation = 'stable-title-foreground-v1'
         inputIsolation = 'noninteractive-window-v1'

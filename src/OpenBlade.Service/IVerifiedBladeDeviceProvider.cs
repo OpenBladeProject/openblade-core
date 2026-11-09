@@ -19,6 +19,19 @@ public interface IVerifiedBladeDeviceProvider
 
     void SetAllowUntestedFirmware(bool enabled);
 
+    // Read interest is not ownership. The callback must recheck fresh cooling admission.
+    void SetBatterySaverFanStopContext(bool readbackRequested, Func<bool>? writeAdmission) { }
+
+    void SetRecoveryWriteAdmission(Func<bool> admission)
+    {
+    }
+
+    // Drain in-flight ordinary hardware work, then retain exclusive admission
+    // until the guardian proves native release. Unsupported providers fail closed.
+    Task<IDisposable> AcquireFanStopHardwareLeaseAsync(CancellationToken cancellationToken) =>
+        Task.FromException<IDisposable>(new CapabilityUnavailableException(
+            "This provider cannot delegate exclusive hardware ownership to a fan guardian."));
+
     bool IsExperimentalWritesPaused => false;
 
     DeviceCapabilities? ExperimentalCapabilities => null;
@@ -38,6 +51,10 @@ public interface IVerifiedBladeDeviceProvider
     }
 
     bool TryGetVerifiedDevice(out IBladeDevice device);
+
+    // Recovery binding only. Every read/write still requires fresh backend admission.
+    // This identifies an exact model/HID contract, not a unique physical unit.
+    string? LaptopControlRecoveryIdentity => null;
 
     DiagnosticDeviceVerification GetCachedDeviceVerificationDiagnostics() =>
         DiagnosticDeviceVerification.NotObserved;

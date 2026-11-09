@@ -7,41 +7,43 @@ Windows hardware utility.
 <!-- trail:start -->
 ## Trail — repo context graph
 
-This repository is indexed in `.trail/cache/`. The graph links concise system
-notes to exact source spans and precomputed symbol relationships. For code
-tasks, query Trail before broad text searches or broad source reads, and reuse
-literal identifiers such as a symbol, error string, or file name.
+This repo is indexed in `.trail/cache/`: small linked markdown nodes that explain each
+system and carry exact file:line spans, kept in sync with the code through git.
 
-Treat graph results as navigation and context, not as a substitute for the
-current checkout. Source and tests remain authoritative. Verify current source
-before consequential edits, safety or compatibility claims, and final review;
-documentation, configuration, generated files, and new files may be unindexed.
+For ANY task here — understanding how something works, finding where code lives,
+or scoping a change — get context from the graph before grepping or opening
+source files. Re-ask freely (it's cheap) and reuse literal identifiers you
+already have (symbol, error string, file name) as the query. New to this repo?
+Run `trail map` first — a token-budgeted orientation (dir clusters, hubs,
+hotspots), no LLM, no key.
 
-Choose the command that matches the question:
+- Run `trail ask "<your question>" --source` → ranked nodes with the relevant
+  code spans inlined (each hit's ≤8-line crux by default; `--full` for whole
+  definitions when the crux isn't enough). Match the tool to the task shape:
+  for understanding or editing, the top node IS the answer — cite its
+  `covers:` file:line spans and edit straight from `--source`. For
+  exhaustive tasks ("every occurrence / every caller of this pattern"), ranked
+  results are top-N, not complete — run `trail grep "<literal>"` instead
+  (exhaustive over indexed files, grouped by enclosing symbol), falling back
+  to raw `grep -rn` only for unindexed files.
+- `trail skeleton <file>` → every definition's signature + span, ~10× cheaper
+  than reading the file; use it to skim an API surface.
+- `trail callers <symbol>` gives precomputed, exact edges — who calls this.
+  Add `--direction out` for what it calls, or `--depth N` to walk
+  transitively for the full blast radius. For structural questions, skip
+  ranking and use this directly.
+- Or browse: `.trail/cache/INDEX.md` lists every node; follow the links.
+- Monorepos and folders of multiple repos rank fairly across sub-projects —
+  hits carry `[scope/]` labels naming which one they're from. Narrow with
+  `trail ask "<task>" --in <scope>/` once you know where you're working.
 
-- `trail map` gives a token-budgeted orientation to directory clusters, hubs,
-  and hotspots. Use it when the repository or subsystem is unfamiliar.
-- `trail ask "<question>" --source` returns ranked nodes with relevant source
-  spans inlined. Use the results as focused starting points; add `--full` when
-  a returned crux is truncated or the complete definition is needed.
-- `trail grep "<literal>"` searches indexed files exhaustively and groups hits
-  by enclosing symbol. Use it for every occurrence or caller of a pattern;
-  use `rg` for files Trail does not index.
-- `trail skeleton <file>` lists each definition's signature and span for a
-  compact view of an API surface.
-- `trail callers <symbol>` shows incoming references. Add `--direction out`
-  for dependencies or `--depth N` to inspect a transitive blast radius.
-- `.trail/cache/INDEX.md` is available for direct browsing. In multi-repository
-  workspaces, narrow queries with `--in <scope>/` when the scope is known.
+If a returned span is truncated ("+N more lines"), open the file at that exact
+range before finalizing. Only open source files when a node genuinely lacks a
+needed detail, and then at the exact file:line the node points to — never
+re-read whole files.
 
-Open the exact referenced source range when Trail omits a required detail or
-when verification is consequential. Read more surrounding source when needed
-to understand the contract or validate an invariant; avoid rebuilding context
-from whole files without a concrete reason.
-
-`trail build` refreshes the deterministic graph without a model or API key;
-`trail check` checks branch changes against recorded team learnings. Optional LLM
-summaries require a separate `trail build --deep`.
+After big code changes, refresh the graph with `trail build` (deterministic,
+no API key, $0).
 <!-- trail:end -->
 
 ## Parallel work
@@ -160,16 +162,20 @@ remaining uncertainty.
 OpenBlade is a lightweight Windows utility for Razer Blade laptops. The
 architecture admits capabilities only for an exact product name and HID
 identity. Physically validated capabilities use sanitized, reviewed capture
-evidence. Experimental capabilities use separately reviewed, pinned upstream
-model and command definitions; they remain experimental until physical
-validation is complete. Host admission verifies the Razer manufacturer and
+evidence. Source-reviewed capabilities use separately reviewed, pinned vendor
+or upstream model and command definitions. Both are officially supported;
+physical validation is tracked separately and must not be inferred from source
+review. Individual unfinished controls and separately experimental integrations
+retain their own evidence and access limits. Host admission verifies the Razer manufacturer and
 exact product name in both Windows registry sources; SKU is diagnostic metadata
 and must not reject a variant of an admitted product. Developer validation may
 pin a SKU for reproducibility. Hardware-specific backends retain their own
 device and driver checks.
-Captured BIOS versions are provenance by default; a capability may impose an
-exact firmware restriction only through an explicit reviewed admission rule,
-and no shipped capability imposes one today.
+Captured BIOS versions are provenance by default; a capability may impose a
+firmware restriction only through an explicit reviewed admission rule. No
+shipped capability pins an exact BIOS version. Source-reviewed HyperBoost on
+RZ09-0482 and RZ09-0483 enforces the separately reviewed minimum MCU versions
+listed in [source-reviewed support](docs/experimental-blade-support.md).
 Never copy a command from another model, expose raw firmware commands, or
 weaken exact-device checks to make a feature appear supported.
 
@@ -177,16 +183,20 @@ Physically validated support is exact-device scoped: the Razer Blade 16
 RZ09-0581 (`1532:02E0`) and RZ09-0528 (`1532:02C6`). Neither model's
 device-specific assumptions may be copied to another.
 
-The separately admitted experimental profiles are RZ09-0483 (`1532:029F`),
+The separately admitted source-reviewed profiles are RZ09-0483 (`1532:029F`),
 RZ09-0482 (`1532:029D`), RZ09-0530 (`1532:02C5`), RZ09-0328 (`1532:0255`),
-and RZ09-0484 (`1532:02A0`). Their available controls are enabled automatically
+RZ09-0484 (`1532:02A0`), RZ09-0508 (`1532:02B6`), RZ09-0510 (`1532:02B7`),
+RZ09-0509 (`1532:02B8`), RZ09-0529 (`1532:02C7`), RZ09-0427 (`1532:028C`),
+RZ09-0421 (`1532:028A`), RZ09-0423 (`1532:028B`), RZ09-0370 (`1532:0270`),
+RZ09-0330 (`1532:0253`), RZ09-0351 (`1532:0268`), RZ09-0301 (`1532:0245`), and RZ09-0300 (`1532:0246`).
+Their available controls are enabled automatically
 when the exact profile is recognized, without a Settings opt-in or release-channel
-gate. See [experimental support](docs/experimental-blade-support.md) for the
+gate. See [source-reviewed support](docs/experimental-blade-support.md) for the
 bounded capabilities, upstream provenance, write-pause recovery, and tester
 reports. These profiles do not inherit another model's backends, drivers, or
 physical-validation status.
 
-## Source-backed experimental admission
+## Source-reviewed model admission
 
 When adding a supported model, review every entry in the blade-driver-catalog
 applicability ledger against exact-model vendor evidence. Update its reviewed
@@ -196,26 +206,29 @@ not establish applicability of a complete driver stack. The coverage tests
 compare the ledger with `RazerBladeModelCatalog.All` so a new model cannot skip
 this review. Catalog applicability does not grant runtime hardware admission.
 
-Physical validation is the promotion gate for validated support, not a
-prerequisite for releasing a separately implemented experimental control for
-community testing. The maintainer need not own every experimental laptop.
-Review and pin the exact model's vendor or upstream command definitions, expose
-its experimental provenance in capabilities and diagnostics, and document what
-users still need to test. Do not claim another model's physical results.
+Official source-reviewed support requires the exact model's reviewed and pinned
+vendor or upstream command definitions, bounded typed implementation, and
+software failure/recovery verification. Physical validation is a separate
+evidence status, not a prerequisite for that support classification. The
+maintainer need not own every supported laptop. Expose the source basis and
+physical-validation status separately in model metadata and diagnostics, retain
+per-feature evidence, and document remaining tests. A firmware download or
+matching image name alone does not establish command semantics or applicability.
+Do not claim another model's physical results.
 
 When an exact model's reviewed HyperBoost implementation uses the same typed
 thermal commands with or without a cooling pad, those commands may be offered
-on both paths experimentally. Record padless use as source-backed extrapolation
+on both source-reviewed paths. Record padless use as source-backed extrapolation
 until community validation is reviewed. Do not fabricate a pad connection or
 issue additional accessory-status writes to emulate one. Preserve any concrete
 firmware prerequisites established by the exact model's source.
 
 Keep fresh exact-device, controller, power, session and ownership admission,
 independent readback, durable restoration, and stop-on-ambiguity behavior on
-every experimental path. Software tests must cover failure and recovery before
+every source-reviewed path. Software tests must cover failure and recovery before
 release. Physical-validation manifests belonging to the separately validated
 backends remain required for those backends; they do not automatically gate
-source-backed experimental backends. New or unknown commands still require
+source-reviewed backends. New or unknown commands still require
 separate exact-model source review. This policy authorizes no development-time
 hardware writes, installations, or unattended sleep/resume tests.
 
@@ -364,7 +377,16 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    policy may restore lighting automatically.
 6. Keep queues bounded, cancellations observable, writes atomic, and native
    handles deterministically released. Do not add a kernel driver or depend on
-   Synapse components. As an optional integration, the native-brightness path
+   Synapse components except for the explicitly approved CPU-temperature path:
+   bundle the pinned, unmodified official PawnIO installer and the reviewed
+   LibreHardwareMonitor CPU-only source subset. Setup verifies acquisition and
+   installed driver trust, preserves compatible shared installations and reports
+   restart-required outcomes. Never remove shared PawnIO during OpenBlade uninstall.
+   CPU acquisition runs in a bounded, job-owned helper; failed, incomplete or stale
+   readings remain unavailable and must not delay Stop's Auto restoration.
+   This exception admits CPU reads only, not additional laptop control commands,
+   live development installs or hardware validation. Retain corresponding source
+   and third-party notices. As an optional integration, the native-brightness path
    may use each admitted model's own exact, signed Razer driver stack (`02E0`
    for RZ09-0581, `02C6` for RZ09-0528) when that stack is already installed
    or separately provisioned. Keep WMI fallback available, never mix one
@@ -375,12 +397,19 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    authorization, notice, hashes, and signature validation.
    SnapTap may use the already installed, trusted model-specific keyboard
    driver profiles reviewed in [SnapTap](docs/snap-tap.md) through the shared
-   typed A/D-only backend. Newly reviewed models remain source-backed experimental
+   typed keyboard backend. Users choose Windows-hook or Razer-driver handling
+   separately for SnapTap and the function row. The Windows SnapTap helper is
+   fixed to A/D and has global keyboard scope. One supervised driver helper owns
+   the complete selected A/D and F1-F12 hook set; stop its subscription and verify
+   owned-hook restoration before changing that set. Function-row driver handling
+   remains source-backed experimental and requires the existing exact-model Fn
+   semantics. Newly reviewed models remain source-backed experimental
    until their own physical SnapTap validation is complete. Keep exact host, driver,
    keyboard-collection and container admission, supervised subscription lifetime,
    owned-hook restoration and uncertain-output recovery. It must not load the
    Synapse mapping engine, acquire the service's HID handle, install or bundle
-   drivers, or fall back to a system-wide keyboard hook. A separate, explicitly
+   drivers. Backend failures remain visible; never automatically select another
+   backend or bypass an uncertain ownership or output recovery gate. A separate, explicitly
    user-initiated elevated helper may install each of the seven reviewed models'
    separately pinned complete stack after exact host, topology, package hash and
    Windows catalog verification. Original Razer carriers are data-only sources:
@@ -478,6 +507,11 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    validated. This exception admits no other laptop or API contract family. Keep
    standalone native/audio validation separate from simulated tests; see
    [THX audio](docs/thx-audio.md).
+   CPU Voltage Optimizer on RZ09-0528 is live-only through its reviewed,
+   signed, already installed AMD stack. Availability checks and reads must not
+   provision or start a driver. New saved-setting requests are retired; retain
+   saved observations and exact-original journal recovery for compatibility.
+   Firmware shadows must never substitute for measured running offsets.
 7. Prefer one shared implementation or presentation primitive over
    page-specific fixes. When a bug can affect every picker, card, or firmware
    field, fix the shared layer and add a regression test there.
@@ -643,8 +677,10 @@ unrelated worktrees and checkout changes.
 6. For WinUI changes, build `OpenBlade.Tray` and inspect the rendered app when
    interactive access is available. XAML contract tests do not prove visual
    quality.
-7. For hardware changes, complete the relevant physical validation before
-   marking support production-ready, following Hardware and capture safety.
+7. For hardware changes, establish exact-model source evidence and software
+   failure/recovery coverage before claiming source-reviewed support. Claim
+   physical validation only after the relevant on-device checks are complete,
+   following Hardware and capture safety. Keep those two statuses separate.
 8. Update `CHANGELOG.md` under `Unreleased` for user-visible changes. Every
    new or materially changed changelog bullet must include a Markdown link to
    its implementing pull request, using

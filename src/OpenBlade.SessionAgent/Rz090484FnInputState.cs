@@ -17,6 +17,29 @@ internal sealed class Rz090484FnInputState
     private nint collection;
     private bool ambiguous;
     private bool reportObserved;
+    private sealed record Observation(nint Collection, bool Pressed);
+    private Observation? observation;
+
+    internal void InvalidateKnowledge() => Volatile.Write(ref observation, null);
+
+    internal bool? Read() => Volatile.Read(ref observation)?.Pressed;
+
+    internal bool? ReadAdmitted(Func<nint, bool> isCurrent)
+    {
+        Observation? current = Volatile.Read(ref observation);
+        if (current is null)
+        {
+            return null;
+        }
+        // Native admission can race a topology reset or a newer Fn report.
+        // Apply its result only to the observation it actually checked.
+        if (!isCurrent(current.Collection))
+        {
+            Interlocked.CompareExchange(ref observation, null, current);
+            return null;
+        }
+        return ReferenceEquals(current, Volatile.Read(ref observation)) ? current.Pressed : null;
+    }
 
     public bool FunctionHeld { get; private set; }
 
@@ -28,12 +51,14 @@ internal sealed class Rz090484FnInputState
         ambiguous = false;
         reportObserved = false;
         FunctionHeld = false;
+        InvalidateKnowledge();
     }
 
     public void Invalidate()
     {
         reportObserved = false;
         FunctionHeld = false;
+        InvalidateKnowledge();
     }
 
     public bool IsBoundCollection(nint sourceCollection) =>
@@ -77,6 +102,7 @@ internal sealed class Rz090484FnInputState
         bool wasHeld = FunctionHeld;
         FunctionHeld = report[1..].ContainsAny((byte)0x0A, (byte)0x0B);
         reportObserved = true;
+        Volatile.Write(ref observation, new(collection, FunctionHeld));
         if (!wasObserved)
         {
             return FunctionHeld

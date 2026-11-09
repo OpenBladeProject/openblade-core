@@ -205,6 +205,55 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task WindowsPowerMode_NewPresetDraftsRemainIndependentAcrossSelectionAndSave()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                PerformancePresets = new HashSet<PerformancePreset>
+                {
+                    PerformancePreset.Balanced, PerformancePreset.Performance,
+                    PerformancePreset.Turbo, PerformancePreset.MaximumPower,
+                    PerformancePreset.Gaming, PerformancePreset.Creator,
+                },
+            },
+        });
+        AsyncRelayCommand select = Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand);
+        await select.ExecuteAsync(PerformancePreset.Performance);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPowerEfficiency);
+        await select.ExecuteAsync(PerformancePreset.Turbo);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+        await select.ExecuteAsync(PerformancePreset.MaximumPower);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.Balanced);
+        await select.ExecuteAsync(PerformancePreset.Gaming);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPerformance);
+        await select.ExecuteAsync(PerformancePreset.Creator);
+        viewModel.StageWindowsPowerMode(WindowsPowerMode.BestPowerEfficiency);
+        await select.ExecuteAsync(PerformancePreset.Gaming);
+        Assert.Equal(WindowsPowerMode.BestPerformance, viewModel.SelectedWindowsPowerModeOption.Value);
+        await select.ExecuteAsync(PerformancePreset.Creator);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, viewModel.SelectedWindowsPowerModeOption.Value);
+        await select.ExecuteAsync(PerformancePreset.Turbo);
+        Assert.Equal(WindowsPowerMode.BestPerformance, viewModel.SelectedWindowsPowerModeOption.Value);
+        await select.ExecuteAsync(PerformancePreset.Performance);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, viewModel.SelectedWindowsPowerModeOption.Value);
+        await select.ExecuteAsync(PerformancePreset.MaximumPower);
+        Assert.Equal(WindowsPowerMode.Balanced, viewModel.SelectedWindowsPowerModeOption.Value);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand).ExecuteAsync(null);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, client.LastProfiles?.WindowsPowerModes.Performance);
+        Assert.Equal(WindowsPowerMode.BestPerformance, client.LastProfiles?.WindowsPowerModes.Turbo);
+        Assert.Equal(WindowsPowerMode.Balanced, client.LastProfiles?.WindowsPowerModes.MaximumPower);
+        Assert.Equal(WindowsPowerMode.BestPerformance, client.LastProfiles?.WindowsPowerModes.Gaming);
+        Assert.Equal(WindowsPowerMode.BestPowerEfficiency, client.LastProfiles?.WindowsPowerModes.Creator);
+    }
+
+    [Fact]
     public async Task WindowsPowerMode_DraftSurvivesPowerSourceTransition()
     {
         var client = new FakeServiceClient();
@@ -2290,6 +2339,84 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.HasGlobalBatteryPolicyDraft);
     }
 
+    [Theory]
+    [InlineData(true, 80)]
+    [InlineData(false, null)]
+    public async Task BatteryLimiter_UnsupportedTemporaryFullChargePreservesUnknownAndAllowsOrdinaryControls(
+        bool protectionEnabled, int? currentLimit)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        status = status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                ChargeLimits = Enumerable.Range(50, 51).ToHashSet(),
+                SupportsTemporaryFullCharge = false,
+            },
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(protectionEnabled, currentLimit, null),
+            },
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
+
+        Assert.True(viewModel.CanAdjustChargeLimit);
+        Assert.True(viewModel.CanChangeBatteryProtection);
+        Assert.True(viewModel.SetChargeLimitCommand.CanExecute(75));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(false));
+        Assert.Equal("Unavailable", viewModel.FullChargeActionLabel);
+        Assert.DoesNotContain("Temporary full charge", viewModel.BatterySourceLabel, StringComparison.Ordinal);
+        Assert.Equal(protectionEnabled ? "Charge limit 80%" : "Battery protection off", viewModel.CurrentBatterySettingLabel);
+        viewModel.ProfileChargeLimitEditor = 75;
+        Assert.True(viewModel.SaveProfilesCommand.CanExecute(null));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand).ExecuteAsync(75);
+        Assert.Equal(BatteryPolicy.Create(75), client.BatteryPolicy);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ToggleBatteryProtectionCommand).ExecuteAsync(null);
+        Assert.Equal(!protectionEnabled, client.BatteryProtectionEnabled);
+        Assert.Null(client.FullChargeEnabled);
+        Assert.Null(client.CurrentStatus!.ConfirmedState!.Battery!.TemporaryFullCharge);
+    }
+
+    [Theory]
+    [InlineData(true, null)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task BatteryLimiter_ManagedUnknownOrKnownActiveTemporaryFullChargeBlocksOrdinaryControls(
+        bool supportsTemporaryFullCharge, bool? temporaryFullCharge)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                SupportsTemporaryFullCharge = supportsTemporaryFullCharge,
+            },
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(true, 80, temporaryFullCharge),
+            },
+        });
+
+        Assert.False(viewModel.CanAdjustChargeLimit);
+        Assert.False(viewModel.CanChangeBatteryProtection);
+        Assert.False(viewModel.SetChargeLimitCommand.CanExecute(75));
+        Assert.False(viewModel.SetChargeLimitCommand.CanExecute(100));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
+        Assert.Equal(supportsTemporaryFullCharge && temporaryFullCharge is true,
+            viewModel.ToggleFullChargeCommand.CanExecute(false));
+        Assert.Equal(0, client.MutationCalls);
+        Assert.Null(client.FullChargeEnabled);
+    }
+
     [Fact]
     public async Task StableChargeCapabilitiesKeepFivePercentRange()
     {
@@ -3526,7 +3653,7 @@ public sealed partial class MainViewModelTests
         var dispatcher = new RecordingDispatcher();
         await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
-        ServiceStatusSnapshot pluggedIn = CreateStatus(verified: true, blocked: false);
+        ServiceStatusSnapshot pluggedIn = CreateStatus(verified: true, blocked: false) with { Message = "AC source applied" };
         await PublishStatusAndWaitAsync(client, dispatcher, viewModel, pluggedIn);
 
         Assert.Equal(
@@ -3534,20 +3661,30 @@ public sealed partial class MainViewModelTests
                 PerformancePreset.Balanced,
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
+                PerformancePreset.Turbo,
+                PerformancePreset.MaximumPower,
+                PerformancePreset.Gaming,
+                PerformancePreset.Creator,
                 PerformancePreset.Custom,
             ],
             viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Turbo));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
         Assert.Equal("AC profile", viewModel.ActivePowerSourceLabel);
         Assert.Equal("Save to AC profile", viewModel.SaveToActiveProfileLabel);
 
-        client.Publish(pluggedIn with
+        // Wait for the complete dispatcher turn, not the first property changed
+        // inside it; labels and command state are applied later in that turn.
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, pluggedIn with
         {
             Revision = pluggedIn.Revision + 1,
             ActivePowerSource = PowerSource.Battery,
+            Message = "Battery source applied",
         });
-        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
 
         Assert.Equal(
             [PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver],
@@ -3555,18 +3692,22 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Turbo));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
         Assert.Equal(
             [FanMode.Automatic, FanMode.Fixed],
             viewModel.AvailableActiveFanModeOptions.Select(option => option.Value));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.Equal("Save to battery profile", viewModel.SaveToActiveProfileLabel);
 
-        client.Publish(pluggedIn with
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, pluggedIn with
         {
             Revision = pluggedIn.Revision + 2,
             ActivePowerSource = PowerSource.UsbC,
+            Message = "USB-C source applied",
         });
-        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
 
         Assert.Equal(
             [PerformancePreset.Balanced],
@@ -3574,18 +3715,21 @@ public sealed partial class MainViewModelTests
         Assert.Equal(viewModel.AvailableUsbCFanModes, viewModel.AvailableActiveFanModes);
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Turbo));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.Equal("Low-power profile", viewModel.ActivePowerSourceLabel);
         Assert.Equal("Save to low-power profile", viewModel.SaveToActiveProfileLabel);
 
-        client.Publish(pluggedIn with
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, pluggedIn with
         {
             Revision = pluggedIn.Revision + 3,
             ActivePowerSource = PowerSource.ExternalUnknown,
+            Message = "Unclassified external source applied",
         });
-        await WaitUntilAsync(() =>
-            viewModel.ActivePowerSource == PowerSource.ExternalUnknown);
 
         Assert.Empty(viewModel.AvailableActivePerformanceOptions);
         Assert.Empty(viewModel.AvailableActiveFanModes);
@@ -5848,7 +5992,6 @@ public sealed partial class MainViewModelTests
         using var culture = new CultureScope("en-US");
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
-        viewModel.LabFeaturesEnabled = true;
         await viewModel.StartAsync();
         client.Publish(CreateStatus(
             verified: true,
@@ -5957,7 +6100,6 @@ public sealed partial class MainViewModelTests
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
-        viewModel.LabFeaturesEnabled = true;
         await viewModel.StartAsync();
         DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
@@ -5995,7 +6137,7 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task ImportKeyboardLighting_RejectsNewPresetsWhileLabFeaturesAreDisabled()
+    public async Task ImportKeyboardLighting_RejectsNewPresetsWhileHardwareControlIsBlocked()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -6010,9 +6152,9 @@ public sealed partial class MainViewModelTests
         };
         client.Publish(CreateStatus(
             verified: true,
-            blocked: false,
+            blocked: true,
             capabilities: capabilities));
-        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        await WaitUntilAsync(() => viewModel.IsConnected);
         var preset = new KeyboardLightingPreset(
             "Imported green",
             "User",
@@ -6020,7 +6162,7 @@ public sealed partial class MainViewModelTests
             1,
             LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 73));
 
-        Assert.False(viewModel.LabFeaturesEnabled);
+        Assert.False(viewModel.CanControlLighting);
         Assert.False(viewModel.CanImportKeyboardLighting(preset));
         Assert.False(viewModel.TryImportKeyboardLighting(preset));
         Assert.False(viewModel.IsLightingApplyPending);
@@ -6031,7 +6173,6 @@ public sealed partial class MainViewModelTests
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
-        viewModel.LabFeaturesEnabled = true;
         await viewModel.StartAsync();
         DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
@@ -6359,11 +6500,85 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task LightingRefreshRate_RequiresLabsAndAdvertisedCapability()
+    public async Task LightingRefreshRate_DistinguishesReadinessSupportAndOwnership()
+    {
+        using var culture = new CultureScope("en-US");
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        Assert.Equal("60 Hz lighting support couldn’t be checked.", viewModel.LightingRefreshRateAvailabilityText);
+
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: false,
+            blocked: true,
+            capabilities: DeviceCapabilities.Unavailable()) with
+        {
+            ObservationReason = DeviceObservationReason.CheckingConnection,
+        });
+        await WaitUntilAsync(() => viewModel.LightingRefreshRateAvailabilityText == "Checking keyboard support…");
+        Assert.False(viewModel.CanSetLightingRefreshRate);
+
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults()));
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        Assert.Equal("60 Hz lighting is not available for this keyboard.", viewModel.LightingRefreshRateAvailabilityText);
+        Assert.False(viewModel.CanSetLightingRefreshRate);
+
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ReadWrite,
+            SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
+            {
+                LightingRefreshRate.ThirtyHz,
+                LightingRefreshRate.SixtyHz,
+            },
+        };
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: capabilities);
+        // Ownership is assigned before capabilities within one UI dispatch.
+        // Wait for that complete snapshot before asserting both fields together.
+        await PushAsync(client, dispatcher, status with
+        {
+            KeyboardLightingControlMode = KeyboardLightingControlMode.WindowsDynamicLighting,
+        });
+        Assert.True(viewModel.UseWindowsDynamicLighting);
+        Assert.True(viewModel.SupportsSixtyHzLighting);
+        Assert.Equal("Windows Dynamic Lighting manages keyboard lighting.", viewModel.LightingRefreshRateAvailabilityText);
+        Assert.False(viewModel.CanSetLightingRefreshRate);
+        Assert.False(await viewModel.SetLightingRefreshRateAsync(
+            LightingRefreshRate.SixtyHz, CancellationToken.None));
+
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.CanSetLightingRefreshRate);
+        Assert.Equal(
+            "Render supported animated effects at 60 Hz. Uses more CPU and power.",
+            viewModel.LightingRefreshRateAvailabilityText);
+    }
+
+    [Fact]
+    public async Task LightingRefreshRate_RequiresAdvertisedCapability()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                SupportedLightingRefreshRates = new HashSet<LightingRefreshRate> { LightingRefreshRate.ThirtyHz },
+            }));
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        Assert.False(viewModel.CanSetLightingRefreshRate);
+        Assert.False(await viewModel.SetLightingRefreshRateAsync(
+            LightingRefreshRate.SixtyHz,
+            CancellationToken.None));
+
         DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             SupportedLightingRefreshRates = new HashSet<LightingRefreshRate>
@@ -6377,11 +6592,6 @@ public sealed partial class MainViewModelTests
             blocked: false,
             capabilities: capabilities));
         await WaitUntilAsync(() => viewModel.SupportsSixtyHzLighting);
-
-        Assert.False(await viewModel.SetLightingRefreshRateAsync(
-            LightingRefreshRate.SixtyHz,
-            CancellationToken.None));
-        viewModel.LabFeaturesEnabled = true;
 
         Assert.True(await viewModel.SetLightingRefreshRateAsync(
             LightingRefreshRate.SixtyHz,
@@ -6411,7 +6621,8 @@ public sealed partial class MainViewModelTests
     public async Task ExperimentalLightingParameters_OfferOnlyAdmittedModesAndUpdateOnCapabilityChanges()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false) with
         {
@@ -6421,8 +6632,11 @@ public sealed partial class MainViewModelTests
                 SupportsWaveDirectionSelection = false,
             },
         };
+        int beforeInitial = dispatcher.CompletedCalls;
         client.Publish(initial);
-        await WaitUntilAsync(() => !viewModel.Capabilities.SupportsWaveDirectionSelection);
+        await WaitUntilAsync(() =>
+            dispatcher.CompletedCalls > beforeInitial
+            && !viewModel.Capabilities.SupportsWaveDirectionSelection);
         viewModel.LightingEffectEditor = LightingEffect.Breathing;
         Assert.Equal(new[] { BreathingColorMode.Random }, viewModel.LightingBreathingColorModes);
         Assert.Equal(BreathingColorMode.Random, viewModel.LightingBreathingColorModeEditor);
@@ -6432,6 +6646,7 @@ public sealed partial class MainViewModelTests
         Assert.Equal(LightingDirection.Rightward, Assert.Single(viewModel.LightingDirectionOptions).Value);
         Assert.Equal(LightingDirection.Rightward, viewModel.LightingDirectionEditor);
         Assert.False(viewModel.LightingShowsDirection);
+        int beforeCapabilityChange = dispatcher.CompletedCalls;
         client.Publish(initial with
         {
             Revision = initial.Revision + 1,
@@ -6441,7 +6656,10 @@ public sealed partial class MainViewModelTests
                 SupportsWaveDirectionSelection = true,
             },
         });
-        await WaitUntilAsync(() => viewModel.Capabilities.SupportsWaveDirectionSelection);
+        // The capability flag is assigned before the derived lighting option lists.
+        await WaitUntilAsync(() =>
+            dispatcher.CompletedCalls > beforeCapabilityChange
+            && viewModel.Capabilities.SupportsWaveDirectionSelection);
         Assert.Equal(2, viewModel.LightingDirectionOptions.Count);
         Assert.Equal(3, viewModel.LightingBreathingColorModes.Count);
     }
@@ -6499,14 +6717,11 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task ExperimentalSupport_IsAutomaticAndIndependentOfLabPreference()
+    public async Task ExperimentalSupport_IsAutomatic()
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
-        await using var viewModel = new MainViewModel(client, dispatcher)
-        {
-            LabFeaturesEnabled = true,
-        };
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         await PublishStatusAndWaitAsync(
             client,
@@ -6521,7 +6736,37 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.IsExperimentalDevice);
         Assert.False(viewModel.ExperimentalWritesPaused);
         Assert.False(viewModel.CanResumeExperimentalWrites);
-        Assert.Contains("Experimental controls are available", viewModel.ExperimentalSupportNotice);
+        Assert.Equal("This laptop is supported using reviewed sources. Physical validation is tracked separately.", viewModel.ExperimentalSupportNotice);
+    }
+
+    [Theory]
+    [InlineData("ru-RU", false, "Этот ноутбук поддерживается на основе проверенных источников. Проверка на реальном устройстве учитывается отдельно.")]
+    [InlineData("zh-CN", false, "此笔记本电脑的支持基于已审核的来源。实机验证情况单独记录。")]
+    [InlineData("ru-RU", true, "Управление ноутбуком приостановлено, поскольку OpenBlade не смог подтвердить изменение. Проверьте текущее состояние, затем возобновите управление ноутбуком. OpenBlade не станет повторять предыдущее изменение.")]
+    [InlineData("zh-CN", true, "由于 OpenBlade 无法确认某项更改，笔记本控制已暂停。请先检查当前状态，再恢复笔记本控制。OpenBlade 不会重试之前的更改。")]
+    public async Task ExperimentalSupport_LocalizesSupportBasisAndPausedRecovery(
+        string language,
+        bool paused,
+        string expectedNotice)
+    {
+        using var culture = new CultureScope(language);
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        await PublishStatusAndWaitAsync(
+            client,
+            dispatcher,
+            viewModel,
+            CreateStatus(verified: true, blocked: paused) with
+            {
+                IsExperimentalDevice = true,
+                ExperimentalWritesPaused = paused,
+            });
+
+        Assert.Equal(expectedNotice, viewModel.ExperimentalSupportNotice);
+        Assert.Equal(paused, viewModel.CanResumeExperimentalWrites);
+        Assert.Equal(0, client.ResumeExperimentalWritesCalls);
     }
 
     [Fact]
@@ -6545,7 +6790,7 @@ public sealed partial class MainViewModelTests
 
         Assert.True(viewModel.ExperimentalWritesPaused);
         Assert.True(viewModel.CanResumeExperimentalWrites);
-        Assert.Contains("will not retry", viewModel.ExperimentalSupportNotice);
+        Assert.Equal("Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change.", viewModel.ExperimentalSupportNotice);
         Assert.True(await viewModel.ResumeExperimentalWritesAsync(CancellationToken.None));
         Assert.Equal(1, client.ResumeExperimentalWritesCalls);
         Assert.False(viewModel.IsResumeExperimentalWritesOperationInProgress);
@@ -7469,7 +7714,8 @@ public sealed partial class MainViewModelTests
                     SettingValueSource.PowerProfile),
             },
         });
-        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC
+            && viewModel.TrayIconState == TrayIconState.UsbCBalanced);
 
         Assert.Equal(PerformancePreset.Balanced, viewModel.SelectedPerformance);
         Assert.Equal(TrayIconState.UsbCBalanced, viewModel.TrayIconState);
@@ -7492,7 +7738,8 @@ public sealed partial class MainViewModelTests
                 PerformancePreset.Performance),
         });
         await WaitUntilAsync(
-            () => viewModel.SelectedPerformance == PerformancePreset.Performance);
+            () => viewModel.SelectedPerformance == PerformancePreset.Performance
+                && viewModel.TrayIconState == TrayIconState.AcPerformance);
 
         Assert.Equal(TrayIconState.AcPerformance, viewModel.TrayIconState);
 
@@ -7502,7 +7749,8 @@ public sealed partial class MainViewModelTests
             PerformanceShortcutPreview = null,
         });
         await WaitUntilAsync(
-            () => viewModel.SelectedPerformance == PerformancePreset.Balanced);
+            () => viewModel.SelectedPerformance == PerformancePreset.Balanced
+                && viewModel.TrayIconState == TrayIconState.AcBalanced);
 
         Assert.Equal(TrayIconState.AcBalanced, viewModel.TrayIconState);
     }
@@ -9637,7 +9885,7 @@ public sealed partial class MainViewModelTests
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(CreatePadlessHyperBoostStatus(baseline));
         await WaitUntilAsync(() => viewModel.CanToggleHyperBoost
-            && viewModel.AvailableLaptopPerformanceOptions.Count == 5);
+            && viewModel.AvailableLaptopPerformanceOptions.Count == 7);
 
         Assert.True(viewModel.IsHyperBoostVisible);
         Assert.True(viewModel.IsHyperBoostWritable);
@@ -9650,7 +9898,7 @@ public sealed partial class MainViewModelTests
             viewModel.AvailablePerformancePresets,
             preset => preset.ToString().Contains("Hyper", StringComparison.Ordinal));
         Assert.Equal(
-            ["Balanced", "Silent", "Performance", "Custom", "HyperBoost"],
+            ["Balanced", "Silent", "Performance", "Turbo", "Maximum Power", "Custom", "HyperBoost"],
             viewModel.AvailableLaptopPerformanceOptions.Select(option => option.Label));
         Assert.Equal(
             PerformancePreset.Balanced,
@@ -9668,6 +9916,7 @@ public sealed partial class MainViewModelTests
 
         Assert.True(client.HyperBoostEnabled);
         Assert.True(viewModel.HyperBoostActive);
+        Assert.Equal(TrayIconState.AcHyperBoost, viewModel.TrayIconState);
         Assert.True(viewModel.SelectedLaptopPerformanceOption?.IsHyperBoost);
         Assert.Equal("HyperBoost", viewModel.ActivePerformanceLabel);
         Assert.Contains("HyperBoost", viewModel.TrayHoverLabelText, StringComparison.Ordinal);
@@ -9686,6 +9935,7 @@ public sealed partial class MainViewModelTests
 
         Assert.False(client.HyperBoostEnabled);
         Assert.False(viewModel.HyperBoostActive);
+        Assert.Equal(TrayIconState.AcBalanced, viewModel.TrayIconState);
         Assert.Equal(
             PerformancePreset.Balanced,
             viewModel.SelectedLaptopPerformanceOption?.Value);
@@ -9734,10 +9984,13 @@ public sealed partial class MainViewModelTests
             },
         };
         client.Publish(active);
-        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+        // Status applies HyperBoostActive before the icon; await the complete presentation.
+        await WaitUntilAsync(() => viewModel.HyperBoostActive
+            && viewModel.TrayIconState == TrayIconState.AcHyperBoost);
         await viewModel.SetHyperBoostEnabledAsync(false, default);
 
         Assert.True(viewModel.HyperBoostActive);
+        Assert.Equal(TrayIconState.AcHyperBoost, viewModel.TrayIconState);
         Assert.Equal(
             "OpenBlade couldn’t complete that action. Check Troubleshooting for details.",
             viewModel.OperationFeedbackMessage);
@@ -9750,9 +10003,11 @@ public sealed partial class MainViewModelTests
                 HyperBoostActive = false,
             },
         });
-        await WaitUntilAsync(() => !viewModel.HyperBoostActive);
+        await WaitUntilAsync(() => !viewModel.HyperBoostActive
+            && viewModel.TrayIconState == TrayIconState.AcBalanced);
 
         Assert.False(viewModel.HyperBoostActive);
+        Assert.Equal(TrayIconState.AcBalanced, viewModel.TrayIconState);
     }
 
     [Fact]
@@ -10078,11 +10333,13 @@ public sealed partial class MainViewModelTests
                 HyperBoostRestoredPerformance = PerformancePreset.Performance,
             },
         };
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         ServiceStatusSnapshot inactive = CreatePadlessHyperBoostStatus(baseline) with
         {
+            Message = "Coalesced entry: inactive baseline",
             DesiredState = baseline.DesiredState with
             {
                 Performance = new ResolvedSetting<PerformancePreset>(
@@ -10095,10 +10352,11 @@ public sealed partial class MainViewModelTests
                 HyperBoostActive = false,
             },
         };
-        client.Publish(inactive);
-        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Silent);
-        client.Publish(inactive with
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, inactive);
+        Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, inactive with
         {
+            Message = "Coalesced entry: active snapshot",
             Revision = inactive.Revision + 2,
             DesiredState = inactive.DesiredState with
             {
@@ -10112,7 +10370,7 @@ public sealed partial class MainViewModelTests
                 HyperBoostActive = true,
             },
         });
-        await WaitUntilAsync(() => viewModel.HyperBoostActive);
+        Assert.True(viewModel.HyperBoostActive);
         LaptopPerformanceOption silent = viewModel.AvailableLaptopPerformanceOptions
             .Single(option => option.Value == PerformancePreset.Silent);
 
@@ -10595,9 +10853,10 @@ public sealed partial class MainViewModelTests
             PerformancePreset.Performance,
             PerformancePreset.Custom,
         ];
+        IReadOnlySet<FanMode> ordinaryFanModes = CreateStatus(verified: true, blocked: false).Capabilities!.FanModes;
         foreach (PerformancePreset performance in performancePresets)
         {
-            foreach (FanMode fans in Enum.GetValues<FanMode>())
+            foreach (FanMode fans in ordinaryFanModes)
             {
                 yield return [performance, fans];
             }
@@ -10769,6 +11028,14 @@ public sealed partial class MainViewModelTests
             ActivePowerSource = PowerSource.PluggedIn,
             Capabilities = baseline.Capabilities! with
             {
+                // This synthetic HyperBoost fixture admits an explicit preset set;
+                // enum extensions must not grant unrelated firmware modes.
+                PerformancePresets = new HashSet<PerformancePreset>
+                {
+                    PerformancePreset.Silent, PerformancePreset.Balanced, PerformancePreset.Performance,
+                    PerformancePreset.BatterySaver, PerformancePreset.BatteryBalanced, PerformancePreset.Custom,
+                    PerformancePreset.Turbo, PerformancePreset.MaximumPower,
+                },
                 HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
                 HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
                 HyperBoostBaseModes = new HyperBoostBaseModeCapabilities(
@@ -11113,9 +11380,19 @@ public sealed partial class MainViewModelTests
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
     {
+        private long timestamp;
+
         public override DateTimeOffset GetUtcNow() => now;
 
-        public void Advance(TimeSpan amount) => now += amount;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => timestamp;
+
+        public void Advance(TimeSpan amount)
+        {
+            now += amount;
+            timestamp += amount.Ticks;
+        }
     }
 
     private sealed class FakeServiceClient : OpenBlade.Testing.UnavailableServiceClient, IServiceClient
@@ -11349,6 +11626,31 @@ public sealed partial class MainViewModelTests
             return SetFanOverrideAsync(value, token);
         }
 
+        public Task<ControlOperationResult> SetBatterySaverFanStopAsync(bool enabled, CancellationToken token)
+        {
+            MutationOperations.Add($"batterySaverFanStop:{enabled}");
+            return MutateAsync(token);
+        }
+
+        public FanStopSettings? LastFanStopSettings { get; private set; }
+        public Task<ControlOperationResult> SetFanStopSettingsAsync(FanStopSettings settings, CancellationToken token)
+        {
+            LastFanStopSettings = settings;
+            MutationOperations.Add("fanStopSettings");
+            return MutateAsync(token);
+        }
+
+        public Task<ControlOperationResult> ResumeAutomaticFanStopAsync(CancellationToken token)
+        {
+            MutationOperations.Add("resumeAutomaticFanStop");
+            return MutateAsync(token);
+        }
+
+        public Task<ControlOperationResult> SetFanStopModeAsync(FanStopMode mode, CancellationToken token)
+        {
+            MutationOperations.Add($"fanStop:{mode}");
+            return MutateAsync(token);
+        }
         public override Task<ControlOperationResult> SetLightingOverrideAsync(
             ManualOverride<LightingSettings>? value,
             CancellationToken token)
@@ -11485,9 +11787,11 @@ public sealed partial class MainViewModelTests
 
         private async Task<ControlOperationResult> MutateAsync(CancellationToken token)
         {
+            bool shouldBlock = BlockMutations;
             MutationCalls++;
+            // Readiness means this request's blocking decision is already latched.
             MutationStarted.TrySetResult();
-            if (BlockMutations)
+            if (shouldBlock)
             {
                 try
                 {

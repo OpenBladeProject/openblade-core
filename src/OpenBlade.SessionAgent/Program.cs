@@ -274,13 +274,83 @@ internal static class Program
                         "OpenBlade.SessionAgent.SpecialKeyBindings",
                         "RefreshPreferences",
                         exception));
+                ServiceReactiveLightingLoop? reactiveOwner = null;
+                using var windowsSnapDemand = new WindowsSnapTapPreferenceSource(specialKeyBindings);
+                using var driverDemand = new RazerKeyboardDriverPreferenceSource(specialKeyBindings);
+                SnapTapProcessCoordinator? keyboardDriver = null;
+                DiagnosticFailure? functionRowStartupFailure = WindowsFunctionRowOwnershipGuard.InspectStartup(
+                    Path.GetDirectoryName(preferencesPath)!, SnapTapDriverSupervisor.ReadBootIdentity);
+                object functionRowGuardSync = new();
+                KeyboardInputBackend ReadEffectiveFunctionRowBackend() => WindowsFunctionRowOwnershipGuard.SelectBackend(
+                    specialKeyBindings.FunctionRowBackend, keyboardDriver?.CanTransferFunctionRowOwnership != false,
+                    Volatile.Read(ref functionRowStartupFailure));
+                SnapTapRuntimeStatus? ReadFunctionRowStatusOverride() => keyboardDriver?.FunctionRowWindowsTransferStatus(
+                    specialKeyBindings.FunctionRowBackend, Volatile.Read(ref functionRowStartupFailure));
+                void RefreshFunctionRowOwnershipGuard()
+                {
+                    lock (functionRowGuardSync)
+                    {
+                        Volatile.Write(ref functionRowStartupFailure, WindowsFunctionRowOwnershipGuard.InspectStartup(
+                            Path.GetDirectoryName(preferencesPath)!, SnapTapDriverSupervisor.ReadBootIdentity));
+                    }
+                }
+                KeyboardDriverFeatures driverPublicationFeatures = driverDemand.RequestedFeatures;
+                KeyboardDriverFeatures driverLaunchFeatures = driverDemand.RequestedFeatures;
                 var snapTap = new SnapTapProcessCoordinator(
-                    specialKeyBindings,
+                    windowsSnapDemand,
                     SnapTapInputProcess.Start,
                     status => SnapTapStatusStore.Write(status),
-                    () => SnapTapStatusStore.Read());
+                    () => SnapTapStatusStore.Read(),
+                    startBackendChild: SnapTapInputProcess.Start,
+                    canStartChild: () => keyboardDriver?.CanTransferOwnership != false,
+                    canPublishIdleStatus: () => specialKeyBindings.SnapTapBackend == KeyboardInputBackend.WindowsHook);
+                keyboardDriver = new SnapTapProcessCoordinator(
+                    driverDemand,
+                    () => SnapTapInputProcess.Start(KeyboardInputBackend.RazerDriver, driverLaunchFeatures),
+                    status =>
+                    {
+                        KeyboardDriverStatusStore.Write(status, driverPublicationFeatures);
+                    },
+                    () => KeyboardDriverStatusStore.Read(),
+                    startBackendChild: backend =>
+                    {
+                        KeyboardDriverFeatures features = driverLaunchFeatures;
+                        driverPublicationFeatures = features;
+                        return SnapTapInputProcess.Start(backend, features);
+                    },
+                    canStartChild: () => ((driverLaunchFeatures & KeyboardDriverFeatures.FunctionRow) == 0 || reactiveOwner?.CanTransferFunctionRowInput == true)
+                        && ((driverLaunchFeatures & KeyboardDriverFeatures.SnapTap) == 0 || snapTap.CanTransferOwnership),
+                    stopTimeout: TimeSpan.FromSeconds(10),
+                    ownsSharedInput: () => (driverLaunchFeatures & KeyboardDriverFeatures.SnapTap) != 0,
+                    ownsFunctionRowInput: () => (driverLaunchFeatures & KeyboardDriverFeatures.FunctionRow) != 0,
+                    prepareChild: () => driverPublicationFeatures = driverLaunchFeatures = driverDemand.RequestedFeatures,
+                    publicationFeatures: () => driverPublicationFeatures,
+                    canPublishIdleStatus: () =>
+                    {
+                        // Off belongs to the selected backend even when SnapTap is
+                        // disabled. Retired roles must not receive an idle projection.
+                        driverPublicationFeatures = RazerKeyboardDriverPreferenceSource.SelectFeatures(true,
+                            specialKeyBindings.SnapTapBackend, specialKeyBindings.FunctionRowBackend);
+                        return driverPublicationFeatures != KeyboardDriverFeatures.None;
+                    });
+                keyboardDriver.OwnershipChanged += cleanupConfirmed =>
+                {
+                    if (cleanupConfirmed) { RefreshFunctionRowOwnershipGuard(); }
+                    reactiveOwner?.InvalidateFunctionRowBackendStatus();
+                };
                 specialKeyBindings.PreferencesObserved += preferences =>
                     audioAutomationCoordinator.SetIntegrationEnabled(preferences?.ThxAudioIntegrationEnabled == true);
+                KeyboardInputBackend observedFunctionRowBackend = specialKeyBindings.FunctionRowBackend;
+                specialKeyBindings.PreferencesObserved += _ =>
+                {
+                    KeyboardInputBackend next = specialKeyBindings.FunctionRowBackend;
+                    if (next != observedFunctionRowBackend)
+                    {
+                        observedFunctionRowBackend = next;
+                        RefreshFunctionRowOwnershipGuard();
+                        reactiveOwner?.InvalidateFunctionRowBackendStatus();
+                    }
+                };
                 var specialKeyInput = new WindowsSpecialKeyInputSender();
                 await using var specialKeyServiceClient = new ServiceClient();
                 var specialKeyExecutor = new SpecialKeyActionExecutor(
@@ -358,6 +428,9 @@ internal static class Program
                         specialKeyExecutor.ExecuteDefaultAsync,
                         ExecuteFunctionRowInputAsync: functionRowActions.ExecuteAsync,
                         ResetFunctionRowInputAsync: functionRowActions.ResetAsync,
+                        ReadFunctionRowBackend: ReadEffectiveFunctionRowBackend,
+                        PublishFunctionRowStatus: status => FunctionRowBackendStatusStore.Write(status),
+                        ReadFunctionRowStatusOverride: ReadFunctionRowStatusOverride,
                         ExecuteBlade18FnShortcutAsync: blade18FnActions.ExecuteAsync,
                         Blade18FnDiagnostic: diagnostic =>
                             System.Diagnostics.Trace.TraceInformation(
@@ -366,6 +439,7 @@ internal static class Program
                                 diagnostic.Shortcut?.ToString() ?? "None",
                                 diagnostic.Phase?.ToString() ?? "None",
                                 diagnostic.FailureType ?? "None")));
+                reactiveOwner = reactive;
                 using var powerTransitionRegistration =
                     WindowsSessionPowerNotificationRegistration.TryCreate(
                         powerTransitionRelay,
@@ -433,6 +507,7 @@ internal static class Program
                 Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
                 Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);
                 Task snapTapTask = snapTap.RunAsync(lifetime.Token);
+                Task keyboardDriverTask = keyboardDriver.RunAsync(lifetime.Token);
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task gpuServerTask = gpuServer.RunAsync(lifetime.Token);
                 Task audioServerTask = audioServer.RunAsync(lifetime.Token);
@@ -458,6 +533,7 @@ internal static class Program
                     statusFeedTask,
                     specialKeyBindingsTask,
                     snapTapTask,
+                    keyboardDriverTask,
                     automationTask,
                     powerModeAutomationTask,
                     reactiveTask,

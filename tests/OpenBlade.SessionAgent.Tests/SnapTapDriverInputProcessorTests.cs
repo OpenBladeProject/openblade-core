@@ -103,4 +103,24 @@ public sealed class SnapTapDriverInputProcessorTests
         Assert.True(processor.Failure?.MayHaveSubmitted);
         Assert.Equal(5, processor.Failure?.Cause?.NativeErrorCode);
     }
+    [Fact]
+    public void ForegroundRecoveryRequiresNoTrackedPhysicalHoldOrUncertainOutput()
+    {
+        var processor = new SnapTapDriverInputProcessor(batch => batch.Count);
+        Assert.True(SnapTapDriverLoop.CanPauseForForegroundLoss(processor));
+        Assert.True(processor.Handle(new(0x1E, true)));
+        Assert.Equal(0, processor.Winner); // Disabled passthrough still tracks the hold.
+        Assert.False(SnapTapDriverLoop.CanPauseForForegroundLoss(processor));
+        Assert.True(processor.Handle(new(0x1E, false)));
+        Assert.True(SnapTapDriverLoop.CanPauseForForegroundLoss(processor));
+        Assert.True(processor.Enable());
+        Assert.True(processor.Handle(new(0x20, true)));
+        Assert.False(SnapTapDriverLoop.CanPauseForForegroundLoss(processor));
+        Assert.True(processor.Handle(new(0x20, false)));
+        Assert.True(SnapTapDriverLoop.CanPauseForForegroundLoss(processor));
+        processor.Poison();
+        Assert.Equal(0, processor.Winner);
+        Assert.False(SnapTapDriverLoop.CanPauseForForegroundLoss(processor));
+    }
+
 }

@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -147,6 +149,65 @@ public sealed class WorkerTests
         Assert.Equal(1, Volatile.Read(ref backgroundStarts));
     }
 
+    [Theory]
+    [InlineData("refused")]
+    [InlineData("failed")]
+    [InlineData("canceled")]
+    public async Task StartupGate_ReportsTerminalInitializationBeforeAnyListener(string outcome)
+    {
+        var reported = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => reported.TrySetResult(value));
+        using var stopping = new CancellationTokenSource();
+        var failure = new IOException("startup test failure");
+        if (outcome == "canceled")
+        {
+            stopping.Cancel();
+        }
+        Task running = Worker.RunAfterSuccessfulStartupAsync(
+            token => outcome switch
+            {
+                "failed" => Task.FromException<bool>(failure),
+                "canceled" => Task.FromCanceled<bool>(token),
+                _ => Task.FromResult(false),
+            },
+            _ => throw new InvalidOperationException("Listener started after failed initialization."),
+            stopping.Token,
+            timing);
+
+        if (outcome == "failed")
+        {
+            Assert.Same(failure, await Assert.ThrowsAsync<IOException>(() => running));
+        }
+        else if (outcome == "canceled")
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+        }
+        else
+        {
+            await running;
+        }
+
+        string report = await reported.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains($"WorkerInitializationOutcome={outcome}", report);
+        Assert.Contains("FirstListenerReadyQpc=0", report);
+        Assert.Contains("FirstRequestReadOutcome=not-started Terminal=worker-initialization", report);
+    }
+
+    [Fact]
+    public void StartupTiming_ReportsAnExitWithoutAFirstClient()
+    {
+        var reports = new List<string>();
+        using (var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), reports.Add))
+        {
+            timing.HostTerminal = "host-exited";
+            timing.FirstListenerReadyQpc = Stopwatch.GetTimestamp();
+        }
+
+        string report = Assert.Single(reports);
+        Assert.Contains("FirstPipeAcceptedQpc=0", report);
+        Assert.Contains("Terminal=host-exited", report);
+    }
+
     [Fact]
     public async Task ShutdownCleanup_UsesFreshTokenAfterHostTokenIsCancelled()
     {
@@ -188,12 +249,43 @@ public sealed class WorkerTests
     }
 
     [Fact]
+    public async Task NativeFailureIsReportedBeforeCleanupAndNeverRetried()
+    {
+        var events = new List<string>();
+        var native = new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
+        int attempts = 0;
+        NativeComponentException actual = await Assert.ThrowsAsync<NativeComponentException>(() =>
+            Worker.RunWithShutdownCleanupAsync(
+                _ =>
+                {
+                    attempts++;
+                    return Task.FromException(native);
+                },
+                (intentionalStop, token) =>
+                {
+                    Assert.False(intentionalStop);
+                    Assert.False(token.IsCancellationRequested);
+                    events.Add("cleanup");
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None,
+                error =>
+                {
+                    Assert.Same(native, error);
+                    events.Add("report");
+                }));
+        Assert.Same(native, actual);
+        Assert.Equal(1, attempts);
+        Assert.Equal(["report", "cleanup"], events);
+    }
+
+    [Fact]
     public async Task UnexpectedBackgroundFailure_AttemptsCleanupButRetainsRunMarker()
     {
         int cleanupCalls = 0;
 
         bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
-            startupCompleted: true,
+            runtimeInitialized: true,
             intentionalStop: false,
             _ =>
             {
@@ -210,13 +302,13 @@ public sealed class WorkerTests
     }
 
     [Fact]
-    public async Task StartupFailure_SkipsCleanupWithoutHardwareWarning()
+    public async Task UninitializedStartup_SkipsCleanupWithoutHardwareWarning()
     {
         bool cleanupCalled = false;
         var logger = new RecordingLogger();
 
         bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
-            startupCompleted: false,
+            runtimeInitialized: false,
             intentionalStop: false,
             _ =>
             {
@@ -233,7 +325,7 @@ public sealed class WorkerTests
         LogEntry entry = Assert.Single(logger.Entries);
         Assert.Equal(LogLevel.Information, entry.Level);
         Assert.Contains(
-            "startup did not complete",
+            "runtime was not initialized",
             entry.Message,
             StringComparison.OrdinalIgnoreCase);
     }
@@ -289,7 +381,7 @@ public sealed class WorkerTests
         bool expected)
     {
         bool? clearRunMarker = await Worker.PrepareHardwareAndShouldClearRunMarkerAsync(
-            startupCompleted: true,
+            runtimeInitialized: true,
             intentionalStop: true,
             _ => Task.FromResult(new ControlOperationResult(status, "result")),
             new RecordingLogger(),

@@ -6,8 +6,104 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Contracts.Tests;
 
-public sealed class IpcMessageCodecTests
+public sealed partial class IpcMessageCodecTests
 {
+    [Theory]
+    [InlineData(FanStopState.Starting, FanStopMode.Stop)]
+    [InlineData(FanStopState.ReturningToAutomatic, FanStopMode.Automatic)]
+    public async Task FanStop_PendingStatesRoundTripWithoutTerminalConfirmation(FanStopState state, FanStopMode mode)
+    {
+        var pending = new FanStopStatus(mode, state, FanStopUnavailableReason.None,
+            CanReturnToAutomatic: true, NormalFanControl: FanControlSettings.Default);
+        var decoded = await RoundTripStatusAsync(CreateStatus() with { FanStopStatus = pending });
+        Assert.Equal(pending, decoded.FanStopStatus);
+    }
+
+    [Fact]
+    public async Task FanStop_GuardianUnavailableRoundTripsWithoutGrantingCapability()
+    {
+        var decoded = await RoundTripStatusAsync(CreateStatus() with
+        {
+            FanStopStatus = new(UnavailableReason: FanStopUnavailableReason.GuardianUnavailable),
+        });
+        Assert.Equal(FanStopUnavailableReason.GuardianUnavailable, decoded.FanStopStatus.UnavailableReason);
+        Assert.False(decoded.FanStopStatus.CanStop);
+        Assert.False(decoded.Capabilities!.SupportsFanStop);
+    }
+
+    [Fact]
+    public async Task FanStop_StatusRoundTripsAndProtocol51OmitsTheNewFeature()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            { HasFanStopTrialEvidence = true, HasFanStopSourceEvidence = true },
+            FanStopStatus = new(UnavailableReason: FanStopUnavailableReason.RecoveryNotValidated),
+        };
+        ServiceStatusSnapshot decoded = await RoundTripStatusAsync(status);
+        Assert.Equal(status.FanStopStatus, decoded.FanStopStatus);
+        Assert.True(decoded.Capabilities!.HasFanStopTrialEvidence);
+        Assert.True(decoded.Capabilities.HasFanStopSourceEvidence);
+        Assert.False(decoded.Capabilities.SupportsFanStop);
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status), default);
+        JsonObject projected = FramedJsonObject(stream)["status"]!.AsObject();
+        Assert.False(projected.ContainsKey("fanStopStatus"));
+        Assert.False(projected["capabilities"]!.AsObject().ContainsKey("hasFanStopTrialEvidence"));
+        Assert.False(projected["capabilities"]!.AsObject().ContainsKey("hasFanStopSourceEvidence"));
+        Assert.False(projected["capabilities"]!.AsObject().ContainsKey("hasFanStopEvidence"));
+        Assert.False(projected["capabilities"]!.AsObject().ContainsKey("supportsFanStop"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FanStop_SourceEvidenceRoundTripsWithoutClaimingPhysicalTrial(bool sourceEvidence)
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            { HasFanStopSourceEvidence = sourceEvidence },
+        };
+        DeviceCapabilities decoded = (await RoundTripStatusAsync(status)).Capabilities!;
+        Assert.Equal(sourceEvidence, decoded.HasFanStopSourceEvidence);
+        Assert.Equal(sourceEvidence, decoded.HasFanStopEvidence);
+        Assert.False(decoded.HasFanStopTrialEvidence);
+        Assert.False(decoded.SupportsFanStop);
+    }
+
+    [Fact]
+    public async Task FanStop_MissingSourceEvidenceDefaultsToUnavailable()
+    {
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(encoded,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.SafeTargetDefaults() with { HasFanStopSourceEvidence = true },
+            }), CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        var status = Assert.IsType<JsonObject>(json["status"]);
+        Assert.True(Assert.IsType<JsonObject>(status["capabilities"]).Remove("hasFanStopSourceEvidence"));
+        using MemoryStream missing = FrameJson(json.ToJsonString());
+        ServiceStatusEvent actual = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(missing, CancellationToken.None));
+        Assert.False(actual.Status.Capabilities!.HasFanStopSourceEvidence);
+        Assert.False(actual.Status.Capabilities.HasFanStopEvidence);
+        Assert.False(actual.Status.Capabilities.SupportsFanStop);
+    }
+
+    [Theory]
+    [InlineData(FanStopState.RecoveryRequired)]
+    [InlineData(FanStopState.Unavailable)]
+    public async Task FanStop_RejectsCommandAdmissionInUnavailableOrUnresolvedState(FanStopState state)
+    {
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            FanStopStatus = new(State: state, CanReturnToAutomatic: true),
+        });
+    }
+
     [Fact]
     public async Task PresetFanRanges_RoundTripAndRemainAbsentFromOldPeerProjection()
     {
@@ -193,7 +289,14 @@ public sealed class IpcMessageCodecTests
 
     public static TheoryData<ServiceRequest> Requests => new()
     {
+        new SetBatterySaverFanStopRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
+            new SetFanStopModeRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), FanStopMode.Stop),
         new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+        new SetCoolingPadSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), new()),
+        new ReadCoolingPadStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+        new ReleaseCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+        new SetCoolingPadDemandLeaseRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), Guid.NewGuid(), 1500, 10),
+        new RemoveCoolingPadDemandLeaseRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), Guid.NewGuid()),
         new ObserveStateRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -541,6 +644,12 @@ public sealed class IpcMessageCodecTests
             stream,
             CancellationToken.None);
 
+        if (expected is SetCoolingPadSettingsRequest set && actual is SetCoolingPadSettingsRequest read)
+        {
+            Assert.Equal(set.Settings.CpuCurve.ToArray(), read.Settings.CpuCurve.ToArray());
+            Assert.Equal(set.Settings.GpuCurve.ToArray(), read.Settings.GpuCurve.ToArray());
+            expected = set with { Settings = set.Settings with { CpuCurve = read.Settings.CpuCurve, GpuCurve = read.Settings.GpuCurve } };
+        }
         Assert.Equal(expected, actual);
         Assert.Equal(expected.GetType(), actual.GetType());
     }
@@ -705,7 +814,7 @@ public sealed class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(72, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(79, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -732,6 +841,101 @@ public sealed class IpcMessageCodecTests
         Assert.False(roundTrip.BatteryProtectionOverride);
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.Turbo, 6)]
+    [InlineData(PerformancePreset.MaximumPower, 7)]
+    [InlineData(PerformancePreset.Gaming, 8)]
+    [InlineData(PerformancePreset.Creator, 9)]
+    public async Task CurrentProtocolNewPerformanceModes_RoundTripDistinctRequestAndStatusValues(
+        PerformancePreset preset, int wireValue)
+    {
+        ServiceRequest request = new SetPerformanceOverrideRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            new ManualOverride<PerformancePreset>(preset, OverrideLifetime.Persistent));
+        using MemoryStream requestBytes = new();
+        await IpcMessageCodec.WriteRequestAsync(requestBytes, request, CancellationToken.None);
+        JsonObject requestJson = FramedJsonObject(requestBytes);
+        Assert.Equal(79, requestJson["version"]!.GetValue<int>());
+        Assert.Equal(wireValue, requestJson["value"]!["value"]!.GetValue<int>());
+        requestBytes.Position = 0;
+        Assert.Equal(request, await IpcMessageCodec.ReadRequestAsync(requestBytes, CancellationToken.None));
+
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot status = baseline with
+        {
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                PerformancePresets = new HashSet<PerformancePreset> { preset },
+            },
+            Profiles = baseline.Profiles with
+            {
+                PluggedIn = baseline.Profiles.PluggedIn with { Performance = preset },
+                WindowsPowerModes = baseline.Profiles.WindowsPowerModes with
+                {
+                    Performance = WindowsPowerMode.BestPowerEfficiency,
+                    Turbo = WindowsPowerMode.BestPerformance,
+                    MaximumPower = WindowsPowerMode.Balanced,
+                    Gaming = WindowsPowerMode.BestPerformance,
+                    Creator = WindowsPowerMode.BestPowerEfficiency,
+                },
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(preset, SettingValueSource.PowerProfile),
+            },
+            ConfirmedState = new ConfirmedDeviceState(preset, FanMode.Automatic, null, null),
+        };
+        ServiceStatusSnapshot decoded = await RoundTripStatusAsync(status);
+        Assert.Equal(new[] { preset }, decoded.Capabilities!.PerformancePresets);
+        Assert.Equal(preset, decoded.Profiles.PluggedIn.Performance);
+        Assert.Equal(preset, decoded.DesiredState.Performance.Value);
+        Assert.Equal(preset, decoded.ConfirmedState!.Performance);
+        Assert.Equal(status.Profiles.WindowsPowerModes, decoded.Profiles.WindowsPowerModes);
+        var profilesRequest = new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), status.Profiles);
+        Assert.Equal(profilesRequest, await RoundTripRequestAsync(profilesRequest));
+    }
+
+    [Fact]
+    public async Task NewWindowsPowerModeAssociations_OmittedByOlderWriterDefaultToNull()
+    {
+        var request = new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), ProfileDefaults.CreateSafeDefaults());
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteRequestAsync(encoded, request, CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        JsonObject associations = json["profiles"]!["windowsPowerModes"]!.AsObject();
+        Assert.True(associations.Remove("turbo"));
+        Assert.True(associations.Remove("maximumPower"));
+        Assert.True(associations.Remove("gaming"));
+        Assert.True(associations.Remove("creator"));
+        using MemoryStream projected = FrameJson(json.ToJsonString());
+        UpdateProfilesRequest decoded = Assert.IsType<UpdateProfilesRequest>(
+            await IpcMessageCodec.ReadRequestAsync(projected, CancellationToken.None));
+        Assert.Null(decoded.Profiles.WindowsPowerModes.Turbo);
+        Assert.Null(decoded.Profiles.WindowsPowerModes.MaximumPower);
+        Assert.Null(decoded.Profiles.WindowsPowerModes.Gaming);
+        Assert.Null(decoded.Profiles.WindowsPowerModes.Creator);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Turbo)]
+    [InlineData(PerformancePreset.MaximumPower)]
+    [InlineData(PerformancePreset.Gaming)]
+    [InlineData(PerformancePreset.Creator)]
+    public async Task NewWindowsPowerModeAssociations_RejectUndefinedValues(PerformancePreset preset)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            WindowsPowerModes = profiles.WindowsPowerModes.WithPerformance(preset, (WindowsPowerMode)999),
+        };
+        using MemoryStream encoded = new();
+        await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.WriteRequestAsync(encoded,
+            new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), profiles), CancellationToken.None));
+        Assert.Equal(0, encoded.Length);
+        await AssertStatusWriteRejectedAsync(CreateStatus() with { Profiles = profiles });
+    }
+
     [Fact]
     public async Task CurrentProtocolDirectManualFanTransitionCapability_OmittedDefaultsFalse()
     {
@@ -749,7 +953,7 @@ public sealed class IpcMessageCodecTests
                 }),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(72, json["version"]!.GetValue<int>());
+        Assert.Equal(79, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
@@ -784,7 +988,7 @@ public sealed class IpcMessageCodecTests
             await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
         Assert.True(roundTrip.Status.Capabilities!.SupportsManualFansOnLimitedPower);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(72, json["version"]!.GetValue<int>());
+        Assert.Equal(79, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsManualFansOnLimitedPower"));
@@ -1359,7 +1563,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(72, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(79, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -2053,6 +2257,13 @@ public sealed class IpcMessageCodecTests
     [InlineData(68)]
     [InlineData(69)]
     [InlineData(71)]
+    [InlineData(72)]
+    [InlineData(73)]
+    [InlineData(74)]
+    [InlineData(75)]
+    [InlineData(76)]
+    [InlineData(77)]
+    [InlineData(78)]
     public async Task WriteRequestAsync_RejectsPriorProtocols(int previousProtocolVersion)
     {
         using MemoryStream stream = new();
@@ -2065,7 +2276,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(72, exception.ExpectedVersion);
+        Assert.Equal(79, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2076,6 +2287,13 @@ public sealed class IpcMessageCodecTests
     [InlineData(68)]
     [InlineData(69)]
     [InlineData(71)]
+    [InlineData(72)]
+    [InlineData(73)]
+    [InlineData(74)]
+    [InlineData(75)]
+    [InlineData(76)]
+    [InlineData(77)]
+    [InlineData(78)]
     public async Task ReadRequestAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         using MemoryStream stream = FrameJson(
@@ -2086,7 +2304,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(72, exception.ExpectedVersion);
+        Assert.Equal(79, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2097,6 +2315,13 @@ public sealed class IpcMessageCodecTests
     [InlineData(68)]
     [InlineData(69)]
     [InlineData(71)]
+    [InlineData(72)]
+    [InlineData(73)]
+    [InlineData(74)]
+    [InlineData(75)]
+    [InlineData(76)]
+    [InlineData(77)]
+    [InlineData(78)]
     public async Task ReadServerFrameAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         Guid requestId = Guid.NewGuid();
@@ -2119,7 +2344,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(72, exception.ExpectedVersion);
+        Assert.Equal(79, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2919,6 +3144,32 @@ public sealed class IpcMessageCodecTests
         Assert.True(projected["writesBlocked"]!.GetValue<bool>());
         JsonObject confirmed = Assert.IsType<JsonObject>(projected["confirmedState"]);
         Assert.False(confirmed["hyperBoostActive"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task BatterySaverStop_Protocol51ShowsNoInventedFanObservation()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        ServiceStatusSnapshot status = baseline with
+        {
+            ConfirmedState = new ConfirmedDeviceState(
+                PerformancePreset.BatterySaver, FanMode.Stop, Battery: null, Lighting: null),
+            DesiredState = baseline.DesiredState with
+            {
+                Fans = baseline.DesiredState.Fans with { Value = FanMode.Stop },
+                FanControl = FanControlSettings.FromLegacy(FanMode.Stop),
+            },
+            BatterySaverFanStopStatus = new(true, true, false, FanControlSettings.Default),
+        };
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status), CancellationToken.None);
+        JsonObject projected = FramedJsonObject(stream)["status"]!.AsObject();
+        Assert.Null(projected["confirmedState"]!["fans"]);
+        Assert.False(projected.ContainsKey("batterySaverFanStopStatus"));
+        Assert.False(projected["capabilities"]!.AsObject().ContainsKey("supportsBatterySaverFanStop"));
+        Assert.False(projected["profiles"]!["battery"]!.AsObject().ContainsKey("stopFansInBatterySaver"));
+        Assert.Equal((int)FanMode.Automatic, projected["desiredState"]!["fans"]!["value"]!.GetValue<int>());
     }
 
     [Fact]

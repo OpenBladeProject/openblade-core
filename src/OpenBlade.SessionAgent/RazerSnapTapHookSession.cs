@@ -19,7 +19,7 @@ internal enum RazerSnapTapHookSessionState
     Faulted,
 }
 
-/// <summary>Owns only the two exact A/D records added by this session.</summary>
+/// <summary>Owns only the exact records added for this session's fixed selector set.</summary>
 /// <remarks>
 /// RzCommon 1.0.0.76 keeps hooks in device+570, while subscriptions belong to
 /// file objects (595C/5CD4). Cleanup 1800/1890 does not clear this global table.
@@ -31,6 +31,8 @@ internal sealed class RazerSnapTapHookSession
 {
     private readonly object gate = new();
     private readonly IRazerSnapTapHookTransport transport;
+    private readonly RazerKeyboardHookPurpose purpose;
+    private readonly Action<IReadOnlyList<byte[]>>? recordOwnership;
     private readonly List<byte[]> ownedHooks = [];
     private IReadOnlyList<byte[]> baselineHooks = [];
     private RazerSnapTapHookSessionState state;
@@ -39,13 +41,19 @@ internal sealed class RazerSnapTapHookSession
     private string failureReason = "DriverRequestFailed";
     private bool subscriptionCloseAttempted;
 
-    internal RazerSnapTapHookSession(IRazerSnapTapHookTransport transport)
+    internal RazerSnapTapHookSession(IRazerSnapTapHookTransport transport,
+        RazerKeyboardHookPurpose purpose = RazerKeyboardHookPurpose.SnapTap,
+        Action<IReadOnlyList<byte[]>>? recordOwnership = null)
     {
         this.transport = transport ?? throw new ArgumentNullException(nameof(transport));
+        _ = RazerSnapTapDriverProtocol.ScanCodes(purpose);
+        this.purpose = purpose;
+        this.recordOwnership = recordOwnership;
     }
 
     internal RazerSnapTapHookSessionState State { get { lock (gate) { return state; } } }
     internal bool FailureMayHaveSubmitted { get; private set; }
+    internal bool SubscriptionClosed { get; private set; }
     internal string? FailureReason { get; private set; }
     internal OpenBlade.Contracts.DiagnosticFailure? Failure { get; private set; }
     internal IReadOnlyList<byte[]> BaselineHooks { get { lock (gate) { return Copy(baselineHooks); } } }
@@ -67,19 +75,27 @@ internal sealed class RazerSnapTapHookSession
             state = RazerSnapTapHookSessionState.Starting;
             try
             {
+                using var mutation = RazerKeyboardHookMutationGate.Enter();
                 failureStage = "BaselineRead";
                 failureReason = "DriverRequestFailed";
                 baselineHooks = ReadSnapshot();
                 failureStage = "BaselineValidation";
                 failureReason = "HookValidationFailed";
+                if (baselineHooks.Any(record =>
+                    RazerSnapTapDriverProtocol.TryDecodeHook(record, record.Length, out var hook)
+                    && hook is not null && RazerSnapTapDriverProtocol.IsPurposeHook(hook, RazerKeyboardHookPurpose.Combined)))
+                {
+                    throw new InvalidOperationException("Preexisting keyboard feature hooks cannot be adopted by a new subscriber.");
+                }
                 VerifyOwnedHooks(baselineHooks, []);
-                if (baselineHooks.Count > RazerSnapTapDriverProtocol.MaximumHookEnumerationCount - 2)
+                if (baselineHooks.Count > RazerSnapTapDriverProtocol.MaximumHookEnumerationCount
+                    - RazerSnapTapDriverProtocol.ScanCodes(purpose).Count)
                 {
                     throw new InvalidOperationException("The hook table has no room within the enumeration safety limit.");
                 }
-                foreach (ushort scanCode in new ushort[] { 0x1E, 0x20 })
+                foreach (ushort scanCode in RazerSnapTapDriverProtocol.ScanCodes(purpose))
                 {
-                    byte[] hook = RazerSnapTapDriverProtocol.EncodeHook(scanCode);
+                    byte[] hook = RazerSnapTapDriverProtocol.EncodeHook(scanCode, purpose);
                     mutationPending = true;
                     failureStage = "HookMutation";
                     failureReason = "SetHookFailed";
@@ -88,10 +104,11 @@ internal sealed class RazerSnapTapHookSession
                     failureReason = "HookReadbackFailed";
                     VerifyOwnedHooks(ReadSnapshot(), [.. ownedHooks, hook]);
                     ownedHooks.Add(hook);
+                    recordOwnership?.Invoke(Copy(ownedHooks));
                     mutationPending = false;
                 }
 
-                // Install and verify both records before subscribing. Hook enumeration
+                // Install and verify the complete fixed set before subscribing. Hook enumeration
                 // confirms records, not the file's subscription flag: Active means
                 // SetHookEnabled completed successfully, not independent flag readback.
                 mutationPending = true;
@@ -146,6 +163,7 @@ internal sealed class RazerSnapTapHookSession
                 failureStage = "SubscriptionClose";
                 failureReason = "CloseFailed";
                 transport.CloseSubscription();
+                SubscriptionClosed = true;
                 if (faulted)
                 {
                     return false;
@@ -190,9 +208,10 @@ internal sealed class RazerSnapTapHookSession
         return Copy(records);
     }
 
-    private static void VerifyOwnedHooks(IReadOnlyList<byte[]> actual, IReadOnlyList<byte[]> expected)
+    private void VerifyOwnedHooks(IReadOnlyList<byte[]> actual, IReadOnlyList<byte[]> expected)
     {
         List<byte[]> pair = [];
+        List<byte[]> unrelated = [];
         foreach (byte[] record in actual)
         {
             if (!RazerSnapTapDriverProtocol.TryDecodeHook(record, record.Length, out RazerSnapTapHookSnapshot? snapshot)
@@ -200,15 +219,34 @@ internal sealed class RazerSnapTapHookSession
             {
                 throw new InvalidOperationException("The hook enumeration contained an invalid record.");
             }
-            if (RazerSnapTapDriverProtocol.IsAdHook(snapshot))
+            if (RazerSnapTapDriverProtocol.IsPurposeHook(snapshot, purpose))
             {
                 pair.Add(record);
+            }
+            else
+            {
+                unrelated.Add(record);
             }
         }
         if (pair.Count != expected.Count
             || expected.Any(record => pair.Count(candidate => candidate.AsSpan().SequenceEqual(record)) != 1))
         {
-            throw new InvalidOperationException("The A/D hooks do not match this session's ownership.");
+            throw new InvalidOperationException("The keyboard hooks do not match this session's ownership.");
+        }
+        // Setup holds the shared mutation gate. Disjoint feature changes are
+        // legitimate between sessions, never inside our own mutation/readback.
+        foreach (byte[] record in baselineHooks)
+        {
+            int index = unrelated.FindIndex(candidate => candidate.AsSpan().SequenceEqual(record));
+            if (index < 0)
+            {
+                throw new InvalidOperationException("An unrelated keyboard hook changed during setup.");
+            }
+            unrelated.RemoveAt(index);
+        }
+        if (unrelated.Count != 0)
+        {
+            throw new InvalidOperationException("An unrelated keyboard hook was added during setup.");
         }
     }
 

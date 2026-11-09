@@ -32,6 +32,8 @@ public sealed class BatteryConfigurationStore
     private readonly SemaphoreSlim gate;
     private bool preservationRequired;
 
+    private string RecoveryRequiredPath => markerPath + ".recovery-required";
+
     public BatteryConfigurationStore(
         string profilePath,
         string preferencesPath,
@@ -191,6 +193,9 @@ public sealed class BatteryConfigurationStore
         bool materializeAdmittedState,
         CancellationToken cancellationToken)
     {
+        // Refuse the load instead of substituting defaults: user activation must
+        // retain its prior context while this transaction remains unresolved.
+        ThrowIfRecoveryRequired();
         AggregateSnapshot snapshot = await CaptureAggregateAsync(cancellationToken);
         if (ContainsFutureSchema(snapshot))
         {
@@ -482,6 +487,30 @@ public sealed class BatteryConfigurationStore
         }
 
         BatteryAutomationPreferences preferences = document.Preferences;
+        if (expectedSchemaVersion >= ProfileStore.FanStopSettingsSchemaVersion
+            && (!preferencesElement.TryGetProperty("fanStopSettings", out JsonElement stopSettings)
+                || stopSettings.ValueKind != JsonValueKind.Object || preferences.FanStopSettings is null))
+        { throw new InvalidDataException("The current preferences are missing valid Fan Stop settings."); }
+        if (expectedSchemaVersion < ProfileStore.FanStopSettingsSchemaVersion)
+        { preferences = preferences with { FanStopSettings = FanStopSettings.Default }; }
+        else if (expectedSchemaVersion < ProfileStore.FanStopRollingAverageSchemaVersion)
+        {
+            // Preserve every selected value and automation preference. These are
+            // product defaults within the existing input range, not validated
+            // thermal ceilings. At 100 C the equal cutoff takes immediate priority.
+            FanStopSettings legacy = preferences.FanStopSettings;
+            preferences = preferences with
+            {
+                FanStopSettings = legacy with
+                {
+                    CpuImmediateCutoffCelsius = (int)Math.Min((long)legacy.CpuLimitCelsius + 10, FanStopSettings.MaximumTemperatureCelsius),
+                    GpuImmediateCutoffCelsius = (int)Math.Min((long)legacy.GpuLimitCelsius + 10, FanStopSettings.MaximumTemperatureCelsius),
+                },
+            };
+        }
+        else if (!preferencesElement.GetProperty("fanStopSettings").TryGetProperty("cpuImmediateCutoffCelsius", out _)
+            || !preferencesElement.GetProperty("fanStopSettings").TryGetProperty("gpuImmediateCutoffCelsius", out _))
+        { throw new InvalidDataException("The current Fan Stop settings are missing immediate cutoffs."); }
         if (expectedSchemaVersion
             < ProfileStore.ExperimentalFeaturesConsentPredecessorSchemaVersion)
         {
@@ -535,6 +564,10 @@ public sealed class BatteryConfigurationStore
             transactionId);
         TransactionTarget[] targets = [profile, preference, marker];
         bool replacementPhaseStarted = false;
+        bool rollbackFailed = false;
+        bool recoveryRecordCreated = false;
+        bool committedAndVerified = false;
+        Exception? transactionFailure = null;
 
         try
         {
@@ -556,6 +589,12 @@ public sealed class BatteryConfigurationStore
             await AtBoundaryAsync(
                 BatteryConfigurationCommitBoundary.BeforeProfileReplacement,
                 cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            // The fixed exclusive sidecar is durable before any replacement.
+            // Its existence survives a crash or failed rollback even when the
+            // new aggregate happens to have internally consistent hashes.
+            await WriteRecoveryRequiredAsync(transactionId, targets, cancellationToken);
+            recoveryRecordCreated = true;
             cancellationToken.ThrowIfCancellationRequested();
             replacementPhaseStarted = true;
             ReplaceStaged(profile);
@@ -598,9 +637,11 @@ public sealed class BatteryConfigurationStore
             await AtBoundaryAsync(
                 BatteryConfigurationCommitBoundary.AfterVerification,
                 CancellationToken.None);
+            committedAndVerified = true;
         }
         catch (Exception commitFailure)
         {
+            transactionFailure = commitFailure;
             if (replacementPhaseStarted)
             {
                 try
@@ -609,8 +650,10 @@ public sealed class BatteryConfigurationStore
                 }
                 catch (Exception rollbackFailure)
                 {
+                    rollbackFailed = true;
+                    preservationRequired = true;
                     throw new IOException(
-                        "Battery configuration commit and rollback both failed.",
+                        $"Battery configuration commit and rollback both failed. Transaction '{transactionId}' requires recovery. Record: '{RecoveryRequiredPath}'. {DescribeRecoveryArtifacts(targets)}",
                         new AggregateException(commitFailure, rollbackFailure));
                 }
             }
@@ -622,11 +665,85 @@ public sealed class BatteryConfigurationStore
             foreach (TransactionTarget target in targets)
             {
                 DeleteBestEffort(target.StagePath);
-                DeleteBestEffort(target.BackupPath);
-                DeleteBestEffort(target.RestorePath);
+            }
+            if (!rollbackFailed)
+            {
+                if (recoveryRecordCreated)
+                {
+                    try
+                    {
+                        File.Delete(RecoveryRequiredPath);
+                    }
+                    catch (Exception cleanupFailure) when (cleanupFailure is IOException or UnauthorizedAccessException)
+                    {
+                        preservationRequired = true;
+                        string outcome = committedAndVerified ? "committed and verified" : "preserved or restored";
+                        throw new IOException(
+                            $"The configuration aggregate was {outcome}, but transaction '{transactionId}' remains quarantined because its recovery-required record could not be cleared: '{RecoveryRequiredPath}'. {DescribeRecoveryArtifacts(targets)}",
+                            transactionFailure is null ? cleanupFailure
+                                : new AggregateException(transactionFailure, cleanupFailure));
+                    }
+                }
+                foreach (TransactionTarget target in targets)
+                {
+                    DeleteBestEffort(target.BackupPath);
+                    DeleteBestEffort(target.RestorePath);
+                }
             }
         }
     }
+
+    private async Task WriteRecoveryRequiredAsync(
+        string transactionId,
+        TransactionTarget[] targets,
+        CancellationToken cancellationToken)
+    {
+        byte[] document = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            schemaVersion = 1,
+            transactionId,
+            targets = targets.Select(target => new
+            {
+                path = target.Prior.Path,
+                priorExists = target.Prior.Exists,
+                backupPath = target.Prior.Exists ? target.BackupPath : null,
+                restorePath = target.Prior.Exists ? target.RestorePath : null,
+            }),
+        });
+        bool created = false;
+        try
+        {
+            await using var stream = new FileStream(
+                RecoveryRequiredPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                4096, FileOptions.Asynchronous | FileOptions.WriteThrough);
+            created = true;
+            await stream.WriteAsync(document, cancellationToken);
+            await stream.FlushAsync(cancellationToken);
+            stream.Flush(flushToDisk: true);
+        }
+        catch
+        {
+            // Failure here precedes every primary replacement. Remove only the
+            // record created by this attempt; an existing record is never replaced.
+            if (created)
+            {
+                DeleteBestEffort(RecoveryRequiredPath);
+            }
+            throw;
+        }
+    }
+
+    private static string DescribeRecoveryArtifacts(TransactionTarget[] targets) =>
+        string.Join("; ", targets.Select(target =>
+        {
+            string prior = target.Prior.Exists
+                ? $"Prior file existed: '{target.Prior.Path}'"
+                : $"Prior file absent (no backup): '{target.Prior.Path}'";
+            string[] retained = new[] { target.BackupPath, target.RestorePath }
+                .Where(File.Exists).ToArray();
+            return retained.Length == 0 ? prior + "; no backup or restore file observed"
+                : prior + "; retained files: " + string.Join(", ", retained.Select(path => $"'{path}'"));
+        }));
 
     private async Task VerifyIntendedAggregateAsync(
         ProfileSet profiles,
@@ -809,12 +926,35 @@ public sealed class BatteryConfigurationStore
 
     private void ThrowIfPreservationRequired()
     {
+        ThrowIfRecoveryRequired();
         if (preservationRequired)
         {
             throw new ConfigurationQuarantinedException(
                 "Configuration is preserved in quarantine and cannot be changed until a validated reload.",
                 ConfigurationQuarantineReason.InvalidDocument);
         }
+    }
+
+    private void ThrowIfRecoveryRequired()
+    {
+        try
+        {
+            _ = File.GetAttributes(RecoveryRequiredPath);
+        }
+        catch (FileNotFoundException)
+        {
+            return;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return;
+        }
+        // Presence is sufficient, including empty/corrupt records and directories.
+        // Do not read paths from this evidence or infer an automatic restoration.
+        preservationRequired = true;
+        throw new ConfigurationQuarantinedException(
+            $"Configuration transaction recovery is required. Preserve '{RecoveryRequiredPath}' and the original transaction artifacts before changing configuration.",
+            ConfigurationQuarantineReason.InvalidDocument);
     }
 
     private CommittedSnapshot ReadCommittedSnapshotForSave(

@@ -1,0 +1,9 @@
+<Project>
+  <!-- Isolate the vendored source subset from OpenBlade product/compiler defaults. -->
+  <PropertyGroup>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

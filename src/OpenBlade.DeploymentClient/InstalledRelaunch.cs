@@ -324,11 +324,13 @@ internal sealed record InstalledProcessLaunchPlan(
 internal sealed record InstalledProcessInventory(
     bool IsUnambiguous,
     int SessionAgentCount,
-    int TrayCount)
+    int TrayCount,
+    int SessionAgentHelperCount = 0)
 {
     internal bool IsEmpty => IsUnambiguous
         && SessionAgentCount == 0
-        && TrayCount == 0;
+        && TrayCount == 0
+        && SessionAgentHelperCount == 0;
 
     internal bool HasOnlySessionAgent => IsUnambiguous
         && SessionAgentCount == 1
@@ -348,6 +350,7 @@ internal sealed record InstalledProcessInventory(
             _ => default,
         };
         return IsUnambiguous
+            && (SessionAgentCount != 0 || SessionAgentHelperCount == 0)
             && (SessionAgentCount, TrayCount) is (0, 0) or (1, 0) or (1, 1);
     }
 }
@@ -366,68 +369,13 @@ internal interface IInstalledProcessInventory
 
 internal sealed class WindowsInstalledProcessInventory : IInstalledProcessInventory
 {
-    private const uint TokenQuery = 0x0008;
-
     public InstalledProcessInventory Inspect(InstalledPayloadPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
-        int currentSession = WindowsClientSessionSource.CurrentProcessSessionId;
-        ProcessCount sessionAgent = CountExactNormalProcess(
-            paths.SessionAgentExecutable,
-            currentSession);
-        ProcessCount tray = CountExactNormalProcess(paths.TrayExecutable, currentSession);
-        return new InstalledProcessInventory(
-            !sessionAgent.Ambiguous && !tray.Ambiguous,
-            sessionAgent.Count,
-            tray.Count);
-    }
-
-    private static ProcessCount CountExactNormalProcess(string expectedPath, int currentSession)
-    {
-        int count = 0;
-        bool ambiguous = false;
-        string processName = Path.GetFileNameWithoutExtension(expectedPath);
-        foreach (Process process in Process.GetProcessesByName(processName))
-        {
-            using (process)
-            {
-                try
-                {
-                    string? actualPath = process.MainModule?.FileName;
-                    if (actualPath is null)
-                    {
-                        ambiguous = true;
-                        continue;
-                    }
-
-                    if (!ShouldInspectIntegrity(
-                            expectedPath,
-                            actualPath,
-                            currentSession,
-                            process.SessionId,
-                            out bool pathOrSessionAmbiguous))
-                    {
-                        ambiguous |= pathOrSessionAmbiguous;
-                        continue;
-                    }
-
-                    if (IsElevated(process))
-                    {
-                        ambiguous = true;
-                        continue;
-                    }
-
-                    count++;
-                }
-                catch (Exception exception) when (exception is
-                    Win32Exception or InvalidOperationException or UnauthorizedAccessException)
-                {
-                    ambiguous = true;
-                }
-            }
-        }
-
-        return new ProcessCount(count, ambiguous);
+        using WindowsIdentity caller = WindowsIdentity.GetCurrent(TokenAccessLevels.Query);
+        InstalledProcessSnapshot snapshot = WindowsInstalledProcessInspection.Capture(paths);
+        return InstalledProcessFamilyPolicy.Evaluate(paths,
+            WindowsClientSessionSource.CurrentProcessSessionId, caller.User?.Value, snapshot);
     }
 
     internal static bool ShouldInspectIntegrity(
@@ -445,57 +393,6 @@ internal sealed class WindowsInstalledProcessInventory : IInstalledProcessInvent
         return isExactPath && !ambiguous;
     }
 
-    private static bool IsElevated(Process process)
-    {
-        if (!OpenProcessToken(process.Handle, TokenQuery, out SafeAccessTokenHandle token))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-
-        using (token)
-        {
-            TokenElevation elevation = default;
-            if (!GetTokenInformation(
-                    token,
-                    TokenInformationClass.TokenElevation,
-                    ref elevation,
-                    Marshal.SizeOf<TokenElevation>(),
-                    out _))
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            return elevation.TokenIsElevated != 0;
-        }
-    }
-
-    private readonly record struct ProcessCount(int Count, bool Ambiguous);
-
-    private struct TokenElevation
-    {
-        internal int TokenIsElevated;
-    }
-
-    private enum TokenInformationClass
-    {
-        TokenElevation = 20,
-    }
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool OpenProcessToken(
-        IntPtr processHandle,
-        uint desiredAccess,
-        out SafeAccessTokenHandle tokenHandle);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetTokenInformation(
-        SafeAccessTokenHandle tokenHandle,
-        TokenInformationClass tokenInformationClass,
-        ref TokenElevation tokenInformation,
-        int tokenInformationLength,
-        out int returnLength);
 }
 
 internal sealed record InstalledShutdownEndpoints(string? SessionAgent, string? Tray)

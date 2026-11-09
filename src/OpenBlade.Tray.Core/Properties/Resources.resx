@@ -156,6 +156,9 @@
   <data name="60 Hz lighting is not available for this keyboard." xml:space="preserve">
     <value>60 Hz lighting is not available for this keyboard.</value>
   </data>
+  <data name="60 Hz lighting support couldn’t be checked." xml:space="preserve">
+    <value>60 Hz lighting support couldn’t be checked.</value>
+  </data>
   <data name="A shortcut must include a non-modifier key." xml:space="preserve">
     <value>A shortcut must include a non-modifier key.</value>
   </data>
@@ -314,6 +317,9 @@
   </data>
   <data name="Check status" xml:space="preserve">
     <value>Check status</value>
+  </data>
+  <data name="Checking keyboard support…" xml:space="preserve">
+    <value>Checking keyboard support…</value>
   </data>
   <data name="Checking" xml:space="preserve">
     <value>Checking</value>
@@ -1440,11 +1446,11 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>Sign in to an interactive Windows session to change laptop settings.</value>
   </data>
-  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
-    <value>Experimental controls are available on this laptop. Export diagnostics in About to help test them.</value>
+  <data name="This laptop is supported using reviewed sources. Physical validation is tracked separately." xml:space="preserve">
+    <value>This laptop is supported using reviewed sources. Physical validation is tracked separately.</value>
   </data>
-  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
-    <value>Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change.</value>
+  <data name="Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change.</value>
   </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>Laptop not supported</value>
@@ -1666,12 +1672,6 @@ Details: {1}</value>
   <data name="Apply overrides for an exact game or application executable." xml:space="preserve">
     <value>Apply overrides for an exact game or application executable.</value>
   </data>
-  <data name="Battery history" xml:space="preserve">
-    <value>Battery history</value>
-  </data>
-  <data name="Review Windows battery history and preview a long battery life preset." xml:space="preserve">
-    <value>Review Windows battery history and preview a long battery life preset.</value>
-  </data>
   <data name="Enter a name of up to 80 characters." xml:space="preserve">
     <value>Enter a name of up to 80 characters.</value>
   </data>
@@ -1701,5 +1701,165 @@ Details: {1}</value>
   </data>
   <data name="Telemetry is disabled." xml:space="preserve">
     <value>Telemetry is disabled.</value>
+  </data>
+  <data name="Notifications" xml:space="preserve">
+    <value>Notifications</value>
+  </data>
+  <data name="Plugged in, battery discharging" xml:space="preserve">
+    <value>Plugged in, battery discharging</value>
+  </data>
+  <data name="The imported profiles include settings that are unavailable on this laptop." xml:space="preserve">
+    <value>The imported profiles include settings that are unavailable on this laptop.</value>
+  </data>
+  <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
+    <value>The power source changed. Review the current profile and try again.</value>
+  </data>
+  <data name="Fan-stop control paused. Turn it off to restore normal cooling." xml:space="preserve"><value>Fan-stop control paused. Turn it off to restore normal cooling.</value></data>
+  <data name="Fan control needs recovery. Automatic cooling is not confirmed." xml:space="preserve">
+    <value>Fan control needs recovery. Automatic cooling is not confirmed.</value>
+  </data>
+  <data name="Fans are stopped. Turn off to return to Auto." xml:space="preserve">
+    <value>Fans are stopped. Turn off to return to Auto.</value>
+  </data>
+  <data name="Fan stop is not available in this build." xml:space="preserve">
+    <value>Fan stop is not available in this build.</value>
+  </data>
+  <data name="Turn on to stop the fans. Turn off to return to Auto." xml:space="preserve">
+    <value>Turn on to stop the fans. Turn off to return to Auto.</value>
+  </data>
+  <data name="Fan stop is unavailable right now." xml:space="preserve">
+    <value>Fan stop is unavailable right now.</value>
+  </data>
+  <data name="Fans are stopped" xml:space="preserve">
+    <value>Fans are stopped</value>
+  </data>
+  <data name="Fan control needs recovery" xml:space="preserve">
+    <value>Fan control needs recovery</value>
+  </data>
+  <data name="Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto." xml:space="preserve">
+    <value>Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto.</value>
+  </data>
+  <data name="Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds." xml:space="preserve">
+    <value>Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds.</value>
+  </data>
+  <data name="Fan stop is unavailable because its safety guardian is not ready." xml:space="preserve">
+    <value>Fan stop is unavailable because its safety guardian is not ready.</value>
+  </data>
+  <data name="Waiting for fan stop confirmation" xml:space="preserve">
+    <value>Waiting for fan stop confirmation</value>
+  </data>
+  <data name="Returning to Auto" xml:space="preserve">
+    <value>Returning to Auto</value>
+  </data>
+  <data name="Custom: {2} s average CPU {0} °C / GPU {1} °C; immediate CPU {3} °C / GPU {4} °C" xml:space="preserve">
+    <value>Custom: {2} s average CPU {0} °C / GPU {1} °C; immediate CPU {3} °C / GPU {4} °C</value>
+  </data>
+  <data name="Auto: use the existing conservative end conditions." xml:space="preserve">
+    <value>Auto: use the existing conservative end conditions.</value>
+  </data>
+  <data name="Paused — resume to start a fresh cool interval." xml:space="preserve">
+    <value>Paused — resume to start a fresh cool interval.</value>
+  </data>
+  <data name="CPU below {0} °C and GPU below {1} °C for {2} s" xml:space="preserve">
+    <value>CPU below {0} °C and GPU below {1} °C for {2} s</value>
+  </data>
+  <data name="Higher temperature limits allow the laptop to stay hotter before cooling restarts." xml:space="preserve">
+    <value>Higher temperature limits allow the laptop to stay hotter before cooling restarts.</value>
+  </data>
+  <data name="A longer averaging window responds more slowly to rising temperatures. Immediate cutoffs still apply." xml:space="preserve">
+    <value>A longer averaging window responds more slowly to rising temperatures. Immediate cutoffs still apply.</value>
+  </data>
+  <data name="The CPU start limit must be below the CPU end limit." xml:space="preserve">
+    <value>The CPU start limit must be below the CPU end limit.</value>
+  </data>
+  <data name="The GPU start limit must be below the GPU end limit." xml:space="preserve">
+    <value>The GPU start limit must be below the GPU end limit.</value>
+  </data>
+  <data name="Use whole temperatures from 10 to 100 °C, an averaging window from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding average limits." xml:space="preserve">
+    <value>Use whole temperatures from 10 to 100 °C, an averaging window from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding average limits.</value>
+  </data>
+  <data name="Each immediate cutoff must be at least its corresponding average limit." xml:space="preserve">
+    <value>Each immediate cutoff must be at least its corresponding average limit.</value>
+  </data>
+  <data name="Turbo" xml:space="preserve">
+    <value>Turbo</value>
+  </data>
+  <data name="Maximum Power" xml:space="preserve">
+    <value>Maximum Power</value>
+  </data>
+  <data name="Gaming" xml:space="preserve">
+    <value>Gaming</value>
+  </data>
+  <data name="Creator" xml:space="preserve">
+    <value>Creator</value>
+  </data>
+  <data name="Apply now" xml:space="preserve"><value>Apply now</value></data>
+  <data name="mixed per-core values" xml:space="preserve"><value>mixed per-core values</value></data>
+  <data name="CPU tuning request failed: {0}" xml:space="preserve"><value>CPU tuning request failed: {0}</value></data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve"><value>Measured running optimizer: unknown.</value></data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve"><value>Measured running optimizer: {0}.</value></data>
+  <data name="Running optimizer changes are unavailable." xml:space="preserve"><value>Running optimizer changes are unavailable.</value></data>
+  <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve"><value>Optimizer recovery is blocked. Refresh to check its status.</value></data>
+  <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve"><value>CPU recovery includes power settings and cannot be restored here.</value></data>
+  <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve"><value>Recovery of earlier saved CPU settings is blocked.</value></data>
+  <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
+    <value>The cooling-pad change was blocked. Refresh status and check Troubleshooting.</value>
+  </data>
+  <data name="Configured brightness: {0}%" xml:space="preserve">
+    <value>Configured brightness: {0}%</value>
+  </data>
+  <data name="Cooling-pad status is unavailable. Showing the last confirmed state." xml:space="preserve">
+    <value>Cooling-pad status is unavailable. Showing the last confirmed state.</value>
+  </data>
+  <data name="Configured fan target: {0} RPM" xml:space="preserve">
+    <value>Configured fan target: {0} RPM</value>
+  </data>
+  <data name="Cooling-pad control is paused. Refresh status before making another change." xml:space="preserve">
+    <value>Cooling-pad control is paused. Refresh status before making another change.</value>
+  </data>
+  <data name="Keep current" xml:space="preserve">
+    <value>Keep current</value>
+  </data>
+  <data name="Configured fan target unavailable" xml:space="preserve">
+    <value>Configured fan target unavailable</value>
+  </data>
+  <data name="Spectrum" xml:space="preserve">
+    <value>Spectrum</value>
+  </data>
+  <data name="Mirror keyboard" xml:space="preserve">
+    <value>Mirror keyboard</value>
+  </data>
+  <data name="Reconnecting. Showing the last confirmed cooling-pad state." xml:space="preserve">
+    <value>Reconnecting. Showing the last confirmed cooling-pad state.</value>
+  </data>
+  <data name="OpenBlade is controlling the cooling pad." xml:space="preserve">
+    <value>OpenBlade is controlling the cooling pad.</value>
+  </data>
+  <data name="Connected. Choose settings and apply them to take control." xml:space="preserve">
+    <value>Connected. Choose settings and apply them to take control.</value>
+  </data>
+  <data name="The cooling-pad change could not be confirmed. Refresh status before continuing." xml:space="preserve">
+    <value>The cooling-pad change could not be confirmed. Refresh status before continuing.</value>
+  </data>
+  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
+    <value>Check fan speeds, increasing curve temperatures, and six-digit RGB colors.</value>
+  </data>
+  <data name="CPU/GPU curves" xml:space="preserve">
+    <value>CPU/GPU curves</value>
+  </data>
+  <data name="Configured brightness unavailable" xml:space="preserve">
+    <value>Configured brightness unavailable</value>
+  </data>
+  <data name="Apply new settings, or release control to restore the captured cooling-pad settings." xml:space="preserve">
+    <value>Apply new settings, or release control to restore the captured cooling-pad settings.</value>
+  </data>
+  <data name="CPU" xml:space="preserve">
+    <value>CPU</value>
+  </data>
+  <data name="GPU" xml:space="preserve">
+    <value>GPU</value>
+  </data>
+  <data name="Both" xml:space="preserve">
+    <value>Both</value>
   </data>
 </root>

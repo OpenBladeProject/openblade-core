@@ -16,23 +16,39 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
     // performance write when the authoritative HyperBoost restoration is unknown.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PerformancePreset? HyperBoostRestoredPerformance { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CpuTuningStatus? CpuTuning { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "operation")]
 [JsonDerivedType(typeof(GetStatusRequest), "getStatus")]
+[JsonDerivedType(typeof(SetCoolingPadSettingsRequest), "setCoolingPadSettings")]
+[JsonDerivedType(typeof(SetCoolingPadDemandLeaseRequest), "setCoolingPadDemandLease")]
+[JsonDerivedType(typeof(RemoveCoolingPadDemandLeaseRequest), "removeCoolingPadDemandLease")]
+[JsonDerivedType(typeof(ReadCoolingPadStatusRequest), "readCoolingPadStatus")]
+[JsonDerivedType(typeof(ReleaseCoolingPadControlRequest), "releaseCoolingPadControl")]
 [JsonDerivedType(typeof(ObserveStateRequest), "observeState")]
 [JsonDerivedType(typeof(SubscribeStatusRequest), "subscribeStatus")]
 [JsonDerivedType(typeof(ExportDiagnosticsRequest), "exportDiagnostics")]
 [JsonDerivedType(typeof(UpdateProfilesRequest), "updateProfiles")]
 [JsonDerivedType(typeof(SetPerformanceOverrideRequest), "setPerformanceOverride")]
 [JsonDerivedType(typeof(SetGpuClockTuningRequest), "setGpuClockTuning")]
+[JsonDerivedType(typeof(SetCpuTuningRequest), "setCpuTuning")]
+[JsonDerivedType(typeof(ObserveCpuTuningRequest), "observeCpuTuning")]
+[JsonDerivedType(typeof(RestoreCpuTuningRequest), "restoreCpuTuning")]
 [JsonDerivedType(typeof(SetHyperBoostRequest), "setHyperBoost")]
 [JsonDerivedType(typeof(ValidatePadlessHyperBoostLifecycleRequest), "validatePadlessHyperBoostLifecycle")]
 [JsonDerivedType(typeof(ValidateThermalExternalDriftRequest), "validateThermalExternalDrift")]
 [JsonDerivedType(typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut")]
 [JsonDerivedType(typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
+[JsonDerivedType(typeof(SetBatterySaverFanStopRequest), "setBatterySaverFanStop")]
+[JsonDerivedType(typeof(SetFanStopModeRequest), "setFanStopMode")]
+[JsonDerivedType(typeof(SetFanStopSettingsRequest), "setFanStopSettings")]
+[JsonDerivedType(typeof(ResumeAutomaticFanStopRequest), "resumeAutomaticFanStop")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
+[JsonDerivedType(typeof(SetIndependentLightingOverrideRequest), "setIndependentLightingOverride")]
 [JsonDerivedType(typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness")]
 [JsonDerivedType(typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage")]
 [JsonDerivedType(typeof(SetKeyboardLightingControlModeRequest), "setKeyboardLightingControlMode")]
@@ -58,6 +74,21 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(ReportSessionPowerTransitionRequest), "reportSessionPowerTransition")]
 [JsonDerivedType(typeof(ReportApplicationContextRequest), "reportApplicationContext")]
 public abstract record ServiceRequest(int Version, Guid RequestId);
+
+public sealed record SetCoolingPadDemandLeaseRequest(int Version, Guid RequestId, Guid LeaseId, int Rpm, int DurationSeconds)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record RemoveCoolingPadDemandLeaseRequest(int Version, Guid RequestId, Guid LeaseId)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetCoolingPadSettingsRequest(int Version, Guid RequestId, CoolingPadSettings Settings)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ReadCoolingPadStatusRequest(int Version, Guid RequestId)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ReleaseCoolingPadControlRequest(int Version, Guid RequestId)
+    : ServiceRequest(Version, RequestId);
 
 public sealed record GetStatusRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
@@ -127,6 +158,25 @@ public sealed record SetGpuClockTuningRequest(
     OverrideLifetime Lifetime)
     : ServiceRequest(Version, RequestId);
 
+public sealed record SetCpuTuningRequest(
+    int Version,
+    Guid RequestId,
+    CpuTuningTarget Target,
+    CpuTuningSettings Settings)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ObserveCpuTuningRequest(
+    int Version,
+    Guid RequestId,
+    bool UseInstalledBackend)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record RestoreCpuTuningRequest(
+    int Version,
+    Guid RequestId,
+    CpuTuningTarget Target)
+    : ServiceRequest(Version, RequestId);
+
 public enum PadlessHyperBoostLifecycleScenario
 {
     LowPower,
@@ -179,6 +229,13 @@ public sealed record PerformanceShortcutPreview(
     long Generation,
     PerformancePreset Preset);
 
+public sealed record SetBatterySaverFanStopRequest(
+    int Version, Guid RequestId, bool Enabled) : ServiceRequest(Version, RequestId);
+
+public sealed record BatterySaverFanStopStatus(
+    bool Requested = false, bool Applied = false, bool ThermallySuspended = false,
+    FanControlSettings? NormalFanControl = null);
+
 public sealed record SetFanOverrideRequest(
     int Version,
     Guid RequestId,
@@ -192,6 +249,12 @@ public sealed record SetLightingOverrideRequest(
     int Version,
     Guid RequestId,
     ManualOverride<LightingSettings>? Value)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetIndependentLightingOverrideRequest(
+    int Version,
+    Guid RequestId,
+    ManualOverride<IndependentLightingSettings>? Value)
     : ServiceRequest(Version, RequestId);
 
 public sealed record StepKeyboardBrightnessRequest(
@@ -460,11 +523,17 @@ public sealed record ServiceStatusSnapshot(
 {
     // Missing values mean no transient-observation exception. Diagnostic text
     // must never be interpreted as a substitute for this typed state.
+    public CoolingPadStatusSnapshot CoolingPad { get; init; } = new();
+
     public DeviceObservationReason ObservationReason { get; init; }
 
     public IReadOnlyList<DeviceSubsystem> UnconfirmedWrites { get; init; } = [];
 
     public FanControlSettings? FanControlOverride { get; init; }
+
+    public BatterySaverFanStopStatus? BatterySaverFanStopStatus { get; init; }
+
+    public FanStopStatus FanStopStatus { get; init; } = new();
 
     public PerformanceShortcutPreview? PerformanceShortcutPreview { get; init; }
 
@@ -482,7 +551,7 @@ public sealed record ServiceStatusSnapshot(
 
     public ThermalConvergenceStatus? ThermalConvergence { get; init; }
 
-    // Legacy status member: recognized experimental models are enabled automatically.
+    // Legacy wire member: recognized source-reviewed models are enabled automatically.
     public bool AllowExperimentalFeatures { get; init; }
 
     public bool ExperimentalWritesPaused { get; init; }
@@ -492,6 +561,8 @@ public sealed record ServiceStatusSnapshot(
     public LaptopBehaviorProfileSettings EffectiveLaptopBehavior { get; init; } =
         LaptopBehaviorProfileSettings.Unconfigured();
 
+    // Legacy backend-routing flag; model support and physical evidence are recorded
+    // separately by RazerBladeModelCatalog. This flag does not mean unsupported.
     public bool IsExperimentalDevice { get; init; }
 
     public string? ExperimentalSupportSource { get; init; }
@@ -499,6 +570,8 @@ public sealed record ServiceStatusSnapshot(
     // or product name and it matches no admitted model. Read failures and
     // other identity blocks leave it false. It never grants hardware access.
     public bool UnsupportedLaptop { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CpuTuningStatus? CpuTuning { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

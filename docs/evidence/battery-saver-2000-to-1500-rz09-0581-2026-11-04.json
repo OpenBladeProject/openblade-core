@@ -1,0 +1,309 @@
+{
+  "schemaVersion": 2,
+  "clientDate": "2026-11-04",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "4.01"
+  },
+  "conditions": {
+    "powerSource": "Battery",
+    "performance": "BatterySaver",
+    "baselineFanMode": "Automatic",
+    "cpuTemperatureSource": "OpenBlade Windows CPU temperature reader",
+    "cpuTemperatureMinimumCelsius": 45.0,
+    "cpuTemperatureMaximumCelsius": 45.0,
+    "externalLoadApplied": false
+  },
+  "software": {
+    "baseCommit": "2e4ae6f035d7d1f9aa45b4caf87aa13d7e8e846e",
+    "reviewedWorkingTreeChanges": true,
+    "configuration": "Debug",
+    "binarySha256": {
+      "OpenBlade.Capture.exe": "38ABD726519E0E5EC4CB6AE361061515657AC39DAAB715C6946DBF7EAD35191B",
+      "OpenBlade.Capture.dll": "C70B7A538E2CF0EDBFF2AE9A9BC20573D7D56E016248A083E299FB1039B69DB4",
+      "OpenBlade.Protocol.dll": "52A0EB3A543BD0F8BCCD23D51D21FC461434EA934F6D555924E36C46787B5E29",
+      "OpenBlade.Contracts.dll": "13FD766917324CDFEB17A3F9812CA615D77663A8649176F8CBD51843B1818E7E",
+      "OpenBlade.Service.dll": "6BF14F324C1518166D008F5668F0B95649929C2859010B7728783814E22978A8"
+    }
+  },
+  "source": {
+    "product": 736,
+    "baseSha256": "BC7DC47E18261AB38393589D336C11F321CC431D700ED32147997144F64628CA",
+    "policySha256": "CD29E8D89135EA967AB13B4607A6524087A6B1DDBF76F7C73A39C7E4C6EC404D"
+  },
+  "scenario": "2000-to-1500-spin-down",
+  "preparationAdmission": {
+    "requestedRpm": 2000,
+    "minimumMeasuredRpm": 1800,
+    "maximumMeasuredRpm": 2200,
+    "requiredConsecutiveSamples": 3
+  },
+  "requestedRpm": 1500,
+  "secondsFromSecond1500TargetAckToFirstBothZero": 10.755,
+  "acknowledgedWrites": [
+    {
+      "timestamp": "2026-11-04T22:23:58.1018069+08:00",
+      "restoring": false,
+      "commandClass": 13,
+      "commandId": 2,
+      "payloadHex": "01010301"
+    },
+    {
+      "timestamp": "2026-11-04T22:23:58.3508757+08:00",
+      "restoring": false,
+      "commandClass": 13,
+      "commandId": 2,
+      "payloadHex": "01020301"
+    },
+    {
+      "timestamp": "2026-11-04T22:23:58.9248195+08:00",
+      "restoring": false,
+      "commandClass": 13,
+      "commandId": 1,
+      "payloadHex": "010114"
+    },
+    {
+      "timestamp": "2026-11-04T22:23:59.1606956+08:00",
+      "restoring": false,
+      "commandClass": 13,
+      "commandId": 1,
+      "payloadHex": "010214"
+    },
+    {
+      "timestamp": "2026-11-04T22:24:04.9143474+08:00",
+      "restoring": false,
+      "commandClass": 13,
+      "commandId": 1,
+      "payloadHex": "01010F"
+    },
+    {
+      "timestamp": "2026-11-04T22:24:05.3178543+08:00",
+      "restoring": false,
+      "commandClass": 13,
+      "commandId": 1,
+      "payloadHex": "01020F"
+    },
+    {
+      "timestamp": "2026-11-04T22:24:18.9089539+08:00",
+      "restoring": true,
+      "commandClass": 13,
+      "commandId": 1,
+      "payloadHex": "010126"
+    },
+    {
+      "timestamp": "2026-11-04T22:24:19.1420412+08:00",
+      "restoring": true,
+      "commandClass": 13,
+      "commandId": 1,
+      "payloadHex": "010226"
+    },
+    {
+      "timestamp": "2026-11-04T22:24:19.2674401+08:00",
+      "restoring": true,
+      "commandClass": 13,
+      "commandId": 2,
+      "payloadHex": "01010300"
+    },
+    {
+      "timestamp": "2026-11-04T22:24:19.4065405+08:00",
+      "restoring": true,
+      "commandClass": 13,
+      "commandId": 2,
+      "payloadHex": "01020300"
+    }
+  ],
+  "result": {
+    "success": true,
+    "restored": true,
+    "manualRecoveryRequired": false,
+    "failure": null,
+    "writesAttempted": 10,
+    "safetyChecks": 25,
+    "indeterminatePartialWrite": false,
+    "baseline": {
+      "thermal1Hex": "01010300",
+      "thermal2Hex": "01020300"
+    },
+    "baselineTargets": {
+      "selector1Rpm": 3800,
+      "selector2Rpm": 3800,
+      "maxRpm": 3800
+    },
+    "baselineFanRpm": {
+      "selector1Rpm": 0,
+      "selector2Rpm": 0,
+      "maxRpm": 0
+    },
+    "candidate": {
+      "thermal1Hex": "01010301",
+      "thermal2Hex": "01020301"
+    },
+    "candidateTargets": {
+      "selector1Rpm": 1500,
+      "selector2Rpm": 1500,
+      "maxRpm": 1500
+    },
+    "restoration": {
+      "thermal1Hex": "01010300",
+      "thermal2Hex": "01020300"
+    },
+    "restorationTargets": {
+      "selector1Rpm": 3800,
+      "selector2Rpm": 3800,
+      "maxRpm": 3800
+    },
+    "samples": [
+      {
+        "number": 1,
+        "timestamp": "2026-11-04T22:24:07.0497455+08:00",
+        "rpm": {
+          "selector1Rpm": 1900,
+          "selector2Rpm": 1900,
+          "maxRpm": 1900
+        }
+      },
+      {
+        "number": 2,
+        "timestamp": "2026-11-04T22:24:08.3479884+08:00",
+        "rpm": {
+          "selector1Rpm": 1800,
+          "selector2Rpm": 1800,
+          "maxRpm": 1800
+        }
+      },
+      {
+        "number": 3,
+        "timestamp": "2026-11-04T22:24:09.6787124+08:00",
+        "rpm": {
+          "selector1Rpm": 1800,
+          "selector2Rpm": 1800,
+          "maxRpm": 1800
+        }
+      },
+      {
+        "number": 4,
+        "timestamp": "2026-11-04T22:24:10.9833053+08:00",
+        "rpm": {
+          "selector1Rpm": 1700,
+          "selector2Rpm": 1800,
+          "maxRpm": 1800
+        }
+      },
+      {
+        "number": 5,
+        "timestamp": "2026-11-04T22:24:12.2434199+08:00",
+        "rpm": {
+          "selector1Rpm": 1700,
+          "selector2Rpm": 1700,
+          "maxRpm": 1700
+        }
+      },
+      {
+        "number": 6,
+        "timestamp": "2026-11-04T22:24:13.4315566+08:00",
+        "rpm": {
+          "selector1Rpm": 1300,
+          "selector2Rpm": 1200,
+          "maxRpm": 1300
+        }
+      },
+      {
+        "number": 7,
+        "timestamp": "2026-11-04T22:24:14.7316832+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 500,
+          "maxRpm": 500
+        }
+      },
+      {
+        "number": 8,
+        "timestamp": "2026-11-04T22:24:16.0729462+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 9,
+        "timestamp": "2026-11-04T22:24:17.3242407+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 10,
+        "timestamp": "2026-11-04T22:24:18.4891444+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      }
+    ],
+    "preparation": {
+      "thermal1Hex": "01010301",
+      "thermal2Hex": "01020301"
+    },
+    "preparationTargets": {
+      "selector1Rpm": 2000,
+      "selector2Rpm": 2000,
+      "maxRpm": 2000
+    },
+    "preparationSamples": [
+      {
+        "number": 1,
+        "timestamp": "2026-11-04T22:24:00.7980119+08:00",
+        "rpm": {
+          "selector1Rpm": 1700,
+          "selector2Rpm": 1800,
+          "maxRpm": 1800
+        }
+      },
+      {
+        "number": 2,
+        "timestamp": "2026-11-04T22:24:02.092556+08:00",
+        "rpm": {
+          "selector1Rpm": 1800,
+          "selector2Rpm": 1800,
+          "maxRpm": 1800
+        }
+      },
+      {
+        "number": 3,
+        "timestamp": "2026-11-04T22:24:03.3256543+08:00",
+        "rpm": {
+          "selector1Rpm": 1800,
+          "selector2Rpm": 1900,
+          "maxRpm": 1900
+        }
+      },
+      {
+        "number": 4,
+        "timestamp": "2026-11-04T22:24:04.5993077+08:00",
+        "rpm": {
+          "selector1Rpm": 1900,
+          "selector2Rpm": 1900,
+          "maxRpm": 1900
+        }
+      }
+    ],
+    "preparationConfirmed": true,
+    "spunDown": true,
+    "scenario": "2000-to-1500-spin-down"
+  },
+  "postChecks": {
+    "installedServiceRunning": true,
+    "originalUserProcessPresenceRestored": true,
+    "installedServiceAndSessionAgentHashesUnchanged": true,
+    "originalProfilesAndOverridesUnchanged": true,
+    "confirmedPerformance": "BatterySaver",
+    "confirmedFanMode": "Automatic"
+  },
+  "interpretation": "With stored targets at 2000 RPM, three consecutive measured pairs were 1800/1800, 1800/1900 and 1900/1900 RPM. A target-only change to 1500 RPM was followed by both actual readings reaching zero for three consecutive samples. This establishes spin-down in this one cool Battery Saver battery test, not steady 1500 RPM rotation, persistent fan-off under load, or behavior on another model."
+}

@@ -1,0 +1,183 @@
+name: Rust
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'rust/**'
+      - 'tools/openblade-discovery/**'
+      - 'src/OpenBlade.Core.Native/**'
+      - 'src/OpenBlade.Contracts/**'
+      - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
+      - 'src/OpenBlade.Service/ProfileAutomationState.cs'
+      - 'src/OpenBlade.Service/OverrideResolver.cs'
+      - 'src/OpenBlade.Protocol/**'
+      - 'tests/OpenBlade.Protocol.Tests/**'
+      - 'build/Build-NativeDevelopment.ps1'
+      - 'build/NativePayload.ps1'
+      - 'build/Prepare-NativeToolchain.ps1'
+      - 'tests/OpenBlade.Core.Native.Tests/**'
+      - 'tests/OpenBlade.Protocol.Tests/ParityFixtureTests.cs'
+      - 'tests/OpenBlade.Testing/**'
+      - 'OpenBlade.Native.slnx'
+      - 'global.json'
+      - 'Directory.*'
+      - 'NuGet.Config'
+      - 'nuget.config'
+      - '.github/workflows/rust.yml'
+      - 'tests/Fixtures/Parity/**'
+      - 'docs/rust-boundaries.md'
+      - '.editorconfig'
+      - '.gitattributes'
+      - 'LICENSE'
+  # No base-branch filter: migration PRs can be stacked before reaching main.
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'rust/**'
+      - 'tools/openblade-discovery/**'
+      - 'src/OpenBlade.Core.Native/**'
+      - 'src/OpenBlade.Contracts/**'
+      - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
+      - 'src/OpenBlade.Service/ProfileAutomationState.cs'
+      - 'src/OpenBlade.Service/OverrideResolver.cs'
+      - 'src/OpenBlade.Protocol/**'
+      - 'tests/OpenBlade.Protocol.Tests/**'
+      - 'build/Build-NativeDevelopment.ps1'
+      - 'build/NativePayload.ps1'
+      - 'build/Prepare-NativeToolchain.ps1'
+      - 'tests/OpenBlade.Core.Native.Tests/**'
+      - 'tests/OpenBlade.Protocol.Tests/ParityFixtureTests.cs'
+      - 'tests/OpenBlade.Testing/**'
+      - 'OpenBlade.Native.slnx'
+      - 'global.json'
+      - 'Directory.*'
+      - 'NuGet.Config'
+      - 'nuget.config'
+      - '.github/workflows/rust.yml'
+      - 'tests/Fixtures/Parity/**'
+      - 'docs/rust-boundaries.md'
+      - '.editorconfig'
+      - '.gitattributes'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workspace:
+    name: Rust (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: macos-15
+            target: aarch64-apple-darwin
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: rust
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install pinned toolchain
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Rustup reads the toolchain, profile and components from the TOML file.
+          rustup toolchain install --no-self-update
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = rustc -vV
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version
+          if ($version -notcontains 'host: ${{ matrix.target }}') {
+            throw 'The runner must execute the selected target natively.'
+          }
+          cargo --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+
+      - name: Check workspace boundaries
+        run: ./Check-Workspace.ps1
+
+      - name: Test workspace guard
+        run: ./Test-WorkspaceCheck.ps1
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Build
+        run: cargo build --locked --workspace --all-targets --target ${{ matrix.target }}
+
+      - name: Verify unsupported transport output
+        if: runner.os != 'Windows'
+        run: |
+          $diagnostic = Join-Path $env:RUNNER_TEMP 'openblade-status-unsupported.txt'
+          $output = & "./target/${{ matrix.target }}/debug/openblade-status-cli" 2> $diagnostic
+          $code = $LASTEXITCODE
+          if ($code -ne 1 -or $output) { throw 'Unsupported transport invented a successful status.' }
+          if ((Get-Content $diagnostic -Raw).Trim() -cne 'OpenBlade status: unsupported transport (Windows named pipe required)') {
+            throw 'Unsupported transport diagnostic changed.'
+          }
+          exit 0
+
+      - name: Test workspace and all 43 canonical report and profile cases
+        run: cargo test --locked --workspace --all-targets --target ${{ matrix.target }}
+
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
+
+      - name: Test the macOS discovery pilot
+        if: runner.os == 'macOS'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = '../tools/openblade-discovery/Cargo.toml'
+          cargo fmt --all --check --manifest-path $manifest
+          cargo test --locked --manifest-path $manifest --target ${{ matrix.target }}
+          cargo clippy --locked --manifest-path $manifest --target ${{ matrix.target }} --all-targets -- -D warnings
+
+      - name: Smoke the macOS discovery CLI
+        if: runner.os == 'macOS'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = '../tools/openblade-discovery/Cargo.toml'
+          cargo build --locked --manifest-path $manifest --target ${{ matrix.target }}
+          $binary = '../tools/openblade-discovery/target/${{ matrix.target }}/debug/openblade-discovery'
+          $output = & $binary
+          if (@($output).Count -ne 1) { throw 'Expected one discovery snapshot.' }
+          $snapshot = $output | ConvertFrom-Json -AsHashtable
+          if ($snapshot.schemaVersion -ne 1 -or $snapshot.platform -cne 'macos' -or
+              $snapshot.hostMetadata -cne 'unverified' -or -not $snapshot.Contains('exactModel') -or
+              $null -ne $snapshot.exactModel -or
+              $snapshot.hid.state -cnotin @('none', 'single', 'ambiguous', 'incomplete')) {
+            throw 'Invalid discovery snapshot or unavailable hosted macOS metadata APIs.'
+          }
+
+      - name: Build native libraries and execute C and .NET interop
+        run: ./Test-NativeInterop.ps1 -Target ${{ matrix.target }}

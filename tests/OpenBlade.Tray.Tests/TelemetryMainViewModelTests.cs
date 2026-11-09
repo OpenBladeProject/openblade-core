@@ -314,18 +314,52 @@ public sealed class TelemetryMainViewModelTests : IDisposable
 
         ServiceStatusSnapshot observed = Status(2, withReadings: true, withApplication: true);
         client.Observation = observed;
+        int freshnessNotifications = 0;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.LatestTelemetryFreshness)) { freshnessNotifications++; }
+        };
         await viewModel.ObserveTrayStateAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(1));
         await viewModel.ObserveTrayStateAsync(CancellationToken.None);
 
         Assert.Equal([LiveReadingSensors.All, LiveReadingSensors.All], client.Requests);
         Assert.Equal(2, viewModel.TelemetryHistorySnapshot.RawSampleCount);
+        Assert.Equal(2, freshnessNotifications);
         TelemetrySample sample = Assert.IsType<TelemetrySample>(viewModel.LatestTelemetrySample);
         Assert.Equal(Start.AddSeconds(1), sample.TimestampUtc);
         Assert.Equal(2, sample.ServiceRevision);
         Assert.Contains(observed.ActiveApplicationProfileId!.Value.ToString("D"), sample.ProfileIdentity);
         Assert.Contains("Game", sample.ProfileIdentity);
         Assert.Equal(TelemetryFreshness.Fresh, viewModel.LatestTelemetryFreshness);
+    }
+
+    [Fact]
+    public async Task FreshnessRefreshWithoutASampleUpdatesAgeWithoutObservingOrChangingHistory()
+    {
+        var client = new FakeServiceClient();
+        var time = new MutableTimeProvider(Start);
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher(), time);
+        await viewModel.SetTelemetryEnabledAsync(true);
+        await viewModel.StartAsync();
+        client.Publish(Status(1));
+        await WaitForAsync(() => viewModel.HasAppliedServiceState);
+        viewModel.SetTelemetryPresentationActive(true);
+        client.Observation = Status(2, withReadings: true);
+        await viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        TelemetrySample? sample = viewModel.LatestTelemetrySample;
+        Assert.Equal(TelemetryFreshness.Fresh, viewModel.LatestTelemetryFreshness);
+        List<string?> changed = [];
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        time.Advance(viewModel.TelemetryExpectedSampleInterval * 3);
+        viewModel.RefreshTelemetryFreshness();
+
+        Assert.Equal(TelemetryFreshness.Stale, viewModel.LatestTelemetryFreshness);
+        Assert.Same(sample, viewModel.LatestTelemetrySample);
+        Assert.Equal(1, viewModel.TelemetryHistorySnapshot.RawSampleCount);
+        Assert.Single(client.Requests);
+        Assert.Equal([nameof(MainViewModel.LatestTelemetryFreshness)], changed);
     }
 
     [Fact]
@@ -669,7 +703,7 @@ public sealed class TelemetryMainViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Replay_SuppressesVisibleLiveDemandUnlessRecordingIsActive()
+    public async Task Replay_SuppressesVisibleLiveDemandButRetainsBatteryWarningReadings()
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "replay.csv");
@@ -699,8 +733,11 @@ public sealed class TelemetryMainViewModelTests : IDisposable
         await viewModel.OpenTelemetryReplayAsync(path, CancellationToken.None);
         Assert.False(viewModel.RequiresTelemetryObservation);
         client.Requests.Clear();
+        client.Observation = Status(1, withReadings: true);
         await viewModel.ObserveStateAsync(CancellationToken.None);
-        Assert.Empty(client.Requests);
+        Assert.Equal([LiveReadingSensors.BatteryPower], client.Requests);
+        Assert.NotNull(viewModel.TelemetryReplaySession);
+        client.Requests.Clear();
 
         var recording = new GatedRecordingSession();
         recording.AllowAppend.TrySetResult();
@@ -708,14 +745,23 @@ public sealed class TelemetryMainViewModelTests : IDisposable
             (_, _, _, _) => Task.FromResult<ITelemetryRecordingSession>(recording));
         await viewModel.StartTelemetryRecordingAsync("during-replay.csv", CancellationToken.None);
         Assert.True(viewModel.RequiresTelemetryObservation);
+        var displayedNotifications = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => displayedNotifications.Add(args.PropertyName);
+        TelemetrySample? replaySample = viewModel.LatestTelemetrySample;
         client.Observation = Status(2, withReadings: true);
         await viewModel.ObserveStateAsync(CancellationToken.None);
         Assert.Equal([LiveReadingSensors.All], client.Requests);
+        Assert.Same(replaySample, viewModel.LatestTelemetrySample);
+        Assert.DoesNotContain(nameof(MainViewModel.LatestTelemetrySample), displayedNotifications);
+        Assert.DoesNotContain(nameof(MainViewModel.LatestTelemetryFreshness), displayedNotifications);
+        Assert.DoesNotContain(nameof(MainViewModel.TelemetryHistorySnapshot), displayedNotifications);
         await viewModel.StopTelemetryRecordingAsync(CancellationToken.None);
         Assert.False(viewModel.RequiresTelemetryObservation);
 
         viewModel.CloseTelemetryReplay();
         Assert.True(viewModel.RequiresTelemetryObservation);
+        Assert.Equal(2, viewModel.LatestTelemetrySample?.ServiceRevision);
+        Assert.Contains(nameof(MainViewModel.TelemetryHistorySnapshot), displayedNotifications);
         client.Observation = Status(3, withReadings: true);
         await viewModel.ObserveStateAsync(CancellationToken.None);
         Assert.Equal([LiveReadingSensors.All, LiveReadingSensors.All], client.Requests);

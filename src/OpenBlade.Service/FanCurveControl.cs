@@ -2,13 +2,17 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
+using OpenBlade.Platform;
 
 namespace OpenBlade.Service;
 
 public readonly record struct FanTemperatureReadings(
     int? CpuCelsius,
     int? GpuCelsius,
-    bool GpuInactive = false);
+    bool GpuInactive = false,
+    // Fresh Windows-reported D3 evidence; workload absence alone is insufficient.
+    bool GpuPoweredDown = false);
 
 public readonly record struct FanTargetSpeeds(
     int Fan1Rpm,
@@ -83,7 +87,15 @@ public static class FanCurveCalculator
 
 public interface IFanTemperatureSource
 {
+    // Optional cold initialization, before a one-shot safety measurement.
+    // Readiness is never a temperature or permission to change fan control.
+    ValueTask<bool> PrepareAsync(CancellationToken cancellationToken) => ValueTask.FromResult(true);
+
     ValueTask<FanTemperatureReadings> ReadAsync(CancellationToken cancellationToken);
+
+    // Stop temperature policy needs device-power evidence, not workload absence.
+    // Sources without that evidence must provide an actual GPU temperature.
+    ValueTask<FanTemperatureReadings> ReadForFanStopAsync(CancellationToken cancellationToken) => ReadAsync(cancellationToken);
 
     async ValueTask<FanTemperatureReadings> ReadAsync(
         bool includeCpu,
@@ -94,7 +106,8 @@ public interface IFanTemperatureSource
         return new FanTemperatureReadings(
             includeCpu ? readings.CpuCelsius : null,
             includeGpu ? readings.GpuCelsius : null,
-            includeGpu && readings.GpuInactive);
+            includeGpu && readings.GpuInactive,
+            includeGpu && readings.GpuPoweredDown);
     }
 }
 
@@ -176,11 +189,11 @@ internal sealed class NativeStatusChangeObserver(
     }
 }
 
-// The exact target firmware exposes a Razer-specific ACPI thermal zone named
-// TZRZ. Windows publishes its EC-backed _TMP value through the standard Thermal
-// Zone Information counter set. This is a platform/CPU-side thermal input, not a
-// claim that Windows exposes the processor's per-core DTS values. NVML remains
-// the signed user-mode source for the NVIDIA GPU temperature.
+// CPU temperature requires a reviewed dynamic sensor contract. The BIOS/EC
+// source review found constant _TMP values in both formerly selected TZRZ paths;
+// they cannot drive a fan curve or stand in for CPU temperature. An unavailable
+// CPU input retains the existing maximum-fan fail-safe. NVML remains the signed
+// user-mode source for the NVIDIA GPU temperature.
 public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDisposable
 {
     // A GPU workload that ends between samples leaves the NVML session open
@@ -191,12 +204,14 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     internal static readonly TimeSpan GpuSessionIdleRetry = TimeSpan.FromMilliseconds(100);
 
     private readonly IGpuActivitySource gpuActivitySource;
-    private readonly Func<int?> cpuTemperatureReader;
+    private readonly Func<CancellationToken, ValueTask<int?>> cpuTemperatureReader;
+    private readonly Func<CancellationToken, ValueTask<bool>> cpuTemperaturePrepare;
     private readonly IDisposable? cpuTemperatureOwner;
     private readonly IGpuTemperatureSession gpuTemperature;
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly ITimer gpuSessionIdleRelease;
     private readonly TimeProvider timeProvider;
+    private readonly Func<FanStopGpuPowerState> gpuPowerState;
     private long lastGpuReadTimestamp;
     private bool gpuIdleReleasePending;
     private bool disposed;
@@ -204,7 +219,7 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     public SafeWindowsFanTemperatureSource()
         : this(
             new WindowsGpuActivitySource(),
-            new WindowsThermalZone(),
+            new WindowsCpuTemperatureReader(),
             new NvidiaNvmlTemperatureSession(),
             TimeProvider.System)
     {
@@ -212,15 +227,16 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
 
     private SafeWindowsFanTemperatureSource(
         IGpuActivitySource gpuActivitySource,
-        WindowsThermalZone thermalZone,
+        WindowsCpuTemperatureReader cpuTemperature,
         IGpuTemperatureSession gpuTemperature,
         TimeProvider timeProvider)
         : this(
             gpuActivitySource,
-            thermalZone.TryRead,
+            cpuTemperature.ReadAsync,
             gpuTemperature,
             timeProvider,
-            cpuTemperatureOwner: thermalZone)
+            cpuTemperatureOwner: cpuTemperature,
+            cpuTemperaturePrepare: cpuTemperature.PrepareAsync)
     {
     }
 
@@ -241,17 +257,35 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         Func<int?> cpuTemperatureReader,
         IGpuTemperatureSession gpuTemperature,
         TimeProvider timeProvider,
-        IDisposable? cpuTemperatureOwner = null)
+        IDisposable? cpuTemperatureOwner = null,
+        Func<FanStopGpuPowerState>? gpuPowerState = null)
+        : this(gpuActivitySource,
+            _ => ValueTask.FromResult(cpuTemperatureReader()),
+            gpuTemperature, timeProvider, cpuTemperatureOwner, gpuPowerState)
+    {
+        ArgumentNullException.ThrowIfNull(cpuTemperatureReader);
+    }
+
+    internal SafeWindowsFanTemperatureSource(
+        IGpuActivitySource gpuActivitySource,
+        Func<CancellationToken, ValueTask<int?>> cpuTemperatureReader,
+        IGpuTemperatureSession gpuTemperature,
+        TimeProvider timeProvider,
+        IDisposable? cpuTemperatureOwner = null,
+        Func<FanStopGpuPowerState>? gpuPowerState = null,
+        Func<CancellationToken, ValueTask<bool>>? cpuTemperaturePrepare = null)
     {
         this.gpuActivitySource = gpuActivitySource
             ?? throw new ArgumentNullException(nameof(gpuActivitySource));
         this.cpuTemperatureReader = cpuTemperatureReader
             ?? throw new ArgumentNullException(nameof(cpuTemperatureReader));
+        this.cpuTemperaturePrepare = cpuTemperaturePrepare ?? (_ => ValueTask.FromResult(true));
         this.gpuTemperature = gpuTemperature
             ?? throw new ArgumentNullException(nameof(gpuTemperature));
         ArgumentNullException.ThrowIfNull(timeProvider);
         this.timeProvider = timeProvider;
         this.cpuTemperatureOwner = cpuTemperatureOwner;
+        this.gpuPowerState = gpuPowerState ?? WindowsNvidiaGpuPowerState.Read;
         gpuSessionIdleRelease = timeProvider.CreateTimer(
             static state => ((SafeWindowsFanTemperatureSource)state!).ReleaseIdleGpuSession(),
             this,
@@ -259,11 +293,68 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
             Timeout.InfiniteTimeSpan);
     }
 
+    public ValueTask<bool> PrepareAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(disposed, this);
+        return cpuTemperaturePrepare(cancellationToken);
+    }
+
     public ValueTask<FanTemperatureReadings> ReadAsync(
         CancellationToken cancellationToken) => ReadAsync(
             includeCpu: true,
             includeGpu: true,
             cancellationToken);
+
+    public async ValueTask<FanTemperatureReadings> ReadForFanStopAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        bool? active = await gpuActivitySource.IsActiveAsync(cancellationToken).ConfigureAwait(false);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            int? cpu = await cpuTemperatureReader(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            FanStopGpuPowerState power = gpuPowerState();
+            cancellationToken.ThrowIfCancellationRequested();
+            int? gpu = null;
+            if (power == FanStopGpuPowerState.PoweredOn)
+            {
+                bool release = true;
+                try
+                {
+                    gpu = gpuTemperature.TryRead();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    // A transition during the read invalidates this sample. Do
+                    // not infer that an unreadable active GPU is asleep.
+                    if (gpuPowerState() != FanStopGpuPowerState.PoweredOn)
+                    { gpu = null; power = FanStopGpuPowerState.Unknown; }
+                    // Borrow only an ordinary active-GPU reader's existing
+                    // lease. Stop never renews that lease or its idle deadline.
+                    TimeSpan leaseAge = timeProvider.GetElapsedTime(lastGpuReadTimestamp);
+                    release = !(power == FanStopGpuPowerState.PoweredOn && gpu is >= 10 and <= 125
+                        && active is true && gpuIdleReleasePending
+                        && leaseAge >= TimeSpan.Zero && leaseAge < GpuSessionIdleTimeout);
+                }
+                finally { if (release) { ReleaseFanStopGpuSession(); } }
+            }
+            else { ReleaseFanStopGpuSession(); }
+            return new(cpu, gpu, GpuInactive: active is false,
+                GpuPoweredDown: power == FanStopGpuPowerState.PoweredDown && active is not true);
+        }
+        finally { gate.Release(); }
+    }
+
+    private void ReleaseFanStopGpuSession()
+    {
+        try { gpuTemperature.Release(); }
+        finally
+        {
+            gpuSessionIdleRelease.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            gpuIdleReleasePending = false;
+        }
+    }
 
     public async ValueTask<FanTemperatureReadings> ReadAsync(
         bool includeCpu,
@@ -278,7 +369,8 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         try
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            int? cpuCelsius = includeCpu ? cpuTemperatureReader() : null;
+            int? cpuCelsius = includeCpu
+                ? await cpuTemperatureReader(cancellationToken).ConfigureAwait(false) : null;
             int? gpuCelsius = null;
             if (gpuActive is true)
             {
@@ -391,13 +483,14 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     /// </summary>
     internal sealed class WindowsThermalZone : IDisposable
     {
-        internal static IReadOnlyList<string> RazerEcCounterPaths { get; } =
-        [
-            // RZ09-0528 BIOS 2.02 / EC 1.09.
-            @"\Thermal Zone Information(\_SB.PCI0.SBRG.EC0.TZRZ)\High Precision Temperature",
-            // RZ09-0581 validated baseline.
-            @"\Thermal Zone Information(\_SB.PC00.LPCB.EC0.TZRZ)\High Precision Temperature",
-        ];
+        // RZ09-0528 BIOS 2.02 and the live-retained RZ09-0581 BIOS 4.01
+        // DSDTs both return the literal 0x0C6E from TZRZ._TMP. A successful
+        // PDH read of either path cannot establish CPU temperature. Keep the
+        // shared source list empty until a dynamic sensor contract is reviewed;
+        // do not substitute another zone or blacklist a legitimate 45 C value.
+        // Provenance: docs/bios-ec-source-validation.md and
+        // docs/so6120-cpu-temperature-source.md.
+        internal static IReadOnlyList<string> RazerEcCounterPaths { get; } = [];
         private const uint PdhFormatDouble = 0x00000200;
         private const uint PdhStatusValidData = 0x00000000;
         private const uint PdhStatusNewData = 0x00000001;
@@ -734,7 +827,7 @@ public sealed class ServiceFanCurveLoop(
                 {
                     return;
                 }
-                catch (Exception exception)
+                catch (Exception exception) when (exception is not NativeComponentException)
                 {
                     logger.LogWarning(exception, "Manual fan-curve maintenance failed.");
                 }

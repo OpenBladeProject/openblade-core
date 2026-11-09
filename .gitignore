@@ -24,6 +24,11 @@ src/OpenBlade.Tray/Assets/Brand/*
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.ico
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.Installer.ico
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.png
+!src/OpenBlade.Tray/Assets/Brand/TRAY-ASSETS.md
+!src/OpenBlade.Tray/Assets/Brand/APP-ASSETS.md
+!src/OpenBlade.Tray/Assets/Brand/app-assets.json
+!src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.Dark.svg
+!src/OpenBlade.Tray/Assets/Brand/OpenBlade.Mark.Light.svg
 !src/OpenBlade.Tray/Assets/Brand/Notifications/
 src/OpenBlade.Tray/Assets/Brand/Notifications/*
 !src/OpenBlade.Tray/Assets/Brand/Notifications/*.png
@@ -35,6 +40,8 @@ src/OpenBlade.Tray/Assets/Brand/Tray/*
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-custom-light.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-performance-dark.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-performance-light.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/ac-hyperboost-dark.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/ac-hyperboost-light.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-silent-dark.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-silent-light.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/battery-balanced-dark.ico
@@ -43,6 +50,9 @@ src/OpenBlade.Tray/Assets/Brand/Tray/*
 !src/OpenBlade.Tray/Assets/Brand/Tray/battery-saver-light.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/usb-c-balanced-dark.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/usb-c-balanced-light.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/*-discharging-dark.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/*-discharging-light.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/external-power-discharge-badge.svg
 !src/OpenBlade.Tray/Assets/Brand/TrayStatus/
 src/OpenBlade.Tray/Assets/Brand/TrayStatus/*
 !src/OpenBlade.Tray/Assets/Brand/TrayStatus/generic-error-dark.ico
@@ -50,3 +60,9 @@ src/OpenBlade.Tray/Assets/Brand/TrayStatus/*
 
 # Trail-Code runtime statistics
 /graft/.cache/
+# Keep benchmark measurements in the linked evidence archive.
+/build/benchmarks/*/results/*.json
+/build/benchmarks/*/results/*.csv
+
+# Experimental Rust workspace build output.
+/rust/target/

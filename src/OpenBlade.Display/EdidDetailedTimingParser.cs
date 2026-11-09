@@ -6,6 +6,7 @@ internal static class EdidDetailedTimingParser
     private const byte DisplayIdExtensionTag = 0x70;
     private const byte Type7DetailedTimingBlockTag = 0x22;
     private const int Type7TimingLength = 20;
+    private const byte InterlacedTiming = 0x10;
 
     internal static IReadOnlyList<EdidDetailedTiming> Parse(ReadOnlySpan<byte> edid)
     {
@@ -59,23 +60,24 @@ internal static class EdidDetailedTimingParser
         for (int offset = 0; offset + Type7TimingLength <= data.Length; offset += Type7TimingLength)
         {
             ReadOnlySpan<byte> timing = data.Slice(offset, Type7TimingLength);
-            uint pixelClockKilohertz = ReadUInt24(timing);
-            int width = ReadUInt16(timing[4..]) + 1;
-            int horizontalBlank = ReadUInt16(timing[6..]) + 1;
-            int height = ReadUInt16(timing[12..]) + 1;
-            int verticalBlank = ReadUInt16(timing[14..]) + 1;
-            long totalPixels = (long)(width + horizontalBlank) * (height + verticalBlank);
-            if (pixelClockKilohertz == 0 || width <= 0 || height <= 0 || totalPixels <= 0)
+            if ((timing[3] & InterlacedTiming) != 0)
             {
                 continue;
             }
 
+            ulong pixelRate = (ReadUInt24(timing) + 1) * 1000UL;
+            int width = ReadUInt16(timing[4..]) + 1;
+            uint totalWidth = (uint)(width + ReadUInt16(timing[6..]) + 1);
+            int height = ReadUInt16(timing[12..]) + 1;
+            uint totalHeight = (uint)(height + ReadUInt16(timing[14..]) + 1);
+            ulong totalPixels = (ulong)totalWidth * totalHeight;
+
             int hertz = checked((int)Math.Round(
-                pixelClockKilohertz * 1000d / totalPixels,
+                (double)pixelRate / totalPixels,
                 MidpointRounding.AwayFromZero));
             if (hertz is >= 20 and <= 1000)
             {
-                timings.Add(new EdidDetailedTiming(width, height, hertz));
+                timings.Add(new EdidDetailedTiming(width, height, hertz, pixelRate, totalWidth, totalHeight));
             }
         }
     }
@@ -97,4 +99,5 @@ internal static class EdidDetailedTimingParser
     }
 }
 
-internal readonly record struct EdidDetailedTiming(int Width, int Height, int Hertz);
+internal readonly record struct EdidDetailedTiming(
+    int Width, int Height, int Hertz, ulong PixelRate, uint TotalWidth, uint TotalHeight);

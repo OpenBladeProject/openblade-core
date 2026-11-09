@@ -12,12 +12,13 @@ internal sealed partial class ExperimentalBladePort
          from gpu in Enum.GetValues<CustomPerformanceLevel>()
          let combination = new CustomPerformanceCombination(cpu, gpu)
          where SupportsExperimentalCustom(model) && combination.IsWellFormed
-             && (model.ProductId is 0x029F or 0x02A0
+             && (model.ProductId is 0x029F or 0x02A0 || model.ThermalPolicy?.SupportsCpuBoost == true
                  || cpu != CustomPerformanceLevel.Boost
-                 && (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High))
+                 && (model.ThermalPolicy is not null
+                     || (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High)))
          select combination).ToHashSet())
     {
-        SupportsMaximumFans = model.ProductId is 0x029F or 0x02A0,
+        SupportsMaximumFans = model.ThermalPolicy?.SupportsMaximumFans ?? (model.ProductId is 0x029F or 0x02A0),
     };
 
     // 029F High/High and CPU Boost are explicit Synapse captures in tdakhran
@@ -26,20 +27,23 @@ internal sealed partial class ExperimentalBladePort
     // pair restriction. All twelve 02A0 pairs are source-backed experimental;
     // Observer additionally corroborates Boost/Low and Boost/High. See
     // docs/blade18-observer-evidence.md. Other models retain their bounds;
-    // raw level 4 is not a normal Custom level.
+    // raw level 4 is not a normal Custom level. The exact 694/695 UI instances
+    // enable their thermal CPU Boost value 3 (UI bytes 6972774/6906371), separate
+    // from native overclocking. 696/711 have only reviewed levels 0..2.
     private async Task<CustomPerformanceSettings?> ReadCustomPerformanceAsync(
         CancellationToken cancellationToken, bool includeMaximumFans = true)
     {
         // Product 672 defaults Custom GETs to profile 1; the exact CPU request
         // is retained in the 2026-10-16 Observer fixture. Other profiles keep
         // their separately admitted upstream query shape; this does not prove 0 fails.
-        byte profile = model.ProductId == 0x02A0 ? (byte)1 : (byte)0;
+        byte profile = model.ThermalPolicy?.QueryProfile ?? (model.ProductId == 0x02A0 ? (byte)1 : (byte)0);
         ReadOnlyMemory<byte> cpu = await ExchangeAsync("CustomPerformance", 0x0D, 0x87,
             [profile, 1, 0], false, cancellationToken).ConfigureAwait(false);
         ReadOnlyMemory<byte> gpu = await ExchangeAsync("CustomPerformance", 0x0D, 0x87,
             [profile, 2, 0], false, cancellationToken).ConfigureAwait(false);
         string reported = $"CpuSelector={cpu.Span[1]};CpuLevel={cpu.Span[2]};GpuSelector={gpu.Span[1]};GpuLevel={gpu.Span[2]}";
-        if (cpu.Span[1] != 1 || gpu.Span[1] != 2)
+        if (cpu.Span[1] != 1 || gpu.Span[1] != 2
+            || model.ThermalPolicy is not null && (cpu.Span[0] != profile || gpu.Span[0] != profile))
         {
             RecordQuery("CustomPerformance", "InconsistentState", reported, "ClusterSelector");
             throw new IOException("Experimental custom performance readback returned an unexpected cluster selector.");
@@ -77,15 +81,20 @@ internal sealed partial class ExperimentalBladePort
             RequireWriteAdmission(thermal: true);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             // 029F/029D admit fixed targets through Custom entry (sqmagellan
-            // 9c66e705/librazer/src/command.rs). 02A0 admits fixed targets only
-            // in Balanced, so it requires Automatic handback before Custom.
+            // 9c66e705/librazer/src/command.rs). Preset-ranged backends do not
+            // admit Custom/manual, so that destination requires Automatic.
             if (baseline.HyperBoostActive || baseline.Fans != FanMode.Automatic
-                    && (GetExperimentalFanRange(model) is null || model.ProductId == 0x02A0)
+                    && (GetExperimentalFanRange(model) is null || GetExperimentalFanRangesByPerformancePreset(model).Count > 0)
                 || baseline.Performance is not (PerformancePreset.Balanced or PerformancePreset.Silent
-                    or PerformancePreset.Performance or PerformancePreset.Custom))
+                    or PerformancePreset.Performance or PerformancePreset.Custom
+                    or PerformancePreset.Turbo or PerformancePreset.MaximumPower))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                    "Experimental custom performance requires an ordinary AC preset and a model-supported fan baseline.");
+                    GetExperimentalFanRangesByPerformancePreset(model).Count > 0 && baseline.Fans != FanMode.Automatic
+                        ? "This exact model admits Custom only with Automatic fans. Select Automatic fans explicitly."
+                        : model.ThermalPolicy is not null && baseline.Fans != FanMode.Automatic
+                        ? "Custom changes cannot preserve this model's manual targets until dynamic fan ranges are admitted. Select Automatic fans explicitly."
+                        : "Experimental custom performance requires an ordinary AC preset and a model-supported fan baseline.");
             }
             if (baseline.Fans == FanMode.Fixed && value.MaximumFans)
             {

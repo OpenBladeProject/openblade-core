@@ -1,3 +1,5 @@
+using OpenBlade.Core.Native;
+
 namespace OpenBlade.Protocol;
 
 internal enum RazerCommandStatus : byte
@@ -106,14 +108,7 @@ internal sealed class RazerReport
                 nameof(destination));
         }
 
-        destination.Clear();
-        destination[0] = (byte)RazerCommandStatus.New;
-        destination[1] = TransactionId;
-        destination[5] = checked((byte)payloadBytes.Length);
-        destination[6] = CommandClass;
-        destination[7] = CommandId;
-        payloadBytes.CopyTo(destination[8..]);
-        destination[88] = CalculateChecksum(destination);
+        Encode(TransactionId, CommandClass, CommandId, payloadBytes, destination);
     }
 
     internal static void Encode(
@@ -138,89 +133,76 @@ internal sealed class RazerReport
                 nameof(destination));
         }
 
-        destination.Clear();
-        destination[0] = (byte)RazerCommandStatus.New;
-        destination[1] = transactionId;
-        destination[5] = checked((byte)payload.Length);
-        destination[6] = commandClass;
-        destination[7] = commandId;
-        payload.CopyTo(destination[8..]);
-        destination[88] = CalculateChecksum(destination);
+        // The managed static encoder cleared the destination and filled its header before copying
+        // payload. For aliased spans, those writes were observable as input. Preserve
+        // that legacy input projection without overlapping ABI buffers or publishing
+        // partial native output. Production command buffers normally do not alias.
+        Span<byte> projected = stackalloc byte[MaximumPayloadLength];
+        scoped ReadOnlySpan<byte> nativePayload = payload;
+        if (payload.Overlaps(destination, out int destinationOffset))
+        {
+            payload.CopyTo(projected);
+            int first = Math.Max(0, destinationOffset);
+            int end = Math.Min(payload.Length, destinationOffset + ReportLength);
+            for (int index = first; index < end; index++)
+            {
+                projected[index] = (index - destinationOffset) switch
+                {
+                    1 => transactionId,
+                    5 => (byte)payload.Length,
+                    6 => commandClass,
+                    7 => commandId,
+                    _ => 0,
+                };
+            }
+            nativePayload = projected[..payload.Length];
+        }
+        NativeBoundaryError? error = ProductNativeRuntime.Codec.EncodeInto(
+            transactionId, commandClass, commandId, nativePayload, destination);
+        if (error is not null)
+        {
+            throw new NativeComponentException(error);
+        }
     }
 
     public ReadOnlyMemory<byte> ValidateResponse(
         ReadOnlySpan<byte> response,
         int? expectedPayloadLength = null)
     {
-        if (response.Length != ReportLength)
-        {
-            throw new RazerProtocolException(
-                $"Expected a {ReportLength}-byte response.",
-                HidProtocolValidationFailure.EnvelopeLength);
-        }
-
-        if (response[88] != CalculateChecksum(response))
-        {
-            throw new RazerProtocolException(
-                "Response checksum is invalid.",
-                HidProtocolValidationFailure.Checksum);
-        }
-
-        if (response[1] != TransactionId)
-        {
-            throw new RazerProtocolException(
-                "Response transaction does not match the request.",
-                HidProtocolValidationFailure.TransactionMismatch);
-        }
-
-        if (response[6] != CommandClass)
-        {
-            throw new RazerProtocolException(
-                "Response command class does not match the request.",
-                HidProtocolValidationFailure.CommandClassMismatch);
-        }
-
-        if (response[7] != CommandId)
-        {
-            throw new RazerProtocolException(
-                "Response command ID does not match the request.",
-                HidProtocolValidationFailure.CommandIdMismatch);
-        }
-
-        RazerCommandStatus status = (RazerCommandStatus)response[0];
-        if (status != RazerCommandStatus.Successful)
-        {
-            throw new RazerProtocolException(
-                $"Razer command failed with status 0x{response[0]:X2}.",
-                HidProtocolValidationFailure.Status);
-        }
-
-        int payloadLength = response[5];
-        if (payloadLength > MaximumPayloadLength)
-        {
-            throw new RazerProtocolException(
-                "Response payload length is invalid.",
-                HidProtocolValidationFailure.PayloadLength);
-        }
-
-        if (expectedPayloadLength is not null && payloadLength != expectedPayloadLength)
-        {
-            throw new RazerProtocolException(
-                "Response payload length does not match the command contract.",
-                HidProtocolValidationFailure.PayloadLength);
-        }
-
-        return response.Slice(8, payloadLength).ToArray();
+        NativeCodecResult result = ProductNativeRuntime.Codec.ValidateResponse(
+            TransactionId, CommandClass, CommandId, payloadBytes, response, expectedPayloadLength);
+        return InterpretResponse(result, response);
     }
 
-    private static byte CalculateChecksum(ReadOnlySpan<byte> report)
+    // The typed mapping is independently exercised with synthetic boundary failures;
+    // it never retries a call or interprets a failed native output as a response.
+    internal static ReadOnlyMemory<byte> InterpretResponse(NativeCodecResult result, ReadOnlySpan<byte> response)
     {
-        byte checksum = 0;
-        for (int index = 2; index <= 87; index++)
+        if (result.IsSuccess)
         {
-            checksum ^= report[index];
+            return result.Output!;
         }
 
-        return checksum;
+        NativeBoundaryError error = result.Error!;
+        if (error.Kind != NativeBoundaryErrorKind.ProtocolValidation)
+        {
+            throw new NativeComponentException(error);
+        }
+
+        HidProtocolValidationFailure failure = (HidProtocolValidationFailure)error.Detail;
+        string message = failure switch
+        {
+            HidProtocolValidationFailure.EnvelopeLength => $"Expected a {ReportLength}-byte response.",
+            HidProtocolValidationFailure.Checksum => "Response checksum is invalid.",
+            HidProtocolValidationFailure.TransactionMismatch => "Response transaction does not match the request.",
+            HidProtocolValidationFailure.CommandClassMismatch => "Response command class does not match the request.",
+            HidProtocolValidationFailure.CommandIdMismatch => "Response command ID does not match the request.",
+            HidProtocolValidationFailure.Status => $"Razer command failed with status 0x{response[0]:X2}.",
+            HidProtocolValidationFailure.PayloadLength => response[5] > MaximumPayloadLength
+                ? "Response payload length is invalid."
+                : "Response payload length does not match the command contract.",
+            _ => throw new NativeComponentException(error),
+        };
+        throw new RazerProtocolException(message, failure);
     }
 }

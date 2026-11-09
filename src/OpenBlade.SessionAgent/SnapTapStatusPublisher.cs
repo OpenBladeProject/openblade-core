@@ -16,12 +16,16 @@ internal sealed class SnapTapStatusPublisher : IDisposable
         });
     private readonly Task writer;
     private RazerSnapTapDriverProfile? profile;
+    private readonly KeyboardInputBackend backend;
     private int failed;
     private SnapTapRuntimeState? lastState;
+    private bool? lastFunctionKeyKnown;
 
-    internal SnapTapStatusPublisher(RazerSnapTapDriverProfile? profile = null)
+    internal SnapTapStatusPublisher(RazerSnapTapDriverProfile? profile = null,
+        KeyboardInputBackend backend = KeyboardInputBackend.RazerDriver)
     {
         this.profile = profile;
+        this.backend = backend.Normalize();
         writer = Task.Run(async () =>
         {
             try
@@ -29,7 +33,8 @@ internal sealed class SnapTapStatusPublisher : IDisposable
                 await foreach (SnapTapRuntimeStatus status in channel.Reader.ReadAllAsync()
                     .ConfigureAwait(false))
                 {
-                    SnapTapStatusStore.Write(status);
+                    if (backend == KeyboardInputBackend.RazerDriver) { KeyboardDriverStatusStore.Write(status); }
+                    else { SnapTapStatusStore.Write(status); }
                 }
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -50,19 +55,25 @@ internal sealed class SnapTapStatusPublisher : IDisposable
 
     internal void Publish(SnapTapRuntimeState state, DiagnosticFailure? failure = null)
     {
-        if (lastState == state && failure is null)
+        bool? functionKeyKnown = backend == KeyboardInputBackend.RazerDriver ? KeyboardDriverStatusStore.FunctionKeyKnown : null;
+        if (lastState == state && lastFunctionKeyKnown == functionKeyKnown && failure is null)
         {
             return;
         }
         lastState = state;
-        channel.Writer.TryWrite(new SnapTapRuntimeStatus(
+        lastFunctionKeyKnown = functionKeyKnown;
+        channel.Writer.TryWrite(CreateStatus(state, failure, profile, backend));
+    }
+
+    internal static SnapTapRuntimeStatus CreateStatus(SnapTapRuntimeState state, DiagnosticFailure? failure,
+        RazerSnapTapDriverProfile? profile, KeyboardInputBackend backend) => new(
             state,
             DateTimeOffset.UtcNow,
             Environment.ProcessId,
-            profile?.ProductName,
-            profile is { PhysicallyValidated: false },
-            failure));
-    }
+            backend == KeyboardInputBackend.RazerDriver ? profile?.ProductName : null,
+            backend == KeyboardInputBackend.RazerDriver && profile is { PhysicallyValidated: false },
+            failure)
+        { Backend = backend.Normalize() };
 
     public void Dispose()
     {

@@ -4,6 +4,7 @@ public enum TrayNotificationSeverity
 {
     Information,
     Error,
+    Warning,
 }
 
 public enum TrayNotificationDestination
@@ -21,7 +22,8 @@ public sealed record TrayNotification(
     TrayNotificationSeverity Severity,
     string? LogoAssetRelativePath = null,
     string? ReplacementTag = null,
-    TrayNotificationDestination Destination = TrayNotificationDestination.Home);
+    TrayNotificationDestination Destination = TrayNotificationDestination.Home,
+    long? OccurrenceId = null);
 
 public interface ITrayIconHost : IDisposable
 {

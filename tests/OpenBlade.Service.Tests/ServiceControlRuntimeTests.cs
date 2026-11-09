@@ -2,12 +2,13 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class ServiceControlRuntimeTests : IDisposable
+public sealed partial class ServiceControlRuntimeTests : IDisposable
 {
     [Fact]
     public async Task PadlessLifecycle_NormalBuildRejectsRequestWithoutDeviceWrites()
@@ -5299,6 +5300,67 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Stored, repeated.Status);
         Assert.Equal(writesWhileSuppressed, context.Device.LightingSetCalls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ProfileEdit_LightingRestoreFailureStillReportsDurableSave(bool unavailable)
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(true, null),
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.DisplayOff, true, CancellationToken.None);
+        int previousWrites = context.Device.LightingSetCalls;
+        context.Provider.Available = !unavailable;
+        if (!unavailable)
+        {
+            context.Device.LightingFailure = new IOException("Lighting restore failed.");
+        }
+        ProfileSet updated = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                LightingPowerPolicy = LightingPowerPolicy.Disabled,
+            },
+        };
+
+        ControlOperationResult result = await context.Runtime.UpdateProfilesAsync(
+            updated, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Contains("Lighting restore result:", result.Message);
+        Assert.Equal(updated, context.Runtime.GetStatus().Profiles);
+        Assert.Equal(updated, (await context.Store.LoadAsync(CancellationToken.None)).Profiles);
+        Assert.Equal(previousWrites + (unavailable ? 0 : 1), context.Device.LightingSetCalls);
+        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+    }
+
+    [Fact]
+    public async Task ProfileEdit_QuarantinedConfigurationDoesNotReportDurableSave()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "profiles.json");
+        byte[] original = "invalid profile document"u8.ToArray();
+        await File.WriteAllBytesAsync(path, original);
+        TestContext context = CreateContext(providerAvailable: true);
+        ProfileSet prior = context.Runtime.GetStatus().Profiles;
+
+        ControlOperationResult result = await context.Runtime.UpdateProfilesAsync(
+            prior with { BatteryPolicy = BatteryPolicy.Create(75) }, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(prior, context.Runtime.GetStatus().Profiles);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
+        Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
     [Fact]
@@ -12672,6 +12734,22 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.FunctionP,
                 CancellationToken.None);
+        ControlOperationResult turbo = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+        ControlOperationResult maximumPower = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.FunctionP,
+                CancellationToken.None);
+        ControlOperationResult gaming = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+        ControlOperationResult creator = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.FunctionP,
+                CancellationToken.None);
         ControlOperationResult custom = await context.Runtime
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
@@ -12685,11 +12763,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal("The performance button selected Silent.", dedicated.Message);
         Assert.Equal(ControlOperationStatus.Applied, functionP.Status);
         Assert.Equal("Fn+P selected Performance.", functionP.Message);
+        Assert.Equal(ControlOperationStatus.Applied, turbo.Status);
+        Assert.Equal("The performance button selected Turbo.", turbo.Message);
+        Assert.Equal(ControlOperationStatus.Applied, maximumPower.Status);
+        Assert.Equal("Fn+P selected Maximum Power.", maximumPower.Message);
+        Assert.Equal(ControlOperationStatus.Applied, gaming.Status);
+        Assert.Equal("The performance button selected Gaming.", gaming.Message);
+        Assert.Equal(ControlOperationStatus.Applied, creator.Status);
+        Assert.Equal("Fn+P selected Creator.", creator.Message);
         Assert.Equal(ControlOperationStatus.Applied, custom.Status);
         Assert.Equal("The performance button selected Custom.", custom.Message);
         Assert.Equal(ControlOperationStatus.Applied, wrapped.Status);
         Assert.Equal("Fn+P selected Balanced.", wrapped.Message);
-        Assert.Equal(4, context.Device.PerformanceSetCalls);
+        Assert.Equal(8, context.Device.PerformanceSetCalls);
         Assert.Equal(
             new PerformanceOverride(
                 PerformancePreset.Balanced,
@@ -12816,13 +12902,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(
-            "The performance button selected Custom.",
+            "The performance button selected Turbo.",
             result.Message);
         Assert.Equal(
-            PerformancePreset.Custom,
+            PerformancePreset.Turbo,
             context.Runtime.GetStatus().ConfirmedState!.Performance);
         Assert.Equal(
-            PerformancePreset.Custom,
+            PerformancePreset.Turbo,
             context.Runtime.GetStatus().PerformanceOverride!.Value);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
     }
@@ -17773,6 +17859,48 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ObserveAsync_NativeFailurePropagatesWithoutPublishingDeviceFailureOrWriting()
+    {
+        TestContext context = CreateWritableContext();
+        var expected = new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        int writes = context.Device.TotalSetterCalls;
+        context.Device.ReadStateFailure = expected;
+
+        NativeComponentException actual = await Assert.ThrowsAsync<NativeComponentException>(
+            () => context.Runtime.ObserveAsync(CancellationToken.None));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+        Assert.Equal(before.DeviceVerified, context.Runtime.GetStatus().DeviceVerified);
+        Assert.DoesNotContain(context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains(expected.Message, StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task ThermalConvergence_NativeFailureStopsConsumerWithoutRetryOrWrites()
+    {
+        ThermalConvergenceTestContext thermal = await CreateThermalConvergenceContextAsync("native-failure");
+        thermal.Context.Device.ConfirmedState = thermal.Context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        await thermal.Context.Runtime.ObserveAsync(CancellationToken.None);
+        int writes = thermal.Context.Device.TotalSetterCalls;
+        var expected = new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
+        thermal.Context.Device.ReadStateFailure = expected;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        NativeComponentException actual = await Assert.ThrowsAsync<NativeComponentException>(
+            () => thermal.Context.Runtime.RunThermalConvergenceAsync(cancellation.Token));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(writes, thermal.Context.Device.TotalSetterCalls);
+        Assert.DoesNotContain(thermal.Context.History.Snapshot().CommandResults,
+            result => result.Detail?.Contains("Maintain thermal convergence stopped safely", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
     public async Task ThermalConvergence_StrictPolicyReportsDriftWithoutWriting()
     {
         ThermalConvergenceTestContext thermal =
@@ -19859,7 +19987,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         TimeProvider? timeProvider = null,
         IUserConfigurationRepository? userConfigurationRepository = null,
         ProfileSetValidator? profileValidator = null,
-        LowPowerGate? lowPowerGate = null)
+        LowPowerGate? lowPowerGate = null,
+        ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
+        string? coolingPadStateDirectory = null)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -19871,7 +20001,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             timeProvider: timeProvider,
             userConfigurationRepository: userConfigurationRepository,
             profileValidator: profileValidator,
-            lowPowerGate: lowPowerGate);
+            lowPowerGate: lowPowerGate,
+            coolingPadDeviceProvider: coolingPadDeviceProvider,
+            coolingPadStateDirectory: coolingPadStateDirectory);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             ChargeLimits = new HashSet<int> { 50, 55, 60, 65, 70, 75, 80 },
@@ -20953,7 +21085,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ];
         foreach (PerformancePreset performance in fullPowerProfiles)
         {
-            foreach (FanMode fanMode in Enum.GetValues<FanMode>())
+            // The operational Battery Saver stop target is not an ordinary
+            // full-power fan preference or a HyperBoost entry intent.
+            foreach (FanMode fanMode in DeviceCapabilities.SafeTargetDefaults().FanModes)
             {
                 matrix.Add(performance, fanMode);
             }
@@ -30981,7 +31115,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         IDisplayBrightnessHidController? displayBrightnessHidController = null,
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
-        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null)
+        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
+        Func<PowerSource>? batterySaverFanStopPowerReader = null,
+        IFanStopBackend? fanStopBackend = null,
+        ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
+        string? coolingPadStateDirectory = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -31079,7 +31217,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             hyperBoostPadDiscoverySource: hyperBoostPadDiscoverySource
                 ?? new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
-            hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary);
+            hyperBoostLifecycleExitBoundary: hyperBoostLifecycleExitBoundary,
+            laptopControlPendingStore: new LaptopControlPendingStore(Path.Combine(directory, "laptop-control-pending.json")),
+            batterySaverFanStopPowerReader: batterySaverFanStopPowerReader ?? (() => telemetry.Current.PowerSource),
+            fanStopBackend: fanStopBackend,
+            coolingPadDeviceProvider: coolingPadDeviceProvider,
+            coolingPadStateDirectory: coolingPadStateDirectory);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -31658,10 +31801,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         private readonly object publishGate = new();
 
+        public Action? BeforePublish { get; set; }
+
         public List<ServiceStatusSnapshot> Published { get; } = [];
 
         public void Publish(ServiceStatusSnapshot snapshot)
         {
+            BeforePublish?.Invoke();
             lock (publishGate)
             {
                 Published.Add(snapshot);
@@ -31675,6 +31821,30 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     private sealed class CountingProvider(bool available, IBladeDevice device)
         : IVerifiedBladeDeviceProvider, IGpuClockOffsetConfirmationInvalidator
     {
+        public string? LaptopControlRecoveryIdentity { get; set; } = "RZ09-0581|1532:02E0";
+
+        public Func<bool>? RecoveryWriteAdmission { get; private set; }
+        public int GuardianLeaseAcquisitions { get; private set; }
+        public GuardianFanStopBackendTests.Lease GuardianLease { get; } = new();
+
+        public Task<IDisposable> AcquireFanStopHardwareLeaseAsync(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            GuardianLeaseAcquisitions++;
+            return Task.FromResult<IDisposable>(GuardianLease);
+        }
+
+        public void SetRecoveryWriteAdmission(Func<bool> admission) => RecoveryWriteAdmission = admission;
+
+        public Func<bool>? BatterySaverFanStopWriteAdmission { get; private set; }
+        public bool BatterySaverFanStopReadInterest { get; private set; }
+
+        public void SetBatterySaverFanStopContext(bool readbackRequested, Func<bool>? writeAdmission)
+        {
+            BatterySaverFanStopReadInterest = readbackRequested;
+            BatterySaverFanStopWriteAdmission = writeAdmission;
+        }
+
         public IBladeDevice Device { get; set; } = device;
 
         public bool Available { get; set; } = available;
@@ -31757,6 +31927,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Action? AfterGpuClockOffsetInvalidation { get; set; }
 
         public Exception? InvalidationFailure { get; set; }
+
+        public Action? AfterLightingInvalidation { get; set; }
 
         public Exception? RelinquishFailure { get; set; }
 
@@ -31868,6 +32040,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 counting.ConfirmedState = counting.ConfirmedState with { Lighting = null };
             }
 
+            AfterLightingInvalidation?.Invoke();
             return Task.FromResult(new LightingRendererInvalidationResult(
                 observed,
                 lowPower ? DriverModeRestoreOutcome.NotOwned : InvalidationDriverModeRestoreOutcome));
@@ -31960,6 +32133,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public List<string> BatterySetterCalls { get; } = [];
 
         public int LightingSetCalls { get; private set; }
+        public List<IndependentLightingSettings> IndependentLightingWrites { get; } = [];
 
         public List<LightingRefreshRate> LightingRefreshRates { get; } = [];
 
@@ -32065,6 +32239,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Action? BeforeLightingRefreshRateSet { get; set; }
 
         public Exception? OneShotFailure { get; set; }
+
+        public Action<ApplyOneShotLaptopControl>? AfterOneShotSet { get; set; }
+
+        public Exception? FunctionKeyReadFailure { get; set; }
+
+        public Action? BeforeFunctionKeyRead { get; set; }
 
         public bool? StartupAnimationEnabled { get; set; }
 
@@ -32172,6 +32352,20 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             AfterReadState?.Invoke();
             AfterReadStateCall?.Invoke(StateReadCalls);
             return Task.FromResult(ConfirmedState);
+        }
+
+        public async Task<ConfirmedDeviceState> ReadIndependentLightingStateAsync(
+            IndependentLightingSettings fields, CancellationToken cancellationToken)
+        {
+            ConfirmedDeviceState state = await ReadStateAsync(cancellationToken);
+            byte? brightness = fields.Brightness.HasValue ? state.IndependentLighting?.Brightness : null;
+            LogoLightingMode? logo = fields.LogoMode.HasValue ? state.IndependentLighting?.LogoMode : null;
+            return state with
+            {
+                Lighting = null,
+                LogoLighting = logo,
+                IndependentLighting = brightness.HasValue || logo.HasValue ? new(brightness, logo) : null,
+            };
         }
 
         public Task<ConfirmedDeviceState> ReadPerformanceFanStateAsync(
@@ -32796,6 +32990,28 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             return Task.CompletedTask;
         }
 
+        public Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            TotalCalls++;
+            IndependentLightingWrites.Add(value);
+            if (LightingFailure is not null)
+            {
+                throw LightingFailure;
+            }
+            if (SuppressConfirmationFor != DeviceSubsystem.Lighting)
+            {
+                ConfirmedState = ConfirmedState with
+                {
+                    IndependentLighting = new(
+                        value.Brightness ?? ConfirmedState.IndependentLighting?.Brightness,
+                        value.LogoMode ?? ConfirmedState.IndependentLighting?.LogoMode),
+                    LogoLighting = value.LogoMode ?? ConfirmedState.LogoLighting,
+                };
+            }
+            AfterSetter?.Invoke(DeviceSubsystem.Lighting);
+            return Task.CompletedTask;
+        }
         public Task SetLightingRefreshRateAsync(
             LightingRefreshRate refreshRate,
             CancellationToken cancellationToken)
@@ -32856,6 +33072,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             {
                 GamingModeEnabled = gamingModeEnabled;
             }
+            AfterOneShotSet?.Invoke(value);
             return OneShotFailure is null
                 ? Task.CompletedTask
                 : Task.FromException(OneShotFailure);
@@ -32874,6 +33091,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             TotalCalls++;
+            BeforeFunctionKeyRead?.Invoke();
+            if (FunctionKeyReadFailure is { } failure)
+            {
+                return Task.FromException<FunctionKeyPrimaryMode?>(failure);
+            }
             return Task.FromResult(FunctionKeyPrimary);
         }
 

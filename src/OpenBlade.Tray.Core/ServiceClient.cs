@@ -50,6 +50,18 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ReportApplicationContextRequest request,
         CancellationToken token) => SendMutationAsync(request, token);
 
+    public Task<ControlOperationResult> SetCoolingPadSettingsAsync(CoolingPadSettings settings, CancellationToken token) =>
+        SendMutationAsync(new SetCoolingPadSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), settings), token);
+
+    public Task<ControlOperationResult> ReleaseCoolingPadControlAsync(CancellationToken token) =>
+        SendMutationAsync(new ReleaseCoolingPadControlRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), token);
+
+    public async Task<ServiceStatusSnapshot> ReadCoolingPadStatusAsync(CancellationToken token)
+    {
+        ServiceResponse response = await SendOnceAsync(new ReadCoolingPadStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), token).ConfigureAwait(false);
+        return response.Status ?? throw new InvalidDataException("Cooling-pad read response is missing its status body.");
+    }
+
     public async Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
     {
         var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
@@ -177,6 +189,17 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 value),
             token);
 
+    public Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target,
+        CpuTuningSettings settings, CancellationToken token) => SendMutationAsync(
+            new SetCpuTuningRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), target, settings), token);
+
+    public Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend,
+        CancellationToken token) => SendMutationAsync(
+            new ObserveCpuTuningRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), useInstalledBackend), token);
+
+    public Task<ControlOperationResult> RestoreCpuTuningAsync(CpuTuningTarget target,
+        CancellationToken token) => SendMutationAsync(
+            new RestoreCpuTuningRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), target), token);
     public Task<ControlOperationResult> SetGpuClockTuningAsync(
         GpuClockTuningSettings value,
         OverrideLifetime lifetime,
@@ -224,10 +247,30 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
             },
             token);
 
+    public Task<ControlOperationResult> SetBatterySaverFanStopAsync(bool enabled, CancellationToken token) =>
+        SendMutationAsync(new SetBatterySaverFanStopRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), enabled), token);
+
+    public Task<ControlOperationResult> SetFanStopSettingsAsync(FanStopSettings settings, CancellationToken token) =>
+        SendMutationAsync(new SetFanStopSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), settings), token);
+
+    public Task<ControlOperationResult> ResumeAutomaticFanStopAsync(CancellationToken token) =>
+        SendMutationAsync(new ResumeAutomaticFanStopRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()), token);
+
+    public Task<ControlOperationResult> SetFanStopModeAsync(FanStopMode mode, CancellationToken token) =>
+        SendMutationAsync(new SetFanStopModeRequest(
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), mode), token);
+
     public Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token) => SendMutationAsync(
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
+            token);
+
+    public Task<ControlOperationResult> SetIndependentLightingOverrideAsync(
+        ManualOverride<IndependentLightingSettings>? value,
+        CancellationToken token) => SendMutationAsync(
+            new SetIndependentLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
             token);
 
     public Task<ControlOperationResult> StepKeyboardBrightnessAsync(

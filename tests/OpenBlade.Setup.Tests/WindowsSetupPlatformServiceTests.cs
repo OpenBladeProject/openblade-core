@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using OpenBlade.Contracts;
 using OpenBlade.Setup;
 
 namespace OpenBlade.Setup.Tests;
@@ -147,6 +149,68 @@ public sealed class WindowsSetupPlatformServiceTests
 
         Assert.DoesNotContain(serviceControl.Commands, command => command.Arguments[0] == "start");
         Assert.Equal(1, health.Verifications);
+    }
+
+    [Fact]
+    public async Task HealthFailures_RetainDistinctInstallAndRollbackTimings()
+    {
+        string logPath = Path.GetTempFileName();
+        using var listener = new SetupDiagnosticTraceListener(new SetupLog(logPath));
+        Trace.Listeners.Add(listener);
+        try
+        {
+            var serviceControl = new RecordingServiceControl { State = SetupServiceState.Running };
+            int attempts = 0;
+            Exception[] failures =
+            [
+                new TaskCanceledException("Private failure message"),
+                new IOException("Private failure message"),
+            ];
+            var probe = new SetupServiceHealthProbe(
+                _ => ValueTask.FromException<Stream>(failures[attempts++]),
+                () => new(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()));
+            WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(serviceControl, healthProbe: probe);
+
+            TimeoutException timeout = await Assert.ThrowsAsync<TimeoutException>(
+                () => platform.VerifyServiceHealthAsync(CancellationToken.None));
+            Assert.IsType<TaskCanceledException>(timeout.InnerException);
+            await Assert.ThrowsAsync<IOException>(() => platform.RestoreServiceInstallStateAsync(
+                new(true, true), CancellationToken.None));
+            var customProbe = new RecordingHealthProbe();
+            await WindowsSetupPlatformTestFactory.Create(serviceControl, healthProbe: customProbe)
+                .VerifyServiceHealthAsync(CancellationToken.None);
+
+            string[] entries = (await File.ReadAllLinesAsync(logPath))
+                .Where(line => line.Contains("OpenBlade setup service health timing.", StringComparison.Ordinal))
+                .ToArray();
+            Assert.Collection(entries,
+                install =>
+                {
+                    Assert.Contains("Purpose=install", install);
+                    Assert.Contains("Outcome=TimeoutException Cause=TaskCanceledException", install);
+                },
+                rollback =>
+                {
+                    Assert.Contains("Purpose=rollback", rollback);
+                    Assert.Contains("Outcome=IOException", rollback);
+                },
+                custom => Assert.Contains("StageTiming=unavailable", custom));
+            Assert.All(entries.Take(2), entry =>
+            {
+                Assert.Contains("BudgetMs=10000", entry);
+                Assert.Contains("Connect=[", entry);
+                Assert.Contains("Succeeded=False", entry);
+                Assert.Contains("HeaderWrite=not-entered", entry);
+                Assert.DoesNotContain("Private failure message", entry);
+            });
+            Assert.Equal(1, customProbe.Verifications);
+            Assert.Empty(serviceControl.Commands);
+        }
+        finally
+        {
+            Trace.Listeners.Remove(listener);
+            File.Delete(logPath);
+        }
     }
 
     [Fact]

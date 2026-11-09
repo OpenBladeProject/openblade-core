@@ -1,6 +1,7 @@
 using System.Security.Principal;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -669,6 +670,94 @@ public sealed class ServiceSessionPowerTransitionCoordinatorTests
         Assert.Equal(1, runtime.MaximumConcurrentOperations);
     }
 
+    [Fact]
+    public async Task NativeFailureAfterRelayCallerLeaves_StopsSupervisionAndDiscardsPendingWork()
+    {
+        var time = new Clock();
+        var gate = new LowPowerGate(time);
+        var failure = new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
+        var runtime = new Runtime
+        {
+            BlockResume = true,
+            IgnoreResumeCancellation = true,
+            ResumeFailure = failure,
+        };
+        var coordinator = new ServiceSessionPowerTransitionCoordinator(runtime, gate);
+        var events = new List<string>();
+        Task supervised = Worker.RunWithShutdownCleanupAsync(
+            token => ServiceBackgroundTaskGroup.RunAsync(
+                [coordinator.WaitForNativeFailureAsync, async siblingToken =>
+                {
+                    try { await Task.Delay(Timeout.InfiniteTimeSpan, siblingToken); }
+                    finally { events.Add("sibling stopped"); }
+                }], token),
+            (intentional, token) =>
+            {
+                Assert.False(intentional);
+                Assert.False(token.IsCancellationRequested);
+                events.Add("cleanup");
+                return Task.CompletedTask;
+            },
+            CancellationToken.None,
+            error => { Assert.Same(failure, error); events.Add("report"); });
+        using var caller = new CancellationTokenSource();
+        ReportSessionPowerTransitionRequest first = Request(time, false);
+        Task<ControlOperationResult> active = coordinator.ReportAsync(first,
+            ServiceClientContext.TrustedTestClient, static () => true, caller.Token);
+        await runtime.ResumeStarted.Task.WaitAsync(DeadlockGuard);
+        caller.Cancel();
+        Assert.Equal(ControlOperationStatus.Stored, (await active.WaitAsync(DeadlockGuard)).Status);
+        time.Advance(1);
+        Task<ControlOperationResult> pending = Report(coordinator, first with
+        {
+            Sequence = 2,
+            TimestampQpc = time.GetTimestamp(),
+            Suspending = true,
+        });
+        runtime.ResumeRelease.TrySetResult();
+
+        NativeComponentException actual = await Assert.ThrowsAsync<NativeComponentException>(
+            () => supervised.WaitAsync(DeadlockGuard));
+        Assert.Same(failure, actual);
+        Assert.Equal(ControlOperationStatus.Failed, (await pending.WaitAsync(DeadlockGuard)).Status);
+        Assert.Equal(["sibling stopped", "report", "cleanup"], events);
+        time.Advance(1);
+        ControlOperationResult next = await Report(coordinator, first with
+        {
+            Sequence = 3,
+            TimestampQpc = time.GetTimestamp(),
+        });
+        Assert.Equal(ControlOperationStatus.Failed, next.Status);
+        Assert.Equal(1, runtime.BeginResumeCalls);
+        Assert.Equal(0, runtime.CompleteResumeCalls);
+        Assert.Equal(0, runtime.RestoreCalls);
+        Assert.Equal(0, runtime.PrepareCalls);
+    }
+
+    [Fact]
+    public async Task OrdinaryPowerFailure_AllowsLaterNotificationsAndSupervisionCancellation()
+    {
+        var time = new Clock();
+        var gate = new LowPowerGate(time);
+        var runtime = new Runtime { ResumeFailure = new IOException("temporary observation failure") };
+        var coordinator = new ServiceSessionPowerTransitionCoordinator(runtime, gate);
+        using var stopping = new CancellationTokenSource();
+        Task supervision = coordinator.WaitForNativeFailureAsync(stopping.Token);
+        ReportSessionPowerTransitionRequest first = Request(time, false);
+        Assert.Equal(ControlOperationStatus.Failed, (await Report(coordinator, first)).Status);
+        time.Advance(1);
+        Assert.Equal(ControlOperationStatus.Applied, (await Report(coordinator, first with
+        {
+            Sequence = 2,
+            TimestampQpc = time.GetTimestamp(),
+            Suspending = true,
+        })).Status);
+        Assert.Equal(1, runtime.PrepareCalls);
+        Assert.False(supervision.IsCompleted);
+        stopping.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => supervision);
+    }
+
     private static Task<ControlOperationResult> Report(
         ServiceSessionPowerTransitionCoordinator coordinator,
         ReportSessionPowerTransitionRequest request) => coordinator.ReportAsync(request,
@@ -714,6 +803,8 @@ public sealed class ServiceSessionPowerTransitionCoordinatorTests
         internal bool BlockPrepare { get; init; }
         internal bool IgnorePrepareCancellation { get; init; }
         internal bool BlockResume { get; init; }
+        internal bool IgnoreResumeCancellation { get; init; }
+        internal Exception? ResumeFailure { get; init; }
         internal bool BlockNoWriteInvalidation { get; init; }
         internal bool HoldCanceledNoWriteInvalidation { get; init; }
         internal bool BlockRestore { get; init; }
@@ -809,7 +900,12 @@ public sealed class ServiceSessionPowerTransitionCoordinatorTests
                 ResumeStarted.TrySetResult();
                 if (BlockResume)
                 {
-                    await ResumeRelease.Task.WaitAsync(cancellationToken);
+                    await ResumeRelease.Task.WaitAsync(IgnoreResumeCancellation
+                        ? CancellationToken.None : cancellationToken);
+                }
+                if (ResumeFailure is not null)
+                {
+                    throw ResumeFailure;
                 }
             }
             finally

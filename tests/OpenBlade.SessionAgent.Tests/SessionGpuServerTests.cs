@@ -117,13 +117,13 @@ public sealed class SessionGpuServerTests
     {
         private int scans;
 
-        public WindowsGpuAppScan Scan(CancellationToken cancellationToken = default)
+        public Task<WindowsGpuAppScan> ScanAsync(CancellationToken cancellationToken = default)
         {
             if (Interlocked.Increment(ref scans) == 1)
             {
                 throw new NullReferenceException("simulated dispatcher defect");
             }
-            return new WindowsGpuAppScan(true, null, []);
+            return Task.FromResult(new WindowsGpuAppScan(true, null, []));
         }
 
         public IReadOnlyList<WindowsGpuAppActionResult> CloseGracefully(

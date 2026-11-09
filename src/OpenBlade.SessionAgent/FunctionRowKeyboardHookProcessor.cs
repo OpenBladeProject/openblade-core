@@ -5,6 +5,11 @@ namespace OpenBlade.SessionAgent;
 
 internal static class FunctionRowKeyboardHookProcessor
 {
+    internal static bool ShouldAdmitNewPress(
+        KeyboardInputBackend backend,
+        KeyboardDriverModeObservation driverMode) =>
+        backend == KeyboardInputBackend.WindowsHook && driverMode.AllowsFunctionRowInterception;
+
     public static bool Process(
         RazerBladeFunctionRowInputState inputState,
         RazerBladeInputDeviceKind deviceKind,

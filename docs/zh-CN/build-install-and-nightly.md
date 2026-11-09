@@ -11,6 +11,7 @@
 
 ## 发布构建产物
 
+请在 OneDrive 之外、路径较短的独立 worktree 中切换到目标提交，再运行正式发布构建。
 创建图形安装程序、`win-x64` 生产包，以及独立的开发者工具：
 
 ```powershell
@@ -61,8 +62,8 @@ OpenBlade 修复操作不会改动已安装的共享运行时。
 - `/quiet` 成功返回后，调用安装程序的自动化脚本必须通过原来的普通权限进程启动
   已安装的 `OpenBlade.Tray.exe`，并确认托盘程序和 Session Agent 正在运行。
 - Microsoft Store EXE 渠道不支持这种由调用方重新启动应用的方式，
-  因为静默调用由 Partner Center 管理。剩余问题见
-  [议题 #25](https://github.com/OSSBlade/openblade-core/issues/25)。
+  因为静默调用由 Partner Center 管理。这个限制记录在原始
+  [议题 #25](https://github.com/OSSBlade/openblade-core/issues/25)中。
 
 <a id="versioned-development-builds"></a>
 
@@ -126,8 +127,8 @@ OpenBlade 修复操作不会改动已安装的共享运行时。
 - 未来的 Microsoft Store EXE 上架版本使用上述离线构建。
 - Store 安装使用 `/install /quiet /norestart`；直接下载仍保留图形界面。
 - Store 无法在静默安装后按要求以普通用户权限重新启动应用，
-  因此在[议题 #25](https://github.com/OSSBlade/openblade-core/issues/25)解决前，
-  安装后启动应用这一环节仍未解决。
+  这一环节目前尚未实现；原始记录见
+  [议题 #25](https://github.com/OSSBlade/openblade-core/issues/25)。
 
 安装包要求、认证说明、硬件声明和后续发布步骤，
 请参阅 [Microsoft Store 提交](../microsoft-store-submission.md)。
@@ -150,7 +151,7 @@ OpenBlade 修复操作不会改动已安装的共享运行时。
   只有选择 **Nightly** 更新渠道时，应用才会提供这些版本。
 
 Nightly 是测试构建。安装前，请用附带的 SHA-256 文件验证 `OpenBlade-Setup.exe`。
-如想帮助测试笔记本，请按[Blade 实验性支持指南](experimental-blade-support.md)
+如想帮助测试笔记本，请按[基于已审核来源的 Blade 支持指南](experimental-blade-support.md)
 了解可用功能和测试报告要求。无论选择哪个更新渠道，OpenBlade 都会自动启用已识别型号的可用功能。
 
 <a id="attestations-and-signing-status"></a>

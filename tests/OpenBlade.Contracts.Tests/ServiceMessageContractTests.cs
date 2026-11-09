@@ -9,11 +9,28 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(72, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(79, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(16 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
         Assert.Equal(24 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticResponseBytes);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent, 0)]
+    [InlineData(PerformancePreset.Balanced, 1)]
+    [InlineData(PerformancePreset.Performance, 2)]
+    [InlineData(PerformancePreset.BatterySaver, 3)]
+    [InlineData(PerformancePreset.BatteryBalanced, 4)]
+    [InlineData(PerformancePreset.Custom, 5)]
+    [InlineData(PerformancePreset.Turbo, 6)]
+    [InlineData(PerformancePreset.MaximumPower, 7)]
+    [InlineData(PerformancePreset.Gaming, 8)]
+    [InlineData(PerformancePreset.Creator, 9)]
+    public void PerformancePreset_WireValuesAppendDistinctModesWithoutRenumbering(
+        PerformancePreset preset, int wireValue)
+    {
+        Assert.Equal(wireValue, (int)preset);
     }
 
     [Fact]
@@ -22,19 +39,32 @@ public sealed class ServiceMessageContractTests
         AssertDerivedTypes(
             typeof(ServiceRequest),
             (typeof(GetStatusRequest), "getStatus"),
+            (typeof(SetCoolingPadSettingsRequest), "setCoolingPadSettings"),
+            (typeof(ReadCoolingPadStatusRequest), "readCoolingPadStatus"),
+            (typeof(ReleaseCoolingPadControlRequest), "releaseCoolingPadControl"),
+            (typeof(SetCoolingPadDemandLeaseRequest), "setCoolingPadDemandLease"),
+            (typeof(RemoveCoolingPadDemandLeaseRequest), "removeCoolingPadDemandLease"),
             (typeof(ObserveStateRequest), "observeState"),
             (typeof(SubscribeStatusRequest), "subscribeStatus"),
             (typeof(ExportDiagnosticsRequest), "exportDiagnostics"),
             (typeof(UpdateProfilesRequest), "updateProfiles"),
             (typeof(SetPerformanceOverrideRequest), "setPerformanceOverride"),
             (typeof(SetGpuClockTuningRequest), "setGpuClockTuning"),
+            (typeof(SetCpuTuningRequest), "setCpuTuning"),
+            (typeof(ObserveCpuTuningRequest), "observeCpuTuning"),
+            (typeof(RestoreCpuTuningRequest), "restoreCpuTuning"),
             (typeof(SetHyperBoostRequest), "setHyperBoost"),
             (typeof(ValidatePadlessHyperBoostLifecycleRequest), "validatePadlessHyperBoostLifecycle"),
             (typeof(ValidateThermalExternalDriftRequest), "validateThermalExternalDrift"),
             (typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut"),
             (typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview"),
             (typeof(SetFanOverrideRequest), "setFanOverride"),
+            (typeof(SetBatterySaverFanStopRequest), "setBatterySaverFanStop"),
+            (typeof(SetFanStopModeRequest), "setFanStopMode"),
+            (typeof(SetFanStopSettingsRequest), "setFanStopSettings"),
+            (typeof(ResumeAutomaticFanStopRequest), "resumeAutomaticFanStop"),
             (typeof(SetLightingOverrideRequest), "setLightingOverride"),
+            (typeof(SetIndependentLightingOverrideRequest), "setIndependentLightingOverride"),
             (typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness"),
             (typeof(SetDisplayBrightnessHidUsageRequest), "setDisplayBrightnessHidUsage"),
             (typeof(SetKeyboardLightingControlModeRequest), "setKeyboardLightingControlMode"),
@@ -70,7 +100,7 @@ public sealed class ServiceMessageContractTests
     {
         string[] expected =
         [
-            "Revision", "DeviceVerified", "WritesBlocked", "PotentialControllers",
+            "CoolingPad", "Revision", "DeviceVerified", "WritesBlocked", "PotentialControllers",
             "ControllerDetectionWarning", "ExternalChanges", "UnconfirmedWrites", "Message", "ObservationReason",
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
             "ActiveApplicationProfileId", "EffectiveLaptopBehavior",
@@ -87,7 +117,8 @@ public sealed class ServiceMessageContractTests
             "PerformanceShortcutPreview", "BatteryHealth", "KeyboardLightingControlMode",
             "ControlAccess", "AllowUntestedFirmware", "AllowExperimentalFeatures",
             "IsExperimentalDevice", "ExperimentalSupportSource", "ExperimentalWritesPaused", "FirmwareCompatibility",
-            "DisplayBrightnessHidAvailability",
+            "DisplayBrightnessHidAvailability", "BatterySaverFanStopStatus", "FanStopStatus",
+            "CpuTuning",
         ];
 
         Assert.Equal(

@@ -32,61 +32,98 @@ public sealed class WindowsAudioMeterLightingSamplerFactory
 public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSampler
 {
     private readonly IAudioMeterNativeApi nativeApi;
+    private readonly object nativeStateSync = new();
     private readonly object enumeratorObject;
-    private readonly object deviceObject;
-    private readonly object meterObject;
+    private readonly IDisposable? defaultOutputSubscription;
+    private object? deviceObject;
+    private object? meterObject;
+    private long defaultOutputGeneration;
+    private long boundOutputGeneration;
     private int disposed;
 
     public WindowsAudioMeterLightingSampler()
-        : this(WindowsAudioMeterNativeApi.Instance)
+        : this(WindowsAudioMeterNativeApi.Instance, WindowsThxActiveOutput.SubscribeDefaultMultimediaOutput)
     {
     }
 
-    internal WindowsAudioMeterLightingSampler(IAudioMeterNativeApi nativeApi)
+    internal WindowsAudioMeterLightingSampler(
+        IAudioMeterNativeApi nativeApi,
+        Func<Action, IDisposable>? subscribeDefaultOutputChanged = null)
     {
         this.nativeApi = nativeApi
             ?? throw new ArgumentNullException(nameof(nativeApi));
-        object? acquiredEnumerator = null;
-        object? acquiredDevice = null;
-        object? acquiredMeter = null;
+        enumeratorObject = nativeApi.CreateEnumerator();
         try
         {
-            acquiredEnumerator = nativeApi.CreateEnumerator();
-            acquiredDevice = nativeApi.GetDefaultAudioEndpoint(acquiredEnumerator);
-            acquiredMeter = nativeApi.ActivateMeter(acquiredDevice);
-            nativeApi.ValidateMeter(acquiredMeter);
-
-            enumeratorObject = acquiredEnumerator;
-            deviceObject = acquiredDevice;
-            meterObject = acquiredMeter;
-            acquiredEnumerator = null;
-            acquiredDevice = null;
-            acquiredMeter = null;
+            // Registration publishes an initial callback. Subscribe before binding,
+            // then acknowledge only the generation captured before that binding.
+            // COM callbacks invalidate state only; the capture owner performs all
+            // acquisition, sampling and release without per-frame enumeration.
+            defaultOutputSubscription = subscribeDefaultOutputChanged?.Invoke(
+                () => Interlocked.Increment(ref defaultOutputGeneration));
+            BindDefaultOutput();
         }
-        finally
+        catch
         {
-            ReleaseIfAcquired(nativeApi, acquiredMeter);
-            ReleaseIfAcquired(nativeApi, acquiredDevice);
-            ReleaseIfAcquired(nativeApi, acquiredEnumerator);
+            Dispose();
+            throw;
         }
     }
 
     public AmbientLightingFrame Capture(double colorBoost)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         ValidateColorBoost(colorBoost);
-
-        float peak = nativeApi.GetPeakValue(meterObject);
+        float peak = ReadPeak();
         return RenderFrame(peak, colorBoost);
     }
 
     public UniformLightingFrame CaptureUniform(double colorBoost)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         ValidateColorBoost(colorBoost);
-
-        float peak = nativeApi.GetPeakValue(meterObject);
+        float peak = ReadPeak();
         return RenderUniformFrame(peak, colorBoost);
+    }
+
+    private float ReadPeak()
+    {
+        lock (nativeStateSync)
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+            if (boundOutputGeneration != Volatile.Read(ref defaultOutputGeneration))
+            {
+                BindDefaultOutput();
+            }
+
+            // A concurrent switch may leave this frame on the previous endpoint.
+            // Its notification remains pending for the next scheduled capture;
+            // ordinary output changes must not enter the native-failure backoff.
+            return nativeApi.GetPeakValue(meterObject!);
+        }
+    }
+
+    private void BindDefaultOutput()
+    {
+        long generation = Volatile.Read(ref defaultOutputGeneration);
+        object? acquiredDevice = null;
+        object? acquiredMeter = null;
+        try
+        {
+            acquiredDevice = nativeApi.GetDefaultAudioEndpoint(enumeratorObject);
+            acquiredMeter = nativeApi.ActivateMeter(acquiredDevice);
+            nativeApi.ValidateMeter(acquiredMeter);
+            object? previousDevice = deviceObject;
+            object? previousMeter = meterObject;
+            deviceObject = acquiredDevice;
+            meterObject = acquiredMeter;
+            boundOutputGeneration = generation;
+            acquiredDevice = null;
+            acquiredMeter = null;
+            ReleaseEndpoint(previousMeter, previousDevice);
+        }
+        finally
+        {
+            ReleaseEndpoint(acquiredMeter, acquiredDevice);
+        }
     }
 
     internal static AmbientLightingFrame RenderFrame(float peak, double colorBoost)
@@ -95,12 +132,7 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
         {
             throw new ArgumentOutOfRangeException(nameof(peak));
         }
-        if (!double.IsFinite(colorBoost)
-            || colorBoost is < 1 or > 4
-            || colorBoost * 4 != Math.Truncate(colorBoost * 4))
-        {
-            throw new ArgumentOutOfRangeException(nameof(colorBoost));
-        }
+        ValidateColorBoost(colorBoost);
         double level = Math.Clamp(peak * colorBoost, 0, 1);
         int litColumns = (int)Math.Ceiling(
             level * AmbientLightingFrame.Columns);
@@ -168,22 +200,43 @@ public sealed class WindowsAudioMeterLightingSampler : IAudioMeterLightingSample
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        lock (nativeStateSync)
         {
-            return;
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+            {
+                return;
+            }
+            try
+            {
+                defaultOutputSubscription?.Dispose();
+            }
+            finally
+            {
+                object? previousMeter = meterObject;
+                object? previousDevice = deviceObject;
+                meterObject = null;
+                deviceObject = null;
+                try
+                {
+                    ReleaseEndpoint(previousMeter, previousDevice);
+                }
+                finally
+                {
+                    nativeApi.Release(enumeratorObject);
+                }
+            }
         }
-        nativeApi.Release(meterObject);
-        nativeApi.Release(deviceObject);
-        nativeApi.Release(enumeratorObject);
     }
 
-    private static void ReleaseIfAcquired(
-        IAudioMeterNativeApi nativeApi,
-        object? value)
+    private void ReleaseEndpoint(object? meter, object? device)
     {
-        if (value is not null)
+        try
         {
-            nativeApi.Release(value);
+            if (meter is not null) { nativeApi.Release(meter); }
+        }
+        finally
+        {
+            if (device is not null) { nativeApi.Release(device); }
         }
     }
 }

@@ -443,6 +443,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.SupportedLightingRefreshRates.Contains(value);
         }
 
+        result["fans.batterySaverStop"] = capabilities.SupportsBatterySaverFanStop;
         result["battery.chargeLimit"] = capabilities.ChargeLimits.Count > 0;
         result["battery.protectionOff"] = capabilities.SupportsBatteryProtectionOff;
         result["battery.temporaryFullCharge"] = capabilities.SupportsTemporaryFullCharge;
@@ -548,6 +549,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
     {
         DeviceCapabilities capabilities = status.Capabilities ?? DeviceCapabilities.Unavailable();
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
+        RazerBladeModelInfo? model = RazerBladeModelCatalog.Find(status.Firmware?.ModelNumber);
         var configuration = new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
             ["status.revision"] = status.Revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -599,9 +601,13 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["experimental.writesPaused"] = status.ExperimentalWritesPaused.ToString(),
             ["experimental.deviceDetected"] = status.IsExperimentalDevice.ToString(),
             ["experimental.evidenceSource"] = status.ExperimentalSupportSource ?? "Unavailable",
+            ["support.status"] = model?.IsOfficiallySupported == true ? "Supported" : "NotEstablished",
+            ["support.basis"] = (model?.SupportBasis ?? BladeSupportBasis.NotEstablished).ToString(),
+            ["support.physicalValidation"] = model is null ? "NotEstablished"
+                : model.HasPhysicalValidation ? "Validated" : "Pending",
             ["experimental.validationBoundary"] = status.IsExperimentalDevice
-                ? "Upstream-derived; physical validation pending tester reports"
-                : "Not an experimental device",
+                ? "Source-reviewed support; physical validation tracked separately"
+                : "See support.basis and support.physicalValidation",
             ["firmware.allowUntested"] = status.AllowUntestedFirmware.ToString(),
             ["firmware.compatibility"] = status.FirmwareCompatibility.ToString(),
             ["confirmed.performance"] = EnumOrUnavailable(confirmed?.Performance),

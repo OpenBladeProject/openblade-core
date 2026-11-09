@@ -4,6 +4,7 @@ param(
     [string]$Configuration = 'Release',
     [string]$VcRedistPath,
     [string]$DotNetRuntimePath,
+    [string]$PawnIoInstallerPath,
     [switch]$OfflineInstaller,
     [string]$SigningThumbprint,
     [string]$SignTool,
@@ -17,7 +18,8 @@ param(
     [string]$LocalDevVersion,
     [string]$SourceRevision,
     [string]$WorkflowRunId,
-    [switch]$ThermalExternalDriftValidation
+    [switch]$ThermalExternalDriftValidation,
+    [switch]$CpuVoltageValidation
 )
 
 Set-StrictMode -Version 3.0
@@ -27,10 +29,12 @@ $artifacts = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts'))
 . (Join-Path $PSScriptRoot 'PublishPayloadValidation.ps1')
 . (Join-Path $PSScriptRoot 'InstallerValidation.ps1')
 . (Join-Path $PSScriptRoot 'InstallerPrerequisites.ps1')
+. (Join-Path $PSScriptRoot 'PawnIoPrerequisite.ps1')
 . (Join-Path $PSScriptRoot 'StoreSubmissionValidation.ps1')
 . (Join-Path $PSScriptRoot 'WindowsAppRuntimeNotificationResource.ps1')
 . (Join-Path $PSScriptRoot 'BuildIdentity.ps1')
 . (Join-Path $PSScriptRoot 'SparsePackageIdentity.ps1')
+. (Join-Path $PSScriptRoot 'NativePayload.ps1')
 
 & (Join-Path $PSScriptRoot 'Verify-Branding.ps1') -Repository $repository
 if ($LASTEXITCODE -ne 0) {
@@ -49,6 +53,8 @@ $developerTools = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlad
 $stagingRoot = [IO.Path]::GetFullPath((Join-Path $artifacts ('.staging\' + [Guid]::NewGuid().ToString('N'))))
 $stagingBundle = Join-Path $stagingRoot 'OpenBlade'
 $stagingDeveloperTools = Join-Path $stagingRoot 'OpenBlade.DeveloperTools'
+$stagingGuardian = Join-Path $stagingRoot 'OpenBlade.FanStop.Guardian'
+$stagingCpuTemperature = Join-Path $stagingRoot 'OpenBlade.CpuTemperature'
 $stagingInstallerOutput = Join-Path $stagingRoot 'installer'
 $stagingInstallerUi = Join-Path $stagingRoot 'installer-ui'
 $stagingUpgradeProbeOutput = Join-Path $stagingRoot 'installer-upgrade-probe'
@@ -116,6 +122,24 @@ if ($ThermalExternalDriftValidation -and $SourceRevision -notmatch '^[0-9a-fA-F]
     throw 'Thermal external-drift validation installers require an exact source revision.'
 }
 
+if ($CpuVoltageValidation) {
+    if ($buildIdentity.Channel -ne 'LocalDev' -or $SourceRevision -notmatch '^[0-9a-fA-F]{40}$') {
+        throw 'CPU voltage validation installers require LocalDev and an exact source revision.'
+    }
+    if ($ThermalExternalDriftValidation) {
+        throw 'CPU voltage validation cannot be combined with thermal external-drift validation.'
+    }
+    $validationHead = (& git -C $repository rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or $validationHead -ne $SourceRevision) {
+        throw 'CPU voltage validation requires SourceRevision to match the current checkout HEAD.'
+    }
+    $validationChanges = & git -C $repository status --porcelain
+    if ($LASTEXITCODE -ne 0 -or -not [string]::IsNullOrWhiteSpace(($validationChanges -join "`n"))) {
+        throw 'CPU voltage validation publication requires a clean source checkout, including nonignored untracked files.'
+    }
+    $buildIdentity.InformationalVersion = "$($buildIdentity.Version)+voltage-validation.$($buildIdentity.SourceRevision.Substring(0, 8).ToLowerInvariant())"
+}
+
 function Invoke-OpenBladeSigning {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -138,6 +162,13 @@ $publishArguments = @(
     '--property:PublishTrimmed=false',
     '--property:OpenBladePadlessHyperBoostLifecycleValidation=false'
 )
+# Every project must use the same profile: Protocol is shared by service and tools.
+if ($CpuVoltageValidation) {
+    $publishArguments += '--property:OpenBladeCpuVoltageValidation=true', "--property:SourceRevision=$SourceRevision"
+}
+else {
+    $publishArguments += '--property:OpenBladeCpuVoltageValidation=false'
+}
 if ($buildIdentity.Channel -ne 'Stable') {
     $publishArguments += @(
         "--property:Version=$($buildIdentity.Version)",
@@ -193,12 +224,40 @@ if ($signingEnabled) {
 try {
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
 
+    # Sign the native component before compiling its hash into Core.Native.
+    $nativeOutput = Join-Path $stagingRoot 'native'
+    Build-OpenBladeNativePayload -Repository $repository -Output $nativeOutput -BuildIdentity $buildIdentity
+    $nativeUnsignedSha256 = (Get-FileHash -LiteralPath (Join-Path $nativeOutput 'openblade_ffi.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($signingEnabled) {
+        Invoke-OpenBladeSigning -Path (Join-Path $nativeOutput 'openblade_ffi.dll') -ResolvedSignTool $resolvedSignTool
+        Update-OpenBladeNativePayloadHash -Payload $nativeOutput
+    }
+    Assert-OpenBladeNativePayload -Payload $nativeOutput -Repository $repository `
+        -BuildIdentity $buildIdentity -ExpectedUnsignedSha256 $nativeUnsignedSha256 -RequireSignature:$signingEnabled
+    $nativeBuildArguments = @("--property:OpenBladeNativePayloadDirectory=$nativeOutput", '--property:OpenBladeNativeDevelopmentBuild=false')
+    $installedPublishArguments += $nativeBuildArguments
+    $productionPublishArguments += $nativeBuildArguments
+    foreach ($nativeFile in @('openblade_ffi.dll', 'OpenBlade.Native.provenance.json', 'OpenBlade.Native.NOTICE.txt')) {
+        Copy-Item -LiteralPath (Join-Path $nativeOutput $nativeFile) -Destination (Join-Path $payload $nativeFile)
+    }
+    & (Join-Path $repository 'rust/Compare-Shadow.ps1') -LibraryPath (Join-Path $payload 'openblade_ffi.dll') `
+        -Configuration $Configuration -NativePayloadDirectory $nativeOutput
+    if ($LASTEXITCODE -ne 0) { throw 'Developer native shadow comparison failed.' }
+
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Service\OpenBlade.Service.csproj') `
         $payload ($installedPublishArguments + $serviceValidationArguments)
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.FanStop.Guardian\OpenBlade.FanStop.Guardian.csproj') `
+        $stagingGuardian ($installedPublishArguments + $serviceValidationArguments)
+    Add-GuardianPublishPayload -Guardian $stagingGuardian -Payload $payload
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.SessionAgent\OpenBlade.SessionAgent.csproj') `
         $payload $installedPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `
         $payload $installedPublishArguments
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.CpuTemperature\OpenBlade.CpuTemperature.csproj') `
+        $stagingCpuTemperature $installedPublishArguments
+    Add-CpuTemperaturePublishPayload -Helper $stagingCpuTemperature -Payload $payload
+    [void](Copy-OpenBladePawnIoPrerequisite -SourcePath $PawnIoInstallerPath -DestinationDirectory $payload)
+    Add-CpuTemperatureLicensePayload -Repository $repository -Payload $payload
     $trayAssets = Join-Path $repository (
         'src\OpenBlade.Tray\obj\project.assets.json')
     Add-WindowsAppRuntimeNotificationResource `
@@ -211,6 +270,10 @@ try {
     # contains a portable-PDB debug directory.
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Capture\OpenBlade.Capture.csproj') `
         $stagingDeveloperTools ($productionPublishArguments + @('--self-contained', 'true'))
+    # Capture carries the same native DLL and must retain its provenance and notices.
+    foreach ($nativeMetadata in @('OpenBlade.Native.provenance.json', 'OpenBlade.Native.NOTICE.txt')) {
+        Copy-Item -LiteralPath (Join-Path $nativeOutput $nativeMetadata) -Destination (Join-Path $stagingDeveloperTools $nativeMetadata)
+    }
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj') `
         $stagingBundle ($productionPublishArguments + $setupPublishArguments + @('--self-contained', 'true'))
     $forbiddenDevelopmentPayload = Get-ChildItem `
@@ -284,7 +347,8 @@ try {
         foreach ($file in Get-ChildItem -LiteralPath $stagingBundle -Recurse -File |
             Where-Object {
                 ($_.Extension -in @('.exe', '.dll')) -and
-                $_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal)
+                ($_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal) -or
+                    $_.FullName -ceq (Join-Path $payload 'LibreHardwareMonitorLib.dll'))
             }) {
             Invoke-OpenBladeSigning -Path $file.FullName -ResolvedSignTool $resolvedSignTool
         }
@@ -292,6 +356,14 @@ try {
             -Path (Join-Path $stagingInstallerUi 'OpenBlade.Installer.UI.exe') `
             -ResolvedSignTool $resolvedSignTool
     }
+
+    # Native signing precedes managed compilation. Verify both final copies against
+    # that fixed manifest; never rewrite its hash to bless changed payload bytes.
+    foreach ($nativePayload in @($payload, $stagingDeveloperTools)) {
+        Assert-OpenBladeNativePayload -Payload $nativePayload -Repository $repository `
+            -BuildIdentity $buildIdentity -ExpectedUnsignedSha256 $nativeUnsignedSha256 -RequireSignature:$signingEnabled
+    }
+    & (Join-Path $repository 'tests/Build.Tests/NativePayload.Tests.ps1') -Payload $payload -DeveloperTools $stagingDeveloperTools
 
     New-Item -ItemType Directory -Path $stagingInstallerOutput -Force | Out-Null
     $installerBuildArguments = @(

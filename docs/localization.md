@@ -33,21 +33,33 @@ always follow the Windows UI culture. If a culture or individual resource
 cannot be resolved, user-facing text falls back to the authoritative en-US
 value.
 
-The en-US catalogs are authoritative. The English text left beside an `x:Uid`
-in WinUI XAML is a design-time fallback and must match the catalog. The
-localization validator checks that copy so the two cannot drift.
+The en-US catalogs are authoritative. WinUI XAML uses `{CustomResource key}`
+for each localized property. A shared resource loader resolves the current
+language and falls back to the same en-US catalog embedded in the tray assembly.
+There is no separate English fallback copy in XAML. This avoids repeated native
+resource-subtree allocation from `x:Uid` while retaining immediate language
+changes through replacement of the localized view content.
 
 ## Adding or changing text
 
-For WinUI and graphical installer text, edit the localizable XAML or code
-fallback first. The extraction scripts rebuild those en-US catalogs from their
-source files, so do not hand-edit the generated catalog value. Give WinUI
-elements a stable `x:Uid`; do not use the displayed sentence as the identifier.
-Attached properties use their full WinUI resource name. For example:
+For an existing WinUI XAML string, edit its authoritative en-US resource value.
+Keep its stable property key in XAML; do not use the displayed sentence as the
+identifier or add `x:Uid`. For new text, add a keyed catalog entry and a matching
+`CustomResource` reference, or write a literal and run the extractor, which
+creates the key and replaces the literal with a reference. Attached properties
+use their full WinUI resource name. For example:
 
 ```text
-DashboardRefreshButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name
+AutomationProperties.Name="{CustomResource DashboardRefreshButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
 ```
+
+Each element's localized properties share a stable key prefix; the suffix must
+match the target property. The shared extraction/validation parser checks this
+mapping and rejects malformed or missing references, leftover `x:Uid`, and
+unlocalized text. Put punctuation, quotes, braces, and line breaks in the catalog,
+not in the `CustomResource` expression. Existing runtime `LocalizedResources.Get`
+or `Format` calls retain their English fallback arguments; update those too when
+they reference a changed catalog value.
 
 The managed Tray.Core and Setup catalogs use the English sentence as the
 resource key and safe runtime fallback. Edit their authoritative en-US entry
@@ -146,7 +158,7 @@ Set `OPENBLADE_PSEUDO_LOCALIZATION=1` before starting a development build. The
 tray and installer select qps-ploc without changing the user's Windows language.
 The isolated tray preview build keeps both the en-US and qps-ploc MRT
 qualifiers and uses a distinct executable and PRI identity. Its smoke test
-proves that the qps-ploc qualifier supplies compiled `x:Uid` text,
+proves that the qps-ploc qualifier supplies compiled localized text,
 accessibility properties, and strings loaded by code. Production builds keep
 en-US as the neutral catalog and do not package qps-ploc.
 
@@ -195,7 +207,8 @@ output root.
 Review these tray surfaces at minimum width and at 100, 150, and 200 percent
 text scaling:
 
-- Dashboard, Profiles, Laptop, Lighting, Display, Settings, and About;
+- Dashboard, Profiles, Laptop, Lighting, Display, THX Audio, Telemetry, Settings,
+  and About;
 - the tray dashboard, each detail view, and its customization view;
 - dialogs, InfoBars, picker labels, tooltips, and screen-reader names.
 

@@ -4,7 +4,7 @@ using OpenBlade.Tray;
 
 namespace OpenBlade.Tray.Tests;
 
-public sealed class DisplaySettingsViewModelTests
+public sealed partial class DisplaySettingsViewModelTests
 {
     private static readonly DisplayRefreshRateOption Fixed60 = new(
         "fixed-60",
@@ -493,6 +493,82 @@ public sealed class DisplaySettingsViewModelTests
         await viewModel.SelectRefreshRateAsync(Dynamic);
 
         Assert.Equal([diagnostic, diagnostic], diagnostics);
+    }
+
+    [Fact]
+    public async Task BrightnessQueuedBehindRefreshReportsTheFreshPreviousSettings()
+    {
+        DisplaySettingsSnapshot initial = Snapshot(Fixed60.Key, false, Native.Key) with
+        {
+            BrightnessPercent = 50,
+            SupportedBrightnessLevels = [0, 50, 70, 100],
+        };
+        var adapter = new FakeDisplaySettingsAdapter(initial);
+        await using var viewModel = CreateViewModel(adapter);
+        await viewModel.RefreshAsync();
+        var changes = new List<DisplayProfileSettingsChangedEventArgs>();
+        viewModel.UserSettingsChanged += (_, args) => changes.Add(args);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        adapter.BlockNextStateRead = true;
+        Task refresh = viewModel.RefreshAsync(timeout.Token);
+        await adapter.StateReadStarted.Task.WaitAsync(timeout.Token);
+        Task brightness = viewModel.SetBrightnessAsync(70, timeout.Token);
+        adapter.SetExternalState(initial with { SelectedRefreshRateKey = Fixed240.Key });
+        adapter.ReleaseStateRead.TrySetResult();
+        await Task.WhenAll(refresh, brightness);
+
+        DisplayProfileSettingsChangedEventArgs changed = Assert.Single(changes);
+        Assert.Equal(Fixed240.Key, changed.PreviousSettings.RefreshRateKey);
+        Assert.Equal((byte)50, changed.PreviousSettings.BrightnessPercent);
+        Assert.Equal(Fixed240.Key, changed.Settings.RefreshRateKey);
+        Assert.Equal((byte)70, changed.Settings.BrightnessPercent);
+        Assert.Equal(1, adapter.MaximumConcurrentOperations);
+    }
+
+    [Fact]
+    public async Task UnexpectedBrightnessFailure_PreservesOriginalDiagnosticAndAllowsSubsequentWrite()
+    {
+        var failure = new InvalidOperationException(@"Sensitive path C:\Users\Example\secret.txt");
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key) with
+            {
+                BrightnessPercent = 50,
+                SupportedBrightnessLevels = [0, 50, 70, 100],
+            })
+        {
+            UnexpectedBrightnessChangeFailure = failure,
+        };
+        var diagnostics = new List<string>();
+        await using var viewModel = new DisplaySettingsViewModel(
+            adapter, TimeProvider.System, diagnostics.Add)
+        {
+            ActivePowerSource = PowerSource.PluggedIn,
+        };
+        await viewModel.RefreshAsync();
+        var changes = new List<DisplayProfileSettingsChangedEventArgs>();
+        viewModel.UserSettingsChanged += (_, args) => changes.Add(args);
+
+        await viewModel.SetBrightnessAsync(70);
+
+        string diagnostic = Assert.Single(diagnostics);
+        DiagnosticFailure recorded = JsonSerializer.Deserialize<DiagnosticFailure>(diagnostic)!;
+        Assert.Equal("brightness change", recorded.Context);
+        Assert.Equal(nameof(InvalidOperationException), recorded.ExceptionType);
+        Assert.Equal(failure.HResult, recorded.HResult);
+        Assert.Contains("Sensitive path", recorded.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Example", diagnostic, StringComparison.Ordinal);
+        Assert.Equal("Display setting failed.", viewModel.StatusMessage);
+        Assert.False(viewModel.IsBusy);
+        Assert.Equal((byte)50, viewModel.BrightnessPercent);
+        Assert.Empty(changes);
+
+        adapter.UnexpectedBrightnessChangeFailure = null;
+        await viewModel.SetBrightnessAsync(70);
+
+        Assert.Equal((byte)70, viewModel.BrightnessPercent);
+        Assert.False(viewModel.IsBusy);
+        Assert.Equal((byte)70, Assert.Single(changes).Settings.BrightnessPercent);
+        Assert.Single(diagnostics);
     }
 
     [Fact]
@@ -1011,6 +1087,7 @@ public sealed class DisplaySettingsViewModelTests
         public bool BlockNextStateRead { get; set; }
         public Exception? UnexpectedStateReadFailure { get; set; }
         public Exception? UnexpectedRefreshChangeFailure { get; init; }
+        public Exception? UnexpectedBrightnessChangeFailure { get; set; }
         public TaskCompletionSource FirstRefreshChangeStarted { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ReleaseFirstRefreshChange { get; } = new(
@@ -1026,10 +1103,12 @@ public sealed class DisplaySettingsViewModelTests
         public List<string> RefreshRequests { get; } = [];
         public List<PowerSource> RefreshRequestSources { get; } = [];
         public List<bool> HdrRequests { get; } = [];
+        public List<byte> BrightnessRequests { get; } = [];
         public List<PowerSource> HdrRequestSources { get; } = [];
         public List<string> ColorRequests { get; } = [];
         public List<PowerSource> ColorRequestSources { get; } = [];
         public List<(PowerSource Source, DisplayProfileSettings Settings)> ProfileRequests { get; } = [];
+        public string? ProfileColorReadback { get; init; }
         public int MaximumConcurrentOperations { get; private set; }
 
         public void SetExternalState(DisplaySettingsSnapshot value) => state = value;
@@ -1123,6 +1202,28 @@ public sealed class DisplaySettingsViewModelTests
             }
         }
 
+        public async Task<DisplaySettingsSnapshot> SetBrightnessAsync(
+            PowerSource expectedPowerSource,
+            byte percent,
+            CancellationToken token)
+        {
+            await EnterAsync(token);
+            try
+            {
+                BrightnessRequests.Add(percent);
+                if (UnexpectedBrightnessChangeFailure is not null)
+                {
+                    throw UnexpectedBrightnessChangeFailure;
+                }
+                state = state with { BrightnessPercent = percent };
+                return state;
+            }
+            finally
+            {
+                Exit();
+            }
+        }
+
         public async Task<DisplaySettingsSnapshot> SetColorProfileAsync(
             PowerSource expectedPowerSource,
             string colorProfileKey,
@@ -1170,7 +1271,7 @@ public sealed class DisplaySettingsViewModelTests
                 {
                     state = state with
                     {
-                        SelectedColorProfileKey = settings.ColorProfileKey,
+                        SelectedColorProfileKey = ProfileColorReadback ?? settings.ColorProfileKey,
                     };
                 }
 

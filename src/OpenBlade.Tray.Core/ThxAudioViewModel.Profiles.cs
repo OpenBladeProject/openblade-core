@@ -286,20 +286,7 @@ public sealed partial class ThxAudioViewModel
     });
 
     private static bool ProfilesEqual(ThxAudioProfileSettings? left, ThxAudioProfileSettings? right) =>
-        ReferenceEquals(left, right) || left is not null && right is not null
-        && left.ApplicationRoutingEnabled == right.ApplicationRoutingEnabled
-        && left.ApplicationRules.SequenceEqual(right.ApplicationRules)
-        && EndpointsEqual(left.Speakers, right.Speakers) && EndpointsEqual(left.Headphones, right.Headphones);
-
-    private static bool EndpointsEqual(ThxAudioEndpointSettings left, ThxAudioEndpointSettings right) =>
-        left.SpatialEnabled == right.SpatialEnabled && left.EqualizerEnabled == right.EqualizerEnabled
-        && left.SelectedPreset == right.SelectedPreset && left.VoiceClarity == right.VoiceClarity
-        && left.SoundNormalization == right.SoundNormalization
-        && left.EqualizerCurves.Game.SequenceEqual(right.EqualizerCurves.Game)
-        && left.EqualizerCurves.Movie.SequenceEqual(right.EqualizerCurves.Movie)
-        && left.EqualizerCurves.Music.SequenceEqual(right.EqualizerCurves.Music)
-        && left.EqualizerCurves.Voice.SequenceEqual(right.EqualizerCurves.Voice)
-        && left.EqualizerCurves.Custom.SequenceEqual(right.EqualizerCurves.Custom);
+        left == right;
 
     private void NotifyProfileEditor()
     {

@@ -53,6 +53,8 @@ public enum PrimaryNavigationItemKind
     Settings = 4,
     ThxAudio = 5,
     Telemetry = 6,
+    Labs = 7,
+    CoolingPad = 8,
 }
 
 public sealed class PrimaryNavigationItemOption
@@ -93,10 +95,35 @@ public static class PrimaryNavigationPreferenceDefaults
         PrimaryNavigationItemKind.Profiles,
         PrimaryNavigationItemKind.Display,
         PrimaryNavigationItemKind.Laptop,
+        PrimaryNavigationItemKind.CoolingPad,
         PrimaryNavigationItemKind.ThxAudio,
         PrimaryNavigationItemKind.Lighting,
         PrimaryNavigationItemKind.Telemetry,
         PrimaryNavigationItemKind.Settings,
+        PrimaryNavigationItemKind.Labs,
+    ];
+
+    private static IReadOnlyList<PrimaryNavigationItemKind> PreviousTelemetryItems { get; } =
+    [
+        PrimaryNavigationItemKind.Profiles,
+        PrimaryNavigationItemKind.Display,
+        PrimaryNavigationItemKind.Laptop,
+        PrimaryNavigationItemKind.ThxAudio,
+        PrimaryNavigationItemKind.Lighting,
+        PrimaryNavigationItemKind.Telemetry,
+        PrimaryNavigationItemKind.Settings,
+    ];
+
+    private static IReadOnlyList<PrimaryNavigationItemKind> PreviousLabsItems { get; } =
+    [
+        PrimaryNavigationItemKind.Profiles,
+        PrimaryNavigationItemKind.Display,
+        PrimaryNavigationItemKind.Laptop,
+        PrimaryNavigationItemKind.ThxAudio,
+        PrimaryNavigationItemKind.Lighting,
+        PrimaryNavigationItemKind.Telemetry,
+        PrimaryNavigationItemKind.Settings,
+        PrimaryNavigationItemKind.Labs,
     ];
 
     private static IReadOnlyList<PrimaryNavigationItemKind> PreviousAudioItems { get; } =
@@ -120,7 +147,8 @@ public static class PrimaryNavigationPreferenceDefaults
         // Move installations that still use previous defaults without
         // replacing a navigation order the user customized.
         if (preferences.SequenceEqual(LegacyItems) || preferences.SequenceEqual(PreviousItems)
-            || preferences.SequenceEqual(PreviousAudioItems))
+            || preferences.SequenceEqual(PreviousAudioItems) || preferences.SequenceEqual(PreviousTelemetryItems)
+            || preferences.SequenceEqual(PreviousLabsItems))
         {
             return Items;
         }

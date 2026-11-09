@@ -5,6 +5,25 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class BatteryOperationPlannerTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void UnmanagedOverride_PolicyPlanUsesOnlyReadableLimiterFields(bool protectionEnabled)
+    {
+        var device = AdmittedDevice();
+        DeviceCapabilities capabilities = device.Capabilities with { SupportsTemporaryFullCharge = false };
+        var initial = new ConfirmedBatteryState(true, 80, null);
+        var desired = new DesiredBatteryState(BatteryPolicy.Create(75), protectionEnabled, false);
+        BatteryOperationPlan plan = BatteryOperationPlanner.CreateBatteryPlan(desired, capabilities, initial);
+        Assert.True(plan.Supported);
+        Assert.False(plan.InitiallyMatching);
+        Assert.Equal(BatteryConfirmationScope.PolicyOnly, plan.ConfirmationScope);
+        Assert.True(plan.Matches(new(protectionEnabled, protectionEnabled ? 75 : null, null)));
+        Assert.False(plan.Matches(new(true, 75, true)));
+        Assert.False(BatteryOperationPlanner.CreateTemporaryFullChargePlan(true, capabilities, initial).Supported);
+        Assert.Null(initial.TemporaryFullCharge);
+    }
+
     [Fact]
     public void DesiredState_CancelsFullChargeBeforeChangingProtection()
     {
@@ -14,6 +33,7 @@ public sealed class BatteryOperationPlannerTests
             desired, device.Capabilities, new ConfirmedBatteryState(true, 80, true));
 
         Assert.Equal(new BatteryOperation.TemporaryFullCharge(false), plan.Operation);
+        Assert.Equal(BatteryConfirmationScope.All, plan.ConfirmationScope);
         Assert.True(plan.Matches(new ConfirmedBatteryState(true, 80, false)));
         Assert.False(plan.Matches(new ConfirmedBatteryState(true, 75, false)));
         Assert.Empty(device.BatterySetterCalls);

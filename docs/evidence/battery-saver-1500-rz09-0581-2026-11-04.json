@@ -1,0 +1,359 @@
+{
+  "schemaVersion": 1,
+  "clientDate": "2026-11-04",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "4.01"
+  },
+  "conditions": {
+    "powerSource": "Battery",
+    "performance": "BatterySaver",
+    "baselineFanMode": "Automatic",
+    "cpuTemperatureSource": "OpenBlade Windows CPU temperature reader",
+    "cpuTemperatureMinimumCelsius": 45.0,
+    "cpuTemperatureMaximumCelsius": 45.0,
+    "externalLoadApplied": false
+  },
+  "software": {
+    "baseCommit": "096d4f7059dd003d106841b57a95074c87762879",
+    "reviewedWorkingTreeChanges": true,
+    "configuration": "Debug",
+    "binarySha256": {
+      "OpenBlade.Capture.exe": "50B7721B4F6421AD6F6479B83B7CCAF4D8ACC9C657BC1FF1B0162A589CF0A5CA",
+      "OpenBlade.Capture.dll": "F3B3D7E2800AE174B402CF562FF8277CBFCD9C9575F40516B4B007BBD83A670F",
+      "OpenBlade.Protocol.dll": "4D50CD914076E2F5AA9CB02028790EF56D59ACBBD3A14908E43A51AB578C7461",
+      "OpenBlade.Contracts.dll": "E9DC8613FFD3E3EBDBB2EB3125CB5AE66ABB1CA3A9648C2819EBB2A72B76FB9E",
+      "OpenBlade.Service.dll": "8A0DEC52A8BED69858B61C1EDE199F20CD5AF557766B7B28C8F2281AAA91FC1E"
+    }
+  },
+  "source": {
+    "product": 736,
+    "baseSha256": "BC7DC47E18261AB38393589D336C11F321CC431D700ED32147997144F64628CA",
+    "policySha256": "CD29E8D89135EA967AB13B4607A6524087A6B1DDBF76F7C73A39C7E4C6EC404D"
+  },
+  "requestedRpm": 1500,
+  "result": {
+    "success": false,
+    "restored": true,
+    "manualRecoveryRequired": false,
+    "failure": "ActualRpmDidNotSettleAt1500",
+    "writesAttempted": 8,
+    "safetyChecks": 39,
+    "indeterminatePartialWrite": false,
+    "baseline": {
+      "thermal1Hex": "01010300",
+      "thermal2Hex": "01020300"
+    },
+    "baselineTargets": {
+      "selector1Rpm": 3800,
+      "selector2Rpm": 3800,
+      "maxRpm": 3800
+    },
+    "baselineFanRpm": {
+      "selector1Rpm": 0,
+      "selector2Rpm": 0,
+      "maxRpm": 0
+    },
+    "candidate": {
+      "thermal1Hex": "01010301",
+      "thermal2Hex": "01020301"
+    },
+    "candidateTargets": {
+      "selector1Rpm": 1500,
+      "selector2Rpm": 1500,
+      "maxRpm": 1500
+    },
+    "restoration": {
+      "thermal1Hex": "01010300",
+      "thermal2Hex": "01020300"
+    },
+    "restorationTargets": {
+      "selector1Rpm": 3800,
+      "selector2Rpm": 3800,
+      "maxRpm": 3800
+    },
+    "samples": [
+      {
+        "number": 1,
+        "timestamp": "2026-11-04T21:53:38.9989682+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 2,
+        "timestamp": "2026-11-04T21:53:40.2630046+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 3,
+        "timestamp": "2026-11-04T21:53:41.532139+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 4,
+        "timestamp": "2026-11-04T21:53:42.8122731+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 5,
+        "timestamp": "2026-11-04T21:53:44.1076455+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 6,
+        "timestamp": "2026-11-04T21:53:45.4787695+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 7,
+        "timestamp": "2026-11-04T21:53:46.8218118+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 8,
+        "timestamp": "2026-11-04T21:53:48.1674413+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 9,
+        "timestamp": "2026-11-04T21:53:49.3837254+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 10,
+        "timestamp": "2026-11-04T21:53:50.772364+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 11,
+        "timestamp": "2026-11-04T21:53:52.0632789+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 12,
+        "timestamp": "2026-11-04T21:53:53.2616911+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 13,
+        "timestamp": "2026-11-04T21:53:54.5717882+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 14,
+        "timestamp": "2026-11-04T21:53:55.8657807+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 15,
+        "timestamp": "2026-11-04T21:53:57.0567116+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 16,
+        "timestamp": "2026-11-04T21:53:58.2747409+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 17,
+        "timestamp": "2026-11-04T21:53:59.4899671+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 18,
+        "timestamp": "2026-11-04T21:54:00.7678409+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 19,
+        "timestamp": "2026-11-04T21:54:02.0446095+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 20,
+        "timestamp": "2026-11-04T21:54:03.3219159+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 21,
+        "timestamp": "2026-11-04T21:54:04.6349915+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 22,
+        "timestamp": "2026-11-04T21:54:05.8679724+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 23,
+        "timestamp": "2026-11-04T21:54:07.0809816+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 24,
+        "timestamp": "2026-11-04T21:54:08.3293639+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 25,
+        "timestamp": "2026-11-04T21:54:09.5013937+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 26,
+        "timestamp": "2026-11-04T21:54:10.7849596+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 27,
+        "timestamp": "2026-11-04T21:54:12.0133735+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 28,
+        "timestamp": "2026-11-04T21:54:13.4273804+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 29,
+        "timestamp": "2026-11-04T21:54:14.7040615+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      },
+      {
+        "number": 30,
+        "timestamp": "2026-11-04T21:54:15.9638682+08:00",
+        "rpm": {
+          "selector1Rpm": 0,
+          "selector2Rpm": 0,
+          "maxRpm": 0
+        }
+      }
+    ]
+  },
+  "postChecks": {
+    "installedServiceRunning": true,
+    "originalUserProcessPresenceRestored": true,
+    "installedServiceAndSessionAgentHashesUnchanged": true,
+    "originalProfilesAndOverridesUnchanged": true,
+    "confirmedPerformance": "BatterySaver",
+    "confirmedFanMode": "Automatic"
+  },
+  "interpretation": "Both stored targets read back as 1500 RPM. All 30 actual-RPM samples remained zero, matching the pre-test automatic baseline. This does not validate physical 1500 RPM control or prove the request caused fan stop. No other model range is changed."
+}

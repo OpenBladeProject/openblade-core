@@ -273,8 +273,8 @@ try {
                     'context/tray/main-telemetry-replay.png')
             },
             @{
-                Key = 'BatteryHistory_Title.Text'
-                Screenshots = @('context/tray/main-laptop-battery-history.png')
+                Key = 'BatteryHistory_Report.Header'
+                Screenshots = @('context/tray/main-telemetry-battery-report.png', 'context/tray/main-telemetry-battery-report-narrow.png', 'context/tray/main-telemetry-battery-report-details.png')
             },
             @{
                 Key = 'TelemetryUI_NextSample'
@@ -305,10 +305,6 @@ try {
                     'context/tray/main-telemetry.png',
                     'context/tray/main-telemetry-empty.png',
                     'context/tray/main-telemetry-recording.png')
-            },
-            @{
-                Key = 'Battery history'
-                Screenshots = @('context/tray/main-laptop-battery-history.png')
             },
             @{
                 Key = 'Display brightness'
@@ -984,7 +980,7 @@ throw 'Target catalog was not write-locked during import.'
         ConvertFrom-Json
     Assert-Equal 'UTC-for-snapshot-timestamps' $manifest.screenshotRenderProfile.timeZone `
         'Snapshot timestamps must not depend on the machine timezone.'
-    Assert-Equal 'bgra8-4-bit-midpoint-local-majority-edge-alpha-filled-corner-v4' `
+    Assert-Equal 'bgra8-4-bit-midpoint-local-majority-edge-alpha-accent-fringe-v5' `
         $manifest.screenshotRenderProfile.pixelCanonicalization `
         'The package manifest must record deterministic pixel canonicalization.'
     Assert-Equal 'two-consecutive-canonical-frames-v1' `

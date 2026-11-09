@@ -45,6 +45,32 @@ public sealed class TelemetryChartViewportTests
     }
 
     [Fact]
+    public void BuildSnapshot_GapSaturatedViewportRetainsReadingsAndExactRawStatistics()
+    {
+        var history = new TelemetryHistory();
+        for (int index = 0; index < 30; index++)
+        {
+            history.AddSample(Sample(index, cpu: index % 2 == 0 ? null : 50 + index));
+        }
+        TelemetryHistorySnapshot retained = history.Snapshot(maximumChartPoints: 2);
+
+        TelemetryHistorySnapshot visible = TelemetryChartViewport.BuildSnapshot(
+            retained, Start.AddSeconds(10), Start.AddSeconds(20), maximumChartPoints: 3);
+        TelemetrySeriesSnapshot cpu = visible.Series.Single(
+            value => value.Metric == TelemetryMetric.CpuTemperatureCelsius);
+
+        Assert.Equal(11, visible.RawSampleCount);
+        Assert.Equal(5, cpu.Statistics.Count);
+        Assert.Equal(6, cpu.Statistics.MissingCount);
+        Assert.Equal(61, cpu.Statistics.Minimum);
+        Assert.Equal(69, cpu.Statistics.Maximum);
+        Assert.Equal(65, cpu.Statistics.Average);
+        Assert.Equal(new[] { 11, 12, 19 }.Select(second => Start.AddSeconds(second)),
+            cpu.Points.Select(point => point.TimestampUtc));
+        Assert.Equal(new double?[] { 61, null, 69 }, cpu.Points.Select(point => point.Value));
+    }
+
+    [Fact]
     public void BuildSnapshot_PreservesStoppedObservationGapAndFiltersEvents()
     {
         var history = new TelemetryHistory();

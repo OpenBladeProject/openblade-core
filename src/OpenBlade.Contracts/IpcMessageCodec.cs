@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 72;
+    public const int ProtocolVersion = 79;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -41,9 +41,16 @@ public static class IpcMessageCodec
         Stream stream,
         ServiceRequest request,
         CancellationToken token)
+        => WriteRequestAsync(stream, request, token, timing: null);
+
+    internal static Task WriteRequestAsync(
+        Stream stream,
+        ServiceRequest request,
+        CancellationToken token,
+        IpcRequestWriteTiming? timing)
     {
         ValidateRequest(request);
-        return WriteFramedAsync<ServiceRequest>(stream, request, token);
+        return WriteFramedAsync<ServiceRequest>(stream, request, token, timing: timing);
     }
 
     public static async Task<ServiceRequest> ReadRequestAsync(
@@ -121,6 +128,11 @@ public static class IpcMessageCodec
             ServiceResponse response => response with
             {
                 Version = OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion,
+                Result = response.Result is null ? null : response.Result with
+                {
+                    HyperBoostRestoredPerformance = response.Result.HyperBoostRestoredPerformance is { } restored
+                        && IsProtocol51PerformancePreset(restored) ? restored : null,
+                },
                 Status = response.Status is null
                     ? null
                     : ProjectProtocol51ReadOnlyStatus(response.Status),
@@ -143,7 +155,8 @@ public static class IpcMessageCodec
         Stream stream,
         T message,
         CancellationToken cancellationToken,
-        JsonSerializerOptions? serializerOptions = null)
+        JsonSerializerOptions? serializerOptions = null,
+        IpcRequestWriteTiming? timing = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(message);
@@ -174,9 +187,23 @@ public static class IpcMessageCodec
 
         byte[] prefix = new byte[sizeof(int)];
         BinaryPrimitives.WriteInt32LittleEndian(prefix, payload.Length);
-        await stream.WriteAsync(prefix, cancellationToken).ConfigureAwait(false);
-        await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
-        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            timing?.Header.Begin(cancellationToken);
+            await stream.WriteAsync(prefix, cancellationToken).ConfigureAwait(false);
+            timing?.Header.End(cancellationToken, succeeded: true);
+            timing?.Body.Begin(cancellationToken);
+            await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+            timing?.Body.End(cancellationToken, succeeded: true);
+            timing?.Flush.Begin(cancellationToken);
+            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            timing?.Flush.End(cancellationToken, succeeded: true);
+        }
+        catch
+        {
+            timing?.FailPending(cancellationToken);
+            throw;
+        }
     }
 
     private static async Task<T> ReadFramedAsync<T>(
@@ -198,7 +225,7 @@ public static class IpcMessageCodec
         await stream.ReadExactlyAsync(payload, cancellationToken).ConfigureAwait(false);
         try
         {
-            ValidateNoDuplicateObjectMembers(payload);
+            IpcJsonValidation.ValidateNoDuplicateMembers(payload);
             ValidatePayloadVersion(payload, allowProtocol51);
             T message = JsonSerializer.Deserialize<T>(payload, SerializerOptions)
                 ?? throw new InvalidDataException("IPC message body is invalid.");
@@ -239,6 +266,11 @@ public static class IpcMessageCodec
         bool validBody = request switch
         {
             GetStatusRequest => true,
+            SetCoolingPadSettingsRequest set => CoolingPadSettings.IsWellFormed(set.Settings),
+            SetCoolingPadDemandLeaseRequest lease => lease.LeaseId != Guid.Empty
+                && CoolingPadSettings.ValidRpm(lease.Rpm) && lease.DurationSeconds is >= 1 and <= 30,
+            RemoveCoolingPadDemandLeaseRequest lease => lease.LeaseId != Guid.Empty,
+            ReadCoolingPadStatusRequest or ReleaseCoolingPadControlRequest => true,
             ObserveStateRequest observe =>
                 (observe.RequestedLiveReadings & ~LiveReadingSensors.All) == 0,
             SubscribeStatusRequest => true,
@@ -256,9 +288,18 @@ public static class IpcMessageCodec
                 set.Value is null
                 || set.Value.IsWellFormed(),
             SetHyperBoostRequest => true,
+            SetBatterySaverFanStopRequest => true,
+            SetFanStopModeRequest set => Enum.IsDefined(set.Mode),
+            SetFanStopSettingsRequest set => FanStopSettings.IsWellFormed(set.Settings),
+            ResumeAutomaticFanStopRequest => true,
             SetGpuClockTuningRequest set =>
                 GpuClockTuningSettings.IsWellFormed(set.Value)
                 && Enum.IsDefined(set.Lifetime),
+            SetCpuTuningRequest set =>
+                Enum.IsDefined(set.Target)
+                && set.Settings is { IsWellFormed: true, IsConfigured: true },
+            ObserveCpuTuningRequest => true,
+            RestoreCpuTuningRequest restore => Enum.IsDefined(restore.Target),
             ValidatePadlessHyperBoostLifecycleRequest validate =>
                 Enum.IsDefined(validate.Scenario)
                 && validate.ValidationRunId != Guid.Empty
@@ -280,6 +321,7 @@ public static class IpcMessageCodec
                 set.Value is null
                     ? set.Settings is null
                     : Enum.IsDefined(set.Value.Value)
+                        && set.Value.Value != FanMode.Stop
                         && Enum.IsDefined(set.Value.Lifetime)
                         && (set.Settings is null
                             || set.Settings.Mode == set.Value.Value),
@@ -288,6 +330,10 @@ public static class IpcMessageCodec
                 || set.Value.Value is not null
                     && Enum.IsDefined(set.Value.Lifetime)
                     && LightingSettingsValidation.IsWellFormed(set.Value.Value),
+            SetIndependentLightingOverrideRequest set =>
+                set.Value is null
+                || set.Value.Value is { IsWellFormed: true }
+                    && Enum.IsDefined(set.Value.Lifetime),
             StepKeyboardBrightnessRequest step =>
                 Enum.IsDefined(step.Direction)
                 && Enum.IsDefined(step.Lifetime),
@@ -374,6 +420,7 @@ public static class IpcMessageCodec
                     || Enum.IsDefined(response.ErrorCode.Value));
         return valid
             && (response.Status is null || ValidateStatus(response.Status))
+            && (response.Result?.CpuTuning is null || response.Result.CpuTuning.IsWellFormed)
             && (response.Archive is null || ValidateArchive(response.Archive));
     }
 
@@ -404,6 +451,26 @@ public static class IpcMessageCodec
         if (!Enum.IsDefined(status.ObservationReason))
         {
             throw InvalidStatus("observation reason is invalid");
+        }
+
+        if (status.FanStopStatus is not { } fanStop
+            || !Enum.IsDefined(fanStop.RequestedMode)
+            || !Enum.IsDefined(fanStop.State)
+            || !Enum.IsDefined(fanStop.UnavailableReason)
+            || !FanStopSettings.IsWellFormed(fanStop.Settings)
+            || !Enum.IsDefined(fanStop.AutomationState)
+            || !Enum.IsDefined(fanStop.AutomationPauseReason)
+            || fanStop.State is FanStopState.Unavailable or FanStopState.RecoveryRequired
+                && (fanStop.CanStop || fanStop.CanReturnToAutomatic)
+            || fanStop.CanReturnToAutomatic && fanStop.State is not
+                (FanStopState.Stopped or FanStopState.Starting or FanStopState.ReturningToAutomatic))
+        {
+            throw InvalidStatus("fan-stop status is invalid");
+        }
+
+        if (status.CpuTuning is { IsWellFormed: false })
+        {
+            throw InvalidStatus("CPU tuning state is invalid");
         }
 
         if (status.Revision < 0)
@@ -733,6 +800,11 @@ public static class IpcMessageCodec
             }
         }
 
+        if (!CoolingPadStatusSnapshot.IsWellFormed(status.CoolingPad))
+        {
+            throw InvalidStatus("cooling-pad status is malformed");
+        }
+
         if (status.Capabilities is { IsWellFormed: false })
         {
             throw InvalidStatus("capability collections are malformed");
@@ -841,36 +913,6 @@ public static class IpcMessageCodec
         }
     }
 
-    private static void ValidateNoDuplicateObjectMembers(ReadOnlyMemory<byte> payload)
-    {
-        using JsonDocument document = JsonDocument.Parse(payload);
-        ValidateNoDuplicateObjectMembers(document.RootElement);
-    }
-
-    private static void ValidateNoDuplicateObjectMembers(JsonElement element)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (JsonProperty property in element.EnumerateObject())
-            {
-                if (!names.Add(property.Name))
-                {
-                    throw new JsonException("IPC message contains a duplicate member.");
-                }
-
-                ValidateNoDuplicateObjectMembers(property.Value);
-            }
-        }
-        else if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (JsonElement item in element.EnumerateArray())
-            {
-                ValidateNoDuplicateObjectMembers(item);
-            }
-        }
-    }
-
     private static bool ValidLiveReadings(LiveReadings readings) =>
         readings.BatteryPowerFlowMilliwatts is null
             or >= -1_000_000 and <= 1_000_000
@@ -903,9 +945,17 @@ public static class IpcMessageCodec
             ? null
             : status.Capabilities with
             {
+                FanModes = status.Capabilities.FanModes.Where(mode => mode != FanMode.Stop).ToHashSet(),
+                PerformancePresets = status.Capabilities.PerformancePresets
+                    .Where(IsProtocol51PerformancePreset)
+                    .ToHashSet(),
+                ObservedPowerSourceBehaviors = status.Capabilities.ObservedPowerSourceBehaviors
+                    .Where(observation => IsProtocol51PerformancePreset(observation.SelectedPerformance))
+                    .ToArray(),
                 ChargeLimits = status.Capabilities.ChargeLimits
                     .Where(IsProtocol51BatteryLimit)
                     .ToHashSet(),
+                SupportsIndependentLightingControls = false,
                 CustomPerformance = ProjectProtocol51CustomCapabilities(
                     status.Capabilities.CustomPerformance),
                 LightingEffects = IsProtocol51LightingLayout(
@@ -923,21 +973,25 @@ public static class IpcMessageCodec
             ? null
             : status.ConfirmedState with
             {
+                IndependentLighting = null,
                 Battery = status.ConfirmedState.Battery is
                 { ChargeLimitPercent: int confirmedLimit }
                     && !IsProtocol51BatteryLimit(confirmedLimit)
                         ? null
                         : status.ConfirmedState.Battery,
                 Performance = IsProtocol51CustomState(status.ConfirmedState.CustomPerformance)
-                    ? status.ConfirmedState.Performance : null,
+                    && status.ConfirmedState.Performance is { } confirmedPerformance
+                    && IsProtocol51PerformancePreset(confirmedPerformance)
+                        ? confirmedPerformance : null,
                 CustomPerformance = IsProtocol51CustomState(status.ConfirmedState.CustomPerformance)
                     ? status.ConfirmedState.CustomPerformance : null,
-                Fans = status.ConfirmedState.CustomPerformance?.MaximumFans == true
+                Fans = status.ConfirmedState.Fans == FanMode.Stop
+                    || status.ConfirmedState.CustomPerformance?.MaximumFans == true
                     ? null : status.ConfirmedState.Fans,
                 Lighting = status.ConfirmedState.Lighting is { } confirmedLighting
-                    && !IsProtocol51LightingSetting(confirmedLighting)
-                        ? null
-                        : status.ConfirmedState.Lighting,
+                    && IsProtocol51LightingSetting(confirmedLighting)
+                        ? confirmedLighting with { IndependentControls = null }
+                        : null,
             };
 
         return status with
@@ -951,12 +1005,30 @@ public static class IpcMessageCodec
             Profiles = status.Profiles with
             {
                 BatteryPolicy = projectedPolicy,
-                PluggedIn = ProjectProtocol51Profile(status.Profiles.PluggedIn),
-                Battery = ProjectProtocol51Profile(status.Profiles.Battery),
-                UsbC = ProjectProtocol51Profile(status.Profiles.UsbC),
+                PluggedIn = ProjectProtocol51Profile(status.Profiles.PluggedIn, PerformancePreset.Balanced),
+                Battery = ProjectProtocol51Profile(status.Profiles.Battery, PerformancePreset.BatterySaver),
+                UsbC = ProjectProtocol51Profile(status.Profiles.UsbC, PerformancePreset.Balanced),
             },
             DesiredState = status.DesiredState with
             {
+                Fans = status.DesiredState.Fans with
+                {
+                    Value = status.DesiredState.Fans.Value == FanMode.Stop
+                        ? status.BatterySaverFanStopStatus?.NormalFanControl?.Mode ?? FanMode.Automatic
+                        : status.DesiredState.Fans.Value,
+                },
+                FanControl = status.DesiredState.FanControl?.Mode == FanMode.Stop
+                    ? status.BatterySaverFanStopStatus?.NormalFanControl ?? FanControlSettings.Default
+                    : status.DesiredState.FanControl,
+                Performance = status.DesiredState.Performance with
+                {
+                    Value = IsProtocol51PerformancePreset(status.DesiredState.Performance.Value)
+                        ? status.DesiredState.Performance.Value
+                        : status.ActivePowerSource == PowerSource.Battery
+                            ? PerformancePreset.BatterySaver : PerformancePreset.Balanced,
+                    Source = IsProtocol51PerformancePreset(status.DesiredState.Performance.Value)
+                        ? status.DesiredState.Performance.Source : SettingValueSource.PowerProfile,
+                },
                 Battery = new DesiredBatteryState(
                     IsProtocol51BatteryLimit(status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent)
                         ? status.DesiredState.Battery.ConfiguredPolicy
@@ -972,28 +1044,38 @@ public static class IpcMessageCodec
                 },
             },
             PerformanceOverride = status.PerformanceOverride is { } performanceOverride
+                && IsProtocol51PerformancePreset(performanceOverride.Value)
                 ? performanceOverride with
                 {
                     CustomPerformance = ProjectProtocol51CustomSettings(
                         performanceOverride.CustomPerformance),
                 } : null,
+            PerformanceShortcutPreview = status.PerformanceShortcutPreview is { } preview
+                && IsProtocol51PerformancePreset(preview.Preset) ? preview : null,
             BatteryPolicyOverride = status.BatteryPolicyOverride is { } batteryOverride
                 && IsProtocol51BatteryLimit(batteryOverride.ChargeLimitPercent)
                     ? batteryOverride
                     : null,
             LightingOverride = status.LightingOverride is { Value: { } overrideLighting }
                 && IsProtocol51LightingSetting(overrideLighting)
-                    ? status.LightingOverride
+                    ? status.LightingOverride with { Value = ProjectProtocol51LightingSetting(overrideLighting) }
                     : null,
             ThermalConvergence = null,
             HyperBoostBlockingControllers = null,
             ObservationReason = DeviceObservationReason.None,
             UnsupportedLaptop = false,
+            CpuTuning = null,
         };
 
         static bool IsProtocol51BatteryLimit(int value) =>
             value is >= 50 and <= 80 && value % 5 == 0;
     }
+
+    // Freeze the original six values. Future enum extensions must be reviewed
+    // explicitly before they can enter the closed, read-only protocol 51 shape.
+    private static bool IsProtocol51PerformancePreset(PerformancePreset preset) => preset is
+        PerformancePreset.Silent or PerformancePreset.Balanced or PerformancePreset.Performance
+        or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced or PerformancePreset.Custom;
 
     private static bool IsProtocol51CustomState(CustomPerformanceSettings? settings) =>
         settings is null || !settings.MaximumFans
@@ -1006,9 +1088,11 @@ public static class IpcMessageCodec
         : IsProtocol51CustomState(settings) ? settings
         : CustomPerformanceSettings.Default;
 
-    private static PowerProfile ProjectProtocol51Profile(PowerProfile profile) =>
+    private static PowerProfile ProjectProtocol51Profile(
+        PowerProfile profile, PerformancePreset placeholder) =>
         profile with
         {
+            Performance = IsProtocol51PerformancePreset(profile.Performance) ? profile.Performance : placeholder,
             CustomPerformance = ProjectProtocol51CustomSettings(profile.CustomPerformance),
             Lighting = ProjectProtocol51LightingSetting(profile.Lighting),
             ThxAudio = null,
@@ -1027,7 +1111,7 @@ public static class IpcMessageCodec
     // in this read-only projection; unrepresentable confirmed lighting stays unknown.
     private static LightingSettings ProjectProtocol51LightingSetting(LightingSettings settings) =>
         IsProtocol51LightingSetting(settings)
-            ? settings
+            ? settings with { IndependentControls = null }
             : LightingSettingsFactory.Off() with { LogoMode = settings.LogoMode };
 
     private static bool ValidThxAudioProfiles(ProfileSet profiles) =>
@@ -1095,7 +1179,10 @@ public static class IpcMessageCodec
         && ValidDisplay(value.Display);
 
     private static bool ValidProfileDisplays(ProfileSet profiles) =>
-        ValidDisplay(profiles.PluggedIn.Display)
+        profiles.PluggedIn is not null
+        && profiles.Battery is not null
+        && profiles.UsbC is not null
+        && ValidDisplay(profiles.PluggedIn.Display)
         && ValidDisplay(profiles.Battery.Display)
         && ValidDisplay(profiles.UsbC.Display);
 
@@ -1123,6 +1210,29 @@ public static class IpcMessageCodec
         var resolver = new DefaultJsonTypeInfoResolver();
         resolver.Modifiers.Add(typeInfo =>
         {
+            if (protocol51Projection)
+            {
+                foreach (JsonPropertyInfo property in typeInfo.Properties.Where(property =>
+                    property.Name.Equals("stopFansInBatterySaver", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("supportsBatterySaverFanStop", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("hasFanStopTrialEvidence", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("hasFanStopSourceEvidence", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("supportsFanStop", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("fanStopStatus", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("batterySaverFanStopStatus", StringComparison.OrdinalIgnoreCase)))
+                {
+                    property.ShouldSerialize = static (_, _) => false;
+                }
+            }
+            if (protocol51Projection
+                && (typeInfo.Type == typeof(ServiceStatusSnapshot)
+                    || typeInfo.Type == typeof(ControlOperationResult)))
+            {
+                JsonPropertyInfo cpuTuning = typeInfo.Properties.Single(property =>
+                    string.Equals(property.Name, "cpuTuning", StringComparison.OrdinalIgnoreCase));
+                cpuTuning.ShouldSerialize = static (_, _) => false;
+            }
+
             if (typeInfo.Type == typeof(ProfileSet))
             {
                 JsonPropertyInfo windowsPowerModes = typeInfo.Properties.Single(property =>
@@ -1135,6 +1245,26 @@ public static class IpcMessageCodec
                 {
                     typeInfo.Properties.Single(property => string.Equals(
                         property.Name, "applicationProfiles", StringComparison.OrdinalIgnoreCase))
+                        .ShouldSerialize = static (_, _) => false;
+                }
+            }
+
+            if (protocol51Projection && typeInfo.Type == typeof(WindowsPowerModeAssociations))
+            {
+                foreach (string member in new[] { "turbo", "maximumPower", "gaming", "creator" })
+                {
+                    typeInfo.Properties.Single(property => string.Equals(
+                        property.Name, member, StringComparison.OrdinalIgnoreCase))
+                        .ShouldSerialize = static (_, _) => false;
+                }
+            }
+
+            if (protocol51Projection && typeInfo.Type == typeof(HyperBoostBaseModeCapabilities))
+            {
+                foreach (string member in new[] { "custom", "coolingPadEntryBaseMode" })
+                {
+                    typeInfo.Properties.Single(property => string.Equals(
+                        property.Name, member, StringComparison.OrdinalIgnoreCase))
                         .ShouldSerialize = static (_, _) => false;
                 }
             }
@@ -1168,6 +1298,8 @@ public static class IpcMessageCodec
             if (protocol51Projection
                 && typeInfo.Type == typeof(ServiceStatusSnapshot))
             {
+                typeInfo.Properties.Single(property => string.Equals(property.Name, "coolingPad", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
                 JsonPropertyInfo thermalConvergence = typeInfo.Properties.Single(property =>
                     string.Equals(
                         property.Name,
@@ -1231,6 +1363,12 @@ public static class IpcMessageCodec
                             "supportsDirectManualFanTransitions",
                             StringComparison.OrdinalIgnoreCase));
                 directManualFanTransitions.ShouldSerialize = static (_, _) => false;
+                foreach (string member in new[] { "supportsBreathingColorSelection", "supportsWaveDirectionSelection" })
+                {
+                    typeInfo.Properties.Single(property => string.Equals(
+                        property.Name, member, StringComparison.OrdinalIgnoreCase))
+                        .ShouldSerialize = static (_, _) => false;
+                }
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "supportsManualFansOnLimitedPower", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
@@ -1287,9 +1425,33 @@ public static class IpcMessageCodec
             UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
             TypeInfoResolver = resolver,
         };
+        if (protocol51Projection)
+        {
+            options.Converters.Add(new Protocol51SettingValueSourceJsonConverter());
+        }
         options.Converters.Add(new BatteryPolicyJsonConverter());
         options.Converters.Add(new ReadOnlySetJsonConverterFactory());
         return options;
+    }
+
+    private sealed class Protocol51SettingValueSourceJsonConverter : JsonConverter<SettingValueSource>
+    {
+        public override SettingValueSource Read(
+            ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            throw new JsonException("The protocol 51 projection is write-only.");
+
+        public override void Write(
+            Utf8JsonWriter writer, SettingValueSource value, JsonSerializerOptions options) =>
+            // Application profiles did not exist in v51. Preserve the original
+            // source numbers and show that intent only as a read-only placeholder.
+            writer.WriteNumberValue(value switch
+            {
+                SettingValueSource.ConfirmedFirmwareState => 0,
+                SettingValueSource.PowerProfile or SettingValueSource.ApplicationProfile => 1,
+                SettingValueSource.TemporaryOverride => 2,
+                SettingValueSource.PersistentOverride => 3,
+                _ => throw new JsonException("The setting value source is invalid."),
+            });
     }
 
     private sealed class BatteryPolicyJsonConverter : JsonConverter<BatteryPolicy>

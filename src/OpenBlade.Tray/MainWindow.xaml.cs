@@ -21,7 +21,7 @@ using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
-public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyPropertyChanged
+public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl, IAsyncDisposable, INotifyPropertyChanged
 {
     private const double InitialWidthDip = 840;
     private const double InitialHeightDip = 720;
@@ -36,7 +36,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private readonly DispatcherQueue dispatcherQueue;
     private readonly SemaphoreSlim contentDialogGate = new(1, 1);
-    private readonly MicaBackdropHost micaBackdropHost;
+    private bool hostAttached;
+    private bool ownsHost;
     private readonly AccentColorManager accentColorManager;
     private readonly UISettings dashboardTextSettings = new();
     private readonly SingleLineTextMeasurementCache dashboardTitleHeightCache = new();
@@ -89,12 +90,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingNotificationPreferences;
     private bool troubleshootingHeaderPointerPressed;
     private bool dashboardCardsReady;
-    private bool canonicalLaptopCardsPlaced;
     private bool fanControlCommitInProgress;
     private bool chargeLimitPointerInteraction;
     private bool? dashboardIsStacked;
     private bool? profilesUseCompactLayout;
-    private bool enforcingMinimumWindowSize;
     private bool windowVisible;
     private bool trayDashboardVisible;
     private int trayDashboardLiveReadingSensors =
@@ -103,6 +102,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private int openDisplayPickerCount;
     private int updateCheckingStarted;
     private int disposed;
+    private WindowsWindowCloseHandler? closeHandler;
     private ContentDialog? dashboardCustomizerDialog;
     private Action? dashboardCustomizerRefresh;
     private Action? dashboardCustomizerApply;
@@ -118,6 +118,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private TrayDashboardPreference trayDashboardPreference =
         TrayDashboardPreferenceDefaults.Preference;
     private readonly TrayDashboardPreferenceEditor trayDashboardEditor = new();
+    private readonly LiveReorderBehavior liveReorder = new();
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -139,9 +140,22 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         UiLanguagePreference? initialLanguageOverride = null,
         UiPreferenceStore? preferenceStore = null,
         UpdateCheckInterval? initialUpdateCheckConsentOverride = null,
-        ITouchpadController? touchpadController = null)
+        ITouchpadController? touchpadController = null,
+        bool suppressWhatsNew = false,
+        IServiceClient? snapshotServiceClient = null,
+        Window? hostWindow = null)
     {
+        if (snapshotServiceClient is not null && !localizationSnapshotMode)
+        {
+            throw new ArgumentException("A snapshot service client requires disconnected snapshot mode.", nameof(snapshotServiceClient));
+        }
+        HostWindow = hostWindow ?? new Window();
+        // Keep one projection for all operations on this native shell.
+        AppWindow = HostWindow.AppWindow;
+        ContentHost = WindowContentHost.GetOrCreate(HostWindow);
+        initialPlacementAttempted = hostWindow is not null;
         this.localizationSnapshotMode = localizationSnapshotMode;
+        this.suppressWhatsNew = suppressWhatsNew || localizationSnapshotMode;
         TouchpadViewModel = new(touchpadController ?? new WindowsTouchpadController());
         if (localizationSnapshotMode && touchpadController is not null)
         {
@@ -157,9 +171,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         dispatcherQueue = DispatcherQueue.GetForCurrentThread()
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         dispatcherQueue.EnsureSystemDispatcherQueue();
-        IServiceClient serviceClient = new ServiceClient();
+        IServiceClient serviceClient = snapshotServiceClient ?? new ServiceClient();
         IThxAudioAdapter thxAudioAdapter = CreateThxAudioAdapter(localizationSnapshotMode);
         string uiVersion = ReadPresentedProductVersion(localizationSnapshotMode);
+        whatsNewRelease = WhatsNewRelease.Load(uiVersion);
         ViewModel = new MainViewModel(
             serviceClient,
             new WinUiDispatcher(dispatcherQueue),
@@ -221,6 +236,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.IsRepeating = true;
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
+        ViewModel.CoolingPad.PropertyChanged += OnCoolingPadPropertyChanged;
+        InitializeKeyboardBackendSelectors();
         InitializeApplicationProfilePages();
         BatteryHistoryViewModel.PropertyChanged += OnBatteryHistoryPropertyChanged;
         RefreshBatteryHistoryPresentation();
@@ -230,12 +247,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         PrimaryNavigationItems.CollectionChanged += OnPrimaryNavigationItemsCollectionChanged;
         accentColorManager = new AccentColorManager(Root, dispatcherQueue);
         accentColorManager.ColorChanged += OnAccentColorChanged;
-        if (OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath)
-        {
-            AppWindow.SetIcon(applicationIconPath);
-        }
-        ExtendsContentIntoTitleBar = true;
-        SetTitleBar(AppTitleBar);
         chargeLimitCommitTimer = dispatcherQueue.CreateTimer();
         chargeLimitCommitTimer.Interval = ChargeLimitCommitDelay;
         chargeLimitCommitTimer.IsRepeating = false;
@@ -271,7 +282,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             AppTitleBar.Resources["TitleBarDeactivatedForegroundBrush"] =
                 snapshotTitleForeground;
         }
-        micaBackdropHost = new MicaBackdropHost(this, Root);
         if (localizationSnapshotMode)
         {
             LaptopPageContent.Transitions.Clear();
@@ -283,10 +293,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         Root.DataContext = ViewModel;
         Root.ActualThemeChanged += OnRootActualThemeChanged;
-        ApplyCaptionTheme();
         Root.Loaded += OnRootLoaded;
         Root.SizeChanged += OnRootSizeChanged;
-        AppWindow.Changed += OnAppWindowChanged;
 
         this.preferenceStore = preferenceStore ?? UiPreferenceStore.CreateDefault();
         preferenceSaveQueue = new UiPreferenceSaveQueue(
@@ -303,7 +311,95 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             }
         };
         TelemetryPlot.VisibleRangeChanged += (_, _) => RefreshTelemetryEvents();
-        AppWindow.Closing += OnClosing;
+        if (hostWindow is null)
+        {
+            // The icon belongs to the native shell, not its localized content.
+            if (OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath)
+            {
+                AppWindow.SetIcon(applicationIconPath);
+            }
+            AttachToHost();
+        }
+    }
+
+    internal Window HostWindow { get; }
+    internal WindowContentHost ContentHost { get; }
+    public AppWindow AppWindow { get; }
+    public string Title => HostWindow.Title;
+    public bool ExtendsContentIntoTitleBar
+    {
+        get => HostWindow.ExtendsContentIntoTitleBar;
+        set => HostWindow.ExtendsContentIntoTitleBar = value;
+    }
+    public void SetTitleBar(UIElement? titleBar) => HostWindow.SetTitleBar(titleBar);
+    public event Windows.Foundation.TypedEventHandler<object, WindowEventArgs> Closed
+    {
+        add => HostWindow.Closed += value;
+        remove => HostWindow.Closed -= value;
+    }
+
+    public void Activate()
+    {
+        if (hostAttached && Volatile.Read(ref disposed) == 0)
+        {
+            HostWindow.Activate();
+        }
+    }
+    public void Close()
+    {
+        if (ownsHost && (ContentHost.ActiveView is null || ReferenceEquals(ContentHost.ActiveView, this)))
+        {
+            HostWindow.Close();
+        }
+    }
+
+    // Construct replacement views detached. Only the committed view owns native
+    // callbacks and chrome; retiring a view must never close its successor's HWND.
+    internal void AttachToHost()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        if (hostAttached)
+        {
+            return;
+        }
+        if (ContentHost.ActiveView is not null && !ReferenceEquals(ContentHost.ActiveView, this))
+        {
+            throw new InvalidOperationException("The main window already has attached content.");
+        }
+        ownsHost = true;
+        hostAttached = true;
+        ContentHost.Attach(this);
+        OnHostContentAttached();
+        HostWindow.Title = "OpenBlade";
+        HostWindow.ExtendsContentIntoTitleBar = true;
+        HostWindow.SetTitleBar(AppTitleBar);
+        ContentHost.AttachBackdrop(HostWindow, Root);
+        ContentHost.ConfigureSizeConstraints(HostWindow, AppWindow, MinimumWidthDip, MinimumHeightDip);
+        closeHandler = new WindowsWindowCloseHandler(HostWindow, TryHideOnClose);
+        ApplyCaptionTheme();
+    }
+
+    partial void OnHostContentAttached();
+
+    internal void DetachFromHost()
+    {
+        ownsHost = false;
+        if (!hostAttached)
+        {
+            return;
+        }
+        hostAttached = false;
+        DisposeComponentSafely("global search detachment", CloseGlobalSearch);
+        DisposeComponentSafely("window closing handler", DetachCloseHandler);
+        DisposeComponentSafely("Mica theme source detachment", () => ContentHost.DetachBackdrop(Root));
+        DisposeComponentSafely("content detachment", () =>
+        {
+            if (ReferenceEquals(ContentHost.ActiveView, this))
+            {
+                DisposeComponentSafely("title bar detachment", () => HostWindow.SetTitleBar(null));
+                ContentHost.Detach(this);
+            }
+        });
     }
 
     public MainViewModel ViewModel { get; }
@@ -459,12 +555,20 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     }
 #endif
 
-    internal static MainWindow CreateLocalizationSnapshot() => new(
+    internal static MainWindow CreateLocalizationSnapshot(
+        IServiceClient? serviceClient = null,
+        UiPreferenceStore? preferenceStore = null,
+        Window? hostWindow = null,
+        UiLanguagePreference? initialLanguageOverride = null) => new(
         WindowsProcessorEfficiencyPolicy.Discover(),
         new WindowsStartupRegistration(),
         showNotification: null,
         localizationSnapshotMode: true,
-        touchpadController: new SnapshotTouchpadController());
+        preferenceStore: preferenceStore,
+        touchpadController: new SnapshotTouchpadController(),
+        snapshotServiceClient: serviceClient,
+        hostWindow: hostWindow,
+        initialLanguageOverride: initialLanguageOverride);
 
     private sealed class SnapshotTouchpadController : ITouchpadController
     {
@@ -510,6 +614,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         set => SetNotificationPreference(
             NotificationCategory.ProfileAndPowerSourceChanges,
             value);
+    }
+
+    public bool ExternalPowerDischargeNotificationsEnabled
+    {
+        get => notificationPreferences.ExternalPowerDischargeEnabled;
+        set => SetNotificationPreference(NotificationCategory.ExternalPowerDischarge, value);
     }
 
     public bool AppUpdateNotificationsEnabled
@@ -619,6 +729,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public void ShowAndActivate()
     {
+        if (!hostAttached || Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
         Volatile.Write(ref windowVisible, true);
         ApplyProcessorVisibilityPolicy();
         UpdateDashboardTelemetryPresentationState();
@@ -651,6 +765,25 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     AnimationDesired = false,
                     VerticalAlignmentRatio = 0,
                 }));
+    }
+
+    private void OnOpenLabsLightingControl(object sender, RoutedEventArgs args)
+    {
+        if (!ViewModel.ShowLightingEffectLabControls
+            || sender is not Microsoft.UI.Xaml.Controls.Button { Tag: string targetName })
+        {
+            return;
+        }
+
+        // Opening a guide explicitly requests its section, even when hidden in Customize.
+        if (pageSections.TryGetValue(CustomizablePageKind.Lighting, out var sections))
+        {
+            sections.Single(section => section.Kind == PageSectionKind.LightingKeyboard).IsVisible = true;
+        }
+
+        OpenGlobalSearchResult(new GlobalSearchResult(
+            LocalizedResources.Get("MainWindow_TextBlockKeyboard2.Text", "Keyboard"),
+            string.Empty, LightingNavigationItem, LightingPage, LightingCard, targetName));
     }
 
     public void NavigateToNotificationDestination(
@@ -702,6 +835,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         try
         {
+            if (!localizationSnapshotMode)
+            {
+                if (NeedsWhatsNew || UpdateViewModel.NeedsConsentPrompt)
+                {
+                    await rootLoaded.Task.WaitAsync(featureLifetime.Token);
+                }
+                await ShowWhatsNewIfNeededAsync();
+            }
             await ShowUpdateCheckConsentIfNeededAsync();
             UpdateViewModel.StartAutomaticCheck();
         }
@@ -722,9 +863,44 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        gpuAppCleanupCoordinator.Cancel();
-        CancelApplicationDiscovery();
-        featureLifetime.Cancel();
+        // Hide before the first await, while the cancel-to-hide handler is
+        // still attached. A retired window must not remain interactive during
+        // slow cleanup, or close its HWND before native chrome is released.
+        Volatile.Write(ref windowVisible, false);
+        bool releaseHost = ownsHost;
+        try
+        {
+            if (releaseHost)
+            {
+                AppWindow.Hide();
+            }
+        }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.Tray.MainWindow", "HideForDisposal", exception);
+        }
+        try { await DisposeOwnedResourcesAsync(); }
+        finally
+        {
+            if (ownsHost && ReferenceEquals(ContentHost.ActiveView, this))
+            {
+                DisposeComponentSafely("window size constraints", ContentHost.DisposeSizeConstraints);
+                DisposeComponentSafely("Mica backdrop", ContentHost.DisposeBackdrop);
+                WindowTitleBarLifetime.Release(HostWindow, usesXamlTitleBar: true);
+                DetachFromHost();
+                ownsHost = true;
+            }
+        }
+    }
+
+    private async ValueTask DisposeOwnedResourcesAsync()
+    {
+        DisposeComponentSafely("global search retirement", ReleaseGlobalSearch);
+        WindowXamlBindingLifetime.Release(this, Bindings, Bindings.StopTracking);
+
+        DisposeComponentSafely("GPU app cleanup cancellation", gpuAppCleanupCoordinator.Cancel);
+        DisposeComponentSafely("application discovery cancellation", CancelApplicationDiscovery);
+        DisposeComponentSafely("feature cancellation", featureLifetime.Cancel);
         BatteryHistoryViewModel.PropertyChanged -= OnBatteryHistoryPropertyChanged;
 
         Task? activeInitialization;
@@ -735,10 +911,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         if (activeInitialization is not null)
         {
-            await activeInitialization;
+            await DisposeComponentSafelyAsync("window initialization", () => new ValueTask(activeInitialization));
         }
 
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        ViewModel.CoolingPad.PropertyChanged -= OnCoolingPadPropertyChanged;
         UpdateViewModel.PreferencesChanged -= OnUpdatePreferencesChanged;
         UpdateViewModel.UpdateAvailable -= OnAppUpdateAvailable;
         FirmwareUpdateViewModel.PreferencesChanged -=
@@ -747,7 +924,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DashboardCards.CollectionChanged -= OnDashboardCardsCollectionChanged;
         trayDashboardEditor.EditAccepted -= OnTrayDashboardEditorEditAccepted;
         trayDashboardEditor.AvailabilityChanged -= UpdateTrayDashboardEditorAvailability;
-        trayDashboardEditor.Dispose();
+        DisposeComponentSafely("dashboard editor", trayDashboardEditor.Dispose);
+        cardReorderDisposed = true;
+        DisposeComponentSafely("live card reorder", liveReorder.Dispose);
         PrimaryNavigationItems.CollectionChanged -= OnPrimaryNavigationItemsCollectionChanged;
         foreach (DashboardCardOption option in DashboardCards)
         {
@@ -767,26 +946,24 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         DisplayViewModel.UserSettingsChanged -= OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested -= OnSavedDisplayProfileRestoreRequested;
-        AppWindow.Closing -= OnClosing;
+        DisposeComponentSafely("window closing handler", DetachCloseHandler);
         Root.ActualThemeChanged -= OnRootActualThemeChanged;
         Root.Loaded -= OnRootLoaded;
         Root.SizeChanged -= OnRootSizeChanged;
-        AppWindow.Changed -= OnAppWindowChanged;
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
-        chargeLimitCommits.Dispose();
-        DisposeThxEnhancementCommits();
+        DisposeComponentSafely("charge-limit commits", chargeLimitCommits.Dispose);
+        DisposeComponentSafely("THX enhancement commits", DisposeThxEnhancementCommits);
         lightingCommitTimer.Stop();
         lightingCommitTimer.Tick -= OnLightingCommitTimerTick;
-        lightingCommits.Dispose();
+        DisposeComponentSafely("lighting commits", lightingCommits.Dispose);
         gpuClockOffsetCommitTimer.Stop();
         gpuClockOffsetCommitTimer.Tick -= OnGpuClockOffsetCommitTimerTick;
-        gpuClockOffsetCommits.Dispose();
+        DisposeComponentSafely("GPU clock-offset commits", gpuClockOffsetCommits.Dispose);
         displayRefreshTimer.Stop();
         displayRefreshTimer.Tick -= OnDisplayRefreshTimerTick;
-        micaBackdropHost.Dispose();
         accentColorManager.ColorChanged -= OnAccentColorChanged;
-        accentColorManager.Dispose();
+        DisposeComponentSafely("accent colors", accentColorManager.Dispose);
         await DisposeComponentSafelyAsync(
             "visible observation loop",
             visibleObservationLoop.DisposeAsync);
@@ -815,7 +992,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await DisposeComponentSafelyAsync(
             "main view model",
             ViewModel.DisposeAsync);
-        featureLifetime.Dispose();
+        DisposeComponentSafely("feature lifetime", featureLifetime.Dispose);
+    }
+
+    private static void DisposeComponentSafely(string component, Action dispose)
+    {
+        try { dispose(); }
+        catch (Exception exception)
+        {
+            // Cancellation callbacks and native disposers can throw. Preserve
+            // the failure while letting independent window resources retire.
+            DiagnosticTrace.TraceException("OpenBlade.Tray.MainWindow", "DisposeComponent", exception, component);
+        }
     }
 
     private static async ValueTask DisposeComponentSafelyAsync(
@@ -891,7 +1079,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         NotificationPreferences initialNotifications = NotificationPreferences.Default;
         string? initialLastNotifiedReleaseTag = null;
         string? initialLastNotifiedFirmwareSignature = null;
-        bool initialLabFeaturesEnabled = false;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -909,6 +1096,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             primaryNavigationItems = preferences.EffectivePrimaryNavigationItems;
             specialKeyBindings = preferences.EffectiveSpecialKeyBindings;
             pageLayouts = preferences.EffectivePageLayouts;
+            RestoreCardOrders(preferences.CardOrders);
             try
             {
                 initialTrayDashboard = preferences.EffectiveTrayDashboard;
@@ -923,6 +1111,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
             snapTapEnabled = preferences.SnapTapEnabled;
+            snapTapBackend = preferences.EffectiveSnapTapBackend;
+            functionRowBackend = preferences.EffectiveFunctionRowBackend;
             initialUpdateChannel = preferences.EffectiveUpdateChannel;
             initialUpdateCheckInterval = preferences.EffectiveUpdateCheckInterval;
             initialUpdateCheckPromptShown = preferences.UpdateCheckPromptShown;
@@ -970,7 +1160,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialLastNotifiedReleaseTag = preferences.LastNotifiedReleaseTag;
             initialLastNotifiedFirmwareSignature =
                 preferences.LastNotifiedFirmwareSignature;
-            initialLabFeaturesEnabled = preferences.LabFeaturesEnabled;
         }
         catch (Exception exception)
         {
@@ -979,6 +1168,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "InitializePreferences",
                 exception);
         }
+
+        await LoadWhatsNewStateAsync();
 
         if (initialUpdateCheckConsentOverride is { } consentOverride)
         {
@@ -1011,10 +1202,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         changingAccentColor = false;
         NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
+        InitializeKeyboardBackendSelectors();
         SnapTapToggle.IsOn = snapTapEnabled;
         RefreshSnapTapStatus();
-        ViewModel.LabFeaturesEnabled = initialLabFeaturesEnabled;
-        LabFeaturesToggle.IsOn = ViewModel.LabFeaturesEnabled;
         ApplyNotificationPreferences(initialNotifications);
         notificationCoordinator.RestoreDeliveredUpdates(
             initialLastNotifiedReleaseTag,
@@ -1126,13 +1316,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             RefreshApplicationProfiles();
         }
 
-        if (args.PropertyName is nameof(MainViewModel.TelemetryHistorySnapshot)
-            or nameof(MainViewModel.LatestTelemetryFreshness))
+        if (args.PropertyName == nameof(MainViewModel.TelemetryHistorySnapshot))
         {
-            if (ViewModel.TelemetryReplaySession is null)
-            {
-                RefreshTelemetryPresentation();
-            }
+            RefreshTelemetryChartPresentation();
+        }
+        if (args.PropertyName == nameof(MainViewModel.LatestTelemetryFreshness))
+        {
+            RefreshTelemetrySourcePresentation();
         }
         if (args.PropertyName == nameof(MainViewModel.TelemetryEnabled) && telemetryToggleInProgress)
         {
@@ -1140,13 +1330,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             // Initialization uses the same property without saving partial preferences.
             QueuePreferenceSave();
         }
-        if (args.PropertyName is nameof(MainViewModel.IsTelemetryRecording)
-            or nameof(MainViewModel.TelemetryReplaySession) or nameof(MainViewModel.TelemetryErrorMessage)
-            or nameof(MainViewModel.TelemetryEnabled))
+        if (args.PropertyName == nameof(MainViewModel.TelemetryEnabled))
         {
             RefreshTelemetryPresentation();
         }
-        if (args.PropertyName == nameof(MainViewModel.RequiresTelemetryObservation))
+        if (args.PropertyName is nameof(MainViewModel.IsTelemetryRecording)
+            or nameof(MainViewModel.TelemetryReplaySession)
+            or nameof(MainViewModel.TelemetryErrorMessage))
+        {
+            RefreshTelemetryCommandPresentation();
+        }
+        if (args.PropertyName is nameof(MainViewModel.RequiresTelemetryObservation)
+            or nameof(MainViewModel.RequiresExternalPowerDischargeObservation))
         {
             UpdateActiveObservationLoop();
         }
@@ -1362,7 +1557,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void ApplyCaptionTheme()
     {
-        if (!AppWindowTitleBar.IsCustomizationSupported())
+        if (!hostAttached || !AppWindowTitleBar.IsCustomizationSupported())
         {
             return;
         }
@@ -1432,6 +1627,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 SpecialKeyBindings: SpecialKeyBindings
                     .Select(binding => binding.ToPreference())
                     .ToArray(),
+                CardOrders: SnapshotCardOrders(),
                 PageLayouts: pageSections
                     .OrderBy(pair => pair.Key)
                     .Select(pair => new PageLayoutPreference(
@@ -1476,9 +1672,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 LastNotifiedReleaseTag: notificationCoordinator.LastNotifiedReleaseTag,
                 LastNotifiedFirmwareSignature: notificationCoordinator.LastNotifiedFirmwareSignature,
                 TrayDashboard: trayDashboardPreference,
-                LabFeaturesEnabled: ViewModel.LabFeaturesEnabled,
                 Language: ViewModel.LanguagePreference,
                 SnapTapEnabled: snapTapEnabled,
+                SnapTapBackend: snapTapBackend,
+                FunctionRowBackend: functionRowBackend,
                 ThxAudioIntegrationEnabled: ThxViewModel.IsEnabled,
                 TelemetryChartMetrics: TelemetryPlot.MetricPreferences,
                 TelemetryEnabled: ViewModel.TelemetryEnabled));
@@ -1506,7 +1703,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         initialPlacementAttempted = true;
         try
         {
-            nint hwnd = WindowNative.GetWindowHandle(this);
+            nint hwnd = WindowNative.GetWindowHandle(HostWindow);
             uint nativeDpi = GetDpiForWindow(hwnd);
             if (nativeDpi == 0)
             {
@@ -1543,58 +1740,24 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
+    private void DetachCloseHandler()
+    {
+        WindowsWindowCloseHandler? previous = closeHandler;
+        closeHandler = null;
+        previous?.Dispose();
+    }
+
+    private bool TryHideOnClose()
     {
         bool exitRequested = Microsoft.UI.Xaml.Application.Current is App app && app.ExitRequested;
         if (WindowLifecyclePolicy.Decide(exitRequested) == WindowCloseDecision.Hide)
         {
             EndTrayDashboardCustomization(showSettingsOverview: true);
-            args.Cancel = true;
             StartHiddenObservation();
             AppWindow.Hide();
+            return true;
         }
-    }
-
-    private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
-    {
-        if (!args.DidSizeChange || enforcingMinimumWindowSize)
-        {
-            return;
-        }
-
-        try
-        {
-            nint hwnd = WindowNative.GetWindowHandle(this);
-            uint nativeDpi = GetDpiForWindow(hwnd);
-            if (nativeDpi == 0)
-            {
-                return;
-            }
-
-            SizeInt32 size = sender.Size;
-            DisplayArea displayArea = DisplayArea.GetFromWindowId(
-                sender.Id,
-                DisplayAreaFallback.Primary);
-            RectInt32 workArea = displayArea.WorkArea;
-            PixelRect constrained = WindowPlacementPolicy.EnforceMinimumSize(
-                new PixelRect(0, 0, size.Width, size.Height),
-                MinimumWidthDip,
-                MinimumHeightDip,
-                checked((int)nativeDpi),
-                workArea.Width,
-                workArea.Height);
-            if (constrained.Width == size.Width && constrained.Height == size.Height)
-            {
-                return;
-            }
-
-            enforcingMinimumWindowSize = true;
-            sender.Resize(new SizeInt32(constrained.Width, constrained.Height));
-        }
-        finally
-        {
-            enforcingMinimumWindowSize = false;
-        }
+        return false;
     }
 
     private async void OnStartAtSignInToggled(object sender, RoutedEventArgs args) =>
@@ -1641,19 +1804,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         StartMinimized = toggle.IsOn;
-        QueuePreferenceSave();
-    }
-
-    private void OnLabFeaturesToggled(object sender, RoutedEventArgs args)
-    {
-        if (sender is not ToggleSwitch toggle
-            || Volatile.Read(ref disposed) != 0
-            || toggle.IsOn == ViewModel.LabFeaturesEnabled)
-        {
-            return;
-        }
-
-        ViewModel.LabFeaturesEnabled = toggle.IsOn;
         QueuePreferenceSave();
     }
 
@@ -1721,6 +1871,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         OnPropertyChanged(nameof(PerformanceNotificationsEnabled));
         OnPropertyChanged(nameof(ProfileAndPowerSourceNotificationsEnabled));
+        OnPropertyChanged(nameof(ExternalPowerDischargeNotificationsEnabled));
         OnPropertyChanged(nameof(AppUpdateNotificationsEnabled));
         OnPropertyChanged(nameof(FirmwareUpdateNotificationsEnabled));
         OnPropertyChanged(nameof(ControllerAdvisoryNotificationsEnabled));
@@ -1730,7 +1881,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private WindowNotificationObservation CaptureNotificationObservation() => new(
         ViewModel.ActivePowerSource,
         ViewModel.HasControllerAdvisory ? ViewModel.ControllerAdvisoryText : string.Empty,
-        ViewModel.TroubleshootingRecentErrorStatus);
+        ViewModel.TroubleshootingRecentErrorStatus,
+        ViewModel.ExternalPowerDischargeEpisode);
 
     private void PrimeNotificationObservation() =>
         notificationCoordinator.Prime(CaptureNotificationObservation());
@@ -1739,6 +1891,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     {
         if (notificationCoordinator.ObservationReady
             && propertyName is nameof(MainViewModel.ActivePowerSource)
+                or nameof(MainViewModel.ExternalPowerDischargeEpisode)
                 or nameof(MainViewModel.ControllerAdvisoryText)
                 or nameof(MainViewModel.TroubleshootingRecentErrorStatus))
         {
@@ -1869,7 +2022,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (changingLightingRefreshRate
             || Volatile.Read(ref disposed) != 0
             || sender is not ToggleSwitch toggle
-            || !ViewModel.LabFeaturesEnabled
             || !ViewModel.CanSetLightingRefreshRate
             || toggle.IsOn == ViewModel.IsSixtyHzLightingEnabled)
         {
@@ -2924,6 +3076,57 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
+    private bool changingBatterySaverFanStop;
+
+    private bool changingFanStop;
+
+    private async void OnFanStopToggled(object sender, RoutedEventArgs args)
+    {
+        if (changingFanStop || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle || toggle.IsOn == ViewModel.FanStopRequested)
+        {
+            return;
+        }
+        changingFanStop = true;
+        bool requested = toggle.IsOn;
+        toggle.IsOn = ViewModel.FanStopRequested;
+        try
+        {
+            await ViewModel.SetFanStopAsync(requested, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.Tray.MainWindow", "SetFanStop", exception);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.FanStopRequested;
+            changingFanStop = false;
+        }
+    }
+
+    private async void OnBatterySaverFanStopToggled(object sender, RoutedEventArgs args)
+    {
+        if (changingBatterySaverFanStop || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle || toggle.IsOn == ViewModel.BatterySaverFanStopRequested)
+        {
+            return;
+        }
+        changingBatterySaverFanStop = true;
+        try
+        {
+            await ViewModel.SetBatterySaverFanStopAsync(toggle.IsOn, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException("OpenBlade.Tray.MainWindow", "SetBatterySaverFanStop", exception);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.BatterySaverFanStopRequested;
+            changingBatterySaverFanStop = false;
+        }
+    }
     private async void OnManualFanCurveSettingChanged(object sender, RoutedEventArgs args)
     {
         if (Volatile.Read(ref disposed) != 0 || sender is not ToggleSwitch toggle)
@@ -2999,7 +3202,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 : null,
             ViewModel.HasUnsavedLightingPowerPolicy
                 ? ViewModel.LightingPowerPolicyDraft
-                : null);
+                : null)
+        {
+            EditorGeneration = ViewModel.LightingCommitGeneration,
+        };
         if (Volatile.Read(ref disposed) != 0 || !request.HasWork)
         {
             lightingCommits.ClearPending();
@@ -3040,7 +3246,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             if (request.Lighting is { } draft
                 && ViewModel.SetLightingCommand is AsyncRelayCommand lightingCommand)
             {
-                if (lightingCommand.CanExecute(draft))
+                if (ViewModel.IsLightingCommitCurrent(request) && lightingCommand.CanExecute(draft))
                 {
                     await lightingCommand.ExecuteAsync(draft);
                 }
@@ -3261,6 +3467,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         string destination = (args.SelectedItemContainer as NavigationViewItem)?.Tag as string
             ?? "home";
+        ClearGlobalSearchArrival();
         ApplyNavigationDestination(destination);
     }
 
@@ -3404,6 +3611,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void ApplyNavigationDestination(string destination)
     {
+        if (destination == "cooling-pad" && !ViewModel.CoolingPad.IsVisible)
+        {
+            destination = "home";
+            MainNavigation.SelectedItem = HomeNavigationItem;
+        }
         ResetApplicationSubpageNavigation();
         if (trayDashboardCustomizationActive && destination != "settings")
         {
@@ -3422,6 +3634,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             RefreshTelemetryPresentation();
         }
+        CoolingPadPage.Visibility = destination == "cooling-pad" && ViewModel.CoolingPad.IsVisible
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         LaptopPage.Visibility = destination == "laptop"
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -3436,6 +3651,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayPage.Visibility = destination == "display"
             ? Visibility.Visible
             : Visibility.Collapsed;
+        LabsPage.Visibility = destination == "labs" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPage.Visibility = destination == "settings"
             && !trayDashboardCustomizationActive
             ? Visibility.Visible
@@ -3498,35 +3714,36 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             "profiles" => ProfilesNavigationItem,
             "telemetry" => TelemetryNavigationItem,
             "laptop" => LaptopNavigationItem,
+            "cooling-pad" => CoolingPadNavigationItem,
             "thx-audio" => ThxAudioNavigationItem,
             "lighting" => LightingNavigationItem,
             "display" => DisplayNavigationItem,
+            "labs" => LabsNavigationItem,
             "settings" => SettingsNavigationItem,
             "about" => AboutNavigationItem,
             _ => throw new ArgumentOutOfRangeException(nameof(destination)),
         };
         MainNavigation.SelectedItem = selected;
+        ClearGlobalSearchArrival();
         ApplyNavigationDestination(destination);
     }
 
-    internal void ShowLocalizationSnapshotOneShotControls() =>
+    internal void ShowLocalizationSnapshotOneShotControls()
+    {
+#if OPENBLADE_DEVELOPER_HARNESS
+        SetLocalizationSnapshotKeyboardBackends();
+#endif
         KeyboardSection.StartBringIntoView(new BringIntoViewOptions
         {
             AnimationDesired = false,
             VerticalAlignmentRatio = 0,
         });
+    }
 
     internal void ShowLocalizationSnapshotSettingsAppearance()
     {
         SettingsAppearanceSection.StartBringIntoView();
     }
-
-    internal void ShowLocalizationSnapshotExperimentalControls() =>
-        LabFeaturesToggle.StartBringIntoView(new BringIntoViewOptions
-        {
-            AnimationDesired = false,
-            VerticalAlignmentRatio = 0,
-        });
 
     internal bool HasLocalizedCheckNowButton(
         string expectedContent,
@@ -3609,7 +3826,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void WakeActiveObservationLoop()
     {
-        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation)
+        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation
+            || ViewModel.RequiresExternalPowerDischargeObservation)
         {
             visibleObservationLoop.StartOrWake();
         }
@@ -3618,30 +3836,37 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private async Task ObserveVisibleSurfacesAsync(CancellationToken cancellationToken)
     {
         bool dashboardVisible = Volatile.Read(ref trayDashboardVisible);
+        TelemetrySample? sampleBeforeObservation = ViewModel.LatestTelemetrySample;
+        TelemetrySessionDocument? replayBeforeObservation = ViewModel.TelemetryReplaySession;
         try
         {
-            await (dashboardVisible
-                ? ViewModel.ObserveTrayDashboardStateAsync(
-                    includeMainDashboardReadings: Volatile.Read(ref windowVisible),
-                    dashboardLiveReadings: (LiveReadingSensors)Volatile.Read(
-                        ref trayDashboardLiveReadingSensors), cancellationToken)
-                : ViewModel.ObserveStateAsync(cancellationToken)).ConfigureAwait(false);
+            if (!Volatile.Read(ref windowVisible) && !dashboardVisible
+                && !ViewModel.RequiresTelemetryObservation)
+            {
+                await ViewModel.ObserveExternalPowerDischargeAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await (dashboardVisible
+                    ? ViewModel.ObserveTrayDashboardStateAsync(
+                        includeMainDashboardReadings: Volatile.Read(ref windowVisible),
+                        dashboardLiveReadings: (LiveReadingSensors)Volatile.Read(
+                            ref trayDashboardLiveReadingSensors), cancellationToken)
+                    : ViewModel.ObserveStateAsync(cancellationToken)).ConfigureAwait(false);
+            }
         }
         finally
         {
-            dispatcherQueue.TryEnqueue(() =>
-            {
-                if (Volatile.Read(ref disposed) == 0)
-                {
-                    ViewModel.RefreshTelemetryFreshness();
-                }
-            });
+            dispatcherQueue.TryEnqueue(() => CompleteTelemetryObservationPresentation(
+                sampleBeforeObservation,
+                replayBeforeObservation));
         }
     }
 
     private void UpdateActiveObservationLoop()
     {
-        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation)
+        if (windowVisible || trayDashboardVisible || ViewModel.RequiresTelemetryObservation
+            || ViewModel.RequiresExternalPowerDischargeObservation)
         {
             visibleObservationLoop.StartOrWake();
         }
@@ -5076,6 +5301,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             .Where(section => section.IsVisible)
             .Select(section => pageSectionPresentations[section.Kind])
             .ToArray();
+        foreach (PageSectionOption option in sections)
+        {
+            FrameworkElement presentation = pageSectionPresentations[option.Kind];
+            RegisterCardGroups(presentation, $"Page.{option.Kind}");
+            liveReorder.Register(presentation, sections, option,
+                origin => CanStartSectionReorder(origin, presentation));
+        }
         var desiredSet = desiredSections.ToHashSet();
 
         foreach (FrameworkElement child in host.Children
@@ -5147,6 +5379,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             {
                 NavigationViewItem item = GetPrimaryNavigationItem(
                     PrimaryNavigationItems[targetIndex].Kind);
+                liveReorder.Register(item, PrimaryNavigationItems, PrimaryNavigationItems[targetIndex]);
                 int menuTargetIndex = targetIndex + 1;
                 int currentIndex = MainNavigation.MenuItems.IndexOf(item);
                 if (currentIndex < 0 || currentIndex == menuTargetIndex)
@@ -5168,6 +5401,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             changingPrimaryNavigationOrder = false;
         }
 
+        ClearGlobalSearchArrival();
         ApplyNavigationDestination(destination);
     }
 
@@ -5177,10 +5411,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             PrimaryNavigationItemKind.Profiles => ProfilesNavigationItem,
             PrimaryNavigationItemKind.Telemetry => TelemetryNavigationItem,
             PrimaryNavigationItemKind.Laptop => LaptopNavigationItem,
+            PrimaryNavigationItemKind.CoolingPad => CoolingPadNavigationItem,
             PrimaryNavigationItemKind.ThxAudio => ThxAudioNavigationItem,
             PrimaryNavigationItemKind.Lighting => LightingNavigationItem,
             PrimaryNavigationItemKind.Display => DisplayNavigationItem,
             PrimaryNavigationItemKind.Settings => SettingsNavigationItem,
+            PrimaryNavigationItemKind.Labs => LabsNavigationItem,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -5190,10 +5426,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             PrimaryNavigationItemKind.Profiles => LocalizedResources.Get("Navigation_Profiles", "Profiles"),
             PrimaryNavigationItemKind.Telemetry => LocalizedResources.Get("Navigation_Telemetry", "Telemetry"),
             PrimaryNavigationItemKind.Laptop => LocalizedResources.Get("Navigation_Laptop", "Laptop"),
+            PrimaryNavigationItemKind.CoolingPad => LocalizedResources.Get("MainWindow_CoolingPadNavigationItemText.Content", "Cooling pad"),
             PrimaryNavigationItemKind.ThxAudio => LocalizedResources.Get("Navigation_ThxAudio", "THX Audio"),
             PrimaryNavigationItemKind.Lighting => LocalizedResources.Get("Navigation_Lighting", "Lighting"),
             PrimaryNavigationItemKind.Display => LocalizedResources.Get("Navigation_Display", "Display"),
             PrimaryNavigationItemKind.Settings => LocalizedResources.Get("Navigation_Settings", "Settings"),
+            PrimaryNavigationItemKind.Labs => LocalizedResources.Get("MainWindow_LabsNavigationItem.Content", "Labs"),
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -5263,6 +5501,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             .Where(option => option.IsPinned)
             .Select(GetOrCreateDashboardCard)
             .ToArray();
+        foreach (DashboardCardOption option in DashboardCards.Where(option => option.IsPinned))
+        {
+            FrameworkElement presentation = GetOrCreateDashboardCard(option);
+            RegisterCardGroups(presentation, $"Dashboard.{option.Kind}");
+            liveReorder.Register(presentation, DashboardCards, option,
+                origin => CanStartSectionReorder(origin, presentation));
+        }
         var desiredSet = desiredCards.ToHashSet();
 
         foreach (FrameworkElement child in DashboardCardHost.Children
@@ -5351,30 +5596,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         };
     }
 
-    private void MoveCanonicalLaptopCardsIntoPlace()
+    private void OnRootLoaded(object sender, RoutedEventArgs args)
     {
-        if (canonicalLaptopCardsPlaced)
+        if (Volatile.Read(ref disposed) != 0)
         {
             return;
         }
 
-        foreach (FrameworkElement card in new[] { PowerModeCard, FansCard, BatteryCard })
-        {
-            if (card.Parent is Microsoft.UI.Xaml.Controls.Panel current)
-            {
-                current.Children.Remove(card);
-            }
-        }
-
-        LaptopCardsHost.Children.Insert(0, BatteryCard);
-        LaptopCardsHost.Children.Insert(0, FansCard);
-        LaptopCardsHost.Children.Insert(0, PowerModeCard);
-        canonicalLaptopCardsPlaced = true;
-    }
-
-    private void OnRootLoaded(object sender, RoutedEventArgs args)
-    {
-        MoveCanonicalLaptopCardsIntoPlace();
+        rootLoaded.TrySetResult();
         RegisterPageSections();
         dashboardCardPresentations[DashboardCardKind.DeviceStatus] = DeviceStatusCard;
         dashboardCardsReady = true;
@@ -5402,7 +5631,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         pageSectionPresentations[PageSectionKind.LaptopPowerMode] = PowerModeCard;
         pageSectionPresentations[PageSectionKind.LaptopFans] = FansCard;
         pageSectionPresentations[PageSectionKind.LaptopBattery] = BatteryCard;
-        pageSectionPresentations[PageSectionKind.LaptopBatteryHistory] = BatteryHistorySection;
         pageSectionPresentations[PageSectionKind.LaptopKeyboardBehavior] =
             KeyboardSection;
         pageSectionPresentations[PageSectionKind.LaptopStartupAnimation] =
@@ -5411,6 +5639,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ShortcutKeysSection;
         pageSectionPresentations[PageSectionKind.SettingsBehavior] =
             SettingsBehaviorSection;
+        pageSectionPresentations[PageSectionKind.SettingsNotifications] =
+            SettingsNotificationsSection;
         pageSectionPresentations[PageSectionKind.SettingsAppearance] =
             SettingsAppearanceSection;
         pageSectionPresentations[PageSectionKind.SettingsUpdates] =
@@ -5450,11 +5680,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         StackPanel? powerSaving = FindDescendant<StackPanel>(
             LightingCard,
             "LightingPowerSavingSection");
-        if (host is null || keyboard is null || logo is null || powerSaving is null)
+        StackPanel? labControls = FindDescendant<StackPanel>(LightingCard, "LightingLabControls");
+        if (host is null || keyboard is null || logo is null || powerSaving is null || labControls is null)
         {
             return false;
         }
 
+        // The shared dashboard template keeps these actions hidden. Their profile actions live here.
+        labControls.Visibility = Visibility.Visible;
         pageSectionHosts[CustomizablePageKind.Lighting] = host;
         ConfigureSectionHostTransitions(host);
         pageSectionPresentations[PageSectionKind.LightingKeyboard] = keyboard;
@@ -5538,10 +5771,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
             if (!await ViewModel.ImportProfilesAsync(profiles, CancellationToken.None))
             {
-                throw new InvalidDataException(
-                    LocalizedResources.Get(
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(ViewModel.OperationStatusMessage)
+                    ? LocalizedResources.Get(
                         "MainWindow_ProfileImport_UnavailableSettings",
-                        "The imported profiles include settings that are unavailable on this laptop."));
+                        "The imported profiles include settings that are unavailable on this laptop.")
+                    : ViewModel.OperationStatusMessage);
             }
         }
         catch (Exception exception)
@@ -5558,7 +5792,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnImportKeyboardLighting(object sender, RoutedEventArgs args)
     {
-        if (!ViewModel.LabFeaturesEnabled)
+        if (!ViewModel.CanControlLighting)
         {
             return;
         }

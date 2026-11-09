@@ -145,6 +145,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Prepare pinned native build toolchain
+        shell: powershell
+        run: ./build/Prepare-NativeToolchain.ps1
+
       - name: Restore
         if: inputs.validation-mode == 'full'
         run: dotnet restore OpenBlade.slnx -p:NuGetAudit=false
@@ -167,6 +171,41 @@ jobs:
           -m:1
           --verbosity minimal
 
+      - name: Prepare test temporary storage
+        shell: pwsh
+        run: |
+          # Guardian fixtures keep the real write-through journal. Use the
+          # runner's job storage instead of the Windows user-profile temp disk.
+          $ErrorActionPreference = 'Stop'
+          $testTemp = Join-Path $env:RUNNER_TEMP 'openblade-tests'
+          New-Item -ItemType Directory -Path $testTemp -Force | Out-Null
+          foreach ($root in @([IO.Path]::GetTempPath(), $testTemp)) {
+            $path = Join-Path $root ('openblade-flush-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+            $stream = $null
+            try {
+              $stream = [IO.FileStream]::new($path, [IO.FileMode]::CreateNew,
+                [IO.FileAccess]::Write, [IO.FileShare]::None, 4096, [IO.FileOptions]::WriteThrough)
+              $buffer = [byte[]]::new(4096)
+              $timer = [Diagnostics.Stopwatch]::StartNew()
+              for ($i = 0; $i -lt 32; $i++) {
+                $stream.Write($buffer, 0, $buffer.Length)
+                $stream.Flush($true)
+              }
+              $timer.Stop()
+              Write-Host "Journal storage: root=$root; records=32; elapsedMs=$($timer.ElapsedMilliseconds)"
+            } finally {
+              if ($null -ne $stream) { $stream.Dispose() }
+              if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
+            }
+          }
+          "TEMP=$testTemp" >> $env:GITHUB_ENV
+          "TMP=$testTemp" >> $env:GITHUB_ENV
+
+      - name: Run native interop tests
+        if: inputs.validation-mode == 'full'
+        shell: pwsh
+        run: ./rust/Test-NativeInterop.ps1
+
       - name: Test
         if: inputs.validation-mode == 'full'
         run: >-
@@ -186,6 +225,10 @@ jobs:
           .\build\Run-AffectedCi.ps1
           -Lane Quality
           -PlanJson $env:OPENBLADE_VALIDATION_PLAN_JSON
+
+      - name: Verify native failure stops the production actor
+        shell: powershell
+        run: ./rust/Test-ProductionActivation.ps1
 
   build-contracts:
     name: Build contracts
@@ -207,6 +250,10 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
+
+      - name: Prepare pinned native build toolchain
+        shell: powershell
+        run: ./build/Prepare-NativeToolchain.ps1
 
       - name: Restore
         if: inputs.validation-mode == 'full'
@@ -271,6 +318,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Prepare pinned native build toolchain
+        shell: powershell
+        run: ./build/Prepare-NativeToolchain.ps1
+
       - name: Publish affected components
         shell: powershell
         env:
@@ -301,6 +352,10 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
+
+      - name: Prepare pinned native build toolchain
+        shell: powershell
+        run: ./build/Prepare-NativeToolchain.ps1
 
       - name: Publish and validate production installer
         if: inputs.channel == 'Stable'

@@ -596,8 +596,13 @@ public static class BatteryValidationFactory
                 new DeviceNumericRange(45, 95, 1),
                 DeviceFeatureAccess.ObservedOnly),
             new CpuVoltageOptimizerCapabilities(
+#if OPENBLADE_CPU_VOLTAGE_VALIDATION
+                new DeviceNumericRange(-1, -1, 1),
+                DeviceFeatureAccess.ReadWrite)
+#else
                 new DeviceNumericRange(-30, -1, 1),
-                DeviceFeatureAccess.ObservedOnly)
+                DeviceFeatureAccess.ReadWrite)
+#endif
             {
                 SupportsEnableDisable = true,
             },
@@ -655,7 +660,10 @@ public static class BatteryValidationFactory
             supportsDirectManualFanTransitions: true,
             thxAudioCapabilities: new ThxAudioCapabilities(
                 DeviceFeatureAccess.ReadWrite,
-                ThxAudioProductIds.Rznb11));
+                ThxAudioProductIds.Rznb11),
+            laptopControlRecoveryIdentity: $"{target.Model}|{target.VendorId:X4}:{target.ProductId:X4}",
+            hasFanStopSourceEvidence: FanStopModelContract.ForProfile(target.Model, target.ProductId,
+                WindowsHostIdentitySource.Rz090528Identity.ProductName).Count != 0);
     }
 
     internal static ProductionBatteryReadEvidence
@@ -1059,6 +1067,70 @@ public static class BatteryValidationFactory
             hyperBoostObservationOnly: true);
     }
 
+
+    internal static SilentLowFanValidationRunner CreateWindowsSilentLowFanValidation(
+        Func<bool, CancellationToken, Task<string?>> admission,
+        Func<bool, bool> submissionAllowed,
+        Action<SilentLowFanProgress> journal)
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var processes = new RunningProcessSource();
+        var services = new WindowsServiceSource();
+        var guard = new DirectFanValidationAccessGuard(
+            new WindowsHardwareAccessGuard(processes, services), processes, services);
+        var identity = new WindowsHostIdentitySource(
+            registry, new RuntimeWindowsPlatformEvidenceSource(registry));
+        var opener = new WindowsRazerHidSessionOpener(
+            identity, guard, native, ControllerExclusivityPolicy.Strict);
+        var actors = new ValidationActorFactory(opener, new OverlappedFeatureOperation(native),
+            guard, TimeProvider.System, DefaultExchangeTimeout, ControllerExclusivityPolicy.Strict,
+            BatteryFeatureReportSettleDelay);
+        DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
+            ProductionFixtureSource.Read()
+                ?? throw new UnvalidatedCommandException("The admitted thermal fixture is unavailable."),
+            TrustedFixtureHashRegistry.Production);
+        return new SilentLowFanValidationRunner(actors, catalog,
+            async (restoring, token) => !guard.Check().Safe
+                ? "ControllerOrValidationOwnerUnavailable"
+                : await admission(restoring, token).ConfigureAwait(false),
+            restoring => guard.Check().Safe && submissionAllowed(restoring), journal, TimeProvider.System, DefaultExchangeTimeout, DefaultCleanupDrainTimeout);
+    }
+
+
+    internal static BatterySaverLowFanValidationRunner CreateWindowsBatterySaverLowFanValidation(
+        Func<bool, CancellationToken, Task<string?>> admission,
+        Action<LowFanValidationProgress> journal,
+        Func<bool, bool> submissionAllowed,
+        bool confirmSpinningAt2000 = false,
+        bool useLowestNonzeroTarget = false)
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var processes = new RunningProcessSource();
+        var services = new WindowsServiceSource();
+        var guard = new DirectFanValidationAccessGuard(
+            new WindowsHardwareAccessGuard(processes, services), processes, services);
+        var identity = new WindowsHostIdentitySource(
+            registry, new RuntimeWindowsPlatformEvidenceSource(registry));
+        var opener = new WindowsRazerHidSessionOpener(
+            identity, guard, native, ControllerExclusivityPolicy.Strict);
+        var actors = new ValidationActorFactory(opener, new OverlappedFeatureOperation(native),
+            guard, TimeProvider.System, DefaultExchangeTimeout, ControllerExclusivityPolicy.Strict,
+            BatteryFeatureReportSettleDelay);
+        DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
+            ProductionFixtureSource.Read()
+                ?? throw new UnvalidatedCommandException("The admitted thermal fixture is unavailable."),
+            TrustedFixtureHashRegistry.Production);
+        return new BatterySaverLowFanValidationRunner(actors, catalog,
+            async (restoring, token) => !guard.Check().Safe
+                ? "ControllerOrValidationOwnerUnavailable"
+                : await admission(restoring, token).ConfigureAwait(false),
+            journal, TimeProvider.System, DefaultExchangeTimeout, DefaultCleanupDrainTimeout,
+            submissionAllowed: restoring => guard.Check().Safe && submissionAllowed(restoring),
+            confirmSpinningAt2000: confirmSpinningAt2000,
+            useLowestNonzeroTarget: useLowestNonzeroTarget);
+    }
 
     internal static DirectThermalTransitionValidationRunner CreateWindowsDirectThermalTransitionValidation()
     {

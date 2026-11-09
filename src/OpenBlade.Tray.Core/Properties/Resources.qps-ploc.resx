@@ -156,6 +156,9 @@
   <data name="60 Hz lighting is not available for this keyboard." xml:space="preserve">
     <value>[!! 60 Hz líghtíng ís nót áváíláblé fór thís kéýbóárd. ~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="60 Hz lighting support couldn’t be checked." xml:space="preserve">
+    <value>[!! 60 Hz líghtíng súppórt cóúldn’t bé chéckéd. ~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="A shortcut must include a non-modifier key." xml:space="preserve">
     <value>[!! Á shórtcút múst ínclúdé á nón-módífíér kéý. ~~~~~~~~~~~~~ !!]</value>
   </data>
@@ -314,6 +317,9 @@
   </data>
   <data name="Check status" xml:space="preserve">
     <value>[!! Chéck státús ~~~~ !!]</value>
+  </data>
+  <data name="Checking keyboard support…" xml:space="preserve">
+    <value>[!! Chéckíng kéýbóárd súppórt… ~~~~~~~~~ !!]</value>
   </data>
   <data name="Checking" xml:space="preserve">
     <value>[!! Chéckíng ~~~ !!]</value>
@@ -1530,11 +1536,11 @@
   <data name="Sign in to an interactive Windows session to change laptop settings." xml:space="preserve">
     <value>[!! Sígn ín tó án íntéráctívé Windows séssíón tó chángé láptóp séttíngs. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Experimental controls are available on this laptop. Export diagnostics in About to help test them." xml:space="preserve">
-    <value>[!! Éxpéríméntál cóntróls áré áváíláblé ón thís láptóp. Éxpórt díágnóstícs ín Ábóút tó hélp tést thém. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="This laptop is supported using reviewed sources. Physical validation is tracked separately." xml:space="preserve">
+    <value>[!! Thís láptóp ís súppórtéd úsíng révíéwéd sóúrcés. Phýsícál válídátíón ís tráckéd sépárátélý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Experimental writes are paused after OpenBlade could not confirm a change. Check the current state, then resume experimental controls. OpenBlade will not retry the previous change." xml:space="preserve">
-    <value>[!! Éxpéríméntál wrítés áré páúséd áftér OpenBlade cóúld nót cónfírm á chángé. Chéck thé cúrrént státé, thén résúmé éxpéríméntál cóntróls. OpenBlade wíll nót rétrý thé prévíóús chángé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  <data name="Laptop controls are paused after OpenBlade could not confirm a change. Check the current state, then resume laptop controls. OpenBlade will not retry the previous change." xml:space="preserve">
+    <value>[!! Láptóp cóntróls áré páúséd áftér OpenBlade cóúld nót cónfírm á chángé. Chéck thé cúrrént státé, thén résúmé láptóp cóntróls. OpenBlade wíll nót rétrý thé prévíóús chángé. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Laptop not supported" xml:space="preserve">
     <value>[!! Láptóp nót súppórtéd ~~~~~~~ !!]</value>
@@ -1756,12 +1762,6 @@ Détáíls: {1} ~~~ !!]</value>
   <data name="Apply overrides for an exact game or application executable." xml:space="preserve">
     <value>[!! Ápplý óvérrídés fór án éxáct gámé ór ápplícátíón éxécútáblé. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
-  <data name="Battery history" xml:space="preserve">
-    <value>[!! Báttérý hístórý ~~~~~ !!]</value>
-  </data>
-  <data name="Review Windows battery history and preview a long battery life preset." xml:space="preserve">
-    <value>[!! Révíéw Windows báttérý hístórý ánd prévíéw á lóng báttérý lífé prését. ~~~~~~~~~~~~~~~~~~~ !!]</value>
-  </data>
   <data name="Enter a name of up to 80 characters." xml:space="preserve">
     <value>[!! Éntér á námé óf úp tó 80 cháráctérs. ~~~~~~~~~~ !!]</value>
   </data>
@@ -1791,5 +1791,185 @@ Détáíls: {1} ~~~ !!]</value>
   </data>
   <data name="Telemetry is disabled." xml:space="preserve">
     <value>[!! Télémétrý ís dísábléd. ~~~~~~~ !!]</value>
+  </data>
+  <data name="Notifications" xml:space="preserve">
+    <value>[!! Nótífícátíóns ~~~~~ !!]</value>
+  </data>
+  <data name="Plugged in, battery discharging" xml:space="preserve">
+    <value>[!! Plúggéd ín, báttérý díschárgíng ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The imported profiles include settings that are unavailable on this laptop." xml:space="preserve">
+    <value>[!! Thé ímpórtéd prófílés ínclúdé séttíngs thát áré únáváíláblé ón thís láptóp. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The power source changed. Review the current profile and try again." xml:space="preserve">
+    <value>[!! Thé pówér sóúrcé chángéd. Révíéw thé cúrrént prófílé ánd trý ágáín. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan-stop control paused. Turn it off to restore normal cooling." xml:space="preserve">
+    <value>[!! Fán-stóp cóntról páúséd. Túrn ít óff tó réstóré nórmál cóólíng. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan control needs recovery. Automatic cooling is not confirmed." xml:space="preserve">
+    <value>[!! Fán cóntról nééds récóvérý. Áútómátíc cóólíng ís nót cónfírméd. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fans are stopped. Turn off to return to Auto." xml:space="preserve">
+    <value>[!! Fáns áré stóppéd. Túrn óff tó rétúrn tó Áútó. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan stop is not available in this build." xml:space="preserve">
+    <value>[!! Fán stóp ís nót áváíláblé ín thís búíld. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Turn on to stop the fans. Turn off to return to Auto." xml:space="preserve">
+    <value>[!! Túrn ón tó stóp thé fáns. Túrn óff tó rétúrn tó Áútó. ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan stop is unavailable right now." xml:space="preserve">
+    <value>[!! Fán stóp ís únáváíláblé ríght nów. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fans are stopped" xml:space="preserve">
+    <value>[!! Fáns áré stóppéd ~~~~~ !!]</value>
+  </data>
+  <data name="Fan control needs recovery" xml:space="preserve">
+    <value>[!! Fán cóntról nééds récóvérý ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Waiting for fan stop confirmation. This may take tens of seconds. Turn off to return to Auto." xml:space="preserve">
+    <value>[!! Wáítíng fór fán stóp cónfírmátíón. Thís máý táké téns óf sécónds. Túrn óff tó rétúrn tó Áútó. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Returning to Auto. Automatic cooling is not confirmed yet; this may take tens of seconds." xml:space="preserve">
+    <value>[!! Rétúrníng tó Áútó. Áútómátíc cóólíng ís nót cónfírméd ýét; thís máý táké téns óf sécónds. ~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Fan stop is unavailable because its safety guardian is not ready." xml:space="preserve">
+    <value>[!! Fán stóp ís únáváíláblé bécáúsé íts sáfétý gúárdíán ís nót réádý. ~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Waiting for fan stop confirmation" xml:space="preserve">
+    <value>[!! Wáítíng fór fán stóp cónfírmátíón ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Returning to Auto" xml:space="preserve">
+    <value>[!! Rétúrníng tó Áútó ~~~~~~ !!]</value>
+  </data>
+  <data name="Custom: {2} s average CPU {0} °C / GPU {1} °C; immediate CPU {3} °C / GPU {4} °C" xml:space="preserve">
+    <value>[!! Cústóm: {2} s ávérágé CPÚ {0} °C / GPÚ {1} °C; ímmédíáté CPÚ {3} °C / GPÚ {4} °C ~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Auto: use the existing conservative end conditions." xml:space="preserve">
+    <value>[!! Áútó: úsé thé éxístíng cónsérvátívé énd cóndítíóns. ~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Paused — resume to start a fresh cool interval." xml:space="preserve">
+    <value>[!! Páúséd — résúmé tó stárt á frésh cóól íntérvál. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="CPU below {0} °C and GPU below {1} °C for {2} s" xml:space="preserve">
+    <value>[!! CPÚ bélów {0} °C ánd GPÚ bélów {1} °C fór {2} s ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Higher temperature limits allow the laptop to stay hotter before cooling restarts." xml:space="preserve">
+    <value>[!! Híghér témpérátúré límíts állów thé láptóp tó stáý hóttér béfóré cóólíng réstárts. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="A longer averaging window responds more slowly to rising temperatures. Immediate cutoffs still apply." xml:space="preserve">
+    <value>[!! Á lóngér ávérágíng wíndów réspónds móré slówlý tó rísíng témpérátúrés. Ímmédíáté cútóffs stíll ápplý. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The CPU start limit must be below the CPU end limit." xml:space="preserve">
+    <value>[!! Thé CPÚ stárt límít múst bé bélów thé CPÚ énd límít. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The GPU start limit must be below the GPU end limit." xml:space="preserve">
+    <value>[!! Thé GPÚ stárt límít múst bé bélów thé GPÚ énd límít. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Use whole temperatures from 10 to 100 °C, an averaging window from 1 to 300 seconds, and a cool interval from 1 to 3600 seconds. Start limits must be below the corresponding average limits." xml:space="preserve">
+    <value>[!! Úsé whólé témpérátúrés fróm 10 tó 100 °C, án ávérágíng wíndów fróm 1 tó 300 sécónds, ánd á cóól íntérvál fróm 1 tó 3600 sécónds. Stárt límíts múst bé bélów thé córréspóndíng ávérágé límíts. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Each immediate cutoff must be at least its corresponding average limit." xml:space="preserve">
+    <value>[!! Éách ímmédíáté cútóff múst bé át léást íts córréspóndíng ávérágé límít. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Turbo" xml:space="preserve">
+    <value>[!! Túrbó ~~ !!]</value>
+  </data>
+  <data name="Maximum Power" xml:space="preserve">
+    <value>[!! Máxímúm Pówér ~~~~~ !!]</value>
+  </data>
+  <data name="Gaming" xml:space="preserve">
+    <value>[!! Gámíng ~~~ !!]</value>
+  </data>
+  <data name="Creator" xml:space="preserve">
+    <value>[!! Créátór ~~~ !!]</value>
+  </data>
+  <data name="Apply now" xml:space="preserve">
+    <value>[!! Ápplý nów ~~~ !!]</value>
+  </data>
+  <data name="mixed per-core values" xml:space="preserve">
+    <value>[!! míxéd pér-córé válúés ~~~~~~~ !!]</value>
+  </data>
+  <data name="CPU tuning request failed: {0}" xml:space="preserve">
+    <value>[!! CPÚ túníng réqúést fáíléd: {0} ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Measured running optimizer: unknown." xml:space="preserve">
+    <value>[!! Méásúréd rúnníng óptímízér: únknówn. ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Measured running optimizer: {0}." xml:space="preserve">
+    <value>[!! Méásúréd rúnníng óptímízér: {0}. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Running optimizer changes are unavailable." xml:space="preserve">
+    <value>[!! Rúnníng óptímízér chángés áré únáváíláblé. ~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Optimizer recovery is blocked. Refresh to check its status." xml:space="preserve">
+    <value>[!! Óptímízér récóvérý ís blóckéd. Réfrésh tó chéck íts státús. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="CPU recovery includes power settings and cannot be restored here." xml:space="preserve">
+    <value>[!! CPÚ récóvérý ínclúdés pówér séttíngs ánd cánnót bé réstóréd héré. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Recovery of earlier saved CPU settings is blocked." xml:space="preserve">
+    <value>[!! Récóvérý óf éárlíér sávéd CPÚ séttíngs ís blóckéd. ~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
+    <value>[!! Thé cóólíng-pád chángé wás blóckéd. Réfrésh státús ánd chéck Tróúbléshóótíng. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Configured brightness: {0}%" xml:space="preserve">
+    <value>[!! Cónfígúréd bríghtnéss: {0}% ~~~~~~~ !!]</value>
+  </data>
+  <data name="Cooling-pad status is unavailable. Showing the last confirmed state." xml:space="preserve">
+    <value>[!! Cóólíng-pád státús ís únáváíláblé. Shówíng thé lást cónfírméd státé. ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Configured fan target: {0} RPM" xml:space="preserve">
+    <value>[!! Cónfígúréd fán tárgét: {0} RPM ~~~~~~~~ !!]</value>
+  </data>
+  <data name="Cooling-pad control is paused. Refresh status before making another change." xml:space="preserve">
+    <value>[!! Cóólíng-pád cóntról ís páúséd. Réfrésh státús béfóré mákíng ánóthér chángé. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Keep current" xml:space="preserve">
+    <value>[!! Kéép cúrrént ~~~~ !!]</value>
+  </data>
+  <data name="Configured fan target unavailable" xml:space="preserve">
+    <value>[!! Cónfígúréd fán tárgét únáváíláblé ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Spectrum" xml:space="preserve">
+    <value>[!! Spéctrúm ~~~ !!]</value>
+  </data>
+  <data name="Mirror keyboard" xml:space="preserve">
+    <value>[!! Mírrór kéýbóárd ~~~~~ !!]</value>
+  </data>
+  <data name="Reconnecting. Showing the last confirmed cooling-pad state." xml:space="preserve">
+    <value>[!! Récónnéctíng. Shówíng thé lást cónfírméd cóólíng-pád státé. ~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="OpenBlade is controlling the cooling pad." xml:space="preserve">
+    <value>[!! OpenBlade ís cóntróllíng thé cóólíng pád. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Connected. Choose settings and apply them to take control." xml:space="preserve">
+    <value>[!! Cónnéctéd. Chóósé séttíngs ánd ápplý thém tó táké cóntról. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="The cooling-pad change could not be confirmed. Refresh status before continuing." xml:space="preserve">
+    <value>[!! Thé cóólíng-pád chángé cóúld nót bé cónfírméd. Réfrésh státús béfóré cóntínúíng. ~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
+    <value>[!! Chéck fán spééds, íncréásíng cúrvé témpérátúrés, ánd síx-dígít RGB cólórs. ~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="CPU/GPU curves" xml:space="preserve">
+    <value>[!! CPÚ/GPÚ cúrvés ~~~~~ !!]</value>
+  </data>
+  <data name="Configured brightness unavailable" xml:space="preserve">
+    <value>[!! Cónfígúréd bríghtnéss únáváíláblé ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Apply new settings, or release control to restore the captured cooling-pad settings." xml:space="preserve">
+    <value>[!! Ápplý néw séttíngs, ór réléásé cóntról tó réstóré thé cáptúréd cóólíng-pád séttíngs. ~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="CPU" xml:space="preserve">
+    <value>[!! CPÚ ~~ !!]</value>
+  </data>
+  <data name="GPU" xml:space="preserve">
+    <value>[!! GPÚ ~~ !!]</value>
+  </data>
+  <data name="Both" xml:space="preserve">
+    <value>[!! Bóth ~~ !!]</value>
   </data>
 </root>

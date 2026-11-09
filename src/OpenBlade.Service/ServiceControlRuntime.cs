@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Principal;
 using System.Text;
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
@@ -26,6 +27,26 @@ public interface IServiceControlRuntime
             "This runtime does not implement unexpected-exit startup classification.");
 
     ServiceStatusSnapshot GetStatus();
+
+    Task<ControlOperationResult> SetCoolingPadSettingsAsync(CoolingPadSettings settings, SecurityIdentifier userSid,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling pad control is unavailable."));
+    Task<ControlOperationResult> ReadCoolingPadStatusAsync(SecurityIdentifier userSid, CancellationToken token) => Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling pad control is unavailable."));
+    Task<ControlOperationResult> ReleaseCoolingPadControlAsync(SecurityIdentifier userSid, Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling pad control is unavailable."));
+    Task<ControlOperationResult> SetCoolingPadDemandLeaseAsync(SetCoolingPadDemandLeaseRequest request, ServiceClientContext client, Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling pad control is unavailable."));
+    Task<ControlOperationResult> RemoveCoolingPadDemandLeaseAsync(RemoveCoolingPadDemandLeaseRequest request, ServiceClientContext client, CancellationToken token) => Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Cooling pad control is unavailable."));
+    Task MaintainCoolingPadAsync(CancellationToken token) => Task.CompletedTask;
+
+    Task<ControlOperationResult> ObserveCpuTuningAsync(bool useInstalledBackend,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU observation is unavailable."));
+
+    Task<ControlOperationResult> SetCpuTuningAsync(CpuTuningTarget target, CpuTuningSettings settings,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU writes are not admitted."));
+
+    Task<ControlOperationResult> RestoreCpuTuningAsync(CpuTuningTarget target,
+        Func<bool> stillControlsSession, CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked, "CPU restoration is unavailable."));
 
     Rz090581CapabilityDiagnostics? GetCachedRz090581CapabilityDiagnostics() => null;
 
@@ -69,6 +90,28 @@ public interface IServiceControlRuntime
     Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
         CancellationToken token);
+
+    Task<ControlOperationResult> SetBatterySaverFanStopAsync(
+        bool enabled, CancellationToken cancellationToken) => Task.FromResult(
+            new ControlOperationResult(ControlOperationStatus.Blocked,
+                "Battery Saver fan stop is unavailable."));
+
+    Task<ControlOperationResult> SetBatterySaverFanStopAsync(
+        bool enabled, Func<bool> stillControlsSession, CancellationToken cancellationToken) =>
+        SetBatterySaverFanStopAsync(enabled, cancellationToken);
+
+    Task<ControlOperationResult> SetFanStopModeAsync(
+        FanStopMode mode, Func<bool> stillControlsSession, CancellationToken cancellationToken) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked,
+            "Fan stop is unavailable."));
+
+    Task<ControlOperationResult> SetFanStopSettingsAsync(
+        FanStopSettings settings, Func<bool> stillControlsSession, CancellationToken cancellationToken) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Fan Stop settings are unavailable."));
+
+    Task<ControlOperationResult> ResumeAutomaticFanStopAsync(
+        Func<bool> stillControlsSession, CancellationToken cancellationToken) =>
+        Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked, "Automatic Stop is unavailable."));
 
     Task<ControlOperationResult> ReportApplicationContextAsync(
         ReportApplicationContextRequest request,
@@ -184,6 +227,11 @@ public interface IServiceControlRuntime
     Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
+
+    Task<ControlOperationResult> SetIndependentLightingOverrideAsync(
+        ManualOverride<IndependentLightingSettings>? value,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked, "Independent lighting controls are unavailable."));
 
     Task<ControlOperationResult> StepKeyboardBrightnessAsync(
         KeyboardBrightnessDirection direction,
@@ -435,7 +483,18 @@ internal sealed record ScopedIntentApplyExecution(
     ScopedApplyOutcome Outcome,
     ThermalTransitionTrace? ThermalTrace = null);
 
-public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
+internal interface IServiceUserAdmission
+{
+    IDisposable BeginUserAdmission(ServiceClientContext client, Func<bool> stillControlsSession,
+        ServiceUserRequestOwner? requestOwner);
+
+    bool TryReadCurrentUserStatus(SecurityIdentifier userSid, Func<bool> stillControlsSession,
+        out ServiceStatusSnapshot? snapshot);
+}
+
+internal sealed record ServiceUserRequestOwner(ServiceClientContext Client, Func<bool> StillControlsSession);
+
+public sealed partial class ServiceControlRuntime : IServiceControlRuntime, IServiceUserAdmission, IDisposable
 {
     private const string UnclassifiedExternalPowerMessage =
         "The external power adapter could not be classified; control writes are blocked.";
@@ -488,10 +547,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly LowPowerGate lowPowerGate;
     private readonly IFirmwareVersionSource firmwareVersionSource;
     private readonly IDisplayBrightnessHidController displayBrightnessHidController;
+    private readonly CpuTuningController cpuTuningController;
     private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
     private readonly Func<CancellationToken, Task> hyperBoostLifecycleExitBoundary;
     private readonly TimeProvider timeProvider;
     private readonly SemaphoreSlim operationGate = new(1, 1);
+    private readonly LaptopControlExecutor laptopControlExecutor;
+    private int laptopRecoveryObservationActive;
+    private int laptopRecoveryPowerDestinationPending;
     private static readonly TimeSpan ApplicationContextLeaseDuration = TimeSpan.FromSeconds(15);
     private CancellationTokenSource? applicationContextLeaseCancellation;
     private Guid applicationContextInstanceId;
@@ -579,6 +642,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool explicitLightingOwnershipActive;
     private string? lightingRecoveryPauseMessage;
     private readonly IFanTemperatureSource fanTemperatureSource;
+    private readonly Func<PowerSource> batterySaverFanStopPowerReader;
+    private readonly BatterySaverFanStopRuntimePolicy batterySaverFanStopPolicy = new();
+    private BatterySaverFanStopThermalSample? batterySaverFanStopThermalSample;
+    private bool batterySaverFanStopReadbackActive;
     private readonly ICoolingPadDiscoverySource hyperBoostPadDiscoverySource;
     private readonly IHyperBoostOwnershipJournalStore hyperBoostOwnershipJournalStore;
     private int? lastCurveFan1Rpm;
@@ -606,6 +673,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool suppressInitialKnownPowerSourceApplyAfterUnexpectedExit;
     private string? activeUserSid;
     private Func<bool>? activeUserStillControlsSession;
+    private bool activeUserActivationIncomplete;
     private ThermalConvergenceStateStore? thermalConvergenceStore;
     private ThermalConvergenceLedgerState? thermalConvergenceLedger;
     private string? thermalConvergenceLedgerSha256;
@@ -824,17 +892,34 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IDisplayBrightnessHidController? displayBrightnessHidController = null,
         ICoolingPadDiscoverySource? hyperBoostPadDiscoverySource = null,
         IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
-        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null)
+        Func<CancellationToken, Task>? hyperBoostLifecycleExitBoundary = null,
+        LaptopControlPendingStore? laptopControlPendingStore = null,
+        Func<PowerSource>? batterySaverFanStopPowerReader = null,
+        IFanStopBackend? fanStopBackend = null,
+        CpuTuningController? cpuTuningController = null,
+        ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
+        string? coolingPadStateDirectory = null)
     {
+        fanStopController = new(fanStopBackend ?? UnavailableFanStopBackend.Instance);
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
             overrideStore ?? throw new ArgumentNullException(nameof(overrideStore)));
+        laptopControlExecutor = new LaptopControlExecutor(laptopControlPendingStore);
         this.powerStateProvider = powerStateProvider
             ?? throw new ArgumentNullException(nameof(powerStateProvider));
         this.subscriptionHub = subscriptionHub
             ?? throw new ArgumentNullException(nameof(subscriptionHub));
         this.deviceProvider = deviceProvider
             ?? throw new ArgumentNullException(nameof(deviceProvider));
+        if (fanStopController.Guardian is { } guardian)
+        {
+            guardian.ConfigureHardwareDelegation(AcquireGuardianHardwareLeaseAsync);
+            guardian.SnapshotChanged += NotifyGuardianSnapshotChanged;
+        }
+        this.deviceProvider.SetRecoveryWriteAdmission(() =>
+            !laptopControlExecutor.RequiresReconciliation && !fanStopController.BlocksOrdinaryHardware
+            && Volatile.Read(ref laptopRecoveryObservationActive) == 0
+            && Volatile.Read(ref laptopRecoveryPowerDestinationPending) == 0);
         this.history = history ?? throw new ArgumentNullException(nameof(history));
         this.lowPowerGate = lowPowerGate
             ?? throw new ArgumentNullException(nameof(lowPowerGate));
@@ -851,14 +936,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.userConfigurationRepository = userConfigurationRepository;
         this.fanTemperatureSource = fanTemperatureSource
             ?? new SafeWindowsFanTemperatureSource();
+        this.batterySaverFanStopPowerReader = batterySaverFanStopPowerReader
+            ?? WindowsPowerStateProvider.CaptureWindowsPowerSource;
         this.displayBrightnessHidController = displayBrightnessHidController
             ?? UnavailableDisplayBrightnessHidController.Instance;
+        this.cpuTuningController = cpuTuningController
+            ?? new CpuTuningController(new WindowsCpuTuningObservationSource());
         this.hyperBoostPadDiscoverySource = hyperBoostPadDiscoverySource
             ?? CoolingPadDiscoveryFactory.CreateWindows();
         this.hyperBoostOwnershipJournalStore = hyperBoostOwnershipJournalStore
             ?? UnavailableHyperBoostOwnershipJournalStore.Instance;
+        coolingPadControl = new CoolingPadControlRuntime(
+            coolingPadDeviceProvider ?? new WindowsCoolingPadDeviceProvider(),
+            new CoolingPadStateStore(coolingPadStateDirectory), this.fanTemperatureSource, this.timeProvider);
         this.hyperBoostLifecycleExitBoundary = hyperBoostLifecycleExitBoundary
             ?? (static _ => Task.CompletedTask);
+        this.deviceProvider.SetBatterySaverFanStopContext(false, BatterySaverFanStopWriteAdmitted);
     }
 
     public void Initialize(BatteryConfiguration configuration, PowerSource powerSource) =>
@@ -945,7 +1038,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .Resolve(UnknownConfirmedState)
                     .Lighting
                     .Value;
-            Volatile.Write(ref status, CreateInitialSnapshot(powerSource));
+            Volatile.Write(ref status, ProjectFanStopStatus(ProjectBatterySaverFanStopStatus(CreateInitialSnapshot(powerSource))));
+            RecordFanStopTransition();
+            RefreshBatterySaverFanStopReadInterest();
         }
     }
 
@@ -955,20 +1050,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? throw new InvalidOperationException("The service runtime is not initialized.");
         bool experimental = deviceProvider.IsExperimentalDevice;
         bool paused = deviceProvider.IsExperimentalWritesPaused;
+        bool laptopPending = laptopControlExecutor.RequiresReconciliation;
         if (current.AllowExperimentalFeatures != experimental
             || current.IsExperimentalDevice != experimental
             || current.ExperimentalWritesPaused != paused
-            || paused && !current.WritesBlocked)
+            || (paused || laptopPending) && !current.WritesBlocked)
         {
             current = current with
             {
                 AllowExperimentalFeatures = experimental,
                 IsExperimentalDevice = experimental,
                 ExperimentalWritesPaused = paused,
-                WritesBlocked = current.WritesBlocked || paused,
+                WritesBlocked = current.WritesBlocked || paused || laptopPending,
             };
         }
-        return ApplyConfigurationQuarantineAdvisory(current);
+        return ApplyConfigurationQuarantineAdvisory(ProjectFanStopStatus(ProjectBatterySaverFanStopStatus(current)));
     }
 
     public IDisposable RegisterProtocolCompatibilityClient()
@@ -1066,6 +1162,86 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             static () => true,
             cancellationToken).ConfigureAwait(false);
 
+    IDisposable IServiceUserAdmission.BeginUserAdmission(
+        ServiceClientContext client, Func<bool> stillControlsSession, ServiceUserRequestOwner? requestOwner)
+    {
+        if (userConfigurationRepository is null)
+        {
+            return EmptyDisposable.Instance;
+        }
+        // A second request from the same live Windows session is a waiter for
+        // the current finite operation, not a competing user admission. Keep
+        // all other pending leases and their advanced epochs unchanged.
+        if (requestOwner is not null
+            && requestOwner.Client.UserSid == client.UserSid
+            && requestOwner.Client.SessionId == client.SessionId
+            && requestOwner.Client.LogonKind == client.LogonKind
+            && RequestOwnerControlsSession(requestOwner)
+            && stillControlsSession())
+        {
+            return EmptyDisposable.Instance;
+        }
+        if (requestOwner is null
+            && Volatile.Read(ref pendingSessionAdmissions) == 0
+            && !Volatile.Read(ref activeUserActivationIncomplete) && string.Equals(
+                Volatile.Read(ref activeUserSid), client.UserSid.Value, StringComparison.OrdinalIgnoreCase)
+            || !stillControlsSession())
+        {
+            return EmptyDisposable.Instance;
+        }
+        return BeginSessionAdmission();
+    }
+
+    private static bool RequestOwnerControlsSession(ServiceUserRequestOwner owner)
+    {
+        try
+        {
+            return owner.StillControlsSession();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    bool IServiceUserAdmission.TryReadCurrentUserStatus(
+        SecurityIdentifier userSid, Func<bool> stillControlsSession, out ServiceStatusSnapshot? snapshot)
+    {
+        snapshot = null;
+        long epoch = Interlocked.Read(ref sessionAdmissionEpoch);
+        if (!CurrentUserStatusReadable(userSid, stillControlsSession))
+        {
+            return false;
+        }
+        ServiceStatusSnapshot current = GetStatus();
+        if (!CurrentUserStatusReadable(userSid, stillControlsSession)
+            || epoch != Interlocked.Read(ref sessionAdmissionEpoch))
+        {
+            return false;
+        }
+        snapshot = current;
+        return true;
+    }
+
+    private bool CurrentUserStatusReadable(SecurityIdentifier userSid, Func<bool> stillControlsSession) =>
+        Volatile.Read(ref pendingSessionAdmissions) == 0
+        && !Volatile.Read(ref activeUserActivationIncomplete)
+        && !unexpectedExitRecoveryDeferredForUserConfiguration
+        && string.Equals(Volatile.Read(ref activeUserSid), userSid.Value, StringComparison.OrdinalIgnoreCase)
+        && activeUserStillControlsSession?.Invoke() == true
+        && stillControlsSession();
+
+    private IDisposable BeginSessionAdmission()
+    {
+        PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.SessionChanged);
+        CloseThermalConvergenceAdmission(
+            ThermalConvergenceReason.InactiveSession,
+            thermalConvergenceShutdown: false);
+        Interlocked.Increment(ref sessionAdmissionEpoch);
+        Interlocked.Increment(ref pendingSessionAdmissions);
+        return new ActionDisposable(() => Interlocked.Decrement(ref pendingSessionAdmissions));
+    }
+
     public async Task ActivateUserAsync(
         SecurityIdentifier userSid,
         Func<bool> stillControlsSession,
@@ -1078,57 +1254,45 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        bool alreadyActive = string.Equals(
-            Volatile.Read(ref activeUserSid),
-            userSid.Value,
-            StringComparison.OrdinalIgnoreCase);
-        if (alreadyActive)
+        // A different-user admission must latch its epoch before waiting for
+        // ongoing recovery. Only a potentially completed same-user activation
+        // takes this fast-path gate; identity is checked again once acquired.
+        if (!Volatile.Read(ref activeUserActivationIncomplete) && string.Equals(
+                Volatile.Read(ref activeUserSid), userSid.Value, StringComparison.OrdinalIgnoreCase))
         {
-            activeUserStillControlsSession = stillControlsSession;
-            if (!unexpectedExitRecoveryDeferredForUserConfiguration)
-            {
-                return;
-            }
-
             await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                if (string.Equals(
-                        activeUserSid,
-                        userSid.Value,
-                        StringComparison.OrdinalIgnoreCase)
-                    && stillControlsSession())
+                if (!activeUserActivationIncomplete && string.Equals(
+                        activeUserSid, userSid.Value, StringComparison.OrdinalIgnoreCase))
                 {
-                    await TryCompleteDeferredUnexpectedExitRecoveryCoreAsync(
-                        stillControlsSession,
-                        cancellationToken).ConfigureAwait(false);
+                    activeUserStillControlsSession = stillControlsSession;
+                    if (unexpectedExitRecoveryDeferredForUserConfiguration
+                        && stillControlsSession())
+                    {
+                        await TryCompleteDeferredUnexpectedExitRecoveryCoreAsync(
+                            stillControlsSession,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    return;
                 }
             }
             finally
             {
                 operationGate.Release();
             }
-
-            return;
         }
 
-        CloseThermalConvergenceAdmission(
-            ThermalConvergenceReason.InactiveSession,
-            thermalConvergenceShutdown: false);
-        Interlocked.Increment(ref sessionAdmissionEpoch);
-        Interlocked.Increment(ref pendingSessionAdmissions);
-        bool sessionAdmissionPending = true;
+        IDisposable sessionAdmission = BeginSessionAdmission();
         try
         {
             UserConfigurationContext context = await userConfigurationRepository
                 .LoadAsync(userSid, cancellationToken)
                 .ConfigureAwait(false);
             await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            Interlocked.Decrement(ref pendingSessionAdmissions);
-            sessionAdmissionPending = false;
             try
             {
-                if (string.Equals(
+                if (!activeUserActivationIncomplete && string.Equals(
                         activeUserSid,
                         userSid.Value,
                         StringComparison.OrdinalIgnoreCase))
@@ -1161,6 +1325,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     suppressInitialUserProfileApplyAfterUnexpectedExit = false;
                 }
+                // Old-context teardown can retire a renderer even when its
+                // caller is canceled before the new context is installed.
+                // Keep the prior SID/stores, but make that activation retryable.
+                Volatile.Write(ref activeUserActivationIncomplete, true);
+                sessionAdmission.Dispose();
                 if (!suppressProfileApply)
                 {
                     explicitLightingOwnershipActive = false;
@@ -1197,6 +1366,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     preserveDeferredRecoveryBaseline:
                         unexpectedExitRecoveryDeferredForUserConfiguration);
                 AdvanceFanDesiredRevision();
+                // Bind ownership before replacing any user context. A canceled
+                // or interrupted application must not leave the prior SID
+                // paired with these stores, and the new user must be able to
+                // retry finalization without replaying uncertain hardware work.
+                string? previousPadUser = Volatile.Read(ref activeUserSid);
+                if (previousPadUser is not null && !string.Equals(previousPadUser, userSid.Value, StringComparison.OrdinalIgnoreCase))
+                {
+                    await PrepareCoolingPadForUserTransitionAsync(previousPadUser, userSid.Value,
+                        stillControlsSession, cancellationToken).ConfigureAwait(false);
+                }
+                activeUserStillControlsSession = stillControlsSession;
+                Volatile.Write(ref activeUserSid, userSid.Value);
+                await coolingPadControl.SetUserAsync(userSid.Value, cancellationToken).ConfigureAwait(false);
+                PublishCoolingPadStatus();
                 Volatile.Write(
                     ref userStores,
                     new UserConfigurationStores(context.Store, context.OverrideStore));
@@ -1218,6 +1401,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 // here so an unrelated preference save cannot turn that runtime
                 // fallback into a permanent Strict selection.
                 preferences = context.Configuration.Preferences;
+                PauseAutomaticFanStop(FanStopAutomationPauseReason.SessionChanged);
                 deviceProvider.SetAllowUntestedFirmware(
                     context.Configuration.Preferences.AllowUntestedFirmware);
 
@@ -1244,7 +1428,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 if (!suppressProfileApply
                     && powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
                 {
-                    await ApplyFullTransitionAsync(
+                    _ = await ApplyFullTransitionAsync(
                             powerSource,
                             cancellationToken,
                             preserveObservedExternalChanges: false,
@@ -1299,8 +1483,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
                 if (stillControlsSession())
                 {
-                    Volatile.Write(ref activeUserSid, userSid.Value);
-                    activeUserStillControlsSession = stillControlsSession;
                     thermalConvergenceShutdown = false;
                     RefreshThermalConvergenceIntentState(
                         GetStatus().ConfirmedState ?? UnknownConfirmedState);
@@ -1318,6 +1500,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             ThermalConvergenceReason.AwaitingFreshObservation,
                             thermalConvergenceShutdown: false);
                     }
+                    Volatile.Write(ref activeUserActivationIncomplete, false);
                 }
             }
             finally
@@ -1327,10 +1510,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         finally
         {
-            if (sessionAdmissionPending)
-            {
-                Interlocked.Decrement(ref pendingSessionAdmissions);
-            }
+            sessionAdmission.Dispose();
         }
     }
 
@@ -1497,6 +1677,84 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    public Task<ControlOperationResult> SetBatterySaverFanStopAsync(
+        bool enabled, CancellationToken cancellationToken) =>
+        SetBatterySaverFanStopAsync(enabled, static () => true, cancellationToken);
+
+    public async Task<ControlOperationResult> SetBatterySaverFanStopAsync(
+        bool enabled, Func<bool> stillControlsSession, CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!ConfigurationIsAdmitted)
+            {
+                return ConfigurationQuarantineBlocked(DeviceSubsystem.Fans);
+            }
+            if (!stillControlsSession())
+            {
+                return SessionAuthorityChanged("The active Windows session changed before the fan preference could be saved.");
+            }
+            ServiceStatusSnapshot current = GetStatus();
+            if (enabled && current.Capabilities?.SupportsBatterySaverFanStop != true)
+            {
+                return new(ControlOperationStatus.Blocked, "Battery Saver fan stop is unavailable on this device.");
+            }
+
+            ProfileSet profiles = Automation.Profiles;
+            if (profiles.Battery.StopFansInBatterySaver != enabled)
+            {
+                profiles = profiles with
+                {
+                    Battery = profiles.Battery with { StopFansInBatterySaver = enabled },
+                };
+                try
+                {
+                    await ConfigurationStore.SaveProfilesAsync(profiles, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (IsIntentFailure(exception))
+                {
+                    return RecordRejectedIntent(exception);
+                }
+                Automation.UpdateProfiles(profiles);
+                batterySaverFanStopPolicy.Reset();
+            }
+            RefreshBatterySaverFanStopReadInterest();
+            PublishIfChanged(current with { Profiles = profiles });
+            const string stored = "Battery Saver fan-stop preference saved.";
+            // Saving a preference never retires an earlier uncertain hardware write.
+            current = GetStatus();
+            if (!stillControlsSession() || current.WritesBlocked || lowPowerGate.IsActive
+                || !current.DeviceVerified
+                || !BatterySaverFanStopInScope(current) && !OwnsBatterySaverFanStop
+                    && (enabled || current.ConfirmedState?.Fans != FanMode.Stop))
+            {
+                return new(ControlOperationStatus.Stored, stored);
+            }
+            await RefreshBatterySaverFanStopThermalSampleAsync(cancellationToken).ConfigureAwait(false);
+            if (enabled && !BatterySaverFanStopThermalSampleIsCool() && !OwnsBatterySaverFanStop)
+            {
+                PublishIfChanged(GetStatus());
+                return new(ControlOperationStatus.Stored,
+                    $"{stored} Fan stop is paused because cool CPU and inactive GPU readings are required.");
+            }
+
+            ControlOperationResult application = await ApplyBatterySaverFanStopIntentAsync(
+                current, cancellationToken, stillControlsSession).ConfigureAwait(false);
+            return application with
+            {
+                Status = application.Status == ControlOperationStatus.Applied
+                    ? ControlOperationStatus.Applied : ControlOperationStatus.Stored,
+                Message = $"{stored} {application.Message}",
+            };
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
         CancellationToken token)
@@ -1516,6 +1774,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState profileResolutionState =
                 GetStatus().ConfirmedState ?? UnknownConfirmedState;
             DesiredDeviceState priorDesired = ResolveAutomationDesired(profileResolutionState);
+            LaptopBehaviorProfileSettings priorLaptopBehavior = Automation.EffectiveLaptopBehavior;
             LightingSettings priorLightingIntent =
                 ResolveAutomationDesired(profileResolutionState).Lighting.Value;
             try
@@ -1526,6 +1785,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     batteryProtectionDefault: null);
                 validator.ValidateStoredCustomIntent(profiles);
                 DeviceCapabilities? editCapabilities = GetStatus().Capabilities;
+                if (profiles.Battery.StopFansInBatterySaver
+                    && !Automation.Profiles.Battery.StopFansInBatterySaver
+                    && editCapabilities?.SupportsBatterySaverFanStop != true)
+                {
+                    throw new InvalidDataException("Battery Saver fan stop requires explicit support from the current device.");
+                }
                 foreach ((PowerProfile requested, PowerProfile saved) in new[]
                 {
                     (profiles.PluggedIn, Automation.Profiles.PluggedIn),
@@ -1543,9 +1808,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     }
                 }
                 await ConfigurationStore.SaveProfilesAsync(profiles, token);
+                bool fanStopPreferenceChanged = Automation.Profiles.Battery.StopFansInBatterySaver
+                    != profiles.Battery.StopFansInBatterySaver;
                 Automation.UpdateProfiles(profiles);
-                if (ResolveAutomationDesired(profileResolutionState).Lighting.Value
-                    != priorLightingIntent)
+                if (fanStopPreferenceChanged)
+                {
+                    batterySaverFanStopPolicy.Reset();
+                }
+                RefreshBatterySaverFanStopReadInterest();
+                LightingSettings updatedLightingIntent = ResolveAutomationDesired(profileResolutionState).Lighting.Value;
+                if (GetStatus().Capabilities?.SupportsIndependentLightingControls == true
+                    ? updatedLightingIntent.IndependentControls != priorLightingIntent.IndependentControls
+                    : updatedLightingIntent != priorLightingIntent)
                 {
                     experimentalLightingResumeAwaitingRequest = false;
                 }
@@ -1587,9 +1861,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             bool activeApplicationIntentChanged = priorApplicationProfileId.HasValue
                 && (Automation.ActiveApplicationProfileId != priorApplicationProfileId
-                    || ResolveAutomationDesired(confirmed) != priorDesired);
+                    || ResolveAutomationDesired(confirmed) != priorDesired
+                    || Automation.EffectiveLaptopBehavior != priorLaptopBehavior);
 
-            if (lightingWasSuppressed && lightingSuppressions.Count == 0)
+            if (lightingWasSuppressed && lightingSuppressions.Count == 0
+                && !activeApplicationIntentChanged)
             {
                 await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                     .ConfigureAwait(false);
@@ -1609,8 +1885,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         token).ConfigureAwait(false);
                     if (restored.Status != ControlOperationStatus.Applied)
                     {
+                        // Saving profiles has already committed. Report that durable
+                        // outcome even when the separate lighting restore is blocked.
                         return restored with
                         {
+                            Status = ControlOperationStatus.Stored,
                             Message = $"Profiles were stored. Lighting restore result: {restored.Message}",
                         };
                     }
@@ -1618,16 +1897,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             current = GetStatus();
+            if (activeApplicationIntentChanged) { PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged); }
             if (activeApplicationIntentChanged
                 && current.ActivePowerSource is
                     PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
                 && current.DeviceVerified && !current.WritesBlocked)
             {
-                await ApplyFullTransitionAsync(current.ActivePowerSource, token)
+                ServiceTransitionApplicationOutcome application = await ApplyFullTransitionAsync(current.ActivePowerSource, token)
                     .ConfigureAwait(false);
-                return new ControlOperationResult(
-                    ControlOperationStatus.Applied,
-                    "Profiles were stored and the active application profile was reconciled.");
+                return application.ToOperationResult(intentStored: true) with
+                {
+                    Message = $"Profiles were stored. {application.Message}",
+                };
             }
 
             return new ControlOperationResult(ControlOperationStatus.Stored, message);
@@ -1701,18 +1982,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 changed
                     ? "The active application profile changed."
                     : "The active application profile lease was renewed.");
+            if (changed) { PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged); }
             ServiceStatusSnapshot current = GetStatus();
             if (changed && current.ActivePowerSource is
                     PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
                 && current.DeviceVerified && !current.WritesBlocked)
             {
-                await ApplyFullTransitionAsync(
+                ServiceTransitionApplicationOutcome application = await ApplyFullTransitionAsync(
                     current.ActivePowerSource,
                     token,
                     stillControlsSession: stillControlsSession).ConfigureAwait(false);
-                return new ControlOperationResult(
-                    ControlOperationStatus.Applied,
-                    "The active application profile was reconciled.");
+                return application.ToOperationResult() with
+                {
+                    Message = $"The active application profile was recorded. {application.Message}",
+                };
             }
             return new ControlOperationResult(
                 ControlOperationStatus.Stored,
@@ -1731,13 +2014,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         long sequence,
         CancellationTokenSource ownedCancellation)
     {
+        // Renewal may dispose the old source while its continuation is queued.
+        // The captured token remains usable after that source is disposed.
+        CancellationToken token = ownedCancellation.Token;
         try
         {
             await Task.Delay(
                 ApplicationContextLeaseDuration,
                 timeProvider,
-                ownedCancellation.Token).ConfigureAwait(false);
-            await operationGate.WaitAsync(ownedCancellation.Token).ConfigureAwait(false);
+                token).ConfigureAwait(false);
+            await operationGate.WaitAsync(token).ConfigureAwait(false);
             try
             {
                 if (!ReferenceEquals(applicationContextLeaseCancellation, ownedCancellation)
@@ -1753,6 +2039,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 }
                 PublishApplicationContextStatus(
                     "The application profile lease expired; the current power profile is active.");
+                PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged);
                 ServiceStatusSnapshot current = GetStatus();
                 if (current.ActivePowerSource is
                         PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
@@ -1760,7 +2047,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     await ApplyFullTransitionAsync(
                         current.ActivePowerSource,
-                        ownedCancellation.Token).ConfigureAwait(false);
+                        token).ConfigureAwait(false);
                 }
             }
             finally
@@ -1768,7 +2055,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 operationGate.Release();
             }
         }
-        catch (OperationCanceledException) when (ownedCancellation.IsCancellationRequested)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
         finally
@@ -2065,6 +2352,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "The active Windows session changed before the performance shortcut started.");
             }
 
+            PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged);
+
             if (pendingWriteConfirmations.Blocks(DeviceSubsystem.Performance))
             {
                 return PendingWriteBlockedResult(DeviceSubsystem.Performance);
@@ -2091,7 +2380,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (ChangePowerSourceCore(powerSource))
             {
-                await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+                if (transition.StopFurtherWrites)
+                {
+                    return transition.ToOperationResult();
+                }
             }
             if (!stillControlsSession())
             {
@@ -2205,9 +2498,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
             {
+                // Preserve legacy shortcut spellings while presenting the new
+                // two-word mode with its reviewed notification label.
+                string presetLabel = next == PerformancePreset.MaximumPower
+                    ? PerformanceLabel(next) : next.ToString();
                 string selectedBy = source == PerformanceShortcutSource.DedicatedButton
-                    ? $"The performance button selected {next}."
-                    : $"Fn+P selected {next}.";
+                    ? $"The performance button selected {presetLabel}."
+                    : $"Fn+P selected {presetLabel}.";
                 string message = result.Status == ControlOperationStatus.Stored
                     ? $"{selectedBy} It will be applied when fans return to Automatic."
                     : selectedBy;
@@ -2339,6 +2636,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public async Task MaintainFanCurveAsync(CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        await MaintainFanStopAsync(cancellationToken).ConfigureAwait(false);
+        if (fanStopController.BlocksOrdinaryThermalWrites)
+        {
+            return;
+        }
+
+        await MaintainBatterySaverFanStopAsync(cancellationToken).ConfigureAwait(false);
         if (!ConfigurationIsAdmitted)
         {
             ClearLastFanCurveTargets();
@@ -2565,6 +2869,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ManualOverride<LightingSettings>? value,
         CancellationToken token)
     {
+        if (value is not null && GetStatus().Capabilities?.SupportsIndependentLightingControls == true)
+        {
+            return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked,
+                "Keyboard effect requests are unavailable; use independent brightness and logo controls."));
+        }
         ManualOverride<LightingSettings>? normalized = value is null
             ? null
             : value with
@@ -2601,6 +2910,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token)
     {
         EnsureInitialized();
+        if (GetStatus().Capabilities?.SupportsIndependentLightingControls == true)
+        {
+            return new ControlOperationResult(ControlOperationStatus.Blocked,
+                "Firmware-native brightness stepping is not admitted for this model.");
+        }
         if (!Enum.IsDefined(direction) || !Enum.IsDefined(lifetime))
         {
             return RecordRejectedIntent(
@@ -2634,7 +2948,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (ChangePowerSourceCore(powerSource))
             {
-                await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+                if (transition.StopFurtherWrites)
+                {
+                    return transition.ToOperationResult();
+                }
             }
 
             ServiceStatusSnapshot current = GetStatus();
@@ -2697,6 +3015,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (fanStopController.BlocksOrdinaryHardware)
+            {
+                return new(ControlOperationStatus.Blocked, fanStopController.RequiresRecovery
+                    ? GetStatus().FanStopStatus.Message! : GuardianHardwareBlockedMessage);
+            }
             if (usage == DisplayBrightnessHidUsage.Released)
             {
                 return await ReleaseDisplayBrightnessUsageCoreAsync(token)
@@ -2763,6 +3086,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task<ControlOperationResult> ReleaseDisplayBrightnessUsageCoreAsync(
         CancellationToken token)
     {
+        if (fanStopController.BlocksOrdinaryHardware)
+        {
+            return new(ControlOperationStatus.Blocked, fanStopController.RequiresRecovery
+                ? GetStatus().FanStopStatus.Message! : GuardianHardwareBlockedMessage);
+        }
         ControlOperationResult release =
             await displayBrightnessHidController.SetUsageAsync(
                 DisplayBrightnessHidUsage.Released,
@@ -3052,7 +3380,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 await SaveCommittedLightingPreferencesAsync(staged, token)
                     .ConfigureAwait(false);
             }
-            catch (Exception saveException) when (delegateToWindows)
+            catch (Exception saveException) when (delegateToWindows
+                && saveException is not NativeComponentException)
             {
                 try
                 {
@@ -3064,7 +3393,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             "The previous lighting renderer could not be restored.");
                     }
                 }
-                catch (Exception restoreException)
+                catch (Exception restoreException) when (restoreException is not NativeComponentException)
                 {
                     throw new AggregateException(
                         "The lighting-control preference could not be saved and the previous renderer could not be restored.",
@@ -3215,7 +3544,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (ChangePowerSourceCore(powerSource))
             {
-                await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+                if (transition.StopFurtherWrites)
+                {
+                    return transition.ToOperationResult();
+                }
             }
             if (!stillControlsSession())
             {
@@ -3225,6 +3558,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             HashSet<DeviceSubsystem> targetSet =
                 [.. driftTracker.ExternalChanges];
+            if (targetSet.Contains(DeviceSubsystem.Performance) || targetSet.Contains(DeviceSubsystem.Fans))
+            { PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged); }
             if (targetSet.Count == 0)
             {
                 const string reconciledMessage =
@@ -4204,7 +4539,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             string refreshMessage =
                 $"{message} Laptop status will refresh automatically. {exception.Message}";
@@ -4317,7 +4652,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             string message = $"Experimental controls remain paused. {exception.Message}";
             PublishIfChanged(GetStatus() with { Message = message });
@@ -4417,7 +4752,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (ChangePowerSourceCore(powerSource))
             {
-                await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+                if (transition.StopFurtherWrites)
+                {
+                    return transition.ToOperationResult();
+                }
             }
 
             bool wasSuppressed = lightingSuppressions.Count > 0;
@@ -4427,6 +4766,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             bool isSuppressed = lightingSuppressions.Count > 0;
 
+            if (GetStatus().Capabilities?.SupportsIndependentLightingControls == true
+                && ResolveAutomationDesired(current.ConfirmedState ?? UnknownConfirmedState)
+                    .Lighting.Value.IndependentControls?.Brightness is null)
+            {
+                lightingSuppressionWritePending = false;
+                const string unmanaged = "Keyboard brightness is not managed by this profile; its lighting power policy was recorded.";
+                history.RecordSummary(ControlOperationStatus.Stored, unmanaged);
+                PublishScopedStatus(powerSource, current.ConfirmedState, current.Capabilities,
+                    unmanaged, current.DeviceVerified, current.WritesBlocked);
+                return new ControlOperationResult(ControlOperationStatus.Stored, unmanaged);
+            }
             if (wasSuppressed == isSuppressed && !lightingSuppressionWritePending)
             {
                 return new ControlOperationResult(
@@ -4478,6 +4828,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         token.ThrowIfCancellationRequested();
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
+            || laptopControlExecutor.RequiresReconciliation
+            || fanStopController.BlocksOrdinaryHardware
+            || Volatile.Read(ref laptopRecoveryObservationActive) != 0
             || current.ActivePowerSource == PowerSource.ExternalUnknown)
         {
             return new ControlOperationResult(
@@ -4839,6 +5192,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
             ServiceStatusSnapshot current = GetStatus();
+            if (laptopControlExecutor.RequiresReconciliation)
+            {
+                return new(ControlOperationStatus.Blocked, laptopControlExecutor.PendingMessage);
+            }
             if (!current.DeviceVerified
                 || current.WritesBlocked
                 || current.Capabilities is null
@@ -5955,6 +6312,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token,
         bool operationGateAlreadyHeld = false,
         Action<bool>? writeAttemptObserver = null,
+        Action<bool, bool, bool>? applicationProgressObserver = null,
         Func<bool>? stillPreparing = null,
         long? lowPowerResumeGeneration = null,
         PadlessHyperBoostLifecycleTarget? lifecycleTarget = null)
@@ -5989,6 +6347,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         try
         {
+            if (fanStopController.RequiresRecovery)
+            {
+                return new(ControlOperationStatus.Blocked, GetStatus().FanStopStatus.Message!);
+            }
+            if (fanStopController.BlocksOrdinaryThermalWrites)
+            {
+                ControlOperationResult? stopRelease = await ReleaseFanStopCoreAsync(token, stillPreparing).ConfigureAwait(false);
+                if (stopRelease?.Status != ControlOperationStatus.Applied)
+                {
+                    return stopRelease!;
+                }
+            }
+            if (laptopControlExecutor.RequiresReconciliation)
+            {
+                return new(ControlOperationStatus.Blocked, laptopControlExecutor.PendingMessage);
+            }
+
             if (expectedOwnershipGeneration is { } expected
                 && (!ownsHyperBoost || hyperBoostOwnershipGeneration != expected))
             {
@@ -7205,6 +7580,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         finally
         {
             writeAttemptObserver?.Invoke(hyperBoostWriteAttempted);
+            if (applicationProgressObserver is not null)
+            {
+                ScopedApplyOutcome[] steps = transitionRunner?.Steps
+                    .SelectMany(step => step.Attempts).Select(attempt => attempt.Outcome).ToArray() ?? [];
+                bool hyperBoostConfirmed = hyperBoostWriteAttempted && finalHyperBoostReadbackCompleted
+                    && GetStatus().ConfirmedState?.HyperBoostActive == enabled;
+                applicationProgressObserver(
+                    hyperBoostWriteAttempted || steps.Any(step => step.WriteAttempted),
+                    hyperBoostWriteAttempted && !hyperBoostConfirmed || steps.Any(step => step.ConfirmationUnavailable),
+                    hyperBoostConfirmed || steps.Any(step => step.WriteAttempted && step.ReadbackMatched));
+            }
             if (hyperBoostWriteAttempted)
             {
                 RebaseLowPowerResumeState(lowPowerResumeGeneration);
@@ -9603,85 +9989,36 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ApplyOneShotLaptopControl value,
         CancellationToken token)
     {
+        if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+        {
+            return new(ControlOperationStatus.Blocked, "This laptop control is unavailable right now.");
+        }
         try
         {
-            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
-            {
-                return new ControlOperationResult(
-                    ControlOperationStatus.Blocked,
-                    "This laptop control is unavailable right now.");
-            }
-
-            await device.ApplyOneShotLaptopControlAsync(value, token)
-                .ConfigureAwait(false);
-            OneShotLaptopControlReadback readback =
-                await ReadOneShotLaptopControlStateAsync(device, value.Control, token)
-                    .ConfigureAwait(false);
-            ControlOperationResult result = CreateOneShotLaptopControlResult(value, readback);
-            PublishOneShotLaptopControlReadback(readback, result);
+            LaptopControlApplyOutcome outcome = await laptopControlExecutor.ExecuteAsync(
+                device, deviceProvider.LaptopControlRecoveryIdentity, value,
+                explicitRequest: true, LaptopControlWriteAllowed, token).ConfigureAwait(false);
+            ControlOperationResult result = outcome.Result.Status == ControlOperationStatus.Applied
+                ? CreateOneShotLaptopControlResult(value, outcome.Readback)
+                : outcome.Result;
+            PublishLaptopControlReadback(outcome.Readback, result);
             history.RecordSummary(result.Status, result.Message);
+            PublishIfChanged(GetStatus() with { Message = result.Message });
             return result;
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        finally
         {
-            throw;
-        }
-        catch (CapabilityUnavailableException exception)
-        {
-            var result = new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                exception.Message);
-            history.RecordSummary(result.Status, result.Message);
-            return result;
-        }
-        catch
-        {
-            var result = new ControlOperationResult(
-                ControlOperationStatus.Failed,
-                "The laptop control could not be applied.");
-            history.RecordSummary(result.Status, result.Message);
-            return result;
+            PublishIfChanged(GetStatus());
         }
     }
 
-    private static async Task<OneShotLaptopControlReadback>
-        ReadOneShotLaptopControlStateAsync(
-            IBladeDevice device,
-            OneShotLaptopControl control,
-            CancellationToken token)
-    {
-        try
-        {
-            return control switch
-            {
-                OneShotLaptopControl.StartupAnimation => new(
-                    await device.ReadStartupAnimationAsync(token).ConfigureAwait(false),
-                    null,
-                    null),
-                OneShotLaptopControl.FunctionKeyPrimary => new(
-                    null,
-                    await device.ReadFunctionKeyPrimaryAsync(token).ConfigureAwait(false),
-                    null),
-                OneShotLaptopControl.GamingMode => new(
-                    null,
-                    null,
-                    await device.ReadGamingModeAsync(token).ConfigureAwait(false)),
-                _ => new(null, null, null),
-            };
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            return new(null, null, null);
-        }
-    }
-
+    private bool LaptopControlWriteAllowed() => !lowPowerGate.IsActive
+        && !Volatile.Read(ref status)!.WritesBlocked
+        && activeUserStillControlsSession?.Invoke() != false
+        && deviceProvider.TryGetVerifiedDevice(out _);
     private static ControlOperationResult CreateOneShotLaptopControlResult(
         ApplyOneShotLaptopControl value,
-        OneShotLaptopControlReadback readback)
+        LaptopControlReadback readback)
     {
         string label = value.Control switch
         {
@@ -9734,8 +10071,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             });
     }
 
-    private void PublishOneShotLaptopControlReadback(
-        OneShotLaptopControlReadback readback,
+    private void PublishLaptopControlReadback(
+        LaptopControlReadback readback,
         ControlOperationResult result)
     {
         if (readback.StartupAnimation is not null)
@@ -9829,7 +10166,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (ChangePowerSourceCore(powerSource))
             {
-                await ApplyFullTransitionAsync(powerSource, token);
+                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
+                // A rejected battery-only request may still report its validation
+                // error after a read-only refusal; it performs no follow-on write.
+                if (transition.StopFurtherWrites
+                    && !(enabled && powerSource == PowerSource.Battery
+                        && !transition.AnyWritesAttempted && !transition.SubmissionPossible))
+                {
+                    return transition.ToOperationResult();
+                }
             }
 
             if (enabled && powerSource == PowerSource.Battery)
@@ -9904,6 +10249,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
+            if (fanStopController.Guardian is not null && fanStopController.BlocksOrdinaryHardware)
+            {
+                await fanStopController.RefreshAsync(true, () => false, cancellationToken).ConfigureAwait(false);
+                PublishFanStopOutcome();
+                if (fanStopController.BlocksOrdinaryHardware) { return; }
+            }
             resumeStateValidation.DiscardExpired();
             bool includeLiveReadings = requestedLiveReadings != LiveReadingSensors.None;
             cancellationToken.ThrowIfCancellationRequested();
@@ -9915,6 +10266,33 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 LiveReadingSensors.BatteryPower)
                 ? powerStateProvider.CaptureBatteryPowerFlowMilliwatts()
                 : null;
+            laptopControlExecutor.Refresh();
+            if (laptopControlExecutor.RequiresReconciliation)
+            {
+                // A recovery observation is read-only for its entire operation,
+                // even when the fresh laptop-control read resolves uncertainty.
+                if (powerSource != PowerSource.ExternalUnknown)
+                {
+                    // Retained frame writers must not resume the old power
+                    // profile while its freshly observed destination is deferred.
+                    // The shared lighting gate also briefly defers Driver acquisition.
+                    Volatile.Write(ref laptopRecoveryPowerDestinationPending,
+                        Automation.PowerSource != powerSource ? 1 : 0);
+                }
+                Interlocked.Exchange(ref laptopRecoveryObservationActive, 1);
+                try
+                {
+                    RefreshControllerPresenceCore(cancellationToken);
+                    await ObserveCoreAsync(PowerSourceForStatus(powerSource),
+                        powerSource != PowerSource.ExternalUnknown, requestedLiveReadings,
+                        batteryPowerFlow, cancellationToken, reconcileLaptopControls: true).ConfigureAwait(false);
+                }
+                finally
+                {
+                    Volatile.Write(ref laptopRecoveryObservationActive, 0);
+                }
+                return;
+            }
             bool sourceChanged = powerSource != PowerSource.ExternalUnknown
                 && Automation.PowerSource != powerSource;
             bool canUseReadOnlyFastPath = !resumeStateValidation.ResumeStarted
@@ -9924,6 +10302,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     powerSource != PowerSource.ExternalUnknown);
             Exception? lightingRelinquishFailure = null;
             bool transitionMessageHasPriority = false;
+            bool transitionStopped = false;
             try
             {
                 await RefreshControllerPresenceAndRelinquishLightingAsync(
@@ -9958,12 +10337,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             else if (ShouldRetryPendingOwnedHyperBoostPowerBoundaryExit(
                 powerSource))
             {
-                await ApplyFullTransitionAsync(powerSource, cancellationToken);
+                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, cancellationToken);
+                transitionStopped = transition.StopFurtherWrites;
                 transitionMessageHasPriority = true;
             }
             else if (changed && !startupProfileReconciliationPending)
             {
-                await ApplyFullTransitionAsync(powerSource, cancellationToken);
+                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, cancellationToken);
+                transitionStopped = transition.StopFurtherWrites;
                 transitionMessageHasPriority = true;
             }
             else
@@ -9996,6 +10377,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PublishLightingRelinquishFailure(
                     lightingRelinquishFailure,
                     publishStatus: !transitionMessageHasPriority);
+            }
+            if (transitionStopped)
+            {
+                return;
             }
             ServiceStatusSnapshot observed = GetStatus();
             if (ownsHyperBoost && ownedHyperBoostRequiresCoolingPad
@@ -11366,6 +11751,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             resumeStateValidation.DiscardExpired();
             resumeStateValidation.DiscardUnstarted();
+            if (await HandleGuardianPowerBoundaryAsync(powerStateProvider.CapturePowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             RefreshBatteryHealthAfterPowerSourceChangeCore();
@@ -11455,6 +11841,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 return;
             }
+
+            if (await HandleGuardianPowerBoundaryAsync(powerStateProvider.CapturePowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
 
             Interlocked.Increment(ref powerAdmissionEpoch);
             await RefreshControllerPresenceAndRelinquishLightingAsync(
@@ -11592,7 +11980,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (lowPowerGate.IsActive)
+            if (lowPowerGate.IsActive || laptopControlExecutor.RequiresReconciliation
+                || fanStopController.BlocksOrdinaryHardware)
             {
                 return;
             }
@@ -11896,7 +12285,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             history.RecordSummary(ControlOperationStatus.Failed, canceled);
             return new ControlOperationResult(ControlOperationStatus.Failed, canceled);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             string failure =
                 $"HyperBoost lifecycle restoration failed. OpenBlade will not retry it: {exception.Message}";
@@ -11918,6 +12307,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        Interlocked.Exchange(ref fanStopShutdownStarted, 1);
+        PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.SessionChanged);
+        coolingPadControl.Revoke();
+        ControlOperationResult? padCleanup = null;
         CloseThermalConvergenceAdmission(
             ThermalConvergenceReason.Shutdown,
             thermalConvergenceShutdown: true);
@@ -11929,11 +12322,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         // keyboard release and fan handback one shared, bounded final attempt.
         // The worker's five-second budget plus this reserve is at most ten
         // seconds of cooperative cleanup; individual steps never renew it.
+        // An owned SO6120 Stop adds its separately bounded Auto phase after the
+        // keyboard attempt; neither budget can recover a noncooperative native hang.
         using var cleanupBudget = new CancellationTokenSource(ShutdownFinalCleanupBudget);
         using var cleanupCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cleanupBudget.Token,
             cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken);
         CancellationToken cleanupToken = cleanupCancellation.Token;
+        if (fanStopController.BlocksOrdinaryThermalWrites)
+        {
+            return await PrepareOwnedFanStopShutdownAsync(hyperBoostResult, cleanupToken).ConfigureAwait(false);
+        }
         await operationGate.WaitAsync(cleanupToken).ConfigureAwait(false);
         try
         {
@@ -11947,8 +12346,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ControlOperationResult fanResult;
             try
             {
-                fanResult = await RestoreAutomaticFansForShutdownCoreAsync(
-                    cleanupToken).ConfigureAwait(false);
+                fanResult = await ReleaseFanStopCoreAsync(cleanupToken).ConfigureAwait(false)
+                    ?? await RestoreAutomaticFansForShutdownCoreAsync(cleanupToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cleanupToken.IsCancellationRequested)
             {
@@ -11964,9 +12363,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     failure);
             }
 
+            // Keyboard and laptop fan handoff take priority over this independent accessory.
+            padCleanup = await ReleaseCoolingPadForLifecycleAsync(
+                allowLowPower: true, cleanupToken).ConfigureAwait(false);
+
             ControlOperationResult combined = CombineShutdownCleanupResults(
                 hyperBoostResult,
-                coolingPadFanResult: null,
+                coolingPadFanResult: padCleanup,
                 coolingPadLightingResult: null,
                 fanResult,
                 driverModeResult);
@@ -11997,6 +12400,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
+        PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.SessionChanged);
+        coolingPadControl.Revoke();
+        ControlOperationResult? padCleanup = null;
         CloseThermalConvergenceAdmission(
             ThermalConvergenceReason.LowPower,
             thermalConvergenceShutdown: false);
@@ -12030,19 +12436,70 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             CancellationToken cleanupToken = stillAuthorized is null && cancellationToken.IsCancellationRequested
                 ? CancellationToken.None
                 : cancellationToken;
-            ControlOperationResult driverModeResult = await ReleaseDriverModeAsync(
-                    preserveLightingIntent: true,
-                    reasonLabel: "low power",
-                    cleanupToken,
-                    lowPowerGeneration: generation,
-                    captureResumeState: !activeBoundary,
-                    stillAuthorized: stillAuthorized)
-                .ConfigureAwait(false);
+            ControlOperationResult driverModeResult;
+            try
+            {
+                driverModeResult = await ReleaseDriverModeAsync(
+                        preserveLightingIntent: true,
+                        reasonLabel: "low power",
+                        cleanupToken,
+                        lowPowerGeneration: generation,
+                        captureResumeState: !activeBoundary,
+                        stillAuthorized: stillAuthorized)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cleanupToken.IsCancellationRequested
+                && fanStopController.BlocksOrdinaryThermalWrites)
+            {
+                driverModeResult = new(ControlOperationStatus.Blocked,
+                    "Keyboard cleanup ended before owned fan-stop handback; Auto retains its independent budget.");
+            }
+            ControlOperationResult? fanStopResult = null;
+            if (activeBoundary && StillPreparing() && fanStopController.BlocksOrdinaryThermalWrites)
+            {
+                fanStopResult = await ReleaseFanStopForLifecycleAsync(StillPreparing).ConfigureAwait(false);
+            }
+            if (driverModeResult.Message == GuardianHardwareBlockedMessage
+                && activeBoundary && StillPreparing() && !fanStopController.BlocksOrdinaryHardware)
+            {
+                // First attempt was command-free and refused specifically by the
+                // delegated owner. Retry only after its native release proof;
+                // canceled/uncertain keyboard calls never enter this branch.
+                using var retry = new CancellationTokenSource(FanStopController.AutomaticCleanupBudget);
+                driverModeResult = await ReleaseDriverModeAsync(preserveLightingIntent: true,
+                    reasonLabel: "low power", retry.Token, lowPowerGeneration: generation,
+                    captureResumeState: false, stillAuthorized: StillPreparing).ConfigureAwait(false);
+            }
+            if (activeBoundary && StillPreparing() && OwnsBatterySaverFanStop)
+            {
+                using var fanCleanupBudget = CancellationTokenSource.CreateLinkedTokenSource(cleanupToken);
+                fanCleanupBudget.CancelAfter(LowPowerLightingBudget);
+                await operationGate.WaitAsync(fanCleanupBudget.Token).ConfigureAwait(false);
+                try
+                {
+                    if (StillPreparing() && OwnsBatterySaverFanStop)
+                    {
+                        fanStopResult = await RestoreAutomaticFansForShutdownCoreAsync(
+                            fanCleanupBudget.Token, "low power",
+                            () => StillPreparing() && OwnsBatterySaverFanStop).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    operationGate.Release();
+                }
+            }
+            padCleanup = await ReleaseCoolingPadForLifecycleAsync(
+                // Owned Stop cleanup has an independent budget; retain the
+                // accessory's own two-second handback and fresh boundary check.
+                allowLowPower: true, fanStopResult is null ? cleanupToken : CancellationToken.None,
+                activeBoundary ? StillPreparing : stillAuthorized).ConfigureAwait(false);
             ControlOperationResult cleanupResult = CombineLowPowerCleanupResults(
                 hyperBoostResult,
-                coolingPadFanResult: null,
+                coolingPadFanResult: padCleanup,
                 coolingPadLightingResult: null,
-                driverModeResult);
+                driverModeResult,
+                fanStopResult);
             return lightingResult is null ? cleanupResult : new ControlOperationResult(
                 CombineCleanupStatus(lightingResult, cleanupResult),
                 $"{lightingResult.Message} {cleanupResult.Message}");
@@ -12158,7 +12615,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return new(ControlOperationStatus.Blocked,
                 "Keyboard standby Off exhausted its preparation budget before confirmation.");
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             return new(ControlOperationStatus.Failed,
                 $"Keyboard standby Off could not be prepared: {exception.Message}");
@@ -12174,6 +12631,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public async Task BeginResumeValidationAsync(CancellationToken cancellationToken)
     {
+        PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.SessionChanged);
         EnsureInitialized();
         CloseThermalConvergenceAdmission(
             ThermalConvergenceReason.LowPower,
@@ -12348,6 +12806,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         long? lowPowerGeneration = null,
         Func<bool>? stillAuthorized = null)
     {
+        if (fanStopController.BlocksOrdinaryHardware)
+        {
+            return new(ControlOperationStatus.Blocked, fanStopController.RequiresRecovery
+                ? GetStatus().FanStopStatus.Message! : GuardianHardwareBlockedMessage);
+        }
+        if (laptopControlExecutor.RequiresReconciliation)
+        {
+            return new(ControlOperationStatus.Blocked, laptopControlExecutor.PendingMessage);
+        }
         string boundary = reasonLabel == "shutdown"
             ? "before shutdown"
             : $"before {reasonLabel}";
@@ -12451,7 +12918,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private async Task<ControlOperationResult> RestoreAutomaticFansForShutdownCoreAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string boundary = "shutdown",
+        Func<bool>? lowPowerFanCleanupAdmission = null)
     {
         if (ShutdownFanHandbackBlockReason(requireControllerClear: false) is { } initialBlock)
         {
@@ -12461,7 +12929,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         history.RecordSummary(
             ControlOperationStatus.Stored,
-            "Attempting to restore firmware-managed Automatic fan control before shutdown.");
+            $"Attempting to restore firmware-managed Automatic fan control before {boundary}.");
         await RefreshControllerPresenceAndRelinquishLightingAsync(
             cancellationToken).ConfigureAwait(false);
         if (ShutdownFanHandbackBlockReason(requireControllerClear: true) is { } refreshedBlock)
@@ -12489,13 +12957,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ScopedThermalFreshSessionRetryPolicy.BlockDuringBoundedCleanup,
                 () => RefreshAndGetShutdownFanHandbackBlockReason(
                     cancellationToken),
-                ScopedThermalAuthorityPurpose.PriorAuthorityCleanup)).ConfigureAwait(false);
+                ScopedThermalAuthorityPurpose.PriorAuthorityCleanup,
+                lowPowerFanCleanupAdmission)).ConfigureAwait(false);
         if (result.Status == ControlOperationStatus.Applied)
         {
             lastCurveFan1Rpm = null;
             lastCurveFan2Rpm = null;
-            const string restored =
-                "Firmware-managed Automatic fan control was confirmed before shutdown.";
+            string restored =
+                $"Firmware-managed Automatic fan control was confirmed before {boundary}.";
             history.RecordSummary(ControlOperationStatus.Applied, restored);
             return result with { Message = restored };
         }
@@ -12606,7 +13075,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ControlOperationResult hyperBoostResult,
         ControlOperationResult? coolingPadFanResult,
         ControlOperationResult? coolingPadLightingResult,
-        ControlOperationResult driverModeResult)
+        ControlOperationResult driverModeResult,
+        ControlOperationResult? fanStopResult)
     {
         var results = new List<ControlOperationResult> { hyperBoostResult };
         var messages = new List<string>
@@ -12623,6 +13093,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             messages,
             "Cooling-pad lighting cleanup",
             coolingPadLightingResult);
+        AddOptionalCleanupResult(results, messages, "Fan-stop cleanup", fanStopResult);
         results.Add(driverModeResult);
         messages.Add($"Keyboard cleanup: {driverModeResult.Message}");
         return new ControlOperationResult(
@@ -12853,6 +13324,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken,
         Func<bool>? stillControlsSession = null)
     {
+        if (laptopControlExecutor.RequiresReconciliation || fanStopController.BlocksOrdinaryHardware)
+        {
+            return false;
+        }
         if (experimentalLightingResumeAwaitingRequest)
         {
             // Skip the old lighting intent while allowing fresh status observation.
@@ -13081,7 +13556,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : MergeScopedReadback(
                     DeviceSubsystem.Lighting,
                     changed.ConfirmedState,
-                    outcome.Readback);
+                    outcome.Readback,
+                    requested.IndependentControls);
             history.RecordSubsystemResult(DeviceSubsystem.Lighting, outcome.Result);
             PublishIfChanged(changed with
             {
@@ -13139,14 +13615,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public void Dispose()
     {
+        coolingPadControl.Revoke();
+        if (fanStopController.Guardian is { } guardian)
+        {
+            Volatile.Write(ref guardianNotificationsStopped, 1);
+            guardian.SnapshotChanged -= NotifyGuardianSnapshotChanged;
+            guardian.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
         applicationContextLeaseCancellation?.Cancel();
         applicationContextLeaseCancellation?.Dispose();
         thermalConvergenceArbiter.Dispose();
-        operationGate.Dispose();
-        if (fanTemperatureSource is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
+        // An unresolved owner/publication can still retain the gate. Do not
+        // dispose synchronization beneath its pending Auto or native operation.
+        if (Volatile.Read(ref guardianNotificationPump) == 0) { operationGate.Dispose(); }
+        _ = DrainCoolingPadAndTemperatureSourceAsync();
     }
 
     private async Task SetPerformanceOverrideCoreAsync(
@@ -13251,7 +13733,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool allowFanOwnershipRearm = false,
         Func<bool>? stillControlsSession = null,
         Func<DesiredDeviceState, IReadOnlyList<DeviceSubsystem>>?
-            thermalComponentResolver = null)
+            thermalComponentResolver = null,
+        Func<DesiredDeviceState, DesiredDeviceState>? hardwareDesiredProjection = null)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(token);
@@ -13268,6 +13751,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return SessionAuthorityChanged(
                     "The active Windows session changed before the control request started.");
             }
+
+            if (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans)
+            { PauseAutomaticFanStopIfArmed(FanStopAutomationPauseReason.ModeChanged); }
 
             if (subsystem == DeviceSubsystem.Lighting && lowPowerGate.IsActive)
             {
@@ -13313,7 +13799,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (ChangePowerSourceCore(powerSource))
             {
-                await ApplyFullTransitionAsync(powerSource, token);
+                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
+                if (transition.StopFurtherWrites)
+                {
+                    return transition.ToOperationResult();
+                }
             }
             if (stillControlsSession?.Invoke() == false)
             {
@@ -13363,6 +13853,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 powerSource,
                 apply,
                 token,
+                stageDesired: hardwareDesiredProjection,
                 allowFanOwnershipRearm: allowFanOwnershipRearm,
                 stillControlsSession: stillControlsSession,
                 thermalExecutionOptions: thermalComponentResolver is null
@@ -13415,7 +13906,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (ChangePowerSourceCore(powerSource))
             {
-                await ApplyFullTransitionAsync(powerSource, token);
+                ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
+                if (transition.StopFurtherWrites)
+                {
+                    return transition.ToOperationResult();
+                }
             }
             DesiredBatteryState? staged = stageIntent(Automation.DesiredBattery);
             if (staged is null)
@@ -13464,6 +13959,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PendingBatteryIntentCommit? pendingBatteryIntentCommit = null,
         bool gpuClockTuningOnly = false)
     {
+        if (fanStopController.RequiresRecovery)
+        {
+            return new(ControlOperationStatus.Blocked, GetStatus().FanStopStatus.Message!);
+        }
+
+        if (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans && fanStopController.BlocksOrdinaryThermalWrites)
+        {
+            ControlOperationResult? release = await ReleaseFanStopCoreAsync(token, stillControlsSession).ConfigureAwait(false);
+            if (release?.Status != ControlOperationStatus.Applied)
+            {
+                return release!;
+            }
+        }
+        if (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans)
+        {
+            fanStopController.RetireAutomaticObservation();
+        }
+        if (laptopControlExecutor.RequiresReconciliation)
+        {
+            return new(ControlOperationStatus.Blocked, laptopControlExecutor.PendingMessage);
+        }
         if (subsystem == DeviceSubsystem.Lighting && lowPowerGate.IsActive)
         {
             return DeferLightingIntentForLowPower();
@@ -13511,6 +14027,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 preserveCurrentAvailability: true);
         }
 
+        if (authorityPurpose != ScopedThermalAuthorityPurpose.PriorAuthorityCleanup)
+        {
+            await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
+        }
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
         DesiredDeviceState desired = ResolveHardwareDesired(
@@ -13676,7 +14196,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 outcome.EffectiveDesired ?? desired,
                 preWriteState,
                 BatteryIntentCommit: pendingBatteryIntentCommit,
-                GpuClockTuningOnly: gpuClockTuningOnly));
+                GpuClockTuningOnly: gpuClockTuningOnly,
+                BatteryConfirmation: outcome.BatteryConfirmation));
         }
 
         if (outcome.ConfirmedCoupledWrites is not null)
@@ -13865,7 +14386,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                                          stillControlsSession,
                                          options.Components,
                                          options.AdditionalWriteBlockReason,
-                                         options.AuthorityPurpose)),
+                                         options.AuthorityPurpose,
+                                         options.LowPowerFanCleanupAdmission)),
                         (runner, cancellationToken) => apply(
                             runner.CreateRecipeCoordinator(),
                             desired,
@@ -14147,7 +14669,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IReadOnlyList<DeviceSubsystem> components,
         Func<string?>? additionalThermalWriteBlockReason = null,
         ScopedThermalAuthorityPurpose authorityPurpose =
-            ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent)
+            ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent,
+        Func<bool>? lowPowerFanCleanupAdmission = null)
     {
         if (ConfigurationThermalWriteBlockReason(authorityPurpose) is { } quarantineBlock)
         {
@@ -14157,7 +14680,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             return "The active Windows session changed before the thermal command was submitted.";
         }
-        if (lowPowerGate.IsActive)
+        bool lowPowerFanCleanup = authorityPurpose == ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
+            && components.Count == 1 && components[0] == DeviceSubsystem.Fans
+            && expected.Fans.Value == FanMode.Automatic
+            && lowPowerFanCleanupAdmission?.Invoke() == true;
+        if (lowPowerGate.IsActive && !lowPowerFanCleanup
+            || lowPowerFanCleanupAdmission is not null && !lowPowerFanCleanup)
         {
             return "The laptop entered a low-power transition before the thermal command was submitted.";
         }
@@ -14237,7 +14765,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             confirmed = MergeScopedReadback(
                 subsystem,
                 cachedConfirmed,
-                outcome.Readback);
+                outcome.Readback,
+                subsystem == DeviceSubsystem.Lighting ? desired.Lighting.Value.IndependentControls : null);
             driftTracker.Observe(confirmed);
         }
 
@@ -14458,10 +14987,42 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         });
     }
 
+    private async Task ReconcilePendingLaptopControlsAsync(
+        CancellationToken token, IBladeDevice? verifiedDevice = null)
+    {
+        laptopControlExecutor.Refresh();
+        if (!laptopControlExecutor.RequiresReconciliation)
+        {
+            return;
+        }
+        if (verifiedDevice is null && !deviceProvider.TryGetVerifiedDevice(out verifiedDevice))
+        {
+            PublishIfChanged(GetStatus() with { Message = laptopControlExecutor.PendingMessage });
+            return;
+        }
+        IReadOnlyList<LaptopControlReadback> readings = await laptopControlExecutor.ReconcileAsync(
+            verifiedDevice, deviceProvider.LaptopControlRecoveryIdentity, token).ConfigureAwait(false);
+        foreach (LaptopControlReadback reading in readings)
+        {
+            PublishLaptopControlReadback(reading, new(ControlOperationStatus.Stored,
+                "Laptop-control state was read. An unconfirmed request will not be replayed automatically; use its explicit control to request it again."));
+        }
+        if (laptopControlExecutor.RequiresReconciliation)
+        {
+            PublishIfChanged(GetStatus() with { Message = laptopControlExecutor.PendingMessage });
+        }
+        // Ordinary full observation clears the presentation block only after all
+        // other safety conditions have been refreshed. Reconciliation alone does not.
+    }
+
     private async Task RefreshControllerPresenceAndRelinquishLightingAsync(
         CancellationToken cancellationToken,
         bool allowRecentObservation = false)
     {
+        if (laptopControlExecutor.RequiresReconciliation || fanStopController.BlocksOrdinaryHardware)
+        {
+            return;
+        }
         RefreshControllerPresenceCore(cancellationToken, allowRecentObservation);
         ServiceStatusSnapshot current = GetStatus();
         if (!ShouldRelinquishLightingOwnership(current))
@@ -14532,9 +15093,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private bool ShouldYieldAutomaticLighting(ServiceStatusSnapshot current) =>
-        !preferences.AlwaysOverrideExternalLightingChanges
-        && (current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
-            || ControllerMayOwnLighting(current));
+        experimentalLightingResumeAwaitingRequest
+        || !preferences.AlwaysOverrideExternalLightingChanges
+            && (current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
+                || ControllerMayOwnLighting(current));
 
     private bool ShouldRelinquishLightingOwnership(ServiceStatusSnapshot current) =>
         ShouldYieldAutomaticLighting(current)
@@ -14613,7 +15175,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task<bool> ExitOwnedHyperBoostForPowerSourceTransitionAsync(
         IBladeDevice device,
         PowerSource powerSource,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<bool, bool, bool> recordApplicationProgress)
     {
         if (powerSource is not (PowerSource.Battery or PowerSource.UsbC))
         {
@@ -14712,7 +15275,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     freshConfirmed,
                     destinationIntent,
                     powerSource,
-                    cancellationToken)
+                    cancellationToken,
+                    recordApplicationProgress)
                 .ConfigureAwait(false);
         }
 
@@ -14726,6 +15290,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 expectedExitPowerSourceGeneration: powerSourceGeneration,
                 token: cancellationToken,
                 operationGateAlreadyHeld: true,
+                applicationProgressObserver: recordApplicationProgress,
                 writeAttemptObserver: attempted =>
                 {
                     pendingOwnedHyperBoostPowerBoundaryExit =
@@ -14751,7 +15316,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState confirmed,
             DesiredDeviceState destinationIntent,
             PowerSource powerSource,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Action<bool, bool, bool> recordApplicationProgress)
     {
         HyperBoostRestoreIntent restoreIntent = !ConfigurationIsAdmitted
             ? ownedHyperBoostRestoreIntent
@@ -14911,6 +15477,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (Exception exception)
         {
+            ScopedApplyOutcome[] failedSteps = transitionRunner.Steps
+                .SelectMany(step => step.Attempts).Select(attempt => attempt.Outcome).ToArray();
+            recordApplicationProgress(failedSteps.Any(step => step.WriteAttempted),
+                failedSteps.Any(step => step.ConfirmationUnavailable),
+                failedSteps.Any(step => step.WriteAttempted && step.ReadbackMatched));
             hyperBoostJournalSafetyBlock = true;
             ClearOwnedHyperBoostState();
             string failure =
@@ -14925,6 +15496,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return false;
         }
 
+        ScopedApplyOutcome[] boundarySteps = transitionRunner.Steps
+            .SelectMany(step => step.Attempts).Select(attempt => attempt.Outcome).ToArray();
+        recordApplicationProgress(boundarySteps.Any(step => step.WriteAttempted),
+            boundarySteps.Any(step => step.ConfirmationUnavailable),
+            boundarySteps.Any(step => step.WriteAttempted && step.ReadbackMatched));
         ConfirmedDeviceState restored = restoration.Readback ?? confirmed;
         ClearOwnedHyperBoostState();
         if (!restoration.Succeeded)
@@ -15004,7 +15580,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return journalCleared;
     }
 
-    private async Task ApplyFullTransitionAsync(
+    private async Task<ServiceTransitionApplicationOutcome> ApplyFullTransitionAsync(
         PowerSource powerSource,
         CancellationToken token,
         bool preserveLiveReadings = false,
@@ -15012,10 +15588,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<bool>? stillControlsSession = null,
         PendingTransitionContinuation? continuation = null)
     {
+        if (fanStopController.BlocksOrdinaryThermalWrites)
+        {
+            ControlOperationResult? release = await ReleaseFanStopCoreAsync(token, stillControlsSession).ConfigureAwait(false);
+            if (release?.Status != ControlOperationStatus.Applied)
+            {
+                return ServiceTransitionApplicationOutcome.Interrupted(release!.Message);
+            }
+        }
+        fanStopController.RetireAutomaticObservation();
+        if (laptopControlExecutor.RequiresReconciliation)
+        {
+            return ServiceTransitionApplicationOutcome.Interrupted(laptopControlExecutor.PendingMessage);
+        }
         if (lowPowerGate.IsActive)
         {
-            _ = DeferLightingIntentForLowPower();
-            return;
+            ControlOperationResult lowPowerDeferred = DeferLightingIntentForLowPower();
+            return ServiceTransitionApplicationOutcome.Interrupted(lowPowerDeferred.Message);
         }
         pendingTransitionContinuation = null;
         ServiceStatusSnapshot current = GetStatus();
@@ -15038,7 +15627,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     LiveReadings = retainedLiveReadings,
                 });
             }
-            return;
+            return ServiceTransitionApplicationOutcome.Interrupted(GetStatus().Message);
         }
 
         if (powerSource is PowerSource.Battery or PowerSource.UsbC
@@ -15058,7 +15647,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (!available)
             {
                 PublishFullUnavailable(powerSource, "No verified supported device is available.");
-                return;
+                return ServiceTransitionApplicationOutcome.Interrupted(GetStatus().Message);
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -15071,9 +15660,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 powerSource,
                 $"Verified device admission failed: {exception.Message}",
                 failed: true);
-            return;
+            return ServiceTransitionApplicationOutcome.Interrupted(GetStatus().Message);
         }
 
+        bool boundaryWriteAttempted = false;
+        bool boundarySubmissionPossible = false;
+        bool boundaryConfirmedWrites = false;
+        ServiceTransitionApplicationOutcome InterruptedAfterBoundary(string message) =>
+            ServiceTransitionApplicationOutcome.Interrupted(message,
+                new ServiceTransitionWriteProgress(boundaryWriteAttempted, boundarySubmissionPossible, boundaryConfirmedWrites));
         bool hyperBoostBoundaryWorkRequired =
             powerSource is PowerSource.Battery or PowerSource.UsbC
             && ownsHyperBoost
@@ -15081,10 +15676,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!await ExitOwnedHyperBoostForPowerSourceTransitionAsync(
                 device,
                 powerSource,
-                token)
+                token,
+                (writeAttempted, submissionPossible, confirmedWrites) =>
+                {
+                    boundaryWriteAttempted |= writeAttempted;
+                    boundarySubmissionPossible |= submissionPossible;
+                    boundaryConfirmedWrites |= confirmedWrites;
+                })
             .ConfigureAwait(false))
         {
-            return;
+            return InterruptedAfterBoundary(GetStatus().Message);
         }
 
         if (hyperBoostBoundaryWorkRequired)
@@ -15099,7 +15700,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     PublishFullUnavailable(
                         powerSource,
                         "The verified device session changed after HyperBoost restoration.");
-                    return;
+                    return InterruptedAfterBoundary(GetStatus().Message);
                 }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -15112,7 +15713,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     powerSource,
                     $"Verified device re-admission failed after HyperBoost restoration: {exception.Message}",
                     failed: true);
-                return;
+                return InterruptedAfterBoundary(GetStatus().Message);
             }
         }
 
@@ -15120,9 +15721,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         cachedConfirmed = current.ConfirmedState;
         if (stillControlsSession?.Invoke() == false)
         {
-            return;
+            return InterruptedAfterBoundary("The active Windows session changed before the destination profile could be applied.");
         }
 
+        await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
         DesiredDeviceState desired = ResolveHardwareDesired(
             cachedConfirmed ?? UnknownConfirmedState);
         ThermalFullTransitionExecution transitionExecution =
@@ -15160,7 +15762,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 new HashSet<DeviceSubsystem>(deferred),
                 new HashSet<DeviceSubsystem>(outcome.WriteAttempted.Concat(
                     continuation?.Dependencies ?? new HashSet<DeviceSubsystem>())),
-                continuation?.ExpiresAt ?? timeProvider.GetUtcNow().AddMinutes(2));
+                continuation?.ExpiresAt ?? timeProvider.GetUtcNow().AddMinutes(2),
+                // Never weaken a prior cancellation/override dependency.
+                continuation?.Dependencies.Contains(DeviceSubsystem.Battery) == true
+                    && continuation.BatteryConfirmation != BatteryConfirmationScope.PolicyOnly
+                        ? BatteryConfirmationScope.All
+                        : outcome.WriteAttempted.Contains(DeviceSubsystem.Battery)
+                            ? outcome.BatteryConfirmation
+                            : continuation?.BatteryConfirmation ?? BatteryConfirmationScope.All);
         }
 
         if (outcome.PreWriteState is { } preWriteState)
@@ -15171,7 +15780,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
                     powerSource,
                     outcome.EffectiveDesired ?? desired,
-                    preWriteState));
+                    preWriteState,
+                    BatteryConfirmation: outcome.BatteryConfirmation));
             }
         }
 
@@ -15184,10 +15794,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             confirmed = outcome.Readback;
         }
 
-        string? laptopBehaviorMessage = continuation is not null
+        LaptopControlBatchOutcome laptopBehavior = continuation is not null
             || current.WritesBlocked
+            || outcome.DeviceAccessFailed
+            || GetStatus().WritesBlocked
             || outcome.ConfirmationUnavailable?.Count > 0
-            ? null
+            ? new(!Automation.EffectiveLaptopBehavior.IsConfigured, false, false, false,
+                Automation.EffectiveLaptopBehavior.IsConfigured
+                    ? "Laptop behavior was not applied because the preceding transition did not complete safely." : null)
             : await ApplyProfileLaptopBehaviorAsync(
                 device,
                 powerSource,
@@ -15195,7 +15809,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 token).ConfigureAwait(false);
 
         LightingRendererOwnershipState observedLightingOwnership = current.LightingRendererOwnership;
-        if (continuation is null || continuation.Subsystems.Contains(DeviceSubsystem.Lighting))
+        if (!laptopBehavior.StopFurtherWrites
+            && (continuation is null || continuation.Subsystems.Contains(DeviceSubsystem.Lighting)))
         {
             (outcome, observedLightingOwnership) = await ReconcileFullTransitionLightingAsync(
                     device,
@@ -15211,11 +15826,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             powerSource,
             confirmed,
             current.Capabilities,
-            laptopBehaviorMessage,
+            laptopBehavior.Message,
             preserveLiveReadings,
             lightingExternalBeforeReadback,
             token,
             continuation?.Subsystems).ConfigureAwait(false);
+        return ServiceTransitionApplicationOutcome.From(outcome, laptopBehavior,
+            laptopBehavior.AnyWritesAttempted && laptopControlExecutor.RequiresReconciliation,
+            new ServiceTransitionWriteProgress(boundaryWriteAttempted, boundarySubmissionPossible, boundaryConfirmedWrites),
+            GetStatus().Message);
     }
 
     private bool ShouldRetryPendingOwnedHyperBoostPowerBoundaryExit(
@@ -15625,161 +16244,79 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     : null);
     }
 
-    private async Task<string?> ApplyProfileLaptopBehaviorAsync(
+    private async Task<LaptopControlBatchOutcome> ApplyProfileLaptopBehaviorAsync(
         IBladeDevice device,
         PowerSource powerSource,
         DeviceCapabilities? capabilities,
         CancellationToken token)
     {
         LaptopBehaviorProfileSettings behavior = Automation.EffectiveLaptopBehavior;
-        if (!behavior.IsConfigured)
-        {
-            return null;
-        }
-
-        var failures = new List<string>();
+        var requests = new List<ApplyOneShotLaptopControl>(3);
         if (behavior.FunctionKeyPrimary is { } functionKeyMode)
         {
-            await ApplyProfileLaptopControlAsync(
-                device,
-                capabilities,
-                new ApplyOneShotLaptopControl(
-                    OneShotLaptopControl.FunctionKeyPrimary,
-                    FunctionKeyMode: functionKeyMode),
-                failures,
-                token).ConfigureAwait(false);
+            requests.Add(new(OneShotLaptopControl.FunctionKeyPrimary, FunctionKeyMode: functionKeyMode));
         }
-        if (behavior.GamingModeEnabled is { } gamingModeEnabled)
+        if (behavior.GamingModeEnabled is { } gamingMode)
         {
-            await ApplyProfileLaptopControlAsync(
-                device,
-                capabilities,
-                new ApplyOneShotLaptopControl(
-                    OneShotLaptopControl.GamingMode,
-                    Enabled: gamingModeEnabled),
-                failures,
-                token).ConfigureAwait(false);
+            requests.Add(new(OneShotLaptopControl.GamingMode, Enabled: gamingMode));
         }
-        if (behavior.StartupAnimationEnabled is { } startupAnimationEnabled)
+        if (behavior.StartupAnimationEnabled is { } startup)
         {
-            await ApplyProfileLaptopControlAsync(
-                device,
-                capabilities,
-                new ApplyOneShotLaptopControl(
-                    OneShotLaptopControl.StartupAnimation,
-                    Enabled: startupAnimationEnabled),
-                failures,
-                token).ConfigureAwait(false);
+            requests.Add(new(OneShotLaptopControl.StartupAnimation, Enabled: startup));
         }
-
-        return failures.Count == 0
-            ? null
-            : $"Laptop behavior could not be synchronized: {string.Join(" ", failures)}";
-    }
-
-    private async Task ApplyProfileLaptopControlAsync(
-        IBladeDevice device,
-        DeviceCapabilities? capabilities,
-        ApplyOneShotLaptopControl requested,
-        ICollection<string> failures,
-        CancellationToken token)
-    {
-        // Host-managed preferences are consumed by the Session Agent from the
-        // durable profile. They must never become firmware writes or readback.
-        if (capabilities?.HostManagedLaptopControls.Contains(requested.Control) is true)
+        var failures = new List<string>();
+        bool confirmedWrite = false;
+        bool attemptedWrite = false;
+        foreach (ApplyOneShotLaptopControl requested in requests)
         {
-            return;
-        }
-
-        string label = requested.Control switch
-        {
-            OneShotLaptopControl.FunctionKeyPrimary => "Function key behavior",
-            OneShotLaptopControl.GamingMode => "Gaming mode",
-            OneShotLaptopControl.StartupAnimation => "Startup animation",
-            _ => "Unknown laptop control",
-        };
-        if (capabilities is null
-            || !capabilities.OneShotLaptopControls.Contains(requested.Control))
-        {
-            failures.Add($"{label} is unsupported.");
-            return;
-        }
-
-        ServiceStatusSnapshot current = GetStatus();
-        bool alreadyMatches = requested.Control switch
-        {
-            OneShotLaptopControl.FunctionKeyPrimary =>
-                current.FunctionKeyPrimary == requested.FunctionKeyMode,
-            OneShotLaptopControl.GamingMode =>
-                current.GamingModeEnabled == requested.Enabled,
-            OneShotLaptopControl.StartupAnimation =>
-                current.StartupAnimationEnabled == requested.Enabled,
-            _ => false,
-        };
-        if (alreadyMatches)
-        {
-            return;
-        }
-
-        try
-        {
-            await device.ApplyOneShotLaptopControlAsync(requested, token)
-                .ConfigureAwait(false);
-            switch (requested.Control)
+            // Host-managed Gaming Mode is a Session Agent preference, not firmware state.
+            if (capabilities?.HostManagedLaptopControls.Contains(requested.Control) == true)
             {
-                case OneShotLaptopControl.FunctionKeyPrimary:
-                    {
-                        FunctionKeyPrimaryMode? readback = await device
-                            .ReadFunctionKeyPrimaryAsync(token)
-                            .ConfigureAwait(false);
-                        if (readback != requested.FunctionKeyMode)
-                        {
-                            failures.Add($"{label} was not confirmed.");
-                            return;
-                        }
-                        PublishIfChanged(GetStatus() with { FunctionKeyPrimary = readback });
-                        break;
-                    }
-                case OneShotLaptopControl.GamingMode:
-                    {
-                        bool? readback = await device.ReadGamingModeAsync(token)
-                            .ConfigureAwait(false);
-                        if (readback != requested.Enabled)
-                        {
-                            failures.Add($"{label} was not confirmed.");
-                            return;
-                        }
-                        PublishIfChanged(GetStatus() with { GamingModeEnabled = readback });
-                        break;
-                    }
-                case OneShotLaptopControl.StartupAnimation:
-                    {
-                        bool? readback = await device.ReadStartupAnimationAsync(token)
-                            .ConfigureAwait(false);
-                        if (readback != requested.Enabled)
-                        {
-                            failures.Add($"{label} was not confirmed.");
-                            return;
-                        }
-                        PublishIfChanged(GetStatus() with { StartupAnimationEnabled = readback });
-                        break;
-                    }
+                continue;
+            }
+            if (capabilities?.OneShotLaptopControls.Contains(requested.Control) != true)
+            {
+                failures.Add($"{requested.Control} is unsupported.");
+                continue;
+            }
+            ServiceStatusSnapshot current = GetStatus();
+            var confirmed = new LaptopControlReadback(current.StartupAnimationEnabled,
+                current.FunctionKeyPrimary, current.GamingModeEnabled);
+            if (confirmed.Matches(requested))
+            {
+                continue;
+            }
+            LaptopControlApplyOutcome outcome;
+            try
+            {
+                outcome = await laptopControlExecutor.ExecuteAsync(
+                    device, deviceProvider.LaptopControlRecoveryIdentity, requested,
+                    explicitRequest: false, LaptopControlWriteAllowed, token).ConfigureAwait(false);
+            }
+            finally
+            {
+                PublishIfChanged(GetStatus());
+            }
+            PublishLaptopControlReadback(outcome.Readback, outcome.Result);
+            attemptedWrite |= outcome.WriteAttempted;
+            confirmedWrite |= outcome.WriteAttempted && outcome.Result.Status == ControlOperationStatus.Applied;
+            if (outcome.Result.Status != ControlOperationStatus.Applied)
+            {
+                failures.Add(outcome.Result.Message);
+            }
+            if (outcome.StopFurtherWrites)
+            {
+                return new(false, true, confirmedWrite, attemptedWrite, string.Join(" ", failures));
             }
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            failures.Add($"{label} could not be applied.");
-        }
+        return new(failures.Count == 0, false, confirmedWrite, attemptedWrite,
+            failures.Count == 0 ? null : $"Laptop behavior could not be synchronized: {string.Join(" ", failures)}");
     }
-
     private static ConfirmedDeviceState MergeScopedReadback(
         DeviceSubsystem subsystem,
         ConfirmedDeviceState? cached,
-        ConfirmedDeviceState readback)
+        ConfirmedDeviceState readback,
+        IndependentLightingSettings? independentFields = null)
     {
         if (cached is null)
         {
@@ -15799,21 +16336,48 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     CustomPerformance = readback.CustomPerformance,
                     GpuClockOffsets = readback.GpuClockOffsets,
                     LogoLighting = readback.LogoLighting ?? cached.LogoLighting,
+                    IndependentLighting = readback.IndependentLighting ?? cached.IndependentLighting,
                 },
             DeviceSubsystem.Lighting => cached with
             {
                 Lighting = readback.Lighting,
-                LogoLighting = readback.LogoLighting,
+                LogoLighting = independentFields is { LogoMode: null }
+                    ? cached.LogoLighting
+                    : readback.LogoLighting,
+                IndependentLighting = MergeIndependentLightingReadback(
+                    cached.IndependentLighting, readback.IndependentLighting, independentFields),
             },
             _ => readback,
         };
     }
 
+    private static IndependentLightingSettings? MergeIndependentLightingReadback(
+        IndependentLightingSettings? cached,
+        IndependentLightingSettings? readback,
+        IndependentLightingSettings? requested)
+    {
+        if (requested is null)
+        {
+            return readback;
+        }
+
+        // Null in a requested field means its read failed. Preserve only fields
+        // outside this operation's scope; never use cached state as confirmation.
+        byte? brightness = requested.Brightness.HasValue ? readback?.Brightness : cached?.Brightness;
+        LogoLightingMode? logo = requested.LogoMode.HasValue ? readback?.LogoMode : cached?.LogoMode;
+        return brightness.HasValue || logo.HasValue
+            ? new IndependentLightingSettings(brightness, logo)
+            : null;
+    }
+
     private async Task<PowerSource> ResolveCurrentPowerSourceAsync(
         CancellationToken cancellationToken,
-        bool allowCachedExternalClassification = false)
+        bool allowCachedExternalClassification = false,
+        CpuSavedAdmissionDiagnostic? cpuDiagnostic = null)
     {
-        PowerSource windowsSource = powerStateProvider.CapturePowerSource();
+        PowerSource windowsSource;
+        using (cpuDiagnostic?.BeginStage("power Windows source capture"))
+        { windowsSource = powerStateProvider.CapturePowerSource(); }
         cancellationToken.ThrowIfCancellationRequested();
         if (windowsSource == PowerSource.Battery)
         {
@@ -15839,9 +16403,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         try
         {
-            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            IBladeDevice device;
+            using (cpuDiagnostic?.BeginStage("power verified device probe"))
             {
-                return PowerSource.ExternalUnknown;
+                if (!deviceProvider.TryGetVerifiedDevice(out device))
+                { return PowerSource.ExternalUnknown; }
             }
 
             AdapterPowerState classified = AdapterPowerState.Unknown;
@@ -15857,7 +16423,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 AdapterPowerState sample;
                 try
                 {
-                    sample = await device.ReadAdapterPowerStateAsync(cancellationToken);
+                    using (cpuDiagnostic?.BeginStage($"power adapter read sample {attempts + 1} of {MaximumAdapterPowerClassificationSamples} (open/exchange/dispose)"))
+                    { sample = await device.ReadAdapterPowerStateAsync(cancellationToken); }
                 }
                 catch (OperationCanceledException) when (
                     cancellationToken.IsCancellationRequested)
@@ -15984,7 +16551,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LiveReadingSensors requestedLiveReadings,
         int? batteryPowerFlowMilliwatts,
         CancellationToken cancellationToken,
-        bool skipLightingHandoff = false)
+        bool skipLightingHandoff = false,
+        bool reconcileLaptopControls = false)
     {
         bool includeLiveReadings = requestedLiveReadings != LiveReadingSensors.None;
         bool deviceAvailable = deviceProvider.TryGetVerifiedDevice(out IBladeDevice device);
@@ -15999,6 +16567,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
+        bool laptopRecoveryObservation = reconcileLaptopControls || laptopControlExecutor.RequiresReconciliation;
+        if (reconcileLaptopControls)
+        {
+            await ReconcilePendingLaptopControlsAsync(cancellationToken, device).ConfigureAwait(false);
+        }
+
         consecutiveDeviceProbeFailures = 0;
 
         try
@@ -16009,6 +16583,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 includeLiveReadings,
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            if (laptopRecoveryObservation)
+            {
+                PublishVerifiedDeviceObservation(powerSource, powerSourceConfirmed,
+                    includeLiveReadings, batteryPowerFlowMilliwatts, observation, batteryHealth: null,
+                    preserveRecoveryState: true);
+                string recoveryMessage = laptopControlExecutor.RequiresReconciliation
+                    ? laptopControlExecutor.PendingMessage
+                    : "Laptop-control recovery was read and reconciled without writes. Unconfirmed intent will not be replayed automatically; use the explicit laptop control to request it again.";
+                if (powerSourceConfirmed && powerSource != Automation.PowerSource)
+                {
+                    recoveryMessage += " The new power profile is waiting to apply; controls still show the previously active targets.";
+                }
+                PublishIfChanged(GetStatus() with
+                {
+                    Message = recoveryMessage,
+                });
+                return;
+            }
+
             // An unclassified adapter cannot resolve a pending submission. Defer
             // only its battery drift comparison; publish the actual readback and
             // keep the pending write block, existing latches, and other drift.
@@ -16207,7 +16800,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             PublishVerifiedDeviceObservationFailure(
                 powerSource,
@@ -16245,7 +16838,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 subsystem,
                 new WriteConfirmationExpectation(
                     pending.EffectiveDesired,
-                    pending.PreWriteState),
+                    pending.PreWriteState,
+                    BatteryConfirmation: pending.BatteryConfirmation),
                 confirmed,
                 device);
             if (result == PendingConfirmationResult.Mismatch)
@@ -16434,9 +17028,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool includeLiveReadings,
         int? batteryPowerFlowMilliwatts,
         FullDeviceObservation observation,
-        BatteryHealthStatus? batteryHealth)
+        BatteryHealthStatus? batteryHealth,
+        bool preserveRecoveryState = false)
     {
         ServiceStatusSnapshot current = GetStatus();
+        // A laptop-control recovery observation must not consume another
+        // recovery owner's provenance before its normal journal reconciliation.
+        bool deferredHyperBoostRecovery = preserveRecoveryState
+            && (ownsHyperBoost || hyperBoostRestorePending
+                || pendingIndeterminateHyperBoostEntryIntent is not null
+                || pendingIndeterminateHyperBoostExitIntent is not null);
         if (observation.Confirmed.HyperBoostActive == true
             && current.ConfirmedState?.HyperBoostActive != true
             && !ownsHyperBoost
@@ -16450,7 +17051,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // their direct journaled restoration path.
             AdvanceFanAuthorityEpoch();
         }
-        if (observation.Confirmed.HyperBoostActive == false)
+        if (!preserveRecoveryState && observation.Confirmed.HyperBoostActive == false)
         {
             if (ownsHyperBoost || ownedHyperBoostBaseMode is not null)
             {
@@ -16468,7 +17069,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishIfChanged(current with
         {
             DeviceVerified = true,
-            WritesBlocked = !powerSourceConfirmed || hyperBoostJournalSafetyBlock,
+            WritesBlocked = !powerSourceConfirmed || hyperBoostJournalSafetyBlock || deferredHyperBoostRecovery,
             ObservationReason = !powerSourceConfirmed && powerSource != PowerSource.ExternalUnknown
                 ? DeviceObservationReason.RetainedPowerSource
                 : DeviceObservationReason.None,
@@ -16687,7 +17288,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private bool ChangePowerSourceCore(PowerSource powerSource)
     {
+        // Any typed request can discover a new source before the power observer.
+        // Apply the same waiting-policy boundary to all of those shared paths.
+        PauseAutomaticFanStopForPowerIncrease(powerSource);
+        if (laptopControlExecutor.RequiresReconciliation)
+        {
+            // Keep the destination unconsumed until the read-only recovery
+            // operation finishes. A later ordinary observation applies that
+            // destination through fresh admission, without replaying the laptop write.
+            return false;
+        }
         bool changed = Automation.ChangePowerSource(powerSource);
+        // Normal fresh destination processing now owns admission, even if the
+        // source reverted while recovery was pending and no transition is needed.
+        Volatile.Write(ref laptopRecoveryPowerDestinationPending, 0);
         if (changed)
         {
             deferredRecoveredHyperBoostEntryIntent = null;
@@ -17889,6 +18503,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DesiredDeviceState desired = ResolveExperimentalFanHardwareDesired(
             ResolveAutomationDesired(confirmed), confirmed);
         DeviceCapabilities? capabilities = GetStatus().Capabilities;
+        bool stopScope = BatterySaverFanStopRuntimePolicy.IsInScope(
+            Automation.Profiles.Battery.StopFansInBatterySaver, capabilities,
+            Automation.PowerSource, desired.Performance.Value);
+        FanMode? stopMode = batterySaverFanStopPolicy.Resolve(stopScope,
+            BatterySaverFanStopThermalSampleIsCool(), OwnsBatterySaverFanStop);
+        if (stopMode is { } operationalMode)
+        {
+            desired = desired with
+            {
+                Fans = new ResolvedSetting<FanMode>(operationalMode, desired.Fans.Source),
+                FanControl = operationalMode == FanMode.Stop
+                    ? BatterySaverFanStopRuntimePolicy.StopSettings : FanControlSettings.Default,
+            };
+        }
         // Custom maximum fans is a separate firmware override, not a fixed RPM
         // target. During a performance override, keep saved manual-fan intent but
         // reach the necessary Automatic fan state directly. Profiles reject the
@@ -17950,7 +18578,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             Lighting = desired.Lighting with
             {
-                Value = LightingSettingsFactory.Off(),
+                Value = capabilities?.SupportsIndependentLightingControls == true
+                    ? desired.Lighting.Value with
+                    {
+                        IndependentControls = SuppressIndependentBrightness(desired.Lighting.Value.IndependentControls, suppressed: true),
+                    }
+                    : LightingSettingsFactory.Off(),
             },
         };
     }
@@ -18132,6 +18765,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         return ConfigurationIsAdmitted
             && thermalConvergenceLedgerAuthoritative
+            && !fanStopController.BlocksOrdinaryThermalWrites
+            && !fanStopController.HoldsAutomatic
             && thermalConvergenceStore is not null
             && thermalConvergenceLedger is not null
             && !string.IsNullOrWhiteSpace(Volatile.Read(ref activeUserSid))
@@ -18860,7 +19495,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     explicitReapplyRequired: true);
             }
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not NativeComponentException)
         {
             history.RecordSummary(
                 ControlOperationStatus.Failed,
@@ -19382,6 +20017,174 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? FanControlSettings.FromLegacy(desired.Fans.Value);
     }
 
+    private sealed record BatterySaverFanStopThermalSample(
+        FanTemperatureReadings Readings, long Timestamp);
+
+    private bool OwnsBatterySaverFanStop =>
+        IsExactFanIntentOwned(BatterySaverFanStopRuntimePolicy.StopSettings);
+
+    private bool BatterySaverFanStopInScope(ServiceStatusSnapshot current)
+    {
+        DesiredDeviceState ordinary = ResolveAutomationDesired(
+            current.ConfirmedState ?? UnknownConfirmedState, current.Capabilities);
+        return current.ActivePowerSource == PowerSource.Battery
+            && BatterySaverFanStopRuntimePolicy.IsInScope(
+                Automation.Profiles.Battery.StopFansInBatterySaver, current.Capabilities,
+                Automation.PowerSource, ordinary.Performance.Value);
+    }
+
+    private bool BatterySaverFanStopThermalSampleIsCool()
+    {
+        BatterySaverFanStopThermalSample? sample = Volatile.Read(ref batterySaverFanStopThermalSample);
+        return sample is not null
+            && timeProvider.GetElapsedTime(sample.Timestamp) <= BatterySaverFanStopRuntimePolicy.MaximumSampleAge
+            && BatterySaverFanStopRuntimePolicy.IsCool(sample.Readings);
+    }
+
+    private bool BatterySaverFanStopWriteAdmitted()
+    {
+        ServiceStatusSnapshot? current = Volatile.Read(ref status);
+        return automation is not null && current is not null
+            && ConfigurationIsAdmitted && BatterySaverFanStopInScope(current)
+            && !batterySaverFanStopPolicy.ThermallyLatched
+            && BatterySaverFanStopThermalSampleIsCool()
+            && current.DeviceVerified && !current.WritesBlocked
+            && !lowPowerGate.IsActive && !thermalConvergenceShutdown
+            && Volatile.Read(ref pendingPowerAdmissions) == 0
+            && Volatile.Read(ref pendingSessionAdmissions) == 0
+            && !activeUserActivationIncomplete
+            && activeUserStillControlsSession?.Invoke() != false
+            && !laptopControlExecutor.RequiresReconciliation
+            && !pendingWriteConfirmations.Blocks(DeviceSubsystem.Fans)
+            && !pendingWriteConfirmations.Blocks(DeviceSubsystem.Performance)
+            && !FanControllerAdmissionUnsafe(current)
+            && BatterySaverFanStopPhysicalPowerAdmitted();
+    }
+
+    private bool BatterySaverFanStopPhysicalPowerAdmitted()
+    {
+        try
+        {
+            // Native submission invokes this synchronously for every command;
+            // an AC arrival must close stop authority before queued events run.
+            return batterySaverFanStopPowerReader() == PowerSource.Battery;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void RefreshBatterySaverFanStopReadInterest()
+    {
+        ServiceStatusSnapshot? current = Volatile.Read(ref status);
+        batterySaverFanStopReadbackActive = current is not null
+            && (BatterySaverFanStopInScope(current) || OwnsBatterySaverFanStop
+                || current.ConfirmedState?.Fans == FanMode.Stop
+                || batterySaverFanStopReadbackActive && pendingWriteConfirmations.Blocks(DeviceSubsystem.Fans));
+        deviceProvider.SetBatterySaverFanStopContext(
+            batterySaverFanStopReadbackActive, BatterySaverFanStopWriteAdmitted);
+    }
+
+    private async Task RefreshBatterySaverFanStopThermalSampleAsync(CancellationToken token)
+    {
+        RefreshBatterySaverFanStopReadInterest();
+        if (!BatterySaverFanStopInScope(GetStatus()) && !OwnsBatterySaverFanStop)
+        {
+            batterySaverFanStopPolicy.Reset();
+            Volatile.Write(ref batterySaverFanStopThermalSample, null);
+            return;
+        }
+        FanTemperatureReadings readings;
+        long sampleTimestamp = timeProvider.GetTimestamp();
+        try
+        {
+            readings = await fanTemperatureSource.ReadAsync(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch
+        {
+            // Unavailable cooling evidence closes admission just like a hot CPU.
+            readings = default;
+        }
+        Volatile.Write(ref batterySaverFanStopThermalSample,
+            new BatterySaverFanStopThermalSample(readings, sampleTimestamp));
+    }
+
+    private ServiceStatusSnapshot ProjectBatterySaverFanStopStatus(ServiceStatusSnapshot current)
+    {
+        if (automation is null)
+        {
+            return current;
+        }
+        DesiredDeviceState ordinary = ResolveAutomationDesired(
+            current.ConfirmedState ?? UnknownConfirmedState, current.Capabilities);
+        bool scope = BatterySaverFanStopInScope(current);
+        var fanStopStatus = new BatterySaverFanStopStatus(
+            Automation.Profiles.Battery.StopFansInBatterySaver,
+            OwnsBatterySaverFanStop && current.ConfirmedState?.Fans == FanMode.Stop
+                && !pendingWriteConfirmations.Blocks(DeviceSubsystem.Fans),
+            batterySaverFanStopPolicy.IsSuspended(scope, BatterySaverFanStopThermalSampleIsCool()),
+            ordinary.FanControl ?? FanControlSettings.FromLegacy(ordinary.Fans.Value));
+        return current.BatterySaverFanStopStatus == fanStopStatus
+            ? current : current with { BatterySaverFanStopStatus = fanStopStatus };
+    }
+
+    private async Task MaintainBatterySaverFanStopAsync(CancellationToken token)
+    {
+        if (!ConfigurationIsAdmitted || lowPowerGate.IsActive || thermalConvergenceShutdown)
+        {
+            return;
+        }
+        // Reuse the existing one-second fan loop. Never queue periodic work behind
+        // an active transition; the next tick obtains fresh evidence instead.
+        if (!await operationGate.WaitAsync(0, token).ConfigureAwait(false))
+        {
+            return;
+        }
+        try
+        {
+            ServiceStatusSnapshot current = GetStatus();
+            if (!BatterySaverFanStopInScope(current) && !OwnsBatterySaverFanStop)
+            {
+                batterySaverFanStopPolicy.Reset();
+                RefreshBatterySaverFanStopReadInterest();
+                return;
+            }
+            await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
+            DesiredDeviceState desired = ResolveHardwareDesired(
+                current.ConfirmedState ?? UnknownConfirmedState);
+            bool needsStop = desired.Fans.Value == FanMode.Stop
+                && current.ConfirmedState?.Fans != FanMode.Stop
+                && current.ConfirmedState?.Performance == PerformancePreset.BatterySaver
+                && !current.ExternalChanges.Contains(DeviceSubsystem.Performance);
+            bool needsRelease = OwnsBatterySaverFanStop && desired.Fans.Value != FanMode.Stop;
+            if ((needsStop || needsRelease) && current.DeviceVerified && !current.WritesBlocked
+                && !current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+            {
+                await RefreshControllerPresenceAndRelinquishLightingAsync(token).ConfigureAwait(false);
+                await ApplyBatterySaverFanStopIntentAsync(current, token).ConfigureAwait(false);
+            }
+            PublishIfChanged(GetStatus());
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private Task<ControlOperationResult> ApplyBatterySaverFanStopIntentAsync(
+        ServiceStatusSnapshot current, CancellationToken token, Func<bool>? stillControlsSession = null) =>
+        ApplyScopedIntentAsync(DeviceSubsystem.Fans, current.ActivePowerSource,
+            (coordinator, desired, cancellationToken) => coordinator.ApplyRecoveryFanControlOutcomeAsync(
+                desired.FanControl ?? FanControlSettings.FromLegacy(desired.Fans.Value), cancellationToken,
+                initialStateBlockReason: observed => desired.Fans.Value == FanMode.Stop
+                    && (observed.Performance != PerformancePreset.BatterySaver
+                        || GetStatus().ExternalChanges.Contains(DeviceSubsystem.Performance))
+                    ? "Fan stop requires independently confirmed Battery Saver performance without external thermal drift."
+                    : null), token, stillControlsSession: stillControlsSession,
+            thermalExecutionOptions: new ScopedThermalExecutionOptions([DeviceSubsystem.Fans]));
+
     private bool CanMaintainFanCurve(
         ServiceStatusSnapshot current,
         FanControlSettings settings)
@@ -19389,6 +20192,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FanControlSettings currentSettings = current.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(current.DesiredState.Fans.Value);
         return settings.Mode == FanMode.ManualCurve
+            && !fanStopController.BlocksOrdinaryThermalWrites
+            && !fanStopController.HoldsAutomatic
+            && Automation.PowerSource == current.ActivePowerSource
             && FanControlPowerPolicy.IsAvailable(current.ActivePowerSource, settings.Mode,
                 current.Capabilities?.SupportsManualFansOnLimitedPower == true)
             && currentSettings == settings
@@ -19528,7 +20334,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private void AdvanceFanDesiredRevision()
     {
+        fanStopController.RetireAutomaticObservation();
+        bool retainOperationalStopOwnership = OwnsBatterySaverFanStop;
         fanDesiredRevision++;
+        if (retainOperationalStopOwnership)
+        {
+            // Ordinary fan edits change the restore destination, not the existing
+            // service-owned stop target. Authority-epoch invalidation still drops
+            // ownership on controller, session and uncertain-submission changes.
+            exactFanControlOwnership = ExactFanControlOwnership.Owned(
+                BatterySaverFanStopRuntimePolicy.StopSettings, fanAuthorityEpoch, fanDesiredRevision);
+        }
         ClearLastFanCurveTargets();
     }
 
@@ -19722,7 +20538,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ConfirmedDeviceState PreWriteState,
         IReadOnlySet<DeviceSubsystem> Subsystems,
         IReadOnlySet<DeviceSubsystem> Dependencies,
-        DateTimeOffset ExpiresAt);
+        DateTimeOffset ExpiresAt,
+        BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
 
     private sealed record PendingResumePerformanceDrift(
         long PowerGeneration,
@@ -19860,7 +20677,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool publishToSubscribers = false;
         lock (statusPublishGate)
         {
-            ServiceStatusSnapshot previous = GetStatus();
+            ServiceStatusSnapshot previous = GetStatus() with
+            {
+                // Compare the previously published cooling status, while retaining
+                // the existing live safety overlays for every other field.
+                BatterySaverFanStopStatus = Volatile.Read(ref status)?.BatterySaverFanStopStatus,
+                FanStopStatus = Volatile.Read(ref status)?.FanStopStatus ?? new(),
+            };
             ServiceStatusSnapshot updated = update(previous);
             IReadOnlyList<DeviceSubsystem> unconfirmedWrites =
                 pendingWriteConfirmations.SnapshotSubsystems();
@@ -19869,7 +20692,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 WritesBlocked = updated.WritesBlocked
                     || hyperBoostJournalSafetyBlock
                     || unconfirmedWrites.Count > 0
-                    || deviceProvider.IsExperimentalWritesPaused,
+                    || deviceProvider.IsExperimentalWritesPaused
+                    || laptopControlExecutor.RequiresReconciliation,
                 UnconfirmedWrites = unconfirmedWrites,
                 HyperBoostRestorePending = hyperBoostRestorePending,
                 AllowExperimentalFeatures = deviceProvider.IsExperimentalDevice,
@@ -19879,7 +20703,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     && deviceProvider.GetCachedDeviceVerificationDiagnostics()
                         .LatestAttemptFoundUnsupportedLaptop,
             };
-            candidate = ApplyConfigurationQuarantineAdvisory(candidate);
+            candidate = ApplyConfigurationQuarantineAdvisory(ProjectFanStopStatus(ProjectBatterySaverFanStopStatus(candidate)));
             if (!previous.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 && candidate.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 && exactFanControlOwnership.Disposition ==
@@ -20141,6 +20965,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingSettings lighting,
         CancellationToken cancellationToken)
     {
+        if (GetStatus().Capabilities?.SupportsIndependentLightingControls == true)
+        {
+            return; // An independent field observation cannot confirm a keyboard effect.
+        }
         lighting = LightingSettingsFactory.NormalizeLegacyOff(lighting);
         if (preferences.LastKnownLighting == lighting)
         {
@@ -20300,11 +21128,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         public FirmwareVersions Capture() => FirmwareVersions.Unavailable();
     }
 
-    private sealed record OneShotLaptopControlReadback(
-        bool? StartupAnimation,
-        FunctionKeyPrimaryMode? FunctionKeyPrimary,
-        bool? GamingMode);
-
     private enum IndeterminateHyperBoostResolution
     {
         None,
@@ -20341,6 +21164,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PerformancePreset.Silent => "Quiet",
         PerformancePreset.Balanced => "Balanced",
         PerformancePreset.Performance => "Performance",
+        PerformancePreset.Turbo => "Turbo",
+        PerformancePreset.MaximumPower => "Maximum Power",
+        PerformancePreset.Gaming => "Gaming",
+        PerformancePreset.Creator => "Creator",
         _ => mode.ToString(),
     };
 

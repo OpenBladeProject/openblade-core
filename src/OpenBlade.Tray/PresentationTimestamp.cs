@@ -14,4 +14,7 @@ internal static class PresentationTimestamp
 
     internal static DateTimeOffset ForDisplay(DateTimeOffset value, bool snapshotMode) =>
         snapshotMode ? value.ToUniversalTime() : value.ToLocalTime();
+
+    internal static string FormatIntervalEnd(DateTimeOffset displayedStart, DateTimeOffset displayedEnd) =>
+        displayedEnd.ToString(displayedStart.Date == displayedEnd.Date ? "t" : "g");
 }

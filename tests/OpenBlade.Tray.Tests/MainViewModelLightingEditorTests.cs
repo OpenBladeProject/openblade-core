@@ -509,6 +509,7 @@ public sealed partial class MainViewModelTests
         // The reset response is delivered before the already in-flight apply response.
         client.BlockMutations = false;
         await reset.ExecuteAsync(null);
+        Assert.False(apply.IsCompleted, "The original apply response must remain blocked until the fixture releases it.");
         Assert.Equal(clearLighting, client.MutationOperations.Contains("lighting:<clear>"));
         Assert.Contains("fans:<clear>", client.MutationOperations);
         client.CompleteMutation();
