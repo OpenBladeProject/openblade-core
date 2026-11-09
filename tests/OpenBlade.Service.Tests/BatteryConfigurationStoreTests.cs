@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -154,6 +155,99 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
         static string Hash(string document) => Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(document)));
+    }
+
+    [RustConfigurationExchangeFact]
+    public async Task WindowsReplay_RustConfigurationWriterExchangesManagedBytes()
+    {
+        string executable = Environment.GetEnvironmentVariable(RustConfigurationExchangeFactAttribute.PathVariable)!;
+        string fileName = Path.GetFileName(executable);
+        Assert.True(Path.IsPathFullyQualified(executable)
+            && fileName.StartsWith("openblade_windows_host-", StringComparison.Ordinal)
+            && fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            && File.Exists(executable), $"Expected a Rust library test executable at '{executable}'.");
+
+        Paths paths = CreatePaths();
+        BatteryConfigurationStore managed = CreateStore(paths);
+        BatteryConfiguration initial = await managed.LoadAsync(CancellationToken.None);
+        await managed.SaveProfilesAsync(initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(79) },
+            CancellationToken.None);
+        byte[][] prior = await ReadTargetsAsync();
+        await managed.SaveProfilesAsync(initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(73) },
+            CancellationToken.None);
+        byte[][] intent = await ReadTargetsAsync();
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var start = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            StandardOutputEncoding = Encoding.UTF8,
+        };
+        start.ArgumentList.Add("--exact");
+        start.ArgumentList.Add("configuration_writer::tests::exchange_managed_bytes");
+        start.ArgumentList.Add("--ignored");
+        start.ArgumentList.Add("--nocapture");
+        using Process process = Process.Start(start)!;
+        Task<string> output = process.StandardOutput.ReadToEndAsync();
+        Task<string> errors = process.StandardError.ReadToEndAsync();
+        Exception? exchangeFailure = null;
+        try
+        {
+            // JSON arrays of integers preserve the original file bytes across the pipe.
+            int[][][] wireInput = new[] { prior, intent }.Select(aggregate => aggregate.Select(document =>
+                Array.ConvertAll(document, value => (int)value)).ToArray()).ToArray();
+            await process.StandardInput.WriteAsync(JsonSerializer.Serialize(wireInput).AsMemory(), timeout.Token);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (Exception error) when (error is IOException or OperationCanceledException)
+        {
+            exchangeFailure = error;
+            if (!process.HasExited)
+            {
+                try
+                {
+                    process.Kill();
+                }
+                catch (Exception) when (process.HasExited)
+                {
+                    // The child exited between HasExited and Kill.
+                }
+            }
+
+            await process.WaitForExitAsync(CancellationToken.None);
+        }
+
+        string transcript = await output;
+        string diagnostics = await errors;
+        Assert.True(exchangeFailure is null && process.ExitCode == 0,
+            $"{exchangeFailure}{Environment.NewLine}{transcript}{Environment.NewLine}{diagnostics}");
+        const string prefix = "CONFIGURATION_OUTPUT=";
+        string line = Assert.Single(transcript.Split('\n'), text => text.StartsWith(prefix, StringComparison.Ordinal));
+        int[][] wireOutput = JsonSerializer.Deserialize<int[][]>(line[prefix.Length..])!;
+        Assert.Equal(3, wireOutput.Length);
+        byte[][] rust = Array.ConvertAll(wireOutput, document =>
+            Array.ConvertAll(document, value => checked((byte)value)));
+        foreach ((string path, byte[] document) in paths.All.Zip(rust))
+        {
+            await File.WriteAllBytesAsync(path, document);
+        }
+
+        BatteryConfigurationInspection read = await CreateStore(paths).InspectAsync(CancellationToken.None);
+        Assert.True(read.Configuration.IsAuthoritative);
+        Assert.Equal(BatteryPolicy.Create(73), read.Configuration.Profiles.BatteryPolicy);
+        for (int i = 0; i < intent.Length; i++)
+        {
+            Assert.Equal(intent[i], rust[i]);
+        }
+
+        Task<byte[][]> ReadTargetsAsync() =>
+            Task.WhenAll(paths.All.Select(path => File.ReadAllBytesAsync(path)));
     }
 
     [Fact]
@@ -1923,4 +2017,17 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         byte[] Profiles,
         byte[] Preferences,
         byte[] Marker);
+}
+
+internal sealed class RustConfigurationExchangeFactAttribute : FactAttribute
+{
+    internal const string PathVariable = "OPENBLADE_RUST_CONFIG_TEST_EXE";
+
+    public RustConfigurationExchangeFactAttribute()
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(PathVariable)))
+        {
+            Skip = $"Requires Windows and an explicit {PathVariable} path.";
+        }
+    }
 }
