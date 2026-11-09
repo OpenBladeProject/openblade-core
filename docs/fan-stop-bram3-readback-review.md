@@ -204,12 +204,14 @@ period is authorized as a reservation or drainage mechanism.
 
 ### Fixed queries and a scratch marker
 
-The nearby legacy command `10` reads a fixed set of RAM fields selected
+The nearby legacy opcode `10` reads a fixed set of RAM fields selected
 by index `30`. Following both outcomes of every branch in each pinned
 image found no load of actual PWM3, its feedback copy, or the pending
-and delayed cleanup guards. Command `12` calls the same helper at
-`9468` in all four images. It reads `80700 + byteIndex` and returns it
-in slot `32`. Command `11` reads `80200 + byteIndex`. Neither window
+and delayed cleanup guards. Legacy opcode `12`, dispatched from slot
+`12`, calls the helper at `9468` in all four images. That helper reads
+`80700 + byteIndex`, and the dispatcher writes the result to slot `32`.
+Opcode `11` reads `80200 + byteIndex` through a separate call and jumps
+over the opcode `12` arm to the common result store. Neither window
 reaches the guards or PWM3.
 
 A marker in slot `18` would survive command `90`'s own cleanup. Both
@@ -219,7 +221,7 @@ detect an intervening writer. The exact storage code also reads slot
 the storage helper. Slot `18` is therefore live data during the same
 kind of contention the marker would monitor.
 
-| Model | Command `10` dispatch body | Command `12` call | Ordinary / delayed clear of `18` | Record copy from `18` |
+| Model | Opcode `10` dispatch body | Opcode `12` helper call | Ordinary / delayed clear of `18` | Record copy from `18` |
 | --- | ---: | ---: | ---: | ---: |
 | 0423 | `1184E` | `11A28` | `17150 / 17174` | `16BAE` |
 | 0484 | `12572` | `1274E` | `176B6 / 176DA` | `170CC` |

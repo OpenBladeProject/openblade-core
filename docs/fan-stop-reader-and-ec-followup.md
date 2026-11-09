@@ -1,6 +1,6 @@
 # Fan Stop reader and EC follow-up
 
-Reviewed 2026-11-08 against `2aa6c4a5`. This follow-up covers the four
+This follow-up incorporates the evidence through `69b4af1b`. It covers the four
 three-channel Blade 17/18 ECs and seven models that still need receiver-side
 EC evidence. The retained vendor inputs were parsed as data. The results
 below are from offline analysis and models of firmware ordering.
@@ -14,7 +14,7 @@ then clears legacy command `12`. This arm leaves `13..15` alone. A zero
 opcode branches directly to return and skips the clear. Index `E3` reaches
 the same active-state byte as primary bank 0, index `06`.
 
-| Model | Command 11 arm | Result store / command clear | Calls from scheduled event 6 to dispatcher |
+| Model | Opcode `11` arm entry | Shared result store / command clear | Calls from scheduled event 6 to dispatcher |
 | --- | --- | --- | --- |
 | RZ09-0423 | `11A1A` | `11A2C` / `11DDA` | `1D02E → 1D01E → BA74` |
 | RZ09-0484 | `12740` | `12752` / `12AFE` | `1D66E → 1D65E → C130` |
@@ -32,6 +32,8 @@ The initial zero-only model clears primary status, seeds its payload with
 `FF`, and keeps the third-duty zero provisional after D0. It clears legacy
 result `32` to zero before the fixed `11/E3` publication. Legacy command zero
 and a reply with active bit 0 set complete the observation.
+The opcode `11` arm jumps over the opcode `12` call before joining the
+shared result store. See the [fixed-query dispatch table](fan-stop-bram3-readback-review.md#fixed-queries-and-a-scratch-marker).
 
 | Model conditions | Explored states | Acceptances | Result |
 | --- | ---: | ---: | --- |
@@ -65,7 +67,9 @@ identical instruction sequences start at `137E6`, `13CDA`, `24BCE` and
 `2530E` in model order 0423/0484/0509/0529. Their bank-zero `B2` descriptors
 read that register. A candidate full-range observation can reserve `FF`
 in the reply and require a fresh cycle in `01..FE` and duty at or below
-that cycle. This also covers a nonzero baseline or Auto observation.
+that cycle. The payload predicate accepts nonzero duties. A baseline or
+post-Auto sample still needs a separate freshness proof if the active bit
+used by the `11/E3` fence can be clear.
 
 The exhaustive byte-domain check passed 131,072 combinations of cycle,
 result and whether the copy occurred. Under intact staging and payload
@@ -206,8 +210,9 @@ Each image still has a bank-dependent I²C receive store, so this result does
 not prove mailbox ownership against another host master or a main-loop
 callback.
 
-The I²C handler adds a byte-sized start index to a saturating transfer
-counter. Receive-side lookup can reach index `1FF` even with a valid bank.
+The I²C handler adds a byte-sized start index to a transfer counter.
+The receive counter saturates at `0x100`, allowing `0xFF + 0x100 = 0x1FF`
+even with a valid bank. The transmit counter saturates at `0xFF`.
 The pinned images were checked at indexes `000..1FF` for all eight banks.
 None of those pointers targets either mailbox descriptor, actual duty 3, or
 the I²C pointer and counter slots. The extended descriptor at `10F` in
@@ -361,6 +366,10 @@ lock between staging its last byte and calling the bus engine.
 | RZ09-0484 | `B96E / BA00` | `CF9E` | `3434` | `B682 → 3444` |
 | RZ09-0509 | `BBEA / BC7C` | `D326` | `3474` | `B8F4 → 3484` |
 | RZ09-0529 | `3758 / 3756` | `C3A4` | `5C8C` | `7860 → 5C18` |
+
+On RZ09-0529 the adjacent stores run in address order, enabling IRQ 16
+before starting the timer. The preemption case needs both to have run
+before the foreground write and does not depend on their startup order.
 
 A completed HID request can leave a selector write queued. If IRQ 16
 dispatches a later gated read after that write stages its frame and
@@ -525,8 +534,8 @@ one checksum-valid DSDT and 115 distinct SSDTs.
 | RZ09-0509 / 1.06 | `790801ff8ccc09606dbd56315968747d1a00919d7dd51a5595c60c8d982d29e4` | `33ad14c9b8a52bde77295a659a2a86c34709c2326e72a75a1e7af9c0e237dcb8` |
 | RZ09-0529 / 4.01 | `3d6ccdc674b135419843832929ef8844b9ec8035ba8d1aef6e7a8e0075f43072` | `c45b52341d996eeba9b1ee6554c598f872e799eca39dfdcbab180a8deba46820` |
 
-All five signed BIOS revisions enable fixed `2E/2F` forwarding from
-`OemBoardPei` in the boot-block firmware volume `FV_BB`. This module
+All five signed BIOS revisions program the fixed `2E/2F` PCI decode bit
+from `OemBoardPei` in the boot-block firmware volume `FV_BB`. This module
 uses a TE image under GUID `E90CF8BD-D50C-40D5-9D5F-1F8D340B86C8`.
 Its entry jumps directly to the initialization code, which passes
 `2E` to the fixed-decode helper. The helper selects mask `1000`
@@ -534,7 +543,8 @@ for bit 12 of the 16-bit PCI word at `00:1f.0` offset `82`.
 DI780 and KI890 also OR the mask into DMI private register `2774`.
 KI8100 writes the same updated PCI word to both registers. KI8110
 uses an MMIO PCI helper that writes the aggregate enable word when
-it changes.
+it changes. The KI8110 trace has yet to establish a matching DMI write,
+so the PCI store alone does not establish forwarding on RZ09-0529.
 [Intel PCH fixed decode and sideband target table](https://cdrdv2-public.intel.com/743835/743835-004.pdf)
 · [Intel Alder Lake EDK2 register definitions](https://www.mail-archive.com/devel%40edk2.groups.io/msg63786.html)
 
@@ -651,7 +661,9 @@ publisher shows no corresponding lock around its mailbox sequence.
 
 The separate `RECR` path submits `80` through ACPI EC offsets
 `F8/F9/FA`. All four pinned EC images handle it at `9484`, read
-`80700 + byteIndex`, and clear the command. This RAM window cannot
+`80700 + byteIndex` inline, and clear the command. The legacy
+opcode `12` reaches the same address window through its separate
+helper at `9468`. This RAM window cannot
 reach either `F01808` or the feedback copy at `80536`. The KI890 BIOS
 field called `PWMV` is used by a keyboard LED brightness method and
 supplies no fan-duty readback.
@@ -815,8 +827,9 @@ and [OL510 repair report](https://vlab.su/viewtopic.php?f=35&p=1129927&t=151751)
 
 RZ09-0300 has a separate original 8 MiB ITE8390 flash listing for the
 DA530 board in `03009E76-R3U1`. It is access-restricted and the donor did
-not POST. On RZ09-0301, the original CH530 FCS V3.0 paired reads identify
-the two physical flash packages. A second listing offers an 8 MiB image,
+not POST. On RZ09-0301, the original paired reads from the CH530 FCS V3.0
+thread identify two physical flash packages. A separate listing titled
+FSC V3.0 offers an 8 MiB image,
 but access and donor provenance are missing, and the 8 MiB package still
 needs to be tied to the receiver. CH530 is the first acquisition target
 because its exact keyboard transport already carries zero to the receiver.
@@ -880,12 +893,13 @@ That requires separate bench review and board wiring evidence.
 [ITE tool source](https://www.ite.com.tw/upload/2024_01_23/6_20240123162336wu55j1Rjm4.bz2)
 · [Chromium ITE tool entry point](https://chromium.googlesource.com/chromiumos/platform/ec/+/d1e7a27efbc80e282b3917d1bef7a9a944c00eeb/util/iteflash.cc#2492)
 
-DA550 MP V4.0 reports identify IT8390E. The superficially similar CH551
-original pair came from RZ09-0330. A separate OL510 PVT V1.0 board photo
+DA550 MP V4.0 reports identify IT8390E. The CH551 donor post identifies
+its original pair as RZ09-0330 within a thread titled RZ09-0328.
+A separate OL510 PVT V1.0 board photo
 records distinct BIOS and EC flash locations on the owner's unit.
 The DA550 and OL510 searches still need attributable receiver bytes.
 [DA550 board reports](https://vinafix.com/threads/razer-da550-mb.46075/page-2)
-· [CH551 donor report](https://vinafix.com/threads/rz09-0328-ch551-mb.41122/)
+· [CH551 donor report, post 8](https://vinafix.com/threads/rz09-0328-ch551-mb.41122/post-279527)
 · [OL510 owner photo and report](https://winraid.level1techs.com/t/looking-for-ec-firmware-for-a-razor-blade-15-2020-base-rz09-03519/107897)
 
 PI490 keyboard firmware 1.04.00 feeds HID current speed (`0D/88`)
