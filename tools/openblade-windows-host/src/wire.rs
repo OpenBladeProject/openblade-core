@@ -102,13 +102,11 @@ impl Status {
     pub fn with_durable(
         mut self,
         percent: u8,
-        update: Option<(
-            tokio::sync::mpsc::Receiver<()>,
-            impl FnOnce() -> io::Result<u8>,
-        )>,
+        update: Option<crate::runtime::DurableUpdate>,
+        shutdown: tokio::sync::oneshot::Receiver<()>,
     ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
         let (status, drive) =
-            crate::runtime::start_durable(self.active.current.clone(), percent, update)?;
+            crate::runtime::start_durable(self.active.current.clone(), percent, update, shutdown)?;
         self.replay = Some(status);
         Ok((self, drive))
     }

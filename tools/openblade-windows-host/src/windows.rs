@@ -16,8 +16,9 @@ use windows_sys::Win32::Foundation::{
     ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_NOT_CONNECTED,
 };
 
+use crate::runtime::DurableUpdate;
 use crate::wire::{self, Session, Status};
-use openblade_windows_host::configuration_writer::fixture;
+use openblade_windows_host::{configuration_writer::fixture, valid_dev_id};
 
 mod pipe;
 mod scm;
@@ -41,19 +42,25 @@ pub(super) fn entry() -> io::Result<()> {
         [mode] if mode == "--scm" => scm::dispatch(),
         [mode, id] if mode == "foreground-durable" || mode == "foreground-durable-interrupt" => {
             let id = foreground_id(id)?;
-            let fixture = fixture::Fixture::create()?;
+            let mut fixture = fixture::Fixture::create()?;
             let (root, identity) = fixture.restart_key()?;
             let mut output = io::stdout().lock();
             writeln!(output, "ROOT {root} {identity}")?;
             output.flush()?;
             drop(output);
+            fixture.hand_off_cleanup();
             let percent = fixture.seed()?;
+            let fixture = Arc::new(fixture);
             let interrupt = mode == "foreground-durable-interrupt";
-            foreground(id, Session::Active, true, |advance| {
-                let (status, drive) = Status::fixture()?.with_durable(
-                    percent,
-                    advance.map(|advance| (advance, || fixture.update(interrupt))),
-                )?;
+            foreground(id, Session::Active, true, |advance, shutdown| {
+                let update = advance.map(|advance| {
+                    let fixture = Arc::clone(&fixture);
+                    DurableUpdate {
+                        advance,
+                        commit: Box::new(move || fixture.update(interrupt)),
+                    }
+                });
+                let (status, drive) = Status::fixture()?.with_durable(percent, update, shutdown)?;
                 Ok((status, Some(drive)))
             })
         }
@@ -64,9 +71,8 @@ pub(super) fn entry() -> io::Result<()> {
                 .to_str()
                 .ok_or_else(|| io::Error::other("invalid root identity"))?;
             let percent = fixture::restart(root, identity)?;
-            foreground(id, Session::Active, false, |_| {
-                let (status, drive) = Status::fixture()?
-                    .with_durable(percent, None::<(_, fn() -> io::Result<u8>)>)?;
+            foreground(id, Session::Active, false, |_, shutdown| {
+                let (status, drive) = Status::fixture()?.with_durable(percent, None, shutdown)?;
                 Ok((status, Some(drive)))
             })
         }
@@ -81,9 +87,7 @@ pub(super) fn entry() -> io::Result<()> {
             } else {
                 Session::Background
             };
-            foreground(id, session, mode == "foreground-replay", |replay| {
-                replay_status(replay)
-            })
+            foreground(id, session, mode == "foreground-replay", replay_status)
         }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -93,7 +97,7 @@ pub(super) fn entry() -> io::Result<()> {
 }
 
 fn foreground_id(id: &std::ffi::OsStr) -> io::Result<&str> {
-    id.to_str().filter(|id| valid_id(id)).ok_or_else(|| {
+    id.to_str().filter(|id| valid_dev_id(id)).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             "expected a 32-digit lowercase hex ID",
@@ -105,7 +109,10 @@ fn foreground<F: Future<Output = io::Result<()>>>(
     id: &str,
     session: Session,
     accept_steps: bool,
-    prepare: impl FnOnce(Option<mpsc::Receiver<()>>) -> io::Result<(Status, Option<F>)>,
+    prepare: impl FnOnce(
+        Option<mpsc::Receiver<()>>,
+        oneshot::Receiver<()>,
+    ) -> io::Result<(Status, Option<F>)>,
 ) -> io::Result<()> {
     let (mut advance, replay) = if accept_steps {
         let (sender, receiver) = mpsc::channel(1);
@@ -119,7 +126,7 @@ fn foreground<F: Future<Output = io::Result<()>>>(
     runtime.block_on(run_prepared(
         id,
         session,
-        || prepare(replay),
+        |shutdown| prepare(replay, shutdown),
         |phase| {
             if phase == Phase::Running {
                 // This thread owns stdin. EOF stops replay; one byte stops fixed modes.
@@ -157,13 +164,6 @@ fn foreground<F: Future<Output = io::Result<()>>>(
     ))
 }
 
-fn valid_id(id: &str) -> bool {
-    id.len() == 32
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
 async fn run(
     id: &str,
     session: Session,
@@ -171,15 +171,29 @@ async fn run(
     report: impl FnMut(Phase) -> io::Result<()>,
     stop: impl Future<Output = ()>,
 ) -> io::Result<()> {
-    run_prepared(id, session, || replay_status(replay), report, stop).await
+    run_prepared(
+        id,
+        session,
+        |shutdown| replay_status(replay, shutdown),
+        report,
+        stop,
+    )
+    .await
 }
 
 fn replay_status(
     replay: Option<mpsc::Receiver<()>>,
+    shutdown: oneshot::Receiver<()>,
 ) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
     let status = Status::fixture()?;
     Ok(if let Some(replay) = replay {
         let (status, drive) = status.with_replay(replay);
+        let drive = async move {
+            tokio::select! {
+                _ = shutdown => Ok(()),
+                result = drive => result,
+            }
+        };
         (status, Some(drive))
     } else {
         (status, None)
@@ -189,36 +203,49 @@ fn replay_status(
 async fn run_prepared<F: Future<Output = io::Result<()>>>(
     id: &str,
     session: Session,
-    prepare: impl FnOnce() -> io::Result<(Status, Option<F>)>,
+    prepare: impl FnOnce(oneshot::Receiver<()>) -> io::Result<(Status, Option<F>)>,
     mut report: impl FnMut(Phase) -> io::Result<()>,
     stop: impl Future<Output = ()>,
 ) -> io::Result<()> {
     let result = async {
         report(Phase::Starting)?;
-        let (status, drive) = prepare()?;
+        let (shutdown, retiring) = oneshot::channel();
+        let (status, drive) = prepare(retiring)?;
         let endpoint = pipe::Endpoint::new(format!("{PREFIX}{id}"))?;
         let claim = endpoint.claim()?;
         let listener = endpoint.listen()?;
         report(Phase::Running)?;
 
         let mut clients = JoinSet::new();
-        let serve = accept(
-            listener,
-            &endpoint,
-            session,
-            Arc::new(status),
-            &mut clients,
-            stop,
-        );
-        let result = tokio::select! {
-            biased;
-            result = serve => result,
-            result = async {
-                if let Some(drive) = drive {
-                    drive.await?;
+        let result = {
+            let serve = accept(
+                listener,
+                &endpoint,
+                session,
+                Arc::new(status),
+                &mut clients,
+                stop,
+            );
+            let drive = async {
+                match drive {
+                    Some(drive) => drive.await,
+                    None => Ok(()),
                 }
-                std::future::pending().await
-            } => result,
+            };
+            tokio::pin!(serve, drive);
+            tokio::select! {
+                biased;
+                result = &mut serve => {
+                    let _ = shutdown.send(());
+                    result.and(drive.await)
+                }
+                result = &mut drive => {
+                    match result {
+                        Ok(()) => serve.await,
+                        Err(error) => Err(error),
+                    }
+                }
+            }
         };
         let stopping = report(Phase::Stopping);
         clients.abort_all();
@@ -344,7 +371,7 @@ mod tests {
 
     #[test]
     fn foreground_names_are_confined_to_the_development_namespace() {
-        assert!(valid_id("00000000000000000000000000000000"));
+        assert!(valid_dev_id("00000000000000000000000000000000"));
         for invalid in [
             "scm",
             "OpenBlade.Service.v2",
@@ -352,7 +379,7 @@ mod tests {
             "0000000000000000000000000000000A",
             "0000000000000000000000000000000\\",
         ] {
-            assert!(!valid_id(invalid));
+            assert!(!valid_dev_id(invalid));
         }
     }
 

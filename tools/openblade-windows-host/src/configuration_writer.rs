@@ -81,7 +81,8 @@ impl TestStore {
     fn new() -> io::Result<Self> {
         let (temp, pins) = Self::pin_temp(&std::env::temp_dir())?;
         let root = temp.join(format!("openblade-config-writer-{}", transaction_id()?));
-        Self::create(root, pins, true)
+        fs::create_dir(&root)?;
+        Self::initialize(root, pins, None)
     }
 
     fn pin_temp(temp: &Path) -> io::Result<(PathBuf, Vec<File>)> {
@@ -104,21 +105,16 @@ impl TestStore {
         Ok((temp.components().collect(), pins))
     }
 
-    fn create(root: PathBuf, mut pins: Vec<File>, cleanup_on_drop: bool) -> io::Result<Self> {
-        fs::create_dir(&root)?;
-        // Keep the new leaf non-reparse while it is empty. MoveFileExW needs
-        // directory write sharing later, so keep the lock file open to prevent
-        // the fixture directory from becoming empty during the session.
-        let creation_pin = if cleanup_on_drop {
-            None
-        } else {
-            Some(pin_directory_with_share(&root, FILE_SHARE_READ)?)
-        };
+    fn initialize(
+        root: PathBuf,
+        mut pins: Vec<File>,
+        creation_pin: Option<File>,
+    ) -> io::Result<Self> {
         pins.push(pin_directory(&root)?);
         let mut store = Self {
             root,
             pins,
-            cleanup_on_drop,
+            cleanup_on_drop: true,
             held_lock: None,
         };
         let lock = OpenOptions::new()
@@ -127,7 +123,8 @@ impl TestStore {
             .share_mode(0)
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
             .open(store.path(LOCK))?;
-        if !cleanup_on_drop {
+        // Keep the live fixture nonempty once MoveFileExW needs directory write sharing.
+        if creation_pin.is_some() {
             store.held_lock = Some(lock);
         }
         drop(creation_pin);
@@ -333,6 +330,7 @@ impl Drop for TestStore {
         if !self.cleanup_on_drop {
             return;
         }
+        drop(self.held_lock.take());
         let cleanup = (|| {
             // Tear down fixture entries while the root is still pinned.
             // Directory sentinels are empty and are removed without recursion.

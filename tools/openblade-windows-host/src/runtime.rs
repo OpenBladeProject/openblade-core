@@ -20,6 +20,8 @@ const POWER_PROFILE_PROVENANCE: i32 = 1;
 enum Observation {
     Recovery(Option<FunctionKeyMode>),
     Battery,
+    #[cfg(windows)]
+    CommittedLimit(u8),
 }
 
 type TimedObservation = (u64, Option<Observation>);
@@ -43,6 +45,8 @@ const SCRIPT: [&[TimedObservation]; 3] = [
 enum Effect {
     Ignored,
     ProfileSelected,
+    #[cfg(windows)]
+    ConfigurationCommitted,
     ReadUnavailable(LaptopGetter),
     JournalSettled(LaptopGetter, EntryChange),
 }
@@ -136,6 +140,11 @@ impl Replay {
         let effect = match observation {
             Observation::Recovery(readback) => self.recover(readback)?,
             Observation::Battery => self.select_battery_profile()?,
+            #[cfg(windows)]
+            Observation::CommittedLimit(percent) => {
+                self.project_charge_limit(percent);
+                Effect::ConfigurationCommitted
+            }
         };
         if effect != Effect::Ignored {
             self.current["revision"] = revision.into();
@@ -272,10 +281,17 @@ pub fn start(
 }
 
 #[cfg(windows)]
+pub struct DurableUpdate {
+    pub advance: mpsc::Receiver<()>,
+    pub commit: Box<dyn FnOnce() -> io::Result<u8> + Send>,
+}
+
+#[cfg(windows)]
 pub fn start_durable(
     baseline: Value,
     percent: u8,
-    update: Option<(mpsc::Receiver<()>, impl FnOnce() -> io::Result<u8>)>,
+    update: Option<DurableUpdate>,
+    mut shutdown: tokio::sync::oneshot::Receiver<()>,
 ) -> io::Result<(
     watch::Receiver<Arc<Value>>,
     impl Future<Output = io::Result<()>>,
@@ -285,18 +301,38 @@ pub fn start_durable(
     replay.project_charge_limit(percent);
     let (publish, status) = watch::channel(Arc::new(replay.current.clone()));
     let drive = async move {
-        if let Some((mut advance, commit)) = update
-            && advance.recv().await.is_some()
+        if let Some(DurableUpdate {
+            mut advance,
+            commit,
+        }) = update
         {
-            let revision = replay.next_revision()?;
-            // The storage callback returns the independently read committed value.
-            // Any failed or unresolved transaction exits without publishing it.
-            replay.project_charge_limit(commit()?);
-            replay.current["revision"] = revision.into();
-            publish.send_replace(Arc::new(replay.current.clone()));
-            while advance.recv().await.is_some() {}
+            let step = tokio::select! {
+                biased;
+                _ = &mut shutdown => return Ok(()),
+                step = advance.recv() => step,
+            };
+            if step.is_some() {
+                replay.next_revision()?;
+                // Once accepted, join the one commit even if the endpoint
+                // stops. Keep synchronous flushes off the pipe executor.
+                let percent = tokio::task::spawn_blocking(commit)
+                    .await
+                    .map_err(io::Error::other)??;
+                replay.step(2, Some(Observation::CommittedLimit(percent)))?;
+                publish.send_replace(Arc::new(replay.current.clone()));
+            }
+            // Retain the one-slot receiver until shutdown. Any further
+            // steps have no effect, and closing stdin still reaches EOF.
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = &mut shutdown => return Ok(()),
+                    step = advance.recv() => if step.is_none() { break; },
+                }
+            }
         }
-        std::future::pending().await
+        let _ = shutdown.await;
+        Ok(())
     };
     Ok((status, drive))
 }

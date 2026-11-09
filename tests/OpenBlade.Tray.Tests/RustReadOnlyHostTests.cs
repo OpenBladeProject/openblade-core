@@ -263,10 +263,14 @@ public sealed class RustReadOnlyHostTests
         byte[][] prior = ReadManagedDocuments(managed.RootElement, "prior");
         byte[][] committed = ReadManagedDocuments(managed.RootElement, "committed");
         string mode = interrupt ? "foreground-durable-interrupt" : "foreground-durable";
+        string temp = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Temp");
+        // An unrelated write-access directory handle must remain compatible
+        // with creation and replacements in the host's own child directory.
+        using SafeFileHandle tempUser = OpenFixtureDirectory(temp, 0x4); // FILE_ADD_SUBDIRECTORY
+        Assert.False(tempUser.IsInvalid, $"Could not open test Temp handle. Win32 {Marshal.GetLastWin32Error()}");
         await using var host = DevHost.Start(endpoint, mode);
         (string rootId, string identity) = await host.ReadFixtureRootAsync(token);
-        string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Temp", $"openblade-durable-host-{rootId}");
+        string root = Path.Combine(temp, $"openblade-durable-host-{rootId}");
         // Keep the creator's directory pinned across both process lifetimes.
         using SafeFileHandle pin = OpenFixtureDirectory(root);
         Assert.False(pin.IsInvalid, $"Could not pin fixture directory. Win32 {Marshal.GetLastWin32Error()}");
@@ -291,6 +295,11 @@ public sealed class RustReadOnlyHostTests
                 AssertDurableStatus(await ReadStatusAsync(watch, subscriptionOpened: false), 3, 75);
                 AssertPrimaryBytes(root, committed);
                 Assert.Equal(4, Directory.GetFileSystemEntries(root).Length);
+                await using (var concurrent = DevHost.Start(Guid.NewGuid().ToString("N"),
+                    "foreground-durable-restart", rootId, identity))
+                {
+                    Assert.Contains("(os error 32)", await concurrent.AssertRejectedAsync(token));
+                }
                 await host.StopAsync(token);
                 Assert.ThrowsAny<IOException>(() => Directory.Move(root, root + "-renamed"));
                 Assert.True(await watch.MoveNextAsync());
@@ -440,9 +449,9 @@ public sealed class RustReadOnlyHostTests
         Assert.True(status.WritesBlocked);
     }
 
-    private static SafeFileHandle OpenFixtureDirectory(string root) =>
-        CreateFile(root, 0x80000000, FileShare.ReadWrite, IntPtr.Zero, FileMode.Open,
-            0x02200000, IntPtr.Zero); // Generic read, backup semantics, open reparse point.
+    private static SafeFileHandle OpenFixtureDirectory(string root, uint access = 0x80000000) =>
+        CreateFile(root, access, FileShare.ReadWrite, IntPtr.Zero, FileMode.Open,
+            0x02200000, IntPtr.Zero); // Backup semantics and open reparse point.
 
     [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeFileHandle CreateFile(
