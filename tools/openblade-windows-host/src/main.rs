@@ -1,3 +1,5 @@
+#[cfg(any(windows, test))]
+mod runtime;
 #[cfg(windows)]
 mod windows;
 #[cfg(any(windows, test))]

@@ -60,6 +60,7 @@ fn service() {
             let _ = runtime.block_on(run(
                 SCM_ID,
                 Session::Active,
+                None,
                 |phase| report(handle, phase),
                 async {
                     let _ = receiver.await;
