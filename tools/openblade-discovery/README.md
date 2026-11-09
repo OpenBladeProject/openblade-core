@@ -1,16 +1,17 @@
 # Linux and macOS discovery pilot
 
 `openblade-discovery` is a developer tool for one metadata snapshot. It is a
-separate Cargo workspace and is excluded from Windows product packaging.
-The [Windows status CLI](../../crates/openblade-status-cli/README.md) remains
+separate Cargo workspace outside the Windows native source manifest. Windows
+product packaging excludes the binary.
+The [Windows status CLI](../../rust/crates/openblade-status-cli/README.md) remains
 a separate named-pipe client.
 
 From the repository root, using the pinned Rust toolchain under `rust/`:
 
 ```sh
 cd rust
-cargo test --locked --manifest-path tools/openblade-discovery/Cargo.toml
-cargo run --locked --manifest-path tools/openblade-discovery/Cargo.toml
+cargo test --locked --manifest-path ../tools/openblade-discovery/Cargo.toml
+cargo run --locked --manifest-path ../tools/openblade-discovery/Cargo.toml
 ```
 
 Run natively on Linux x64 (`x86_64-unknown-linux-gnu`), Intel macOS
@@ -19,7 +20,7 @@ On macOS use the installed Xcode Command Line Tools or Xcode to link the
 system frameworks. For an explicit Intel build and run on an Intel host:
 
 ```sh
-cargo run --locked --manifest-path tools/openblade-discovery/Cargo.toml --target x86_64-apple-darwin
+cargo run --locked --manifest-path ../tools/openblade-discovery/Cargo.toml --target x86_64-apple-darwin
 ```
 
 The CLI takes no arguments. It prints one JSON line on success (including
@@ -83,7 +84,7 @@ snapshot authorizes hardware access or establishes product support.
 
 On an already-working Blade running Linux or Intel macOS, run the command
 above once as a normal user. Compare the candidate PID against the
-[Windows catalog](../../../src/OpenBlade.Contracts/RazerBladeModelCatalog.cs)
+[Windows catalog](../../src/OpenBlade.Contracts/RazerBladeModelCatalog.cs)
 for the independently known model. For example, an RZ09-0328 (historical
 candidate, not a tested host) that publishes one matching USB HID entry and
 reports a valid macOS model string would produce:

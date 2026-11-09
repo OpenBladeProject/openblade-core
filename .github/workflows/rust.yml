@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'rust/**'
+      - 'tools/openblade-discovery/**'
       - 'src/OpenBlade.Core.Native/**'
       - 'src/OpenBlade.Contracts/**'
       - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
@@ -35,6 +36,7 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'rust/**'
+      - 'tools/openblade-discovery/**'
       - 'src/OpenBlade.Core.Native/**'
       - 'src/OpenBlade.Contracts/**'
       - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
@@ -153,7 +155,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          $manifest = 'tools/openblade-discovery/Cargo.toml'
+          $manifest = '../tools/openblade-discovery/Cargo.toml'
           cargo fmt --all --check --manifest-path $manifest
           cargo test --locked --manifest-path $manifest --target ${{ matrix.target }}
           cargo clippy --locked --manifest-path $manifest --target ${{ matrix.target }} --all-targets -- -D warnings
@@ -161,10 +163,10 @@ jobs:
       - name: Smoke the discovery CLI
         run: |
           $ErrorActionPreference = 'Stop'
-          $manifest = 'tools/openblade-discovery/Cargo.toml'
+          $manifest = '../tools/openblade-discovery/Cargo.toml'
           cargo build --locked --manifest-path $manifest --target ${{ matrix.target }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $binary = './tools/openblade-discovery/target/${{ matrix.target }}/debug/openblade-discovery'
+          $binary = '../tools/openblade-discovery/target/${{ matrix.target }}/debug/openblade-discovery'
           if ($IsWindows) {
             $diagnostic = Join-Path $env:RUNNER_TEMP 'openblade-discovery-unsupported.txt'
             $output = & "$binary.exe" 2> $diagnostic

@@ -71,3 +71,6 @@ dotnet_diagnostic.IDE0161.severity = none
 
 [rust/**]
 end_of_line = lf
+
+[tools/openblade-discovery/**]
+end_of_line = lf
