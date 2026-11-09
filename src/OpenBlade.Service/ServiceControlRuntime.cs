@@ -7993,7 +7993,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             // different base, restore the saved preset and levels before targets.
             if (preservedState is { Fans: FanMode.Automatic, HyperBoostActive: false }
                 && (preservedState.Performance != intent.Performance
-                    || preservedState.CustomPerformance != intent.CustomPerformance))
+                    || preservedState.CustomPerformance != intent.CustomPerformance)
+                && await transitionRunner.CurrentDevice.ReadCapabilitiesAsync(cancellationToken)
+                    .ConfigureAwait(false) is
+                { SupportsDirectManualFanTransitions: true, ReportsPerformanceWithManualFans: false })
             {
                 ScopedApplyOutcome preset = await ApplyStepAsync(
                         DeviceSubsystem.Performance,

@@ -1156,6 +1156,36 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Theory]
+    [InlineData(0x01)]
+    [InlineData(0x02)]
+    public async Task DirectAutomaticFanSetter_HandsBackCustomWithUnwritableLevels(byte gpuLevel)
+    {
+        var session = new ScriptedSession(
+            Success([1, 1, 4, 1]), Success([1, 2, 4, 1]),
+            Success([1, 1, 2]), Success([1, 2, gpuLevel]),
+            Success([0x11, 0x11]), Success([1, 1, 0, 0]),
+            Success([0x11, 0x11]), Success([1, 2, 0, 0]));
+        await using var port = CreatePort(
+            session,
+            Catalog([.. MaximumCapabilityFixtures(), .. CustomPerformanceFixtures()]),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            customPerformanceCapabilities: new CustomPerformanceCapabilities(
+                new HashSet<CustomPerformanceCombination>
+                {
+                    new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+                }),
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetFanModeAsync(FanMode.Automatic, default);
+
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x07);
+        Assert.Equal(["01010000", "01020000"],
+            session.Commands.Where(command => command.CommandId == 0x02)
+                .Select(command => Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Theory]
     [InlineData(0x03)]
     [InlineData(0x06)]
     public async Task DirectAutomaticFanSetter_BatteryManualPreservesSelector(

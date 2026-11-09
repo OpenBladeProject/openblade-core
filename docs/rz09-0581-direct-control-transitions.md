@@ -24,7 +24,8 @@ projection omits these fields; Session Agent IPC remains unchanged.
   pair directly. A fan-only handback on full adapter power uses the confirmed
   Silent, Performance, or Custom selector with flag `00`. Custom reapplies
   and confirms its CPU/GPU levels. Generic `00/01` readback has no confirmed
-  preset and uses the existing Balanced handback when no profile is requested.
+  preset. When no profile is requested, the existing Balanced handback releases
+  generic manual state or a Custom manual state with unadmitted levels.
 - HyperBoost enters directly from admitted automatic or manual state on either
   supported cooling-pad path. Each command rechecks the selected path's pad
   presence and adapter eligibility; the operation cannot switch paths mid-entry.
@@ -33,6 +34,9 @@ projection omits these fields; Session Agent IPC remains unchanged.
   the saved mode is restoration intent, not guessed firmware confirmation.
   A request to leave mode 7 for an admitted AC preset uses that preset's
   pair and final readback directly, including the Custom levels if requested.
+  Higher-power destinations recheck adapter power before each write. When
+  a saved manual-fan profile has a different preset or Custom levels than the
+  confirmed exit state, restore those settings before applying fan targets.
 - Battery Protection Off uses its admitted command from the current supported
   limit, independently of the unused stored limit. Re-enabling requires and
   applies an admitted stored limit; temporary full-charge cancellation

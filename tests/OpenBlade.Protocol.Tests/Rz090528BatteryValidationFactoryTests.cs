@@ -339,9 +339,13 @@ public sealed class Rz090528BatteryValidationFactoryTests
         byte[] second = [1, 2, mode, 0];
         byte[] cpu = [1, 1, 1];
         byte[] gpu = [1, 2, 0];
+        byte[] fullPower = [0x11, 0x11];
         var session = custom
-            ? new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], first, second, cpu, gpu, first, second, cpu, gpu)
-            : new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], first, second, first, second);
+            ? new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0],
+                fullPower, first, fullPower, second, fullPower, cpu, fullPower, gpu,
+                first, second, cpu, gpu)
+            : new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0],
+                fullPower, first, fullPower, second, first, second);
         await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
 
         if (custom)
@@ -357,7 +361,26 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.Equal(custom
             ? new[] { "01010400", "01020400", "010101", "010200" }
             : new[] { "01010200", "01020200" }, Writes(session));
-        Assert.Equal(custom ? 10 : 6, session.Commands.Count);
+        Assert.Equal(custom ? 14 : 8, session.Commands.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectHyperBoostExit_StopsOnLimitedAdapterPower(bool afterFirstWrite)
+    {
+        byte[] limited = [0x07, 0x11];
+        var session = afterFirstWrite
+            ? new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], [0x11, 0x11], [1, 1, 2, 0], limited)
+            : new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], limited);
+        await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Performance, default));
+
+        Assert.Equal(afterFirstWrite ? WriteSubmissionState.Indeterminate : WriteSubmissionState.KnownNotApplied,
+            error.SubmissionState);
+        Assert.Equal(afterFirstWrite ? new[] { "01010200" } : [], Writes(session));
     }
 
     [Theory]

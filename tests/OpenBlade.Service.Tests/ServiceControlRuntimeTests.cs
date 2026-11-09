@@ -30285,6 +30285,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         {
             Performance = PerformancePreset.Silent,
         };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, default);
         Assert.Equal(ControlOperationStatus.Applied, enabled.Status);
         Assert.Equal(PerformancePreset.Silent, journal.Journal!.BaseMode);
