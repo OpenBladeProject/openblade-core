@@ -100,7 +100,7 @@ public sealed partial class ServiceControlRuntime
                 // The native owner's policy is immutable. Finish its verified
                 // typed handback before saving a different thermal policy.
                 ControlOperationResult release = await fanStopController.SetModeAsync(FanStopMode.Automatic,
-                    GetStatus().Capabilities?.HasFanStopTrialEvidence == true, ResolveCurrentFanIntent(),
+                    GetStatus().Capabilities?.HasFanStopEvidence == true, ResolveCurrentFanIntent(),
                     FanStopCommandAdmitted, cancellationToken, FanStopEntryAdmitted,
                     stillControlsSession, FanStopOwnedContinuationAdmitted).ConfigureAwait(false);
                 if (release.Status is ControlOperationStatus.Blocked or ControlOperationStatus.Failed) { return release; }

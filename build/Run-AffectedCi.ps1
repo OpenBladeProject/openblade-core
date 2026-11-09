@@ -112,6 +112,14 @@ switch ($Lane) {
         }
 
         foreach ($project in $testProjects) {
+            # This suite requires the real Rust library and two C loader fixtures.
+            if ($project -eq 'tests/OpenBlade.Core.Native.Tests/OpenBlade.Core.Native.Tests.csproj') {
+                & pwsh -NoProfile -File (Join-Path $repository 'rust/Test-NativeInterop.ps1')
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Native interop tests failed with exit code $LASTEXITCODE."
+                }
+                continue
+            }
             Invoke-DotNetChecked -Operation "test $project" -Arguments @(
                 'test', $project, '--configuration', $Configuration,
                 '-p:NuGetAudit=false', '--no-build', '--no-restore',

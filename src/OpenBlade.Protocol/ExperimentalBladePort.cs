@@ -157,6 +157,8 @@ internal sealed partial class ExperimentalBladePort(
             // fixed targets without enabling broader direct manual transitions.
             SupportsDirectManualFanTransitions = enabled && model.ProductId is not (0x02A0 or 0x0245)
                 && GetExperimentalFanRange(model) is not null,
+            HasFanStopSourceEvidence = enabled
+                && FanStopModelContract.ForProfile(model.ModelNumber, model.ProductId, model.ProductName).Count != 0,
             // 029F/029D use separate mode/fan bytes in 0D82 and independent
             // Custom getters, unlike validated backends' shared manual selector.
             // See sqmagellan 9c66e705/librazer/src/command.rs and descriptor.rs.

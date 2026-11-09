@@ -696,6 +696,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     ? port.Capabilities with
                     {
                         HasFanStopTrialEvidence = batteryFactory.Capabilities.HasFanStopTrialEvidence,
+                        HasFanStopSourceEvidence = batteryFactory.Capabilities.HasFanStopSourceEvidence,
                     }
                     : DeviceCapabilities.Unavailable();
             }

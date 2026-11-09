@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text;
@@ -16,9 +17,19 @@ public sealed class NamedPipeControlServerTests
     [Fact]
     public async Task ServeOnceAsync_RoundTripsTypedRequestOverAclProtectedPipe()
     {
-        TestServer context = CreateServer();
+        var reported = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => reported.TrySetResult(value));
+        TestServer context = CreateServer(timing: timing);
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
-        Task serverTask = context.Server.ServeOnceAsync(timeout.Token);
+        var initialized = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task serverTask = Worker.RunAfterSuccessfulStartupAsync(
+            token => initialized.Task.WaitAsync(token),
+            context.Server.ServeOnceAsync,
+            timeout.Token,
+            timing);
+        Assert.Equal(0, timing.FirstListenerReadyQpc);
+        initialized.SetResult(true);
         await using NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
         var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
 
@@ -30,6 +41,47 @@ public sealed class NamedPipeControlServerTests
         Assert.True(response.Success);
         Assert.Equal(request.RequestId, response.RequestId);
         Assert.NotNull(response.Status);
+
+        string report = await reported.Task.WaitAsync(timeout.Token);
+        Assert.Contains($"ProcessId={Environment.ProcessId} QpcFrequency={Stopwatch.Frequency}", report);
+        Assert.Contains("WorkerInitializationOutcome=completed", report);
+        Assert.Contains("FirstRequestReadOutcome=completed Terminal=first-request-read", report);
+        Assert.DoesNotContain(request.RequestId.ToString(), report);
+        long[] stages =
+        [
+            timing.WorkerInitializationStartQpc,
+            timing.WorkerInitializationEndQpc,
+            timing.FirstListenerReadyQpc,
+            timing.FirstPipeAcceptedQpc,
+            timing.FirstRequestReadStartQpc,
+            timing.FirstRequestReadEndQpc,
+        ];
+        Assert.All(stages, stage => Assert.True(stage > 0));
+        Assert.Equal(stages.Order().ToArray(), stages);
+    }
+
+    [Fact]
+    public async Task ServeOnceAsync_ReportsFirstListenerCreationFailureBeforeShutdown()
+    {
+        var reported = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => reported.TrySetResult(value));
+        TestServer context = CreateServer(timing: timing);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using var existing = new NamedPipeServerStream(
+            context.PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+
+        await Assert.ThrowsAsync<PipeListenerEstablishmentException>(
+            () => context.Server.ServeOnceAsync(timeout.Token));
+
+        string report = await reported.Task.WaitAsync(timeout.Token);
+        long failureQpc = timing.FirstListenerFailureQpc;
+        Assert.True(failureQpc > 0);
+        Assert.Contains($"FirstListenerFailureQpc={failureQpc} Terminal=first-listener-failed", report);
+        Assert.Equal(0, timing.FirstListenerReadyQpc);
+        await Assert.ThrowsAsync<PipeListenerEstablishmentException>(
+            () => context.Server.ServeOnceAsync(timeout.Token));
+        Assert.Equal(failureQpc, timing.FirstListenerFailureQpc);
     }
 
     [Fact]
@@ -829,7 +881,9 @@ public sealed class NamedPipeControlServerTests
     public async Task ServeOnceAsync_StalledInitialClientDoesNotPreventNextConnection()
     {
         var time = new ManualTimeProvider();
-        TestServer context = CreateServer(time);
+        var reported = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => reported.TrySetResult(value));
+        TestServer context = CreateServer(time, timing);
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
 
         Task stalledServer = context.Server.ServeOnceAsync(timeout.Token);
@@ -841,6 +895,9 @@ public sealed class NamedPipeControlServerTests
         time.Advance(TimeSpan.FromSeconds(2));
 
         await stalledServer.WaitAsync(timeout.Token);
+        string report = await reported.Task.WaitAsync(timeout.Token);
+        Assert.Contains("FirstRequestReadOutcome=timeout Terminal=first-request-read", report);
+        long firstReadEnd = timing.FirstRequestReadEndQpc;
         Task nextServer = context.Server.ServeOnceAsync(timeout.Token);
         await using NamedPipeClientStream nextClient = await ConnectAsync(
             context.PipeName,
@@ -854,6 +911,7 @@ public sealed class NamedPipeControlServerTests
         await nextServer.WaitAsync(timeout.Token);
 
         Assert.True(response.Success);
+        Assert.Equal(firstReadEnd, timing.FirstRequestReadEndQpc);
     }
 
     [Fact]
@@ -917,7 +975,9 @@ public sealed class NamedPipeControlServerTests
         return data;
     }
 
-    private static TestServer CreateServer(TimeProvider? timeProvider = null)
+    private static TestServer CreateServer(
+        TimeProvider? timeProvider = null,
+        ServiceStartupTiming? timing = null)
     {
         string pipeName = $"OpenBlade.Tests.{Guid.NewGuid():N}";
         var runtime = new StubRuntime(CreateStatus(0));
@@ -929,7 +989,10 @@ public sealed class NamedPipeControlServerTests
                 ?? throw new InvalidOperationException("Current user has no SID."),
             new ControlRequestHandler(runtime, new StubArchiveProvider()),
             hub,
-            time);
+            time)
+        {
+            StartupTiming = timing,
+        };
         return new TestServer(pipeName, server, hub, runtime);
     }
 

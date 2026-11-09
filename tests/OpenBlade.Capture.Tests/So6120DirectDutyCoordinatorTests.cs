@@ -5,6 +5,97 @@ namespace OpenBlade.Capture.Tests;
 
 public sealed class So6120DirectDutyCoordinatorTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ThreeChannelEntryRequiresActualThirdDutyAndRestoresExactStaging(bool thirdResponds)
+    {
+        var fake = new Fake();
+        fake.Controls = fake.Controls with { Staged3 = 0xF0 };
+        fake.State = fake.State with { Actual3 = 70, Tach3 = 20 };
+        if (!thirdResponds)
+        {
+            fake.OnWrite = _ => fake.State = fake.State with { Actual3 = 70 };
+        }
+        So6120DutyControls original = fake.Controls;
+        var operation = fake.Operation(threeChannels: true);
+        var entry = new So6120DirectDutyCoordinator(operation).EnterThreeChannel(PerformancePreset.Silent, 0, 0, 0);
+        Assert.Equal(thirdResponds ? So6120DutyFailure.None : So6120DutyFailure.PwmNotObserved, entry.Failure);
+        Assert.Equal(new[] { So6120MailboxRegister.StagedDuty1, So6120MailboxRegister.StagedDuty2,
+            So6120MailboxRegister.StagedDuty3, So6120MailboxRegister.Override, So6120MailboxRegister.Selector },
+            fake.Writes.Select(x => x.Register));
+        Assert.Equal(new byte[] { 0, 0, 0, 0x51, 0xFE }, fake.Writes.Select(x => x.Value));
+        var checkpoint = Assert.IsType<So6120DutyCheckpoint>(entry.CleanupCheckpoint);
+        Assert.True(checkpoint.Owned.HasFlag(So6120DutyOwnedFields.Staged3));
+        var exit = new So6120DirectDutyAutoExit(operation).Restore(checkpoint);
+        Assert.True(exit.Success);
+        Assert.True(exit.CleanupConfirmed);
+        Assert.Equal(original, fake.Controls);
+        Assert.Equal(new[] { So6120MailboxRegister.Selector, So6120MailboxRegister.Override,
+            So6120MailboxRegister.StagedDuty1, So6120MailboxRegister.StagedDuty2, So6120MailboxRegister.StagedDuty3 },
+            fake.Writes.Skip(5).Select(x => x.Register));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void ThreeChannelObservationMissingAnyThirdFieldFencesBeforeFirstWrite(int missing)
+    {
+        var fake = new Fake();
+        fake.Controls = fake.Controls with { Staged3 = missing == 0 ? null : (byte)30 };
+        fake.State = fake.State with { Actual3 = missing == 1 ? null : (byte)70, Tach3 = missing == 2 ? null : (byte)20 };
+        var operation = fake.Operation(threeChannels: true);
+        var entry = new So6120DirectDutyCoordinator(operation).EnterThreeChannel(PerformancePreset.Silent, 0, 0, 0);
+        Assert.Equal(So6120DutyFailure.ObservationRejected, entry.Failure);
+        Assert.True(entry.CommandsFenced);
+        Assert.Empty(fake.Writes);
+    }
+
+    [Fact]
+    public void ThirdTachMustIndependentlyReachZeroAfterZeroPwm()
+    {
+        var controls = new So6120DutyControls(0xFE, 0, 0x40, 0, 0, 183, 0) { Staged3 = 0 };
+        var snapshot = new So6120DutySnapshot(controls, 0, 0, 0, 0, 0, 1) { Actual3 = 0, Tach3 = 10 };
+        Assert.True(snapshot.MatchesActualDuty(0, 0, 0));
+        Assert.False(snapshot.AllTachStopped(threeChannels: true));
+        Assert.False((snapshot with { Tach3 = null }).AllTachStopped(threeChannels: true));
+        Assert.True((snapshot with { Tach3 = 0 }).AllTachStopped(threeChannels: true));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(255)]
+    [InlineData(69)]
+    public void ThreeChannelReadbackRejectsInvalidCycleOrOutOfRangeActualDuty(int cycle)
+    {
+        var controls = new So6120DutyControls(0xFE, 0, 0x40, 0, 0, (byte)cycle, 0) { Staged3 = 0 };
+        var snapshot = new So6120DutySnapshot(controls, 0, 0, 0, 0, 0, 1) { Actual3 = 70, Tach3 = 20 };
+        Assert.False(snapshot.HasValidReadback(threeChannels: true));
+    }
+
+    [Fact]
+    public void MissingThirdReadbackAfterSubmissionFencesWithoutReplayOrHandback()
+    {
+        var fake = new Fake();
+        fake.Controls = fake.Controls with { Staged3 = 30 };
+        fake.State = fake.State with { Actual3 = 70, Tach3 = 20 };
+        fake.OnWrite = mutation =>
+        {
+            if (mutation.Register == So6120MailboxRegister.StagedDuty3)
+            {
+                fake.State = fake.State with { Actual3 = null };
+            }
+        };
+        var operation = fake.Operation(threeChannels: true);
+        var entry = new So6120DirectDutyCoordinator(operation).EnterThreeChannel(PerformancePreset.Silent, 0, 0, 0);
+        Assert.Equal(So6120DutyFailure.CommandUnresolved, entry.Failure);
+        Assert.True(entry.CommandsFenced);
+        Assert.Null(entry.CleanupCheckpoint);
+        Assert.Equal(3, fake.Writes.Count);
+        Assert.Equal(So6120MailboxRegister.StagedDuty3, fake.Writes[^1].Register);
+    }
+
     [Fact]
     public void EntryStagesBeforePermissionAndFeThenExitRestoresExactOwnedBytes()
     {
@@ -452,7 +543,7 @@ public sealed class So6120DirectDutyCoordinatorTests
         public Func<So6120DutyObservation, So6120DutyObservation>? TransformObservation;
         public Action<So6120DutyMutation>? OnWrite;
         private long sequence;
-        public So6120DirectDutyOperation Operation() => new(Owner, this);
+        public So6120DirectDutyOperation Operation(bool threeChannels = false) => new(Owner, this, threeChannels);
         public bool ClaimEntry(DirectDutyOwner owner, PerformancePreset capturedProfile) { Events.Add("claim-entry"); return true; }
         public bool ClaimExit(So6120DutyCheckpoint checkpoint) { Events.Add("claim-exit"); return true; }
         public So6120DutyReadResult ReadSnapshot(CancellationToken cancellationToken)
@@ -508,11 +599,15 @@ public sealed class So6120DirectDutyCoordinatorTests
             {
                 So6120MailboxRegister.StagedDuty1 => Controls with { Staged1 = mutation.Value },
                 So6120MailboxRegister.StagedDuty2 => Controls with { Staged2 = mutation.Value },
+                So6120MailboxRegister.StagedDuty3 => Controls with { Staged3 = mutation.Value },
                 So6120MailboxRegister.Override => Controls with { Override = mutation.Value },
                 So6120MailboxRegister.Selector => Controls with { Selector = mutation.Value },
                 _ => throw new InvalidOperationException("Unexpected coordinator field"),
             };
-            if (Controls.Selector == 0xFE && ApplyPwm) { State = State with { Actual1 = Controls.Staged1, Actual2 = Controls.Staged2 }; }
+            if (Controls.Selector == 0xFE && ApplyPwm)
+            {
+                State = State with { Actual1 = Controls.Staged1, Actual2 = Controls.Staged2, Actual3 = Controls.Staged3 };
+            }
             OnWrite?.Invoke(mutation);
             return new(So6120DutyIoDisposition.Confirmed, new(So6120MailboxFailure.None, mutation.Value, 2, 2, true, []));
         }

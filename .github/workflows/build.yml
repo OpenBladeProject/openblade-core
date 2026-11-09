@@ -201,6 +201,11 @@ jobs:
           "TEMP=$testTemp" >> $env:GITHUB_ENV
           "TMP=$testTemp" >> $env:GITHUB_ENV
 
+      - name: Run native interop tests
+        if: inputs.validation-mode == 'full'
+        shell: pwsh
+        run: ./rust/Test-NativeInterop.ps1
+
       - name: Test
         if: inputs.validation-mode == 'full'
         run: >-

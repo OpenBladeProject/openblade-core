@@ -444,7 +444,9 @@ public sealed partial class ServiceControlRuntimeTests
         public FanStopAdmission Admission = GuardianFanStopBackendTests.Client.SafeAdmission;
         public Exception? AdmissionFailure;
         public FanStopSubmission StartSubmission = FanStopSubmission.Submitted;
-        public FanStopUnavailableReason UnavailableReason => FanStopUnavailableReason.None;
+        public Func<FanStopFirmwareAvailabilityResult>? FirmwareAvailability;
+        public FanStopUnavailableReason UnavailableReason => FirmwareAvailability?.Invoke().Reason ?? FanStopUnavailableReason.None;
+        public string? UnavailableMessage => FirmwareAvailability?.Invoke().Message;
         public FanStopStartupDisposition StartupDisposition => FanStopStartupDisposition.Clear;
         public FanStopGuardianSnapshot Snapshot { get; private set; } = new(Guid.Empty, 0, FanStopGuardianPhase.Idle);
         public event Action? SnapshotChanged;

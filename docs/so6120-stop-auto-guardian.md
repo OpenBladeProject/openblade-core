@@ -1,10 +1,25 @@
 # SO6120 Stop/Auto guardian integration
 
 The service Stop/Auto request now delegates an activation to a separate native
-owner. It does not run Capture or change the installed driver. This is an
-experimental implementation on exact Blade 16 RZ09-0581 / `1532:02E0`, using
-the reviewed SO6120 EC 1.04 command contract. Other Blade models do not inherit
-its registers, driver, admission or physical results.
+owner. It does not run Capture or change the installed driver. This is a
+guarded implementation with exact model and firmware admission. The original
+Blade 16 RZ09-0581 / `1532:02E0` SO6120 EC 1.04 path has physical validation.
+Independent firmware reviews add RZ09-0528 EC 1.09, standard RZ09-0483 EC 2.01,
+RZ09-0483 Lamborghini EC 1.01, RZ09-0510 EC 1.02, RZ09-0530/0421 EC 1.03,
+RZ09-0427 EC 1.03/1.06, and RZ09-0330 EC 1.01. The two RZ09-0483
+variants additionally require their own mapped board identifier. Their
+physical validation remains separate; see the [model coverage](fan-stop-model-coverage.md).
+
+Before offering a new Stop, the service checks the exact host and the OS-reported
+EC version. Status checks reuse that result for up to five seconds; dispatch
+forces a fresh check. Temporary failures are retried. This preflight opens no
+HID or port handles and does not attest the running firmware image. The guardian
+still performs complete fresh admission, including the variant's board identifier.
+An active owner retains its Auto action if the preliminary check becomes unavailable.
+
+All paths require the reviewed InpOut driver to be installed and running.
+OpenBlade verifies that driver but does not install it. The bundled PawnIO
+dependency supplies CPU temperatures; it does not grant fan-control access.
 
 Entry remains scoped to Balanced on USB-C. The initial destination is zero
 PWM directly through the reviewed coordinator; the half-cycle step in the
@@ -105,7 +120,7 @@ observations rather than hiding them behind a shared cache. This is OS-reported
 state, not proof of D3cold or physically validated no-wake behavior. Ordinary
 fan-curve and Auto-policy sampling retain their existing behavior.
 
-Policy settings use configuration schema 25 and service IPC 77. Schema-24
+Policy settings use configuration schema 25 and service IPC 79. Schema-24
 settings retain their mode, temperature limits and duration; the duration now
 controls the averaging window. Each new immediate cutoff starts 10 C above its
 corresponding saved limit, capped at the existing 100 C input maximum. A saved

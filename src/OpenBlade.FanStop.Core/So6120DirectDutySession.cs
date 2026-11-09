@@ -86,6 +86,8 @@ internal sealed partial class So6120DirectDutySession : IDisposable
         if (options.TransactionTimeout <= TimeSpan.Zero || options.TransactionTimeout > TimeSpan.FromSeconds(5)
             || options.SnapshotTimeout < options.TransactionTimeout || options.SnapshotTimeout > TimeSpan.FromMinutes(1)
             || options.MaxPolls is < 1 or > 1000 || binding.ConsoleSession is 0 or uint.MaxValue
+            // This transport supplies independent readback for two fans only.
+            || binding.Identity.RequestedDuty3.HasValue
             || !MatchesStamp(binding.Challenge.Stamp, binding, clock) || !MatchesStamp(binding.Handoff.Stamp, binding, clock))
         { throw new ArgumentException("Invalid session bounds or binding."); }
         try
@@ -250,7 +252,8 @@ internal sealed partial class So6120DirectDutySession : IDisposable
             var result = value is byte written
                 ? new So6120HostMailboxTransaction(port, boundary, clock, transferTimeout, options.MaxPolls)
                     .WriteAndConfirm(register, written, cancellationToken)
-                : new So6120HostMailboxTransaction(port, boundary, clock, transferTimeout, options.MaxPolls)
+                : new So6120HostMailboxTransaction(port, boundary, clock, transferTimeout, options.MaxPolls,
+                    allowBoardIdentityReads: expectedBoardSsid.HasValue)
                     .Read(register, cancellationToken);
             commandsPossiblySubmitted += result.CommandsPossiblySubmitted;
             commandsCompleted += result.CommandsCompleted;
@@ -307,6 +310,34 @@ internal sealed partial class So6120DirectDutySession : IDisposable
         // missing mandatory post-A1 observation; pre-mutation/dwell can stop
         // and attempt separately admitted Auto from the confirmed checkpoint.
         long started = clock.GetTimestamp();
+        if (expectedBoardSsid is ushort expected)
+        {
+            // The journal names the intended source contract. These separately
+            // completed, journaled A0 reads establish its reported EC family
+            // before any baseline or fresh pre-write snapshot can be accepted.
+            // Existing supervised capture has no family-query authority.
+            var low = Transfer(So6120MailboxRegister.BoardSsidLow, null, cancellationToken);
+            if (blocked || !low.Success)
+            { return new(blocked ? So6120DutyIoDisposition.Unresolved : So6120DutyIoDisposition.DefinitelyUnsubmitted, null); }
+            if (clock.GetElapsedTime(started) >= options.SnapshotTimeout)
+            { return new(So6120DutyIoDisposition.DefinitelyUnsubmitted, null); }
+            var high = Transfer(So6120MailboxRegister.BoardSsidHigh, null, cancellationToken);
+            if (blocked || !high.Success)
+            { return new(blocked ? So6120DutyIoDisposition.Unresolved : So6120DutyIoDisposition.DefinitelyUnsubmitted, null); }
+            ushort observed = (ushort)(low.Value!.Value | high.Value!.Value << 8);
+            if (observed != expected)
+            {
+                BoardIdentityRefusal = $"Reported EC family mismatch (expected SSID={expected:X4}; observed SSID={observed:X4}).";
+                // A changed family after any setting publication invalidates
+                // ownership, including a confirmed pre-FE staging prefix.
+                if (mutationsPossiblySubmitted != 0)
+                {
+                    Fence(So6120DutyFailure.StateChanged);
+                    return new(So6120DutyIoDisposition.Unresolved, null);
+                }
+                return new(So6120DutyIoDisposition.DefinitelyUnsubmitted, null);
+            }
+        }
         var values = new byte[SnapshotOrder.Length];
         for (int i = 0; i < SnapshotOrder.Length; i++)
         {

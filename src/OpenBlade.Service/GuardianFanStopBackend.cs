@@ -30,7 +30,15 @@ internal sealed class GuardianFanStopBackend(IFanStopGuardianClient client) : IF
         acquireHardware = acquire;
     }
 
-    public FanStopUnavailableReason UnavailableReason => client.UnavailableReason;
+    // Availability gates new owners only. An existing owner must retain its
+    // status and Auto action even if a later OS compatibility preflight fails.
+    // Status readers use accepted evidence. The controller alone advances it
+    // and releases the hardware lease when it observes terminal proof.
+    private bool HasUnreleasedOperation => HasOperation
+        && (Volatile.Read(ref fenced) || Volatile.Read(ref accepted)?.Released != true);
+    public FanStopUnavailableReason UnavailableReason => HasUnreleasedOperation
+        ? FanStopUnavailableReason.None : client.UnavailableReason;
+    public string? UnavailableMessage => HasUnreleasedOperation ? null : client.UnavailableMessage;
     public FanStopStartupDisposition StartupDisposition => client.StartupDisposition;
     public event Action? SnapshotChanged
     {

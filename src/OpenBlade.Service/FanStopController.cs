@@ -194,8 +194,10 @@ internal sealed class FanStopController(IFanStopBackend backend)
             return new(Message: "Fan stop has no reviewed evidence for this device.");
         }
 
-        return backend.UnavailableReason == FanStopUnavailableReason.None ? current
-            : new(UnavailableReason: backend.UnavailableReason, Message: UnavailableMessage);
+        FanStopUnavailableReason unavailableReason = backend.UnavailableReason;
+        return unavailableReason == FanStopUnavailableReason.None ? current
+            : new(UnavailableReason: unavailableReason,
+                Message: Guardian?.UnavailableMessage ?? UnavailableMessage);
     }
 
     public async Task<ControlOperationResult> SetModeAsync(

@@ -79,20 +79,25 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     [Theory]
-    [InlineData(true, true, true)]
-    [InlineData(true, true, false)]
-    [InlineData(true, false, true)]
-    [InlineData(false, true, true)]
+    [InlineData(true, true, false, true)]
+    [InlineData(true, true, false, false)]
+    [InlineData(true, false, true, true)]
+    [InlineData(true, false, true, false)]
+    [InlineData(true, false, false, true)]
+    [InlineData(false, true, false, true)]
+    [InlineData(false, false, true, true)]
     public async Task GuardianCapabilityProjectionUsesBackendAndExactEvidenceWhileFreshAdmissionControlsCanStop(
-        bool available, bool exactEvidence, bool temperatureSafe)
+        bool available, bool trialEvidence, bool sourceEvidence, bool temperatureSafe)
     {
+        bool exactEvidence = trialEvidence || sourceEvidence;
         var client = new GuardianFanStopBackendTests.Client
         { Admission = GuardianFanStopBackendTests.Client.SafeAdmission with { TemperatureSafe = temperatureSafe } };
         IFanStopBackend backend = available ? new GuardianFanStopBackend(client) : UnavailableFanStopBackend.Instance;
         TestContext context = CreateContext(true, fanStopBackend: backend);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
-            HasFanStopTrialEvidence = exactEvidence,
+            HasFanStopTrialEvidence = trialEvidence,
+            HasFanStopSourceEvidence = sourceEvidence,
             // A stale/raw flag must neither enable an unsupported model nor hide
             // a backend admitted by this runtime's explicit composition.
             SupportsFanStop = !available || !exactEvidence,
@@ -101,6 +106,8 @@ public sealed partial class ServiceControlRuntimeTests
         await context.Runtime.MaintainFanCurveAsync(default);
         ServiceStatusSnapshot projected = context.Runtime.GetStatus();
         Assert.Equal(available && exactEvidence, projected.Capabilities!.SupportsFanStop);
+        Assert.Equal(trialEvidence, projected.Capabilities.HasFanStopTrialEvidence);
+        Assert.Equal(sourceEvidence, projected.Capabilities.HasFanStopSourceEvidence);
         Assert.Equal(available && exactEvidence && temperatureSafe, projected.FanStopStatus.CanStop);
         Assert.Equal(!available || !exactEvidence, context.Device.Capabilities.SupportsFanStop);
         Assert.Same(projected, context.Runtime.GetStatus());

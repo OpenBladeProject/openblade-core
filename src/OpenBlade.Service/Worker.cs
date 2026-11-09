@@ -1,9 +1,10 @@
+using System.Diagnostics;
 using OpenBlade.Contracts;
 using OpenBlade.Core.Native;
 
 namespace OpenBlade.Service;
 
-public sealed class Worker(
+internal sealed class Worker(
     ControlRequestHandler handler,
     IServiceControlRuntime runtime,
     IStatusSubscriptionHub subscriptionHub,
@@ -15,7 +16,8 @@ public sealed class Worker(
     LowPowerGate lowPowerGate,
     ServiceSessionPowerTransitionCoordinator powerTransitions,
     IServiceClientContextResolver clientContextResolver,
-    ILogger<Worker> logger) : BackgroundService
+    ILogger<Worker> logger,
+    ServiceStartupTiming startupTiming) : BackgroundService
 {
     private const int MaximumPipeClients = NamedPipeControlServer.MaximumServerInstances;
     private static readonly TimeSpan ShutdownCleanupTimeout = TimeSpan.FromSeconds(5);
@@ -33,7 +35,8 @@ public sealed class Worker(
             token => RunAfterSuccessfulStartupAsync(
                 startupCoordinator.InitializeAsync,
                 RunBackgroundAsync,
-                token),
+                token,
+                startupTiming),
             (intentionalStop, token) => PrepareForShutdownAsync(
                 startupCoordinator.RuntimeInitialized,
                 intentionalStop,
@@ -76,14 +79,42 @@ public sealed class Worker(
     internal static async Task RunAfterSuccessfulStartupAsync(
         Func<CancellationToken, Task<bool>> initializeAsync,
         Func<CancellationToken, Task> runBackgroundAsync,
-        CancellationToken stoppingToken)
+        CancellationToken stoppingToken,
+        ServiceStartupTiming? timing = null)
     {
-        if (!await initializeAsync(stoppingToken))
+        bool initialized;
+        string outcome = "failed";
+        if (timing is not null)
         {
-            return;
+            timing.WorkerInitializationStartQpc = Stopwatch.GetTimestamp();
+        }
+        try
+        {
+            initialized = await initializeAsync(stoppingToken);
+            outcome = initialized ? "completed" : "refused";
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            outcome = "canceled";
+            throw;
+        }
+        finally
+        {
+            if (timing is not null)
+            {
+                timing.WorkerInitializationEndQpc = Stopwatch.GetTimestamp();
+                timing.WorkerInitializationOutcome = outcome;
+                if (outcome != "completed")
+                {
+                    timing.QueueReport("worker-initialization");
+                }
+            }
         }
 
-        await runBackgroundAsync(stoppingToken);
+        if (initialized)
+        {
+            await runBackgroundAsync(stoppingToken);
+        }
     }
 
     private async Task RunBackgroundAsync(CancellationToken stoppingToken)
@@ -92,7 +123,10 @@ public sealed class Worker(
             OpenBladeIpc.PipeName,
             handler,
             subscriptionHub,
-            clientContextResolver);
+            clientContextResolver)
+        {
+            StartupTiming = startupTiming,
+        };
         var listenerErrors = new PipeListenerErrorReporter(logger, TimeProvider.System);
         List<Func<CancellationToken, Task>> operations =
         [
