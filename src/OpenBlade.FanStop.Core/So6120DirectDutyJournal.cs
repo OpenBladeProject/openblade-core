@@ -430,9 +430,9 @@ internal sealed class So6120DirectDutyJournal : IDisposable
                     Require(next.Intent is not null && next.WriteConfirmed && checkpoint.Generation == next.Checkpoint.Generation + 1
                         && checkpoint.Baseline == next.Checkpoint.Baseline);
                     So6120DutyMutation mutation = next.Intent!.Mutation;
-                    So6120DutyOwnedFields field = Field(mutation.Register);
-                    Require(checkpoint.Expected == Set(next.Checkpoint.Expected, mutation.Register, mutation.Value));
-                    Require(checkpoint.Owned == (mutation.Value == Get(checkpoint.Baseline, mutation.Register)
+                    So6120DutyOwnedFields field = So6120DutyControls.OwnedField(mutation.Register);
+                    Require(checkpoint.Expected == next.Checkpoint.Expected.With(mutation.Register, mutation.Value));
+                    Require(checkpoint.Owned == (mutation.Value == checkpoint.Baseline.Read(mutation.Register)
                         ? next.Checkpoint.Owned & ~field : next.Checkpoint.Owned | field));
                     if (next.Phase == Phase.Exit && mutation.Register == So6120MailboxRegister.Override)
                     { next.PermissionRestored = true; }
@@ -468,23 +468,17 @@ internal sealed class So6120DirectDutyJournal : IDisposable
         {
             Phase.Exit => current.Baseline,
             Phase.Stop => current.Expected with { Staged1 = 0, Staged2 = 0 },
-            _ => current.Baseline with
-            {
-                Staged1 = RequestedDuty(state, true),
-                Staged2 = RequestedDuty(state, false),
-                Override = (byte)(current.Baseline.Override | 0x40),
-                Selector = 0xFE,
-            },
+            _ => current.Baseline.DirectTarget(RequestedDuty(state, true), RequestedDuty(state, false)),
         };
-        So6120MailboxRegister[] order = state.Phase == Phase.Exit
-            ? [So6120MailboxRegister.Selector, So6120MailboxRegister.Override, So6120MailboxRegister.StagedDuty1, So6120MailboxRegister.StagedDuty2]
-            : [So6120MailboxRegister.StagedDuty1, So6120MailboxRegister.StagedDuty2, So6120MailboxRegister.Override, So6120MailboxRegister.Selector];
+        ReadOnlySpan<So6120MailboxRegister> order = state.Phase == Phase.Exit
+            ? So6120DutyControls.HandbackOrder
+            : So6120DutyControls.EntryOrder;
         foreach (So6120MailboxRegister register in order)
         {
-            byte value = Get(target, register);
-            if (Get(current.Expected, register) != value)
+            byte value = target.Read(register);
+            if (current.Expected.Read(register) != value)
             {
-                Require(state.Phase != Phase.Exit || (current.Owned & Field(register)) != 0);
+                Require(state.Phase != Phase.Exit || (current.Owned & So6120DutyControls.OwnedField(register)) != 0);
                 return new(register, value, current.Expected);
             }
         }
@@ -584,31 +578,6 @@ internal sealed class So6120DirectDutyJournal : IDisposable
             catch (FileNotFoundException) { }
         }
     }
-    private static So6120DutyOwnedFields Field(So6120MailboxRegister register) => register switch
-    {
-        So6120MailboxRegister.StagedDuty1 => So6120DutyOwnedFields.Staged1,
-        So6120MailboxRegister.StagedDuty2 => So6120DutyOwnedFields.Staged2,
-        So6120MailboxRegister.Override => So6120DutyOwnedFields.Override,
-        So6120MailboxRegister.Selector => So6120DutyOwnedFields.Selector,
-        _ => throw new InvalidDataException(),
-    };
-    private static byte Get(So6120DutyControls value, So6120MailboxRegister register) => register switch
-    {
-        So6120MailboxRegister.StagedDuty1 => value.Staged1,
-        So6120MailboxRegister.StagedDuty2 => value.Staged2,
-        So6120MailboxRegister.Override => value.Override,
-        So6120MailboxRegister.Selector => value.Selector,
-        _ => throw new InvalidDataException(),
-    };
-    private static So6120DutyControls Set(So6120DutyControls value, So6120MailboxRegister register, byte data) => register switch
-    {
-        So6120MailboxRegister.StagedDuty1 => value with { Staged1 = data },
-        So6120MailboxRegister.StagedDuty2 => value with { Staged2 = data },
-        So6120MailboxRegister.Override => value with { Override = data },
-        So6120MailboxRegister.Selector => value with { Selector = data },
-        _ => throw new InvalidDataException(),
-    };
-
     private enum Kind
     {
         Binding, EntryClaim, ExitClaim, Observation, Intent, TransferBegin, RequestPrepared, Publication,

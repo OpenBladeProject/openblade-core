@@ -334,10 +334,10 @@ internal sealed partial class So6120DirectDutySession
             { return Result(flow.Result(So6120DutyFailure.AdmissionRefused)); }
             Store(() => journal.ClaimStop(checkpoint, spin));
             trialStopping = true;
-            flow.Change(So6120MailboxRegister.StagedDuty1, 0, So6120DutyOwnedFields.Staged1);
+            flow.Change(So6120MailboxRegister.StagedDuty1, 0);
             if (!EntryAllowed(refresh: false, checkThermal: false))
             { return Result(flow.Result(So6120DutyFailure.AdmissionRefused)); }
-            flow.Change(So6120MailboxRegister.StagedDuty2, 0, So6120DutyOwnedFields.Staged2);
+            flow.Change(So6120MailboxRegister.StagedDuty2, 0);
 
             coastStarted = clock.GetTimestamp();
             CountCoastSample(operation.Latest!.Observation);
