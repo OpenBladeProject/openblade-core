@@ -292,6 +292,59 @@ disables that IRQ without an explicit STOP or peripheral reset in that
 path. The HID response supplies neither wire-idle evidence nor EC
 callback completion. Keep a timeout ambiguous. [NXP I²C specification, §3.1.4](https://www.nxp.com/docs/en/user-guide/UM10204.pdf)
 
+### Candidate direct read through Super I/O
+
+All four exact EC carriers contain the same managed flasher, SHA-256
+`3de34bf3f5e57e0c11e76f45b773642ae3816f4a645040cf3b0602dcd30e79ed`.
+Its `Embedded_Controller_Get_Ram_Byte` method (RVA `3CC4`) selects
+16-bit addresses through the Super I/O depth-two index and data
+registers, then reads the selected byte. This method publishes no BRAM
+command and calls no keyboard transport. Its only direct caller in the
+retained assembly is the separate SPI ID helper at `392C`, which uses
+it at indirect flash register `103F`. The reviewed managed call
+inventory does not reach that helper from the updater entry. The
+method establishes a vendor transport definition and register example,
+with normal-mode availability still open.
+
+| Model | Shared flasher block | EC store of `C3` at `F0200D` |
+| --- | ---: | --- |
+| RZ09-0423 | 25 | `CF78` |
+| RZ09-0484 | 28 | `DCD0` |
+| RZ09-0509 | 12 | `E3D2` |
+| RZ09-0529 | 7 | `E692` |
+
+Each EC's initialization code sets the low two bits of `F0200D`.
+Chromium's IT83xx code names offset `0D` SPCTRL1. ITE's IT81202 manual
+and the exact Razer helper independently agree on the depth-two
+register layout. The manual identifies SPCTRL1 bits 1:0 as memory-snoop
+permission and describes external-memory access through this path.
+That helps explain the firmware setting without proving that every
+16-bit address resolves as expected on the installed Blade controller.
+[Chromium IT83xx LPC code](https://chromium.googlesource.com/chromiumos/platform/ec/+/08f5a1e6fc2c9467230444ac9b582dcf4d9f0068/chip/it83xx/lpc.c)
+· [ITE IT81202 specification, pp. 78, 433, 533–534](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
+
+The next proof for this route is the installed controller's ordinary
+host decode and its 16-bit address binding to `F01808`. A read-only
+comparison needs exact device and firmware identity, a known-answer
+control, independent mapped duty and cycle comparisons, and a third
+channel observation that can distinguish a real duty value from a
+constant, a shadow, or a wrong address. The nested selectors also need
+ownership through every read, including Auto handback. If those checks
+pass, Stop can use independent actual PWM without submitting D0.
+The A1 publication and verified Auto handback still require their
+separate completion proof.
+
+The four images also copy actual PWM3 to RAM `80536` during ordinary
+feedback. That copy is skipped in FE, and no mapped descriptor exposes
+it. The mapped third tachometer is separate. Its producer can return
+zero after missing or disabled feedback, so neither field substitutes
+for actual PWM readback during Stop.
+
+All four exact images can now be inspected with the
+[offline firmware CLI and register explorer](../tools/firmware/README.md).
+The profiles decode all mapped entries and annotate the staged duty,
+actual duty, tachometer, cycle and restore fields separately.
+
 ## Seven models with missing receiver evidence
 
 | Model | New evidence | Remaining EC evidence |

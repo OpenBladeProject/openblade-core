@@ -23,6 +23,9 @@ Additional profiles decode independently reviewed eight-bank maps and fan regist
 - [RZ09-0421 CH580 EC 1.03](../../docs/fan-stop-ch580-source-review.md).
 - [RZ09-0427 PI480 EC 1.03 and 1.06](../../docs/fan-stop-pi480-source-review.md).
 - [RZ09-0330 CH551 EC 1.01](../../docs/fan-stop-ch551-source-review.md).
+- [RZ09-0423 DI780 EC 1.05 and Blade 18 KI890 1.07, KI8100 1.02, KI8110 1.06](../../docs/fan-stop-blade18-source-findings.md).
+  These profiles distinguish the third staged duty and tachometer from the
+  unmapped third PWM output.
 
 Their thermal-table formats are not inferred from SO6120.
 
