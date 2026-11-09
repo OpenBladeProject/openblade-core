@@ -28,12 +28,10 @@ returned. The host does not have to publish a primary A0 fence while D0
 still has its second clear pending. The candidate is one compound
 observation with its complete sequence chosen before the first publication.
 
-The offline zero-only model clears primary status, seeds its payload with
+The initial zero-only model clears primary status, seeds its payload with
 `FF`, and keeps the third-duty zero provisional after D0. It clears legacy
 result `32` to zero before the fixed `11/E3` publication. Legacy command zero
-and a reply with active bit 0 set complete the observation. This checks a
-zero duty result. It would need a separate value contract to read arbitrary
-duty values where `FF` might be a valid result.
+and a reply with active bit 0 set complete the observation.
 
 | Model conditions | Explored states | Acceptances | Result |
 | --- | ---: | ---: | --- |
@@ -59,6 +57,23 @@ need verified ownership across both windows, including exclusion of other
 commands that can write the primary payload. The reader's time bound and
 actual port behavior remain unmeasured. The `90` reader still has its
 previously identified descriptor-sharing race.
+
+### Duty values beyond zero
+
+All four images program cycle register `F01841` to `B7` (183). The
+identical instruction sequences start at `137E6`, `13CDA`, `24BCE` and
+`2530E` in model order 0423/0484/0509/0529. Their bank-zero `B2` descriptors
+read that register. A candidate full-range observation can reserve `FF`
+in the reply and require a fresh cycle in `01..FE` and duty at or below
+that cycle. This also covers a nonzero baseline or Auto observation.
+
+The exhaustive byte-domain check passed 131,072 combinations of cycle,
+result and whether the copy occurred. Under intact staging and payload
+ownership, a lost copy leaves `FF` outside the accepted range even if an
+unrelated writer sets success status. Cycle zero and cycle `FF` fail this
+predicate. The check separates the sentinel from legitimate duty values.
+The compound observation still requires the callback ordering and
+completion conditions above.
 
 ## Independent EC I²C route
 
@@ -136,13 +151,55 @@ Verified Auto also needs independent confirmation of the captured normal
 selector, stage bytes and override permission. A guardian using this
 transport must retain its handback ability if the caller exits.
 
+### Observe the bank and verify the applied restore independently
+
+Primary A0 with bank zero, logical `0F` and count one reads the I²C bank
+byte through the primary table. It selects that table from `F02290`,
+independent of the selected I²C bank. This makes a non-mutating bank
+observation possible while keeping the exact primary completion and
+payload checks. A confirmed zero is a point-in-time observation.
+
+Across all four images, bank zero maps the six possible restore fields
+`1A/36/B8/B9/9C/F0` to the selector, manual state, three stage bytes and
+override, all with metadata 2. Banks 1 through 7 give those six indexes
+metadata 1. The I²C RX path diverts writes for metadata 1 to scratch. For
+bank 1 the six read descriptors all alias a single reset-cleared RAM byte:
+`81449` on 0423 and 0484, `8144D` on 0509, and `81451` on 0529.
+
+The model starts in FE with override bit 6 set and a captured all-zero
+normal baseline. If another master selects bank 1 after the initial
+bank-zero check, the I²C writes can leave FE and the override intact while
+the same-bank reads return zero for every field. Returning the bank to
+zero before the final bank check makes both checks pass. This witness
+appears in the 64-state model for each image. Verifying each affected
+field through fresh primary bank-zero A0 removes that false acceptance
+in the 33-state model. The model permits valid bank drift alone and
+assumes intact primary reads. Out-of-range bank selection remains an
+addressing hazard before any readback can detect it.
+
+The RX handler also diverts a single write starting at logical `36` in
+bank zero if current manual-state bit 7 is set. The 0529 branch is
+`2B1E..2B42`. The operation must preserve a matching field and verify
+the actual byte if restoration needs to change it. The map alone cannot
+establish that the write applied.
+
+The only constant-address bank store found in the retained instruction
+inventory is the setup write of zero. The 0529 watcher at `279D4` can
+re-enter setup, which may interrupt a transfer. A later zero observation
+does not settle an earlier ambiguous write. The I²C bank selector and
+primary writes can still change the same byte. The route needs exclusive
+ownership, bounded
+transport results and a guardian-held handback path. The present guardian
+has its port owner through caller exit. This source review has yet to
+establish an equivalent independent HID lifetime for the I²C route.
+
 ## Seven models with missing receiver evidence
 
 | Model | New evidence | Remaining EC evidence |
 | --- | --- | --- |
 | RZ09-0300 | Two exact DA530 selectors, SSID `1A582004`, in the signed Intel ME carriers. | D3 BIOS and the additional Intel ME packages have yielded no laptop EC implementation. |
 | RZ09-0301 | Official keyboard firmware `1.00.01` for USB `1532:0245`, decoded and traced through the thermal I²C peer. | Receiver zero handling, fresh actual duty, tach provenance, and verified Auto. |
-| RZ09-0328 | Two exact DA550 selectors, SSIDs `1A582011` and `1A58200C`, in the signed Intel ME carriers. | An exact EC implementation or equivalent vendor contract. |
+| RZ09-0328 | Razer-signed DA550 BIOS 1.03 with SSIDs `1A582011` and `1A58200C`. The carrier includes BIOS and Intel ME. | An exact EC implementation or equivalent vendor contract. |
 | RZ09-0351 | Two signed OL510 selectors pin SSID `1A58200D`. They select Intel ME payloads. | An attributable, usable OL510 EC image. The exact-board dump mentioned in the repair post is restricted and comes from a board reported unable to start. |
 | RZ09-0370 | Two older Razer-signed updaters contain the same P1106 BIOS image. Exact selectors include SSIDs `1A582013` and `1A582014`. | Both packages select BIOS only. The EC side of the BIOS mailbox remains unidentified. |
 | RZ09-0482 | Microsoft-signed public catalog capsule for PI490 BIOS 1.06, with verified INF and ROM membership. | The older image retains the conditional OEM fan hook and the generic EC mailbox. The [keyboard MCU bridge](fan-stop-pi490-mcu-bridge-review.md) still ends at the receiver. |
@@ -175,10 +232,29 @@ Package sources include the
 [RZ09-03519 downloads](https://mysupport.razer.com/app/answers/detail/a_id/5655/),
 and [OL510 repair report](https://vlab.su/viewtopic.php?f=35&p=1129927&t=151751).
 
+The older DA550 carrier has SHA-256
+`02e23deb63ef703dbdb5349e33590e7fa9fc9a3eb426a4d63e3fc3f6285e3d20`.
+All 15 NSIS blocks were accounted for. The batch selects a 16 MiB
+`Dana5_0103.bin` and an Intel ME image. The DSDT matches BIOS 1.06, and
+the 55 new body hashes did not identify a receiver payload.
+[Razer DA550 BIOS 1.03 carrier](https://dl.razerzone.com/drivers/Razer%20Blade%2015%E2%80%9D%20Base%20%282020%29%20%7C%20RZ09-0328x/RazerUpdater_v1.1.1.2_DA550-BIOSv0103.exe)
+
+The public Microsoft catalog returned the previously examined PI490
+BIOS 1.06 as the positive control. Exact capsule GUID searches and LVFS
+stable and testing metadata yielded no new attributable AMD receiver
+artifact. Eight signed exact-model Synapse host resources exposed
+firmware-version and touchpad tooling. Their bounded static inventories
+identified no receiver image. Razer's recovery service requires account
+and serial binding and documents Windows recovery. These results bound
+the public sources checked. [Microsoft Update Catalog](https://www.catalog.update.microsoft.com/Search.aspx?q=Razer%20Firmware)
+· [Razer recovery service](https://mysupport.razer.com/app/answers/detail/a_id/6300/)
+
 Detailed local proof and input manifests are under
 `artifacts/model-expansion/bram3-followup/`,
 `primary-reader-followup/`, `intel-missing-ec-followup/`, and
-`amd-missing-ec-followup/`. The reader proof hashes all four EC images,
+`amd-missing-ec-followup/`. Later proof and acquisition results are under
+`bank-ownership-model/`, `bank-ownership-followup/`,
+`intel-receiver-next/` and `amd-receiver-next/`. The reader proof hashes all four EC images,
 checks the opcode paths and calls, and reproduces the ordering model.
 The package work verified signatures or catalog membership and inspected
 the decoded contents offline. Runtime admission remains open for these

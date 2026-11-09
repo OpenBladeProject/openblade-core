@@ -26,7 +26,7 @@ separately; the new models do not inherit RZ09-0581's physical results.
 | Blade 17 RZ09-0423 | Same source-backed control and conditional readback design, independently examined for DI780 EC 1.05 | Same unresolved readback evidence and three-channel software work. |
 | Blade 14 RZ09-0482 | No exact Stop contract yet | [MCU fan/mode bridge traced](fan-stop-pi490-mcu-bridge-review.md): named duty command unsupported; EC-side zero duty/readback/Auto still missing. [BIOS host interfaces](fan-stop-missing-model-host-interfaces.md) add generic transport, not fan semantics. |
 | Blade 14 RZ09-0508 | No exact Stop contract yet | [BIOS 1.06 inspected](fan-stop-blade14-missing-ec-evidence.md). [Host EC interfaces traced](fan-stop-missing-model-host-interfaces.md); no implemented complete fan hook or EC payload identified. |
-| Blade 15 Base RZ09-0328 | No exact Stop contract yet | [Signed DA550 BIOS 1.06 inspected](fan-stop-blade15-missing-ec-evidence.md). [DPTF fan API resolves to stubs](fan-stop-missing-model-host-interfaces.md); EC image/control meaning still missing. |
+| Blade 15 Base RZ09-0328 | No exact Stop contract yet | [Signed DA550 BIOS 1.03 and 1.06 inspected](fan-stop-reader-and-ec-followup.md#seven-models-with-missing-receiver-evidence). EC image and receiver behavior are still missing. |
 | Blade 14 RZ09-0370 | No exact Stop contract yet | [BIOS 1.08 inspected](fan-stop-blade14-missing-ec-evidence.md). [EC-init modules resolve to host ACPI plumbing](fan-stop-missing-model-host-interfaces.md); no complete fan contract identified. |
 | Blade 15 Advanced RZ09-0330 | [Source reviewed](fan-stop-ch551-source-review.md), CH551 EC 1.01 | Shared two-fan backend. Uses the exact existing Windows product name and reported EC version; mapped E0/E1 are not version registers on this model. |
 | Blade 15 Base RZ09-0351 | No exact Stop contract yet | [Signed OL510 selectors](fan-stop-reader-and-ec-followup.md#seven-models-with-missing-receiver-evidence) establish SSID `1A58200D`. A usable EC image remains missing. |
@@ -43,8 +43,10 @@ bytes. A conditional staging race returns a wrong zero; reachability under an
 independently clean FE session is not established. Observing FE alone does not
 prove callback drainage. A [separate legacy completion fence and exact MCU
 I²C route](fan-stop-reader-and-ec-followup.md) narrow the remaining work.
-The fence orders the D0 tail under serialized callbacks. The I²C route
-needs verified bank ownership and complete Auto handback.
+The fence orders the D0 tail under serialized callbacks. The fixed primary
+map can observe the I²C bank and verify actual restore fields independently.
+The bounded model catches a false success that same-bank I²C readback can
+miss. Exclusive bank ownership and guardian handback remain prerequisites.
 
 For the other seven models, six have signed BIOS packages inspected through
 their complete extractable payload trees; RZ09-0351 still lacks a usable BIOS
