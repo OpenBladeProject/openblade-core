@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -20,6 +21,234 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Path.GetTempPath(),
         "OpenBlade.BatteryConfigurationStoreTests",
         Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public async Task WindowsReplay_ConfigurationAggregateFixtureMatchesManagedWriter()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfiguration initial = await CreateStore(paths).LoadAsync(CancellationToken.None);
+        string[] prior = await ReadTargetsAsync();
+        JsonElement recovery = default;
+        BatteryConfigurationStore writer = CreateStore(paths, async (boundary, cancellationToken) =>
+        {
+            if (boundary != BatteryConfigurationCommitBoundary.AfterProfileReplacement)
+            {
+                return;
+            }
+
+            using JsonDocument record = JsonDocument.Parse(
+                await File.ReadAllBytesAsync(paths.Marker + ".recovery-required", cancellationToken));
+            JsonElement root = record.RootElement;
+            Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
+            string id = root.GetProperty("transactionId").GetString()!;
+            Assert.True(Guid.TryParseExact(id, "N", out _));
+            JsonElement[] targets = root.GetProperty("targets").EnumerateArray().ToArray();
+            Assert.Equal(3, targets.Length);
+            for (int i = 0; i < targets.Length; i++)
+            {
+                string target = paths.All.ElementAt(i);
+                Assert.Equal(target, targets[i].GetProperty("path").GetString());
+                Assert.True(targets[i].GetProperty("priorExists").GetBoolean());
+                string backup = target + $".transaction-{id}.backup";
+                Assert.Equal(backup, targets[i].GetProperty("backupPath").GetString());
+                Assert.Equal(Encoding.UTF8.GetBytes(prior[i]), await File.ReadAllBytesAsync(backup, cancellationToken));
+                Assert.Equal(target + $".transaction-{id}.restore",
+                    targets[i].GetProperty("restorePath").GetString());
+            }
+            // Normalize only the random ID and the test-owned absolute root.
+            string text = root.GetRawText().Replace(id, "0123456789abcdef0123456789abcdef",
+                StringComparison.Ordinal);
+            string encodedDirectory = JsonEncodedText.Encode(directory + Path.DirectorySeparatorChar)
+                .ToString();
+            using JsonDocument normalized = JsonDocument.Parse(text.Replace(
+                encodedDirectory, @"C:\\Fixture\\", StringComparison.Ordinal));
+            recovery = normalized.RootElement.Clone();
+        });
+
+        await writer.SaveProfilesAsync(initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(75) },
+            CancellationToken.None);
+        string[] committed = await ReadTargetsAsync();
+        Assert.NotEqual(prior[0], committed[0]);
+        Assert.Equal(prior[1], committed[1]);
+        Assert.NotEqual(prior[2], committed[2]);
+        Assert.False(File.Exists(paths.Marker + ".recovery-required"));
+
+        JsonElement actual = JsonSerializer.SerializeToElement(new
+        {
+            legacy = LegacyJson.ReplaceLineEndings("\n"),
+            prior,
+            committed,
+            recovery,
+        });
+        string fixture = Path.Combine(AppContext.BaseDirectory, "WindowsReplay", "v1",
+            "configuration-aggregate.json");
+        using JsonDocument expected = JsonDocument.Parse(await File.ReadAllBytesAsync(fixture));
+        Assert.True(JsonElement.DeepEquals(expected.RootElement, actual));
+
+        async Task<string[]> ReadTargetsAsync() =>
+            await Task.WhenAll(paths.All.Select(async path =>
+                Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path))));
+    }
+
+
+    [Fact]
+    public async Task WindowsReplay_ConfigurationInspectionMatchesManagedReader()
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        string fixtures = Path.Combine(AppContext.BaseDirectory, "WindowsReplay", "v1");
+        using JsonDocument aggregate = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(Path.Combine(fixtures, "configuration-aggregate.json")));
+        JsonElement committed = aggregate.RootElement.GetProperty("committed");
+        using JsonDocument vectors = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(Path.Combine(fixtures, "configuration-inspection.json")));
+        foreach (JsonElement vector in vectors.RootElement.EnumerateArray())
+        {
+            string profile = Document("profile", committed[0].GetString()!);
+            string preferences = Document("preferences", committed[1].GetString()!);
+            await File.WriteAllTextAsync(paths.Profiles, profile);
+            if (vector.TryGetProperty("profileOnly", out JsonElement only) && only.GetBoolean())
+            {
+                File.Delete(paths.Preferences);
+                File.Delete(paths.Marker);
+            }
+            else
+            {
+                string schema = vector.TryGetProperty("markerSchema", out JsonElement value)
+                    ? value.GetString()!
+                    : "25";
+                string marker = $$"""
+                    {"schemaVersion":{{schema}},"profileSha256":"{{Hash(profile)}}","preferencesSha256":"{{Hash(preferences)}}"}
+                    """;
+                await File.WriteAllTextAsync(paths.Preferences, preferences);
+                await File.WriteAllTextAsync(paths.Marker, marker);
+            }
+
+            string actual;
+            try
+            {
+                BatteryConfigurationInspection inspection = await CreateStore(paths).InspectAsync(CancellationToken.None);
+                actual = inspection.Configuration.IsAuthoritative
+                    ? "CommittedEnvelope"
+                    : inspection.Configuration.QuarantineReason.ToString();
+            }
+            catch (InvalidOperationException)
+            {
+                actual = nameof(InvalidOperationException);
+            }
+
+            Assert.True(vector.GetProperty("managed").GetString() == actual,
+                $"{vector.GetProperty("id").GetString()} returned {actual}.");
+
+            string Document(string name, string original)
+            {
+                if (vector.TryGetProperty(name, out JsonElement document))
+                {
+                    return document.GetString()!;
+                }
+                return vector.TryGetProperty(name + "Schema", out JsonElement schema)
+                    ? original.Replace("\"schemaVersion\": 25",
+                        $"\"schemaVersion\": {schema.GetString()}", StringComparison.Ordinal)
+                    : original;
+            }
+        }
+
+        static string Hash(string document) => Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(document)));
+    }
+
+    [RustConfigurationExchangeFact]
+    public async Task WindowsReplay_RustConfigurationWriterExchangesManagedBytes()
+    {
+        string executable = Environment.GetEnvironmentVariable(RustConfigurationExchangeFactAttribute.PathVariable)!;
+        string fileName = Path.GetFileName(executable);
+        Assert.True(Path.IsPathFullyQualified(executable)
+            && fileName.StartsWith("openblade_windows_host-", StringComparison.Ordinal)
+            && fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            && File.Exists(executable), $"Expected a Rust library test executable at '{executable}'.");
+
+        Paths paths = CreatePaths();
+        BatteryConfigurationStore managed = CreateStore(paths);
+        BatteryConfiguration initial = await managed.LoadAsync(CancellationToken.None);
+        await managed.SaveProfilesAsync(initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(79) },
+            CancellationToken.None);
+        byte[][] prior = await ReadTargetsAsync();
+        await managed.SaveProfilesAsync(initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(73) },
+            CancellationToken.None);
+        byte[][] intent = await ReadTargetsAsync();
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var start = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            StandardOutputEncoding = Encoding.UTF8,
+        };
+        start.ArgumentList.Add("--exact");
+        start.ArgumentList.Add("configuration_writer::tests::exchange_managed_bytes");
+        start.ArgumentList.Add("--ignored");
+        start.ArgumentList.Add("--nocapture");
+        using Process process = Process.Start(start)!;
+        Task<string> output = process.StandardOutput.ReadToEndAsync();
+        Task<string> errors = process.StandardError.ReadToEndAsync();
+        Exception? exchangeFailure = null;
+        try
+        {
+            // JSON arrays of integers preserve the original file bytes across the pipe.
+            int[][][] wireInput = new[] { prior, intent }.Select(aggregate => aggregate.Select(document =>
+                Array.ConvertAll(document, value => (int)value)).ToArray()).ToArray();
+            await process.StandardInput.WriteAsync(JsonSerializer.Serialize(wireInput).AsMemory(), timeout.Token);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (Exception error) when (error is IOException or OperationCanceledException)
+        {
+            exchangeFailure = error;
+            if (!process.HasExited)
+            {
+                try
+                {
+                    process.Kill();
+                }
+                catch (Exception) when (process.HasExited)
+                {
+                    // The child exited between HasExited and Kill.
+                }
+            }
+
+            await process.WaitForExitAsync(CancellationToken.None);
+        }
+
+        string transcript = await output;
+        string diagnostics = await errors;
+        Assert.True(exchangeFailure is null && process.ExitCode == 0,
+            $"{exchangeFailure}{Environment.NewLine}{transcript}{Environment.NewLine}{diagnostics}");
+        const string prefix = "CONFIGURATION_OUTPUT=";
+        string line = Assert.Single(transcript.Split('\n'), text => text.StartsWith(prefix, StringComparison.Ordinal));
+        int[][] wireOutput = JsonSerializer.Deserialize<int[][]>(line[prefix.Length..])!;
+        Assert.Equal(3, wireOutput.Length);
+        byte[][] rust = Array.ConvertAll(wireOutput, document =>
+            Array.ConvertAll(document, value => checked((byte)value)));
+        foreach ((string path, byte[] document) in paths.All.Zip(rust))
+        {
+            await File.WriteAllBytesAsync(path, document);
+        }
+
+        BatteryConfigurationInspection read = await CreateStore(paths).InspectAsync(CancellationToken.None);
+        Assert.True(read.Configuration.IsAuthoritative);
+        Assert.Equal(BatteryPolicy.Create(73), read.Configuration.Profiles.BatteryPolicy);
+        for (int i = 0; i < intent.Length; i++)
+        {
+            Assert.Equal(intent[i], rust[i]);
+        }
+
+        Task<byte[][]> ReadTargetsAsync() =>
+            Task.WhenAll(paths.All.Select(path => File.ReadAllBytesAsync(path)));
+    }
 
     [Fact]
     public async Task LoadAsync_MigratesLegacyProfileAndCommitsMarkerLast()
@@ -1788,4 +2017,17 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         byte[] Profiles,
         byte[] Preferences,
         byte[] Marker);
+}
+
+internal sealed class RustConfigurationExchangeFactAttribute : FactAttribute
+{
+    internal const string PathVariable = "OPENBLADE_RUST_CONFIG_TEST_EXE";
+
+    public RustConfigurationExchangeFactAttribute()
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(PathVariable)))
+        {
+            Skip = $"Requires Windows and an explicit {PathVariable} path.";
+        }
+    }
 }

@@ -1,0 +1,93 @@
+[
+  {
+    "id": "quoted-marker-and-preferences",
+    "preferencesSchema": "\"25\"",
+    "markerSchema": "\"25\"",
+    "managed": "CommittedEnvelope"
+  },
+  {
+    "id": "quoted-profile-schema",
+    "profileSchema": "\"25\"",
+    "managed": "InvalidOperationException",
+    "rust": "InvalidDocument"
+  },
+  {
+    "id": "surrogate-property-in-hashed-profile",
+    "profile": "{\"schemaVersion\":25,\"profiles\":{},\"\\uDC00\":0}",
+    "managed": "InvalidOperationException",
+    "rust": "InvalidDocument"
+  },
+  {
+    "id": "future-schema-with-surrogate-value",
+    "profile": "{\"schemaVersion\":26,\"payload\":\"\\uD800\"}",
+    "profileOnly": true,
+    "managed": "FutureSchema"
+  },
+  {
+    "id": "future-schema-after-surrogate-property",
+    "profile": "{\"\\uDC00\":0,\"schemaVersion\":26}",
+    "profileOnly": true,
+    "managed": "FutureSchema"
+  },
+  {
+    "id": "partial-current-schema-with-surrogate-value",
+    "profile": "{\"schemaVersion\":25,\"payload\":\"\\uD800\"}",
+    "profileOnly": true,
+    "managed": "IncompleteAggregate"
+  },
+  {
+    "id": "future-schema-before-duplicate-check",
+    "profile": "{\"schemaVersion\":26,\"schemaVersion\":25}",
+    "profileOnly": true,
+    "managed": "FutureSchema"
+  },
+  {
+    "id": "future-schema-within-depth",
+    "profile": "{\"schemaVersion\":26,\"payload\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}",
+    "profileOnly": true,
+    "managed": "FutureSchema"
+  },
+  {
+    "id": "future-schema-outside-depth",
+    "profile": "{\"schemaVersion\":26,\"payload\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}",
+    "profileOnly": true,
+    "managed": "InvalidDocument"
+  },
+  {
+    "id": "old-supported-envelope",
+    "profileSchema": "24",
+    "preferencesSchema": "24",
+    "markerSchema": "24",
+    "managed": "CommittedEnvelope"
+  },
+  {
+    "id": "mixed-profile-schema",
+    "profileSchema": "24",
+    "managed": "MixedSchema"
+  },
+  {
+    "id": "mixed-preferences-schema",
+    "preferencesSchema": "24",
+    "managed": "InvalidDocument"
+  },
+  {
+    "id": "duplicates-in-nested-profile",
+    "profile": "{\"schemaVersion\":25,\"profiles\":{\"nested\":[{\"red\":0,\"r\\u0065d\":1}]}}",
+    "managed": "InvalidDocument"
+  },
+  {
+    "id": "trailing-profile-content",
+    "profile": "{\"schemaVersion\":25,\"profiles\":{}}{}",
+    "managed": "InvalidDocument"
+  },
+  {
+    "id": "fractional-marker-schema",
+    "markerSchema": "25.0",
+    "managed": "InvalidDocument"
+  },
+  {
+    "id": "old-unsupported-marker-schema",
+    "markerSchema": "0",
+    "managed": "InvalidDocument"
+  }
+]

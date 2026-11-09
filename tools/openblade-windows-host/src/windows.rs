@@ -16,7 +16,9 @@ use windows_sys::Win32::Foundation::{
     ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_NOT_CONNECTED,
 };
 
+use crate::runtime::DurableUpdate;
 use crate::wire::{self, Session, Status};
+use openblade_windows_host::{configuration_writer::fixture, valid_dev_id};
 
 mod pipe;
 mod scm;
@@ -38,126 +40,212 @@ pub(super) fn entry() -> io::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.as_slice() {
         [mode] if mode == "--scm" => scm::dispatch(),
+        [mode, id] if mode == "foreground-durable" || mode == "foreground-durable-interrupt" => {
+            let id = foreground_id(id)?;
+            let mut fixture = fixture::Fixture::create()?;
+            let (root, identity) = fixture.restart_key()?;
+            let mut output = io::stdout().lock();
+            writeln!(output, "ROOT {root} {identity}")?;
+            output.flush()?;
+            drop(output);
+            fixture.hand_off_cleanup();
+            let percent = fixture.seed()?;
+            let fixture = Arc::new(fixture);
+            let interrupt = mode == "foreground-durable-interrupt";
+            foreground(id, Session::Active, true, |advance, shutdown| {
+                let update = advance.map(|advance| {
+                    let fixture = Arc::clone(&fixture);
+                    DurableUpdate {
+                        advance,
+                        commit: Box::new(move || fixture.update(interrupt)),
+                    }
+                });
+                let (status, drive) = Status::fixture()?.with_durable(percent, update, shutdown)?;
+                Ok((status, Some(drive)))
+            })
+        }
+        [mode, id, root, identity] if mode == "foreground-durable-restart" => {
+            let id = foreground_id(id)?;
+            let root = foreground_id(root)?;
+            let identity = identity
+                .to_str()
+                .ok_or_else(|| io::Error::other("invalid root identity"))?;
+            let percent = fixture::restart(root, identity)?;
+            foreground(id, Session::Active, false, |_, shutdown| {
+                let (status, drive) = Status::fixture()?.with_durable(percent, None, shutdown)?;
+                Ok((status, Some(drive)))
+            })
+        }
         [mode, id]
             if mode == "foreground"
                 || mode == "foreground-background"
                 || mode == "foreground-replay" =>
         {
-            let id = id.to_str().filter(|id| valid_id(id)).ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "expected a 32-digit lowercase hex ID",
-                )
-            })?;
+            let id = foreground_id(id)?;
             let session = if mode != "foreground-background" {
                 Session::Active
             } else {
                 Session::Background
             };
-
-            let (mut advance, replay) = if mode == "foreground-replay" {
-                let (sender, receiver) = mpsc::channel(1);
-                (Some(sender), Some(receiver))
-            } else {
-                (None, None)
-            };
-            let (stop_tx, stop_rx) = oneshot::channel();
-            let mut stop_tx = Some(stop_tx);
-            let runtime = Builder::new_current_thread().enable_all().build()?;
-            runtime.block_on(run(
-                id,
-                session,
-                replay,
-                |phase| {
-                    if phase == Phase::Running {
-                        // This thread owns stdin. EOF stops replay; one byte stops fixed modes.
-                        std::thread::Builder::new()
-                            .name("development-stop".into())
-                            .spawn({
-                                let stop = stop_tx.take().ok_or_else(|| {
-                                    io::Error::other("foreground stop signal already started")
-                                })?;
-                                let advance = advance.take();
-                                move || {
-                                    let mut input = io::stdin().lock();
-                                    if let Some(advance) = advance {
-                                        let mut byte = [0];
-                                        while input.read_exact(&mut byte).is_ok() {
-                                            if byte[0] == b'n' && advance.blocking_send(()).is_err()
-                                            {
-                                                break;
-                                            }
-                                        }
-                                    } else {
-                                        let _ = input.fill_buf();
-                                    }
-                                    let _ = stop.send(());
-                                }
-                            })?;
-                        let mut output = io::stdout().lock();
-                        writeln!(output, "READY")?;
-                        output.flush()?;
-                    }
-                    Ok(())
-                },
-                async {
-                    let _ = stop_rx.await;
-                },
-            ))
+            foreground(id, session, mode == "foreground-replay", replay_status)
         }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "expected foreground <hex-id>, foreground-background <hex-id>, foreground-replay <hex-id>, or --scm",
+            "expected a development foreground mode with its hex ID(s), or --scm",
         )),
     }
 }
 
-fn valid_id(id: &str) -> bool {
-    id.len() == 32
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+fn foreground_id(id: &std::ffi::OsStr) -> io::Result<&str> {
+    id.to_str().filter(|id| valid_dev_id(id)).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected a 32-digit lowercase hex ID",
+        )
+    })
+}
+
+fn foreground<F: Future<Output = io::Result<()>>>(
+    id: &str,
+    session: Session,
+    accept_steps: bool,
+    prepare: impl FnOnce(
+        Option<mpsc::Receiver<()>>,
+        oneshot::Receiver<()>,
+    ) -> io::Result<(Status, Option<F>)>,
+) -> io::Result<()> {
+    let (mut advance, replay) = if accept_steps {
+        let (sender, receiver) = mpsc::channel(1);
+        (Some(sender), Some(receiver))
+    } else {
+        (None, None)
+    };
+    let (stop_tx, stop_rx) = oneshot::channel();
+    let mut stop_tx = Some(stop_tx);
+    let runtime = Builder::new_current_thread().enable_all().build()?;
+    runtime.block_on(run_prepared(
+        id,
+        session,
+        |shutdown| prepare(replay, shutdown),
+        |phase| {
+            if phase == Phase::Running {
+                // This thread owns stdin. EOF stops replay; one byte stops fixed modes.
+                std::thread::Builder::new()
+                    .name("development-stop".into())
+                    .spawn({
+                        let stop = stop_tx.take().ok_or_else(|| {
+                            io::Error::other("foreground stop signal already started")
+                        })?;
+                        let advance = advance.take();
+                        move || {
+                            let mut input = io::stdin().lock();
+                            if let Some(advance) = advance {
+                                let mut byte = [0];
+                                while input.read_exact(&mut byte).is_ok() {
+                                    if byte[0] == b'n' && advance.blocking_send(()).is_err() {
+                                        break;
+                                    }
+                                }
+                            } else {
+                                let _ = input.fill_buf();
+                            }
+                            let _ = stop.send(());
+                        }
+                    })?;
+                let mut output = io::stdout().lock();
+                writeln!(output, "READY")?;
+                output.flush()?;
+            }
+            Ok(())
+        },
+        async {
+            let _ = stop_rx.await;
+        },
+    ))
 }
 
 async fn run(
     id: &str,
     session: Session,
     replay: Option<mpsc::Receiver<()>>,
+    report: impl FnMut(Phase) -> io::Result<()>,
+    stop: impl Future<Output = ()>,
+) -> io::Result<()> {
+    run_prepared(
+        id,
+        session,
+        |shutdown| replay_status(replay, shutdown),
+        report,
+        stop,
+    )
+    .await
+}
+
+fn replay_status(
+    replay: Option<mpsc::Receiver<()>>,
+    shutdown: oneshot::Receiver<()>,
+) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
+    let status = Status::fixture()?;
+    Ok(if let Some(replay) = replay {
+        let (status, drive) = status.with_replay(replay);
+        let drive = async move {
+            tokio::select! {
+                _ = shutdown => Ok(()),
+                result = drive => result,
+            }
+        };
+        (status, Some(drive))
+    } else {
+        (status, None)
+    })
+}
+
+async fn run_prepared<F: Future<Output = io::Result<()>>>(
+    id: &str,
+    session: Session,
+    prepare: impl FnOnce(oneshot::Receiver<()>) -> io::Result<(Status, Option<F>)>,
     mut report: impl FnMut(Phase) -> io::Result<()>,
     stop: impl Future<Output = ()>,
 ) -> io::Result<()> {
     let result = async {
         report(Phase::Starting)?;
-        let status = Status::fixture()?;
-        let (status, drive) = if let Some(replay) = replay {
-            let (status, drive) = status.with_replay(replay);
-            (status, Some(drive))
-        } else {
-            (status, None)
-        };
+        let (shutdown, retiring) = oneshot::channel();
+        let (status, drive) = prepare(retiring)?;
         let endpoint = pipe::Endpoint::new(format!("{PREFIX}{id}"))?;
         let claim = endpoint.claim()?;
         let listener = endpoint.listen()?;
         report(Phase::Running)?;
 
         let mut clients = JoinSet::new();
-        let serve = accept(
-            listener,
-            &endpoint,
-            session,
-            Arc::new(status),
-            &mut clients,
-            stop,
-        );
-        let result = tokio::select! {
-            biased;
-            result = serve => result,
-            result = async {
-                if let Some(drive) = drive {
-                    drive.await?;
+        let result = {
+            let serve = accept(
+                listener,
+                &endpoint,
+                session,
+                Arc::new(status),
+                &mut clients,
+                stop,
+            );
+            let drive = async {
+                match drive {
+                    Some(drive) => drive.await,
+                    None => Ok(()),
                 }
-                std::future::pending().await
-            } => result,
+            };
+            tokio::pin!(serve, drive);
+            tokio::select! {
+                biased;
+                result = &mut serve => {
+                    let _ = shutdown.send(());
+                    result.and(drive.await)
+                }
+                result = &mut drive => {
+                    match result {
+                        Ok(()) => serve.await,
+                        Err(error) => Err(error),
+                    }
+                }
+            }
         };
         let stopping = report(Phase::Stopping);
         clients.abort_all();
@@ -283,7 +371,7 @@ mod tests {
 
     #[test]
     fn foreground_names_are_confined_to_the_development_namespace() {
-        assert!(valid_id("00000000000000000000000000000000"));
+        assert!(valid_dev_id("00000000000000000000000000000000"));
         for invalid in [
             "scm",
             "OpenBlade.Service.v2",
@@ -291,7 +379,7 @@ mod tests {
             "0000000000000000000000000000000A",
             "0000000000000000000000000000000\\",
         ] {
-            assert!(!valid_id(invalid));
+            assert!(!valid_dev_id(invalid));
         }
     }
 

@@ -20,6 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\OpenBlade.Service.Tests\WindowsReplay\v1\configuration-aggregate.json"
+                      LogicalName="OpenBlade.WindowsReplay.ConfigurationAggregate" />
     <None Update="Fixtures\DriverCatalogApplicability.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\ThxNativeComponentCatalog.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\ThxRznb11StackCatalog.json" CopyToOutputDirectory="PreserveNewest" />

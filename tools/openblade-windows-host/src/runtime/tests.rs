@@ -155,3 +155,42 @@ fn fake_journal_rejects_a_settlement_from_a_retired_revision() {
     assert_eq!(replay.journal.revision, revision);
     assert_eq!(replay.journal.entry, entry);
 }
+
+#[cfg(windows)]
+#[tokio::test]
+async fn an_in_flight_commit_keeps_the_executor_responsive_and_surfaces_failure_at_shutdown() {
+    use std::{sync::mpsc as thread_mpsc, time::Duration};
+    use tokio::{sync::oneshot, time::timeout};
+
+    let budget = Duration::from_secs(2);
+    let (step, advance) = mpsc::channel(1);
+    let (stop, shutdown) = oneshot::channel();
+    let (started, running) = oneshot::channel();
+    let (release, blocked) = thread_mpsc::channel();
+    let (status, drive) = start_durable(
+        baseline(),
+        80,
+        Some(DurableUpdate {
+            advance,
+            commit: Box::new(move || {
+                started.send(()).unwrap();
+                blocked.recv_timeout(budget).map_err(io::Error::other)?;
+                Err(io::Error::other("injected commit failure"))
+            }),
+        }),
+        shutdown,
+    )
+    .unwrap();
+
+    let worker = tokio::spawn(drive);
+    step.send(()).await.unwrap();
+    timeout(budget, running).await.unwrap().unwrap();
+    assert_eq!(status.borrow()["revision"], 2);
+    stop.send(()).unwrap();
+    tokio::task::yield_now().await;
+    assert!(!worker.is_finished());
+    release.send(()).unwrap();
+    let failure = timeout(budget, worker).await.unwrap().unwrap().unwrap_err();
+    assert_eq!(failure.to_string(), "injected commit failure");
+    assert_eq!(status.borrow()["revision"], 2);
+}

@@ -17,7 +17,8 @@ path = "src/discover.rs"
 [dependencies]
 openblade-domain = { path = '../../rust/crates/openblade-domain' }
 serde = { version = "=1.0.228", features = ["derive"] }
-serde_json = "=1.0.149"
+serde_json = { version = "=1.0.149", features = ["arbitrary_precision", "raw_value"] }
+sha2 = "=0.10.9"
 tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 
 [dev-dependencies]
@@ -26,21 +27,24 @@ openblade-types = { path = '../../rust/crates/openblade-types' }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = [
+    "Wdk_Storage_FileSystem",
     "Wdk_System_SystemServices",
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Devices_HumanInterfaceDevice",
     "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",
+    "Win32_System_Com",
     "Win32_System_Console",
+    "Win32_System_IO",
     "Win32_System_Pipes",
     "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_System_Services",
     "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+    "Win32_UI_Shell",
 ] }
 
-[target.'cfg(windows)'.dev-dependencies]
-windows-sys = { version = "=0.61.2", features = ["Win32_System_IO"] }
 
 [lints.rust]
 unsafe_code = "deny"

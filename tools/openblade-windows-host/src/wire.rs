@@ -98,6 +98,19 @@ impl Status {
         (self, drive)
     }
 
+    #[cfg(windows)]
+    pub fn with_durable(
+        mut self,
+        percent: u8,
+        update: Option<crate::runtime::DurableUpdate>,
+        shutdown: tokio::sync::oneshot::Receiver<()>,
+    ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
+        let (status, drive) =
+            crate::runtime::start_durable(self.active.current.clone(), percent, update, shutdown)?;
+        self.replay = Some(status);
+        Ok((self, drive))
+    }
+
     fn for_session(&self, session: Session) -> &Projection {
         match session {
             Session::Active => &self.active,
