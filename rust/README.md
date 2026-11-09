@@ -245,8 +245,8 @@ including automation-policy lifetime failure with host validation preserved.
 All device resources remain inert test doubles.
 
 
-## Linux and macOS discovery
+## macOS discovery
 
 The [developer discovery pilot](../tools/openblade-discovery/README.md) uses a
-separate Cargo workspace. It reads OS metadata and provides synthetic JSON for
-native UI prototyping, without using the Windows service or sending HID reports.
+separate Cargo workspace and reads macOS metadata without opening a HID device
+or sending reports.

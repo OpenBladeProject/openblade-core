@@ -1,6 +1,6 @@
 //! Only registry metadata. No user client, device open, or report functions.
 use crate::snapshot::{
-    Entry, Hid, HostMetadata, MAX_HOST_TEXT, Platform, RAZER_VID, Snapshot, host_text,
+    Entry, Hid, HostMetadata, MAX_HOST_TEXT, RAZER_VID, Snapshot, classify_macos_model,
 };
 use std::{
     ffi::{CStr, c_char, c_int, c_uchar, c_uint, c_void},
@@ -119,7 +119,7 @@ impl Drop for CfObject {
 }
 
 pub fn discover() -> Snapshot {
-    Snapshot::new(Platform::Macos, host_metadata(), enumerate())
+    Snapshot::new(host_metadata(), enumerate())
 }
 
 fn host_metadata() -> HostMetadata {
@@ -136,15 +136,10 @@ fn host_metadata() -> HostMetadata {
             0,
         )
     };
-    if result == 0
-        && bytes
+    if result == 0 {
+        bytes
             .get(..size)
-            .and_then(|bytes| bytes.strip_suffix(b"\0"))
-            .and_then(host_text)
-            .is_some()
-    {
-        // This may be an Apple SMBIOS identity on a Blade. Never resolve it to a model.
-        HostMetadata::Unverified
+            .map_or(HostMetadata::Unavailable, classify_macos_model)
     } else {
         HostMetadata::Unavailable
     }

@@ -7,32 +7,23 @@ pub const MAX_HOST_TEXT: usize = 128;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum Platform {
-    #[cfg(any(target_os = "linux", test))]
-    Linux,
-    #[cfg(any(target_os = "macos", test))]
-    Macos,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 pub enum HostMetadata {
     Unavailable,
     Unverified,
-    #[cfg(any(target_os = "linux", test))]
-    OtherVendor,
-    #[cfg(any(target_os = "linux", test))]
-    RazerBladeReported,
 }
 
-// No OS strings are retained in the output model.
-pub fn host_text(bytes: &[u8]) -> Option<&str> {
-    if bytes.len() > MAX_HOST_TEXT {
-        return None;
+// Validate only the bounded sysctl string. Never retain it in the snapshot.
+pub fn classify_macos_model(bytes: &[u8]) -> HostMetadata {
+    let model = bytes
+        .strip_suffix(b"\0")
+        .filter(|bytes| bytes.len() <= MAX_HOST_TEXT)
+        .and_then(|bytes| std::str::from_utf8(bytes).ok());
+    if model.is_some_and(|text| !text.trim().is_empty() && !text.chars().any(char::is_control)) {
+        // A valid model string may be spoofed; it cannot establish exact identity.
+        HostMetadata::Unverified
+    } else {
+        HostMetadata::Unavailable
     }
-    let text = std::str::from_utf8(bytes).ok()?;
-    let trimmed = text.trim();
-    (!trimmed.is_empty() && !text.chars().any(char::is_control)).then_some(trimmed)
 }
 
 pub enum Entry {
@@ -114,17 +105,17 @@ impl Hid {
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     schema_version: u8,
-    platform: Platform,
+    platform: &'static str,
     host_metadata: HostMetadata,
     exact_model: (),
     hid: Hid,
 }
 
 impl Snapshot {
-    pub fn new(platform: Platform, host_metadata: HostMetadata, hid: Hid) -> Self {
+    pub fn new(host_metadata: HostMetadata, hid: Hid) -> Self {
         Self {
             schema_version: 1,
-            platform,
+            platform: "macos",
             host_metadata,
             exact_model: (),
             hid,
