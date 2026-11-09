@@ -12,10 +12,27 @@
       "expected": {
         "success": true,
         "activations": 1,
-        "calls": [
-          "GetStatus"
-        ],
-        "controlAccess": 0
+        "controlAccess": 0,
+        "effects": [
+          "readCachedStatus"
+        ]
+      }
+    },
+    {
+      "id": "v79-active-subscription-initial-status",
+      "input": {
+        "operation": "subscribeStatus",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "session": "active",
+      "expected": {
+        "success": true,
+        "activations": 1,
+        "controlAccess": 0,
+        "effects": [
+          "readCachedStatus"
+        ]
       }
     },
     {
@@ -29,10 +46,10 @@
       "expected": {
         "success": true,
         "activations": 0,
-        "calls": [
-          "GetStatus"
-        ],
-        "controlAccess": 1
+        "controlAccess": 1,
+        "effects": [
+          "readCachedStatus"
+        ]
       }
     },
     {
@@ -48,12 +65,12 @@
       "expected": {
         "success": true,
         "activations": 1,
-        "calls": [
-          "Observe",
-          "GetStatus"
-        ],
         "controlAccess": 0,
-        "sensors": 2
+        "sensors": 2,
+        "effects": [
+          "observeRequestedSensors",
+          "readCachedStatus"
+        ]
       }
     },
     {
@@ -68,10 +85,10 @@
       "expected": {
         "success": true,
         "activations": 1,
-        "calls": [
-          "SetBatteryProtection"
-        ],
-        "operationStatus": 0
+        "operationStatus": 0,
+        "effects": [
+          "storeBatteryProtectionIntent"
+        ]
       }
     },
     {
@@ -86,7 +103,7 @@
       "expected": {
         "success": false,
         "activations": 0,
-        "calls": []
+        "effects": []
       }
     },
     {
@@ -102,41 +119,7 @@
       "expected": {
         "failure": "canceled",
         "activations": 0,
-        "calls": []
-      }
-    },
-    {
-      "id": "v51-cached-status",
-      "input": {
-        "operation": "getStatus",
-        "version": 51,
-        "requestId": "11111111-2222-4333-8444-555555555555"
-      },
-      "session": "active",
-      "expected": {
-        "success": true,
-        "activations": 0,
-        "calls": [
-          "GetStatus"
-        ],
-        "controlAccess": 0
-      }
-    },
-    {
-      "id": "v51-subscribe-initial-status",
-      "input": {
-        "operation": "subscribeStatus",
-        "version": 51,
-        "requestId": "11111111-2222-4333-8444-555555555555"
-      },
-      "session": "active",
-      "expected": {
-        "success": true,
-        "activations": 0,
-        "calls": [
-          "GetStatus"
-        ],
-        "controlAccess": 0
+        "effects": []
       }
     }
   ],
@@ -184,7 +167,9 @@
         "disposition": "Quarantined",
         "quarantineReason": "FutureSchema",
         "performance": null,
-        "gpuOffsets": null
+        "gpuOffsets": null,
+        "saveBeforeLoadReason": "FutureSchema",
+        "saveAfterLoadReason": "InvalidDocument"
       }
     },
     {
@@ -201,7 +186,9 @@
         "disposition": "Quarantined",
         "quarantineReason": "InvalidDocument",
         "performance": null,
-        "gpuOffsets": null
+        "gpuOffsets": null,
+        "saveBeforeLoadReason": "InvalidDocument",
+        "saveAfterLoadReason": "InvalidDocument"
       }
     }
   ],
@@ -296,7 +283,19 @@
   "thermal": [
     {
       "id": "indeterminate-confirmation",
-      "input": "indeterminate",
+      "input": {
+        "result": "Failed",
+        "readback": null,
+        "writeAttempted": true,
+        "readbackMatched": false,
+        "deviceAccessFailed": true,
+        "confirmationUnavailable": true,
+        "preWriteState": {
+          "performance": 1,
+          "fans": 0
+        },
+        "submissionCertainty": "Indeterminate"
+      },
       "expected": {
         "attempts": 1,
         "retryConsumed": false,
@@ -307,13 +306,52 @@
     },
     {
       "id": "confirmed-write",
-      "input": "confirmed",
+      "input": {
+        "result": "Applied",
+        "readback": {
+          "performance": 2,
+          "fans": 0
+        },
+        "writeAttempted": true,
+        "readbackMatched": true,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": null
+      },
       "expected": {
         "attempts": 1,
         "retryConsumed": false,
         "progress": "Acknowledged",
         "certainty": null,
         "disposition": "Confirmed"
+      }
+    }
+  ],
+  "compatibilityEdge": [
+    {
+      "id": "v51-cached-status",
+      "input": {
+        "operation": "getStatus",
+        "version": 51,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "expected": {
+        "success": true,
+        "writesBlocked": true
+      }
+    },
+    {
+      "id": "v51-mutation-rejected",
+      "input": {
+        "operation": "setFullChargeOverride",
+        "version": 51,
+        "requestId": "11111111-2222-4333-8444-555555555555",
+        "enabled": true
+      },
+      "expected": {
+        "success": false,
+        "failure": "readOnlyProtocol"
       }
     }
   ]

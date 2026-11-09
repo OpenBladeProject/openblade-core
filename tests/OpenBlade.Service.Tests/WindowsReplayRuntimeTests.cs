@@ -23,7 +23,7 @@ public sealed partial class ControlRequestHandlerTests
         stream.Write(prefix);
         stream.Write(payload);
         stream.Position = 0;
-        ServiceRequest request = await IpcMessageCodec.ReadRequestWithProtocol51CompatibilityAsync(stream, default);
+        ServiceRequest request = await IpcMessageCodec.ReadRequestAsync(stream, default);
 
         var runtime = new RecordingRuntime();
         var handler = new ControlRequestHandler(
@@ -48,12 +48,7 @@ public sealed partial class ControlRequestHandlerTests
         }
         else
         {
-            bool compatibility = request.Version == OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion;
-            // The named-pipe boundary performs this normalization before calling the read-only dispatcher.
-            ServiceResponse response = compatibility
-                ? await handler.HandleProtocol51ReadOnlyAsync(
-                    request with { Version = OpenBladeIpc.ProtocolVersion }, client, cancellation.Token)
-                : await handler.HandleAsync(request, client, cancellation.Token);
+            ServiceResponse response = await handler.HandleAsync(request, client, cancellation.Token);
 
             Assert.Equal(request.RequestId, response.RequestId);
             Assert.Equal(expected.GetProperty("success").GetBoolean(), response.Success);
@@ -74,7 +69,14 @@ public sealed partial class ControlRequestHandlerTests
         }
 
         Assert.Equal(expected.GetProperty("activations").GetInt32(), runtime.ActivationCalls);
-        Assert.Equal(expected.GetProperty("calls").EnumerateArray().Select(call => call.GetString()), runtime.Calls);
+        Assert.Equal(expected.GetProperty("effects").EnumerateArray().Select(effect => effect.GetString()),
+            runtime.Calls.Select(call => call switch
+            {
+                "GetStatus" => "readCachedStatus",
+                "Observe" => "observeRequestedSensors",
+                "SetBatteryProtection" => "storeBatteryProtectionIntent",
+                _ => throw new InvalidOperationException($"Unexpected runtime effect: {call}"),
+            }));
     }
 }
 
@@ -87,12 +89,20 @@ public sealed partial class ThermalTransitionExecutorTests
         using JsonDocument fixture = WindowsReplayData.Open();
         JsonElement example = WindowsReplayData.Find(fixture, "thermal", id);
         JsonElement expected = example.GetProperty("expected");
-        ScopedApplyOutcome input = example.GetProperty("input").GetString() switch
-        {
-            "indeterminate" => IndeterminateOutcome(),
-            "confirmed" => ConfirmedOutcome(writeAttempted: true),
-            _ => throw new InvalidDataException("Unknown thermal replay input."),
-        };
+        JsonElement observation = example.GetProperty("input");
+        ScopedApplyOutcome input = new(
+            new ControlResult(Enum.Parse<ControlResultStatus>(observation.GetProperty("result").GetString()!),
+                "Synthetic performance operation."),
+            Readback: ThermalReplayState(observation.GetProperty("readback")),
+            WriteAttempted: observation.GetProperty("writeAttempted").GetBoolean(),
+            ReadbackMatched: observation.GetProperty("readbackMatched").GetBoolean(),
+            DeviceCapabilities.Unavailable(),
+            DeviceAccessFailed: observation.GetProperty("deviceAccessFailed").GetBoolean(),
+            ConfirmationUnavailable: observation.GetProperty("confirmationUnavailable").GetBoolean(),
+            PreWriteState: ThermalReplayState(observation.GetProperty("preWriteState")),
+            WriteSubmissionState: observation.GetProperty("submissionCertainty").GetString() is { } certainty
+                ? Enum.Parse<OpenBlade.Protocol.WriteSubmissionState>(certainty)
+                : null);
         int attempts = 0;
         ThermalTransitionExecution execution = await ThermalTransitionExecutor.ExecuteScopedPerformanceAsync(
             new StubDevice(),
@@ -110,6 +120,12 @@ public sealed partial class ThermalTransitionExecutorTests
         Assert.Equal(expected.GetProperty("certainty").GetString(), execution.Trace.Certainty?.ToString());
         Assert.Equal(expected.GetProperty("disposition").GetString(), execution.Trace.Disposition.ToString());
     }
+    private static ConfirmedDeviceState? ThermalReplayState(JsonElement state) =>
+        state.ValueKind == JsonValueKind.Null
+            ? null
+            : new ConfirmedDeviceState(
+                (PerformancePreset)state.GetProperty("performance").GetInt32(),
+                (FanMode)state.GetProperty("fans").GetInt32(), null, null);
 }
 
 public sealed class WindowsReplayPersistenceTests : IDisposable
@@ -127,6 +143,12 @@ public sealed class WindowsReplayPersistenceTests : IDisposable
         string input = example.GetProperty("input").GetRawText();
         await File.WriteAllTextAsync(path, input);
 
+        if (expected.TryGetProperty("saveBeforeLoadReason", out JsonElement beforeLoad))
+        {
+            ConfigurationQuarantinedException error = await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+                new PersistentOverrideStore(path).SaveAsync(PersistentOverrideState.Empty, default));
+            Assert.Equal(beforeLoad.GetString(), error.Reason.ToString());
+        }
         PersistentOverrideLoadResult first = await new PersistentOverrideStore(path).LoadAsync(default);
         var restarted = new PersistentOverrideStore(path);
         PersistentOverrideLoadResult actual = await restarted.LoadAsync(default);
@@ -149,8 +171,9 @@ public sealed class WindowsReplayPersistenceTests : IDisposable
 
         if (actual.Disposition == ConfigurationLoadDisposition.Quarantined)
         {
-            await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
+            ConfigurationQuarantinedException error = await Assert.ThrowsAsync<ConfigurationQuarantinedException>(() =>
                 restarted.SaveAsync(PersistentOverrideState.Empty, default));
+            Assert.Equal(expected.GetProperty("saveAfterLoadReason").GetString(), error.Reason.ToString());
             Assert.Equal(input, await File.ReadAllTextAsync(path));
         }
 

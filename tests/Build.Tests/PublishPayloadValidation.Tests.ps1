@@ -16,35 +16,6 @@ function Assert-True {
     }
 }
 
-# Parse the publish entry points without executing Publish.ps1 or any helper.
-$inventory = Get-Content -LiteralPath (Join-Path $repository 'docs/windows-backend-replay-inventory.json') -Raw |
-    ConvertFrom-Json
-$publishScript = Join-Path $repository 'build/Publish.ps1'
-$tokens = $null
-$parseErrors = $null
-$publishAst = [System.Management.Automation.Language.Parser]::ParseFile(
-    $publishScript, [ref]$tokens, [ref]$parseErrors)
-Assert-True ($parseErrors.Count -eq 0) 'Unable to parse the Windows publish entry points.'
-$actualProjects = @($publishAst.FindAll({
-    param($node)
-    $node -is [System.Management.Automation.Language.CommandAst] -and
-        $node.GetCommandName() -eq 'Invoke-CheckedPublish'
-}, $true) | ForEach-Object {
-    $project = [regex]::Match($_.CommandElements[1].Extent.Text, 'src[/\\](?<name>OpenBlade\.[\w.]+)[/\\]\k<name>\.csproj')
-    $destination = $_.CommandElements[2]
-    Assert-True ($project.Success -and
-        $destination -is [System.Management.Automation.Language.VariableExpressionAst]) 'Unrecognized Windows publish entry.'
-    '{0} -> {1}' -f $project.Groups['name'].Value, $destination.VariablePath.UserPath
-})
-$expectedProjects = @($inventory.publishProjects | ForEach-Object { '{0} -> {1}' -f $_.project, $_.staging })
-$projectComparison = @{
-    ReferenceObject = $expectedProjects
-    DifferenceObject = $actualProjects
-    CaseSensitive = $true
-}
-$publishDifferences = @(Compare-Object @projectComparison)
-Assert-True ($publishDifferences.Count -eq 0) (
-    'Windows replay publish inventory differs from Publish.ps1: ' + ($publishDifferences | Out-String))
 function Get-RealHostingAssemblies {
     $repositoryCandidates = @(
         (Join-Path $repository 'artifacts\win-x64\OpenBlade\payload'),

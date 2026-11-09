@@ -98,6 +98,19 @@
       }
     },
     {
+      "id": "subscribe-status",
+      "input": {
+        "operation": "subscribeStatus",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      },
+      "output": {
+        "operation": "subscribeStatus",
+        "version": 79,
+        "requestId": "11111111-2222-4333-8444-555555555555"
+      }
+    },
+    {
       "id": "legacy-observation-mask",
       "input": {
         "operation": "observeState",

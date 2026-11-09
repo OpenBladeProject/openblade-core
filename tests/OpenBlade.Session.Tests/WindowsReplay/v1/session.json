@@ -77,12 +77,12 @@
             "version": 1,
             "requestId": "11111111-2222-4333-8444-555555555555"
           },
-          "invalid": true
+          "failure": "versionMismatch"
         },
         {
           "id": "oversize-prefix",
           "declaredLength": 65537,
-          "invalid": true
+          "failure": "lengthOutOfRange"
         },
         {
           "id": "unknown-member",
@@ -92,7 +92,7 @@
             "requestId": "11111111-2222-4333-8444-555555555555",
             "futureMember": true
           },
-          "invalid": true
+          "failure": "unknownMember"
         }
       ]
     },
@@ -132,12 +132,12 @@
             "version": 1,
             "requestId": "11111111-2222-4333-8444-555555555555"
           },
-          "invalid": true
+          "failure": "versionMismatch"
         },
         {
           "id": "oversize-prefix",
           "declaredLength": 65537,
-          "invalid": true
+          "failure": "lengthOutOfRange"
         },
         {
           "id": "unknown-member",
@@ -147,7 +147,7 @@
             "requestId": "11111111-2222-4333-8444-555555555555",
             "futureMember": true
           },
-          "invalid": true
+          "failure": "unknownMember"
         }
       ]
     },
@@ -251,12 +251,12 @@
             "version": 1,
             "requestId": "11111111-2222-4333-8444-555555555555"
           },
-          "invalid": true
+          "failure": "versionMismatch"
         },
         {
           "id": "oversize-prefix",
           "declaredLength": 65537,
-          "invalid": true
+          "failure": "lengthOutOfRange"
         },
         {
           "id": "unknown-member",
@@ -266,7 +266,7 @@
             "requestId": "11111111-2222-4333-8444-555555555555",
             "futureMember": true
           },
-          "invalid": true
+          "failure": "unknownMember"
         }
       ],
       "legacyResponse": {
@@ -296,12 +296,12 @@
             "version": 0,
             "requestId": "11111111-2222-4333-8444-555555555555"
           },
-          "invalid": true
+          "failure": "versionMismatch"
         },
         {
           "id": "oversize-prefix",
           "declaredLength": 262145,
-          "invalid": true
+          "failure": "lengthOutOfRange"
         },
         {
           "id": "unknown-member",
@@ -310,7 +310,7 @@
             "requestId": "11111111-2222-4333-8444-555555555555",
             "futureMember": true
           },
-          "invalid": true
+          "failure": "unknownMember"
         }
       ]
     }

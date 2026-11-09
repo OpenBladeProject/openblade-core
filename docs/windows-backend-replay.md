@@ -1,6 +1,6 @@
 # Windows backend replay baseline
 
-The compatibility baseline was taken from `df4cbe096e8cace43ab527f6335afd9d705528ed`. It covers the Windows service, current-user Session Agent, and first-party helper boundaries. The current C# hosts establish the oracle. The replay runs codecs on memory streams, dispatch against synthetic clients and fake state, and persistence against test-owned temporary files. The existing Rust codec and decoded policy fixtures remain the source for their respective FFI contracts.
+The compatibility baseline was taken from `df4cbe096e8cace43ab527f6335afd9d705528ed`. It covers the Windows service, current-user Session Agent, and first-party helper boundaries. The current C# hosts establish the oracle. The replay runs codecs on memory streams, dispatch against synthetic clients and fake state, the v51 one-shot connection loop on a memory stream, and persistence against test-owned temporary files. The existing Rust codec and decoded policy fixtures remain the source for their respective FFI contracts.
 
 ## Running the managed oracle
 
@@ -11,10 +11,10 @@ dotnet test tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj --f
 dotnet test tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter 'FullyQualifiedName~WindowsReplay' -p:NuGetAudit=false
 dotnet test tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj --filter FullyQualifiedName~WindowsRustModelEvidenceInventory -p:NuGetAudit=false
 dotnet test tests/OpenBlade.Session.Tests/OpenBlade.Session.Tests.csproj --filter 'FullyQualifiedName~WindowsReplay' -p:NuGetAudit=false
-pwsh -NoProfile -File tests/Build.Tests/PublishPayloadValidation.Tests.ps1
+pwsh -NoProfile -File tests/Build.Tests/WindowsReplayPublishInventory.Tests.ps1
 ```
 
-The existing affected-project CI runs the test projects and the publish contract. The publish contract parses the seven explicit project and staging pairs in `Publish.ps1` and runs its existing synthetic payload checks.
+The existing affected-project CI runs the test projects and the publish contract. The inventory contract parses the seven explicit project and staging pairs in Publish.ps1. It checks the listed helper switches and persistence readers against their source anchors. New helper modes and stores require inventory review. This check requires no restored or built assemblies.
 
 ## Consuming the fixtures from Rust
 
@@ -28,7 +28,7 @@ The existing affected-project CI runs the test projects and the publish contract
 | [Model evidence](../tests/OpenBlade.Protocol.Tests/Fixtures/windows-rust-model-evidence-inventory.json) | All 19 catalog profiles, production feature-evidence rows for the 17 source-reviewed profiles, and separate physical-evidence pointers for the two physically validated models. |
 | [Inventory](windows-backend-replay-inventory.json) | Windows publish entry points, helper modes, persistence owners, and the phase responsible for remaining parity. |
 
-The JSON fixtures are independent of .NET. Preserve integer precision and the distinction between absent and null. In a wire vector, serialize `input` to UTF-8 JSON with the discriminator first where present. `json` is a literal body used for duplicate keys. Prepend the signed 32-bit little-endian payload length in bytes. `declaredLength` supplies a prefix with no payload. Compare successful re-encodings as JSON objects, preserving array order and numeric values. `output` is the expected canonical body when the input is a request. Failure categories describe the point of rejection and do not freeze localized or exception text. Session request vectors without `invalid` use the same object for input and output. The persistence vectors use the raw JSON object on disk and assert state after reconstruction of the store.
+The JSON fixtures are independent of .NET. Preserve integer precision and the distinction between absent and null. In a wire vector, serialize `input` to UTF-8 JSON with the discriminator first where present. `json` is a literal body used for duplicate keys. Prepend the signed 32-bit little-endian payload length in bytes. `declaredLength` supplies a prefix with no payload. Compare successful re-encodings as JSON objects, preserving array order and numeric values. `output` is the expected canonical body when the input is a request. Failure categories describe the point of rejection and do not freeze localized or exception text. Session request vectors without `failure` use the same object for input and output. The persistence vectors use the raw JSON object on disk and assert state after reconstruction of the store.
 
 For example, emit a binary test frame for the read-only host or inspect the operation inventory from a clean checkout using Python's standard library:
 
@@ -37,7 +37,7 @@ python -c 'import pathlib, struct; p=pathlib.Path("tests/OpenBlade.Contracts.Tes
 python -m json.tool tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service.json
 ```
 
-Phase 2 should load these files directly in Rust tests. Replay the v79 cached read and subscription with the full v79 status body and replay the v51 compatibility read with the existing CLI fixtures. Check the active/background/cancelled scenarios and malformed envelope cases against the separate development endpoint. Existing service named-pipe tests retain authority for Windows ACL, Identification QoS, persistent slots, bounded subscriptions and authentication order. The fixture dispatcher does not simulate the Windows security token, the named-pipe compatibility rewrite/edge rejection, service lifecycle timing or subscriber reconnect. Implement and verify those on the development pipe in Phase 2.
+Phase 2 should load these files directly in Rust tests. Replay the v79 cached read and subscription with the full v79 status body and replay the v51 compatibility read with the existing CLI fixtures. Check the active/background/cancelled scenarios and malformed envelope cases against the separate development endpoint. Existing service named-pipe tests retain authority for Windows ACL, Identification QoS, persistent slots, bounded subscriptions and authentication order. The v51 one-shot vectors pass through the production connection loop. Windows security tokens, service lifecycle timing and subscriber reconnect require separate validation. Implement and verify those on the development pipe in Phase 2.
 
 ## Remaining parity by phase
 

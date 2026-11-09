@@ -49,72 +49,86 @@
     {
       "host": "OpenBlade.FanStop.Guardian",
       "mode": "--proxy",
-      "phase": 5
+      "phase": 5,
+      "source": "src/OpenBlade.FanStop.Guardian/Program.cs"
     },
     {
       "host": "OpenBlade.FanStop.Guardian",
       "mode": "--owner",
-      "phase": 5
+      "phase": 5,
+      "source": "src/OpenBlade.FanStop.Guardian/Program.cs"
     },
     {
       "host": "OpenBlade.CpuTemperature",
       "mode": "--worker",
-      "phase": 5
+      "phase": 5,
+      "source": "src/OpenBlade.CpuTemperature/Program.cs"
     },
     {
       "host": "OpenBlade.SessionAgent",
       "mode": "--snap-tap-input",
-      "phase": 6
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/SnapTapInputHost.cs"
     },
     {
       "host": "OpenBlade.SessionAgent",
       "mode": "--snap-tap-driver-worker",
-      "phase": 6
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/SnapTapDriverSupervisor.cs"
     },
     {
       "host": "OpenBlade.SessionAgent",
       "mode": "--thx-audio-helper",
-      "phase": 6
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/ThxAudioHelperProtocol.cs"
     },
     {
       "host": "OpenBlade.SessionAgent",
       "mode": "--request-thx-audio-provisioning",
-      "phase": 6
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/ThxAudioProvisioningElevationBridge.cs"
     },
     {
       "host": "OpenBlade.SessionAgent",
       "mode": "--provision-thx-audio",
-      "phase": 6
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/ThxAudioProvisioningCommand.cs"
     },
     {
       "host": "OpenBlade.SessionAgent",
       "mode": "--probe-microphone-mute-state",
-      "phase": 6
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/MicrophoneMuteStateProbeCommand.cs"
     },
     {
       "host": "OpenBlade.SessionAgent",
       "mode": "--probe-dynamic-lighting-identity",
-      "phase": 6
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/DynamicLightingIdentityProbe.cs"
     },
     {
       "host": "OpenBlade.Tray",
       "mode": "--start-service",
-      "phase": 6
+      "phase": 6,
+      "source": "src/OpenBlade.Tray/ElevatedServiceControlLauncher.cs"
     },
     {
       "host": "OpenBlade.Tray",
       "mode": "--shutdown-service",
-      "phase": 6
+      "phase": 6,
+      "source": "src/OpenBlade.Tray/ElevatedServiceControlLauncher.cs"
     },
     {
       "host": "OpenBlade.Tray",
       "mode": "--stop-razer-services",
-      "phase": 6
+      "phase": 6,
+      "source": "src/OpenBlade.Tray/ElevatedServiceControlLauncher.cs"
     },
     {
       "host": "OpenBlade.Tray",
       "mode": "--install-razer-keyboard-driver",
-      "phase": 6
+      "phase": 6,
+      "source": "src/OpenBlade.Tray/RazerDriverInstallLauncher.cs"
     }
   ],
   "retainedDeployment": [
@@ -142,7 +156,12 @@
         "UserConfigurationRepository"
       ],
       "phase": 4,
-      "coverage": "managed-only"
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Service/ProfileStore.cs",
+        "src/OpenBlade.Service/BatteryConfigurationStore.cs",
+        "src/OpenBlade.Service/UserConfigurationRepository.cs"
+      ]
     },
     {
       "files": [
@@ -152,7 +171,10 @@
         "PersistentOverrideStore"
       ],
       "phase": 4,
-      "coverage": "portable"
+      "coverage": "portable",
+      "readerSources": [
+        "src/OpenBlade.Service/PersistentOverrideStore.cs"
+      ]
     },
     {
       "files": [
@@ -164,7 +186,11 @@
         "ThermalConvergenceStateStore"
       ],
       "phase": 4,
-      "coverage": "managed-only"
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Service/ServiceRunMarkerStore.cs",
+        "src/OpenBlade.Service/ThermalConvergenceStateStore.cs"
+      ]
     },
     {
       "files": [
@@ -180,7 +206,13 @@
         "CpuLivePowerOwnershipJournalStore"
       ],
       "phase": 4,
-      "coverage": "managed-only"
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Service/HyperBoostOwnershipJournalStore.cs",
+        "src/OpenBlade.Service/CpuTuningOwnershipJournalStore.cs",
+        "src/OpenBlade.Service/CpuLiveCurveOwnershipJournalStore.cs",
+        "src/OpenBlade.Service/CpuLivePowerOwnershipJournalStore.cs"
+      ]
     },
     {
       "files": [
@@ -190,7 +222,10 @@
         "LaptopControlPendingStore"
       ],
       "phase": 4,
-      "coverage": "portable"
+      "coverage": "portable",
+      "readerSources": [
+        "src/OpenBlade.Service/LaptopControlPendingStore.cs"
+      ]
     },
     {
       "files": [
@@ -200,7 +235,10 @@
         "CoolingPadStateStore"
       ],
       "phase": 5,
-      "coverage": "managed-only"
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Service/CoolingPadStateStore.cs"
+      ]
     },
     {
       "files": [
@@ -210,7 +248,10 @@
         "FanStopGuardianStore"
       ],
       "phase": 5,
-      "coverage": "managed-only"
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Service/FanStopGuardianTransport.cs"
+      ]
     },
     {
       "files": [
@@ -230,7 +271,15 @@
         "ThxAudioProvisioningJournal"
       ],
       "phase": 6,
-      "coverage": "managed-only"
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Tray.Core/UiPreferenceStore.cs",
+        "src/OpenBlade.Tray.Core/WhatsNewSeenStore.cs",
+        "src/OpenBlade.Tray.Core/SnapTapRuntimeStatus.cs",
+        "src/OpenBlade.Session/DisplayAutomationCheckpointStore.cs",
+        "src/OpenBlade.Tray.Core/RazerDriverInstallJournal.cs",
+        "src/OpenBlade.SessionAgent/ThxAudioProvisioningJournal.cs"
+      ]
     }
   ]
 }

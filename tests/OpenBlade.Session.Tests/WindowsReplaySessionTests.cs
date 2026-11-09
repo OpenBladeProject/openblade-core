@@ -34,10 +34,27 @@ public sealed class WindowsReplaySessionTests
             .GetProperty("requests").EnumerateArray().Single(item => item.GetProperty("id").GetString() == id);
         using MemoryStream stream = OpenFrame(example);
         using var output = new MemoryStream();
-        bool invalid = example.TryGetProperty("invalid", out JsonElement reject) && reject.GetBoolean();
-        if (invalid)
+        if (example.TryGetProperty("failure", out JsonElement failure))
         {
-            await Assert.ThrowsAsync<InvalidDataException>(() => ReplayAsync(family, stream, output));
+            InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() => ReplayAsync(family, stream, output));
+            switch (failure.GetString())
+            {
+                case "versionMismatch":
+                    Assert.Contains("protocol version", error.Message, StringComparison.Ordinal);
+                    Assert.Null(error.InnerException);
+                    break;
+                case "lengthOutOfRange":
+                    Assert.Contains("message length", error.Message, StringComparison.Ordinal);
+                    Assert.Equal(sizeof(int), stream.Position);
+                    break;
+                case "unknownMember":
+                    Assert.IsType<JsonException>(error.InnerException);
+                    break;
+                default:
+                    throw new InvalidDataException("Unknown Session replay failure category.");
+            }
+
+            Assert.Equal(0, output.Length);
             return;
         }
 
@@ -106,7 +123,7 @@ public sealed class WindowsReplaySessionTests
             .Select(attribute => Assert.IsType<string>(attribute.TypeDiscriminator))
             .Order(StringComparer.Ordinal).ToArray();
         JsonElement[] valid = family.GetProperty("requests").EnumerateArray()
-            .Where(example => !example.TryGetProperty("invalid", out _))
+            .Where(example => !example.TryGetProperty("failure", out _))
             .Select(example => example.GetProperty("input")).ToArray();
         if (discriminator is null)
         {
