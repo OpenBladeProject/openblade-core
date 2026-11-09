@@ -108,6 +108,47 @@ async fn replays_managed_v79_reads_and_the_full_status_event() {
 }
 
 #[tokio::test]
+async fn replay_publication_during_initial_write_remains_pending() {
+    let (advance, input) = tokio::sync::mpsc::channel(1);
+    let (status, drive) = Status::fixture().unwrap().with_replay(input);
+    let mut published = status.replay.as_ref().unwrap().clone();
+    let drive = tokio::spawn(drive);
+    let slots = Arc::new(Semaphore::new(1));
+    let (mut client, server) = connect(Arc::new(status), slots.clone(), Session::Active, 64);
+    let request = json!({"operation":"subscribeStatus","version":79,"requestId":ID});
+    send(&mut client, &serde_json::to_vec(&request).unwrap()).await;
+
+    // Reading the prefix proves the server captured its initial revision.
+    // The body is larger than the duplex buffer and cannot finish yet.
+    let length = timeout(FRAME_TIMEOUT, client.read_i32_le())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(length > 64);
+    advance.send(()).await.unwrap();
+    timeout(FRAME_TIMEOUT, published.changed())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut body = vec![0; length as usize];
+    timeout(FRAME_TIMEOUT, client.read_exact(&mut body))
+        .await
+        .unwrap()
+        .unwrap();
+    let initial: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(initial["status"]["revision"], 1);
+    let event = receive(&mut client, "statusEvent").await;
+    assert_eq!(event["status"]["revision"], 2);
+    assert_eq!(event["status"]["functionKeyPrimary"], Value::Null);
+
+    drop(client);
+    server.await.unwrap().unwrap();
+    assert_eq!(slots.available_permits(), 1);
+    drop(advance);
+    drive.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn replays_v51_request_and_emits_only_the_cli_whitelist() {
     let status = Arc::new(Status::fixture().unwrap());
     let (mut client, server) = connect(status, Arc::new(Semaphore::new(0)), Session::Active, 128);

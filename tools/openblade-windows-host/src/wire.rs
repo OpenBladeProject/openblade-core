@@ -1,11 +1,12 @@
 use std::future::pending;
 use std::io::{self, ErrorKind};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, watch};
 use tokio::time::timeout;
 
 const CURRENT_VERSION: i32 = 79;
@@ -27,6 +28,7 @@ pub enum Session {
 
 pub struct Status {
     active: Projection,
+    replay: Option<watch::Receiver<Arc<Value>>>,
     background: Projection,
 }
 
@@ -82,8 +84,18 @@ impl Status {
 
         Ok(Self {
             active: Projection::new(current, legacy)?,
+            replay: None,
             background: Projection::new(background, background_legacy)?,
         })
+    }
+
+    pub fn with_replay(
+        mut self,
+        advance: tokio::sync::mpsc::Receiver<()>,
+    ) -> (Self, impl Future<Output = io::Result<()>>) {
+        let (status, drive) = crate::runtime::start(self.active.current.clone(), advance);
+        self.replay = Some(status);
+        (self, drive)
     }
 
     fn for_session(&self, session: Session) -> &Projection {
@@ -216,7 +228,12 @@ where
     let payload = timeout(FRAME_TIMEOUT, read_payload(&mut io)).await??;
     // Windows supplies the token associated with the last pipe read. Resolve it
     // after the exact first payload and before parsing any client-supplied JSON.
-    let projected = status.for_session(authorize(&io)?);
+    let session = authorize(&io)?;
+    let projected = status.for_session(session);
+    let replay = match session {
+        Session::Active => status.replay.as_ref(),
+        Session::Background => None,
+    };
     let request = Request::decode(&payload)?;
     match (request.version, request.operation.as_str()) {
         (LEGACY_VERSION, "getStatus") => {
@@ -227,11 +244,9 @@ where
             .await
         }
         (CURRENT_VERSION, "getStatus") => {
-            write_frame(
-                &mut io,
-                request.response(Some(&projected.current), None, None),
-            )
-            .await
+            let latest = replay.map(|status| Arc::clone(&status.borrow()));
+            let current = latest.as_deref().unwrap_or(&projected.current);
+            write_frame(&mut io, request.response(Some(current), None, None)).await
         }
         (CURRENT_VERSION, "subscribeStatus") => {
             let Ok(_slot) = subscriptions.try_acquire() else {
@@ -245,24 +260,29 @@ where
                 )
                 .await;
             };
-            write_frame(
-                &mut io,
-                request.response(Some(&projected.initial), None, None),
-            )
-            .await?;
+            // Mark the exact initial snapshot seen before writing it. A publication
+            // during that write stays pending in this receiver, including on reconnect.
+            let mut replay = replay.cloned();
+            let latest = replay
+                .as_mut()
+                .map(|status| Arc::clone(&status.borrow_and_update()));
+            let initial = latest.as_deref().unwrap_or(&projected.initial);
+            write_frame(&mut io, request.response(Some(initial), None, None)).await?;
 
-            // A fixed replay publishes one newer snapshot. Keep the lease until
-            // a peer disconnects, sends another byte, or the host cancels the task.
             let (mut reader, mut writer) = tokio::io::split(io);
             let mut probe = [0];
             tokio::select! {
                 disconnected = reader.read(&mut probe) => disconnected.map(|_| ()),
                 streamed = async {
-                    let event = Frame::StatusEvent {
-                        version: CURRENT_VERSION,
-                        status: &projected.current,
-                    };
-                    write_frame(&mut writer, event).await?;
+                    if let Some(mut replay) = replay {
+                        while replay.changed().await.is_ok() {
+                            let latest = Arc::clone(&replay.borrow_and_update());
+                            write_status_event(&mut writer, &latest).await?;
+                        }
+                        return Ok(());
+                    }
+                    // Retain the original fixed replay for the existing modes.
+                    write_status_event(&mut writer, &projected.current).await?;
                     pending::<io::Result<()>>().await
                 } => streamed,
             }
@@ -279,6 +299,20 @@ where
             .await
         }
     }
+}
+
+async fn write_status_event(
+    writer: &mut (impl AsyncWrite + Unpin),
+    status: &Value,
+) -> io::Result<()> {
+    write_frame(
+        writer,
+        Frame::StatusEvent {
+            version: CURRENT_VERSION,
+            status,
+        },
+    )
+    .await
 }
 
 async fn read_payload(io: &mut (impl AsyncRead + Unpin)) -> io::Result<Vec<u8>> {

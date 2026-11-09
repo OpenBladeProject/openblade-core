@@ -177,6 +177,65 @@ public sealed class RustReadOnlyHostTests
         await host.StopAsync(timeout.Token);
     }
 
+
+    [RustReadOnlyHostFact]
+    public async Task TrayClient_ObservesOrderedRecoveryAndPowerChanges_AndReconnectsToLatestStatus()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        string endpointId = Guid.NewGuid().ToString("N");
+        await using var host = DevHost.Start(endpointId, "foreground-replay");
+        await host.WaitUntilReadyAsync(timeout.Token);
+        await using var client = new ServiceClient(PipeName(endpointId));
+        await using var watch = client.WatchStatusAsync(timeout.Token).GetAsyncEnumerator();
+
+        ServiceStatusSnapshot initial = await ReadStatusAsync(watch, subscriptionOpened: true);
+        Assert.Equal(1, initial.Revision);
+        Assert.True(initial.WritesBlocked);
+        Assert.Null(initial.FunctionKeyPrimary);
+        Assert.Null(initial.ConfirmedState?.Performance);
+        Assert.Equal(PowerSource.PluggedIn, initial.ActivePowerSource);
+        Assert.Equal(initial.Profiles.PluggedIn.Performance, initial.DesiredState.Performance.Value);
+        Assert.Equal(initial.Revision, (await client.GetStatusAsync(timeout.Token)).Revision);
+
+        await host.AdvanceAsync(timeout.Token);
+        ServiceStatusSnapshot unavailable = await ReadStatusAsync(watch, subscriptionOpened: false);
+        Assert.Equal(2, unavailable.Revision);
+        Assert.True(unavailable.WritesBlocked);
+        Assert.Null(unavailable.FunctionKeyPrimary);
+
+        await host.AdvanceAsync(timeout.Token);
+        ServiceStatusSnapshot onBattery = await ReadStatusAsync(watch, subscriptionOpened: false);
+        Assert.Equal(3, onBattery.Revision);
+        Assert.Equal(PowerSource.Battery, onBattery.ActivePowerSource);
+        Assert.Equal(onBattery.Profiles.Battery.Performance, onBattery.DesiredState.Performance.Value);
+        Assert.NotEqual(initial.DesiredState.Performance.Value, onBattery.DesiredState.Performance.Value);
+        Assert.Null(onBattery.ConfirmedState?.Performance);
+
+        await host.AdvanceAsync(timeout.Token);
+        ServiceStatusSnapshot settled = await ReadStatusAsync(watch, subscriptionOpened: false);
+        Assert.Equal(4, settled.Revision);
+        Assert.True(settled.WritesBlocked);
+        Assert.Equal(FunctionKeyPrimaryMode.MultimediaKeys, settled.FunctionKeyPrimary);
+        Assert.Equal(onBattery.DesiredState.Performance, settled.DesiredState.Performance);
+        ServiceStatusSnapshot cached = await client.GetStatusAsync(timeout.Token);
+        Assert.Equal(settled.Revision, cached.Revision);
+        Assert.Equal(settled.FunctionKeyPrimary, cached.FunctionKeyPrimary);
+
+        await using var reconnected = client.WatchStatusAsync(timeout.Token).GetAsyncEnumerator();
+        ServiceStatusSnapshot latest = await ReadStatusAsync(reconnected, subscriptionOpened: true);
+        Assert.Equal(settled.Revision, latest.Revision);
+        Assert.Equal(settled.FunctionKeyPrimary, latest.FunctionKeyPrimary);
+
+        // Exercise EOF shutdown with active subscribers and an incomplete first frame.
+        await using NamedPipeClientStream partial = await ConnectAsync(endpointId, timeout.Token);
+        await partial.WriteAsync(new byte[] { 1 }, timeout.Token);
+        using var stopBudget = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        stopBudget.CancelAfter(TimeSpan.FromSeconds(5));
+        await host.StopAsync(stopBudget.Token);
+        Assert.True(await watch.MoveNextAsync());
+        Assert.IsType<ServiceWatchUpdate.Reconnecting>(watch.Current);
+    }
+
     private static string PipeName(string endpointId) => $"OpenBlade.Rust.ReadOnly.Dev.{endpointId}";
 
     private static async Task<ServiceStatusSnapshot> ReadStatusAsync(
@@ -267,6 +326,13 @@ public sealed class RustReadOnlyHostTests
             }
 
             Assert.Equal("READY", line);
+        }
+
+
+        internal async Task AdvanceAsync(CancellationToken token)
+        {
+            await process.StandardInput.BaseStream.WriteAsync(new byte[] { (byte)'n' }, token);
+            await process.StandardInput.BaseStream.FlushAsync(token);
         }
 
         internal async Task StopAsync(CancellationToken token)

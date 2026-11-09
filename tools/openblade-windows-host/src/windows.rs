@@ -1,13 +1,13 @@
 use std::{
     future::Future,
-    io::{self, BufRead, Write},
+    io::{self, BufRead, Read, Write},
     sync::Arc,
 };
 
 use tokio::{
     net::windows::named_pipe::NamedPipeServer,
     runtime::Builder,
-    sync::{Semaphore, oneshot},
+    sync::{Semaphore, mpsc, oneshot},
     task::JoinSet,
     time::{sleep, timeout},
 };
@@ -38,36 +38,59 @@ pub(super) fn entry() -> io::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.as_slice() {
         [mode] if mode == "--scm" => scm::dispatch(),
-        [mode, id] if mode == "foreground" || mode == "foreground-background" => {
+        [mode, id]
+            if mode == "foreground"
+                || mode == "foreground-background"
+                || mode == "foreground-replay" =>
+        {
             let id = id.to_str().filter(|id| valid_id(id)).ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "expected a 32-digit lowercase hex ID",
                 )
             })?;
-            let session = if mode == "foreground" {
+            let session = if mode != "foreground-background" {
                 Session::Active
             } else {
                 Session::Background
             };
 
+            let (mut advance, replay) = if mode == "foreground-replay" {
+                let (sender, receiver) = mpsc::channel(1);
+                (Some(sender), Some(receiver))
+            } else {
+                (None, None)
+            };
             let (stop_tx, stop_rx) = oneshot::channel();
             let mut stop_tx = Some(stop_tx);
             let runtime = Builder::new_current_thread().enable_all().build()?;
             runtime.block_on(run(
                 id,
                 session,
+                replay,
                 |phase| {
                     if phase == Phase::Running {
-                        // One byte or EOF is the harness-owned stop signal.
+                        // This thread owns stdin. EOF stops replay; one byte stops fixed modes.
                         std::thread::Builder::new()
                             .name("development-stop".into())
                             .spawn({
                                 let stop = stop_tx.take().ok_or_else(|| {
                                     io::Error::other("foreground stop signal already started")
                                 })?;
+                                let advance = advance.take();
                                 move || {
-                                    let _ = io::stdin().lock().fill_buf();
+                                    let mut input = io::stdin().lock();
+                                    if let Some(advance) = advance {
+                                        let mut byte = [0];
+                                        while input.read_exact(&mut byte).is_ok() {
+                                            if byte[0] == b'n' && advance.blocking_send(()).is_err()
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        let _ = input.fill_buf();
+                                    }
                                     let _ = stop.send(());
                                 }
                             })?;
@@ -84,7 +107,7 @@ pub(super) fn entry() -> io::Result<()> {
         }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "expected foreground <hex-id>, foreground-background <hex-id>, or --scm",
+            "expected foreground <hex-id>, foreground-background <hex-id>, foreground-replay <hex-id>, or --scm",
         )),
     }
 }
@@ -99,19 +122,43 @@ fn valid_id(id: &str) -> bool {
 async fn run(
     id: &str,
     session: Session,
+    replay: Option<mpsc::Receiver<()>>,
     mut report: impl FnMut(Phase) -> io::Result<()>,
     stop: impl Future<Output = ()>,
 ) -> io::Result<()> {
     let result = async {
         report(Phase::Starting)?;
-        let status = Arc::new(Status::fixture()?);
+        let status = Status::fixture()?;
+        let (status, drive) = if let Some(replay) = replay {
+            let (status, drive) = status.with_replay(replay);
+            (status, Some(drive))
+        } else {
+            (status, None)
+        };
         let endpoint = pipe::Endpoint::new(format!("{PREFIX}{id}"))?;
         let claim = endpoint.claim()?;
         let listener = endpoint.listen()?;
         report(Phase::Running)?;
 
         let mut clients = JoinSet::new();
-        let result = accept(listener, &endpoint, session, status, &mut clients, stop).await;
+        let serve = accept(
+            listener,
+            &endpoint,
+            session,
+            Arc::new(status),
+            &mut clients,
+            stop,
+        );
+        let result = tokio::select! {
+            biased;
+            result = serve => result,
+            result = async {
+                if let Some(drive) = drive {
+                    drive.await?;
+                }
+                std::future::pending().await
+            } => result,
+        };
         let stopping = report(Phase::Stopping);
         clients.abort_all();
         while clients.join_next().await.is_some() {}
@@ -260,6 +307,7 @@ mod tests {
             let host = run(
                 &id,
                 Session::Active,
+                None,
                 |phase| {
                     phases.push(phase);
                     match phase {
@@ -323,6 +371,7 @@ mod tests {
             let result = run(
                 &id,
                 Session::Active,
+                None,
                 |phase| {
                     phases.push(phase);
                     Ok(())
@@ -347,6 +396,7 @@ mod tests {
             let host = run(
                 &id,
                 Session::Active,
+                None,
                 |phase| {
                     if phase == Phase::Running {
                         ready.take().unwrap().send(()).unwrap();
@@ -424,6 +474,7 @@ mod tests {
             let host = run(
                 &id,
                 Session::Active,
+                None,
                 |phase| {
                     if phase == Phase::Running {
                         // Open and close a client before the accept loop can poll.
@@ -486,7 +537,7 @@ mod tests {
             let (stop, stop_requested) = oneshot::channel();
             let (ready, wait_ready) = oneshot::channel();
             let mut ready = Some(ready);
-            let host = run(&id, Session::Active, |phase| {
+            let host = run(&id, Session::Active, None, |phase| {
                 if phase == Phase::Running {
                     ready.take().unwrap().send(()).unwrap();
                 }
