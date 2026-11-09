@@ -17,6 +17,7 @@ tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt", "sy
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = [
     "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
     "Win32_System_Pipes",
     "Win32_System_Services",
     "Win32_System_Threading",

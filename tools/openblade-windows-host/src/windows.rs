@@ -9,6 +9,11 @@ use tokio::{
     runtime::Builder,
     sync::{Semaphore, oneshot},
     task::JoinSet,
+    time::{sleep, timeout},
+};
+
+use windows_sys::Win32::Foundation::{
+    ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_NOT_CONNECTED,
 };
 
 use crate::wire::{self, Session, Status};
@@ -101,7 +106,8 @@ async fn run(
         report(Phase::Starting)?;
         let status = Arc::new(Status::fixture()?);
         let endpoint = pipe::Endpoint::new(format!("{PREFIX}{id}"))?;
-        let listener = endpoint.listen(true)?;
+        let claim = endpoint.claim()?;
+        let listener = endpoint.listen()?;
         report(Phase::Running)?;
 
         let mut clients = JoinSet::new();
@@ -109,6 +115,7 @@ async fn run(
         let stopping = report(Phase::Stopping);
         clients.abort_all();
         while clients.join_next().await.is_some() {}
+        drop(claim);
         result.and(stopping)
     }
     .await;
@@ -130,35 +137,76 @@ async fn accept(
     let identity = Arc::clone(&endpoint.identity);
     tokio::pin!(stop);
     loop {
-        tokio::select! {
+        let connected = tokio::select! {
             biased;
             () = &mut stop => return Ok(()),
             joined = clients.join_next(), if !clients.is_empty() => {
                 if let Some(Err(error)) = joined {
-                    return Err(io::Error::other(error));
+                    let _ = writeln!(io::stderr().lock(), "Development pipe task: {error}");
                 }
+                continue;
             }
-            connected = listener.connect(), if clients.len() < CLIENTS => {
-                connected?;
-                // Retain at least one server handle across every accepted connection.
-                let next = endpoint.listen(false)?;
-                let client = std::mem::replace(&mut listener, next);
+            connected = listener.connect() => connected,
+        };
+
+        match connected {
+            Ok(()) if clients.len() < CLIENTS => {
+                let client = listener;
                 let status = Arc::clone(&status);
                 let identity = Arc::clone(&identity);
                 let subscriptions = Arc::clone(&subscriptions);
                 clients.spawn(async move {
-                    let authorize = |pipe: &NamedPipeServer| identity.authorize(pipe).map(|()| session);
-                    // Invalid input, timeout and client disconnect only retire this connection.
+                    let authorize =
+                        |pipe: &NamedPipeServer| identity.authorize(pipe).map(|()| session);
                     let _ = wire::serve(client, authorize, &status, &subscriptions).await;
                 });
             }
+            Ok(()) => drop(listener), // Promptly close a connection above the handler limit.
+            Err(error) if stale_connection(&error) => drop(listener),
+            Err(error) => return Err(error),
         }
+
+        // Retire the listener instead of reusing it. Tokio can already have
+        // buffered bytes from its previous peer. The private claim holds the
+        // name throughout the replacement.
+        listener = tokio::select! {
+            biased;
+            () = &mut stop => return Ok(()),
+            next = next_listener(endpoint) => next?,
+        };
     }
+}
+
+fn stale_connection(error: &io::Error) -> bool {
+    matches!(
+        error.raw_os_error().map(|code| code as u32),
+        Some(ERROR_BROKEN_PIPE | ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED)
+    )
+}
+
+async fn next_listener(endpoint: &pipe::Endpoint) -> io::Result<NamedPipeServer> {
+    use std::time::Duration;
+
+    timeout(Duration::from_secs(2), async {
+        loop {
+            match endpoint.listen() {
+                Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
+                    // A retired overlapped operation can briefly retain its handle.
+                    sleep(Duration::from_millis(20)).await;
+                }
+                result => return result,
+            }
+        }
+    })
+    .await?
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::{
+        sync::atomic::{AtomicU32, Ordering},
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
 
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -173,7 +221,13 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        format!("{:08x}{time:024x}", std::process::id())
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
+        format!(
+            "{:08x}{:016x}{sequence:08x}",
+            std::process::id(),
+            time as u64
+        )
     }
 
     fn runtime() -> tokio::runtime::Runtime {
@@ -263,7 +317,8 @@ mod tests {
             let id = test_id();
             let path = format!("{PREFIX}{id}");
             let endpoint = pipe::Endpoint::new(path.clone()).unwrap();
-            let _owner = endpoint.listen(true).unwrap();
+            let _claim = endpoint.claim().unwrap();
+            let _owner = endpoint.listen().unwrap();
             let mut phases = Vec::new();
             let result = run(
                 &id,
@@ -279,6 +334,148 @@ mod tests {
             assert_eq!(phases, [Phase::Starting, Phase::Stopped { failed: true }]);
             assert!(ClientOptions::new().open(&path).is_ok());
         });
+    }
+
+    #[test]
+    fn capacity_retires_overflow_without_waiting_for_partial_frame_deadlines() {
+        runtime().block_on(async {
+            let id = test_id();
+            let path = format!("{PREFIX}{id}");
+            let (stop, stop_requested) = oneshot::channel();
+            let (ready, wait_ready) = oneshot::channel();
+            let mut ready = Some(ready);
+            let host = run(
+                &id,
+                Session::Active,
+                |phase| {
+                    if phase == Phase::Running {
+                        ready.take().unwrap().send(()).unwrap();
+                    }
+                    Ok(())
+                },
+                async {
+                    stop_requested.await.unwrap();
+                },
+            );
+            let client = async {
+                wait_ready.await.unwrap();
+                let mut pending = Vec::new();
+                for _ in 0..CLIENTS {
+                    let mut client = open_pipe(&path).await;
+                    client.write_all(&[10]).await.unwrap();
+                    pending.push(client);
+                }
+                let mut overflow = open_pipe(&path).await;
+                let mut byte = [0];
+                let result = timeout(Duration::from_secs(1), overflow.read(&mut byte))
+                    .await
+                    .expect("overflow waited for an active handler to finish");
+                assert_closed(result);
+
+                // The owner must still be running and serviceable after the
+                // eight stalled first frames time out and free their handlers.
+                let result = pending[0].read(&mut byte).await;
+                assert_closed(result);
+                drop(pending);
+                read_status(&path).await;
+                stop.send(()).unwrap();
+            };
+            let (result, ()) =
+                timeout(Duration::from_secs(8), async { tokio::join!(host, client) })
+                    .await
+                    .unwrap();
+            result.unwrap();
+        });
+    }
+
+    #[test]
+    fn transient_instance_exhaustion_preserves_the_claim_and_retries() {
+        runtime().block_on(async {
+            let path = format!("{PREFIX}{}", test_id());
+            let endpoint = pipe::Endpoint::new(path).unwrap();
+            let _claim = endpoint.claim().unwrap();
+            let mut instances: Vec<_> = (0..=CLIENTS).map(|_| endpoint.listen().unwrap()).collect();
+            assert_eq!(
+                endpoint.listen().unwrap_err().raw_os_error(),
+                Some(ERROR_PIPE_BUSY as i32)
+            );
+            let release = async {
+                sleep(Duration::from_millis(50)).await;
+                drop(instances.pop());
+            };
+            let (replacement, ()) = tokio::join!(next_listener(&endpoint), release);
+            drop(replacement.unwrap());
+            drop(instances);
+            assert_eq!(
+                endpoint.claim().unwrap_err().kind(),
+                io::ErrorKind::PermissionDenied
+            );
+        });
+    }
+
+    #[test]
+    fn client_that_closes_before_accept_does_not_retire_endpoint() {
+        runtime().block_on(async {
+            let id = test_id();
+            let path = format!("{PREFIX}{id}");
+            let (stop, stop_requested) = oneshot::channel();
+            let (ready, wait_ready) = oneshot::channel();
+            let mut ready = Some(ready);
+            let host = run(
+                &id,
+                Session::Active,
+                |phase| {
+                    if phase == Phase::Running {
+                        // Open and close a client before the accept loop can poll.
+                        drop(ClientOptions::new().open(&path).unwrap());
+                        ready.take().unwrap().send(()).unwrap();
+                    }
+                    Ok(())
+                },
+                async {
+                    stop_requested.await.unwrap();
+                },
+            );
+            let client = async {
+                wait_ready.await.unwrap();
+                read_status(&path).await;
+                stop.send(()).unwrap();
+            };
+            let (result, ()) =
+                timeout(Duration::from_secs(5), async { tokio::join!(host, client) })
+                    .await
+                    .unwrap();
+            result.unwrap();
+        });
+    }
+
+    async fn open_pipe(path: &str) -> tokio::net::windows::named_pipe::NamedPipeClient {
+        loop {
+            match ClientOptions::new().open(path) {
+                Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
+                    sleep(Duration::from_millis(5)).await;
+                }
+                result => return result.unwrap(),
+            }
+        }
+    }
+
+    async fn read_status(path: &str) {
+        let mut pipe = open_pipe(path).await;
+        let request = br#"{"operation":"getStatus","version":79,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
+        pipe.write_all(&(request.len() as i32).to_le_bytes())
+            .await
+            .unwrap();
+        pipe.write_all(request).await.unwrap();
+        assert!((1..=65_536).contains(&pipe.read_i32_le().await.unwrap()));
+    }
+
+    fn assert_closed(result: io::Result<usize>) {
+        match result {
+            Ok(0) => {}
+            Err(error) if stale_connection(&error) => {}
+            result => panic!("expected closed pipe, got {result:?}"),
+        }
     }
 
     #[test]

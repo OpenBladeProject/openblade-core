@@ -2,8 +2,10 @@
 
 use std::{
     ffi::c_void,
+    fs::{File, OpenOptions},
     io,
     mem::{size_of, size_of_val},
+    os::windows::fs::OpenOptionsExt,
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     ptr::null_mut,
     sync::Arc,
@@ -11,7 +13,7 @@ use std::{
 
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use windows_sys::Win32::{
-    Foundation::{HANDLE, LUID, LocalFree},
+    Foundation::{HANDLE, INVALID_HANDLE_VALUE, LUID, LocalFree},
     Security::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
@@ -21,13 +23,22 @@ use windows_sys::Win32::{
         SECURITY_MAX_SID_SIZE, TOKEN_QUERY, TOKEN_STATISTICS, TOKEN_USER, TokenSessionId,
         TokenStatistics, TokenUser,
     },
+    Storage::FileSystem::{
+        FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX, SECURITY_IDENTIFICATION,
+    },
     System::{
-        Pipes::{GetNamedPipeClientSessionId, ImpersonateNamedPipeClient},
+        Pipes::{
+            CreateNamedPipeW, GetNamedPipeClientProcessId, GetNamedPipeClientSessionId,
+            ImpersonateNamedPipeClient, PIPE_REJECT_REMOTE_CLIENTS,
+        },
         Threading::{GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken},
     },
 };
 
 use super::CLIENTS;
+
+const PIPE_INSTANCES: u32 = CLIENTS as u32 + 2;
+const PIPE_BUFFER_BYTES: u32 = 8192;
 
 pub(super) struct Endpoint {
     path: String,
@@ -62,25 +73,67 @@ impl Endpoint {
         })
     }
 
-    pub(super) fn listen(&self, first: bool) -> io::Result<NamedPipeServer> {
-        let mut attributes = SECURITY_ATTRIBUTES {
-            nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
-            lpSecurityDescriptor: self.descriptor.0,
-            bInheritHandle: 0,
+    pub(super) fn claim(&self) -> io::Result<(OwnedHandle, File)> {
+        // A synchronous instance makes no I/O submissions, so dropping the
+        // claim does not depend on Tokio draining overlapped read completions.
+        let path: Vec<_> = self.path.encode_utf16().chain([0]).collect();
+        // SAFETY: both the path and explicit descriptor live through this call.
+        let server = unsafe {
+            CreateNamedPipeW(
+                path.as_ptr(),
+                PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                PIPE_REJECT_REMOTE_CLIENTS,
+                PIPE_INSTANCES,
+                PIPE_BUFFER_BYTES,
+                PIPE_BUFFER_BYTES,
+                0,
+                &self.security_attributes(),
+            )
         };
+        if server == INVALID_HANDLE_VALUE {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: a successful CreateNamedPipeW transfers an owned pipe handle.
+        let server = unsafe { OwnedHandle::from_raw_handle(server) };
+        let client = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .security_qos_flags(SECURITY_IDENTIFICATION)
+            .open(&self.path)?;
+
+        // The client's open connects it before any server-side I/O. Confirm
+        // that this instance is paired with our process before publishing ready.
+        let mut pid = 0;
+        // SAFETY: the server is borrowed and the output is valid for this call.
+        check(unsafe { GetNamedPipeClientProcessId(server.as_raw_handle(), &mut pid) })?;
+        if pid != std::process::id() {
+            return Err(denied());
+        }
+        Ok((server, client))
+    }
+
+    pub(super) fn listen(&self) -> io::Result<NamedPipeServer> {
+        let mut attributes = self.security_attributes();
         // SAFETY: the Win32 SECURITY_ATTRIBUTES and its descriptor remain valid
         // for synchronous CreateNamedPipeW. Tokio owns a successful pipe handle.
         unsafe {
             ServerOptions::new()
-                .first_pipe_instance(first)
                 .reject_remote_clients(true)
-                .max_instances(CLIENTS + 1)
-                .in_buffer_size(8192)
-                .out_buffer_size(8192)
+                .max_instances(PIPE_INSTANCES as usize)
+                .in_buffer_size(PIPE_BUFFER_BYTES)
+                .out_buffer_size(PIPE_BUFFER_BYTES)
                 .create_with_security_attributes_raw(
                     &self.path,
                     (&mut attributes as *mut SECURITY_ATTRIBUTES).cast(),
                 )
+        }
+    }
+
+    fn security_attributes(&self) -> SECURITY_ATTRIBUTES {
+        SECURITY_ATTRIBUTES {
+            nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: self.descriptor.0,
+            bInheritHandle: 0,
         }
     }
 }
@@ -102,6 +155,7 @@ pub(super) struct Identity {
 
 impl Identity {
     pub(super) fn authorize(&self, pipe: &NamedPipeServer) -> io::Result<()> {
+        // Verify the connecting process session independently of the read token.
         let mut session = 0;
         // SAFETY: the pipe is connected and borrowed, with a valid output slot.
         check(unsafe { GetNamedPipeClientSessionId(pipe.as_raw_handle(), &mut session) })?;

@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 #[cfg(windows)]
 mod windows;
 #[cfg(any(windows, test))]
