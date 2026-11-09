@@ -117,6 +117,7 @@ public sealed partial class ThermalTransitionExecutorTests
         Assert.Equal(expected.GetProperty("attempts").GetInt32(), attempts);
         Assert.Equal(expected.GetProperty("retryConsumed").GetBoolean(), execution.Trace.RetryConsumed);
         Assert.Equal(expected.GetProperty("progress").GetString(), execution.Trace.SubmissionProgress.ToString());
+        Assert.Equal(expected.GetProperty("stage").GetString(), execution.Trace.Stage.ToString());
         Assert.Equal(expected.GetProperty("certainty").GetString(), execution.Trace.Certainty?.ToString());
         Assert.Equal(expected.GetProperty("disposition").GetString(), execution.Trace.Disposition.ToString());
     }

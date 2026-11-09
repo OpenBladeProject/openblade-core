@@ -301,6 +301,7 @@
         "retryConsumed": false,
         "progress": "Submitted",
         "certainty": "Indeterminate",
+        "stage": "Submission",
         "disposition": "ReconciliationUnavailable"
       }
     },
@@ -324,7 +325,332 @@
         "retryConsumed": false,
         "progress": "Acknowledged",
         "certainty": null,
+        "stage": "Confirmation",
         "disposition": "Confirmed"
+      }
+    },
+    {
+      "id": "indeterminate-matching-readback",
+      "input": {
+        "result": "Applied",
+        "readback": {
+          "performance": 2,
+          "fans": 0
+        },
+        "writeAttempted": true,
+        "readbackMatched": true,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": "Indeterminate"
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Submitted",
+        "certainty": "Indeterminate",
+        "stage": "Confirmation",
+        "disposition": "Confirmed"
+      }
+    },
+    {
+      "id": "indeterminate-prior-readback",
+      "input": {
+        "result": "Failed",
+        "readback": {
+          "performance": 1,
+          "fans": 0
+        },
+        "writeAttempted": false,
+        "readbackMatched": false,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": "Indeterminate"
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Submitted",
+        "certainty": "Indeterminate",
+        "stage": "Confirmation",
+        "disposition": "External"
+      }
+    },
+    {
+      "id": "indeterminate-other-readback",
+      "input": {
+        "result": "Failed",
+        "readback": {
+          "performance": 3,
+          "fans": 0
+        },
+        "writeAttempted": true,
+        "readbackMatched": false,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": "Indeterminate"
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Submitted",
+        "certainty": "Indeterminate",
+        "stage": "Confirmation",
+        "disposition": "External"
+      }
+    },
+    {
+      "id": "acknowledgement-without-confirmation",
+      "input": {
+        "result": "Applied",
+        "readback": null,
+        "writeAttempted": true,
+        "readbackMatched": false,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": null
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "Acknowledged",
+        "certainty": null,
+        "stage": "Acknowledgement",
+        "disposition": "Acknowledged"
+      }
+    },
+    {
+      "id": "known-no-submission",
+      "input": {
+        "result": "Blocked",
+        "readback": null,
+        "writeAttempted": false,
+        "readbackMatched": false,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": "KnownNotApplied"
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "NotSubmitted",
+        "certainty": "KnownNotApplied",
+        "stage": "Preflight",
+        "disposition": "Blocked"
+      }
+    },
+    {
+      "id": "already-matched",
+      "input": {
+        "result": "Unchanged",
+        "readback": {
+          "performance": 2,
+          "fans": 0
+        },
+        "writeAttempted": false,
+        "readbackMatched": true,
+        "deviceAccessFailed": false,
+        "confirmationUnavailable": false,
+        "preWriteState": null,
+        "submissionCertainty": null
+      },
+      "expected": {
+        "attempts": 1,
+        "retryConsumed": false,
+        "progress": "NotSubmitted",
+        "certainty": null,
+        "stage": "Confirmation",
+        "disposition": "Confirmed"
+      }
+    }
+  ],
+  "laptopRecovery": [
+    {
+      "id": "canceled-before-submission",
+      "input": {
+        "action": "CanceledBefore",
+        "cleanupRevision": "Intent",
+        "requested": "FunctionKeys",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Removed",
+        "setters": 0
+      }
+    },
+    {
+      "id": "canceled-before-submission-replacement",
+      "input": {
+        "action": "CanceledBefore",
+        "cleanupRevision": "Replacement",
+        "requested": "FunctionKeys",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Replacement",
+        "setters": 0
+      }
+    },
+    {
+      "id": "canceled-during-submission",
+      "input": {
+        "action": "CanceledDuring",
+        "requested": "FunctionKeys",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 1
+      }
+    },
+    {
+      "id": "acknowledged-and-confirmed",
+      "input": {
+        "action": "Acknowledged",
+        "requested": "FunctionKeys",
+        "readback": "FunctionKeys",
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Removed",
+        "setters": 1
+      }
+    },
+    {
+      "id": "acknowledged-different",
+      "input": {
+        "action": "Acknowledged",
+        "requested": "FunctionKeys",
+        "readback": "MultimediaKeys",
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Tombstone",
+        "setters": 1
+      }
+    },
+    {
+      "id": "acknowledged-unreadable",
+      "input": {
+        "action": "Acknowledged",
+        "requested": "FunctionKeys",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 1
+      }
+    },
+    {
+      "id": "write-only-acknowledged",
+      "input": {
+        "action": "Acknowledged",
+        "requested": "Microphone",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Removed",
+        "setters": 1
+      }
+    },
+    {
+      "id": "write-only-uncertain",
+      "input": {
+        "action": "Indeterminate",
+        "requested": "Microphone",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 1
+      }
+    },
+    {
+      "id": "write-only-after-restart",
+      "input": {
+        "action": "Restart",
+        "requested": "Microphone",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 0
+      }
+    },
+    {
+      "id": "restart-missing-identity",
+      "input": {
+        "action": "Restart",
+        "requested": "FunctionKeys",
+        "readback": "FunctionKeys",
+        "identity": null
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 0
+      }
+    },
+    {
+      "id": "restart-mismatched-identity",
+      "input": {
+        "action": "Restart",
+        "requested": "FunctionKeys",
+        "readback": "FunctionKeys",
+        "identity": "SYNTHETIC-DEVICE"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 0
+      }
+    },
+    {
+      "id": "restart-read-unavailable",
+      "input": {
+        "action": "Restart",
+        "requested": "FunctionKeys",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Pending",
+        "setters": 0
+      }
+    },
+    {
+      "id": "restart-matching-readback",
+      "input": {
+        "action": "Restart",
+        "requested": "FunctionKeys",
+        "readback": "FunctionKeys",
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Removed",
+        "setters": 0
+      }
+    },
+    {
+      "id": "restart-differing-readback",
+      "input": {
+        "action": "Restart",
+        "requested": "FunctionKeys",
+        "readback": "MultimediaKeys",
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Tombstone",
+        "setters": 0
       }
     }
   ],
