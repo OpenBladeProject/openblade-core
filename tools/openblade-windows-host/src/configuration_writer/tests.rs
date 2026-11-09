@@ -96,18 +96,11 @@ fn read_record(store: &TestStore) -> Value {
 }
 
 #[test]
-fn managed_oracle_exchange() {
+fn matches_managed_transaction_fixture() {
     let store = TestStore::new().unwrap();
     let fixture = replay();
-    let exchange =
-        std::env::var_os("OPENBLADE_CONFIGURATION_EXCHANGE").as_deref() == Some(OsStr::new("1"));
-    let prior: [String; 3] = if exchange {
-        serde_json::from_reader(io::stdin().lock()).unwrap()
-    } else {
-        fixture.prior.clone()
-    };
-    assert_eq!(prior, fixture.prior);
-    for (name, contents) in NAMES.into_iter().zip(bytes(&prior)) {
+    let prior = &fixture.prior;
+    for (name, contents) in NAMES.into_iter().zip(bytes(prior)) {
         store.create_durable(name, contents).unwrap();
     }
     assert_eq!(
@@ -129,7 +122,7 @@ fn managed_oracle_exchange() {
             );
             let entries = record["targets"].as_array().unwrap();
             assert_eq!(entries.len(), 3);
-            assert_primaries(&store, bytes(&prior).map(Some));
+            assert_primaries(&store, bytes(prior).map(Some));
             for (index, name) in NAMES.into_iter().enumerate() {
                 let target = store.path(name);
                 let prefix = format!("{name}.transaction-{id}");
@@ -194,12 +187,43 @@ fn managed_oracle_exchange() {
         .unwrap()
         .map(|item| String::from_utf8(item.unwrap()).unwrap());
     assert_eq!(written, fixture.committed);
-    if exchange {
-        println!(
-            "CONFIGURATION_OUTPUT={}",
-            serde_json::to_string(&written).unwrap()
-        );
+}
+
+#[test]
+#[ignore = "requires managed input on redirected stdin"]
+fn exchange_managed_bytes() {
+    use std::io::IsTerminal;
+
+    assert!(
+        !io::stdin().is_terminal(),
+        "expected redirected managed input"
+    );
+    let bounded_input = io::stdin().lock().take(MAX_DOCUMENT * 24);
+    let [prior, intent]: [[Vec<u8>; 3]; 2] = serde_json::from_reader(bounded_input).unwrap();
+    let store = TestStore::new().unwrap();
+    for (name, contents) in NAMES.into_iter().zip(&prior) {
+        store.create_durable(name, contents).unwrap();
     }
+    assert_eq!(
+        store.restart_inspection().unwrap(),
+        Inspection::CommittedEnvelope {
+            schema: CURRENT_SCHEMA
+        }
+    );
+    assert_committed(store.commit(intent.each_ref().map(Vec::as_slice), |_| Ok(())));
+    assert_eq!(
+        store.restart_inspection().unwrap(),
+        Inspection::CommittedEnvelope {
+            schema: CURRENT_SCHEMA
+        }
+    );
+    assert_only_primaries_and_lock(&store, true);
+    let written = store.capture().unwrap().map(Option::unwrap);
+    // The leading newline separates the record from libtest's test-name prefix.
+    println!(
+        "\nCONFIGURATION_OUTPUT={}",
+        serde_json::to_string(&written).unwrap()
+    );
 }
 
 #[test]
@@ -454,7 +478,7 @@ fn corrupted_backup_and_restore_failure_keep_recovery_evidence() {
                 }
                 Err(injected())
             }
-            Boundary::BeforeRestore(0) => Err(injected()),
+            Boundary::BeforeRestore(0) if !corrupt_backup => Err(injected()),
             _ => Ok(()),
         });
         assert_preserved(report, true);
@@ -524,12 +548,48 @@ fn native_sharing_failure_after_first_replace_restores_prior() {
         .share_mode(FILE_SHARE_READ)
         .open(store.path(PREFERENCES))
         .unwrap();
-    let report = store.commit(bytes(&fixture.committed), |_| Ok(()));
+    let mut replaced = Vec::new();
+    let report = store.commit(bytes(&fixture.committed), |boundary| {
+        if let Boundary::AfterReplace(index) = boundary {
+            replaced.push(index);
+        }
+        Ok(())
+    });
     let Outcome::Restored(error) = report.outcome else {
         panic!("{report:?}");
     };
+    assert_eq!(replaced, [0]);
     assert!(matches!(error.raw_os_error(), Some(5 | 32)));
     drop(reader);
     assert_primaries(&store, bytes(&fixture.prior).map(Some));
     assert_only_primaries_and_lock(&store, true);
+}
+
+#[test]
+fn cleanup_preserves_a_same_byte_substitute_for_an_owned_backup() {
+    let store = TestStore::new().unwrap();
+    let fixture = replay();
+    assert_committed(store.commit(bytes(&fixture.prior), |_| Ok(())));
+    let mut backup = None;
+    let report = store.commit(bytes(&fixture.committed), |boundary| {
+        if boundary == Boundary::RecordFlushed {
+            let record = read_record(&store);
+            let id = record["transactionId"].as_str().unwrap();
+            backup = Some(store.path(&format!("{PROFILE}.transaction-{id}.backup")));
+        }
+        if boundary == Boundary::BeforeArtifactCleanup {
+            let foreign = store.path("substitute");
+            fs::write(&foreign, fixture.prior[0].as_bytes())?;
+            move_file(&foreign, backup.as_ref().unwrap(), true)?;
+        }
+        Ok(())
+    });
+    assert!(matches!(report.outcome, Outcome::Committed), "{report:?}");
+    assert_eq!(report.artifact_errors.len(), 1);
+    assert_eq!(
+        fs::read(backup.unwrap()).unwrap(),
+        fixture.prior[0].as_bytes()
+    );
+    assert!(!store.record_present().unwrap());
+    assert_primaries(&store, bytes(&fixture.committed).map(Some));
 }

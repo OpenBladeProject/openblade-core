@@ -14,11 +14,11 @@ use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::os::windows::io::AsRawHandle;
 use std::path::{Component, Path, PathBuf, Prefix};
 use windows_sys::Win32::Storage::FileSystem::{
-    BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_INFO,
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_WRITE_THROUGH,
-    FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileDispositionInfo,
-    GetFileInformationByHandle, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
-    SetFileInformationByHandle,
+    BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_DISPOSITION_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_FLAG_WRITE_THROUGH, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, FileDispositionInfo, GetFileInformationByHandle, MOVEFILE_REPLACE_EXISTING,
+    MOVEFILE_WRITE_THROUGH, MoveFileExW, SetFileInformationByHandle,
 };
 use windows_sys::Win32::System::Com::CoCreateGuid;
 
@@ -155,7 +155,7 @@ impl TestStore {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error),
         };
-        read_file(&file).map(Some)
+        read_file(&file).map(|(_, bytes)| Some(bytes))
     }
 
     fn capture(&self) -> io::Result<[Option<Vec<u8>>; 3]> {
@@ -185,12 +185,32 @@ impl TestStore {
             .share_mode(if is_record { FILE_SHARE_READ } else { 0 })
             .custom_flags(FILE_FLAG_WRITE_THROUGH | FILE_FLAG_OPEN_REPARSE_POINT)
             .open(self.path(name))?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
+        file.write_all(bytes)
+            .and_then(|()| file.sync_all())
+            .map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("could not write and flush {name}, file retained: {error}"),
+                )
+            })?;
         Ok(file)
     }
 
-    fn delete_exact(&self, name: &str, expected: &[u8], allow_missing: bool) -> io::Result<()> {
+    fn create_artifact<'a>(&self, name: &str, bytes: &'a [u8]) -> io::Result<Artifact<'a>> {
+        let file = self.create_durable(name, bytes)?;
+        Ok(Artifact {
+            name: name.to_owned(),
+            bytes,
+            identity: check_regular_file(&file)?,
+        })
+    }
+
+    fn delete_exact(
+        &self,
+        name: &str,
+        expected: &[u8],
+        owned_artifact: Option<FileIdentity>,
+    ) -> io::Result<()> {
         let file = match OpenOptions::new()
             .access_mode(FILE_GENERIC_READ | DELETE)
             .share_mode(FILE_SHARE_READ)
@@ -198,11 +218,16 @@ impl TestStore {
             .open(self.path(name))
         {
             Ok(file) => file,
-            Err(error) if allow_missing && error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) if owned_artifact.is_some() && error.kind() == io::ErrorKind::NotFound => {
+                return Ok(());
+            }
             Err(error) => return Err(error),
         };
-        if read_file(&file)? != expected {
-            return Err(io::Error::other(format!("unexpected bytes at {name}")));
+        let (identity, bytes) = read_file(&file)?;
+        if bytes != expected || owned_artifact.is_some_and(|owned| identity != owned) {
+            return Err(io::Error::other(format!(
+                "unexpected file or bytes at {name}"
+            )));
         }
         mark_for_deletion(&file)
     }
@@ -261,9 +286,40 @@ impl TestStore {
 
 impl Drop for TestStore {
     fn drop(&mut self) {
-        self.pins.pop();
-        fs::remove_dir_all(&self.root).expect("remove owned test directory");
+        let cleanup = (|| {
+            // Tear down fixture entries while the root is still pinned.
+            // Directory sentinels are empty and are removed without recursion.
+            for entry in fs::read_dir(&self.root)? {
+                let entry = entry?;
+                if entry.metadata()?.file_attributes() & FILE_ATTRIBUTE_DIRECTORY != 0 {
+                    fs::remove_dir(entry.path())?;
+                } else {
+                    fs::remove_file(entry.path())?;
+                }
+            }
+            self.pins.pop();
+            fs::remove_dir(&self.root)
+        })();
+        if let Err(error) = cleanup {
+            if std::thread::panicking() {
+                eprintln!("could not remove test configuration fixture: {error}");
+            } else {
+                panic!("could not remove test configuration fixture: {error}");
+            }
+        }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FileIdentity {
+    volume: u32,
+    index: u64,
+}
+
+struct Artifact<'a> {
+    name: String,
+    bytes: &'a [u8],
+    identity: FileIdentity,
 }
 
 struct Target<'a> {
@@ -296,7 +352,7 @@ struct Transaction<'a> {
     store: &'a TestStore,
     id: String,
     targets: [Target<'a>; 3],
-    artifacts: Vec<(String, &'a [u8])>,
+    artifacts: Vec<Artifact<'a>>,
     replaced: [bool; 3],
 }
 
@@ -331,11 +387,11 @@ impl<'a> Transaction<'a> {
     fn stage(&mut self, at: &mut impl FnMut(Boundary) -> io::Result<()>) -> io::Result<()> {
         for (index, target) in self.targets.iter().enumerate() {
             at(Boundary::BeforeStage(index))?;
-            self.store.create_durable(&target.stage, target.intended)?;
-            self.artifacts.push((target.stage.clone(), target.intended));
+            self.artifacts
+                .push(self.store.create_artifact(&target.stage, target.intended)?);
             if let Some(prior) = target.prior {
-                self.store.create_durable(&target.backup, prior)?;
-                self.artifacts.push((target.backup.clone(), prior));
+                self.artifacts
+                    .push(self.store.create_artifact(&target.backup, prior)?);
             }
         }
         Ok(())
@@ -467,14 +523,14 @@ impl<'a> Transaction<'a> {
             self.verify_primaries()?;
             if let Some(prior) = target.prior {
                 self.store.expect(&target.backup, Some(prior))?;
-                self.store.create_durable(&target.restore, prior)?;
-                self.artifacts.push((target.restore.clone(), prior));
+                self.artifacts
+                    .push(self.store.create_artifact(&target.restore, prior)?);
                 self.store.expect(&target.restore, Some(prior))?;
                 self.store
                     .move_into_place(&target.restore, target.name, true)?;
             } else {
                 self.store
-                    .delete_exact(target.name, target.intended, false)?;
+                    .delete_exact(target.name, target.intended, None)?;
             }
             self.replaced[index] = false;
             self.store.expect(target.name, target.prior)?;
@@ -488,8 +544,10 @@ impl<'a> Transaction<'a> {
             report.artifact_errors.push(error);
             return report;
         }
-        for (name, bytes) in self.artifacts {
-            let cleanup = self.store.delete_exact(&name, bytes, true);
+        for artifact in self.artifacts {
+            let cleanup =
+                self.store
+                    .delete_exact(&artifact.name, artifact.bytes, Some(artifact.identity));
             if let Err(error) = cleanup {
                 report.artifact_errors.push(error);
             }
@@ -524,8 +582,8 @@ fn pin_directory(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
-fn read_file(file: &File) -> io::Result<Vec<u8>> {
-    check_regular_file(file)?;
+fn read_file(file: &File) -> io::Result<(FileIdentity, Vec<u8>)> {
+    let identity = check_regular_file(file)?;
     let mut bytes = Vec::new();
     file.take(MAX_DOCUMENT + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_DOCUMENT {
@@ -533,7 +591,7 @@ fn read_file(file: &File) -> io::Result<Vec<u8>> {
             "configuration test file exceeds size limit",
         ));
     }
-    Ok(bytes)
+    Ok((identity, bytes))
 }
 
 fn mark_for_deletion(file: &File) -> io::Result<()> {
@@ -554,7 +612,7 @@ fn mark_for_deletion(file: &File) -> io::Result<()> {
     Ok(())
 }
 
-fn check_regular_file(file: &File) -> io::Result<()> {
+fn check_regular_file(file: &File) -> io::Result<FileIdentity> {
     let metadata = file.metadata()?;
     if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(io::Error::other("configuration entry is not a plain file"));
@@ -567,7 +625,10 @@ fn check_regular_file(file: &File) -> io::Result<()> {
     if info.nNumberOfLinks != 1 {
         return Err(io::Error::other("configuration entry has multiple links"));
     }
-    Ok(())
+    Ok(FileIdentity {
+        volume: info.dwVolumeSerialNumber,
+        index: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    })
 }
 
 fn move_file(source: &Path, target: &Path, replace: bool) -> io::Result<()> {

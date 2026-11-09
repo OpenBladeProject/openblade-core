@@ -165,12 +165,17 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.True(Path.IsPathFullyQualified(executable)
             && fileName.StartsWith("openblade_windows_host-", StringComparison.Ordinal)
             && fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            && File.Exists(executable));
+            && File.Exists(executable), $"Expected a Rust library test executable at '{executable}'.");
 
         Paths paths = CreatePaths();
-        await CreateStore(paths).LoadAsync(CancellationToken.None);
-        string[] managed = await Task.WhenAll(paths.All.Select(async path =>
-            Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path))));
+        BatteryConfigurationStore managed = CreateStore(paths);
+        BatteryConfiguration initial = await managed.LoadAsync(CancellationToken.None);
+        await managed.SaveProfilesAsync(initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(79) },
+            CancellationToken.None);
+        byte[][] prior = await ReadTargetsAsync();
+        await managed.SaveProfilesAsync(initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(73) },
+            CancellationToken.None);
+        byte[][] intent = await ReadTargetsAsync();
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var start = new ProcessStartInfo(executable)
@@ -184,41 +189,65 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             StandardOutputEncoding = Encoding.UTF8,
         };
         start.ArgumentList.Add("--exact");
-        start.ArgumentList.Add("configuration_writer::tests::managed_oracle_exchange");
+        start.ArgumentList.Add("configuration_writer::tests::exchange_managed_bytes");
+        start.ArgumentList.Add("--ignored");
         start.ArgumentList.Add("--nocapture");
-        start.Environment["OPENBLADE_CONFIGURATION_EXCHANGE"] = "1";
         using Process process = Process.Start(start)!;
-        Task<string> output = process.StandardOutput.ReadToEndAsync(timeout.Token);
-        Task<string> errors = process.StandardError.ReadToEndAsync(timeout.Token);
+        Task<string> output = process.StandardOutput.ReadToEndAsync();
+        Task<string> errors = process.StandardError.ReadToEndAsync();
+        Exception? exchangeFailure = null;
         try
         {
-            await process.StandardInput.WriteAsync(JsonSerializer.Serialize(managed).AsMemory(), timeout.Token);
+            // JSON arrays of integers preserve the original file bytes across the pipe.
+            int[][][] wireInput = new[] { prior, intent }.Select(aggregate => aggregate.Select(document =>
+                Array.ConvertAll(document, value => (int)value)).ToArray()).ToArray();
+            await process.StandardInput.WriteAsync(JsonSerializer.Serialize(wireInput).AsMemory(), timeout.Token);
             process.StandardInput.Close();
             await process.WaitForExitAsync(timeout.Token);
         }
-        finally
+        catch (Exception error) when (error is IOException or OperationCanceledException)
         {
+            exchangeFailure = error;
             if (!process.HasExited)
             {
-                process.Kill();
-                await process.WaitForExitAsync(CancellationToken.None);
+                try
+                {
+                    process.Kill();
+                }
+                catch (Exception) when (process.HasExited)
+                {
+                    // The child exited between HasExited and Kill.
+                }
             }
+
+            await process.WaitForExitAsync(CancellationToken.None);
         }
 
         string transcript = await output;
-        Assert.True(process.ExitCode == 0, $"{transcript}{Environment.NewLine}{await errors}");
+        string diagnostics = await errors;
+        Assert.True(exchangeFailure is null && process.ExitCode == 0,
+            $"{exchangeFailure}{Environment.NewLine}{transcript}{Environment.NewLine}{diagnostics}");
         const string prefix = "CONFIGURATION_OUTPUT=";
         string line = Assert.Single(transcript.Split('\n'), text => text.StartsWith(prefix, StringComparison.Ordinal));
-        string[] rust = JsonSerializer.Deserialize<string[]>(line[prefix.Length..])!;
-        Assert.Equal(3, rust.Length);
-        foreach ((string path, string document) in paths.All.Zip(rust))
+        int[][] wireOutput = JsonSerializer.Deserialize<int[][]>(line[prefix.Length..])!;
+        Assert.Equal(3, wireOutput.Length);
+        byte[][] rust = Array.ConvertAll(wireOutput, document =>
+            Array.ConvertAll(document, value => checked((byte)value)));
+        foreach ((string path, byte[] document) in paths.All.Zip(rust))
         {
-            await File.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes(document), timeout.Token);
+            await File.WriteAllBytesAsync(path, document);
         }
 
-        BatteryConfigurationInspection read = await CreateStore(paths).InspectAsync(timeout.Token);
+        BatteryConfigurationInspection read = await CreateStore(paths).InspectAsync(CancellationToken.None);
         Assert.True(read.Configuration.IsAuthoritative);
-        Assert.Equal(BatteryPolicy.Create(75), read.Configuration.Profiles.BatteryPolicy);
+        Assert.Equal(BatteryPolicy.Create(73), read.Configuration.Profiles.BatteryPolicy);
+        for (int i = 0; i < intent.Length; i++)
+        {
+            Assert.Equal(intent[i], rust[i]);
+        }
+
+        Task<byte[][]> ReadTargetsAsync() =>
+            Task.WhenAll(paths.All.Select(path => File.ReadAllBytesAsync(path)));
     }
 
     [Fact]
