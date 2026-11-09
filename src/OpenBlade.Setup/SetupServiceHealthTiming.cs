@@ -14,6 +14,7 @@ internal sealed class SetupServiceHealthTiming(string purpose, TimeSpan budget)
     internal long DeadlineArmedQpc;
     private readonly long probeBeginQpc = Stopwatch.GetTimestamp();
     internal uint? ServerProcessId { get; private set; }
+    internal bool StagesObserved { get; set; }
 
     internal void IdentifyPeer(Stream connection)
     {
@@ -31,7 +32,7 @@ internal sealed class SetupServiceHealthTiming(string purpose, TimeSpan budget)
         }
     }
 
-    internal void Report(string outcome, bool callerCanceled, bool probeCanceled)
+    internal void Report(string outcome, string? cause, bool callerCanceled, bool probeCanceled)
     {
         long endQpc = Stopwatch.GetTimestamp();
         try
@@ -42,18 +43,27 @@ internal sealed class SetupServiceHealthTiming(string purpose, TimeSpan budget)
                 $"Purpose={purpose} ProcessId={Environment.ProcessId} ServerProcessId={ServerProcessId} QpcFrequency={Stopwatch.Frequency}");
             string deadline = FormattableString.Invariant(
                 $"ProbeBeginQpc={probeBeginQpc} DeadlineArmedQpc={DeadlineArmedQpc} NominalDeadlineQpc={nominalDeadlineQpc} ProbeEndQpc={endQpc} BudgetMs={budget.TotalMilliseconds}");
-            string result = $"Outcome={outcome} CallerCanceled={callerCanceled} ProbeCanceled={probeCanceled}";
-            string remaining = FormattableString.Invariant(
-                $"ConnectEndRemainingMs={RemainingMs(Connect.EndQpc, nominalDeadlineQpc):F3} HeaderBeginRemainingMs={RemainingMs(RequestWrite.Header.BeginQpc, nominalDeadlineQpc):F3}");
-            Trace.WriteLine($"OpenBlade setup service health timing. {identity} {deadline} {result} {remaining} "
-                + $"{FormatStage("Connect", Connect)} {FormatStage("HeaderWrite", RequestWrite.Header)} "
-                + $"{FormatStage("BodyWrite", RequestWrite.Body)} {FormatStage("Flush", RequestWrite.Flush)} "
-                + FormatStage("ResponseRead", ResponseRead));
+            string result = $"Outcome={outcome} Cause={cause ?? "none"} CallerCanceled={callerCanceled} ProbeCanceled={probeCanceled}";
+            Trace.WriteLine($"OpenBlade setup service health timing. {identity} {deadline} {result} {FormatStages(nominalDeadlineQpc)}");
         }
         catch (Exception)
         {
             // Trace listeners are best effort and cannot change setup or rollback.
         }
+    }
+
+    private string FormatStages(long nominalDeadlineQpc)
+    {
+        if (!StagesObserved)
+        {
+            return "StageTiming=unavailable";
+        }
+
+        string remaining = FormattableString.Invariant(
+            $"ConnectEndRemainingMs={RemainingMs(Connect.EndQpc, nominalDeadlineQpc):F3} HeaderBeginRemainingMs={RemainingMs(RequestWrite.Header.BeginQpc, nominalDeadlineQpc):F3}");
+        return $"{remaining} {FormatStage("Connect", Connect)} {FormatStage("HeaderWrite", RequestWrite.Header)} "
+            + $"{FormatStage("BodyWrite", RequestWrite.Body)} {FormatStage("Flush", RequestWrite.Flush)} "
+            + FormatStage("ResponseRead", ResponseRead);
     }
 
     private static double? RemainingMs(long? qpc, long deadlineQpc)

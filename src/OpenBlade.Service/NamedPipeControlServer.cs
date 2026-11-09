@@ -88,10 +88,7 @@ public sealed class NamedPipeControlServer
                     }
                     catch (PipeListenerEstablishmentException)
                     {
-                        if (firstTiming is { FirstListenerFailureQpc: 0 })
-                        {
-                            firstTiming.FirstListenerFailureQpc = Stopwatch.GetTimestamp();
-                        }
+                        firstTiming?.RecordFirstListenerFailure();
                         throw;
                     }
                     if (firstTiming is { FirstListenerReadyQpc: 0 })

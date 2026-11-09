@@ -155,8 +155,8 @@ public sealed class WorkerTests
     [InlineData("canceled")]
     public async Task StartupGate_ReportsTerminalInitializationBeforeAnyListener(string outcome)
     {
-        string? report = null;
-        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => report = value);
+        var reported = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => reported.TrySetResult(value));
         using var stopping = new CancellationTokenSource();
         var failure = new IOException("startup test failure");
         if (outcome == "canceled")
@@ -187,10 +187,25 @@ public sealed class WorkerTests
             await running;
         }
 
-        await timing.Reported.WaitAsync(TimeSpan.FromSeconds(5));
+        string report = await reported.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Contains($"WorkerInitializationOutcome={outcome}", report);
         Assert.Contains("FirstListenerReadyQpc=0", report);
         Assert.Contains("FirstRequestReadOutcome=not-started Terminal=worker-initialization", report);
+    }
+
+    [Fact]
+    public void StartupTiming_ReportsAnExitWithoutAFirstClient()
+    {
+        var reports = new List<string>();
+        using (var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), reports.Add))
+        {
+            timing.HostTerminal = "host-exited";
+            timing.FirstListenerReadyQpc = Stopwatch.GetTimestamp();
+        }
+
+        string report = Assert.Single(reports);
+        Assert.Contains("FirstPipeAcceptedQpc=0", report);
+        Assert.Contains("Terminal=host-exited", report);
     }
 
     [Fact]

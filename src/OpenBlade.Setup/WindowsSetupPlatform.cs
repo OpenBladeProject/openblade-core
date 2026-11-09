@@ -338,20 +338,15 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         timing.DeadlineArmedQpc = Stopwatch.GetTimestamp();
         timeout.CancelAfter(ServiceHealthTimeout);
         string outcome = "success";
+        string? cause = null;
         try
         {
-            if (healthProbe is SetupServiceHealthProbe instrumented)
-            {
-                await instrumented.VerifyAsync(timeout.Token, timing);
-            }
-            else
-            {
-                await healthProbe.VerifyAsync(timeout.Token);
-            }
+            await healthProbe.VerifyWithTimingAsync(timeout.Token, timing);
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            outcome = exception.GetType().Name;
+            outcome = nameof(TimeoutException);
+            cause = exception.GetType().Name;
             throw new TimeoutException("The OpenBlade service did not respond to its health check within 10 seconds.", exception);
         }
         catch (Exception exception)
@@ -361,7 +356,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         }
         finally
         {
-            timing.Report(outcome, cancellationToken.IsCancellationRequested, timeout.IsCancellationRequested);
+            timing.Report(outcome, cause, cancellationToken.IsCancellationRequested, timeout.IsCancellationRequested);
         }
     }
 

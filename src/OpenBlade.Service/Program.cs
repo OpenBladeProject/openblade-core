@@ -17,7 +17,7 @@ try
 catch (NativeComponentException exception)
 {
     startupTiming.NativeCheckEndQpc = Stopwatch.GetTimestamp();
-    startupTiming.QueueReport("native-check-failed");
+    startupTiming.HostTerminal = "native-check-failed";
     // Build only the logging/lifetime host on failure: no hardware providers,
     // runtime, worker or power/session monitors have been registered yet.
     using IHost failedHost = builder.Build();
@@ -93,7 +93,7 @@ static void WriteStartupTiming(string message)
 {
     if (WindowsServiceHelpers.IsWindowsService())
     {
-        // Keep this one diagnostic independent of host initialization, disposal
+        // Keep startup diagnostics independent of host initialization, disposal
         // and Event Log logger filters. The SCM service runs as LocalSystem.
         EventLog.WriteEntry("OpenBlade.Service", message, EventLogEntryType.Information, 4901);
     }

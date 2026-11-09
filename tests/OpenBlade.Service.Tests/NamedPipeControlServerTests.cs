@@ -17,8 +17,8 @@ public sealed class NamedPipeControlServerTests
     [Fact]
     public async Task ServeOnceAsync_RoundTripsTypedRequestOverAclProtectedPipe()
     {
-        string? report = null;
-        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => report = value);
+        var reported = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => reported.TrySetResult(value));
         TestServer context = CreateServer(timing: timing);
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
         var initialized = new TaskCompletionSource<bool>(
@@ -42,8 +42,7 @@ public sealed class NamedPipeControlServerTests
         Assert.Equal(request.RequestId, response.RequestId);
         Assert.NotNull(response.Status);
 
-        await timing.Reported.WaitAsync(timeout.Token);
-        Assert.NotNull(report);
+        string report = await reported.Task.WaitAsync(timeout.Token);
         Assert.Contains($"ProcessId={Environment.ProcessId} QpcFrequency={Stopwatch.Frequency}", report);
         Assert.Contains("WorkerInitializationOutcome=completed", report);
         Assert.Contains("FirstRequestReadOutcome=completed Terminal=first-request-read", report);
@@ -59,6 +58,30 @@ public sealed class NamedPipeControlServerTests
         ];
         Assert.All(stages, stage => Assert.True(stage > 0));
         Assert.Equal(stages.Order().ToArray(), stages);
+    }
+
+    [Fact]
+    public async Task ServeOnceAsync_ReportsFirstListenerCreationFailureBeforeShutdown()
+    {
+        var reported = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => reported.TrySetResult(value));
+        TestServer context = CreateServer(timing: timing);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using var existing = new NamedPipeServerStream(
+            context.PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+
+        await Assert.ThrowsAsync<PipeListenerEstablishmentException>(
+            () => context.Server.ServeOnceAsync(timeout.Token));
+
+        string report = await reported.Task.WaitAsync(timeout.Token);
+        long failureQpc = timing.FirstListenerFailureQpc;
+        Assert.True(failureQpc > 0);
+        Assert.Contains($"FirstListenerFailureQpc={failureQpc} Terminal=first-listener-failed", report);
+        Assert.Equal(0, timing.FirstListenerReadyQpc);
+        await Assert.ThrowsAsync<PipeListenerEstablishmentException>(
+            () => context.Server.ServeOnceAsync(timeout.Token));
+        Assert.Equal(failureQpc, timing.FirstListenerFailureQpc);
     }
 
     [Fact]
@@ -858,8 +881,8 @@ public sealed class NamedPipeControlServerTests
     public async Task ServeOnceAsync_StalledInitialClientDoesNotPreventNextConnection()
     {
         var time = new ManualTimeProvider();
-        string? report = null;
-        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => report = value);
+        var reported = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => reported.TrySetResult(value));
         TestServer context = CreateServer(time, timing);
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
 
@@ -872,7 +895,7 @@ public sealed class NamedPipeControlServerTests
         time.Advance(TimeSpan.FromSeconds(2));
 
         await stalledServer.WaitAsync(timeout.Token);
-        await timing.Reported.WaitAsync(timeout.Token);
+        string report = await reported.Task.WaitAsync(timeout.Token);
         Assert.Contains("FirstRequestReadOutcome=timeout Terminal=first-request-read", report);
         long firstReadEnd = timing.FirstRequestReadEndQpc;
         Task nextServer = context.Server.ServeOnceAsync(timeout.Token);

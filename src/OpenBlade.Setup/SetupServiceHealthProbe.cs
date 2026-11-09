@@ -6,6 +6,9 @@ namespace OpenBlade.Setup;
 public interface ISetupServiceHealthProbe
 {
     Task VerifyAsync(CancellationToken cancellationToken);
+
+    internal Task VerifyWithTimingAsync(CancellationToken cancellationToken, SetupServiceHealthTiming timing)
+        => VerifyAsync(cancellationToken);
 }
 
 public sealed class SetupServiceHealthProbe : ISetupServiceHealthProbe
@@ -29,10 +32,19 @@ public sealed class SetupServiceHealthProbe : ISetupServiceHealthProbe
     public Task VerifyAsync(CancellationToken cancellationToken)
         => VerifyAsync(cancellationToken, timing: null);
 
+    Task ISetupServiceHealthProbe.VerifyWithTimingAsync(
+        CancellationToken cancellationToken,
+        SetupServiceHealthTiming timing)
+        => VerifyAsync(cancellationToken, timing);
+
     internal async Task VerifyAsync(
         CancellationToken cancellationToken,
         SetupServiceHealthTiming? timing)
     {
+        if (timing is not null)
+        {
+            timing.StagesObserved = true;
+        }
         GetStatusRequest request = createRequest();
         timing?.Connect.Begin(cancellationToken);
         try
