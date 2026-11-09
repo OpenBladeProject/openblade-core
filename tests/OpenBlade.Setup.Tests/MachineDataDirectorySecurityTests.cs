@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using OpenBlade.Setup;
@@ -94,6 +95,38 @@ public sealed class MachineDataDirectorySecurityTests : IDisposable
                 cancellation.Token));
 
         Assert.False(Directory.Exists(MachineData));
+    }
+
+    [Fact]
+    public async Task ProtectAsync_RejectsJunctionWithoutChangingTargetSecurity()
+    {
+        DirectoryInfo target = Directory.CreateDirectory(Path.Combine(root, "Target"));
+        const AccessControlSections sections = AccessControlSections.Access | AccessControlSections.Owner;
+        string before = target.GetAccessControl(sections).GetSecurityDescriptorSddlForm(sections);
+        ProcessStartInfo startInfo = new(Path.Combine(Environment.SystemDirectory, "cmd.exe"))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (string argument in new[] { "/c", "mklink", "/J", MachineData, target.FullName })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(startInfo)!;
+        Assert.True(process.WaitForExit(10000));
+        Assert.Equal(0, process.ExitCode);
+        try
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(
+                () => new WindowsMachineDataDirectorySecurity().ProtectAsync(
+                    MachineData, CancellationToken.None, includeDescendants: false));
+            Assert.Equal(before, target.GetAccessControl(sections).GetSecurityDescriptorSddlForm(sections));
+        }
+        finally
+        {
+            Directory.Delete(MachineData);
+        }
     }
 
     public void Dispose()

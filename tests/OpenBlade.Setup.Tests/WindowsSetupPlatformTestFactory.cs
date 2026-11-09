@@ -37,7 +37,7 @@ internal static class WindowsSetupPlatformTestFactory
                 Paths: paths,
                 PayloadDirectory: payloadDirectory,
                 PayloadFileSystem: payloadFileSystem,
-                MachineDataDirectorySecurity: machineDataDirectorySecurity,
+                MachineDataDirectorySecurity: machineDataDirectorySecurity ?? NoOpMachineDataDirectorySecurity.Instance,
                 UninstallRegistration: uninstallRegistration,
                 BundleOwnershipRegistration: bundleOwnershipRegistration,
                 InstalledUninstallerWriter: installedUninstallerWriter,
@@ -50,6 +50,14 @@ internal static class WindowsSetupPlatformTestFactory
                 // enumerate real helpers. Guardian behavior tests inject their
                 // own guard with controlled paths and process observations.
                 GuardianQuiescenceGuard: guardianQuiescenceGuard ?? AcceptingGuardianQuiescenceGuard.Instance));
+
+    private sealed class NoOpMachineDataDirectorySecurity : IMachineDataDirectorySecurity
+    {
+        internal static NoOpMachineDataDirectorySecurity Instance { get; } = new();
+
+        public Task ProtectAsync(string directory, CancellationToken cancellationToken, bool includeDescendants = true) =>
+            Task.CompletedTask;
+    }
 
     private sealed class AcceptingGuardianQuiescenceGuard : ISetupGuardianQuiescenceGuard
     {
