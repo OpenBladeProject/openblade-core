@@ -201,6 +201,24 @@ jobs:
           dotnet restore ../src/OpenBlade.Tray/OpenBlade.Tray.csproj
           dotnet test ../tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter FullyQualifiedName~RustReadOnlyHostTests
 
+      - name: Smoke Windows discovery metadata on the hosted VM
+        if: runner.os == 'Windows' && runner.environment == 'github-hosted' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        timeout-minutes: 2
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $binary = '../tools/openblade-windows-host/target/${{ matrix.target }}/debug/openblade-windows-discovery.exe'
+          $output = & $binary
+          if (@($output).Count -ne 1) { throw 'Expected one Windows metadata snapshot.' }
+          $snapshot = $output | ConvertFrom-Json -AsHashtable
+          if ($snapshot.schemaVersion -ne 1 -or $snapshot.platform -cne 'unsupported' -or
+              $snapshot.registryMatch.state -cnotin @('unknown', 'incomplete') -or
+              $snapshot.hid.inventory -cnotin @('complete', 'incomplete') -or
+              $snapshot.hid.candidates -cne 'notEvaluated' -or $null -ne $snapshot.hid.counts) {
+            throw "Unexpected hosted Windows discovery result: $output"
+          }
+          Write-Output $output
+
       - name: Smoke native SCM lifecycle on the hosted Windows VM
         if: runner.os == 'Windows' && runner.environment == 'github-hosted' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         timeout-minutes: 5

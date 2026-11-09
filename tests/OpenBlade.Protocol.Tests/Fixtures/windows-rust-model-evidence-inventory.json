@@ -1,15 +1,19 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "sourceApis": [
     "OpenBlade.Contracts.RazerBladeModelCatalog.All",
     "OpenBlade.Protocol.ExperimentalBladeModels.All",
-    "OpenBlade.Protocol.ExperimentalBladeModels.FeatureEvidenceFor"
+    "OpenBlade.Protocol.ExperimentalBladeModels.FeatureEvidenceFor",
+    "OpenBlade.Protocol.WindowsHostIdentitySource",
+    "OpenBlade.Protocol.BatteryValidationFactory.AdmittedServiceModels",
+    "OpenBlade.Protocol.ExperimentalBladeFactory.IsCandidateDescriptor"
   ],
   "boundaries": [
     "Catalog support basis classifies model-level support; it is not a capability grant.",
     "FeatureEvidenceFor applies to ExperimentalBladeModels.All. Physically validated models have separate backend evidence pointers.",
     "An evidence pointer records provenance only; it does not extend a backend, feature, firmware rule, or physical validation result.",
-    "This portable inventory includes catalog USB vendor/product IDs only. It omits SKU, BIOS, serial numbers, captures, and host data."
+    "This portable inventory includes catalog IDs and expected Windows registry product names. It omits SKU, BIOS, serial numbers, captures, and observed host data.",
+    "The optional Windows control usage pair comes from the physically validated handle selectors. Source-reviewed control candidates have no fixed usage filter."
   ],
   "models": [
     {
@@ -43,6 +47,11 @@
           "kind": "hyperboost-command-admission",
           "path": "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_4_00_HyperBoostProduction.json"
         }
+      ],
+      "windowsRegistryProductName": "Blade 16 - RZ09-0581",
+      "windowsControlUsage": [
+        1,
+        2
       ]
     },
     {
@@ -68,6 +77,11 @@
           "kind": "hyperboost-command-admission",
           "path": "src/OpenBlade.Protocol/Fixtures/Rz09_0528_02c6_2_02_HyperBoostProduction.json"
         }
+      ],
+      "windowsRegistryProductName": "Blade 16 - RZ09-0528",
+      "windowsControlUsage": [
+        1,
+        2
       ]
     },
     {
@@ -250,7 +264,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 18 - RZ09-0484",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0483",
@@ -348,7 +364,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 16 - RZ09-0483",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0482",
@@ -423,7 +441,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 14 - RZ09-0482",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0530",
@@ -495,7 +515,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 14 - RZ09-0530",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0328",
@@ -534,7 +556,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 15 Base Model (Early 2020) - RZ09-0328",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0508",
@@ -632,7 +656,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 14 - RZ09-0508",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0510",
@@ -738,7 +764,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 16 - RZ09-0510",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0509",
@@ -836,7 +864,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 18 - RZ09-0509",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0529",
@@ -942,7 +972,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 18 - RZ09-0529",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0370",
@@ -1040,7 +1072,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 14 - RZ09-0370",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0427",
@@ -1147,7 +1181,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 14 (2022) - RZ09-0427",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0421",
@@ -1253,7 +1289,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 15 (2022) - RZ09-0421",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0423",
@@ -1351,7 +1389,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 17 (2022) - RZ09-0423",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0330",
@@ -1465,7 +1505,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 15 Advanced Model (Early 2020) - RZ09-033",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0351",
@@ -1571,7 +1613,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 15 Base Model (Late 2020)",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0301",
@@ -1754,7 +1798,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade",
+      "windowsControlUsage": null
     },
     {
       "modelNumber": "RZ09-0300",
@@ -1860,7 +1906,9 @@
           }
         ]
       },
-      "physicalBackendEvidence": []
+      "physicalBackendEvidence": [],
+      "windowsRegistryProductName": "Blade 15 Mid 2019-Base",
+      "windowsControlUsage": null
     }
   ]
 }
