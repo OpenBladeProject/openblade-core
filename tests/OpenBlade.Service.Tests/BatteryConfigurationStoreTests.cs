@@ -22,6 +22,74 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task WindowsReplay_ConfigurationAggregateFixtureMatchesManagedWriter()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfiguration initial = await CreateStore(paths).LoadAsync(CancellationToken.None);
+        string[] prior = await ReadTargetsAsync();
+        JsonElement recovery = default;
+        BatteryConfigurationStore writer = CreateStore(paths, async (boundary, cancellationToken) =>
+        {
+            if (boundary != BatteryConfigurationCommitBoundary.AfterProfileReplacement)
+            {
+                return;
+            }
+
+            using JsonDocument record = JsonDocument.Parse(
+                await File.ReadAllBytesAsync(paths.Marker + ".recovery-required", cancellationToken));
+            JsonElement root = record.RootElement;
+            Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
+            string id = root.GetProperty("transactionId").GetString()!;
+            Assert.True(Guid.TryParseExact(id, "N", out _));
+            JsonElement[] targets = root.GetProperty("targets").EnumerateArray().ToArray();
+            Assert.Equal(3, targets.Length);
+            for (int i = 0; i < targets.Length; i++)
+            {
+                string target = paths.All.ElementAt(i);
+                Assert.Equal(target, targets[i].GetProperty("path").GetString());
+                Assert.True(targets[i].GetProperty("priorExists").GetBoolean());
+                string backup = target + $".transaction-{id}.backup";
+                Assert.Equal(backup, targets[i].GetProperty("backupPath").GetString());
+                Assert.Equal(Encoding.UTF8.GetBytes(prior[i]), await File.ReadAllBytesAsync(backup, cancellationToken));
+                Assert.Equal(target + $".transaction-{id}.restore",
+                    targets[i].GetProperty("restorePath").GetString());
+            }
+            // Normalize only the random ID and the test-owned absolute root.
+            string text = root.GetRawText().Replace(id, "0123456789abcdef0123456789abcdef",
+                StringComparison.Ordinal);
+            string encodedDirectory = JsonEncodedText.Encode(directory + Path.DirectorySeparatorChar)
+                .ToString();
+            using JsonDocument normalized = JsonDocument.Parse(text.Replace(
+                encodedDirectory, @"C:\\Fixture\\", StringComparison.Ordinal));
+            recovery = normalized.RootElement.Clone();
+        });
+
+        await writer.SaveProfilesAsync(initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(75) },
+            CancellationToken.None);
+        string[] committed = await ReadTargetsAsync();
+        Assert.NotEqual(prior[0], committed[0]);
+        Assert.Equal(prior[1], committed[1]);
+        Assert.NotEqual(prior[2], committed[2]);
+        Assert.False(File.Exists(paths.Marker + ".recovery-required"));
+
+        JsonElement actual = JsonSerializer.SerializeToElement(new
+        {
+            legacy = LegacyJson.ReplaceLineEndings("\n"),
+            prior,
+            committed,
+            recovery,
+        });
+        string fixture = Path.Combine(AppContext.BaseDirectory, "WindowsReplay", "v1",
+            "configuration-aggregate.json");
+        using JsonDocument expected = JsonDocument.Parse(await File.ReadAllBytesAsync(fixture));
+        Assert.True(JsonElement.DeepEquals(expected.RootElement, actual));
+
+        async Task<string[]> ReadTargetsAsync() =>
+            await Task.WhenAll(paths.All.Select(async path =>
+                Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path))));
+    }
+
+    [Fact]
     public async Task LoadAsync_MigratesLegacyProfileAndCommitsMarkerLast()
     {
         Paths paths = CreatePaths();
