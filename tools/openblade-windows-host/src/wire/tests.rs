@@ -108,6 +108,48 @@ async fn replays_managed_v79_reads_and_the_full_status_event() {
 }
 
 #[tokio::test]
+async fn performance_mutation_requires_explicit_v79_mode_active_session_and_strict_fields() {
+    let (_advance, input) = tokio::sync::mpsc::channel(1);
+    let (performance, _drive) = Status::fixture().unwrap().with_performance(input).unwrap();
+    let performance = Arc::new(performance);
+    let passive = Arc::new(Status::fixture().unwrap());
+    let slots = Arc::new(Semaphore::new(1));
+
+    for (status, version, session) in [
+        (passive, 79, Session::Active),
+        (performance.clone(), 51, Session::Active),
+        (performance.clone(), 79, Session::Background),
+    ] {
+        let (mut client, server) = connect(status, slots.clone(), session, 256);
+        let request = json!({
+            "operation": "setPerformanceOverride", "version": version, "requestId": ID,
+            "value": {"value": 2, "lifetime": 1}
+        });
+        send(&mut client, &serde_json::to_vec(&request).unwrap()).await;
+        assert_eq!(receive(&mut client, "response").await["success"], false);
+        server.await.unwrap().unwrap();
+    }
+
+    for fields in ["", r#","value":{"value":2,"lifetime":0,"lifetime":1}"#] {
+        let (mut client, server) =
+            connect(performance.clone(), slots.clone(), Session::Active, 256);
+        let request = format!(
+            r#"{{"operation":"setPerformanceOverride","version":79,"requestId":"{ID}"{fields}}}"#
+        );
+        send(&mut client, request.as_bytes()).await;
+        assert_eq!(
+            server.await.unwrap().unwrap_err().kind(),
+            ErrorKind::InvalidData
+        );
+        assert_eq!(client.read(&mut [0]).await.unwrap(), 0);
+    }
+
+    let replay = performance.replay.as_ref().unwrap().borrow();
+    assert_eq!(replay["confirmedState"]["performance"], 1);
+    assert_eq!(replay["performanceOverride"], Value::Null);
+}
+
+#[tokio::test]
 async fn replay_publication_during_initial_write_remains_pending() {
     let (advance, input) = tokio::sync::mpsc::channel(1);
     let (status, drive) = Status::fixture().unwrap().with_replay(input);

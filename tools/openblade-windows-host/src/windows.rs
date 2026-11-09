@@ -29,6 +29,7 @@ const SUBSCRIPTIONS: usize = 4;
 enum Script {
     RuntimeReplay(mpsc::Receiver<()>),
     BatteryParity(mpsc::Receiver<()>),
+    PerformanceParity(mpsc::Receiver<()>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,7 +48,8 @@ pub(super) fn entry() -> io::Result<()> {
             if mode == "foreground"
                 || mode == "foreground-background"
                 || mode == "foreground-replay"
-                || mode == "foreground-battery-parity" =>
+                || mode == "foreground-battery-parity"
+                || mode == "foreground-performance-parity" =>
         {
             let id = id.to_str().filter(|id| valid_id(id)).ok_or_else(|| {
                 io::Error::new(
@@ -69,6 +71,10 @@ pub(super) fn entry() -> io::Result<()> {
                 Some("foreground-battery-parity") => {
                     let (sender, receiver) = mpsc::channel(1);
                     (Some(sender), Some(Script::BatteryParity(receiver)))
+                }
+                Some("foreground-performance-parity") => {
+                    let (sender, receiver) = mpsc::channel(1);
+                    (Some(sender), Some(Script::PerformanceParity(receiver)))
                 }
                 _ => (None, None),
             };
@@ -140,16 +146,20 @@ async fn run(
     let result = async {
         report(Phase::Starting)?;
         let status = Status::fixture()?;
-        let (status, replay, battery) = match script {
+        let (status, replay, battery, performance) = match script {
             Some(Script::RuntimeReplay(advance)) => {
                 let (status, drive) = status.with_replay(advance);
-                (status, Some(drive), None)
+                (status, Some(drive), None, None)
             }
             Some(Script::BatteryParity(advance)) => {
                 let (status, drive) = status.with_battery(advance)?;
-                (status, None, Some(drive))
+                (status, None, Some(drive), None)
             }
-            None => (status, None, None),
+            Some(Script::PerformanceParity(advance)) => {
+                let (status, drive) = status.with_performance(advance)?;
+                (status, None, None, Some(drive))
+            }
+            None => (status, None, None, None),
         };
         let endpoint = pipe::Endpoint::new(format!("{PREFIX}{id}"))?;
         let claim = endpoint.claim()?;
@@ -173,6 +183,9 @@ async fn run(
                     drive.await?;
                 }
                 if let Some(drive) = battery {
+                    drive.await?;
+                }
+                if let Some(drive) = performance {
                     drive.await?;
                 }
                 std::future::pending().await

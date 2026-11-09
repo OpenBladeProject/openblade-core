@@ -86,10 +86,54 @@ C# client. The scenario has no HID transport or production storage. Temporary fu
 charge, RZ09-0528 and source-reviewed model paths, real power and device admission,
 and the rest of the full-service transition remain separate work.
 
+## Exercise a standard performance override
+
+Run `foreground-performance-parity <id>` on a fresh private development pipe.
+The same-logon v79 client can send `setPerformanceOverride` with Balanced or
+Performance, a temporary or persistent lifetime, or an explicit null to clear.
+The scenario fixes the RZ09-0581 (1532:02E0) on full adapter power with Automatic
+fans. It starts at Balanced, with no HyperBoost or manual fan ownership. The
+[exact-device thermal capture](../evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-thermal-write-validation-fixture.json)
+records the pair and its independent readback.
+
+The controller reads both thermal channels through the scoped coordinator check
+and the port's own preflight. If the first read already matches, the operation
+returns Applied without a setter. Otherwise the fake device receives the
+destination's two `0D/02` commands in channel order and must echo each payload
+exactly. Independent `0D/82` reads must agree before the confirmed preset changes.
+Performance uses `01010200` then `01020200`. Balanced uses `01010000` then
+`01020000`. The selected path leaves the fans on Automatic throughout.
+
+The operation stores a persistent override before attempting hardware admission
+or a write. A temporary override clears the persistent slot and changes in-memory
+intent. Clearing returns to the saved profile without editing it. A canceled
+request can leave accepted intent in storage while the last published snapshot
+stays unchanged until the next publication. The test store survives controller
+reconstruction in the Rust tests. Each new foreground process starts with a
+fresh store.
+
+After `READY`, send one lowercase `n` for each fixed step. Wait for the status
+event before sending the next request.
+
+| Step | Effect |
+| --- | --- |
+| 1 | Arm cancellation before the first eligible setter. The request closes without a result and submits no command. |
+| 2 | Arm a lost echo after the second setter changes the fake device, and fail the immediate reconciliation read. The result is Failed and performance writes stay blocked. |
+| 3 | Observe the fake device read-only. Matching readback publishes the preset and clears the block without replaying either setter. |
+
+The managed runtime oracle checks the typed operation, storage order and
+observed outcomes separately from the Rust replay. The tray test uses the
+existing `ServiceClient` and v79 status stream. Rust tests also check the
+exact payloads and partial-pair failure. Native admission, durable production
+configuration and restart recovery, power-source transitions, other presets,
+Custom, HyperBoost, manual fan ownership and handback, Guardian, and other
+thermal routes remain outside this scenario. The installed service remains
+the only live owner.
+
 ## Compatibility boundary
 
 - Each connection accepts one v79 `getStatus` or `subscribeStatus` request, or one v51 `getStatus` request. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.
-- Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Outside the battery parity mode, other operations receive a correlated refusal before any dispatch. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
+- Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Outside the two opt-in parity modes, mutations receive a correlated refusal before any dispatch. Each parity mode accepts only its own v79 mutation operations. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
 - Windows claims the first instance exclusively and rejects remote connections. The explicit DACL restricts access to the host account. After reading the request bytes, the host resolves the pipe token and requires the same SID, logon authentication ID and Windows session. This is a same-logon development trust boundary. The ordinary duplex C# client asks for generic write, which also gives its SID permission to create pipe instances. It does not establish server trust against another process in that logon. Both projections exercise synthetic authorization inputs behind the native identity check. They do not replicate active-session selection or LocalSystem access policy.
 - Rust tests cover the wire fixtures and native endpoint checks, including first-instance contention, listener saturation and recovery, an anonymous client, and start/stop ordering through the shared lifecycle with an injected SCM reporter and stop signal. The .NET tests exercise the real tray client through the foreground endpoint, including initial status, event, cancellation and reconnect. They supplement that path with managed codec and v51 raw frames. The Windows job in the Rust workflow runs both sets on stacked PRs.
 

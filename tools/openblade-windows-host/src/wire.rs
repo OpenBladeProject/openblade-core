@@ -12,6 +12,7 @@ use tokio::time::timeout;
 use crate::{
     battery_policy::{Intent, Limit},
     battery_runtime::{self, LimitValue, Scenario},
+    performance_runtime,
 };
 use openblade_domain::recovery::ScopedStatus;
 
@@ -36,6 +37,7 @@ pub struct Status {
     active: Projection,
     replay: Option<watch::Receiver<Arc<Value>>>,
     battery: Option<Arc<Scenario>>,
+    performance: Option<Arc<performance_runtime::Scenario>>,
     background: Projection,
 }
 
@@ -93,6 +95,7 @@ impl Status {
             active: Projection::new(current, legacy)?,
             replay: None,
             battery: None,
+            performance: None,
             background: Projection::new(background, background_legacy)?,
         })
     }
@@ -104,6 +107,19 @@ impl Status {
         let scenario = Arc::new(Scenario::new(self.active.current.clone())?);
         self.replay = Some(scenario.subscribe());
         self.battery = Some(Arc::clone(&scenario));
+        let drive = async move { scenario.drive(advance).await };
+        Ok((self, drive))
+    }
+
+    pub fn with_performance(
+        mut self,
+        advance: tokio::sync::mpsc::Receiver<()>,
+    ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
+        let scenario = Arc::new(performance_runtime::Scenario::new(
+            self.active.current.clone(),
+        )?);
+        self.replay = Some(scenario.subscribe());
+        self.performance = Some(Arc::clone(&scenario));
         let drive = async move { scenario.drive(advance).await };
         Ok((self, drive))
     }
@@ -163,15 +179,18 @@ struct OperationResult {
 
 impl From<battery_runtime::Result> for OperationResult {
     fn from(result: battery_runtime::Result) -> Self {
-        let status = match result.status {
+        Self::scoped(result.status, result.message)
+    }
+}
+
+impl OperationResult {
+    fn scoped(result: ScopedStatus, message: &'static str) -> Self {
+        let status = match result {
             ScopedStatus::Applied | ScopedStatus::Unchanged => 1,
             ScopedStatus::Blocked => 2,
             ScopedStatus::Failed => 3,
         };
-        Self {
-            status,
-            message: result.message,
-        }
+        Self { status, message }
     }
 }
 
@@ -205,6 +224,20 @@ impl BatteryRequest {
             Self::SetBatteryProtection { enabled, .. } => Ok(Intent::Protection(enabled)),
         }
     }
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
+enum PerformanceRequest {
+    SetPerformanceOverride {
+        #[serde(rename = "version")]
+        _version: i32,
+        #[serde(rename = "requestId")]
+        _request_id: String,
+        // Require the field while allowing the explicit null used to clear.
+        #[serde(deserialize_with = "Deserialize::deserialize")]
+        value: Option<performance_runtime::Override>,
+    },
 }
 
 #[derive(Deserialize)]
@@ -380,6 +413,20 @@ where
                 .ok_or_else(|| invalid("missing battery scenario"))?
                 .apply(intent)?;
             write_frame(&mut io, request.operation_response(result.into())).await
+        }
+        (CURRENT_VERSION, "setPerformanceOverride")
+            if matches!(session, Session::Active) && status.performance.is_some() =>
+        {
+            let PerformanceRequest::SetPerformanceOverride { value, .. } =
+                serde_json::from_slice(&payload)
+                    .map_err(|_| invalid("invalid performance request"))?;
+            let result = status
+                .performance
+                .as_ref()
+                .ok_or_else(|| invalid("missing performance scenario"))?
+                .apply(value)?;
+            let result = OperationResult::scoped(result.status, result.message);
+            write_frame(&mut io, request.operation_response(result)).await
         }
         _ => {
             write_frame(
