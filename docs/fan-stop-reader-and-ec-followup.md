@@ -206,6 +206,15 @@ Each image still has a bank-dependent I²C receive store, so this result does
 not prove mailbox ownership against another host master or a main-loop
 callback.
 
+The I²C handler adds a byte-sized start index to a saturating transfer
+counter. Receive-side lookup can reach index `1FF` even with a valid bank.
+The pinned images were checked at indexes `000..1FF` for all eight banks.
+None of those pointers targets either mailbox descriptor, actual duty 3, or
+the I²C pointer and counter slots. The extended descriptor at `10F` in
+banks 1–7 does point to the writable bank-selector byte in all four images.
+A bank-ownership argument must bound the whole transfer, including
+its length and any pending command.
+
 | Model | Scalar stores in graph | Missing from earlier inventory | Lifecycle store to actual duty 3 |
 | --- | ---: | ---: | --- |
 | RZ09-0423 | 456 | 22 | `139DC` |
