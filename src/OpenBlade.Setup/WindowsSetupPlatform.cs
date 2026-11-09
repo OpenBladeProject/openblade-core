@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Security.Principal;
 using OpenBlade.Contracts;
@@ -45,6 +46,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private const string ServiceName = OpenBladeWindowsService.Name;
     private const int ServiceDoesNotExist = 1060;
     private const int ServiceNotActive = 1062;
+    private static readonly TimeSpan ServiceHealthTimeout = TimeSpan.FromSeconds(10);
     private readonly SetupPaths paths;
     private readonly string payloadDirectory;
     private readonly ISetupPayloadFileSystem payloadFileSystem;
@@ -232,7 +234,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 await ConfigureServiceAsync(startService: true, cancellationToken);
             }
 
-            await VerifyServiceHealthAsync(cancellationToken);
+            await VerifyServiceHealthAsync("rollback", cancellationToken);
             return;
         }
 
@@ -326,17 +328,40 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         }
     }
 
-    public async Task VerifyServiceHealthAsync(CancellationToken cancellationToken)
+    public Task VerifyServiceHealthAsync(CancellationToken cancellationToken)
+        => VerifyServiceHealthAsync("install", cancellationToken);
+
+    private async Task VerifyServiceHealthAsync(string purpose, CancellationToken cancellationToken)
     {
+        var timing = new SetupServiceHealthTiming(purpose, ServiceHealthTimeout);
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        timing.DeadlineArmedQpc = Stopwatch.GetTimestamp();
+        timeout.CancelAfter(ServiceHealthTimeout);
+        string outcome = "success";
         try
         {
-            await healthProbe.VerifyAsync(timeout.Token);
+            if (healthProbe is SetupServiceHealthProbe instrumented)
+            {
+                await instrumented.VerifyAsync(timeout.Token, timing);
+            }
+            else
+            {
+                await healthProbe.VerifyAsync(timeout.Token);
+            }
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
+            outcome = exception.GetType().Name;
             throw new TimeoutException("The OpenBlade service did not respond to its health check within 10 seconds.", exception);
+        }
+        catch (Exception exception)
+        {
+            outcome = exception.GetType().Name;
+            throw;
+        }
+        finally
+        {
+            timing.Report(outcome, cancellationToken.IsCancellationRequested, timeout.IsCancellationRequested);
         }
     }
 

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
 using OpenBlade.Core.Native;
@@ -146,6 +147,50 @@ public sealed class WorkerTests
         configurationLoaded.SetResult(true);
         await running;
         Assert.Equal(1, Volatile.Read(ref backgroundStarts));
+    }
+
+    [Theory]
+    [InlineData("refused")]
+    [InlineData("failed")]
+    [InlineData("canceled")]
+    public async Task StartupGate_ReportsTerminalInitializationBeforeAnyListener(string outcome)
+    {
+        string? report = null;
+        using var timing = new ServiceStartupTiming(Stopwatch.GetTimestamp(), value => report = value);
+        using var stopping = new CancellationTokenSource();
+        var failure = new IOException("startup test failure");
+        if (outcome == "canceled")
+        {
+            stopping.Cancel();
+        }
+        Task running = Worker.RunAfterSuccessfulStartupAsync(
+            token => outcome switch
+            {
+                "failed" => Task.FromException<bool>(failure),
+                "canceled" => Task.FromCanceled<bool>(token),
+                _ => Task.FromResult(false),
+            },
+            _ => throw new InvalidOperationException("Listener started after failed initialization."),
+            stopping.Token,
+            timing);
+
+        if (outcome == "failed")
+        {
+            Assert.Same(failure, await Assert.ThrowsAsync<IOException>(() => running));
+        }
+        else if (outcome == "canceled")
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+        }
+        else
+        {
+            await running;
+        }
+
+        await timing.Reported.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains($"WorkerInitializationOutcome={outcome}", report);
+        Assert.Contains("FirstListenerReadyQpc=0", report);
+        Assert.Contains("FirstRequestReadOutcome=not-started Terminal=worker-initialization", report);
     }
 
     [Fact]

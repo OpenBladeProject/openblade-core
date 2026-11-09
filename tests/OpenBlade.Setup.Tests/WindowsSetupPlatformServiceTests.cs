@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using OpenBlade.Contracts;
 using OpenBlade.Setup;
 
 namespace OpenBlade.Setup.Tests;
@@ -147,6 +149,47 @@ public sealed class WindowsSetupPlatformServiceTests
 
         Assert.DoesNotContain(serviceControl.Commands, command => command.Arguments[0] == "start");
         Assert.Equal(1, health.Verifications);
+    }
+
+    [Fact]
+    public async Task HealthFailures_RetainDistinctInstallAndRollbackTimings()
+    {
+        string logPath = Path.GetTempFileName();
+        using var listener = new SetupDiagnosticTraceListener(new SetupLog(logPath));
+        Trace.Listeners.Add(listener);
+        try
+        {
+            var serviceControl = new RecordingServiceControl { State = SetupServiceState.Running };
+            var probe = new SetupServiceHealthProbe(
+                _ => throw new IOException("Private failure message"),
+                () => new(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()));
+            WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(serviceControl, healthProbe: probe);
+
+            await Assert.ThrowsAsync<IOException>(() => platform.VerifyServiceHealthAsync(CancellationToken.None));
+            await Assert.ThrowsAsync<IOException>(() => platform.RestoreServiceInstallStateAsync(
+                new(true, true), CancellationToken.None));
+
+            string[] entries = (await File.ReadAllLinesAsync(logPath))
+                .Where(line => line.Contains("OpenBlade setup service health timing.", StringComparison.Ordinal)
+                    && line.Contains("Outcome=IOException", StringComparison.Ordinal)).ToArray();
+            Assert.Collection(entries,
+                install => Assert.Contains("Purpose=install", install),
+                rollback => Assert.Contains("Purpose=rollback", rollback));
+            Assert.All(entries, entry =>
+            {
+                Assert.Contains("BudgetMs=10000", entry);
+                Assert.Contains("Connect=[", entry);
+                Assert.Contains("Succeeded=False", entry);
+                Assert.Contains("HeaderWrite=not-entered", entry);
+                Assert.DoesNotContain("Private failure message", entry);
+            });
+            Assert.Empty(serviceControl.Commands);
+        }
+        finally
+        {
+            Trace.Listeners.Remove(listener);
+            File.Delete(logPath);
+        }
     }
 
     [Fact]
