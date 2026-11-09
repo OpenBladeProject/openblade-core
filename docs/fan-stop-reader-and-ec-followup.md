@@ -252,6 +252,48 @@ command and status are both zero and Auto never applies. This is a
 conditional interleaving. Bounding residual delivery to one event does
 not establish quiescence.
 
+#### Compare the mapped commands with the supervised Blade 16
+
+The four exact Blade 17/18 images and the RZ09-0581 SO6120 EC 1.04
+image have byte-identical primary interrupt setup (44 bytes), IRQ
+handler (40 bytes), and wrapper clear and return (12 bytes). In each
+image IRQ 71 reaches that handler through its relocated vector entry,
+and the wrapper calls the command handler at `203C`. The 128-byte
+span from the A1 opcode test through the handler's final return is
+also identical, including the mapped store loop. The outer wrapper
+does the command clear after those stores.
+
+| EC | Interrupt setup | IRQ 71 handler | A0 opcode test | A1 opcode test | Outer clear |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SO6120 1.04 | `12D54` | `BEE6` | `22F8` | `233A` | `12D8C` |
+| DI780 1.05 | `115B0` | `B360` | `228E` | `22D4` | `115E8` |
+| KI890 1.07 | `122D4` | `BA18` | `2294` | `22D6` | `1230C` |
+| KI8100 1.02 | `12868` | `BEE8` | `2294` | `22D6` | `128A0` |
+| KI8110 1.06 | `12BB8` | `C1A0` | `22F8` | `233A` | `12BF0` |
+
+The Blade 18 A0 loops are byte-identical to the SO6120 loop. DI780
+uses different registers to carry the same count, start index and
+payload pointer through the loop. The validation code retains each
+model's descriptor table. The byte comparison supplies evidence about
+the dispatcher and completion order, and each model's register map
+still determines which fan fields it can read and write.
+
+The retained, hash-checked RZ09-0581 Stop/Auto journal reports both
+states confirmed and contains 238 completed A0 publications and four
+completed A1 publications. The A1 writes cover selector `1A` and
+override `F0`. Each A1 has a completed mapped readback and the trace
+contains no D0 publication. The journal binds to the reviewed SO6120
+EC 1.04 source hash and records the hardware outcome for RZ09-0581.
+
+This supports keeping mapped A0/A1 as the candidate write and Auto
+path once a separate third-duty reader is available. It narrows the
+comparison to the exact code used for the known round trip. The
+retained journal does not exercise the extra D0 clear, observe
+interrupt edges, or establish ownership of the host ports on a
+different model. The source comparison and aggregate journal
+observations are reproducible from the local
+`artifacts/model-expansion/trigger-resolution-next/` evidence.
+
 The exact keyboard images for 0423 (1.02.00), 0484 (1.04.00), 0509
 (1.01.00), and 0529 (1.07.00) send both named duty commands, `0D/0D` and
 `0D/8D`, to the unsupported handler with status `05`. The separate raw
@@ -439,6 +481,15 @@ forwarding enable. An exact-host read of that PCI config word after a
 normal boot could resolve the fixed decode bit without touching any
 EC selector or mailbox. The recorded value would apply to the sampled
 host and firmware. [Intel 700-series PCH datasheet, table 9](https://cdrdv2-public.intel.com/743835/743835-004.pdf)
+
+The KI890 2.09 and DI780 2.01 BIOS default stores also contain
+`PchSetup` under GUID `4570B7F1-ADE8-4943-8DC3-406472842384`. In
+KI890, `PolicyInitAdvancedDxe` has a conditional path that reads
+that variable at RVA `1AB0` and updates two configuration blocks.
+The recovered consumers use those blocks in the DXE NHLT audio path
+and the PCI device override table path. That trace did not reach a
+write to the Super I/O decode bit. The policy modules and disassembly
+are retained with the KI890 evidence.
 
 The Blade 18 DSDTs bind `ECRR` to the same primary `300/301` mailbox.
 `TBCC` calls it for one byte at `80B82`. The method tries to acquire the ACPI
