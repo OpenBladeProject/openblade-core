@@ -183,3 +183,7 @@ try {
         }
     }
 }
+
+# The final absence check expects sc.exe to return 1060. Report script success
+# only after all assertions and cleanup have completed.
+exit 0
