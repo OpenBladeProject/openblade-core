@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "platform": "linux",
+  "hostMetadata": "unavailable",
+  "exactModel": null,
+  "hid": {
+    "state": "incomplete",
+    "candidates": [
+      {
+        "vendorId": 5426,
+        "productId": 597,
+        "entries": 1
+      }
+    ]
+  }
+}

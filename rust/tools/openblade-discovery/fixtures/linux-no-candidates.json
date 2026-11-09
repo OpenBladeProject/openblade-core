@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "platform": "linux",
+  "hostMetadata": "otherVendor",
+  "exactModel": null,
+  "hid": {
+    "state": "none",
+    "candidates": []
+  }
+}

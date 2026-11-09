@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "platform": "linux",
+  "hostMetadata": "razerBladeReported",
+  "exactModel": null,
+  "hid": {
+    "state": "ambiguous",
+    "candidates": [
+      {
+        "vendorId": 5426,
+        "productId": 597,
+        "entries": 2
+      },
+      {
+        "vendorId": 5426,
+        "productId": 736,
+        "entries": 1
+      }
+    ]
+  }
+}

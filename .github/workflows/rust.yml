@@ -149,5 +149,44 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
 
+      - name: Test the separate discovery pilot
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = 'tools/openblade-discovery/Cargo.toml'
+          cargo fmt --all --check --manifest-path $manifest
+          cargo test --locked --manifest-path $manifest --target ${{ matrix.target }}
+          cargo clippy --locked --manifest-path $manifest --target ${{ matrix.target }} --all-targets -- -D warnings
+
+      - name: Smoke the discovery CLI
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifest = 'tools/openblade-discovery/Cargo.toml'
+          cargo build --locked --manifest-path $manifest --target ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $binary = './tools/openblade-discovery/target/${{ matrix.target }}/debug/openblade-discovery'
+          if ($IsWindows) {
+            $diagnostic = Join-Path $env:RUNNER_TEMP 'openblade-discovery-unsupported.txt'
+            $output = & "$binary.exe" 2> $diagnostic
+            if ($LASTEXITCODE -ne 1 -or $output -or
+                (Get-Content $diagnostic -Raw).Trim() -cne 'OpenBlade discovery: unsupported platform (Linux or macOS required)') {
+              throw 'Discovery unexpectedly ran on Windows.'
+            }
+          } else {
+            $output = & $binary
+            if ($LASTEXITCODE -ne 0 -or @($output).Count -ne 1) { throw 'Expected one discovery snapshot.' }
+            $snapshot = $output | ConvertFrom-Json -AsHashtable
+            $platform = if ($IsMacOS) { 'macos' } else { 'linux' }
+            if ($snapshot.schemaVersion -ne 1 -or $snapshot.platform -cne $platform -or
+                -not $snapshot.Contains('exactModel') -or $null -ne $snapshot.exactModel -or
+                $snapshot.hid.state -cnotin @('none', 'single', 'ambiguous', 'incomplete', 'unavailable')) {
+              throw 'Invalid discovery snapshot.'
+            }
+            if ($IsMacOS -and ($snapshot.hostMetadata -cne 'unverified' -or $snapshot.hid.state -ceq 'unavailable')) {
+              throw 'The hosted macOS metadata APIs were unavailable.'
+            }
+          }
+          exit 0
+
       - name: Build native libraries and execute C and .NET interop
         run: ./Test-NativeInterop.ps1 -Target ${{ matrix.target }}

@@ -536,6 +536,23 @@ try {
     }
     Assert-ProductionBundleFootprint -Bundle $footprint
 
+    foreach ($toolName in @('openblade-discovery.exe', 'openblade-status-cli.exe')) {
+        $toolFile = Join-Path $footprintPayload $toolName
+        Set-Content -LiteralPath $toolFile -Value 'developer tool' -NoNewline
+        $toolRejected = $false
+        try {
+            Assert-ProductionBundleFootprint -Bundle $footprint
+        }
+        catch {
+            $toolRejected = $_.Exception.Message.Contains($toolName) -and
+                $_.Exception.Message.Contains('development or unused component file')
+        }
+        finally {
+            Remove-Item -LiteralPath $toolFile
+        }
+        Assert-True $toolRejected "Production footprint validation accepted $toolName."
+    }
+
     Remove-Item -LiteralPath (
         Join-Path $footprintPayload 'ru-RU\OpenBlade.Tray.Core.resources.dll')
     $missingSatelliteRejected = $false
