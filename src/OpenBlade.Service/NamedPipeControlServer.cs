@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.ExceptionServices;
 using System.Security.Principal;
@@ -65,9 +66,12 @@ public sealed class NamedPipeControlServer
         this.timeProvider = timeProvider ?? TimeProvider.System;
     }
 
+    internal ServiceStartupTiming? StartupTiming { get; init; }
+
     public async Task ServeOnceAsync(CancellationToken cancellationToken)
     {
         bool ownsFirstListenerGate = false;
+        ServiceStartupTiming? firstTiming = null;
         NamedPipeServerStream? pipe = null;
         try
         {
@@ -77,7 +81,20 @@ public sealed class NamedPipeControlServer
                 ownsFirstListenerGate = true;
                 if (Volatile.Read(ref firstListenerEstablished) == 0)
                 {
-                    pipe = CreateListener(firstInstance: true);
+                    firstTiming = StartupTiming;
+                    try
+                    {
+                        pipe = CreateListener(firstInstance: true);
+                    }
+                    catch (PipeListenerEstablishmentException)
+                    {
+                        firstTiming?.RecordFirstListenerFailure();
+                        throw;
+                    }
+                    if (firstTiming is { FirstListenerReadyQpc: 0 })
+                    {
+                        firstTiming.FirstListenerReadyQpc = Stopwatch.GetTimestamp();
+                    }
                 }
                 else
                 {
@@ -90,6 +107,10 @@ public sealed class NamedPipeControlServer
             await pipe.WaitForConnectionAsync(cancellationToken);
             if (ownsFirstListenerGate)
             {
+                if (firstTiming is not null)
+                {
+                    firstTiming.FirstPipeAcceptedQpc = Stopwatch.GetTimestamp();
+                }
                 Volatile.Write(ref firstListenerEstablished, 1);
                 firstListenerGate.Release();
                 ownsFirstListenerGate = false;
@@ -97,7 +118,9 @@ public sealed class NamedPipeControlServer
             ServiceRequest request;
             try
             {
-                request = await ReadRequestAsync(pipe, cancellationToken);
+                request = firstTiming is null
+                    ? await ReadRequestAsync(pipe, cancellationToken)
+                    : await ReadFirstRequestAsync(pipe, firstTiming, cancellationToken);
             }
             catch (Exception exception) when (
                 exception is InvalidDataException
@@ -137,6 +160,44 @@ public sealed class NamedPipeControlServer
             {
                 await pipe.DisposeAsync();
             }
+        }
+    }
+
+    private async Task<ServiceRequest> ReadFirstRequestAsync(
+        NamedPipeServerStream pipe,
+        ServiceStartupTiming timing,
+        CancellationToken cancellationToken)
+    {
+        timing.FirstRequestReadStartQpc = Stopwatch.GetTimestamp();
+        string outcome = "failed";
+        try
+        {
+            ServiceRequest request = await ReadRequestAsync(pipe, cancellationToken);
+            outcome = "completed";
+            return request;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            outcome = "canceled";
+            throw;
+        }
+        catch (TimeoutException)
+        {
+            outcome = "timeout";
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException or JsonException or IpcProtocolVersionMismatchException)
+        {
+            outcome = "malformed";
+            throw;
+        }
+        finally
+        {
+            timing.FirstRequestReadEndQpc = Stopwatch.GetTimestamp();
+            timing.FirstRequestReadOutcome = outcome;
+            // Do not wait for the event log before handling or rejecting the request.
+            timing.QueueReport("first-request-read");
         }
     }
 

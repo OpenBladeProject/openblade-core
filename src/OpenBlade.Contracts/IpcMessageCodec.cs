@@ -41,9 +41,16 @@ public static class IpcMessageCodec
         Stream stream,
         ServiceRequest request,
         CancellationToken token)
+        => WriteRequestAsync(stream, request, token, timing: null);
+
+    internal static Task WriteRequestAsync(
+        Stream stream,
+        ServiceRequest request,
+        CancellationToken token,
+        IpcRequestWriteTiming? timing)
     {
         ValidateRequest(request);
-        return WriteFramedAsync<ServiceRequest>(stream, request, token);
+        return WriteFramedAsync<ServiceRequest>(stream, request, token, timing: timing);
     }
 
     public static async Task<ServiceRequest> ReadRequestAsync(
@@ -148,7 +155,8 @@ public static class IpcMessageCodec
         Stream stream,
         T message,
         CancellationToken cancellationToken,
-        JsonSerializerOptions? serializerOptions = null)
+        JsonSerializerOptions? serializerOptions = null,
+        IpcRequestWriteTiming? timing = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(message);
@@ -179,9 +187,23 @@ public static class IpcMessageCodec
 
         byte[] prefix = new byte[sizeof(int)];
         BinaryPrimitives.WriteInt32LittleEndian(prefix, payload.Length);
-        await stream.WriteAsync(prefix, cancellationToken).ConfigureAwait(false);
-        await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
-        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            timing?.Header.Begin(cancellationToken);
+            await stream.WriteAsync(prefix, cancellationToken).ConfigureAwait(false);
+            timing?.Header.End(cancellationToken, succeeded: true);
+            timing?.Body.Begin(cancellationToken);
+            await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+            timing?.Body.End(cancellationToken, succeeded: true);
+            timing?.Flush.Begin(cancellationToken);
+            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            timing?.Flush.End(cancellationToken, succeeded: true);
+        }
+        catch
+        {
+            timing?.FailPending(cancellationToken);
+            throw;
+        }
     }
 
     private static async Task<T> ReadFramedAsync<T>(

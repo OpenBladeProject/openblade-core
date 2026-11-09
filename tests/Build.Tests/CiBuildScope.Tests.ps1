@@ -87,6 +87,9 @@ Assert-Contains $contracts.QualityProjects `
 Assert-Contains $contracts.QualityProjects `
     'src/OpenBlade.Tray/OpenBlade.Tray.csproj' `
     'Contracts changes must include Tray consumers.'
+Assert-Contains $contracts.TestProjects `
+    'tests/OpenBlade.Core.Native.Tests/OpenBlade.Core.Native.Tests.csproj' `
+    'Contracts changes must select native interop tests through Core.Native.'
 foreach ($consumer in @(
         'src/OpenBlade.Display/OpenBlade.Display.csproj',
         'src/OpenBlade.Platform/OpenBlade.Platform.csproj',
