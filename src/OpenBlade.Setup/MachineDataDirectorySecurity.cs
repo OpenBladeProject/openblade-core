@@ -1,36 +1,105 @@
+using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using Microsoft.Win32.SafeHandles;
 
 namespace OpenBlade.Setup;
 
 public interface IMachineDataDirectorySecurity
 {
-    Task ProtectAsync(string directory, CancellationToken cancellationToken);
+    Task ProtectAsync(string directory, CancellationToken cancellationToken, bool includeDescendants = true);
 }
 
 public sealed class WindowsMachineDataDirectorySecurity : IMachineDataDirectorySecurity
 {
-    public Task ProtectAsync(string directory, CancellationToken cancellationToken)
+    public Task ProtectAsync(string directory, CancellationToken cancellationToken, bool includeDescendants = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         cancellationToken.ThrowIfCancellationRequested();
 
-        DirectoryInfo machineData = Directory.CreateDirectory(directory);
-        if ((machineData.Attributes & FileAttributes.ReparsePoint) != 0)
+        DirectoryInfo machineData = new(directory);
+        DirectorySecurity security = CreateProtectedSecurity();
+        // New roots start protected. For an existing root, check and update the
+        // same non-following handle: ProgramData permits users to create directories.
+        machineData.Create(security);
+        using SafeFileHandle handle = OpenMachineDataDirectory(machineData.FullName);
+        var current = new DirectoryHandleSecurity(handle);
+        if (current.GetOwner(typeof(SecurityIdentifier)) is not SecurityIdentifier owner
+            || !owner.IsWellKnown(WellKnownSidType.LocalSystemSid)
+                && !owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid))
         {
-            throw new InvalidDataException(
-                $"Refusing to secure reparse-point machine data directory '{directory}'.");
+            throw new UnauthorizedAccessException("The machine data directory is not owned by SYSTEM or Administrators.");
         }
 
-        DirectorySecurity security = CreateProtectedSecurity();
-        machineData.SetAccessControl(security);
-
-        DirectorySecurity applied = machineData.GetAccessControl(
-            AccessControlSections.Access | AccessControlSections.Owner);
+        current.Apply(security);
+        DirectorySecurity applied = new();
+        applied.SetSecurityDescriptorBinaryForm(new DirectoryHandleSecurity(handle).GetSecurityDescriptorBinaryForm());
         VerifyProtectedSecurity(applied);
-        ProtectDescendants(machineData, cancellationToken);
+        if (includeDescendants)
+        {
+            ProtectDescendants(machineData, cancellationToken);
+        }
         return Task.CompletedTask;
     }
+
+    private const uint OpenExisting = 3;
+    private const uint BackupSemantics = 0x02000000;
+    private const uint OpenReparsePoint = 0x00200000;
+    private const int FileAttributeTagInfo = 9;
+
+    private static SafeFileHandle OpenMachineDataDirectory(string path)
+    {
+        const FileSystemRights rights = FileSystemRights.ReadAttributes | FileSystemRights.ReadPermissions
+            | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership;
+        SafeFileHandle handle = CreateFileW(path, (uint)rights, FileShare.Read, 0,
+            OpenExisting, BackupSemantics | OpenReparsePoint, 0);
+        if (handle.IsInvalid || !GetFileInformationByHandleEx(handle, FileAttributeTagInfo,
+                out FileAttributeTagInformation info, (uint)Marshal.SizeOf<FileAttributeTagInformation>()))
+        {
+            int error = Marshal.GetLastPInvokeError();
+            handle.Dispose();
+            throw new Win32Exception(error, "Could not open the machine data directory for permission verification.");
+        }
+
+        const FileAttributes mask = FileAttributes.Directory | FileAttributes.ReparsePoint;
+        if ((info.Attributes & mask) != FileAttributes.Directory)
+        {
+            handle.Dispose();
+            throw new InvalidDataException(
+                $"Refusing to secure a reparse point or non-directory at '{path}'.");
+        }
+
+        return handle;
+    }
+
+    private sealed class DirectoryHandleSecurity(SafeFileHandle handle)
+        : ObjectSecurity<FileSystemRights>(true, ResourceType.FileObject, handle, Sections)
+    {
+        private const AccessControlSections Sections = AccessControlSections.Access | AccessControlSections.Owner;
+
+        internal void Apply(DirectorySecurity security)
+        {
+            SetSecurityDescriptorBinaryForm(security.GetSecurityDescriptorBinaryForm(), Sections);
+            Persist(handle);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileAttributeTagInformation
+    {
+        internal FileAttributes Attributes;
+        internal uint ReparseTag;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    private static extern SafeFileHandle CreateFileW(
+        string path, uint access, FileShare share, nint security, uint creation, uint flags, nint template);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandleEx(
+        SafeFileHandle handle, int informationClass, out FileAttributeTagInformation information, uint size);
 
     private static void ProtectDescendants(
         DirectoryInfo directory,

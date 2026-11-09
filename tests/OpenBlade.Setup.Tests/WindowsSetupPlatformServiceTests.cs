@@ -82,6 +82,48 @@ public sealed class WindowsSetupPlatformServiceTests
             command => command.Arguments.SequenceEqual(["failureflag", "OpenBlade", "1"]));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InstallService_ProtectsMachineDataBeforeRegistrationOrStart(bool existingService)
+    {
+        RecordingServiceControl serviceControl = new() { Exists = existingService };
+        RecordingMachineDataDirectorySecurity machineDataSecurity = new()
+        {
+            OnProtect = () => Assert.Empty(serviceControl.Commands),
+        };
+        RecordingAuthorizedSidWriter sidWriter = new();
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            serviceControl, sidWriter: sidWriter, machineDataDirectorySecurity: machineDataSecurity);
+
+        await platform.InstallServiceAsync(CancellationToken.None);
+
+        Assert.Equal(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "OpenBlade"),
+            Assert.Single(machineDataSecurity.ProtectedDirectories),
+            ignoreCase: true);
+        Assert.False(Assert.Single(machineDataSecurity.IncludeDescendants));
+        Assert.Empty(sidWriter.Requests);
+        Assert.Contains(serviceControl.Commands, command => command.Arguments[0] == "start");
+    }
+
+    [Fact]
+    public async Task InstallService_MachineDataSecurityFailure_DoesNotConfigureOrStartService()
+    {
+        RecordingServiceControl serviceControl = new() { Exists = true };
+        RecordingMachineDataDirectorySecurity machineDataSecurity = new()
+        {
+            Failure = new UnauthorizedAccessException("ACL write denied."),
+        };
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            serviceControl, machineDataDirectorySecurity: machineDataSecurity);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => platform.InstallServiceAsync(CancellationToken.None));
+
+        Assert.Empty(serviceControl.Commands);
+    }
+
     [Fact]
     public async Task InstallService_StartsThenWaitsForRunning()
     {
@@ -1085,11 +1127,15 @@ public sealed class WindowsSetupPlatformServiceTests
         : IMachineDataDirectorySecurity
     {
         public List<string> ProtectedDirectories { get; } = [];
+        public List<bool> IncludeDescendants { get; } = [];
         public Exception? Failure { get; init; }
+        public Action? OnProtect { get; init; }
 
-        public Task ProtectAsync(string directory, CancellationToken cancellationToken)
+        public Task ProtectAsync(string directory, CancellationToken cancellationToken, bool includeDescendants = true)
         {
+            OnProtect?.Invoke();
             ProtectedDirectories.Add(directory);
+            IncludeDescendants.Add(includeDescendants);
             return Failure is null
                 ? Task.CompletedTask
                 : Task.FromException(Failure);
