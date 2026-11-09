@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'rust/**'
+      - 'tools/openblade-discovery/**'
       - 'src/OpenBlade.Core.Native/**'
       - 'src/OpenBlade.Contracts/**'
       - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
@@ -35,6 +36,7 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'rust/**'
+      - 'tools/openblade-discovery/**'
       - 'src/OpenBlade.Core.Native/**'
       - 'src/OpenBlade.Contracts/**'
       - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
@@ -148,6 +150,34 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
+
+      - name: Test the macOS discovery pilot
+        if: runner.os == 'macOS'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = '../tools/openblade-discovery/Cargo.toml'
+          cargo fmt --all --check --manifest-path $manifest
+          cargo test --locked --manifest-path $manifest --target ${{ matrix.target }}
+          cargo clippy --locked --manifest-path $manifest --target ${{ matrix.target }} --all-targets -- -D warnings
+
+      - name: Smoke the macOS discovery CLI
+        if: runner.os == 'macOS'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = '../tools/openblade-discovery/Cargo.toml'
+          cargo build --locked --manifest-path $manifest --target ${{ matrix.target }}
+          $binary = '../tools/openblade-discovery/target/${{ matrix.target }}/debug/openblade-discovery'
+          $output = & $binary
+          if (@($output).Count -ne 1) { throw 'Expected one discovery snapshot.' }
+          $snapshot = $output | ConvertFrom-Json -AsHashtable
+          if ($snapshot.schemaVersion -ne 1 -or $snapshot.platform -cne 'macos' -or
+              $snapshot.hostMetadata -cne 'unverified' -or -not $snapshot.Contains('exactModel') -or
+              $null -ne $snapshot.exactModel -or
+              $snapshot.hid.state -cnotin @('none', 'single', 'ambiguous', 'incomplete')) {
+            throw 'Invalid discovery snapshot or unavailable hosted macOS metadata APIs.'
+          }
 
       - name: Build native libraries and execute C and .NET interop
         run: ./Test-NativeInterop.ps1 -Target ${{ matrix.target }}

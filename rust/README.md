@@ -243,3 +243,10 @@ native-library variables when running the managed suite directly.
 `Test-ProductionActivation.ps1` now runs four isolated offline scenarios,
 including automation-policy lifetime failure with host validation preserved.
 All device resources remain inert test doubles.
+
+
+## macOS discovery
+
+The [developer discovery pilot](../tools/openblade-discovery/README.md) uses a
+separate Cargo workspace and reads macOS metadata without opening a HID device
+or sending reports.

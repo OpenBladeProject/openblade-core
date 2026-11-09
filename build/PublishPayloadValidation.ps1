@@ -481,6 +481,8 @@ function Assert-ProductionBundleFootprint {
         + [IO.Path]::DirectorySeparatorChar
     $forbiddenFileNames = @(
         'appsettings.Development.json',
+        'openblade-discovery.exe',
+        'openblade-status-cli.exe',
         'DirectML.dll',
         'onnxruntime.dll',
         'Microsoft.ML.OnnxRuntime.dll'
