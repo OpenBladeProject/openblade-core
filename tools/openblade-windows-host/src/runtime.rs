@@ -132,10 +132,7 @@ impl Replay {
             return Ok(Effect::Ignored);
         };
 
-        let revision = self.current["revision"]
-            .as_i64()
-            .and_then(|revision| revision.checked_add(1))
-            .ok_or_else(|| io::Error::other("invalid replay status revision"))?;
+        let revision = self.next_revision()?;
         let effect = match observation {
             Observation::Recovery(readback) => self.recover(readback)?,
             Observation::Battery => self.select_battery_profile()?,
@@ -144,6 +141,20 @@ impl Replay {
             self.current["revision"] = revision.into();
         }
         Ok(effect)
+    }
+
+    fn next_revision(&self) -> io::Result<i64> {
+        self.current["revision"]
+            .as_i64()
+            .and_then(|revision| revision.checked_add(1))
+            .ok_or_else(|| io::Error::other("invalid replay status revision"))
+    }
+
+    #[cfg(windows)]
+    fn project_charge_limit(&mut self, percent: u8) {
+        self.current["profiles"]["batteryPolicy"]["chargeLimitPercent"] = percent.into();
+        self.current["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"] =
+            percent.into();
     }
 
     fn select_battery_profile(&mut self) -> io::Result<Effect> {
@@ -258,6 +269,36 @@ pub fn start(
         Ok(())
     };
     (status, drive)
+}
+
+#[cfg(windows)]
+pub fn start_durable(
+    baseline: Value,
+    percent: u8,
+    update: Option<(mpsc::Receiver<()>, impl FnOnce() -> io::Result<u8>)>,
+) -> io::Result<(
+    watch::Receiver<Arc<Value>>,
+    impl Future<Output = io::Result<()>>,
+)> {
+    let mut replay = Replay::new(baseline);
+    replay.step(1, Some(Observation::Recovery(None)))?;
+    replay.project_charge_limit(percent);
+    let (publish, status) = watch::channel(Arc::new(replay.current.clone()));
+    let drive = async move {
+        if let Some((mut advance, commit)) = update
+            && advance.recv().await.is_some()
+        {
+            let revision = replay.next_revision()?;
+            // The storage callback returns the independently read committed value.
+            // Any failed or unresolved transaction exits without publishing it.
+            replay.project_charge_limit(commit()?);
+            replay.current["revision"] = revision.into();
+            publish.send_replace(Arc::new(replay.current.clone()));
+            while advance.recv().await.is_some() {}
+        }
+        std::future::pending().await
+    };
+    Ok((status, drive))
 }
 
 #[cfg(test)]

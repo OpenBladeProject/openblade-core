@@ -1,4 +1,4 @@
-//! Windows test-only execution of the managed aggregate transaction.
+//! Windows fixture-only execution of the managed aggregate transaction.
 #![allow(unsafe_code)]
 
 use crate::configuration::{
@@ -21,6 +21,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     MOVEFILE_WRITE_THROUGH, MoveFileExW, SetFileInformationByHandle,
 };
 use windows_sys::Win32::System::Com::CoCreateGuid;
+
+pub mod fixture;
 
 const NAMES: [&str; 3] = [PROFILE, PREFERENCES, COMMIT];
 const LOCK: &str = "configuration.test-lock";
@@ -66,15 +68,23 @@ impl Report {
     }
 }
 
-// Only the test module can construct a store. There is no open-by-path API.
+// Construction is private to the native tests and the fixed developer fixture.
 struct TestStore {
     root: PathBuf,
     pins: Vec<File>,
+    cleanup_on_drop: bool,
+    held_lock: Option<File>,
 }
 
 impl TestStore {
+    #[cfg(test)]
     fn new() -> io::Result<Self> {
-        let temp = std::env::temp_dir();
+        let (temp, pins) = Self::pin_temp(&std::env::temp_dir())?;
+        let root = temp.join(format!("openblade-config-writer-{}", transaction_id()?));
+        Self::create(root, pins, true)
+    }
+
+    fn pin_temp(temp: &Path) -> io::Result<(PathBuf, Vec<File>)> {
         if !matches!(
             temp.components().next(),
             Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::Disk(_))
@@ -84,22 +94,43 @@ impl TestStore {
             return Err(io::Error::other("expected a local absolute test temp path"));
         }
 
-        // Hold each component without delete sharing for the life of the root.
+        // Deny delete sharing on each directory for the life of the root.
         // Check from the drive down so an unchecked ancestor is never followed.
         let mut pins = Vec::new();
         let directories: Vec<_> = temp.ancestors().filter(|path| path.has_root()).collect();
         for directory in directories.into_iter().rev() {
             pins.push(pin_directory(directory)?);
         }
-        let temp: PathBuf = temp.components().collect();
-        let root = temp.join(format!("openblade-config-writer-{}", transaction_id()?));
+        Ok((temp.components().collect(), pins))
+    }
+
+    fn create(root: PathBuf, mut pins: Vec<File>, cleanup_on_drop: bool) -> io::Result<Self> {
         fs::create_dir(&root)?;
+        // Keep the new leaf non-reparse while it is empty. MoveFileExW needs
+        // directory write sharing later, so keep the lock file open to prevent
+        // the fixture directory from becoming empty during the session.
+        let creation_pin = if cleanup_on_drop {
+            None
+        } else {
+            Some(pin_directory_with_share(&root, FILE_SHARE_READ)?)
+        };
         pins.push(pin_directory(&root)?);
-        let store = Self { root, pins };
-        OpenOptions::new()
+        let mut store = Self {
+            root,
+            pins,
+            cleanup_on_drop,
+            held_lock: None,
+        };
+        let lock = OpenOptions::new()
             .write(true)
             .create_new(true)
+            .share_mode(0)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
             .open(store.path(LOCK))?;
+        if !cleanup_on_drop {
+            store.held_lock = Some(lock);
+        }
+        drop(creation_pin);
         Ok(store)
     }
 
@@ -111,29 +142,42 @@ impl TestStore {
         self.root.join(name)
     }
 
-    fn lock(&self) -> io::Result<File> {
+    fn lock(&self) -> io::Result<Option<File>> {
+        if self.held_lock.is_some() {
+            return Ok(None);
+        }
         let lock = OpenOptions::new()
             .read(true)
-            .write(true)
             .share_mode(0)
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
             .open(self.path(LOCK))?;
         check_regular_file(&lock)?;
-        Ok(lock)
+        Ok(Some(lock))
     }
 
+    #[cfg(test)]
     fn restart_inspection(&self) -> io::Result<Inspection> {
+        self.inspect_snapshot().map(|(inspection, _)| inspection)
+    }
+
+    fn inspect_snapshot(&self) -> io::Result<(Inspection, [Option<Vec<u8>>; 3])> {
         let _lock = self.lock()?;
         if self.record_present()? {
-            return Ok(inspect(Snapshot {
+            let inspection = inspect(Snapshot {
                 recovery: RecoveryRecord::Present,
                 profile: ObservedFile::Unavailable,
                 preferences: ObservedFile::Unavailable,
                 commit: ObservedFile::Unavailable,
-            }));
+            });
+            return Ok((inspection, [None, None, None]));
         }
         let prior = self.capture()?;
-        Ok(inspect_bytes(prior.each_ref().map(Option::as_deref)))
+        if self.record_present()? {
+            return Err(io::Error::other(
+                "recovery record appeared during inspection",
+            ));
+        }
+        Ok((inspect_bytes(prior.each_ref().map(Option::as_deref)), prior))
     }
 
     fn record_present(&self) -> io::Result<bool> {
@@ -286,6 +330,9 @@ impl TestStore {
 
 impl Drop for TestStore {
     fn drop(&mut self) {
+        if !self.cleanup_on_drop {
+            return;
+        }
         let cleanup = (|| {
             // Tear down fixture entries while the root is still pinned.
             // Directory sentinels are empty and are removed without recursion.
@@ -568,9 +615,13 @@ fn inspect_bytes(bytes: [Option<&[u8]>; 3]) -> Inspection {
 }
 
 fn pin_directory(path: &Path) -> io::Result<File> {
+    pin_directory_with_share(path, FILE_SHARE_READ | FILE_SHARE_WRITE)
+}
+
+fn pin_directory_with_share(path: &Path, share: u32) -> io::Result<File> {
     let file = OpenOptions::new()
         .read(true)
-        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .share_mode(share)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
         .open(path)?;
     let metadata = file.metadata()?;
@@ -617,18 +668,27 @@ fn check_regular_file(file: &File) -> io::Result<FileIdentity> {
     if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(io::Error::other("configuration entry is not a plain file"));
     }
+    let info = handle_information(file)?;
+    if info.nNumberOfLinks != 1 {
+        return Err(io::Error::other("configuration entry has multiple links"));
+    }
+    Ok(file_identity(&info))
+}
+
+fn handle_information(file: &File) -> io::Result<BY_HANDLE_FILE_INFORMATION> {
     let mut info = BY_HANDLE_FILE_INFORMATION::default();
     // SAFETY: The file owns the live handle and info is writable for the call.
     if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
         return Err(io::Error::last_os_error());
     }
-    if info.nNumberOfLinks != 1 {
-        return Err(io::Error::other("configuration entry has multiple links"));
-    }
-    Ok(FileIdentity {
+    Ok(info)
+}
+
+fn file_identity(info: &BY_HANDLE_FILE_INFORMATION) -> FileIdentity {
+    FileIdentity {
         volume: info.dwVolumeSerialNumber,
         index: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
-    })
+    }
 }
 
 fn move_file(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
@@ -670,4 +730,5 @@ fn transaction_id() -> io::Result<String> {
     ))
 }
 
+#[cfg(test)]
 mod tests;

@@ -1,6 +1,6 @@
-//! Pure development contracts for the future Windows host.
+//! Development contracts for the Windows host.
 
 pub mod configuration;
 
-#[cfg(all(test, windows))]
-mod configuration_writer;
+#[cfg(windows)]
+pub mod configuration_writer;
