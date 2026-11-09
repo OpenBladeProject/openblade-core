@@ -20,15 +20,19 @@ projection omits these fields; Session Agent IPC remains unchanged.
   external-power path.
 - Changing manual fan subtype preserves manual state and submits the requested
   targets. It does not cycle through Automatic and Balanced.
-- Manual to Automatic applies the selected AC performance pair directly. Custom
-  additionally applies and confirms the saved CPU/GPU levels. The service
-  attributes the coupled fan and performance write together.
+- An explicit profile transition to Automatic applies the selected AC performance
+  pair directly. A fan-only handback on full adapter power uses the confirmed
+  Silent, Performance, or Custom selector with flag `00`. Custom reapplies
+  and confirms its CPU/GPU levels. Generic `00/01` readback has no confirmed
+  preset and uses the existing Balanced handback when no profile is requested.
 - HyperBoost enters directly from admitted automatic or manual state on either
   supported cooling-pad path. Each command rechecks the selected path's pad
   presence and adapter eligibility; the operation cannot switch paths mid-entry.
   The durable journal retains the saved performance and fan intent before the
   first command. When manual firmware state hides the performance selector,
   the saved mode is restoration intent, not guessed firmware confirmation.
+  A request to leave mode 7 for an admitted AC preset uses that preset's
+  pair and final readback directly, including the Custom levels if requested.
 - Battery Protection Off uses its admitted command from the current supported
   limit, independently of the unused stored limit. Re-enabling requires and
   applies an admitted stored limit; temporary full-charge cancellation

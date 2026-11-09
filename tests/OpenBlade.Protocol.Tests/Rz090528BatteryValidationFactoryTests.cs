@@ -330,6 +330,37 @@ public sealed class Rz090528BatteryValidationFactoryTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectHyperBoostExit_UsesRequestedPerformanceOrCustomWithoutBalanced(bool custom)
+    {
+        byte mode = custom ? (byte)4 : (byte)2;
+        byte[] first = [1, 1, mode, 0];
+        byte[] second = [1, 2, mode, 0];
+        byte[] cpu = [1, 1, 1];
+        byte[] gpu = [1, 2, 0];
+        var session = custom
+            ? new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], first, second, cpu, gpu, first, second, cpu, gpu)
+            : new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], first, second, first, second);
+        await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
+
+        if (custom)
+        {
+            await port.SetCustomPerformanceAsync(new CustomPerformanceSettings(
+                CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low), default);
+        }
+        else
+        {
+            await port.SetPerformanceAsync(PerformancePreset.Performance, default);
+        }
+
+        Assert.Equal(custom
+            ? new[] { "01010400", "01020400", "010101", "010200" }
+            : new[] { "01010200", "01020200" }, Writes(session));
+        Assert.Equal(custom ? 10 : 6, session.Commands.Count);
+    }
+
+    [Theory]
     [InlineData(CoolingPadConnectionState.Absent, false)]
     [InlineData(CoolingPadConnectionState.PresentExact, true)]
     public async Task DirectManualHyperBoost_UsesExactMode7PairForTheSelectedPadPath(

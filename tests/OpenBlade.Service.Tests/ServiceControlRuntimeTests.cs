@@ -30274,6 +30274,41 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
+    [Fact]
+    public async Task DirectHyperBoost_RestoresSavedPerformanceBeforeManualFansWhenBaseDiffers()
+    {
+        (TestContext context, RecordingHyperBoostOwnershipJournalStore journal,
+            FanControlSettings manual) = await CreateDirectManualHyperBoostContextAsync();
+        // The active selector and saved intent can differ while manual fans
+        // are active. Mode 7 exits to the actual entry base, here Silent.
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Silent,
+        };
+        ControlOperationResult enabled = await context.Runtime.SetHyperBoostAsync(true, default);
+        Assert.Equal(ControlOperationStatus.Applied, enabled.Status);
+        Assert.Equal(PerformancePreset.Silent, journal.Journal!.BaseMode);
+        Assert.Equal(PerformancePreset.Performance, journal.Journal.RestoreIntent.Performance);
+
+        var order = new List<DeviceSubsystem>();
+        context.Device.AfterSetter = subsystem =>
+        {
+            order.Add(subsystem);
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                Assert.Equal(PerformancePreset.Performance, context.Device.ConfirmedState.Performance);
+            }
+        };
+
+        ControlOperationResult disabled = await context.Runtime.SetHyperBoostAsync(false, default);
+
+        Assert.Equal(ControlOperationStatus.Applied, disabled.Status);
+        Assert.Equal([DeviceSubsystem.Performance, DeviceSubsystem.Fans], order);
+        Assert.Equal(PerformancePreset.Performance, context.Device.ConfirmedState.Performance);
+        Assert.Equal(manual, context.Device.FanControlWrites[^1]);
+        Assert.Null(journal.Journal);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

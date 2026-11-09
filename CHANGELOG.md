@@ -11,7 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Preserve Silent, Performance, and Custom when enabling fixed fans, maximum fans, or a fan curve on full adapter power on Blade 16 RZ09-0581 and RZ09-0528. ([#907](https://github.com/OSSBlade/openblade-core/pull/907))
+- Preserve Silent, Performance, and Custom when changing between Automatic and manual fans on full adapter power on Blade 16 RZ09-0581 and RZ09-0528. Apply admitted AC performance presets directly when leaving HyperBoost. ([#907](https://github.com/OSSBlade/openblade-core/pull/907))
 
 ## [0.57.1-nightly.109] - 2026-11-08
 

@@ -7989,6 +7989,28 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
         if (DeviceSubsystemOrder.IsManualFanMode(intent.FanControl.Mode))
         {
+            // Fan entry retains the active selector. If mode 7 returned to a
+            // different base, restore the saved preset and levels before targets.
+            if (preservedState is { Fans: FanMode.Automatic, HyperBoostActive: false }
+                && (preservedState.Performance != intent.Performance
+                    || preservedState.CustomPerformance != intent.CustomPerformance))
+            {
+                ScopedApplyOutcome preset = await ApplyStepAsync(
+                        DeviceSubsystem.Performance,
+                        ThermalTransitionStepPurpose.Restoration,
+                        (stepCoordinator, stepToken) => stepCoordinator
+                            .ApplyPerformanceOutcomeAsync(
+                                intent.Performance, intent.CustomPerformance, intent.GpuClockTuning, stepToken))
+                    .ConfigureAwait(false);
+                preservedState = MergeHyperBoostThermalState(preservedState, preset.Readback);
+                if (!HyperBoostBaselineStepSucceeded(preset))
+                {
+                    return new HyperBoostIntentRestorationResult(
+                        false, preservedState, preset.Result.Message,
+                        IsDeferredHyperBoostRestoreRetryEligible(preset));
+                }
+            }
+
             ScopedApplyOutcome fans = await coordinator
                 .ApplyFanControlTransitionOutcomeAsync(
                     FanControlSettings.FromLegacy(FanMode.Automatic),

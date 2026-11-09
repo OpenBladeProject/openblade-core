@@ -1127,6 +1127,35 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Theory]
+    [InlineData(0x02)]
+    [InlineData(0x05)]
+    public async Task DirectAutomaticFanSetter_RetainsConfirmedFullPowerPreset(byte mode)
+    {
+        byte[] firstAutomatic = [0x01, 0x01, mode, 0x00];
+        byte[] secondAutomatic = [0x01, 0x02, mode, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, mode, 0x01]),
+            Success([0x01, 0x02, mode, 0x01]),
+            Success([0x11, 0x11]), Success(firstAutomatic),
+            Success([0x11, 0x11]), Success(secondAutomatic),
+            Success(firstAutomatic), Success(secondAutomatic));
+        await using var port = CreatePort(
+            session,
+            Catalog(MaximumCapabilityFixtures()),
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates: AdapterPowerProtocol.SynapseAdapterStates,
+            supportsDirectManualFanTransitions: true);
+
+        await port.SetFanModeAsync(FanMode.Automatic, default);
+
+        Assert.Equal([0x82, 0x82, 0x8C, 0x02, 0x8C, 0x02, 0x82, 0x82],
+            session.Commands.Select(command => command.CommandId).ToArray());
+        Assert.Equal([$"0101{mode:X2}00", $"0102{mode:X2}00"],
+            session.Commands.Where(command => command.CommandId == 0x02)
+                .Select(command => Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Theory]
     [InlineData(0x03)]
     [InlineData(0x06)]
     public async Task DirectAutomaticFanSetter_BatteryManualPreservesSelector(
