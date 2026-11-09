@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -154,6 +155,70 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
         static string Hash(string document) => Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(document)));
+    }
+
+    [RustConfigurationExchangeFact]
+    public async Task WindowsReplay_RustConfigurationWriterExchangesManagedBytes()
+    {
+        string executable = Environment.GetEnvironmentVariable(RustConfigurationExchangeFactAttribute.PathVariable)!;
+        string fileName = Path.GetFileName(executable);
+        Assert.True(Path.IsPathFullyQualified(executable)
+            && fileName.StartsWith("openblade_windows_host-", StringComparison.Ordinal)
+            && fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            && File.Exists(executable));
+
+        Paths paths = CreatePaths();
+        await CreateStore(paths).LoadAsync(CancellationToken.None);
+        string[] managed = await Task.WhenAll(paths.All.Select(async path =>
+            Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path))));
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var start = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            StandardOutputEncoding = Encoding.UTF8,
+        };
+        start.ArgumentList.Add("--exact");
+        start.ArgumentList.Add("configuration_writer::tests::managed_oracle_exchange");
+        start.ArgumentList.Add("--nocapture");
+        start.Environment["OPENBLADE_CONFIGURATION_EXCHANGE"] = "1";
+        using Process process = Process.Start(start)!;
+        Task<string> output = process.StandardOutput.ReadToEndAsync(timeout.Token);
+        Task<string> errors = process.StandardError.ReadToEndAsync(timeout.Token);
+        try
+        {
+            await process.StandardInput.WriteAsync(JsonSerializer.Serialize(managed).AsMemory(), timeout.Token);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill();
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
+        }
+
+        string transcript = await output;
+        Assert.True(process.ExitCode == 0, $"{transcript}{Environment.NewLine}{await errors}");
+        const string prefix = "CONFIGURATION_OUTPUT=";
+        string line = Assert.Single(transcript.Split('\n'), text => text.StartsWith(prefix, StringComparison.Ordinal));
+        string[] rust = JsonSerializer.Deserialize<string[]>(line[prefix.Length..])!;
+        Assert.Equal(3, rust.Length);
+        foreach ((string path, string document) in paths.All.Zip(rust))
+        {
+            await File.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes(document), timeout.Token);
+        }
+
+        BatteryConfigurationInspection read = await CreateStore(paths).InspectAsync(timeout.Token);
+        Assert.True(read.Configuration.IsAuthoritative);
+        Assert.Equal(BatteryPolicy.Create(75), read.Configuration.Profiles.BatteryPolicy);
     }
 
     [Fact]
@@ -1923,4 +1988,17 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         byte[] Profiles,
         byte[] Preferences,
         byte[] Marker);
+}
+
+internal sealed class RustConfigurationExchangeFactAttribute : FactAttribute
+{
+    internal const string PathVariable = "OPENBLADE_RUST_CONFIG_TEST_EXE";
+
+    public RustConfigurationExchangeFactAttribute()
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(PathVariable)))
+        {
+            Skip = $"Requires Windows and an explicit {PathVariable} path.";
+        }
+    }
 }

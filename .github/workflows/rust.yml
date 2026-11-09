@@ -213,6 +213,21 @@ jobs:
           dotnet restore ../src/OpenBlade.Tray/OpenBlade.Tray.csproj
           dotnet test ../tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter FullyQualifiedName~RustReadOnlyHostTests
 
+      - name: Verify the Windows configuration writer against the managed store
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = '../tools/openblade-windows-host/Cargo.toml'
+          $messages = cargo test --locked --lib --no-run --message-format=json --manifest-path $manifest --target ${{ matrix.target }}
+          $testBinaries = @($messages | ConvertFrom-Json | Where-Object {
+            $_.reason -eq 'compiler-artifact' -and $_.profile.test -and
+              $_.target.name -eq 'openblade_windows_host' -and $_.executable
+          })
+          if ($testBinaries.Count -ne 1) { throw 'Expected one Rust library test executable.' }
+          $env:OPENBLADE_RUST_CONFIG_TEST_EXE = $testBinaries[0].executable
+          dotnet test ../tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter FullyQualifiedName~BatteryConfigurationStoreTests
+
       - name: Smoke Windows discovery metadata on the hosted VM
         if: runner.os == 'Windows' && runner.environment == 'github-hosted' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         timeout-minutes: 2
