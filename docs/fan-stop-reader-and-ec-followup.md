@@ -398,7 +398,15 @@ Blade's address mapping and host decode still need their own evidence.
 · [ITE IT81202 specification, pp. 78, 433, 533–534](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
 · [Coreboot IT5570E depth-two reader](https://github.com/coreboot/coreboot/blob/e1e65cb0f1cad6117d48503f2f78d115caecc55b/src/ec/clevo/it5570e/i2ec.c)
 
-The next proof for this route is the installed controller's ordinary
+The IT81202 reference assigns `2E/2F` to the reset value of BADRSEL and
+describes a separately enabled programmable port. A bounded constant
+propagation scan of the four exact Blade EC images resolved the known
+`F0200D` writes and found no resolved writes to `F0200A`, `F02012`, or
+`F02014/15`. Some store destinations remain unresolved. Together with
+the exact BIOS initialization below, this makes `2E/2F` the first route
+to check on an installed host. [ITE IT81202 specification, pp. 432–434](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
+
+The remaining readback evidence is the installed controller's ordinary
 host decode and its 16-bit address binding to `F01808`. A read-only
 comparison needs exact device and firmware identity, a known-answer
 control, independent mapped duty and cycle comparisons, and a third
@@ -472,15 +480,42 @@ one checksum-valid DSDT and 115 distinct SSDTs.
 | RZ09-0509 / 1.06 | `790801ff8ccc09606dbd56315968747d1a00919d7dd51a5595c60c8d982d29e4` | `33ad14c9b8a52bde77295a659a2a86c34709c2326e72a75a1e7af9c0e237dcb8` |
 | RZ09-0529 / 4.01 | `3d6ccdc674b135419843832929ef8844b9ec8035ba8d1aef6e7a8e0075f43072` | `c45b52341d996eeba9b1ee6554c598f872e799eca39dfdcbab180a8deba46820` |
 
-The recovered DSDTs define `RRIO` cases `0C/0D` that control `C1LE`
-when the base is `2E`. The field is bit 12 of the 16-bit word at PCI
-device 31, function 0, offset `82` (bit 4 of byte `83`). None of the
-four models' recovered main volumes contains an AML caller to `RRIO`.
-Intel documents that these Super I/O ports have a dedicated eSPI
-forwarding enable. An exact-host read of that PCI config word after a
-normal boot could resolve the fixed decode bit without touching any
-EC selector or mailbox. The recorded value would apply to the sampled
-host and firmware. [Intel 700-series PCH datasheet, table 9](https://cdrdv2-public.intel.com/743835/743835-004.pdf)
+All five signed BIOS revisions enable fixed `2E/2F` forwarding from
+`OemBoardPei` in the boot-block firmware volume `FV_BB`. This module
+uses a TE image under GUID `E90CF8BD-D50C-40D5-9D5F-1F8D340B86C8`.
+Its entry jumps directly to the initialization code, which passes
+`2E` to the fixed-decode helper. The helper selects mask `1000`
+for bit 12 of the 16-bit PCI word at `00:1f.0` offset `82`.
+DI780 and KI890 also OR the mask into DMI private register `2774`.
+KI8100 writes the same updated PCI word to both registers. KI8110
+uses an MMIO PCI helper that writes the aggregate enable word when
+it changes.
+[Intel PCH fixed decode and sideband target table](https://cdrdv2-public.intel.com/743835/743835-004.pdf)
+· [Intel Alder Lake EDK2 register definitions](https://www.mail-archive.com/devel%40edk2.groups.io/msg63786.html)
+
+The offsets below are relative to the TE `.text` section, which begins
+at RVA `220` and TE file offset `A0` in each image. The last column
+identifies the subsequent early-boot sequence that selects `40` and
+`41` through port `302` and writes zero to each through port `303`.
+
+| Model / BIOS | `OemBoardPei` TE SHA-256 | `2E` setup → decode helper | PCI write / DMI write | `302/303` setup |
+| --- | --- | --- | --- | --- |
+| RZ09-0423 / 2.01 | `fd8fa993c1d018b6700846a0061b273a236588e527b9fbc613b31b7d0b2f8e86` | `347 → B40` | `C06 / C19` | `380–39F` |
+| RZ09-0484 / 2.04 | `e35cf4e78432a81a807311115bbb282801d6c0668c981c3d1ff78b3b24ee360a` | `33C → AF1` | `BB6 / BC9` | `375–394` |
+| RZ09-0484 / 2.09 | `28379a02684f52e6750ec6f79c49e3b24894994b448fecaf669eec4b16c26e8c` | `33C → AF1` | `BB6 / BC9` | `375–394` |
+| RZ09-0509 / 1.06 | `178c19616966699dbb4edcd1bfba6ef5f96fdbeb20e75cb9e41ebfa03d342cc8` | `34B → B14` | `BF1 / BE8` | `384–3A3` |
+| RZ09-0529 / 4.01 | `1f36973310ddefbaf36e50f405dd590a7565d55a568424b18c20fabc531dfc2a` | `2EF → 479` | `A83 → 1A66 / open` | `321–346` |
+
+The recovered DSDTs also define `RRIO` cases `0C/0D` for this bit.
+None of the four models' recovered main volumes contains an AML caller
+to `RRIO`. The PEI path establishes boot-time configuration and
+secondary mailbox initialization independently of AML. It leaves the
+installed post-boot decode, ongoing selector ownership, and third PWM
+readback open. An exact-host PCI config read after a normal boot can
+check the fixed decode bit without touching an EC selector or mailbox.
+The standard public hw-probe PCI logs collect device descriptions
+without a config-space hex dump, so they cannot supply this word.
+[hw-probe PCI collection](https://github.com/linuxhw/hw-probe/blob/master/hw-probe.pl#L6035-L6111)
 
 On a matching host already running Linux, the narrow capture is:
 
@@ -550,6 +585,14 @@ The EC-local `0D/02` handler stores the selector at `8035F` and a fresh
 `0D/82` reads that byte directly. This path does not use the keyboard
 MCU's I²C staging or selector cache. The separate `0D/84` table reads
 speed or configuration RAM and supplies no actual third PWM reading.
+
+The KI890 SET_REPORT parser at `120D4` dispatches class `00` at
+`11EB0` and class `0D` at `11FCE`. Its accepted classes
+`02/03/04/0A` have no getter implementation in this path. Class
+`00/02` stages 22 bytes from the request and `00/82` echoes those
+staged bytes. The implemented thermal getters return constants,
+selector state, or thermal configuration. This trace found no path
+from a native USB getter to actual PWM3 at `F01808` on KI890.
 
 An exact-board enumeration is still needed to establish whether the
 EC USB endpoint is connected and visible to the host. The selector
@@ -640,9 +683,15 @@ because its exact keyboard transport already carries zero to the receiver.
 
 Razer's public index lists BIOS and keyboard updates for RZ09-0301.
 The recheck identified no separate receiver package or additional
-public receiver bytes for the seven models.
+public receiver bytes for the seven models. The adjacent signed
+Charlotte2 EC 1.03 carrier, SHA-256
+`bc61e2b1024ef3e6fffa1da4ad55788213044c92d4df9d76ddbccd0b1f260b22`,
+contains an EC image. Its three selectors bind only RZ09-02886,
+RZ09-02887 and RZ09-02888 with SSID `1A582002`. They do not include
+RZ09-0301.
 [Razer firmware index](https://mysupport.razer.com/app/answers/detail/a_id/4166/kw/Nari%20downloads)
 · [RZ09-0301 support and downloads](https://mysupport.razer.com/app/answers/detail/a_id/3683/)
+· [RZ09-0288 EC updater](https://mysupport.razer.com/app/answers/detail/a_id/1991/)
 
 DA550 MP V4.0 reports identify IT8390E. The superficially similar CH551
 original pair came from RZ09-0330. A separate OL510 PVT V1.0 board photo
