@@ -198,3 +198,90 @@ fn automation_contains_both_panic_payloads_before_publication() {
         );
     }
 }
+
+#[test]
+fn performance_source_abi_checks_admission_before_writing_eligibility() {
+    let mut eligible = 99;
+    let mut written = 99;
+    let mut error = error();
+    let version = OB_AUTOMATION_ABI_VERSION;
+    // SAFETY: all nonnull outputs are accessible, aligned and disjoint.
+    unsafe {
+        assert_eq!(
+            ob_v1_performance_source_eligible(2, 1, 0, &mut eligible, &mut written, &mut error),
+            1
+        );
+        assert_eq!((eligible, written, error.category), (99, 0, 1));
+        assert_eq!(
+            ob_v1_performance_source_eligible(
+                version,
+                1,
+                0,
+                ptr::null_mut(),
+                &mut written,
+                &mut error
+            ),
+            2
+        );
+        assert_eq!((written, error.detail), (0, 5));
+        assert_eq!(
+            ob_v1_performance_source_eligible(
+                version,
+                1,
+                0,
+                &mut eligible,
+                ptr::null_mut(),
+                &mut error
+            ),
+            2
+        );
+        assert_eq!((eligible, error.detail), (99, 5));
+        error.struct_size = 4;
+        let old_error = error;
+        assert_eq!(
+            ob_v1_performance_source_eligible(2, 1, 0, &mut eligible, &mut written, &mut error),
+            2
+        );
+        assert_eq!((eligible, written, error), (99, 0, old_error));
+        error.struct_size = 16;
+        for panic in [1, 2] {
+            PANIC_NEXT.with(|flag| flag.set(panic));
+            assert_eq!(
+                ob_v1_performance_source_eligible(
+                    version,
+                    1,
+                    0,
+                    &mut eligible,
+                    &mut written,
+                    &mut error
+                ),
+                5
+            );
+            assert_eq!((eligible, written, error.category), (99, 0, 5));
+        }
+        assert_eq!(
+            ob_v1_performance_source_eligible(
+                version,
+                1,
+                2,
+                &mut eligible,
+                &mut written,
+                &mut error
+            ),
+            0
+        );
+        assert_eq!((eligible, written, error.category), (1, 0, 0));
+        assert_eq!(
+            ob_v1_performance_source_eligible(
+                version,
+                i32::MIN,
+                i32::MAX,
+                &mut eligible,
+                &mut written,
+                ptr::null_mut()
+            ),
+            0
+        );
+        assert_eq!((eligible, written), (0, 0));
+    }
+}

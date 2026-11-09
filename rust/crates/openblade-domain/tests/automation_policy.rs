@@ -103,3 +103,36 @@ fn malformed_fixture_fails_closed() {
         assert!(read(&invalid).is_err());
     }
 }
+
+#[test]
+fn decoded_performance_source_matches_shared_matrix() {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct PerformanceSourceFixture {
+        schema_version: u32,
+        source_revision: String,
+        sources: Vec<i32>,
+        cases: Vec<(i32, Vec<bool>)>,
+    }
+    let fixture: PerformanceSourceFixture = serde_json::from_str(include_str!(
+        "../../../../tests/Fixtures/Parity/v1/performance-source.json"
+    ))
+    .unwrap();
+    assert_eq!(fixture.schema_version, 1);
+    assert_eq!(
+        fixture.source_revision,
+        "8a6e49d7bcffc52c84e8d447711f9192385e9da6"
+    );
+    assert_eq!(fixture.sources, [0, 1, 2, 3, -1, i32::MIN, i32::MAX]);
+    assert_eq!(fixture.cases.len(), 14);
+    for (preset, expected) in fixture.cases {
+        assert_eq!(expected.len(), fixture.sources.len());
+        for (&source, eligible) in fixture.sources.iter().zip(expected) {
+            assert_eq!(
+                automation::performance_source_eligible(preset, source),
+                eligible,
+                "preset {preset}, source {source}"
+            );
+        }
+    }
+}

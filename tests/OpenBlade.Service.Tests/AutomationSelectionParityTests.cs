@@ -103,6 +103,41 @@ public sealed class AutomationSelectionParityTests
         Assert.Same(profiles.PluggedIn.Lighting, reverted.Lighting.Value);
     }
 
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.Battery)]
+    [InlineData(PowerSource.UsbC)]
+    [InlineData(PowerSource.ExternalUnknown)]
+    public void CompleteResolutionFiltersEachCandidateWithoutRewritingHostIntent(PowerSource source)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        var confirmed = new ConfirmedDeviceState((PerformancePreset)999, null, null, null);
+        foreach (PerformancePreset preset in Enum.GetValues<PerformancePreset>().Concat(
+            [(PerformancePreset)(-1), (PerformancePreset)10, (PerformancePreset)int.MinValue, (PerformancePreset)int.MaxValue]))
+        {
+            foreach (string slot in new[] { "persistentPerformance", "temporaryPerformance", "recoveredHyperBoostPerformance" })
+            {
+                var state = new ProfileAutomationState(profiles, new BatteryAutomationPreferences(), source);
+                ResolvedSetting<PerformancePreset> baseline = state.Resolve(confirmed).Performance;
+                bool persistent = slot == "persistentPerformance";
+                var candidate = new PerformanceOverride(preset, persistent
+                    ? OverrideLifetime.Persistent : OverrideLifetime.UntilPowerSourceChange);
+                SetField(state, slot, candidate);
+
+                ResolvedSetting<PerformancePreset> expected =
+                    ManagedAutomationPolicyBaseline.IsPerformanceCompatibleWithSource(preset, source)
+                        ? new(preset, persistent ? SettingValueSource.PersistentOverride : SettingValueSource.TemporaryOverride)
+                        : baseline;
+                Assert.Equal(expected, state.Resolve(confirmed).Performance);
+                Assert.Same(candidate, state.PerformanceOverride);
+                if (source == PowerSource.ExternalUnknown)
+                {
+                    Assert.Equal((PerformancePreset)999, baseline.Value);
+                }
+            }
+        }
+    }
+
     private static void SetField<T>(ProfileAutomationState state, string name, T value) =>
         typeof(ProfileAutomationState).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(state, value);
 }

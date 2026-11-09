@@ -489,23 +489,15 @@ public sealed class ProfileAutomationState
 
     private static bool IsPerformanceCompatibleWithSource(
         PerformancePreset performance,
-        PowerSource source) => source switch
+        PowerSource source)
+    {
+        var (eligible, error) = ProductNativeRuntime.Automation.CheckPerformanceSource(performance, source);
+        if (error is not null)
         {
-            PowerSource.PluggedIn => performance is
-                PerformancePreset.Silent
-                or PerformancePreset.Balanced
-                or PerformancePreset.Performance
-                or PerformancePreset.Turbo
-                or PerformancePreset.MaximumPower
-                or PerformancePreset.Gaming
-                or PerformancePreset.Creator
-                or PerformancePreset.Custom,
-            PowerSource.Battery => performance is
-                PerformancePreset.BatterySaver
-                or PerformancePreset.BatteryBalanced,
-            PowerSource.UsbC => performance is PerformancePreset.Balanced,
-            _ => false,
-        };
+            throw new NativeComponentException(error);
+        }
+        return eligible;
+    }
 
     private PowerProfile CreateObservedFallbackProfile(ConfirmedDeviceState confirmed) => new(
         confirmed.Performance ?? profiles.UsbC.Performance,

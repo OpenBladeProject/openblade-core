@@ -22,14 +22,16 @@ public sealed record NativeAutomationLoadResult(NativeAutomationPolicy? Policy, 
     public bool IsSuccess => Policy is not null && Error is null;
 }
 
-/// <summary>Pure source-token selection; host values and mutable state never enter native memory.</summary>
+/// <summary>Pure automation selection and decoded performance eligibility.</summary>
 public sealed unsafe class NativeAutomationPolicy : IDisposable
 {
     public const uint AutomationAbiVersion = 0x00010000;
     private readonly AutomationModule module;
     private readonly delegate* unmanaged[Cdecl]<uint, NativeAutomationRequest*, NativeAutomationRecord*, uint*, NativeErrorRecord*, uint> select;
 
-    private NativeAutomationPolicy(AutomationModule module)
+    private readonly delegate* unmanaged[Cdecl]<uint, int, int, uint*, uint*, NativeErrorRecord*, uint> performanceSourceEligible;
+
+    private NativeAutomationPolicy(AutomationModule module, bool requirePerformanceSourceEligibility)
     {
         this.module = module;
         bool added = false;
@@ -43,6 +45,15 @@ public sealed unsafe class NativeAutomationPolicy : IDisposable
                 throw new AutomationVersionException();
             }
             select = (delegate* unmanaged[Cdecl]<uint, NativeAutomationRequest*, NativeAutomationRecord*, uint*, NativeErrorRecord*, uint>)NativeLibrary.GetExport(handle, "ob_v1_select_automation");
+            const string eligibilityExport = "ob_v1_performance_source_eligible";
+            if (NativeLibrary.TryGetExport(handle, eligibilityExport, out nint eligibility))
+            {
+                performanceSourceEligible = (delegate* unmanaged[Cdecl]<uint, int, int, uint*, uint*, NativeErrorRecord*, uint>)eligibility;
+            }
+            else if (requirePerformanceSourceEligibility)
+            {
+                throw new EntryPointNotFoundException(eligibilityExport);
+            }
         }
         finally
         {
@@ -52,7 +63,10 @@ public sealed unsafe class NativeAutomationPolicy : IDisposable
             }
         }
     }
-    public static NativeAutomationLoadResult Load(string absoluteLibraryPath)
+    public static NativeAutomationLoadResult Load(string absoluteLibraryPath) =>
+        Load(absoluteLibraryPath, requirePerformanceSourceEligibility: false);
+
+    public static NativeAutomationLoadResult Load(string absoluteLibraryPath, bool requirePerformanceSourceEligibility)
     {
         if (!(OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
             || RuntimeInformation.ProcessArchitecture is not (Architecture.X64 or Architecture.Arm64))
@@ -88,7 +102,7 @@ public sealed unsafe class NativeAutomationPolicy : IDisposable
         try
         {
             loaded = new AutomationModule(NativeLibrary.Load(absoluteLibraryPath));
-            return new(new NativeAutomationPolicy(loaded), null);
+            return new(new NativeAutomationPolicy(loaded, requirePerformanceSourceEligibility), null);
         }
         catch (AutomationVersionException)
         {
@@ -131,6 +145,53 @@ public sealed unsafe class NativeAutomationPolicy : IDisposable
             ExternalUnknown = Flag(externalUnknown),
             FromApplication = Flag(fromApplication),
         });
+
+    public (bool IsEligible, NativeBoundaryError? Error) CheckPerformanceSource(
+        PerformancePreset preset, PowerSource source)
+    {
+        if (performanceSourceEligible == null)
+        {
+            return (false, Error(NativeBoundaryErrorKind.MissingExport, "Performance source eligibility was not negotiated."));
+        }
+
+        bool added = false;
+        try
+        {
+            module.DangerousAddRef(ref added);
+            uint eligible = uint.MaxValue;
+            uint written = 0;
+            NativeErrorRecord error = NativeErrorRecord.Create();
+            uint status = performanceSourceEligible(
+                AutomationAbiVersion, (int)preset, (int)source, &eligible, &written, &error);
+            return ReadPerformanceSourceEligibility(eligible, status, error, written);
+        }
+        catch (ObjectDisposedException)
+        {
+            return (false, Error(NativeBoundaryErrorKind.Disposed, "Native automation policy is disposed."));
+        }
+        finally
+        {
+            if (added)
+            {
+                module.DangerousRelease();
+            }
+        }
+    }
+
+    internal static (bool IsEligible, NativeBoundaryError? Error) ReadPerformanceSourceEligibility(
+        uint eligible, uint status, NativeErrorRecord error, uint written)
+    {
+        if (written != 0)
+        {
+            return (false, InvalidResultError());
+        }
+        NativeBoundaryError? failure = NativeProfilePolicy.CheckStatus(status, error, written, 0);
+        if (failure is not null)
+        {
+            return (false, failure);
+        }
+        return eligible <= 1 ? (eligible == 1, null) : (false, InvalidResultError());
+    }
 
     private NativeAutomationResult Select(NativeAutomationRequest request)
     {
@@ -228,8 +289,9 @@ public sealed unsafe class NativeAutomationPolicy : IDisposable
     private static bool Offset<T>(string field, int expected) where T : struct =>
         Marshal.OffsetOf<T>(field).ToInt64() == expected;
     private static NativeBoundaryError Error(NativeBoundaryErrorKind kind, string message) => new(kind, 0, 0, message);
-    private static NativeAutomationResult InvalidResult() => new(null,
-        Error(NativeBoundaryErrorKind.InvalidNativeResult, "Native automation policy returned inconsistent records."));
+    private static NativeAutomationResult InvalidResult() => new(null, InvalidResultError());
+    private static NativeBoundaryError InvalidResultError() =>
+        Error(NativeBoundaryErrorKind.InvalidNativeResult, "Native automation policy returned inconsistent records.");
     public void Dispose() => module.Dispose();
     private sealed class AutomationVersionException : Exception;
     private sealed class AutomationModule : SafeHandle

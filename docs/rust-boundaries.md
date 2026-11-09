@@ -493,8 +493,8 @@ cover layout, malformed inputs, publication, panic containment, independent
 negotiation and concurrent disposal. An isolated Windows failure probe checks
 host validation order and no published desired state after lifetime failure.
 
-Compatibility predicates and recovered HyperBoost priority remain C# because
-they select active candidates before these helpers. C# retains mutable state,
+This selection extraction originally left compatibility predicates and recovered
+HyperBoost priority in C#. Both determine which candidates reach these helpers. C# retains mutable state,
 override lifetimes, foreground/path matching, power transitions, validation
 order, observed fallback construction, saved intent and suppression. Read-only
 recovery may publish a power source before destination automation is consumed:
@@ -504,6 +504,29 @@ cancellation, journals and hardware writes are unchanged.
 
 This behavior-preserving extraction has version impact `none`. IPC versions,
 persisted schemas, model capabilities and vendor definitions are unchanged.
-The next small seam is source compatibility for decoded performance candidates,
-with separate parity for legacy values; temporal state and fan backend policy
-remain host-owned.
+
+### Decoded performance source eligibility
+
+The three performance override slots in `ProfileAutomationState.Resolve` call
+the same pure source predicate in their original order. Plugged-in admits the
+eight AC presets, Battery admits BatterySaver and BatteryBalanced, and USB-C
+admits Balanced only. ExternalUnknown and unmapped values are ineligible. An
+undefined active source still fails host validation before reaching Rust.
+Observed fallback and saved profile values remain host data, including legacy
+scalars that never entered candidate filtering.
+
+The additive `ob_v1_performance_source_eligible` export uses automation ABI v1.
+The loader probes the eligibility symbol and still admits an automation v1
+library with only the selection exports. The product explicitly requires the
+new symbol during the same hash-bound module admission and keeps that module
+through shutdown. Two signed decoded enum scalars go in and a validated 0/1
+result comes out. No record layout, buffer negotiation, or hardware encoding is
+added. Errors follow existing native supervision and leave the result
+unpublished. C# retains application profile validation, recovered HyperBoost
+priority, fan policy, mutable and temporal state, and device admission.
+
+The shared matrix and a frozen managed predicate from
+`8a6e49d7bcffc52c84e8d447711f9192385e9da6` cover every current preset and
+source, plus unmapped values. Host tests exercise all three override slots and
+keep undefined observations and saved candidate values intact. The version
+impact is `none`.
