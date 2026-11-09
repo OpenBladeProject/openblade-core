@@ -1,7 +1,7 @@
 # Rust workspace
 
-Stage 7 uses the Rust report codec and decoded profile merge policy from the
-retained C# Windows host. The required native component is built with ordinary
+The Windows host uses the Rust report codec, decoded profile merge and bounded automation selection from the
+shared core. The required native component is built with ordinary
 .NET builds and tests, and packaged with the coordinated product payload.
 Hardware ownership, admission, IPC and saved schemas remain in the host.
 
@@ -31,11 +31,15 @@ no older compiler compatibility is claimed. Update both together. `0.0.0`
 identifies these unpublished migration crates independently of the Windows
 product version. Licensing follows `GPL-3.0-or-later`.
 
-Commit `Cargo.lock`. Only the protocol and domain integration tests use registry roots:
+Commit `Cargo.lock`. The protocol and domain integration tests use registry roots:
 exact `serde` 1.0.228 with derive and `serde_json` 1.0.149, plus their locked
 parsing/proc-macro dependency closure. These established parsers provide strict
 typed JSON and duplicate-field rejection without adding a handwritten parser.
-Production libraries have only inward local dependencies. The workspace guard
+The separate developer-only `openblade-status-cli` uses the same JSON parsers
+and Tokio 1.54.1 for bounded asynchronous Windows pipe I/O and cancellation.
+Its locked OS/runtime dependencies stay in the CLI. Production libraries have
+only inward local dependencies. See [the read-only status guide](crates/openblade-status-cli/README.md).
+The workspace guard
 checks the four libraries, reviewed test targets/dependencies, MSRV and compiler
 policies independently of the caller's directory. Its regression tests use
 disposable workspace copies. Inner crates retain `no_std` and inherit
@@ -214,7 +218,28 @@ The managed report and profile implementations frozen at predecessor
 expectations and provenance remain unchanged. These independent oracles continue
 to check the activated path; they do not constitute physical validation.
 
-On Windows, `rust/Test-ProductionActivation.ps1` runs three isolated offline
+On Windows, `rust/Test-ProductionActivation.ps1` runs four isolated offline
 processes against the real admitted component. They verify a codec failure after
-a mocked SET in the batch and response paths, and policy failure with preserved
+a mocked SET in the batch and response paths, and profile/automation policy failure with preserved
 null/legacy validation branches. All HID handles and I/O are inert test doubles.
+
+
+## Automation selection
+
+`openblade-domain::automation` owns bounded performance-priority and lighting
+origin/provenance decisions. The independently negotiated automation ABI v1 returns
+only tokens for original host values. `NativeAutomationPolicy` binds the exports;
+production uses `ProductNativeRuntime.Automation` under the existing startup
+hash admission and shutdown lifetime. See [stage 8](../docs/rust-boundaries.md#automation-selection-stage-8)
+for the exact boundary and independent oracle. Codec/profile ABI v1 consumers
+remain compatible.
+
+The native tests add 18 shared cases and compare every presence combination with
+the frozen managed baseline. `Test-NativeInterop.ps1` also supplies
+`OPENBLADE_AUTOMATION_ONLY_LIBRARY` from the artifact's `automation-only/`
+subfolder for independent-loader tests. Set that path alongside the other two
+native-library variables when running the managed suite directly.
+
+`Test-ProductionActivation.ps1` now runs four isolated offline scenarios,
+including automation-policy lifetime failure with host validation preserved.
+All device resources remain inert test doubles.

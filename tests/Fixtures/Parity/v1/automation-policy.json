@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "suite": "automation-selection",
+  "sourceRevision": "9e53ed92bbe3985e1ea899ed6c1124f6f6dd020e",
+  "cases": [
+    {"id":"performance-power","operation":0,"profile":true,"confirmed":false,"temporary":false,"persistent":false,"externalUnknown":false,"application":false,"origin":0,"provenance":1},
+    {"id":"performance-application","operation":0,"profile":true,"confirmed":false,"temporary":false,"persistent":false,"externalUnknown":false,"application":true,"origin":0,"provenance":2},
+    {"id":"performance-temporary","operation":0,"profile":true,"confirmed":false,"temporary":true,"persistent":false,"externalUnknown":false,"application":true,"origin":2,"provenance":3},
+    {"id":"performance-persistent","operation":0,"profile":true,"confirmed":false,"temporary":false,"persistent":true,"externalUnknown":false,"application":true,"origin":3,"provenance":4},
+    {"id":"performance-both","operation":0,"profile":true,"confirmed":true,"temporary":true,"persistent":true,"externalUnknown":false,"application":false,"origin":3,"provenance":4},
+    {"id":"performance-host-filtered","operation":0,"profile":true,"confirmed":true,"temporary":false,"persistent":false,"externalUnknown":true,"application":false,"origin":0,"provenance":1},
+    {"id":"lighting-power","operation":1,"profile":true,"confirmed":true,"temporary":false,"persistent":false,"externalUnknown":false,"application":false,"origin":0,"provenance":1},
+    {"id":"lighting-application","operation":1,"profile":true,"confirmed":true,"temporary":false,"persistent":false,"externalUnknown":false,"application":true,"origin":0,"provenance":2},
+    {"id":"lighting-temporary","operation":1,"profile":true,"confirmed":true,"temporary":true,"persistent":false,"externalUnknown":false,"application":true,"origin":2,"provenance":3},
+    {"id":"lighting-persistent","operation":1,"profile":true,"confirmed":true,"temporary":false,"persistent":true,"externalUnknown":false,"application":true,"origin":3,"provenance":4},
+    {"id":"lighting-both","operation":1,"profile":true,"confirmed":true,"temporary":true,"persistent":true,"externalUnknown":false,"application":false,"origin":3,"provenance":4},
+    {"id":"lighting-profile-absent","operation":1,"profile":false,"confirmed":true,"temporary":false,"persistent":false,"externalUnknown":false,"application":true,"origin":1,"provenance":0},
+    {"id":"lighting-all-values-absent","operation":1,"profile":false,"confirmed":false,"temporary":false,"persistent":false,"externalUnknown":false,"application":true,"origin":1,"provenance":0},
+    {"id":"lighting-null-profile-temporary","operation":1,"profile":false,"confirmed":false,"temporary":true,"persistent":false,"externalUnknown":false,"application":false,"origin":2,"provenance":3},
+    {"id":"unknown-observed-ignores-all-intent","operation":1,"profile":true,"confirmed":true,"temporary":true,"persistent":true,"externalUnknown":true,"application":true,"origin":1,"provenance":0},
+    {"id":"unknown-observed-no-profile","operation":1,"profile":false,"confirmed":true,"temporary":false,"persistent":false,"externalUnknown":true,"application":false,"origin":1,"provenance":0},
+    {"id":"unknown-unobserved-profile","operation":1,"profile":true,"confirmed":false,"temporary":true,"persistent":true,"externalUnknown":true,"application":true,"origin":0,"provenance":1},
+    {"id":"unknown-all-values-absent","operation":1,"profile":false,"confirmed":false,"temporary":false,"persistent":true,"externalUnknown":true,"application":true,"origin":0,"provenance":1}
+  ]
+}

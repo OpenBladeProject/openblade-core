@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Core.Native;
 
 namespace OpenBlade.Service;
 
@@ -448,25 +449,31 @@ public sealed class ProfileAutomationState
         ConfirmedDeviceState confirmed,
         bool fromApplication)
     {
-        if (PowerSource == PowerSource.ExternalUnknown)
+        bool externalUnknown = PowerSource == PowerSource.ExternalUnknown;
+        // Preserve the original unknown-source branch's lazy profile access:
+        // observed firmware lighting does not consume saved profile intent.
+        LightingSettings? observed = externalUnknown ? confirmed.Lighting : null;
+        LightingSettings? profileValue = externalUnknown && observed is not null
+            ? null
+            : profile.Lighting;
+        observed ??= confirmed.Lighting;
+        NativeAutomationSelection selection = RequireSelection(
+            ProductNativeRuntime.Automation.SelectLighting(
+                profileValue is not null,
+                observed is not null,
+                temporaryLighting is not null,
+                persistentLighting is not null,
+                externalUnknown,
+                fromApplication));
+        LightingSettings? value = selection.Origin switch
         {
-            return confirmed.Lighting is { } observed
-                ? new ResolvedSetting<LightingSettings>(
-                    observed,
-                    SettingValueSource.ConfirmedFirmwareState)
-                : new ResolvedSetting<LightingSettings>(
-                    profile.Lighting,
-                    SettingValueSource.PowerProfile);
-        }
-
-        return OverrideResolver.Resolve(
-            profile.Lighting,
-            confirmed.Lighting ?? profile.Lighting,
-            temporaryLighting,
-            persistentLighting,
-            fromApplication
-                ? SettingValueSource.ApplicationProfile
-                : SettingValueSource.PowerProfile);
+            AutomationValueOrigin.Profile => profileValue,
+            AutomationValueOrigin.Confirmed => observed ?? profileValue,
+            AutomationValueOrigin.Temporary => temporaryLighting!.Value,
+            AutomationValueOrigin.Persistent => persistentLighting!.Value,
+            _ => throw new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult),
+        };
+        return new(value!, selection.Source);
     }
 
     private static FanControlSettings WithMode(
@@ -482,23 +489,15 @@ public sealed class ProfileAutomationState
 
     private static bool IsPerformanceCompatibleWithSource(
         PerformancePreset performance,
-        PowerSource source) => source switch
+        PowerSource source)
+    {
+        var (eligible, error) = ProductNativeRuntime.Automation.CheckPerformanceSource(performance, source);
+        if (error is not null)
         {
-            PowerSource.PluggedIn => performance is
-                PerformancePreset.Silent
-                or PerformancePreset.Balanced
-                or PerformancePreset.Performance
-                or PerformancePreset.Turbo
-                or PerformancePreset.MaximumPower
-                or PerformancePreset.Gaming
-                or PerformancePreset.Creator
-                or PerformancePreset.Custom,
-            PowerSource.Battery => performance is
-                PerformancePreset.BatterySaver
-                or PerformancePreset.BatteryBalanced,
-            PowerSource.UsbC => performance is PerformancePreset.Balanced,
-            _ => false,
-        };
+            throw new NativeComponentException(error);
+        }
+        return eligible;
+    }
 
     private PowerProfile CreateObservedFallbackProfile(ConfirmedDeviceState confirmed) => new(
         confirmed.Performance ?? profiles.UsbC.Performance,
@@ -549,23 +548,33 @@ public sealed class ProfileAutomationState
         PerformanceOverride? persistentOverride,
         SettingValueSource profileSource)
     {
-        if (persistentOverride is not null)
+        NativeAutomationSelection selection = RequireSelection(
+            ProductNativeRuntime.Automation.SelectPerformance(
+                temporaryOverride is not null,
+                persistentOverride is not null,
+                profileSource == SettingValueSource.ApplicationProfile));
+        PerformancePreset value = selection.Origin switch
         {
-            return new ResolvedSetting<PerformancePreset>(
-                persistentOverride.Value,
-                SettingValueSource.PersistentOverride);
-        }
+            AutomationValueOrigin.Profile => profileValue,
+            AutomationValueOrigin.Temporary => temporaryOverride!.Value,
+            AutomationValueOrigin.Persistent => persistentOverride!.Value,
+            _ => throw new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult),
+        };
+        // The profile source is host data, including legacy/undefined values;
+        // only its origin participates in the portable selection.
+        return new(value, selection.Origin == AutomationValueOrigin.Profile
+            ? profileSource
+            : selection.Source);
+    }
 
-        if (temporaryOverride is not null)
+    private static NativeAutomationSelection RequireSelection(NativeAutomationResult result)
+    {
+        if (result.Error is not null)
         {
-            return new ResolvedSetting<PerformancePreset>(
-                temporaryOverride.Value,
-                SettingValueSource.TemporaryOverride);
+            throw new NativeComponentException(result.Error);
         }
-
-        return new ResolvedSetting<PerformancePreset>(
-            profileValue,
-            profileSource);
+        return result.Selection
+            ?? throw new NativeComponentException((int)NativeBoundaryErrorKind.InvalidNativeResult);
     }
 
     private ApplicationPowerProfileOverride? GetApplicationOverride()

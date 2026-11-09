@@ -45,6 +45,11 @@
   ],
   "testInputRules": [
     {
+      "patterns": ["rust/crates/openblade-status-cli/fixtures/request.json", "rust/crates/openblade-status-cli/fixtures/response.json"],
+      "testProjects": ["tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj"],
+      "reason": "Contracts tests compare the independent Rust CLI request and response fixtures with the real read-only IPC contract."
+    },
+    {
       "patterns": ["tests/OpenBlade.NativeFailureProbe/*"],
       "testProjects": ["tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj"],
       "reason": "The offline production actor probe runs in the quality lane with Protocol tests."

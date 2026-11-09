@@ -19,7 +19,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Production activation probe build failed: $LASTEXITCODE"
 }
 $probe = Join-Path $root "tests/OpenBlade.NativeFailureProbe/bin/$Configuration/net10.0-windows/OpenBlade.Protocol.Tests.dll"
-foreach ($scenario in @('batch-encode', 'query-validate', 'policy-failure')) {
+foreach ($scenario in @('batch-encode', 'query-validate', 'policy-failure', 'automation-failure')) {
     # A fresh process owns the deliberately disposed singleton for each scenario.
     & dotnet $probe $scenario
     if ($LASTEXITCODE -ne 0) {

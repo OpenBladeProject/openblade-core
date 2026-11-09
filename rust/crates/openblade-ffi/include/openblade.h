@@ -154,6 +154,53 @@ uint32_t OB_CALL ob_v1_apply_display(uint32_t abi_version,
     const uint8_t *keys, uint32_t keys_length,
     ObDisplayProjectionV1 *result, uint8_t *output_keys, uint32_t capacity,
     uint32_t *written_or_required, ObErrorV1 *error);
+/* Independent additive automation v1. Codec/profile policy negotiation is unchanged.
+ * Fixed natural layouts: request 16/4, result 12/4. All flags are 0/1, reserved zero.
+ * operation: performance 0, lighting 1. Presence never validates a host value.
+ * Performance consumes temporary/persistent/from_application only (profile is a scalar).
+ * Lighting consumes all flags; external_unknown ignores overrides/application provenance.
+ * origin: profile 0, confirmed 1, temporary 2, persistent 3.
+ * provenance: confirmed firmware 0, power profile 1, application 2, temporary 3, persistent 4.
+ * Same borrowed-memory, panic/error and disjointness rules as codec v1.
+ * request/result/written are required; error optional. Both record size prefixes must
+ * be readable; exact sizes require full accessible records. Result needs struct_size=12.
+ * Admission: error size, automation version, written, required record pointers,
+ * result/request sizes, flags/reserved, operation. No result publication on failure.
+ * written is always zero; no variable buffer or capacity negotiation is needed.
+ * No values/strings/objects cross the ABI; host maps returned tokens to original values.
+ */
+#define OB_AUTOMATION_ABI_VERSION UINT32_C(0x00010000)
+typedef struct ObAutomationRequestV1 {
+    uint32_t struct_size; /* 0, exactly 16 */
+    uint32_t operation; /* 4 */
+    uint8_t has_profile; /* 8 */
+    uint8_t has_confirmed; /* 9 */
+    uint8_t has_temporary; /* 10 */
+    uint8_t has_persistent; /* 11 */
+    uint8_t external_unknown; /* 12 */
+    uint8_t from_application; /* 13 */
+    uint8_t reserved[2]; /* 14 */
+} ObAutomationRequestV1;
+typedef struct ObAutomationSelectionV1 {
+    uint32_t struct_size; /* 0, exactly 12 */
+    uint32_t origin; /* 4 */
+    uint32_t provenance; /* 8 */
+} ObAutomationSelectionV1;
+uint32_t OB_CALL ob_automation_abi_version(void);
+uint32_t OB_CALL ob_v1_select_automation(uint32_t abi_version,
+    const ObAutomationRequestV1 *request, ObAutomationSelectionV1 *result,
+    uint32_t *written, ObErrorV1 *error);
+
+/* Optional automation v1 export. Negotiate by checking the symbol and automation version.
+ * Decoded signed preset: Silent 0, Balanced 1, Performance 2, BatterySaver 3,
+ * BatteryBalanced 4, Custom 5, Turbo 6, MaximumPower 7, Gaming 8, Creator 9.
+ * Decoded signed source: PluggedIn 0, Battery 1, UsbC 2, ExternalUnknown 3.
+ * Unmapped inputs are valid and ineligible. Success stores a 0/1 token in eligible;
+ * failure leaves it unchanged. written is always zero. Both pointers are required,
+ * error is optional. Same panic/error and disjointness rules as automation selection.
+ */
+uint32_t OB_CALL ob_v1_performance_source_eligible(uint32_t abi_version,
+    int32_t preset, int32_t source, uint32_t *eligible, uint32_t *written, ObErrorV1 *error);
 #ifdef __cplusplus
 }
 #endif

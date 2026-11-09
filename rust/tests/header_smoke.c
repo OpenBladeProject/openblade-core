@@ -54,6 +54,23 @@ _Static_assert(offsetof(ObProfileProjectionV1, gaming_mode_enabled) == 32, "gami
 _Static_assert(offsetof(ObProfileProjectionV1, display) == 40, "nested display offset");
 _Static_assert(offsetof(ObProfileProjectionV1, fan_control_source) == 84, "curve source offset");
 
+_Static_assert(sizeof(ObAutomationRequestV1) == 16, "automation request size");
+_Static_assert(_Alignof(ObAutomationRequestV1) == 4, "automation request alignment");
+_Static_assert(offsetof(ObAutomationRequestV1, struct_size) == 0, "automation size offset");
+_Static_assert(offsetof(ObAutomationRequestV1, operation) == 4, "automation operation offset");
+_Static_assert(offsetof(ObAutomationRequestV1, has_profile) == 8, "automation profile offset");
+_Static_assert(offsetof(ObAutomationRequestV1, has_confirmed) == 9, "automation confirmed offset");
+_Static_assert(offsetof(ObAutomationRequestV1, has_temporary) == 10, "automation temporary offset");
+_Static_assert(offsetof(ObAutomationRequestV1, has_persistent) == 11, "automation persistent offset");
+_Static_assert(offsetof(ObAutomationRequestV1, external_unknown) == 12, "automation power offset");
+_Static_assert(offsetof(ObAutomationRequestV1, from_application) == 13, "automation application offset");
+_Static_assert(offsetof(ObAutomationRequestV1, reserved) == 14, "automation reserved offset");
+_Static_assert(sizeof(ObAutomationSelectionV1) == 12, "automation selection size");
+_Static_assert(_Alignof(ObAutomationSelectionV1) == 4, "automation selection alignment");
+_Static_assert(offsetof(ObAutomationSelectionV1, struct_size) == 0, "selection size offset");
+_Static_assert(offsetof(ObAutomationSelectionV1, origin) == 4, "selection origin offset");
+_Static_assert(offsetof(ObAutomationSelectionV1, provenance) == 8, "selection provenance offset");
+
 int main(void)
 {
     const ObReportRequestV1 request = {sizeof(ObReportRequestV1), 1, 2, 3, 0};
@@ -103,5 +120,20 @@ int main(void)
             key, sizeof(key), &display_result, key_output, sizeof(key_output), &written, &error) != 0 ||
             written != sizeof(key) || display_result.refresh_rate_key.present != 1) return 8;
     }
+    const ObAutomationRequestV1 selection = {16, 1, 1, 1, 1, 1, 1, 1, {0}};
+    ObAutomationSelectionV1 selected = {12, 99, 98};
+    if (ob_automation_abi_version() != OB_AUTOMATION_ABI_VERSION) return 20;
+    if (ob_v1_select_automation(OB_AUTOMATION_ABI_VERSION, &selection,
+        &selected, &written, &error) != 0 || written != 0 ||
+        selected.origin != 1 || selected.provenance != 0) return 21;
+    if (ob_v1_select_automation(2, &selection, &selected, &written, &error) != 1 ||
+        selected.origin != 1 || selected.provenance != 0 || written != 0) return 22;
+    uint32_t eligible = 99;
+    if (ob_v1_performance_source_eligible(2, 1, 2, &eligible, &written, &error) != 1 ||
+        eligible != 99 || written != 0) return 23;
+    if (ob_v1_performance_source_eligible(OB_AUTOMATION_ABI_VERSION, 1, 2,
+        &eligible, &written, &error) != 0 || eligible != 1 || written != 0) return 24;
+    if (ob_v1_performance_source_eligible(OB_AUTOMATION_ABI_VERSION, -1, 0,
+        &eligible, &written, NULL) != 0 || eligible != 0 || written != 0) return 25;
     return 0;
 }

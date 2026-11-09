@@ -111,3 +111,25 @@ shared cases rather than inferring full-domain parity from this small suite.
 In particular, overriding GamingModeKeyPolicy, CustomPerformance, GpuClockTuning
 or Lighting is outside this projection; their override branches remain C#-owned
 until a later slice adds its own parity cases.
+
+
+## Automation selection
+
+`v1/automation-policy.json` is a separate 18-case suite, `automation-selection`,
+pinned to `9e53ed92bbe3985e1ea899ed6c1124f6f6dd020e`. Literal expectations were
+reviewed from `ProfileAutomationState.cs:446-470,546-569` and
+`OverrideResolver.cs:7-34`; the test-only frozen managed oracle preserves those
+bodies independently of Rust. Expectations are never generated at test time.
+
+Each row has an ID, operation (performance 0, lighting 1), Boolean presence flags
+(`profile`, `confirmed`, `temporary`, `persistent`), `externalUnknown`,
+`application`, and numeric `origin`/`provenance` as frozen in the C header.
+Presence describes a host container/value, never its contents. Performance
+consumes temporary/persistent/application only, after host compatibility filtering.
+
+Cases cover priority, application provenance, absent values and unknown power
+ignoring manual/application intent. Additional managed tests retain object
+identity, null override contents, zero, unsupported scalars, unprojected fan/custom
+objects and power reversion. Strict readers reject unknown/missing/duplicate
+fields, bad provenance, duplicate IDs and non-Boolean flags. The earlier
+merge/report suites retain their original provenance and contracts.

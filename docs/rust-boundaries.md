@@ -32,7 +32,7 @@ The initial extraction seams are:
 | --- | --- | --- |
 | `RazerReport.Create`, `Encode`, `ValidateResponse` in `src/OpenBlade.Protocol/RazerReport.cs` | Byte construction and validation | Selecting an admitted typed command and interpreting its payload |
 | `ApplicationProfileResolution.Apply` / `ApplyDisplay` in `src/OpenBlade.Service/ApplicationProfileResolution.cs` | Merging already decoded values | Validating whole profiles and selecting the active application/power source |
-| `ProfileAutomationState` in `src/OpenBlade.Service/ProfileAutomationState.cs` | Later explicit decision rules | State lifetime, observations, manual override priority and orchestration until separately migrated |
+| `ProfileAutomationState` in `src/OpenBlade.Service/ProfileAutomationState.cs` | Performance priority and lighting source-token selection | State lifetime, compatibility filtering, observations, recovered overrides and orchestration |
 | `IRazerCommandSession` / `WindowsRazerHidSession` | Later adapter seam | Native handles, serialization, transaction allocation, cancellation, submission outcomes and retirement |
 | `IpcMessageCodec` in `src/OpenBlade.Contracts/IpcMessageCodec.cs` | No initial extraction | Existing authenticated service IPC, compatibility projection and schema readers |
 
@@ -425,3 +425,108 @@ switch. The original canonical fixtures are retained. Native interop runs on all
 four existing host targets; affected Windows integration and package tests check
 the coordinated payload and failure paths. See [native development](../rust/README.md)
 for the new ordinary build requirements.
+
+## Developer-only read-only status CLI
+
+The separate std binary [openblade-status-cli](../rust/crates/openblade-status-cli/README.md)
+reads the existing Windows service's cached GetStatus snapshot through its v51
+read-only compatibility path (current service IPC is v78). It has no dependency
+on the four shared libraries and is excluded from product packaging. JSON and
+OS/runtime dependencies belong to this CLI alone; the existing inner no_std,
+unsafe and inward-dependency rules remain authoritative.
+
+The guide records the compatibility lease's temporary thermal-admission effect,
+redaction, unknown telemetry freshness, identity limits and bounded cancellation.
+The Windows pipe module is the transport seam for future OS work. Other systems
+currently return unsupported transport without reporting invented device state.
+
+
+## Automation selection (stage 8)
+
+The bounded extraction selects a host-owned value and its provenance in
+`ProfileAutomationState.ResolvePerformance` and `ResolveLighting`. Performance
+selects persistent override, temporary override, then profile. Lighting uses
+the same priority on known power sources, then profile presence, then confirmed
+firmware fallback. On `ExternalUnknown`, observed lighting wins with
+`ConfirmedFirmwareState` provenance; absent observations use the fallback profile
+with `PowerProfile` provenance, ignoring overrides and application provenance.
+
+Rust receives presence flags and returns origin/provenance tokens. Settings,
+enum payloads, strings, curves and object references stay in C#. Mapping retains
+the exact original values, including zero, unsupported performance scalars and
+null lighting inside a present override. Known-source confirmed fallback retains
+`confirmed.Lighting ?? profile.Lighting`; unknown-source observation retains
+lazy access to saved profile lighting.
+
+The additive `ob_automation_abi_version` and `ob_v1_select_automation` exports
+negotiate automation ABI `0x00010000` independently of codec/profile ABI v1.
+The C header freezes the natural 16-byte request and 12-byte result, alignment 4,
+operations, flags and token numbers. The fixed result needs no variable buffer
+or capacity query; required `written` is always zero. Admission checks error size,
+version, written pointer, record pointers, result/request sizes, flags and
+operation in order. Failure leaves the result unchanged, including caught
+panics before publication. Calls retain no memory.
+
+`NativeAutomationPolicy` checks its own exports/version/layouts, uses Cdecl
+and SafeHandle lifetime references, and validates returned tokens/errors.
+Production admits it from the same fixed, hash-bound artifact before hardware
+composition, retains it through shutdown and disposes it on failed admission.
+Errors propagate through existing `NativeComponentException` supervision.
+A separate C loader fixture proves independence from codec/profile exports;
+it never supplies parity results or enters the product payload.
+
+Managed result admission rejects tokens that cannot address this request's host
+values, including lighting overrides on unknown external power. Priority remains
+Rust policy and is checked against the independent oracle. Performance ignores
+lighting-only flags as specified by the ABI; host reconstruction also preserves
+legacy/undefined managed profile-source values without expanding the wire schema.
+
+
+The managed oracle freezes the actual helper/resolver bodies at
+`9e53ed92bbe3985e1ea899ed6c1124f6f6dd020e`, adapting only instance fields to
+explicit parameters. Eighteen shared literal cases cover priority, absence and
+provenance. All presence combinations compare the native binding and actual host
+helpers with that oracle, including distinct equal object references, present
+overrides containing null, zero and unsupported performance values. Whole-state
+tests retain unprojected custom/fan objects and source reversion. Rust/C/C# tests
+cover layout, malformed inputs, publication, panic containment, independent
+negotiation and concurrent disposal. An isolated Windows failure probe checks
+host validation order and no published desired state after lifetime failure.
+
+This selection extraction originally left compatibility predicates and recovered
+HyperBoost priority in C#. Both determine which candidates reach these helpers. C# retains mutable state,
+override lifetimes, foreground/path matching, power transitions, validation
+order, observed fallback construction, saved intent and suppression. Read-only
+recovery may publish a power source before destination automation is consumed:
+maintenance still requires source agreement and never replays uncertain commands.
+Fresh device/controller/power/session/ownership/readback admission, queues,
+cancellation, journals and hardware writes are unchanged.
+
+This behavior-preserving extraction has version impact `none`. IPC versions,
+persisted schemas, model capabilities and vendor definitions are unchanged.
+
+### Decoded performance source eligibility
+
+The three performance override slots in `ProfileAutomationState.Resolve` call
+the same pure source predicate in their original order. Plugged-in admits the
+eight AC presets, Battery admits BatterySaver and BatteryBalanced, and USB-C
+admits Balanced only. ExternalUnknown and unmapped values are ineligible. An
+undefined active source still fails host validation before reaching Rust.
+Observed fallback and saved profile values remain host data, including legacy
+scalars that never entered candidate filtering.
+
+The additive `ob_v1_performance_source_eligible` export uses automation ABI v1.
+The loader probes the eligibility symbol and still admits an automation v1
+library with only the selection exports. The product explicitly requires the
+new symbol during the same hash-bound module admission and keeps that module
+through shutdown. Two signed decoded enum scalars go in and a validated 0/1
+result comes out. No record layout, buffer negotiation, or hardware encoding is
+added. Errors follow existing native supervision and leave the result
+unpublished. C# retains application profile validation, recovered HyperBoost
+priority, fan policy, mutable and temporal state, and device admission.
+
+The shared matrix and a frozen managed predicate from
+`8a6e49d7bcffc52c84e8d447711f9192385e9da6` cover every current preset and
+source, plus unmapped values. Host tests exercise all three override slots and
+keep undefined observations and saved candidate values intact. The version
+impact is `none`.
