@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "platform": "macos",
+  "hostMetadata": "unverified",
+  "exactModel": null,
+  "hid": {
+    "state": "single",
+    "candidates": [
+      {
+        "vendorId": 5426,
+        "productId": 597,
+        "entries": 1
+      }
+    ]
+  }
+}
