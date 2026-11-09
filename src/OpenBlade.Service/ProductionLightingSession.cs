@@ -16,6 +16,8 @@ internal sealed partial class ProductionLightingSession
     private readonly IProductionLightingPortFactory lightingFactory;
     private readonly ILogger<WindowsVerifiedBladeDeviceProvider>? logger;
     private readonly LowPowerGate? lowPowerGate;
+    private readonly ManagedOwnerHandoff? ownerHandoff;
+    private bool lightingRetirementUnconfirmed;
     private Func<bool>? recoveryWriteAdmission;
 
     internal void SetRecoveryWriteAdmission(Func<bool> admission)
@@ -28,11 +30,12 @@ internal sealed partial class ProductionLightingSession
         }
     }
 
-    private bool RecoveryWritesAllowed() => Volatile.Read(ref recoveryWriteAdmission)?.Invoke() != false;
+    private bool RecoveryWritesAllowed() => ownerHandoff?.IsBlocked != true
+        && Volatile.Read(ref recoveryWriteAdmission)?.Invoke() != false;
 
     private void BindRecoveryWriteAdmission(IProductionLightingPort port)
     {
-        if (Volatile.Read(ref recoveryWriteAdmission) is null)
+        if (ownerHandoff is null && Volatile.Read(ref recoveryWriteAdmission) is null)
         {
             return;
         }
@@ -66,11 +69,13 @@ internal sealed partial class ProductionLightingSession
         ILogger<WindowsVerifiedBladeDeviceProvider>? logger,
         LowPowerGate? lowPowerGate,
         Func<CancellationToken, Task> enterHardwareOperation,
-        Action releaseHardwareOperation)
+        Action releaseHardwareOperation,
+        ManagedOwnerHandoff? ownerHandoff = null)
     {
         this.lightingFactory = lightingFactory;
         this.logger = logger;
         this.lowPowerGate = lowPowerGate;
+        this.ownerHandoff = ownerHandoff;
         this.enterHardwareOperation = enterHardwareOperation;
         this.releaseHardwareOperation = releaseHardwareOperation;
     }
@@ -871,6 +876,29 @@ internal sealed partial class ProductionLightingSession
         }
     }
 
+    internal async Task RetireForOwnerHandoffAsync(CancellationToken cancellationToken)
+    {
+        await AwaitLightingPortRetirementCoreAsync(cancellationToken).ConfigureAwait(false);
+        if (lightingRetirementUnconfirmed)
+        {
+            throw new IOException("An earlier lighting retirement did not confirm closure.");
+        }
+        if (lightingPort is null)
+        {
+            return;
+        }
+        if (lightingPort is not ProductionLightingPort port)
+        {
+            throw new InvalidOperationException("Handoff requires the production lighting owner.");
+        }
+
+        // The normal shutdown close may restore keyboard mode. This temporary
+        // hold uses the write-free close and awaits both owned native lanes.
+        lightingPortRetirement = port.CloseForOwnerHandoffAsync();
+        await AwaitLightingPortRetirementCoreAsync(cancellationToken).ConfigureAwait(false);
+        ClearLightingRefreshRateReconciliation(port);
+    }
+
     internal async Task DisposeLightingPortWithinDeadlineAsync()
     {
         IProductionLightingPort? currentLighting = lightingPort;
@@ -883,6 +911,10 @@ internal sealed partial class ProductionLightingSession
 
         try
         {
+            if (ownerHandoff?.IsBlocked == true && currentLighting is ProductionLightingPort port)
+            {
+                _ = port.CloseForOwnerHandoffAsync();
+            }
             bool drained = await currentLighting
                 .DisposeWithinCleanupDeadlineAsync()
                 .ConfigureAwait(false);
@@ -904,6 +936,10 @@ internal sealed partial class ProductionLightingSession
         LightingPortOperation operation,
         CancellationToken cancellationToken)
     {
+        if (ownerHandoff?.IsBlocked == true)
+        {
+            throw new CapabilityUnavailableException("Service lighting ownership is fenced for handoff.");
+        }
         await AwaitLightingPortRetirementCoreAsync(cancellationToken).ConfigureAwait(false);
         if (lightingPort is ExperimentalBladePort { IsDisposed: true } experimentalPort)
         {
@@ -945,12 +981,16 @@ internal sealed partial class ProductionLightingSession
         {
             // Initial Driver-mode acquisition occurs inside OpenAsync, before
             // the retained port receives its separate recovery callback.
-            opened = await (lowPowerGate is null && Volatile.Read(ref recoveryWriteAdmission) is null
-                ? lightingFactory.OpenAsync(cancellationToken)
-                : lightingFactory.OpenAsync(
-                    () => lowPowerGate?.IsActive != true
-                        && Volatile.Read(ref recoveryWriteAdmission)?.Invoke() != false,
-                    cancellationToken)).ConfigureAwait(false);
+            opened = await (ownerHandoff is not null && lightingFactory is ProductionLightingFactory production
+                ? production.OpenForServiceAsync(
+                    () => lowPowerGate?.IsActive != true && RecoveryWritesAllowed(),
+                    () => !ownerHandoff.IsBlocked,
+                    cancellationToken)
+                : lowPowerGate is null && Volatile.Read(ref recoveryWriteAdmission) is null
+                    ? lightingFactory.OpenAsync(cancellationToken)
+                    : lightingFactory.OpenAsync(
+                        () => lowPowerGate?.IsActive != true && RecoveryWritesAllowed(),
+                        cancellationToken)).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1391,10 +1431,18 @@ internal sealed partial class ProductionLightingSession
         ClearLightingRefreshRateReconciliation(port);
         try
         {
-            await port.DisposeAsync().ConfigureAwait(false);
+            if (ownerHandoff?.IsBlocked == true && port is ProductionLightingPort production)
+            {
+                await production.CloseForOwnerHandoffAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                await port.DisposeAsync().ConfigureAwait(false);
+            }
         }
         catch
         {
+            lightingRetirementUnconfirmed = true;
         }
     }
 

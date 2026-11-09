@@ -226,7 +226,37 @@ The marker models fail-closed recovery across process death on a running
 system. The fixture has no marker repair command and tests neither
 power-loss durability nor reconciliation against real firmware.
 
-### Production hookup required before the physical runbook
+### Phase 3e managed ownership boundary
+
+The private Windows service fixture composes the real serialized device
+provider, battery and lighting factories, retained lighting session, and PID
+02E0 matrix writer. Windows exclusive test files stand in for HID handles.
+The child waits on redirected standard input and the owner observes exit through
+its retained Windows process handle. The Rust tests above separately exercise
+the private pipe protocol, job teardown and terminal receipts.
+
+Run the managed fixture on Windows with
+`dotnet test tests/OpenBlade.Service.Tests -p:NuGetAudit=false --filter FullyQualifiedName~ManagedOwnerHandoffTests`.
+It checks active and queued control work, matrix close ordering, blocked
+reopen, stale and duplicate handback, a mismatched independent adapter-power
+read, cancellation, a failed close and a fresh provider over a pending marker.
+
+The injected scope closes ordinary provider and renderer admission before
+draining. A successful drain requires lighting control and matrix closure,
+empty retained-disposal work, and release of the shared native command gate.
+The temporary close leaves firmware mode and saved settings alone. Handback
+uses the same typed adapter-power read through a fresh control port after
+exact child exit, waits for terminal cleanup and compares the observed value
+with the recorded baseline. Exit and readback establish distinct facts.
+A failed or canceled transfer leaves the marker. A new supervisor treats
+any occupied marker as unresolved and cannot reconstruct an in-memory lease.
+
+Installed service composition does not select the scope. The lease proves
+managed drain in the fixture. A separate grant still needs the fixed Rust
+query, pinned child/job/pipe binding and strict native authority. The managed
+scope leaves the laptop-control recovery store untouched.
+
+### Remaining work before the physical runbook
 
 1. Put an owner-pause latch at the C# service device admission boundary
    before waiting for operations. Cover `SerializedBladeDevice.EnterHardwareOperationAsync`,
@@ -266,5 +296,12 @@ power-loss durability nor reconciliation against real firmware.
    reconciliation. A service restart, lost lease receipt or unresolved native
    completion must stay fenced. [Pending control store](../src/OpenBlade.Service/LaptopControlPendingStore.cs) · [Control executor](../src/OpenBlade.Service/LaptopControlExecutor.cs) · [Service recovery](../src/OpenBlade.Service/ServiceControlRuntime.cs)
 
-The production hook and strict native authority provider remain prerequisites
-for the separate attended RZ09-0581 query in the Phase 3c runbook.
+For a controlled developer build, first refresh the ancestor stack from
+`main`, including the service-data ACL hardening, and rerun the fixture on the
+rebased exact head. Connect the private supervisor before any real service
+acquisition, bind the marker to verified build and boot identities in protected
+storage, and define supervised restart recovery and keyboard-mode ownership
+across handback. Connect the pinned worker and strict opened-handle authority
+for the fixed query, then rehearse that assembled artifact on fake devices.
+The separate attended RZ09-0581 run also needs explicit authority for the
+service lifecycle and the single device query in the Phase 3c runbook.

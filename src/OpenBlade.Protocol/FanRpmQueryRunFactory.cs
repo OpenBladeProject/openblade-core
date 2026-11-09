@@ -71,6 +71,8 @@ internal sealed class FanRpmQueryRunFactory : IFanRpmQueryRunFactory
 
     internal SemaphoreSlim? SharedCommandGate => sharedCommandGate;
 
+    internal PendingDisposalRegistry PendingDisposals => pendingDisposals;
+
     public async Task<HidSessionResult<IFanRpmQueryPort>> OpenAsync(
         CancellationToken cancellationToken)
     {

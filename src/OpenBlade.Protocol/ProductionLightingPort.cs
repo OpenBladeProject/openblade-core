@@ -953,17 +953,20 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
     public Task<LightingRendererOwnershipState> InvalidateForLowPowerAsync() =>
         CloseAsync(restoreDriverMode: false);
 
-    private Task<LightingRendererOwnershipState> CloseAsync(bool restoreDriverMode = true)
+    internal Task<LightingRendererOwnershipState> CloseForOwnerHandoffAsync() =>
+        CloseAsync(restoreDriverMode: false, ownerHandoff: true);
+
+    private Task<LightingRendererOwnershipState> CloseAsync(bool restoreDriverMode = true, bool ownerHandoff = false)
     {
         lock (lifecycleSync)
         {
             closing = true;
             KeyboardLightingFrameStream.Clear(this);
-            return closeTask ??= CloseCoreAsync(restoreDriverMode);
+            return closeTask ??= CloseCoreAsync(restoreDriverMode, ownerHandoff);
         }
     }
 
-    private async Task<LightingRendererOwnershipState> CloseCoreAsync(bool restoreDriverMode)
+    private async Task<LightingRendererOwnershipState> CloseCoreAsync(bool restoreDriverMode, bool ownerHandoff)
     {
         await operationGate.WaitAsync().ConfigureAwait(false);
         try
@@ -981,9 +984,19 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                 // close task keeps subsequent disposal write-free as well.
                 ownsDriverMode = false;
             }
-            if (matrixWriter is not null)
+            try
             {
-                await matrixWriter.DisposeAsync().ConfigureAwait(false);
+                if (matrixWriter is not null)
+                {
+                    await matrixWriter.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+            catch when (ownerHandoff)
+            {
+                // A fault in one lane must not skip closing the other. The
+                // fault still prevents a handoff grant.
+                await actor.DisposeAsync().ConfigureAwait(false);
+                throw;
             }
 
             await actor.DisposeAsync().ConfigureAwait(false);

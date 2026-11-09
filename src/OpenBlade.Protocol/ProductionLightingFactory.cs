@@ -54,6 +54,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
 
     internal SemaphoreSlim? SharedCommandGate => sharedCommandGate;
 
+    internal PendingDisposalRegistry PendingDisposals => pendingDisposals;
+
     public static IProductionLightingPortFactory CreateWindows()
         => CreateWindowsCore(compatibilityPolicy: null);
 
@@ -119,9 +121,14 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         return OpenCoreAsync(driverModeWriteAllowed, cancellationToken);
     }
 
+    internal Task<HidSessionResult<IProductionLightingPort>> OpenForServiceAsync(
+        Func<bool> driverModeWriteAllowed, Func<bool> ownerAdmission, CancellationToken cancellationToken) =>
+        OpenCoreAsync(driverModeWriteAllowed, cancellationToken, ownerAdmission);
+
     private async Task<HidSessionResult<IProductionLightingPort>> OpenCoreAsync(
         Func<bool>? driverModeWriteAllowed,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<bool>? ownerAdmission = null)
     {
         if (driverModeWriteAllowed?.Invoke() == false)
         {
@@ -172,6 +179,12 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         {
             await DisposeActorBoundedAsync(actor).ConfigureAwait(false);
             return Failure(HidSessionFailureKind.Canceled);
+        }
+
+        if (ownerAdmission?.Invoke() == false)
+        {
+            await DisposeActorBoundedAsync(actor).ConfigureAwait(false);
+            return Failure(HidSessionFailureKind.ConflictBlocked);
         }
 
         IPid02E0MatrixFeatureWriter? matrixWriter = null;
@@ -334,7 +347,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             cleanupDrainTimeout,
             pendingDisposals).ConfigureAwait(false);
 
-    private static async Task DisposeMatrixWriterAsync(IPid02E0MatrixFeatureWriter writer)
+    private async Task DisposeMatrixWriterAsync(IPid02E0MatrixFeatureWriter writer)
     {
         try
         {
@@ -342,6 +355,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
         }
         catch
         {
+            pendingDisposals.RecordUnconfirmedDisposal();
         }
     }
 

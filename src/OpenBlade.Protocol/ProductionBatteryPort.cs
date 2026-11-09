@@ -181,11 +181,12 @@ internal sealed class ProductionBatteryPort :
         bool supportsDirectManualFanTransitions = false,
         ThxAudioCapabilities? thxAudioCapabilities = null,
         bool supportsBatterySaverFanStop = false,
-        Func<bool>? stopHardwareAdmission = null)
+        Func<bool>? stopHardwareAdmission = null,
+        Func<bool>? ownerAdmission = null)
         : this(
             sharedCommandGate is null
                 ? actor.Session
-                : new RazerCommandSessionGate(actor.Session, sharedCommandGate),
+                : new RazerCommandSessionGate(actor.Session, sharedCommandGate, ownerAdmission: ownerAdmission),
             actor,
             catalog,
             readEvidence,

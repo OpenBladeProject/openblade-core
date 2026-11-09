@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32.SafeHandles;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -30,6 +31,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         ServiceComposition.CreateProductionLightingFactory;
 
     private readonly Func<BatteryValidationProbeResult> probe;
+    private readonly ManagedOwnerHandoff? ownerHandoff;
+    private readonly SemaphoreSlim? probeGate;
     private readonly ExperimentalBladeFactory? experimentalFactory;
     private readonly FirmwareCompatibilityPolicy compatibilityPolicy;
     private readonly SerializedBladeDevice device;
@@ -64,7 +67,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         FirmwareCompatibilityPolicy? compatibilityPolicy = null,
         IGpuActivitySource? gpuActivitySource = null,
         Func<TimeSpan, CancellationToken, Task>? preWriteRetryDelay = null,
-        LowPowerGate? lowPowerGate = null)
+        LowPowerGate? lowPowerGate = null,
+        ManagedOwnerHandoff? ownerHandoff = null)
     {
         TimeSpan effectiveShutdownBudget = shutdownBudget ?? DefaultShutdownBudget;
         if (effectiveShutdownBudget <= TimeSpan.Zero ||
@@ -75,6 +79,19 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
         experimentalFactory = batteryFactory as ExperimentalBladeFactory;
+        if (ownerHandoff is not null
+            && (batteryFactory is not ProductionBatteryFactory battery
+                || battery.SharedCommandGate != Rz090581FeatureCommandGate.Shared
+                || lightingFactory is not ProductionLightingFactory lighting
+                || lighting.SharedCommandGate != Rz090581FeatureCommandGate.Shared
+                || lighting.PendingDisposals != battery.PendingDisposals
+                || fanRpmFactory is FanRpmQueryRunFactory fanRpm
+                    && fanRpm.PendingDisposals != battery.PendingDisposals))
+        {
+            throw new ArgumentException("The handoff is scoped to the PID 02E0 production owners.", nameof(ownerHandoff));
+        }
+        this.ownerHandoff = ownerHandoff;
+        probeGate = ownerHandoff is null ? null : new SemaphoreSlim(1, 1);
         LaptopControlRecoveryIdentity = batteryFactory switch
         {
             ProductionBatteryFactory production => production.LaptopControlRecoveryIdentity,
@@ -93,7 +110,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             effectiveShutdownBudget,
             onClosing,
             preWriteRetryDelay ?? Task.Delay,
-            lowPowerGate);
+            lowPowerGate,
+            ownerHandoff);
     }
 
     public void SetBatterySaverFanStopContext(bool readbackRequested, Func<bool>? writeAdmission) =>
@@ -155,17 +173,55 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         lock (providerLifecycleSync) { return disposed == 0 && ReferenceEquals(retained, device); }
     }
 
+    internal Task<ManagedOwnerHandoff.Lease> QuiesceForOwnerHandoffAsync(
+        SafeProcessHandle child, AdapterPowerState baseline, CancellationToken cancellationToken) =>
+        device.QuiesceForOwnerHandoffAsync(child, baseline, probeGate, cancellationToken);
+
+    internal Task<bool> CompleteOwnerHandoffAsync(
+        ManagedOwnerHandoff.Lease lease, CancellationToken cancellationToken) =>
+        device.CompleteOwnerHandoffAsync(lease, ProbeForHandback, cancellationToken);
+
+    private bool ProbeForHandback()
+    {
+        // The owner already drained ordinary probes and still holds admission.
+        BatteryValidationProbeResult result = probe();
+        return result.Classification == BatteryValidationProbeClassification.Ready
+            && result.HostIdentityMatched && result.ConflictCheckPassed && result.ExactMatchCount == 1
+            && result.FirmwareCompatibility == BatteryValidationFirmwareCompatibility.Tested;
+    }
+
+    private BatteryValidationProbeResult? ProbeForService()
+    {
+        if (probeGate is null)
+        {
+            return probe();
+        }
+        probeGate.Wait();
+        try
+        {
+            return ownerHandoff?.IsBlocked == true ? null : probe();
+        }
+        finally
+        {
+            probeGate.Release();
+        }
+    }
+
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
     {
         verifiedDevice = null!;
-        if (Volatile.Read(ref disposed) != 0)
+        if (Volatile.Read(ref disposed) != 0 || ownerHandoff?.IsBlocked == true)
         {
             return false;
         }
 
         try
         {
-            BatteryValidationProbeResult result = probe();
+            BatteryValidationProbeResult? result = ProbeForService();
+            if (result is null)
+            {
+                return false;
+            }
             UpdateFirmwareCompatibility(
                 MapFirmwareCompatibility(result.FirmwareCompatibility));
             BatteryValidationProbeClassification classification = result.Classification;
@@ -191,7 +247,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 RecordVerificationAttempt(DiagnosticDeviceVerificationAttempt.FromProbe(
                     result,
                     usedRecentlyVerifiedDevice: false));
-                if (disposed != 0)
+                if (disposed != 0 || ownerHandoff?.IsBlocked == true)
                 {
                     return false;
                 }
@@ -248,7 +304,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
         lock (providerLifecycleSync)
         {
-            if (disposed != 0
+            if (disposed != 0 || ownerHandoff?.IsBlocked == true
                 || Volatile.Read(ref lastReadyProbeTimestamp) != timestamp)
             {
                 return false;
@@ -405,7 +461,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     {
         try
         {
-            BatteryValidationProbeResult result = probe();
+            BatteryValidationProbeResult? result = ProbeForService();
+            if (result is null)
+            {
+                return false;
+            }
             UpdateFirmwareCompatibility(MapFirmwareCompatibility(result.FirmwareCompatibility));
             // Presentation grace does not authorize a new lifecycle write.
             return IsReadyClassification(result.Classification)
@@ -474,6 +534,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             TimeSpan.FromSeconds(5);
 
         private readonly IProductionBatteryPortFactory batteryFactory;
+        private readonly LowPowerGate? lowPowerGate;
+        private readonly ManagedOwnerHandoff? ownerHandoff;
+        private ManagedOwnerHandoff.Lease? grantedOwnerLease;
         private readonly IFanRpmQueryRunFactory fanRpmFactory;
         private readonly ProductionLightingSession lightingSession;
         private readonly IGpuClockOffsetController gpuClockOffsets;
@@ -501,7 +564,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 lock (lifecycleSync)
                 {
-                    if (closing || disposed)
+                    if (closing || disposed || ownerHandoff?.IsBlocked == true)
                     {
                         return false;
                     }
@@ -517,7 +580,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             {
                 lock (lifecycleSync)
                 {
-                    if (closing || disposed)
+                    if (closing || disposed || ownerHandoff?.IsBlocked == true)
                     {
                         return false;
                     }
@@ -548,9 +611,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             TimeSpan shutdownBudget,
             Action? onClosing,
             Func<TimeSpan, CancellationToken, Task> preWriteRetryDelay,
-            LowPowerGate? lowPowerGate)
+            LowPowerGate? lowPowerGate,
+            ManagedOwnerHandoff? ownerHandoff)
         {
             this.batteryFactory = batteryFactory;
+            this.lowPowerGate = lowPowerGate;
+            this.ownerHandoff = ownerHandoff;
             this.fanRpmFactory = fanRpmFactory;
             this.gpuClockOffsets = gpuClockOffsets;
             this.gpuActivitySource = gpuActivitySource;
@@ -563,7 +629,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 logger,
                 lowPowerGate,
                 EnterHardwareOperationAsync,
-                () => hardwareOperationGate.Release());
+                () => hardwareOperationGate.Release(),
+                ownerHandoff);
         }
 
         internal async Task<ConfirmedDeviceState> ResumeExperimentalWritesAsync(
@@ -665,7 +732,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             HidSessionResult<IProductionBatteryPort> opened;
             try
             {
-                opened = await batteryFactory.OpenAsync(cancellationToken)
+                opened = await OpenBatteryForServiceAsync(cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1103,7 +1170,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             CancellationToken cancellationToken)
         {
             HidSessionResult<IProductionBatteryPort> opened =
-                await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                await OpenBatteryForServiceAsync(cancellationToken).ConfigureAwait(false);
             if (opened.Value is not { } port)
             {
                 ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
@@ -1210,7 +1277,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             CancellationToken cancellationToken)
         {
             HidSessionResult<IProductionBatteryPort> opened =
-                await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                await OpenBatteryForServiceAsync(cancellationToken).ConfigureAwait(false);
             if (opened.Value is not { } port)
             {
                 ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
@@ -1253,6 +1320,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 HidSessionResult<IFanRpmQueryPort> opened;
                 try
                 {
+                    ThrowIfOwnerHandoffBlocked();
                     opened = await fanRpmFactory.OpenAsync(cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -1328,7 +1396,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             try
             {
                 HidSessionResult<IProductionBatteryPort> opened =
-                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                    await OpenBatteryForServiceAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
                     ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
@@ -1370,7 +1438,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
 
                 HidSessionResult<IProductionBatteryPort> opened =
-                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                    await OpenBatteryForServiceAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
                     ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
@@ -1420,7 +1488,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     return null;
                 }
                 HidSessionResult<IProductionBatteryPort> opened =
-                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                    await OpenBatteryForServiceAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
                     ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
@@ -1474,7 +1542,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
 
                 HidSessionResult<IProductionBatteryPort> opened =
-                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                    await OpenBatteryForServiceAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
                     ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
@@ -1526,7 +1594,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
 
                 HidSessionResult<IProductionBatteryPort> opened =
-                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                    await OpenBatteryForServiceAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
                     ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
@@ -1577,7 +1645,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
 
                 HidSessionResult<IProductionBatteryPort> opened =
-                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                    await OpenBatteryForServiceAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
                     ThrowReadOpenFailure(opened.Failure, cancellationToken, opened.Diagnostic);
@@ -2668,7 +2736,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         beforeWrite?.Invoke();
                         cancellationToken.ThrowIfCancellationRequested();
                         HidSessionResult<IProductionBatteryPort> opened =
-                            await batteryFactory.OpenAsync(cancellationToken)
+                            await OpenBatteryForServiceAsync(cancellationToken)
                                 .ConfigureAwait(false);
                         if (opened.Value is not { } port)
                         {
@@ -2875,6 +2943,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             lock (lifecycleSync)
             {
                 ObjectDisposedException.ThrowIf(closing || disposed, this);
+                ThrowIfOwnerHandoffBlocked();
                 if (fanStopDelegated) { throw new InvalidOperationException("Fan guardian hardware is already delegated."); }
                 fanStopDelegated = true;
             }
@@ -2906,12 +2975,161 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
+        private void ThrowIfOwnerHandoffBlocked()
+        {
+            if (ownerHandoff?.IsBlocked == true)
+            {
+                throw new CapabilityUnavailableException("Service device ownership is fenced for handoff.");
+            }
+        }
+
+        private Task<HidSessionResult<IProductionBatteryPort>> OpenBatteryForServiceAsync(
+            CancellationToken cancellationToken)
+        {
+            ThrowIfOwnerHandoffBlocked();
+            return ownerHandoff is not null && batteryFactory is ProductionBatteryFactory production
+                ? production.OpenAsync(() => !ownerHandoff.IsBlocked, cancellationToken)
+                : batteryFactory.OpenAsync(cancellationToken);
+        }
+
+        internal async Task<ManagedOwnerHandoff.Lease> QuiesceForOwnerHandoffAsync(
+            SafeProcessHandle child, AdapterPowerState baseline, SemaphoreSlim? probeGate,
+            CancellationToken cancellationToken)
+        {
+            if (ownerHandoff is not { } handoff || probeGate is null)
+            {
+                throw new InvalidOperationException("The service has no private handoff scope.");
+            }
+            if (!Enum.IsDefined(baseline) || baseline == AdapterPowerState.Unknown)
+            {
+                throw new ArgumentOutOfRangeException(nameof(baseline));
+            }
+
+            ManagedOwnerHandoff.Lease lease;
+            lock (lifecycleSync)
+            {
+                ObjectDisposedException.ThrowIf(closing || disposed, this);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (fanStopDelegated || lowPowerGate?.IsActive == true)
+                {
+                    throw new InvalidOperationException("Device ownership is already delegated or suspended.");
+                }
+                lease = handoff.Begin(child, baseline);
+            }
+
+            // A canceled or failed drain leaves the marker and admission closed.
+            await hardwareOperationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ThrowIfClosingOrDisposed();
+                await probeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                probeGate.Release();
+                await lightingSession.RetireForOwnerHandoffAsync(cancellationToken).ConfigureAwait(false);
+                await ConfirmNativeRetirementAsync(cancellationToken).ConfigureAwait(false);
+
+                lock (lifecycleSync)
+                {
+                    ObjectDisposedException.ThrowIf(closing || disposed, this);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!handoff.ChildStillWaiting(lease) || lowPowerGate?.IsActive == true)
+                    {
+                        throw new InvalidOperationException("The waiting child or active session is no longer available.");
+                    }
+                    grantedOwnerLease = lease;
+                    return lease;
+                }
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        internal async Task<bool> CompleteOwnerHandoffAsync(
+            ManagedOwnerHandoff.Lease lease, Func<bool> probe, CancellationToken cancellationToken)
+        {
+            if (lease is null || ownerHandoff is not { } handoff)
+            {
+                return false;
+            }
+
+            await hardwareOperationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ThrowIfClosingOrDisposed();
+                if (!ReferenceEquals(lease, grantedOwnerLease) || !handoff.ChildExited(lease)
+                    || lowPowerGate?.IsActive == true)
+                {
+                    return false;
+                }
+
+                await ConfirmNativeRetirementAsync(cancellationToken).ConfigureAwait(false);
+                if (!probe())
+                {
+                    return false;
+                }
+
+                // This is the sole opening allowed under a granted handoff. It
+                // reuses the typed control query and independently closes its port.
+                HidSessionResult<IProductionBatteryPort> opened =
+                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                if (opened.Value is not { } port)
+                {
+                    return false;
+                }
+                AdapterPowerState observed;
+                await using (port.ConfigureAwait(false))
+                {
+                    if (opened.Failure is not null)
+                    {
+                        return false;
+                    }
+                    observed = await port.QueryAdapterPowerStateAsync(cancellationToken).ConfigureAwait(false);
+                }
+                await ConfirmNativeRetirementAsync(cancellationToken).ConfigureAwait(false);
+
+                lock (lifecycleSync)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (closing || disposed || lowPowerGate?.IsActive == true || observed != lease.Baseline
+                        || !handoff.TryFinish(lease))
+                    {
+                        return false;
+                    }
+                    grantedOwnerLease = null;
+                    return true;
+                }
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        private async Task ConfirmNativeRetirementAsync(CancellationToken cancellationToken)
+        {
+            // The constructor binds this scope to the production factories and
+            // verifies their retirement registry is the same instance.
+            var factory = (ProductionBatteryFactory)batteryFactory;
+            PendingDisposalRegistry pending = factory.PendingDisposals;
+            await pending.WhenEmptyAsync()
+                .WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (pending.HasUnconfirmedDisposal)
+            {
+                throw new IOException("A retained native disposal failed to confirm closure.");
+            }
+            SemaphoreSlim commandGate = Rz090581FeatureCommandGate.Shared;
+            await commandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            commandGate.Release();
+        }
+
         private async Task EnterHardwareOperationAsync(CancellationToken cancellationToken)
         {
             Task waitForHardware;
             lock (lifecycleSync)
             {
                 ObjectDisposedException.ThrowIf(closing || disposed, this);
+                ThrowIfOwnerHandoffBlocked();
                 if (fanStopDelegated) { throw new CapabilityUnavailableException("Ordinary hardware access is blocked by the fan guardian delegation."); }
                 waitForHardware = hardwareOperationGate.WaitAsync(cancellationToken);
             }
@@ -2922,6 +3140,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 ThrowIfClosingOrDisposed();
                 lock (lifecycleSync)
                 {
+                    ThrowIfOwnerHandoffBlocked();
                     if (fanStopDelegated) { throw new CapabilityUnavailableException("Ordinary hardware access is blocked by the fan guardian delegation."); }
                 }
             }

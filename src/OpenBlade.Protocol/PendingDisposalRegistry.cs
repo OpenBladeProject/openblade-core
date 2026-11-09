@@ -8,6 +8,12 @@ internal sealed class PendingDisposalRegistry
     private readonly HashSet<Task> pending = [];
     private TaskCompletionSource empty = CompletedSignal();
 
+    private int unconfirmedDisposal;
+
+    internal bool HasUnconfirmedDisposal => Volatile.Read(ref unconfirmedDisposal) != 0;
+
+    internal void RecordUnconfirmedDisposal() => Volatile.Write(ref unconfirmedDisposal, 1);
+
     internal int Count
     {
         get
@@ -43,6 +49,10 @@ internal sealed class PendingDisposalRegistry
                     _ = completed.Exception;
                 }
 
+                if (!completed.IsCompletedSuccessfully)
+                {
+                    RecordUnconfirmedDisposal();
+                }
                 lock (sync)
                 {
                     pending.Remove(completed);
