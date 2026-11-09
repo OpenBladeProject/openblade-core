@@ -275,15 +275,34 @@ outside that result.
 | RZ09-0509 | `BACC / BBA4` | `91EE → 2544` | `1000032E` | `322A / 3230` |
 | RZ09-0529 | `35D8 / 3688` | `6B66 → 4E0C` | `10000200` | `25D0 / 25D4` |
 
-The timer dispatches the synchronous HID bridge. The foreground worker
-stages ordinary fan traffic in the same buffer and length fields before
-calling the bus engine. Neither helper checks a busy flag or saves the
-previous frame before staging. If the timer can interrupt a foreground
-call between staging and engine entry, even a bridge read can replace
-the staged frame and lengths before the worker submits them. The trace
-identifies the window, while runtime interrupt masking and scheduling
-still need to be established. Serializing host HID requests alone does
-not settle this firmware-side overlap.
+The startup path on each image starts the timer at `4000C000` and
+enables IRQ 16 through `E000E100`. In the foreground loop the
+watchdog-refresh helper executes `CPSIE i` before the thermal worker.
+The queued selector path can reach the bus helper while this interrupt
+is enabled. Its normal-operation conditions also permit the timer to
+dispatch the HID bridge. The selector helper has no interrupt mask or
+lock between staging its last byte and calling the bus engine.
+[Arm Cortex-M0 user guide](https://documentation-service.arm.com/static/5ea6ce5e9931941038def8c1)
+· [NXP timer and interrupt reference](https://community.nxp.com/pwmxy87654/attachments/pwmxy87654/lpc/28119/2/UM10398.pdf)
+
+| Model | Timer start / IRQ 16 enable | Foreground `CPSIE i` | Submit staged selector write | Immediate bridge read |
+| --- | --- | --- | --- | --- |
+| RZ09-0423 | `B6E2 / B774` | `CD1E` | `3390` | `B3E6 → 33A0` |
+| RZ09-0484 | `B96E / BA00` | `CF9E` | `3434` | `B682 → 3444` |
+| RZ09-0509 | `BBEA / BC7C` | `D326` | `3474` | `B8F4 → 3484` |
+| RZ09-0529 | `3758 / 3756` | `C3A4` | `5C8C` | `7860 → 5C18` |
+
+A completed HID request can leave a selector write queued. If IRQ 16
+dispatches a later gated read after that write stages its frame and
+before it enters the engine, the read replaces the global frame and
+both lengths. The read helper returns without restoring them. The
+foreground engine then consumes the combined-read frame in place of
+the intended selector write. This is a firmware scheduling
+counterexample to exclusive ownership through host-side serialization.
+It needs a queued write, an enabled bridge gate and interrupt delivery
+in that window. It does not establish a failure rate or a captured
+failure. The exact bytes and call edges were checked offline in all
+four images.
 
 The write path stores success `0C` immediately after requesting the
 I²C STOP condition. The engine returns the software result and disables
@@ -306,12 +325,21 @@ inventory does not reach that helper from the updater entry. The
 method establishes a vendor transport definition and register example,
 with normal-mode availability still open.
 
-| Model | Shared flasher block | EC store of `C3` at `F0200D` |
-| --- | ---: | --- |
-| RZ09-0423 | 25 | `CF78` |
-| RZ09-0484 | 28 | `DCD0` |
-| RZ09-0509 | 12 | `E3D2` |
-| RZ09-0529 | 7 | `E692` |
+| Model | Shared flasher block | EC store of `C3` at `F0200D` | EC SPI ID opcode / data read |
+| --- | ---: | --- | --- |
+| RZ09-0423 | 25 | `CF78` | `2944 / 295A` |
+| RZ09-0484 | 28 | `DCD0` | `2944 / 295A` |
+| RZ09-0509 | 12 | `E3D2` | `27A4 / 27BA` |
+| RZ09-0529 | 7 | `E692` | `2808 / 281E` |
+
+The managed SPI ID helper and each EC's SPI ID routine perform the
+same `9F` flash operation. The host helper supplies `103F` to the
+depth-two reader. The EC builds the address from `F01000 + 3F` and
+reads the result there. All four pinned images have the same
+instruction bytes for the address construction, opcode load and data
+read. This gives an exact-image example supporting the low-16-bit
+address mapping in the flash block. It leaves the PWM block's decode
+and normal-operation host access open.
 
 Each EC's initialization code sets the low two bits of `F0200D`.
 Chromium's IT83xx code names offset `0D` SPCTRL1. ITE's IT81202 manual
@@ -320,8 +348,13 @@ register layout. The manual identifies SPCTRL1 bits 1:0 as memory-snoop
 permission and describes external-memory access through this path.
 That helps explain the firmware setting without proving that every
 16-bit address resolves as expected on the installed Blade controller.
+Coreboot's separate IT5570E driver also supplies the high and low bytes
+to the depth-two interface before reading its data register. The
+cross-chip agreement establishes the shape of the transaction. The
+Blade's address mapping and host decode still need their own evidence.
 [Chromium IT83xx LPC code](https://chromium.googlesource.com/chromiumos/platform/ec/+/08f5a1e6fc2c9467230444ac9b582dcf4d9f0068/chip/it83xx/lpc.c)
 · [ITE IT81202 specification, pp. 78, 433, 533–534](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
+· [Coreboot IT5570E depth-two reader](https://github.com/coreboot/coreboot/blob/e1e65cb0f1cad6117d48503f2f78d115caecc55b/src/ec/clevo/it5570e/i2ec.c)
 
 The next proof for this route is the installed controller's ordinary
 host decode and its 16-bit address binding to `F01808`. A read-only
