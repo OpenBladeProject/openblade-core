@@ -334,6 +334,19 @@ pass, Stop can use independent actual PWM without submitting D0.
 The A1 publication and verified Auto handback still require their
 separate completion proof.
 
+The EC can temporarily close Super I/O host access during PNPCFG
+programming. The general table writers are `AC06/B084/B4D0/B31A` on
+0423/0484/0509/0529. They set `F01202` bit 0 while programming and clear
+it at exit. The direct callers traced on these images are startup and
+power-sequence paths. For example, KI8110's event-6 dispatcher reaches
+the writer via power states `06/0A/0B`, while its steady state dispatch
+does not reach that writer in the reviewed call graph. The emitted
+tables use no depth-two index or data registers. The secondary writers
+also avoid those registers and have no direct or literal-pointer caller
+in the pinned images. These findings narrow steady-state contention.
+They leave the need to exclude lifecycle crossings and competing host
+access during the entire nested selector operation. [Chromium EC2I register access](https://chromium.googlesource.com/chromiumos/platform/ec/+/08f5a1e6fc2c9467230444ac9b582dcf4d9f0068/chip/it83xx/ec2i.c)
+
 The four images also copy actual PWM3 to RAM `80536` during ordinary
 feedback. That copy is skipped in FE, and no mapped descriptor exposes
 it. The mapped third tachometer is separate. Its producer can return
@@ -344,6 +357,33 @@ All four exact images can now be inspected with the
 [offline firmware CLI and register explorer](../tools/firmware/README.md).
 The profiles decode all mapped entries and annotate the staged duty,
 actual duty, tachometer, cycle and restore fields separately.
+
+### EC-native USB selector candidate
+
+The pinned images also contain a separate USB device descriptor for
+`1532:F003`, device release `0100`, at `2AE00/2B258/2A0E4/2A874`
+on 0423/0484/0509/0529 respectively. This is distinct from each model's
+keyboard MCU product ID. The KI890 descriptor calls it Razer EC and
+declares two HID interfaces and one vendor interface.
+
+On KI890 the ordinary event table starts the USB initializer through
+`1D63A → 69A8 → 22424 → 222E0 → 7C06 → 79A0`. The USB SET_REPORT handler
+dispatches the 90-byte report before scheduling the status stage.
+The EC-local `0D/02` handler stores the selector at `8035F` and a fresh
+`0D/82` reads that byte directly. This path does not use the keyboard
+MCU's I²C staging or selector cache. The separate `0D/84` table reads
+speed or configuration RAM and supplies no actual third PWM reading.
+
+An exact-board enumeration is still needed to establish whether the
+EC USB endpoint is connected and visible to the host. The selector
+round trip would also leave the captured override and staged duties to
+restore through separately reviewed operations. The signed KI890 BIOS
+2.09 carrier (SHA-256
+`ea6b01417b8b868a60c7f85dc194aaa8e8ec0d117dedaa6f3689ff09fbde9741`)
+identifies RZ09-0484 and SSID `1A583007`. A compressed section could
+only be decoded in part. The recovered BIOS bodies and decoded prefix
+contained no matching device identity, so this inspection does not
+settle host visibility. [Razer KI890 BIOS 2.09](https://mysupport.razer.com/app/answers/detail/a_id/14221/kw/RZ09%2Baudio%2Bdriver)
 
 ## Seven models with missing receiver evidence
 
