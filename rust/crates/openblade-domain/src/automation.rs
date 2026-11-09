@@ -31,6 +31,21 @@ fn profile_source(from_application: bool) -> Provenance {
     }
 }
 
+/// Check a decoded performance candidate using the host's signed enum values.
+pub fn performance_source_eligible(preset: i32, source: i32) -> bool {
+    match source {
+        // Plugged in: Silent, Balanced, Performance, Custom, Turbo,
+        // MaximumPower, Gaming, Creator.
+        0 => matches!(preset, 0..=2 | 5..=9),
+        // Battery: BatterySaver, BatteryBalanced.
+        1 => matches!(preset, 3 | 4),
+        // USB-C: Balanced.
+        2 => preset == 1,
+        // Unknown external power and unmapped legacy values.
+        _ => false,
+    }
+}
+
 /// Select an already source-compatible performance override; scalar values stay host-owned.
 pub fn performance(temporary: bool, persistent: bool, from_application: bool) -> Selection {
     overrides(temporary, persistent).unwrap_or(Selection {

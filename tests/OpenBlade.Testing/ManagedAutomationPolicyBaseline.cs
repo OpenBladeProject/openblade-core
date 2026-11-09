@@ -7,6 +7,27 @@ namespace OpenBlade.Testing;
 // Only static parameters replace instance fields. No native or production resolver calls.
 internal static class ManagedAutomationPolicyBaseline
 {
+    // ProfileAutomationState.cs:490-508 at 8a6e49d7bcffc52c84e8d447711f9192385e9da6.
+    internal static bool IsPerformanceCompatibleWithSource(
+        PerformancePreset performance,
+        PowerSource source) => source switch
+        {
+            PowerSource.PluggedIn => performance is
+                PerformancePreset.Silent
+                or PerformancePreset.Balanced
+                or PerformancePreset.Performance
+                or PerformancePreset.Turbo
+                or PerformancePreset.MaximumPower
+                or PerformancePreset.Gaming
+                or PerformancePreset.Creator
+                or PerformancePreset.Custom,
+            PowerSource.Battery => performance is
+                PerformancePreset.BatterySaver
+                or PerformancePreset.BatteryBalanced,
+            PowerSource.UsbC => performance is PerformancePreset.Balanced,
+            _ => false,
+        };
+
     internal static ResolvedSetting<LightingSettings> ResolveLighting(
         PowerProfile profile,
         ConfirmedDeviceState confirmed,

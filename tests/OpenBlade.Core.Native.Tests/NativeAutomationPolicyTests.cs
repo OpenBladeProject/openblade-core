@@ -7,11 +7,11 @@ namespace OpenBlade.Core.Native.Tests;
 
 public sealed class NativeAutomationPolicyTests
 {
-    private static NativeAutomationPolicy Load()
+    private static NativeAutomationPolicy Load(bool requirePerformanceSourceEligibility = false)
     {
         string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_LIBRARY")
             ?? throw new InvalidOperationException("Actual native artifact is required.");
-        NativeAutomationLoadResult loaded = NativeAutomationPolicy.Load(path);
+        NativeAutomationLoadResult loaded = NativeAutomationPolicy.Load(path, requirePerformanceSourceEligibility);
         Assert.True(loaded.IsSuccess, loaded.Error?.ToString());
         return loaded.Policy!;
     }
@@ -31,6 +31,53 @@ public sealed class NativeAutomationPolicyTests
             Assert.Equal(row.Provenance, (uint)actual.Selection.Value.Source);
             VerifyFrozenBaseline(policy, row);
         }
+    }
+
+    [Fact]
+    public void DecodedPerformanceSourceMatchesSharedMatrixAndFrozenPredicate()
+    {
+        using NativeAutomationPolicy policy = Load(requirePerformanceSourceEligibility: true);
+        using JsonDocument fixture = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, "Parity", "performance-source.json")));
+        JsonElement root = fixture.RootElement;
+        Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal("8a6e49d7bcffc52c84e8d447711f9192385e9da6", root.GetProperty("sourceRevision").GetString());
+        PowerSource[] sources = root.GetProperty("sources").EnumerateArray()
+            .Select(item => (PowerSource)item.GetInt32()).ToArray();
+        Assert.Equal(Enum.GetValues<PowerSource>().Concat([(PowerSource)(-1), (PowerSource)int.MaxValue]), sources);
+
+        var presets = new List<PerformancePreset>();
+        foreach (JsonElement row in root.GetProperty("cases").EnumerateArray())
+        {
+            Assert.Equal(2, row.GetArrayLength());
+            var preset = (PerformancePreset)row[0].GetInt32();
+            presets.Add(preset);
+            Assert.Equal(sources.Length, row[1].GetArrayLength());
+            for (int index = 0; index < sources.Length; index++)
+            {
+                PowerSource source = sources[index];
+                bool expected = row[1][index].GetBoolean();
+                Assert.Equal(expected, ManagedAutomationPolicyBaseline.IsPerformanceCompatibleWithSource(preset, source));
+                var (eligible, error) = policy.CheckPerformanceSource(preset, source);
+                Assert.Null(error);
+                Assert.Equal(expected, eligible);
+            }
+        }
+
+        Assert.Equal(Enum.GetValues<PerformancePreset>().Concat(
+            [(PerformancePreset)(-1), (PerformancePreset)10, (PerformancePreset)int.MinValue, (PerformancePreset)int.MaxValue]), presets);
+    }
+
+    [Fact]
+    public void PerformanceSourceRejectsInconsistentNativeResult()
+    {
+        NativeErrorRecord error = NativeErrorRecord.Create();
+        Assert.Equal(NativeBoundaryErrorKind.InvalidNativeResult,
+            NativeAutomationPolicy.ReadPerformanceSourceEligibility(2, 0, error, 0).Error!.Kind);
+        Assert.Equal(NativeBoundaryErrorKind.InvalidNativeResult,
+            NativeAutomationPolicy.ReadPerformanceSourceEligibility(1, 0, error, 1).Error!.Kind);
+        Assert.Equal(NativeBoundaryErrorKind.InvalidNativeResult,
+            NativeAutomationPolicy.ReadPerformanceSourceEligibility(1, 5, error, 0).Error!.Kind);
     }
 
     [Fact]
@@ -221,7 +268,11 @@ public sealed class NativeAutomationPolicyTests
             ?? throw new InvalidOperationException("Automation-only fixture is required.");
         NativeAutomationLoadResult result = NativeAutomationPolicy.Load(path);
         Assert.True(result.IsSuccess, result.Error?.ToString());
-        result.Policy!.Dispose();
+        using NativeAutomationPolicy legacy = result.Policy!;
+        Assert.Equal(NativeBoundaryErrorKind.MissingExport,
+            legacy.CheckPerformanceSource(PerformancePreset.Balanced, PowerSource.PluggedIn).Error!.Kind);
+        Assert.Equal(NativeBoundaryErrorKind.MissingExport,
+            NativeAutomationPolicy.Load(path, requirePerformanceSourceEligibility: true).Error!.Kind);
         Assert.Equal(NativeBoundaryErrorKind.MissingExport, NativeProfilePolicy.Load(path).Error!.Kind);
         Assert.Equal(NativeBoundaryErrorKind.MissingExport, NativeReportCodec.Load(path).Error!.Kind);
         string policyPath = Environment.GetEnvironmentVariable("OPENBLADE_POLICY_ONLY_LIBRARY")!;

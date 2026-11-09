@@ -67,7 +67,8 @@ public static class ProductNativeRuntime
             NativePolicyLoadResult policyResult = NativeProfilePolicy.Load(path);
             policy = policyResult.Policy;
             if (!policyResult.IsSuccess) { throw new NativeComponentException(policyResult.Error!); }
-            NativeAutomationLoadResult automationResult = NativeAutomationPolicy.Load(path);
+            NativeAutomationLoadResult automationResult = NativeAutomationPolicy.Load(path,
+                requirePerformanceSourceEligibility: true);
             automation = automationResult.Policy;
             if (!automationResult.IsSuccess) { throw new NativeComponentException(automationResult.Error!); }
             VerifyHash(lease, hash);

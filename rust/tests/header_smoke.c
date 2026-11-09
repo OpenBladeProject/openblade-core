@@ -128,5 +128,12 @@ int main(void)
         selected.origin != 1 || selected.provenance != 0) return 21;
     if (ob_v1_select_automation(2, &selection, &selected, &written, &error) != 1 ||
         selected.origin != 1 || selected.provenance != 0 || written != 0) return 22;
+    uint32_t eligible = 99;
+    if (ob_v1_performance_source_eligible(2, 1, 2, &eligible, &written, &error) != 1 ||
+        eligible != 99 || written != 0) return 23;
+    if (ob_v1_performance_source_eligible(OB_AUTOMATION_ABI_VERSION, 1, 2,
+        &eligible, &written, &error) != 0 || eligible != 1 || written != 0) return 24;
+    if (ob_v1_performance_source_eligible(OB_AUTOMATION_ABI_VERSION, -1, 0,
+        &eligible, &written, NULL) != 0 || eligible != 0 || written != 0) return 25;
     return 0;
 }

@@ -1,4 +1,4 @@
-//! Independently negotiated automation selection. All values and state remain host-owned.
+//! Independently negotiated automation selection and decoded performance eligibility.
 use crate::{ABSENT, FLAG, ObErrorV1, RECORD_SIZE, boundary_for_version};
 use openblade_domain::automation::{self, Provenance, ValueOrigin};
 use std::mem;
@@ -30,6 +30,42 @@ pub struct ObAutomationSelectionV1 {
 #[unsafe(no_mangle)]
 pub extern "C" fn ob_automation_abi_version() -> u32 {
     OB_AUTOMATION_ABI_VERSION
+}
+
+/// Check a decoded performance candidate without receiving or retaining host state.
+///
+/// # Safety
+/// Nonnull pointers must be aligned, accessible for the call and mutually disjoint.
+/// The error size prefix must be readable; an exact size requires the full record.
+/// eligible and written are required, error is optional. Failure leaves eligible unchanged.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_v1_performance_source_eligible(
+    abi_version: u32,
+    preset: i32,
+    source: i32,
+    eligible: *mut u32,
+    written: *mut u32,
+    error: *mut ObErrorV1,
+) -> u32 {
+    // SAFETY: forwarded exported pointer contract, including output disjointness.
+    unsafe {
+        boundary_for_version(
+            abi_version,
+            OB_AUTOMATION_ABI_VERSION,
+            written,
+            error,
+            || {
+                if eligible.is_null() {
+                    return Err(ABSENT);
+                }
+                let value = u32::from(automation::performance_source_eligible(preset, source));
+                #[cfg(test)]
+                crate::panic_injection();
+                eligible.write(value);
+                Ok(0)
+            },
+        )
+    }
 }
 
 /// Select a borrowed host value without receiving or retaining that value.

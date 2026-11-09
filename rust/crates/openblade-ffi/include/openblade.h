@@ -190,6 +190,17 @@ uint32_t OB_CALL ob_automation_abi_version(void);
 uint32_t OB_CALL ob_v1_select_automation(uint32_t abi_version,
     const ObAutomationRequestV1 *request, ObAutomationSelectionV1 *result,
     uint32_t *written, ObErrorV1 *error);
+
+/* Optional automation v1 export. Negotiate by checking the symbol and automation version.
+ * Decoded signed preset: Silent 0, Balanced 1, Performance 2, BatterySaver 3,
+ * BatteryBalanced 4, Custom 5, Turbo 6, MaximumPower 7, Gaming 8, Creator 9.
+ * Decoded signed source: PluggedIn 0, Battery 1, UsbC 2, ExternalUnknown 3.
+ * Unmapped inputs are valid and ineligible. Success stores a 0/1 token in eligible;
+ * failure leaves it unchanged. written is always zero. Both pointers are required,
+ * error is optional. Same panic/error and disjointness rules as automation selection.
+ */
+uint32_t OB_CALL ob_v1_performance_source_eligible(uint32_t abi_version,
+    int32_t preset, int32_t source, uint32_t *eligible, uint32_t *written, ObErrorV1 *error);
 #ifdef __cplusplus
 }
 #endif

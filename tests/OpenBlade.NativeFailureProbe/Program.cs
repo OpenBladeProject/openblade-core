@@ -52,6 +52,12 @@ internal static class Program
             published = state.Resolve(new(null, null, null, null)));
         Require(published is null && failure.Category == (int)NativeBoundaryErrorKind.Disposed,
             "Automation failure must not publish desired state or select a fallback.");
+        state.SetPerformanceOverride(new PerformanceOverride(PerformancePreset.Balanced, OverrideLifetime.Persistent));
+        NativeComponentException eligibilityFailure = Expect<NativeComponentException>(() =>
+            published = state.Resolve(new(null, null, null, null)));
+        Require(published is null && eligibilityFailure.Category == failure.Category
+            && state.PerformanceOverride?.Value == PerformancePreset.Balanced,
+            "Eligibility failure must preserve the candidate without publishing desired state.");
         Require(failure.InnerException is null && !failure.Message.Contains((char)92)
             && !failure.Message.Contains('/'), "Automation failure must remain redacted.");
         Console.WriteLine(JsonSerializer.Serialize(new
