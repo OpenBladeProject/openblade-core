@@ -9,21 +9,18 @@ use tokio::{
     runtime::Builder,
     sync::{Semaphore, mpsc, oneshot},
     task::JoinSet,
-    time::{sleep, timeout},
 };
 
-use windows_sys::Win32::Foundation::{
-    ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_NOT_CONNECTED,
-};
+use openblade_windows_host::pipe::{self, stale_connection};
 
 use crate::wire::{self, Session, Status};
 
-mod pipe;
 mod scm;
 
 const PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.ReadOnly.Dev.";
 const SCM_ID: &str = "scm";
 const CLIENTS: usize = 8;
+const PIPE_INSTANCES: u32 = CLIENTS as u32 + 2;
 const SUBSCRIPTIONS: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,7 +132,7 @@ async fn run(
         } else {
             (status, None)
         };
-        let endpoint = pipe::Endpoint::new(format!("{PREFIX}{id}"))?;
+        let endpoint = pipe::Endpoint::new(format!("{PREFIX}{id}"), PIPE_INSTANCES)?;
         let claim = endpoint.claim()?;
         let listener = endpoint.listen()?;
         report(Phase::Running)?;
@@ -219,33 +216,9 @@ async fn accept(
         listener = tokio::select! {
             biased;
             () = &mut stop => return Ok(()),
-            next = next_listener(endpoint) => next?,
+            next = endpoint.next_listener() => next?,
         };
     }
-}
-
-fn stale_connection(error: &io::Error) -> bool {
-    matches!(
-        error.raw_os_error().map(|code| code as u32),
-        Some(ERROR_BROKEN_PIPE | ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED)
-    )
-}
-
-async fn next_listener(endpoint: &pipe::Endpoint) -> io::Result<NamedPipeServer> {
-    use std::time::Duration;
-
-    timeout(Duration::from_secs(2), async {
-        loop {
-            match endpoint.listen() {
-                Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
-                    // A retired overlapped operation can briefly retain its handle.
-                    sleep(Duration::from_millis(20)).await;
-                }
-                result => return result,
-            }
-        }
-    })
-    .await?
 }
 
 #[cfg(test)]
@@ -258,8 +231,9 @@ mod tests {
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::windows::named_pipe::ClientOptions,
-        time::timeout,
+        time::{sleep, timeout},
     };
+    use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
 
     use super::*;
 
@@ -364,7 +338,7 @@ mod tests {
         runtime().block_on(async {
             let id = test_id();
             let path = format!("{PREFIX}{id}");
-            let endpoint = pipe::Endpoint::new(path.clone()).unwrap();
+            let endpoint = pipe::Endpoint::new(path.clone(), PIPE_INSTANCES).unwrap();
             let _claim = endpoint.claim().unwrap();
             let _owner = endpoint.listen().unwrap();
             let mut phases = Vec::new();
@@ -442,7 +416,7 @@ mod tests {
     fn transient_instance_exhaustion_preserves_the_claim_and_retries() {
         runtime().block_on(async {
             let path = format!("{PREFIX}{}", test_id());
-            let endpoint = pipe::Endpoint::new(path).unwrap();
+            let endpoint = pipe::Endpoint::new(path, PIPE_INSTANCES).unwrap();
             let _claim = endpoint.claim().unwrap();
             let mut instances: Vec<_> = (0..=CLIENTS).map(|_| endpoint.listen().unwrap()).collect();
             assert_eq!(
@@ -453,7 +427,7 @@ mod tests {
                 sleep(Duration::from_millis(50)).await;
                 drop(instances.pop());
             };
-            let (replacement, ()) = tokio::join!(next_listener(&endpoint), release);
+            let (replacement, ()) = tokio::join!(endpoint.next_listener(), release);
             drop(replacement.unwrap());
             drop(instances);
             assert_eq!(

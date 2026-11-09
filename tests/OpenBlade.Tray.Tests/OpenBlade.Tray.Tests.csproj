@@ -30,6 +30,8 @@
 
   <ItemGroup>
     <Compile Include="..\OpenBlade.Testing\AsyncTest.cs" Link="AsyncTest.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\SessionDisplaySettingsAdapter.cs"
+             Link="SessionDisplaySettingsAdapter.cs" />
     <Compile Include="..\OpenBlade.Testing\UnavailableServiceClient.cs"
              Link="UnavailableServiceClient.cs" />
     <Compile Include="..\..\src\OpenBlade.Setup\SignInTaskScheduler.cs"

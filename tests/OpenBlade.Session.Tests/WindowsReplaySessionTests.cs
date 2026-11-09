@@ -77,6 +77,31 @@ public sealed class WindowsReplaySessionTests
         AssertFrame(expected, output);
     }
 
+    [Theory]
+    [InlineData("available", true)]
+    [InlineData("unavailable", false)]
+    public async Task WindowsReplay_DisplayQueryResponseMatchesManagedContract(string scenario, bool available)
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "WindowsReplay", "v1", "session-display-query.json");
+        using var input = File.OpenRead(path);
+        using JsonDocument fixture = JsonDocument.Parse(input);
+        JsonElement expected = fixture.RootElement.GetProperty(scenario);
+        byte[] payload = Encoding.UTF8.GetBytes(expected.GetRawText());
+        using MemoryStream stream = Frame(payload.Length, payload);
+        SessionDisplayResponse response = await SessionDisplayIpcCodec.ReadResponseAsync(stream);
+
+        Assert.Equal(Guid.Parse("11111111-2222-4333-8444-555555555555"), response.RequestId);
+        Assert.Equal(SessionDisplayOperationStatus.Succeeded, response.Status);
+        Assert.Null(response.Error);
+        Assert.Equal(available, response.State.IsAvailable);
+        Assert.Null(response.State.BrightnessPercent);
+        Assert.Null(response.State.ActiveColorProfileId);
+        Assert.Equal(available ? 8 : null, response.State.BitsPerColorChannel);
+        using var output = new MemoryStream();
+        await SessionDisplayIpcCodec.WriteResponseAsync(output, response);
+        AssertFrame(expected, output);
+    }
+
     public static TheoryData<string, string> Cases()
     {
         using JsonDocument fixture = Open();

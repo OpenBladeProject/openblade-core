@@ -7,7 +7,7 @@ using Backend = OpenBlade.Display;
 
 namespace OpenBlade.Tray;
 
-internal sealed class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
+internal sealed partial class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
 {
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(8);
