@@ -252,6 +252,18 @@ command and status are both zero and Auto never applies. This is a
 conditional interleaving. Bounding residual delivery to one event does
 not establish quiescence.
 
+The ITE memory-snoop reference describes I2EC reads preserving the
+contents of read-to-clear registers. If that behavior and low-address
+binding are established on the installed Blade, `2019` can check the
+known `93` comparator value, `201B` can observe the address-match flag,
+and `1124` can observe the interrupt pending bit without publishing a
+primary command. Those observations can distinguish a pending source
+from a quiet sample. A quiet sample does not prove callback completion.
+IRQ 71 first sets event 13, then clears interrupt and match status, and
+the scheduler clears event 13 before invoking the callback. The host
+can therefore see clear status while the callback is still in flight.
+[ITE IT81202 specification, pp. 533–534](https://www.ite.com.tw/upload/2024_01_23/6_20240123162204gq4mc18f22.pdf)
+
 #### Compare the mapped commands with the supervised Blade 16
 
 The four exact Blade 17/18 images and the RZ09-0581 SO6120 EC 1.04
@@ -594,6 +606,49 @@ No AML caller to the generic command publishers `BMCR` or `BMCW` was
 found on any of the four. These observations constrain the AML path
 while leaving runtime access from other firmware or host code open.
 
+#### Display-mux firmware shares both mailboxes
+
+All five expanded BIOS revisions contain the `TpvSmm` module with GUID
+`8AB1D576-5977-4A89-9414-099D90B53E79`. Its software-SMI callback uses
+the same primary and legacy windows as the candidate Fan Stop path.
+The recovered SSDTs on every revision contain a byte-identical `MXDM`
+method. For modes 1–4 it stores the requested display-mux mode and writes
+`B8` to the software-SMI field. On KI890 2.09 the field is in DSDT
+region `SPRT` and the trace runs from `SSDT-B3B838.dsl:103–123` to the
+SMM registration and callback. The table and module evidence identify
+a conditional runtime path. It has not been observed during a physical
+Fan Stop trial.
+[EDK II software-SMI dispatch definition](https://github.com/tianocore/edk2/blob/master/MdePkg/MdePkg.dec#L1286-L1287)
+
+| Model / BIOS | SMI registration call RVA | Callback call to primary publisher | Primary A1 publication instruction | Legacy port setup |
+| --- | --- | --- | --- | --- |
+| RZ09-0423 / 2.01 | `1AAE` | `1900 → 1D0C` | `1D8D` | `1777` |
+| RZ09-0484 / 2.04 and 2.09 | `1AA2` | `18F4 → 1D00` | `1D81` | `176B` |
+| RZ09-0509 / 1.06 | `1AA2` | `18F4 → 1D00` | `1D81` | `176B` |
+| RZ09-0529 / 4.01 | `196B` | `18A5 → 1A10` | `1AAC` | `170D` |
+
+The primary publisher polls command zero, clears and stages the shared
+descriptor, writes the bank-zero `C0` payload, publishes `A1`, then polls
+and checks status `80`. Its distinct target index still uses the same
+selectors, descriptor, payload and status as Fan Stop. The callback
+also has a legacy `10/0A` request with the same index and reply registers
+as the proposed `11/E3` fence. The command-zero poll can pass while a
+different caller has staged a descriptor or selected a port index and
+has yet to publish. Closing Synapse or holding an application mutex
+cannot establish exclusivity against this firmware path. A mailbox-based
+implementation needs a coordination mechanism that covers display-mux
+invocation through Auto handback, or an independently established route
+that avoids these windows. The extracted module pins, checksum-verified
+SSDT spans and disassembly checks are under
+`artifacts/model-expansion/ki890-host-bios/`.
+
+KI890's `SSMP` field uses AML's `Lock` rule. That does not place the
+raw host mailbox I/O under the ACPI Global Lock. Windows reserves its
+acquire and release requests for internal use, and the traced SMM
+publisher shows no corresponding lock around its mailbox sequence.
+[ACPI Global Lock specification](https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html)
+· [Microsoft ACPI driver interfaces](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/)
+
 The separate `RECR` path submits `80` through ACPI EC offsets
 `F8/F9/FA`. All four pinned EC images handle it at `9484`, read
 `80700 + byteIndex`, and clear the command. This RAM window cannot
@@ -706,6 +761,28 @@ cannot identify the RZ09-0370 receiver.
 · [Repair board photo](https://appatt.chinafix.com/pic/20250703/175150517415748_523.jpg)
 · [0427 filing](https://fccid.io/RWO-RZ090368QCNFA/User-Manual/User-Manual-5876422.pdf)
 · [0427 specifications](https://mysupport.razer.com/app/answers/detail/a_id/5915/)
+
+An original repair close-up from a unit reported as RZ09-0370 shows
+`IT8320VG-256` on the ITE package. The photo does not include the board
+silkscreen, so retain this as a controller lead for PI411. The IT8320
+uses embedded flash. Dataman lists the exact marked BGA144 part for
+its socket programmer. Chromium's IT8320 route uses an external I²C
+debug adapter and a waveform that enters DFU. This makes a preserved
+original read from an exact PI411 board the acquisition target. Neither
+route establishes a normal-boot, in-system read on this laptop.
+[Repair photo and model report](https://www.reddit.com/r/AskElectronics/comments/1iahi00/what_are_these_components_and_are_they_difficult/)
+· [Original close-up](https://i.redd.it/5k6z8uhxxcfe1.jpg)
+· [Dataman exact device listing](https://www.dataman.com/blogs/latest-news/new-database-released-11-april-2024)
+· [Chromium IT8320 reference](https://chromium.googlesource.com/chromiumos/platform/ec/+/08f5a1e6fc2c9467230444ac9b582dcf4d9f0068/util/iteflash.md)
+
+The retained BIOS, UEFI and PSP members for 0370, 0482 and 0508 were
+rechecked using four firmware fingerprints present in all four pinned
+Blade 17/18 EC images. None matched the `ITE8320EC` tag, the boot magic,
+the vector prefix or the reset prologue. The same check covered all 15
+decoded blocks of 0370 BIOS 1.08_v3 and both older 0370 BIOS payloads.
+This excludes those fingerprints in the scanned contents. A receiver
+built with a different layout could lack them.
+[Razer 0370 BIOS 1.08_v3](https://mysupport.razer.com/app/answers/detail/a_id/5502/)
 
 The RZ09-0301 keyboard carrier has SHA-256
 `58f880cc46a64379131e7edc3d1a8c63418dc2989179d3a514d6d79ea38e49e5`.
