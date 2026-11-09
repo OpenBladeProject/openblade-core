@@ -473,12 +473,27 @@
       "id": "canceled-before-submission",
       "input": {
         "action": "CanceledBefore",
+        "cleanupRevision": "Intent",
         "requested": "FunctionKeys",
         "readback": null,
         "identity": "synthetic-device"
       },
       "expected": {
         "journal": "Removed",
+        "setters": 0
+      }
+    },
+    {
+      "id": "canceled-before-submission-replacement",
+      "input": {
+        "action": "CanceledBefore",
+        "cleanupRevision": "Replacement",
+        "requested": "FunctionKeys",
+        "readback": null,
+        "identity": "synthetic-device"
+      },
+      "expected": {
+        "journal": "Replacement",
         "setters": 0
       }
     },

@@ -566,13 +566,18 @@ is shared between the managed executor tests and Rust replay. Its thermal
 rows supply synthetic outcomes to the managed trace classifier. Its laptop
 rows drive the actual managed journal and executor through fake setters and
 getters. The managed tests still cover raw journal version and malformed
-record handling. Rust consumes the validated disposition and a single entry
-at a time. A future host must accumulate per-entry decisions from one document,
-preserve the order of untouched entries, append new tombstones in observation
-order, and compare the expected revision in
-one atomic save. It may report readback independently of the save. A failed
-or raced save must leave authoritative state to a fresh load. None of the
-effects authorizes a hardware mutation.
+record handling. Rust consumes the validated disposition and returns one
+batch for one revision. The host preserves the order of untouched entries,
+appends new tombstones in observation order, and compares the revision in one
+atomic save. It can publish readback independently of the save. The journal
+write gate separately blocks all mutations while any entry is pending and
+blocks foreign non-empty journals even when their entries are settled.
+
+The thermal replay checks base classification after a scoped attempt. Runner
+overrides for refused retry admission and unavailable continuations belong to
+future command planning. The managed harness alone checks setter and attempt
+counts and the recovery lease. The portable decisions contain no write or
+retry effect, and the host retains the actual baseline and transport evidence.
 
 | Phase 4 area | Remaining Windows work |
 | --- | --- |

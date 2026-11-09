@@ -16,7 +16,8 @@ public sealed partial class ServiceControlRuntimeTests
         JsonElement input = example.GetProperty("input");
         JsonElement expected = example.GetProperty("expected");
         const string identity = "synthetic-device";
-        var store = new LaptopControlPendingStore(Path.Combine(directory, "replay-pending.json"));
+        string path = Path.Combine(directory, "replay-pending.json");
+        var store = new LaptopControlPendingStore(path);
         ApplyOneShotLaptopControl request = input.GetProperty("requested").GetString() == "Microphone"
             ? new(OneShotLaptopControl.MicrophoneMuteIndicator, Enabled: true)
             : FunctionKeysRequest;
@@ -42,7 +43,16 @@ public sealed partial class ServiceControlRuntimeTests
             {
                 if (++authorityChecks == 2 && action == "CanceledBefore")
                 {
-                    Assert.True(store.Load().RequiresReconciliation);
+                    LaptopControlPendingLoad pending = store.Load();
+                    Assert.True(pending.RequiresReconciliation);
+                    if (input.GetProperty("cleanupRevision").GetString() == "Replacement")
+                    {
+                        var replacement = pending.Document! with
+                        {
+                            Entries = [new(request with { FunctionKeyMode = FunctionKeyPrimaryMode.MultimediaKeys }, true)],
+                        };
+                        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(replacement));
+                    }
                     cancellation.Cancel();
                     return false;
                 }
@@ -85,6 +95,11 @@ public sealed partial class ServiceControlRuntimeTests
                 break;
             case "Pending":
                 Assert.Equal(new LaptopControlPendingEntry(request, true), Assert.Single(load.Document!.Entries));
+                break;
+            case "Replacement":
+                Assert.Equal(new LaptopControlPendingEntry(
+                    request with { FunctionKeyMode = FunctionKeyPrimaryMode.MultimediaKeys }, true),
+                    Assert.Single(load.Document!.Entries));
                 break;
             case "Tombstone":
                 Assert.Equal(new LaptopControlPendingEntry(request, false), Assert.Single(load.Document!.Entries));

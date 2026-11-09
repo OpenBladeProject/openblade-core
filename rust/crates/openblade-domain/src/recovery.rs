@@ -42,23 +42,39 @@ pub struct PendingEntry {
 /// SHA-256 of the exact loaded bytes, compared again by the host at commit.
 pub type JournalRevision = [u8; 32];
 
+const MAX_ENTRIES: usize = 4;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum JournalEntry<'a> {
+pub enum LaptopJournal<'a> {
     Missing,
     Paused,
-    /// One entry from a host-validated v1 document (at most four unique controls).
+    /// The host validates the v1 document, including exact identity and unique controls.
     Valid {
         identity: &'a str,
         revision: JournalRevision,
-        entry: PendingEntry,
+        entries: &'a [PendingEntry],
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LaptopObservation {
-    NotRead,
-    Unavailable,
-    Read(LaptopValue),
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LaptopReadback {
+    pub startup_animation: Option<bool>,
+    pub function_key_primary: Option<FunctionKeyMode>,
+    pub gaming_mode: Option<bool>,
+}
+
+impl LaptopReadback {
+    fn value(self, getter: LaptopGetter) -> Option<LaptopValue> {
+        match getter {
+            LaptopGetter::StartupAnimation => {
+                self.startup_animation.map(LaptopValue::StartupAnimation)
+            }
+            LaptopGetter::FunctionKeyPrimary => self
+                .function_key_primary
+                .map(LaptopValue::FunctionKeyPrimary),
+            LaptopGetter::GamingMode => self.gaming_mode.map(LaptopValue::GamingMode),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -77,103 +93,32 @@ pub enum EntryChange {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LaptopRecovery {
-    NoPendingEntry,
-    Pause(PauseReason),
-    ReadOnly(LaptopGetter),
-    /// The host may publish the observation independently of the journal save.
-    /// The entry is still pending until the proposed change is durably committed.
-    Settle {
-        expected_revision: JournalRevision,
-        requested: LaptopValue,
-        observed: Option<LaptopValue>,
-        change: EntryChange,
-    },
+pub struct EntrySettlement {
+    pub requested: LaptopValue,
+    pub observed: Option<LaptopValue>,
+    pub change: EntryChange,
 }
 
-/// Evaluate one entry in restart or ordinary read-only reconciliation.
-/// The observation must come from the freshly verified device for this operation.
-/// The managed journal uses exact device identity, with machine name as provenance.
-pub fn recover_laptop_entry(
-    journal: JournalEntry<'_>,
-    fresh_identity: Option<&str>,
-    observation: LaptopObservation,
-) -> LaptopRecovery {
-    let (identity, revision, entry) = match journal {
-        JournalEntry::Missing => return LaptopRecovery::NoPendingEntry,
-        JournalEntry::Paused => return LaptopRecovery::Pause(PauseReason::JournalUnavailable),
-        JournalEntry::Valid {
-            identity,
-            revision,
-            entry,
-        } => (identity, revision, entry),
-    };
-    if !entry.reconciliation_required {
-        return LaptopRecovery::NoPendingEntry;
-    }
-    if fresh_identity != Some(identity) {
-        return LaptopRecovery::Pause(PauseReason::ExactIdentityUnavailable);
-    }
-    resolve_readback(revision, entry.requested, observation)
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LiveCompletion {
-    Acknowledged(LaptopObservation),
-    MayHaveSubmitted,
-}
-
-/// The acknowledgement must belong to the live executor's persisted intent.
-/// A possible submission leaves the entry pending for a separate observation.
-pub fn complete_laptop_intent(
-    intent_revision: JournalRevision,
-    requested: LaptopValue,
-    completion: LiveCompletion,
-) -> LaptopRecovery {
-    match completion {
-        LiveCompletion::MayHaveSubmitted => LaptopRecovery::Pause(PauseReason::PossibleSubmission),
-        LiveCompletion::Acknowledged(_) if requested.getter().is_none() => LaptopRecovery::Settle {
-            expected_revision: intent_revision,
+impl EntrySettlement {
+    fn observed(requested: LaptopValue, observed: LaptopValue) -> Self {
+        Self {
             requested,
-            observed: None,
-            change: EntryChange::Remove,
-        },
-        LiveCompletion::Acknowledged(observation) => {
-            resolve_readback(intent_revision, requested, observation)
+            observed: Some(observed),
+            change: if requested == observed {
+                EntryChange::Remove
+            } else {
+                EntryChange::KeepTombstone
+            },
         }
-    }
-}
-
-fn resolve_readback(
-    revision: JournalRevision,
-    requested: LaptopValue,
-    observation: LaptopObservation,
-) -> LaptopRecovery {
-    let Some(getter) = requested.getter() else {
-        return LaptopRecovery::Pause(PauseReason::WriteOnly);
-    };
-    match observation {
-        LaptopObservation::NotRead => LaptopRecovery::ReadOnly(getter),
-        LaptopObservation::Read(observed) if observed.getter() == Some(getter) => {
-            LaptopRecovery::Settle {
-                expected_revision: revision,
-                requested,
-                observed: Some(observed),
-                change: if requested == observed {
-                    EntryChange::Remove
-                } else {
-                    EntryChange::KeepTombstone
-                },
-            }
-        }
-        _ => LaptopRecovery::Pause(PauseReason::ReadbackUnavailable),
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum JournalLoadRevision {
-    Paused,
-    Readable(Option<JournalRevision>),
+pub struct LaptopSettlement {
+    pub expected_revision: JournalRevision,
+    /// Save all changes together. The observations may be published independently.
+    /// No entry is settled until the compare-and-save succeeds.
+    pub changes: [Option<EntrySettlement>; MAX_ENTRIES],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -183,28 +128,172 @@ pub enum NonSubmissionCleanup {
     RestorePriorDocument { expected_revision: JournalRevision },
 }
 
-/// Only call with process-local proof that submission did not begin, including
-/// cancellation before submission. Retain proof until restore succeeds or a fresh
-/// load shows different bytes. The host retains the exact prior document.
-pub fn clean_up_known_non_submission(
-    intent_revision: JournalRevision,
-    loaded: JournalLoadRevision,
-) -> NonSubmissionCleanup {
-    match loaded {
-        JournalLoadRevision::Paused => NonSubmissionCleanup::KeepProof,
-        JournalLoadRevision::Readable(Some(current)) if current == intent_revision => {
-            NonSubmissionCleanup::RestorePriorDocument {
-                expected_revision: current,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LaptopRecoveryPlan<'a> {
+    NoPendingEntries,
+    Pause(PauseReason),
+    StorageOnly(NonSubmissionCleanup),
+    ReadOnly(LaptopReadPlan<'a>),
+}
+
+/// One read-only pass over a single validated journal revision.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LaptopReadPlan<'a> {
+    revision: JournalRevision,
+    entries: &'a [PendingEntry],
+}
+
+impl LaptopReadPlan<'_> {
+    fn readable_entries(&self) -> impl Iterator<Item = (LaptopValue, LaptopGetter)> + '_ {
+        self.entries.iter().filter_map(|entry| {
+            if !entry.reconciliation_required {
+                return None;
             }
+            Some((entry.requested, entry.requested.getter()?))
+        })
+    }
+
+    pub fn getters(&self) -> impl Iterator<Item = LaptopGetter> + '_ {
+        self.readable_entries().map(|(_, getter)| getter)
+    }
+
+    /// Use only readings produced by this plan on the freshly verified device.
+    /// Unavailable values and write-only entries remain pending.
+    pub fn finish(self, readback: LaptopReadback) -> Option<LaptopSettlement> {
+        let mut changes = [None; MAX_ENTRIES];
+        let confirmed = self.readable_entries().filter_map(|(request, getter)| {
+            Some(EntrySettlement::observed(request, readback.value(getter)?))
+        });
+        for (slot, settlement) in changes.iter_mut().zip(confirmed) {
+            *slot = Some(settlement);
         }
-        JournalLoadRevision::Readable(_) => NonSubmissionCleanup::ForgetProof,
+        changes[0].is_some().then_some(LaptopSettlement {
+            expected_revision: self.revision,
+            changes,
+        })
     }
 }
 
-/// A settled tombstone suppresses the same automatic request. A new explicit
-/// request needs ordinary host admission and a new write-ahead save.
-pub fn tombstone_blocks_automatic(entry: PendingEntry, requested: LaptopValue) -> bool {
-    !entry.reconciliation_required && entry.requested == requested
+/// Cleanup takes the entire pass when live non-submission proof is present.
+/// The host retains the exact prior document and keeps proof until its restore
+/// commits or a fresh load shows different bytes. Restart has no such proof.
+pub fn plan_laptop_recovery<'a>(
+    journal: LaptopJournal<'a>,
+    fresh_identity: Option<&str>,
+    known_unsubmitted_revision: Option<JournalRevision>,
+) -> LaptopRecoveryPlan<'a> {
+    if let Some(expected) = known_unsubmitted_revision {
+        let cleanup = match journal {
+            LaptopJournal::Paused => NonSubmissionCleanup::KeepProof,
+            LaptopJournal::Valid { revision, .. } if revision == expected => {
+                NonSubmissionCleanup::RestorePriorDocument {
+                    expected_revision: revision,
+                }
+            }
+            _ => NonSubmissionCleanup::ForgetProof,
+        };
+        return LaptopRecoveryPlan::StorageOnly(cleanup);
+    }
+
+    let (identity, revision, entries) = match journal {
+        LaptopJournal::Missing => return LaptopRecoveryPlan::NoPendingEntries,
+        LaptopJournal::Paused => return LaptopRecoveryPlan::Pause(PauseReason::JournalUnavailable),
+        LaptopJournal::Valid {
+            identity,
+            revision,
+            entries,
+        } => (identity, revision, entries),
+    };
+    if entries.len() > MAX_ENTRIES {
+        return LaptopRecoveryPlan::Pause(PauseReason::JournalUnavailable);
+    }
+    if !entries.iter().any(|entry| entry.reconciliation_required) {
+        return LaptopRecoveryPlan::NoPendingEntries;
+    }
+    if fresh_identity != Some(identity) {
+        return LaptopRecoveryPlan::Pause(PauseReason::ExactIdentityUnavailable);
+    }
+    let plan = LaptopReadPlan { revision, entries };
+    if plan.getters().next().is_none() {
+        return LaptopRecoveryPlan::Pause(PauseReason::WriteOnly);
+    }
+    LaptopRecoveryPlan::ReadOnly(plan)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JournalWriteBlock {
+    JournalUnavailable,
+    ReconciliationRequired,
+    ExactIdentityUnavailable,
+    AutomaticReplay,
+}
+
+/// Evaluate the journal part of write admission. Successful evaluation still
+/// requires protected storage, ordinary host checks and a new write-ahead save.
+pub fn check_laptop_journal_for_write(
+    journal: LaptopJournal<'_>,
+    fresh_identity: Option<&str>,
+    requested: LaptopValue,
+    explicit_request: bool,
+) -> Result<(), JournalWriteBlock> {
+    let fresh_identity = fresh_identity
+        .filter(|identity| !identity.trim().is_empty())
+        .ok_or(JournalWriteBlock::ExactIdentityUnavailable)?;
+    let (identity, entries) = match journal {
+        LaptopJournal::Missing => return Ok(()),
+        LaptopJournal::Paused => return Err(JournalWriteBlock::JournalUnavailable),
+        LaptopJournal::Valid {
+            identity, entries, ..
+        } => (identity, entries),
+    };
+    if entries.len() > MAX_ENTRIES {
+        return Err(JournalWriteBlock::JournalUnavailable);
+    }
+    if entries.iter().any(|entry| entry.reconciliation_required) {
+        return Err(JournalWriteBlock::ReconciliationRequired);
+    }
+    if !entries.is_empty() && identity != fresh_identity {
+        return Err(JournalWriteBlock::ExactIdentityUnavailable);
+    }
+    if !explicit_request && entries.iter().any(|entry| entry.requested == requested) {
+        return Err(JournalWriteBlock::AutomaticReplay);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveCompletion {
+    Acknowledged(LaptopReadback),
+    MayHaveSubmitted,
+}
+
+/// The acknowledgement and any readback must belong to the live executor's
+/// persisted intent. A possible submission remains pending for another pass.
+pub fn complete_laptop_intent(
+    intent_revision: JournalRevision,
+    requested: LaptopValue,
+    completion: LiveCompletion,
+) -> Result<LaptopSettlement, PauseReason> {
+    let LiveCompletion::Acknowledged(readback) = completion else {
+        return Err(PauseReason::PossibleSubmission);
+    };
+    let settlement = match requested.getter() {
+        None => EntrySettlement {
+            requested,
+            observed: None,
+            change: EntryChange::Remove,
+        },
+        Some(getter) => {
+            let observed = readback
+                .value(getter)
+                .ok_or(PauseReason::ReadbackUnavailable)?;
+            EntrySettlement::observed(requested, observed)
+        }
+    };
+    Ok(LaptopSettlement {
+        expected_revision: intent_revision,
+        changes: [Some(settlement), None, None, None],
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -267,9 +356,10 @@ pub struct ThermalCompletion {
     pub disposition: ThermalDisposition,
 }
 
-/// Mirrors ThermalTransitionExecutor's scoped trace classification. Fresh
-/// readback can resolve state while preserving possible-submission chronology.
-pub fn classify_scoped_thermal(outcome: ScopedThermalOutcome) -> ThermalCompletion {
+/// Mirrors the three base classification methods in ThermalTransitionExecutor.
+/// The runner's retry-admission and continuation overrides are separate.
+/// Fresh readback can resolve state while preserving submission chronology.
+pub fn classify_scoped_thermal_outcome(outcome: ScopedThermalOutcome) -> ThermalCompletion {
     use ScopedStatus::{Applied, Blocked, Unchanged};
     use SubmissionCertainty::{Indeterminate, KnownNotApplied};
     let known_not_applied = outcome.certainty == Some(KnownNotApplied);

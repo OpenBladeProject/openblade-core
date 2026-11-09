@@ -4,15 +4,16 @@ use serde_json::Value;
 const FIXTURE: &str =
     include_str!("../../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json");
 const REVISION: JournalRevision = [0x21; 32];
+const REPLACEMENT: JournalRevision = [0x42; 32];
 const IDENTITY: &str = "synthetic-device";
+const FUNCTION_KEYS: LaptopValue = LaptopValue::FunctionKeyPrimary(FunctionKeyMode::FunctionKeys);
 
-fn laptop_value(value: &Value) -> Option<LaptopValue> {
-    Some(match value.as_str()? {
-        "FunctionKeys" => LaptopValue::FunctionKeyPrimary(FunctionKeyMode::FunctionKeys),
-        "MultimediaKeys" => LaptopValue::FunctionKeyPrimary(FunctionKeyMode::MultimediaKeys),
-        "Microphone" => LaptopValue::MicrophoneMuteIndicator(true),
-        other => panic!("unexpected laptop value {other}"),
-    })
+fn laptop_journal(revision: JournalRevision, entries: &[PendingEntry]) -> LaptopJournal<'_> {
+    LaptopJournal::Valid {
+        identity: IDENTITY,
+        revision,
+        entries,
+    }
 }
 
 #[test]
@@ -22,128 +23,201 @@ fn laptop_recovery_matches_managed_executor() {
         let id = case["id"].as_str().unwrap();
         let input = &case["input"];
         let expected = &case["expected"];
-        let requested = laptop_value(&input["requested"]).unwrap();
-        let readback = laptop_value(&input["readback"]);
-        let observation = readback.map_or(LaptopObservation::Unavailable, LaptopObservation::Read);
+        let requested = match input["requested"].as_str().unwrap() {
+            "FunctionKeys" => FUNCTION_KEYS,
+            "Microphone" => LaptopValue::MicrophoneMuteIndicator(true),
+            other => panic!("{id}: unexpected request {other}"),
+        };
+        let readback = LaptopReadback {
+            function_key_primary: input["readback"].as_str().map(|mode| match mode {
+                "FunctionKeys" => FunctionKeyMode::FunctionKeys,
+                "MultimediaKeys" => FunctionKeyMode::MultimediaKeys,
+                other => panic!("{id}: unexpected readback {other}"),
+            }),
+            ..LaptopReadback::default()
+        };
+        let entries = [PendingEntry {
+            requested,
+            reconciliation_required: true,
+        }];
         let action = input["action"].as_str().unwrap();
-        let result = match action {
-            "Restart" => recover_laptop_entry(
-                JournalEntry::Valid {
-                    identity: IDENTITY,
-                    revision: REVISION,
-                    entry: PendingEntry {
-                        requested,
-                        reconciliation_required: true,
-                    },
-                },
+        let settlement = match action {
+            "Restart" => match plan_laptop_recovery(
+                laptop_journal(REVISION, &entries),
                 input["identity"].as_str(),
-                observation,
-            ),
-            "Acknowledged" => complete_laptop_intent(
-                REVISION,
-                requested,
-                LiveCompletion::Acknowledged(observation),
-            ),
-            "CanceledDuring" | "Indeterminate" => {
-                complete_laptop_intent(REVISION, requested, LiveCompletion::MayHaveSubmitted)
+                None,
+            ) {
+                LaptopRecoveryPlan::ReadOnly(plan) => plan.finish(readback),
+                LaptopRecoveryPlan::Pause(_) => None,
+                other => panic!("{id}: unexpected plan {other:?}"),
+            },
+            "Acknowledged" => {
+                complete_laptop_intent(REVISION, requested, LiveCompletion::Acknowledged(readback))
+                    .ok()
             }
-            "CanceledBefore" => {
-                // The managed test cancels after write-ahead persistence and
-                // verifies that storage-only cleanup restores the prior document.
-                assert_eq!(expected["journal"], "Removed", "{id}");
+            "CanceledDuring" | "Indeterminate" => {
                 assert_eq!(
-                    clean_up_known_non_submission(
-                        REVISION,
-                        JournalLoadRevision::Readable(Some(REVISION))
-                    ),
-                    NonSubmissionCleanup::RestorePriorDocument {
-                        expected_revision: REVISION
-                    },
+                    complete_laptop_intent(REVISION, requested, LiveCompletion::MayHaveSubmitted),
+                    Err(PauseReason::PossibleSubmission),
                     "{id}"
                 );
+                None
+            }
+            "CanceledBefore" => {
+                let loaded = match input["cleanupRevision"].as_str().unwrap() {
+                    "Intent" => REVISION,
+                    "Replacement" => REPLACEMENT,
+                    other => panic!("{id}: unexpected cleanup revision {other}"),
+                };
+                let plan = plan_laptop_recovery(
+                    laptop_journal(loaded, &entries),
+                    Some(IDENTITY),
+                    Some(REVISION),
+                );
+                let journal = match plan {
+                    LaptopRecoveryPlan::StorageOnly(
+                        NonSubmissionCleanup::RestorePriorDocument { expected_revision },
+                    ) => {
+                        assert_eq!(expected_revision, loaded, "{id}");
+                        "Removed"
+                    }
+                    LaptopRecoveryPlan::StorageOnly(NonSubmissionCleanup::ForgetProof) => {
+                        "Replacement"
+                    }
+                    other => panic!("{id}: unexpected plan {other:?}"),
+                };
+                assert_eq!(expected["journal"], journal, "{id}");
                 continue;
             }
-            other => panic!("unexpected action {other}"),
+            other => panic!("{id}: unexpected action {other}"),
         };
-        let journal = match result {
-            LaptopRecovery::Settle {
-                expected_revision,
-                requested: saved_request,
-                observed,
-                change,
-            } => {
-                assert_eq!(expected_revision, REVISION, "{id}");
-                assert_eq!(saved_request, requested, "{id}");
-                assert_eq!(observed, readback, "{id}");
-                match change {
+        let journal = match settlement {
+            Some(batch) => {
+                assert_eq!(batch.expected_revision, REVISION, "{id}");
+                assert_eq!(batch.changes[1..], [None; 3], "{id}");
+                let change = batch.changes[0].unwrap();
+                assert_eq!(change.requested, requested, "{id}");
+                assert_eq!(
+                    change.observed,
+                    readback
+                        .function_key_primary
+                        .map(LaptopValue::FunctionKeyPrimary),
+                    "{id}"
+                );
+                match change.change {
                     EntryChange::Remove => "Removed",
                     EntryChange::KeepTombstone => "Tombstone",
                 }
             }
-            LaptopRecovery::Pause(_) => "Pending",
-            other => panic!("{id}: unexpected decision {other:?}"),
+            None => "Pending",
         };
         assert_eq!(expected["journal"], journal, "{id}");
     }
 }
 
 #[test]
-fn recovery_preserves_paused_records_and_ignores_replaced_intents() {
-    let read = LaptopObservation::NotRead;
+fn cleanup_has_precedence_even_if_no_record_can_be_read() {
     assert_eq!(
-        recover_laptop_entry(JournalEntry::Paused, Some(IDENTITY), read),
-        LaptopRecovery::Pause(PauseReason::JournalUnavailable)
+        plan_laptop_recovery(LaptopJournal::Paused, None, None),
+        LaptopRecoveryPlan::Pause(PauseReason::JournalUnavailable)
     );
     assert_eq!(
-        recover_laptop_entry(JournalEntry::Missing, Some(IDENTITY), read),
-        LaptopRecovery::NoPendingEntry
+        plan_laptop_recovery(LaptopJournal::Paused, None, Some(REVISION)),
+        LaptopRecoveryPlan::StorageOnly(NonSubmissionCleanup::KeepProof)
     );
     assert_eq!(
-        clean_up_known_non_submission(REVISION, JournalLoadRevision::Paused),
-        NonSubmissionCleanup::KeepProof
+        plan_laptop_recovery(LaptopJournal::Missing, None, Some(REVISION)),
+        LaptopRecoveryPlan::StorageOnly(NonSubmissionCleanup::ForgetProof)
     );
-    for replacement in [None, Some([0x42; 32])] {
-        assert_eq!(
-            clean_up_known_non_submission(REVISION, JournalLoadRevision::Readable(replacement)),
-            NonSubmissionCleanup::ForgetProof
-        );
-    }
 }
 
 #[test]
-fn read_only_plan_and_tombstones_are_control_specific() {
-    let requested = LaptopValue::GamingMode(true);
-    let mut entry = PendingEntry {
+fn one_revision_batches_known_readbacks_and_leaves_unknown_entries_pending() {
+    let requests = [
+        LaptopValue::StartupAnimation(true),
+        FUNCTION_KEYS,
+        LaptopValue::MicrophoneMuteIndicator(true),
+        LaptopValue::GamingMode(true),
+    ];
+    let entries = requests.map(|requested| PendingEntry {
         requested,
         reconciliation_required: true,
+    });
+    let LaptopRecoveryPlan::ReadOnly(plan) =
+        plan_laptop_recovery(laptop_journal(REVISION, &entries), Some(IDENTITY), None)
+    else {
+        panic!("expected a read-only plan");
     };
-    let journal = JournalEntry::Valid {
-        identity: IDENTITY,
-        revision: REVISION,
-        entry,
-    };
+    assert!(plan.getters().eq([
+        LaptopGetter::StartupAnimation,
+        LaptopGetter::FunctionKeyPrimary,
+        LaptopGetter::GamingMode,
+    ]));
+    let batch = plan
+        .finish(LaptopReadback {
+            startup_animation: Some(true),
+            function_key_primary: None,
+            gaming_mode: Some(false),
+        })
+        .unwrap();
+    assert_eq!(batch.expected_revision, REVISION);
     assert_eq!(
-        recover_laptop_entry(journal, Some(IDENTITY), LaptopObservation::NotRead),
-        LaptopRecovery::ReadOnly(LaptopGetter::GamingMode)
+        batch.changes,
+        [
+            Some(EntrySettlement {
+                requested: requests[0],
+                observed: Some(requests[0]),
+                change: EntryChange::Remove
+            }),
+            Some(EntrySettlement {
+                requested: requests[3],
+                observed: Some(LaptopValue::GamingMode(false)),
+                change: EntryChange::KeepTombstone
+            }),
+            None,
+            None,
+        ]
+    );
+}
+
+#[test]
+fn pending_or_foreign_journal_cannot_pass_write_admission() {
+    let entry = PendingEntry {
+        requested: FUNCTION_KEYS,
+        reconciliation_required: true,
+    };
+    let other = LaptopValue::GamingMode(true);
+    let pending = [entry];
+    let journal = laptop_journal(REVISION, &pending);
+    assert_eq!(
+        check_laptop_journal_for_write(journal, Some(IDENTITY), FUNCTION_KEYS, false),
+        Err(JournalWriteBlock::ReconciliationRequired)
     );
     assert_eq!(
-        recover_laptop_entry(
-            journal,
-            Some(IDENTITY),
-            LaptopObservation::Read(LaptopValue::StartupAnimation(true))
-        ),
-        LaptopRecovery::Pause(PauseReason::ReadbackUnavailable)
+        check_laptop_journal_for_write(journal, Some(IDENTITY), other, true),
+        Err(JournalWriteBlock::ReconciliationRequired)
     );
-    entry.reconciliation_required = false;
-    assert!(tombstone_blocks_automatic(entry, requested));
-    assert!(!tombstone_blocks_automatic(
-        entry,
-        LaptopValue::GamingMode(false)
-    ));
-    assert!(!tombstone_blocks_automatic(
-        entry,
-        LaptopValue::StartupAnimation(true)
-    ));
+    let settled = [PendingEntry {
+        reconciliation_required: false,
+        ..entry
+    }];
+    let journal = laptop_journal(REVISION, &settled);
+    assert_eq!(
+        check_laptop_journal_for_write(journal, Some("another-device"), other, true),
+        Err(JournalWriteBlock::ExactIdentityUnavailable)
+    );
+    assert_eq!(
+        check_laptop_journal_for_write(journal, Some(IDENTITY), FUNCTION_KEYS, false),
+        Err(JournalWriteBlock::AutomaticReplay)
+    );
+    assert_eq!(
+        check_laptop_journal_for_write(journal, Some(IDENTITY), FUNCTION_KEYS, true),
+        Ok(())
+    );
+    assert_eq!(
+        check_laptop_journal_for_write(journal, Some(IDENTITY), other, false),
+        Ok(())
+    );
 }
 
 #[test]
@@ -167,7 +241,7 @@ fn thermal_completion_matches_managed_scoped_trace() {
                 "KnownNotApplied" => SubmissionCertainty::KnownNotApplied,
                 other => panic!("unexpected certainty {other}"),
             });
-        let result = classify_scoped_thermal(ScopedThermalOutcome {
+        let result = classify_scoped_thermal_outcome(ScopedThermalOutcome {
             status,
             certainty,
             write_attempted: input["writeAttempted"].as_bool().unwrap(),
