@@ -29,8 +29,8 @@ separately; the new models do not inherit RZ09-0581's physical results.
 | Blade 15 Base RZ09-0328 | No exact Stop contract yet | [Signed DA550 BIOS 1.06 inspected](fan-stop-blade15-missing-ec-evidence.md). [DPTF fan API resolves to stubs](fan-stop-missing-model-host-interfaces.md); EC image/control meaning still missing. |
 | Blade 14 RZ09-0370 | No exact Stop contract yet | [BIOS 1.08 inspected](fan-stop-blade14-missing-ec-evidence.md). [EC-init modules resolve to host ACPI plumbing](fan-stop-missing-model-host-interfaces.md); no complete fan contract identified. |
 | Blade 15 Advanced RZ09-0330 | [Source reviewed](fan-stop-ch551-source-review.md), CH551 EC 1.01 | Shared two-fan backend. Uses the exact existing Windows product name and reported EC version; mapped E0/E1 are not version registers on this model. |
-| Blade 15 Base RZ09-0351 | No exact Stop contract yet | [Official-source acquisition search](fan-stop-blade15-missing-ec-evidence.md#rz09-0351-and-remaining-acquisition-limits) still lacks a usable exact BIOS/EC carrier. |
-| Blade 15 Advanced RZ09-0301 | No exact Stop contract yet | [Signed C3 BIOS 1.04/1.02 inspected](fan-stop-blade15-missing-ec-evidence.md). [DPTF fan API resolves to stubs](fan-stop-missing-model-host-interfaces.md); no EC payload identified. Its manual minimum does not settle PWM stop. |
+| Blade 15 Base RZ09-0351 | No exact Stop contract yet | [Signed OL510 selectors](fan-stop-reader-and-ec-followup.md#seven-models-with-missing-receiver-evidence) establish SSID `1A58200D`. A usable EC image remains missing. |
+| Blade 15 Advanced RZ09-0301 | No exact Stop contract yet | [Exact MCU bridge traced](fan-stop-reader-and-ec-followup.md#seven-models-with-missing-receiver-evidence). Receiver-side zero handling, actual duty and verified Auto remain open. |
 | Blade 15 Base RZ09-0300 | No exact Stop contract yet | [Signed D3 BIOS 1.03 inspected](fan-stop-blade15-missing-ec-evidence.md), including both exact Base 2019 variants. [Host EC interfaces traced](fan-stop-missing-model-host-interfaces.md); fan semantics still missing. |
 
 For the four models with additional channels, the [expanded scheduling model](fan-stop-it8320-trigger-investigation.md)
@@ -41,15 +41,20 @@ The [alternate reader](fan-stop-bram3-readback-review.md) has exact 302/303
 port-base evidence on all four images, but ordinary callbacks share its address
 bytes. A conditional staging race returns a wrong zero; reachability under an
 independently clean FE session is not established. Observing FE alone does not
-prove callback drainage. Neither reader is admitted for runtime use yet.
+prove callback drainage. A [separate legacy completion fence and exact MCU
+I²C route](fan-stop-reader-and-ec-followup.md) narrow the remaining work.
+The fence orders the D0 tail under serialized callbacks. The I²C route
+needs verified bank ownership and complete Auto handback.
 
 For the other seven models, six have signed BIOS packages inspected through
-their complete extractable payload trees; RZ09-0351 still lacks a usable carrier.
+their complete extractable payload trees; RZ09-0351 still lacks a usable BIOS
+or EC carrier.
 No exact EC Stop contract was established. Existing Automatic-only HID support
 does not prevent an independent EC implementation, and unidentified payloads do
 not establish that a model is incapable of fan stop. The linked evidence reports
 pin the packages, extraction methods, remaining limits and next useful sources.
-The [host-interface follow-up](fan-stop-missing-model-host-interfaces.md) traces
-six BIOSes beyond payload labels, and the [PI490 MCU review](fan-stop-pi490-mcu-bridge-review.md)
-adds a model-specific bridge. These partial interfaces do not supply the missing
-zero-duty, actual-readback and Auto contracts.
+The [host-interface follow-up](fan-stop-missing-model-host-interfaces.md)
+traces six BIOSes beyond payload labels. The [later package and MCU
+review](fan-stop-reader-and-ec-followup.md#seven-models-with-missing-receiver-evidence)
+adds two older Blade 14 BIOSes, exact Intel ME selectors and the RZ09-0301
+thermal MCU path. The missing EC contracts remain receiver-side.
