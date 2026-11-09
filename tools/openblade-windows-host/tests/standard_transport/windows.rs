@@ -12,13 +12,15 @@ use std::{
     time::Duration,
 };
 use windows_sys::Win32::{
-    Foundation::{ERROR_IO_INCOMPLETE, ERROR_IO_PENDING, GetLastError, HANDLE},
+    Foundation::{ERROR_IO_INCOMPLETE, ERROR_IO_PENDING, GetLastError, HANDLE, WAIT_FAILED},
     System::{
         IO::{CancelIoEx, DeviceIoControl, GetOverlappedResult, OVERLAPPED},
-        Threading::CreateEventW,
+        Threading::{CreateEventW, WaitForSingleObject},
     },
 };
 
+// Matches WindowsHidNative and WindowsRazerHidSession. The pinned
+// windows-sys crate does not export these HIDClass control codes.
 const IOCTL_HID_SET_FEATURE: u32 = 0x000B0191;
 const IOCTL_HID_GET_FEATURE: u32 = 0x000B0192;
 
@@ -85,7 +87,7 @@ impl Native {
                 hEvent: event.as_raw_handle(),
                 ..OVERLAPPED::default()
             }),
-            _event: event,
+            event,
         };
         if let Some(reason) = limit.stop() {
             return Transfer::BeforeSubmission(reason);
@@ -123,7 +125,7 @@ impl Native {
 struct Operation {
     buffer: UnsafeCell<Frame>,
     overlapped: UnsafeCell<OVERLAPPED>,
-    _event: OwnedHandle,
+    event: OwnedHandle,
 }
 
 struct NativePending<'a> {
@@ -168,6 +170,16 @@ impl Pending for NativePending<'_> {
             Err(last_error())
         }
     }
+    fn wait_for_progress(&mut self, timeout: Duration) {
+        let milliseconds = timeout.as_nanos().div_ceil(1_000_000) as u32;
+        // SAFETY: The request owns this event through terminal completion.
+        // A wait result never substitutes for GetOverlappedResult.
+        if unsafe { WaitForSingleObject(self.operation.event.as_raw_handle(), milliseconds) }
+            == WAIT_FAILED
+        {
+            thread::sleep(timeout);
+        }
+    }
 }
 
 impl Drop for NativePending<'_> {
@@ -177,7 +189,7 @@ impl Drop for NativePending<'_> {
             // There is no safe deadline for releasing kernel-owned storage.
             let _ = self.cancel();
             while self.poll().is_none() {
-                thread::sleep(Duration::from_millis(1));
+                self.wait_for_progress(Duration::from_millis(100));
             }
         }
     }

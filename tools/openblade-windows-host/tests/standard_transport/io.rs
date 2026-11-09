@@ -66,6 +66,10 @@ pub(crate) trait FeatureIo {
 pub(crate) trait Pending {
     fn poll(&mut self) -> Option<Completion>;
     fn cancel(&mut self) -> CancelResult;
+
+    fn wait_for_progress(&mut self, timeout: Duration) {
+        thread::sleep(timeout);
+    }
 }
 
 /// A cancellation attempt never transfers ownership of operation storage back.
@@ -89,6 +93,14 @@ pub(crate) fn finish_pending(operation: &mut impl Pending, limit: Limit<'_>) -> 
         {
             cancellation = Some((reason, operation.cancel()));
         }
-        thread::sleep(Duration::from_millis(1));
+        let timeout = if cancellation.is_some() {
+            Duration::from_millis(100)
+        } else {
+            limit
+                .deadline
+                .saturating_duration_since(Instant::now())
+                .min(Duration::from_millis(10))
+        };
+        operation.wait_for_progress(timeout);
     }
 }

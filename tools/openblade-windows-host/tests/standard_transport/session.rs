@@ -7,7 +7,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -40,6 +40,7 @@ pub(crate) enum ReplyFailure {
 pub(crate) struct Session<T> {
     state: Mutex<State<T>>,
     waiting: AtomicBool,
+    settle_delay: Duration,
 }
 
 struct State<T> {
@@ -48,13 +49,14 @@ struct State<T> {
 }
 
 impl<T: FeatureIo> Session<T> {
-    pub(crate) fn new(io: T) -> Self {
+    pub(crate) fn new(io: T, settle_delay: Duration) -> Self {
         Self {
             state: Mutex::new(State {
                 io: Some(io),
                 next_transaction: Some(1),
             }),
             waiting: AtomicBool::new(false),
+            settle_delay,
         }
     }
 
@@ -77,6 +79,7 @@ impl<T: FeatureIo> Session<T> {
         let result = query_adapter_power(
             state.io.as_mut().expect("claimed transport"),
             transaction,
+            self.settle_delay,
             limit,
         );
         if matches!(
@@ -129,12 +132,15 @@ impl Drop for WaitSlot<'_> {
 fn query_adapter_power(
     io: &mut impl FeatureIo,
     transaction: u8,
+    settle_delay: Duration,
     limit: Limit<'_>,
 ) -> Result<AdapterPowerLevels, Failure> {
     // AdapterPowerCommandClient.QueryCommand, RZ09-0581 standard report ID 0.
     let request = RazerReport::create(transaction, 0x07, 0x8C, &[0, 0]).expect("fixed payload");
     let mut set: Frame = [0; FRAME_LENGTH];
-    set[1..].copy_from_slice(&request.encode());
+    request
+        .encode_into(&mut set[1..])
+        .expect("fixed frame geometry");
     let set_result = io.transfer(Direction::Set, &mut set, limit);
     let set_count = match set_result {
         Transfer::Completed(Ok(count)) => count,
@@ -145,8 +151,7 @@ fn query_adapter_power(
         _ => return Err(Failure::UncertainIo(Direction::Set, set_result)),
     };
 
-    // ProductionBatteryFactory passes a 30 ms settle interval for this route.
-    let settled = std::time::Instant::now() + Duration::from_millis(30);
+    let settled = Instant::now() + settle_delay;
     loop {
         if let Some(reason) = limit.stop() {
             return Err(Failure::UncertainIo(
@@ -157,7 +162,7 @@ fn query_adapter_power(
                 },
             ));
         }
-        let remaining = settled.saturating_duration_since(std::time::Instant::now());
+        let remaining = settled.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             break;
         }
@@ -168,6 +173,12 @@ fn query_adapter_power(
     let Transfer::Completed(Ok(count)) = get_result else {
         return Err(Failure::UncertainIo(Direction::Get, get_result));
     };
+    if count as usize != FRAME_LENGTH && !(count as usize == REPORT_LENGTH && get[0] == 0) {
+        return Err(Failure::UncertainProtocol {
+            count,
+            failure: ReplyFailure::Count,
+        });
+    }
     if let Some(reason) = limit.stop() {
         return Err(Failure::UncertainIo(
             Direction::Get,
@@ -176,12 +187,6 @@ fn query_adapter_power(
                 completion: Ok(count),
             },
         ));
-    }
-    if count as usize != FRAME_LENGTH && !(count as usize == REPORT_LENGTH && get[0] == 0) {
-        return Err(Failure::UncertainProtocol {
-            count,
-            failure: ReplyFailure::Count,
-        });
     }
     if get[0] != 0 {
         return Err(Failure::UncertainProtocol {

@@ -60,13 +60,23 @@ impl Drop for Replay {
 fn replay(
     steps: impl IntoIterator<Item = Step>,
 ) -> (Session<Replay>, Arc<AtomicUsize>, Arc<AtomicBool>) {
+    replay_with_settle(steps, Duration::ZERO)
+}
+
+fn replay_with_settle(
+    steps: impl IntoIterator<Item = Step>,
+    settle_delay: Duration,
+) -> (Session<Replay>, Arc<AtomicUsize>, Arc<AtomicBool>) {
     let calls = Arc::new(AtomicUsize::new(0));
     let retired = Arc::new(AtomicBool::new(false));
-    let session = Session::new(Replay {
-        steps: steps.into_iter().collect(),
-        calls: calls.clone(),
-        retired: retired.clone(),
-    });
+    let session = Session::new(
+        Replay {
+            steps: steps.into_iter().collect(),
+            calls: calls.clone(),
+            retired: retired.clone(),
+        },
+        settle_delay,
+    );
     (session, calls, retired)
 }
 
@@ -125,26 +135,25 @@ fn replays_the_observed_adapter_query_with_both_managed_transfer_counts() {
     assert_eq!(capture["query"]["requestPayloadHex"], "0000");
     assert_eq!(capture["query"]["expectedResponsePayloadLength"], 2);
 
-    let steps = capture["mappings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .enumerate()
-        .flat_map(|(index, row)| {
-            let hex = row["responsePayloadHex"].as_str().unwrap();
-            let payload = [
-                u8::from_str_radix(&hex[..2], 16).unwrap(),
-                u8::from_str_radix(&hex[2..], 16).unwrap(),
-            ];
-            [
-                set((index + 1) as u8, Transfer::Completed(Ok(0))),
-                get(
-                    frame(2, (index + 1) as u8, payload),
-                    Transfer::Completed(Ok([90, 91][index])),
-                ),
-            ]
-        });
-    let (session, calls, retired) = replay(steps);
+    let mappings = capture["mappings"].as_array().unwrap();
+    assert_eq!(mappings.len(), 2, "review any changed capture mapping");
+    let steps = mappings.iter().enumerate().flat_map(|(index, row)| {
+        let hex = row["responsePayloadHex"].as_str().unwrap();
+        let payload = [
+            u8::from_str_radix(&hex[..2], 16).unwrap(),
+            u8::from_str_radix(&hex[2..], 16).unwrap(),
+        ];
+        [
+            set((index + 1) as u8, Transfer::Completed(Ok(0))),
+            get(
+                frame(2, (index + 1) as u8, payload),
+                Transfer::Completed(Ok([90, 91][index])),
+            ),
+        ]
+    });
+    // ProductionBatteryFactory supplies this interval on the RZ09-0581 route.
+    let settle_delay = Duration::from_millis(30);
+    let (session, calls, retired) = replay_with_settle(steps, settle_delay);
     let canceled = AtomicBool::new(false);
     assert_eq!(
         session.query_adapter_power(limit(&canceled)),
@@ -325,13 +334,16 @@ fn cancellation_does_not_release_the_gate_or_handle_before_native_completion() {
         let canceled = AtomicBool::new(false);
         let queued_cancel = AtomicBool::new(false);
         let another = AtomicBool::new(false);
-        let session = Session::new(PendingSet {
-            entered,
-            cancel_called,
-            completion,
-            request_result,
-            retired: &retired,
-        });
+        let session = Session::new(
+            PendingSet {
+                entered,
+                cancel_called,
+                completion,
+                request_result,
+                retired: &retired,
+            },
+            Duration::ZERO,
+        );
         thread::scope(|scope| {
             let _drain_on_unwind = DrainOnDrop(Some(complete.clone()));
             let active = scope.spawn(|| session.query_adapter_power(limit(&canceled)));
@@ -429,7 +441,7 @@ fn completed_set_followed_by_cancellation_keeps_the_count_and_never_issues_get()
     }
 
     let canceled = AtomicBool::new(false);
-    let session = Session::new(CancelsOnSet(&canceled));
+    let session = Session::new(CancelsOnSet(&canceled), Duration::from_millis(30));
     assert_eq!(
         session.query_adapter_power(limit(&canceled)),
         Err(Failure::UncertainIo(
@@ -457,4 +469,60 @@ fn native_preparation_failure_can_be_distinguished_from_submission() {
     );
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert!(!retired.load(Ordering::Acquire));
+}
+
+#[test]
+fn get_completion_checks_native_count_before_a_concurrent_stop() {
+    struct CancelsOnGet<'a> {
+        canceled: &'a AtomicBool,
+        count: u32,
+    }
+
+    impl FeatureIo for CancelsOnGet<'_> {
+        fn transfer(&mut self, direction: Direction, reply: &mut Frame, _: Limit<'_>) -> Transfer {
+            match direction {
+                Direction::Set => Transfer::Completed(Ok(0)),
+                Direction::Get => {
+                    *reply = frame(2, 1, [7, 17]);
+                    self.canceled.store(true, Ordering::Release);
+                    Transfer::Completed(Ok(self.count))
+                }
+            }
+        }
+    }
+
+    for (count, expected) in [
+        (
+            89,
+            Failure::UncertainProtocol {
+                count: 89,
+                failure: ReplyFailure::Count,
+            },
+        ),
+        (
+            91,
+            Failure::UncertainIo(
+                Direction::Get,
+                Transfer::CompletedAfterStop {
+                    reason: Stop::Caller,
+                    completion: Ok(91),
+                },
+            ),
+        ),
+    ] {
+        let canceled = AtomicBool::new(false);
+        let session = Session::new(
+            CancelsOnGet {
+                canceled: &canceled,
+                count,
+            },
+            Duration::ZERO,
+        );
+        assert_eq!(session.query_adapter_power(limit(&canceled)), Err(expected));
+        canceled.store(false, Ordering::Release);
+        assert_eq!(
+            session.query_adapter_power(limit(&canceled)),
+            Err(Failure::ReconciliationRequired)
+        );
+    }
 }
