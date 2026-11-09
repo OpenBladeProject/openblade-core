@@ -41,10 +41,55 @@ Each v79 subscription starts at the latest snapshot and can receive newer revisi
 
 This phase exercises the startup recovery and power-profile paths with scripted observations, a fake journal and no transport setter. Full startup and run-marker orchestration, protected storage and its recovery gates, native observation and command execution, session ownership, and the remaining profile and feature paths still need parity work.
 
+## Exercise standard battery policy
+
+Run `foreground-battery-parity <id>` on a fresh private development pipe. The
+same-logon v79 client can send `setBatteryPolicy` and `setBatteryProtection` to this
+mode. All other mutations are refused. v51 keeps its passive status projection. The
+foreground, runtime replay, and SCM modes keep their existing refusal behavior.
+
+The fake device represents the RZ09-0581 (1532:02E0) [reviewed battery command
+table](../src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_3_01_BatteryProduction.json).
+It starts at 80% with protection on and a confirmed inactive temporary-full-charge
+flag. The capture-backed thresholds are 50% through 80% in five-point steps.
+Protection off uses its dedicated typed setter. Turning protection on from off sets
+the configured limit in one operation. A scoped limit change requires protection to be
+on and the current and requested limits to be admitted. An unknown
+temporary-full-charge flag blocks new policy writes on this query-capable path.
+
+The scenario loads the baseline profiles from test-owned storage. Direct requests
+update temporary intent after independent confirmation and leave the saved profile
+intact. After a lost acknowledgement, the confirmed snapshot and committed intent stay
+separate from the pending request. A fresh read-only observation may commit a matching
+pending intent. An unavailable observation leaves it pending, and a mismatch publishes
+the observed state without replaying the request. If the source changes while a request is unconfirmed, the next successful
+observation selects the new profile without committing the old request or issuing
+a setter.
+On reconstruction from the same
+saved profile, scoped overrides and pending intent are absent. Startup in this harness
+observes state without applying a profile.
+
+After `READY`, stdin accepts one lowercase `n` for each fixed scenario step. Use the
+v79 status stream to observe the step before sending the next request.
+
+| Step | Effect |
+| --- | --- |
+| 1 | Arm cancellation before the next eligible fake setter. The canceled request closes without a result or a write. |
+| 2 | Arm a lost acknowledgement after the next eligible fake setter takes effect. |
+| 3 | Run one read-only observation to reconcile any pending intent. |
+| 4 | After recovery, select the battery profile and reconcile protection. The global limit override remains. |
+| 5 | Select the USB-C profile through the same battery-only transition. |
+
+The managed runtime test and Rust fake-device tests cover the same standard operation
+sequence. The tray test checks the typed results and current status through the real
+C# client. The scenario has no HID transport or production storage. Temporary full
+charge, RZ09-0528 and source-reviewed model paths, real power and device admission,
+and the rest of the full-service transition remain separate work.
+
 ## Compatibility boundary
 
 - Each connection accepts one v79 `getStatus` or `subscribeStatus` request, or one v51 `getStatus` request. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.
-- Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Other operations receive a correlated refusal before any dispatch. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
+- Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Outside the battery parity mode, other operations receive a correlated refusal before any dispatch. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
 - Windows claims the first instance exclusively and rejects remote connections. The explicit DACL restricts access to the host account. After reading the request bytes, the host resolves the pipe token and requires the same SID, logon authentication ID and Windows session. This is a same-logon development trust boundary. The ordinary duplex C# client asks for generic write, which also gives its SID permission to create pipe instances. It does not establish server trust against another process in that logon. Both projections exercise synthetic authorization inputs behind the native identity check. They do not replicate active-session selection or LocalSystem access policy.
 - Rust tests cover the wire fixtures and native endpoint checks, including first-instance contention, listener saturation and recovery, an anonymous client, and start/stop ordering through the shared lifecycle with an injected SCM reporter and stop signal. The .NET tests exercise the real tray client through the foreground endpoint, including initial status, event, cancellation and reconnect. They supplement that path with managed codec and v51 raw frames. The Windows job in the Rust workflow runs both sets on stacked PRs.
 
