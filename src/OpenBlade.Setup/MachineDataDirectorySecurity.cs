@@ -5,12 +5,12 @@ namespace OpenBlade.Setup;
 
 public interface IMachineDataDirectorySecurity
 {
-    Task ProtectAsync(string directory, CancellationToken cancellationToken);
+    Task ProtectAsync(string directory, CancellationToken cancellationToken, bool includeDescendants = true);
 }
 
 public sealed class WindowsMachineDataDirectorySecurity : IMachineDataDirectorySecurity
 {
-    public Task ProtectAsync(string directory, CancellationToken cancellationToken)
+    public Task ProtectAsync(string directory, CancellationToken cancellationToken, bool includeDescendants = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         cancellationToken.ThrowIfCancellationRequested();
@@ -28,7 +28,10 @@ public sealed class WindowsMachineDataDirectorySecurity : IMachineDataDirectoryS
         DirectorySecurity applied = machineData.GetAccessControl(
             AccessControlSections.Access | AccessControlSections.Owner);
         VerifyProtectedSecurity(applied);
-        ProtectDescendants(machineData, cancellationToken);
+        if (includeDescendants)
+        {
+            ProtectDescendants(machineData, cancellationToken);
+        }
         return Task.CompletedTask;
     }
 

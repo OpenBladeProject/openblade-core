@@ -273,6 +273,27 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             throw new ArgumentException("A valid Windows account SID is required.", nameof(sid));
         }
 
+        await ProtectMachineDataAsync(cancellationToken, includeDescendants: true);
+        await sidWriter.WriteAsync(
+            new AuthorizedSidWriteRequest(
+                Path.Combine(paths.MachineDataDirectory, "authorized-user.sid"),
+                identity.Value),
+            cancellationToken);
+    }
+
+    public async Task InstallServiceAsync(CancellationToken cancellationToken)
+    {
+        // Multi-user setup no longer writes a legacy authorized-user SID.
+        // Protect the shared root before the service inspects ownership journals.
+        // Do not re-own existing descendants: that could grant trust to an
+        // untrusted recovery record. Subsystems still validate their own state.
+        await ProtectMachineDataAsync(cancellationToken, includeDescendants: false);
+        guardianQuiescenceGuard.EnsureClear();
+        await ConfigureServiceAsync(startService: true, cancellationToken);
+    }
+
+    private Task ProtectMachineDataAsync(CancellationToken cancellationToken, bool includeDescendants)
+    {
         if (!SetupPaths.IsExactOpenBladeDirectory(
             paths.MachineDataDirectory,
             paths.MachineDataRoot))
@@ -281,18 +302,11 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 $"Refusing to secure unexpected machine data path '{paths.MachineDataDirectory}'.");
         }
 
-        await machineDataDirectorySecurity.ProtectAsync(
+        return machineDataDirectorySecurity.ProtectAsync(
             paths.MachineDataDirectory,
-            cancellationToken);
-        await sidWriter.WriteAsync(
-            new AuthorizedSidWriteRequest(
-                Path.Combine(paths.MachineDataDirectory, "authorized-user.sid"),
-                identity.Value),
-            cancellationToken);
+            cancellationToken,
+            includeDescendants);
     }
-
-    public Task InstallServiceAsync(CancellationToken cancellationToken) =>
-        ConfigureServiceAsync(startService: true, cancellationToken);
 
     public Task InstallUninstallerAsync(CancellationToken cancellationToken) =>
         installedUninstallerWriter.WriteVerifiedAsync(

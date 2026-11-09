@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Restore protected machine-data permissions during setup so Fan Stop recovery does not incorrectly block laptop detection after installing or upgrading.
+
 ## [0.58.1] - 2026-11-09
 
 ### Added
