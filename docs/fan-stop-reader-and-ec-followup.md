@@ -482,6 +482,22 @@ normal boot could resolve the fixed decode bit without touching any
 EC selector or mailbox. The recorded value would apply to the sampled
 host and firmware. [Intel 700-series PCH datasheet, table 9](https://cdrdv2-public.intel.com/743835/743835-004.pdf)
 
+On a matching host already running Linux, the narrow capture is:
+
+```bash
+cat /sys/class/dmi/id/{sys_vendor,product_name,bios_version,ec_firmware_release}
+sudo setpci -s 0000:00:1f.0 VENDOR_ID DEVICE_ID 82.W
+```
+
+Keep the vendor/device pair with the 16-bit word and the BIOS and EC
+versions. The mask for fixed `2E/2F` forwarding is `0x1000`. A set bit
+shows that fixed forwarding is enabled at the time of the sample. A
+clear bit only describes that fixed route. A missing or failed read,
+or an all-ones value, leaves decode unknown. The capture does not
+enter Super I/O configuration, issue an EC command, or record machine
+serials. [pciutils setpci manual](https://github.com/pciutils/pciutils/blob/master/setpci.man)
+· [Linux DMI attributes](https://github.com/torvalds/linux/blob/master/drivers/firmware/dmi-id.c)
+
 The KI890 2.09 and DI780 2.01 BIOS default stores also contain
 `PchSetup` under GUID `4570B7F1-ADE8-4943-8DC3-406472842384`. In
 KI890, `PolicyInitAdvancedDxe` has a conditional path that reads

@@ -202,6 +202,62 @@ research candidate; baseline and post-Auto third-duty reads would need their
 own exclusion argument. No additional firmware command or guessed waiting
 period is authorized as a reservation or drainage mechanism.
 
+### Fixed queries and a scratch marker
+
+The nearby legacy command `10` reads a fixed set of RAM fields selected
+by index `30`. Following both outcomes of every branch in each pinned
+image found no load of actual PWM3, its feedback copy, or the pending
+and delayed cleanup guards. Command `12` calls the same helper at
+`9468` in all four images. It reads `80700 + byteIndex` and returns it
+in slot `32`. Command `11` reads `80200 + byteIndex`. Neither window
+reaches the guards or PWM3.
+
+A marker in slot `18` would survive command `90`'s own cleanup. Both
+competing cleanup helpers clear that slot, so it looks like a way to
+detect an intervening writer. The exact storage code also reads slot
+`18` and copies it into byte 5 of an eight-byte record before calling
+the storage helper. Slot `18` is therefore live data during the same
+kind of contention the marker would monitor.
+
+| Model | Command `10` dispatch body | Command `12` call | Ordinary / delayed clear of `18` | Record copy from `18` |
+| --- | ---: | ---: | ---: | ---: |
+| 0423 | `1184E` | `11A28` | `17150 / 17174` | `16BAE` |
+| 0484 | `12572` | `1274E` | `176B6 / 176DA` | `170CC` |
+| 0509 | `12B08` | `12CEC` | `24880 / 248A4` | `241BA` |
+| 0529 | `12E7A` | `1306A` | `24FC0 / 24FE4` | `248FA` |
+
+The marker could also miss a late address clear. The ordinary helper
+clears `18` before it clears the high address byte `13`. A callback
+paused between those stores can resume after the host stages its
+marker and address. It can erase the high byte while leaving the
+new marker intact. Both findings apply even if the marker and command
+register can be read back successfully.
+
+The byte checks and fixed-query branch traversal are in the local
+`artifacts/model-expansion/bram3-followup/verify_legacy_fixed_reads.py`.
+
+### Earlier DI780 EC 1.03
+
+Razer's June 2022 Blade 17 support page links an older signed carrier.
+Its `torden.ini` selects RZ09-0423, SSID `1A583005` and EC 1.03.
+The carrier was verified and extracted as data. Its SHA-256 is
+`4a8390f12f97a56834a2db5209a38f047dfbfc81bf5db5864243e7e37d92c170`.
+The 262,144-byte EC image SHA-256 is
+`e3d8b9988b17e9a9b041aef4702b41e4eb11ba25e34e351f6ebf19ef1d659578`.
+[Archived Razer support article](https://web.archive.org/web/20220614130955/https://mysupport.razer.com/app/answers/detail/a_id/6092)
+· [Signed Razer carrier](https://dl.razerzone.com/drivers/RazerUpdater_v1.1.1.2_DI780_VBIOS_EC_25W_20220523.exe)
+
+EC 1.03 has the same D0 inner clear at `2094` and the same wrapper
+clear sequence at `11500`. Its legacy reader at `11544`, ordinary
+cleanup at `17042`, and delayed cleanup at `17076` match the
+corresponding EC 1.05 instruction spans. The FE third-duty store is
+at `15424`. The bank table at `2CC70` retains the three-channel
+stage and tach mappings, and none of its 2,048 descriptors points to
+actual PWM3 at `F01808`. EC 1.03 also contains zero at the wrong-address
+target `001808`. The older firmware therefore retains both readback
+gaps. The exact byte comparison is reproducible from the local
+`artifacts/model-expansion/older-ec-source-check/verify_di780_0103.py`.
+
 ## Bounded implementation boundary and next evidence
 
 Do not implement this candidate as a fallback after any uncertain primary
