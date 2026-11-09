@@ -64,7 +64,13 @@ struct StoredProfiles {
     plugged_in: Profile,
     battery: Profile,
     usb_c: Profile,
-    battery_policy: LimitValue,
+    battery_policy: StoredLimit,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredLimit {
+    charge_limit_percent: i32,
 }
 
 trait ProfileSource {
@@ -100,7 +106,9 @@ struct Controller<D> {
     policy_override: Option<Limit>,
     protection_override: Option<bool>,
     confirmed: Option<Confirmed>,
+    drift_baseline: Option<Confirmed>,
     pending: Option<Pending>,
+    observed_power_while_pending: Option<Power>,
     external: bool,
 }
 
@@ -116,10 +124,12 @@ impl Controller<FakeDevice> {
             limit: Limit::new(80),
             temporary: Some(false),
         };
-        Self::new(
+        let controller = Self::new(
             &FixtureProfiles(status["profiles"].clone()),
             FakeDevice::new(read),
-        )
+        )?;
+        validate_status_fixture(status, &controller.profiles)?;
+        Ok(controller)
     }
 }
 
@@ -136,7 +146,9 @@ impl<D: Device> Controller<D> {
             policy_override: None,
             protection_override: None,
             confirmed: None,
+            drift_baseline: None,
             pending: None,
+            observed_power_while_pending: None,
             external: false,
         })
     }
@@ -178,13 +190,22 @@ impl<D: Device> Controller<D> {
         }
         let baseline = self.device.read_policy();
         let target = intent.stage(self.desired());
+        let mut block_message =
+            "Battery request does not meet the verified capability or state requirements.";
         let status = match policy::plan(intent, target, CAPABILITIES, baseline) {
             Plan::Blocked => {
-                self.confirmed = baseline;
+                self.record_readback(baseline);
+                block_message = match baseline.and_then(|read| read.temporary) {
+                    None => "Battery policy or temporary full charge could not be confirmed.",
+                    Some(true) => {
+                        "Battery changes are blocked while temporary full charge is active."
+                    }
+                    Some(false) => block_message,
+                };
                 Blocked
             }
             Plan::Unchanged => {
-                self.confirmed = baseline;
+                self.record_readback(baseline);
                 Unchanged
             }
             Plan::Write(command) => {
@@ -192,13 +213,19 @@ impl<D: Device> Controller<D> {
                 if submission == Submission::CanceledBeforeSet {
                     return Err(io::ErrorKind::Interrupted.into());
                 }
+                if submission == Submission::Refused {
+                    block_message = "Battery write admission closed before submission.";
+                }
                 let readback = if submission == Submission::Acknowledged {
                     let read = self.device.read_policy();
-                    self.confirmed = read;
+                    self.record_readback(read);
                     policy::confirm(command, read, CAPABILITIES)
                 } else {
+                    // As in the managed scoped runtime, an indeterminate SET
+                    // returns no semantic readback. Preserve the last published
+                    // state until an independent observation.
                     if submission != Submission::Failed(SubmissionCertainty::Indeterminate) {
-                        self.confirmed = baseline;
+                        self.record_readback(baseline);
                     }
                     Confirmation::Unavailable
                 };
@@ -223,7 +250,7 @@ impl<D: Device> Controller<D> {
         let message = match status {
             Applied => "Battery setting applied and confirmed by readback.",
             Unchanged => "Battery setting is already confirmed.",
-            Blocked => "Battery value is not supported by the verified capability table.",
+            Blocked => block_message,
             Failed if self.pending.is_some() => "Battery write is indeterminate.",
             Failed => "Battery write was not confirmed.",
         };
@@ -237,22 +264,54 @@ impl<D: Device> Controller<D> {
         let Some(read) = self.device.read_policy() else {
             return;
         };
-        self.confirmed = Some(read);
+        self.record_readback(Some(read));
         if let Some(pending) = self.pending.take() {
-            // Every writer in this slice records PolicyOnly. A missing override
-            // getter stays unknown and cannot turn into a false observation.
-            let target = pending.target.protection.then_some(pending.target.limit);
-            let matches = read.limit == target && read.temporary != Some(true);
-            if matches && pending.explicit {
-                self.commit(pending.target);
+            // A pending PolicyOnly confirmation can settle even if the
+            // temporary flag is unavailable. Preserve that unknown in status.
+            let matches = policy_matches(read, pending.target);
+            if let Some(destination) = self.observed_power_while_pending.take() {
+                // The observation belongs to a new source. Publish it without
+                // committing the previous source's intent or issuing a setter.
+                self.select_power(destination);
+                self.external = !policy_matches(read, self.desired());
+            } else {
+                if matches && pending.explicit {
+                    self.commit(pending.target);
+                }
+                self.external = !matches;
             }
-            self.external = !matches;
         }
+    }
+
+    fn record_readback(&mut self, read: Option<Confirmed>) {
+        self.confirmed = read;
+        let Some(read) = read else {
+            return;
+        };
+        let previous_temporary = self.drift_baseline.and_then(|old| old.temporary);
+        if self
+            .drift_baseline
+            .is_some_and(|old| old.limit != read.limit)
+            || previous_temporary
+                .zip(read.temporary)
+                .is_some_and(|(old, new)| old != new)
+        {
+            self.external = true;
+        }
+        self.drift_baseline = Some(Confirmed {
+            temporary: read.temporary.or(previous_temporary),
+            ..read
+        });
+    }
+
+    fn select_power(&mut self, source: Power) {
+        self.power = source;
+        self.protection_override = None;
     }
 
     fn change_power(&mut self, source: Power) -> io::Result<Result> {
         if self.pending.is_some() {
-            // A new source is outside this slice until read-only recovery settles.
+            self.observed_power_while_pending = (source != self.power).then_some(source);
             return self.apply(Intent::Profile);
         }
         if self.power == source {
@@ -261,10 +320,65 @@ impl<D: Device> Controller<D> {
                 message: "Battery power profile is already selected.",
             });
         }
-        self.power = source;
-        self.protection_override = None;
-        self.apply(Intent::Profile)
+        self.select_power(source);
+        match self.apply(Intent::Profile) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => Ok(Result {
+                status: ScopedStatus::Failed,
+                message: "Battery profile setter canceled before submission.",
+            }),
+            result => result,
+        }
     }
+}
+
+fn policy_matches(read: Confirmed, target: Desired) -> bool {
+    read.limit == target.protection.then_some(target.limit) && read.temporary != Some(true)
+}
+
+fn validate_status_fixture(status: &Value, profiles: &[Profile; 3]) -> io::Result<()> {
+    let first = status["profiles"]["pluggedIn"]
+        .as_object()
+        .ok_or_else(|| io::Error::other("missing battery parity profile fixture"))?;
+    for (index, key) in ["pluggedIn", "battery", "usbC"].into_iter().enumerate() {
+        let profile = status["profiles"][key]
+            .as_object()
+            .ok_or_else(|| io::Error::other("missing battery parity power profile"))?;
+        let preset = profiles[index].performance;
+        // Keep non-battery fixture fields common, except for the same
+        // performance projection that the existing runtime replay handles.
+        if !matches!(preset, 0..=4)
+            || !automation::performance_source_eligible(preset, index as i32)
+            || profile.len() != first.len()
+            || !first.iter().all(|(field, value)| match field.as_str() {
+                "performance" | "customPerformance" | "batteryProtectionEnabled" => {
+                    profile.contains_key(field)
+                }
+                _ => profile.get(field) == Some(value),
+            })
+        {
+            return Err(io::Error::other("unsupported battery parity power profile"));
+        }
+    }
+    if status["desiredState"]["performance"]["source"] != 1
+        || !status["desiredState"]["customPerformance"].is_null()
+        || !status["activeApplicationProfileId"].is_null()
+        || [
+            "performanceOverride",
+            "fanOverride",
+            "fanControlOverride",
+            "lightingOverride",
+            "batteryPolicyOverride",
+            "batteryProtectionOverride",
+        ]
+        .iter()
+        .any(|key| !status[*key].is_null())
+        || status["fullChargeOverride"] != false
+    {
+        return Err(io::Error::other(
+            "unsupported battery parity status fixture",
+        ));
+    }
+    Ok(())
 }
 
 struct FakeDevice {
@@ -426,10 +540,8 @@ impl ScenarioState {
         let controller = &self.controller;
         let desired = controller.desired();
         self.current["activePowerSource"] = json!(controller.power.index());
-        let performance = controller.profile().performance;
-        if automation::performance_source_eligible(performance, controller.power.index() as i32) {
-            self.current["desiredState"]["performance"]["value"] = json!(performance);
-        }
+        self.current["desiredState"]["performance"]["value"] =
+            json!(controller.profile().performance);
         self.current["desiredState"]["battery"] = json!({
             "configuredPolicy": {"chargeLimitPercent": desired.limit.percent()},
             "protectionEnabled": desired.protection,
@@ -482,6 +594,9 @@ impl Step {
                 "Synthetic lost response armed."
             }
             Self::Recover => {
+                // A fault is valid only until the next script step. In
+                // particular, no unused fault can reach a power transition.
+                controller.device.next_submission = None;
                 controller.observe();
                 "Synthetic read-only battery observation complete."
             }
@@ -688,6 +803,112 @@ mod tests {
         assert_eq!(restarted.device.effects, [Effect::Admit, Effect::Read]);
         assert_eq!(restarted.desired().limit, limit(80));
         assert_eq!(restarted.confirmed.unwrap().limit, Some(limit(65)));
+    }
+
+    #[test]
+    fn pending_write_observes_new_power_without_committing_old_source_intent() {
+        let mut battery = setup();
+        battery.observe();
+        battery.device.next_submission =
+            Some(Submission::Failed(SubmissionCertainty::Indeterminate));
+        battery.apply(Intent::Limit(limit(70))).unwrap();
+        battery.device.effects.clear();
+
+        assert_eq!(
+            battery.change_power(Power::Battery).unwrap().status,
+            ScopedStatus::Blocked
+        );
+        assert!(battery.device.effects.is_empty());
+        assert_eq!(battery.power, Power::PluggedIn);
+
+        battery.observe();
+        assert_eq!(battery.device.effects, [Effect::Admit, Effect::Read]);
+        assert_eq!(battery.power, Power::Battery);
+        assert!(battery.pending.is_none());
+        assert!(battery.external);
+        assert_eq!(battery.confirmed.unwrap().limit, Some(limit(70)));
+        assert_eq!(battery.desired().limit, limit(80));
+    }
+
+    #[test]
+    fn unused_script_faults_do_not_escape_into_power_changes() {
+        let mut battery = setup();
+        battery.apply(Intent::Protection(false)).unwrap();
+        for step in [Step::Cancel, Step::LoseResponse, Step::Recover] {
+            step.run(&mut battery).unwrap();
+        }
+        assert_eq!(
+            Step::Battery.run(&mut battery).unwrap().status,
+            ScopedStatus::Applied
+        );
+        assert_eq!(battery.confirmed.unwrap().limit, Some(limit(80)));
+        assert!(battery.pending.is_none());
+    }
+
+    #[test]
+    fn partial_passive_reads_keep_drift_evidence_until_a_matching_intent() {
+        let mut battery = setup();
+        battery.observe();
+        battery.device.observed.limit = Some(limit(65));
+        battery.device.observed.temporary = None;
+        battery.observe();
+        assert!(battery.external);
+        assert_eq!(battery.confirmed.unwrap().temporary, None);
+        battery.device.observed.limit = Some(limit(80));
+        battery.device.observed.temporary = Some(false);
+        battery.observe();
+        assert!(battery.external);
+        assert_eq!(
+            battery.apply(Intent::Limit(limit(80))).unwrap().status,
+            ScopedStatus::Unchanged
+        );
+        assert!(!battery.external);
+    }
+
+    #[test]
+    fn explicit_enable_does_not_retarget_already_enabled_protection() {
+        let mut battery = setup();
+        battery.observe();
+        battery.device.observed.limit = Some(limit(65));
+        battery.device.effects.clear();
+        assert_eq!(
+            battery.apply(Intent::Protection(true)).unwrap().status,
+            ScopedStatus::Blocked
+        );
+        assert_eq!(battery.device.effects, [Effect::Admit, Effect::Read]);
+        assert_eq!(battery.confirmed.unwrap().limit, Some(limit(65)));
+        assert_eq!(battery.desired().limit, limit(80));
+    }
+
+    #[test]
+    fn lost_response_retains_last_published_state_when_the_baseline_has_drifted() {
+        let mut battery = setup();
+        battery.observe();
+        battery.device.observed.limit = Some(limit(65));
+        battery.device.next_submission =
+            Some(Submission::Failed(SubmissionCertainty::Indeterminate));
+        assert_eq!(
+            battery.apply(Intent::Limit(limit(70))).unwrap().status,
+            ScopedStatus::Failed
+        );
+        assert_eq!(battery.confirmed.unwrap().limit, Some(limit(80)));
+        assert_eq!(battery.device.observed.limit, Some(limit(70)));
+        battery.observe();
+        assert_eq!(battery.confirmed.unwrap().limit, Some(limit(70)));
+        assert_eq!(battery.desired().limit, limit(70));
+    }
+
+    #[test]
+    fn status_fixture_rejects_unprojected_power_differences_and_accepts_additive_storage() {
+        let baseline: Value = serde_json::from_str(crate::wire::CURRENT_FIXTURE).unwrap();
+        let mut status = baseline["status"].clone();
+        status["profiles"]["batteryPolicy"]["futureField"] = json!("safe additive field");
+        assert!(Controller::fixture(&status).is_ok());
+        status["profiles"]["battery"]["fans"] = json!(1);
+        assert!(Controller::fixture(&status).is_err());
+        status["profiles"]["battery"]["fans"] = json!(0);
+        status["profiles"]["battery"]["performance"] = json!(1);
+        assert!(Controller::fixture(&status).is_err());
     }
 
     #[test]

@@ -62,7 +62,10 @@ update temporary intent after independent confirmation and leave the saved profi
 intact. After a lost acknowledgement, the confirmed snapshot and committed intent stay
 separate from the pending request. A fresh read-only observation may commit a matching
 pending intent. An unavailable observation leaves it pending, and a mismatch publishes
-the observed state without replaying the request. On reconstruction from the same
+the observed state without replaying the request. If the source changes while a request is unconfirmed, the next successful
+observation selects the new profile without committing the old request or issuing
+a setter.
+On reconstruction from the same
 saved profile, scoped overrides and pending intent are absent. Startup in this harness
 observes state without applying a profile.
 
