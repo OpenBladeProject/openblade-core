@@ -201,5 +201,10 @@ jobs:
           dotnet restore ../src/OpenBlade.Tray/OpenBlade.Tray.csproj
           dotnet test ../tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter FullyQualifiedName~RustReadOnlyHostTests
 
+      - name: Smoke native SCM lifecycle on the hosted Windows VM
+        if: runner.os == 'Windows' && runner.environment == 'github-hosted' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        timeout-minutes: 5
+        run: ../tools/openblade-windows-host/Test-HostedScm.ps1
+
       - name: Build native libraries and execute C and .NET interop
         run: ./Test-NativeInterop.ps1 -Target ${{ matrix.target }}
