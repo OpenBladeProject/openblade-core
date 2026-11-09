@@ -96,7 +96,7 @@ The integration target above now imports the adapter from
 [`src/adapter_power`](../tools/openblade-windows-host/src/adapter_power/).
 The fixture consumes one simulated owner lease for one `07/8C` adapter-power
 query. Neither developer executable links the adapter. No native HID opener,
-controller authority provider, or service handoff is wired.
+controller authority provider, or production service handoff is wired.
 
 - The supported Windows platform and both registry identities must agree on
   `Razer` and `Blade 16 - RZ09-0581`. The fixture shares the ordinal
@@ -176,3 +176,95 @@ SET-only and batch operations, the PID 02E0 matrix route, and accessory
 routes such as the cooling pad. Each mutating route also needs its own fresh
 admission, independent readback and durable restoration. Product packaging
 and the hardware-owner cutover belong to later phases.
+
+## Phase 3d Windows ownership rehearsal
+
+Run the process tests with the pinned Rust toolchain on Windows x64.
+
+```powershell
+cargo +1.99.1 test --locked --manifest-path tools/openblade-windows-host/Cargo.toml --test standard_transport ownership::
+```
+
+The integration test launches its own executable as the fake incumbent and
+Rust worker. The roles are reachable only through the test target. Each case
+creates a new temporary directory with fixed control, matrix and owner-fence
+files. The incumbent keeps an exclusive Windows open on the fence while
+both lanes have work in flight. It writes and flushes a restart block before
+retiring either lane, stops admission, joins both lane operations, closes
+their handles and checks closure through fresh exclusive opens.
+
+The incumbent creates an unnamed, non-inherited job with kill-on-close and
+one active process. Windows puts the worker in the job at creation. An
+explicit handle list passes its anonymous request and reply pipes and a
+wait-only handle to the exact incumbent. Test output has separate handles.
+The worker supplies a fresh attempt nonce, accepts a matching grant once and
+verifies the volume and full 128-bit file ID from its own open handle. It
+checks the incumbent handle during admission and before fake I/O. The
+fixture assumes trusted executables running as the same user in the
+test-owned directory. A production service also needs a restricted launch
+and service-protected state. [Windows process creation attributes](https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) · [Windows file identity](https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-file_id_info)
+
+The worker consumes the Phase 3c lease once through `query_once`. The fake
+SET stays in flight while the tests observe the worker's exclusive control
+handle and the released matrix handle. A separate incumbent is refused while
+the lease is live, before the timed query starts. The query returns the two
+validated levels. The incumbent requires the expected
+terminal receipt, successful exit of its exact child and independent file
+reopens and readback before clearing the restart block and returning to
+active. The Phase 3c fake host and collection data and scripted controller,
+power and session decisions remain separate from process ownership.
+File identity, share denial, child pipes, process exit, job teardown and
+persistence across replacement processes are Windows behavior exercised by
+the test. The fake operations do not exercise physical driver drain.
+
+A stale attempt or file identity and a changed controller or execution
+decision refuse before SET. Cancellation after SET, abrupt worker exit, a
+lost or malformed receipt and failed readback preserve the restart block. A hung worker
+ignores the channel when the test kills the incumbent. The job releases
+the worker's file, while a new incumbent still refuses the marked directory.
+The marker models fail-closed recovery across process death on a running
+system. The fixture has no marker repair command and tests neither
+power-loss durability nor reconciliation against real firmware.
+
+### Production hookup required before the physical runbook
+
+1. Put an owner-pause latch at the C# service device admission boundary
+   before waiting for operations. Cover `SerializedBladeDevice.EnterHardwareOperationAsync`,
+   provider acquisition and independent adapter-power opens such as
+   `FanStopAdapterPowerReader`. Hold new service automation, interactive
+   lighting and command admissions before draining. Read-only cached status
+   can continue. The `Rz090581FeatureCommandGate` orders individual protocol
+   commands. It cannot fence the lifetime of all openers or stop a later
+   admission. [Device provider](../src/OpenBlade.Service/WindowsVerifiedBladeDeviceProvider.cs) · [Independent adapter-power reader](../src/OpenBlade.Protocol/FanStopAdapterPowerReader.cs) · [Shared gate](../src/OpenBlade.Protocol/Rz090581FeatureCommandGate.cs)
+2. With admissions closed, drain the service hardware gate, cancel queued
+   work that has not reached native submission and await terminal retirement
+   of every in-flight command. Fence lighting reopen and retire the retained
+   port via `ProductionLightingSession`. Drain and dispose the PID 02E0
+   matrix writer and its queue separately. Account for native work retained
+   by the command gate and bounded disposal registry after a caller returns.
+   Treat a drain deadline or pending disposal as unresolved. Verify terminal
+   completion and disposal of both lanes before granting. The service shutdown
+   path restores owned HyperBoost, keyboard mode and fan state. A temporary
+   handoff needs a dedicated pause and retirement path. [Lighting session](../src/OpenBlade.Service/ProductionLightingSession.cs) · [Matrix writer](../src/OpenBlade.Protocol/WindowsPid02E0MatrixFeatureWriter.cs) · [Command gate](../src/OpenBlade.Protocol/RazerCommandSessionGate.cs) · [Pending disposals](../src/OpenBlade.Protocol/PendingDisposalRegistry.cs)
+3. Persist a service-protected pending handoff before releasing either lane.
+   Bind it to the admitted exact model, build, boot and attempt. Gate
+   service startup and all reacquisition paths on that record. Launch a
+   pinned worker under an explicit handle allowlist and retained process/job
+   supervision. Grant only the fixed query, with fresh Windows platform,
+   both registry identities, strict controller absence, power and session
+   admission, and independent opened HID identity and report geometry.
+   Revoke on topology, session, power or controller changes. Link the
+   adapter only after these production gates and their refusal paths have
+   been implemented and reviewed. [Strict controller guard](../src/OpenBlade.Protocol/WindowsHardwareAccessGuard.cs)
+4. Keep the pause latched through Rust terminal native drain and disposal.
+   Process exit is useful evidence about handle lifetime. For an unexpected
+   exit it cannot establish that the firmware received or completed an
+   exchange. Keep unresolved intents and reconcile through a separately
+   admitted C# read-only path after closure. Preserve pending laptop-control
+   journal meanings, saved fan and keyboard intent and stop-on-ambiguity.
+   Release normal reacquisition and automation only after successful
+   reconciliation. A service restart, lost lease receipt or unresolved native
+   completion must stay fenced. [Pending control store](../src/OpenBlade.Service/LaptopControlPendingStore.cs) · [Control executor](../src/OpenBlade.Service/LaptopControlExecutor.cs) · [Service recovery](../src/OpenBlade.Service/ServiceControlRuntime.cs)
+
+The production hook and strict native authority provider remain prerequisites
+for the separate attended RZ09-0581 query in the Phase 3c runbook.
