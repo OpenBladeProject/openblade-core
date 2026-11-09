@@ -237,19 +237,25 @@ the private pipe protocol, job teardown and terminal receipts.
 
 Run the managed fixture on Windows with
 `dotnet test tests/OpenBlade.Service.Tests -p:NuGetAudit=false --filter FullyQualifiedName~ManagedOwnerHandoffTests`.
-It checks active and queued control work, matrix close ordering, blocked
-reopen, stale and duplicate handback, a mismatched independent adapter-power
-read, cancellation, a failed close and a fresh provider over a pending marker.
+It checks active and queued control work, a submitted frame from the retained
+Ambient Awareness renderer, matrix close ordering, blocked reopen, stale and
+duplicate handback, a mismatched adapter-power read, cancellation, a failed
+close and a fresh provider over a pending marker.
 
-The injected scope closes ordinary provider and renderer admission before
-draining. A successful drain requires lighting control and matrix closure,
+The private scope requires the same native retirement gate and disposal
+registry across the battery, fan-RPM and lighting factories. Both preflight and
+handback require an exact tested or model-scoped firmware probe. An ordinary
+untested firmware override cannot authorize this handoff. The scope closes
+ordinary provider and renderer admission before draining. A successful drain requires lighting control and matrix closure,
 empty retained-disposal work, and release of the shared native command gate.
 The temporary close leaves firmware mode and saved settings alone. Handback
 uses the same typed adapter-power read through a fresh control port after
 exact child exit, waits for terminal cleanup and compares the observed value
 with the recorded baseline. Exit and readback establish distinct facts.
-A failed or canceled transfer leaves the marker. A new supervisor treats
-any occupied marker as unresolved and cannot reconstruct an in-memory lease.
+A failed or canceled transfer after journaling leaves the marker. Partial
+records also block startup. The private supervisor must provision its storage
+directory before composing the owner. A new owner cannot reconstruct a
+lease from a pending record.
 
 Installed service composition does not select the scope. The lease proves
 managed drain in the fixture. A separate grant still needs the fixed Rust
@@ -300,8 +306,8 @@ For a controlled developer build, first refresh the ancestor stack from
 `main`, including the service-data ACL hardening, and rerun the fixture on the
 rebased exact head. Connect the private supervisor before any real service
 acquisition, bind the marker to verified build and boot identities in protected
-storage, and define supervised restart recovery and keyboard-mode ownership
-across handback. Connect the pinned worker and strict opened-handle authority
+storage, and define supervised restart recovery, keyboard-mode ownership
+and renderer reapplication across handback. Connect the pinned worker and strict opened-handle authority
 for the fixed query, then rehearse that assembled artifact on fake devices.
 The separate attended RZ09-0581 run also needs explicit authority for the
 service lifecycle and the single device query in the Phase 3c runbook.

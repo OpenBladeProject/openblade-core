@@ -122,15 +122,21 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     }
 
     internal Task<HidSessionResult<IProductionLightingPort>> OpenForServiceAsync(
-        Func<bool> driverModeWriteAllowed, Func<bool> ownerAdmission, CancellationToken cancellationToken) =>
-        OpenCoreAsync(driverModeWriteAllowed, cancellationToken, ownerAdmission);
+        Func<bool> driverModeWriteAllowed, Func<bool> ownerAdmission, CancellationToken cancellationToken)
+    {
+        if (sharedCommandGate is null)
+        {
+            throw new InvalidOperationException("Scoped owner admission requires a shared native retirement gate.");
+        }
+        return OpenCoreAsync(driverModeWriteAllowed, cancellationToken, ownerAdmission);
+    }
 
     private async Task<HidSessionResult<IProductionLightingPort>> OpenCoreAsync(
         Func<bool>? driverModeWriteAllowed,
         CancellationToken cancellationToken,
         Func<bool>? ownerAdmission = null)
     {
-        if (driverModeWriteAllowed?.Invoke() == false)
+        if (ownerAdmission?.Invoke() == false || driverModeWriteAllowed?.Invoke() == false)
         {
             return Failure(HidSessionFailureKind.ConflictBlocked);
         }
@@ -216,7 +222,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             }
         }
 
-        if (cancellationToken.IsCancellationRequested)
+        if (cancellationToken.IsCancellationRequested || ownerAdmission?.Invoke() == false)
         {
             if (matrixWriter is not null)
             {
@@ -224,7 +230,9 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             }
 
             await DisposeActorBoundedAsync(actor).ConfigureAwait(false);
-            return Failure(HidSessionFailureKind.Canceled);
+            return Failure(cancellationToken.IsCancellationRequested
+                ? HidSessionFailureKind.Canceled
+                : HidSessionFailureKind.ConflictBlocked);
         }
 
         var port = new ProductionLightingPort(
@@ -236,7 +244,8 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             cleanupDrainTimeout,
             pendingDisposals,
             driverModeWriteAllowed,
-            sharedCommandGate);
+            sharedCommandGate,
+            ownerAdmission);
         if (admitted)
         {
             try

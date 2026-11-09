@@ -97,6 +97,7 @@ internal sealed class ProductionBatteryPort :
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object lifecycleSync = new();
     private readonly IAsyncDisposable ownedSession;
+    private readonly PendingDisposalRegistry? pendingDisposals;
     private bool closing;
     private bool disposed;
     private bool poisoned;
@@ -182,7 +183,8 @@ internal sealed class ProductionBatteryPort :
         ThxAudioCapabilities? thxAudioCapabilities = null,
         bool supportsBatterySaverFanStop = false,
         Func<bool>? stopHardwareAdmission = null,
-        Func<bool>? ownerAdmission = null)
+        Func<bool>? ownerAdmission = null,
+        PendingDisposalRegistry? pendingDisposals = null)
         : this(
             sharedCommandGate is null
                 ? actor.Session
@@ -210,7 +212,8 @@ internal sealed class ProductionBatteryPort :
             supportsDirectManualFanTransitions,
             thxAudioCapabilities,
             supportsBatterySaverFanStop,
-            stopHardwareAdmission)
+            stopHardwareAdmission,
+            pendingDisposals)
     {
     }
 
@@ -239,9 +242,11 @@ internal sealed class ProductionBatteryPort :
         bool supportsDirectManualFanTransitions,
         ThxAudioCapabilities? thxAudioCapabilities,
         bool supportsBatterySaverFanStop,
-        Func<bool>? stopHardwareAdmission)
+        Func<bool>? stopHardwareAdmission,
+        PendingDisposalRegistry? pendingDisposals = null)
     {
         this.stopHardwareAdmission = stopHardwareAdmission;
+        this.pendingDisposals = pendingDisposals;
         this.session = session ?? throw new ArgumentNullException(nameof(session));
         this.ownedSession = ownedSession ?? throw new ArgumentNullException(nameof(ownedSession));
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -1786,6 +1791,11 @@ internal sealed class ProductionBatteryPort :
         try
         {
             await ownedSession.DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            pendingDisposals?.RecordUnconfirmedDisposal();
+            throw;
         }
         finally
         {

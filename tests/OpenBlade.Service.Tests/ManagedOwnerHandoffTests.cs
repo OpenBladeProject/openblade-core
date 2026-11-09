@@ -10,11 +10,14 @@ public sealed class ManagedOwnerHandoffTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
-    [Fact]
-    public async Task QuiesceDrainsBothOwnersAndHandbackRequiresExactExitAndFreshMatchingRead()
+    [Theory]
+    [InlineData(BatteryValidationFirmwareCompatibility.Tested)]
+    [InlineData(BatteryValidationFirmwareCompatibility.ModelScoped)]
+    public async Task QuiesceDrainsBothOwnersAndHandbackRequiresExactExitAndFreshMatchingRead(
+        BatteryValidationFirmwareCompatibility firmware)
     {
         using var deadline = new CancellationTokenSource(Timeout);
-        using var fixture = new Fixture(holdMatrixClose: true);
+        using var fixture = new Fixture(holdMatrixClose: true) { Firmware = firmware };
         using Process child = StartWaitingChild();
         using WindowsVerifiedBladeDeviceProvider owner = fixture.CreateOwner();
         try
@@ -77,6 +80,50 @@ public sealed class ManagedOwnerHandoffTests
         {
             fixture.ReleaseControlRead.TrySetResult();
             fixture.ReleaseMatrixClose.TrySetResult();
+            StopChild(child);
+        }
+    }
+
+    [Fact]
+    public async Task ASubmittedRendererFrameDrainsAndTheNextFrameIsRefused()
+    {
+        using var deadline = new CancellationTokenSource(Timeout);
+        using var fixture = new Fixture();
+        using Process child = StartWaitingChild();
+        using WindowsVerifiedBladeDeviceProvider owner = fixture.CreateOwner();
+        try
+        {
+            Assert.True(owner.TryGetVerifiedDevice(out IBladeDevice device));
+            await device.SetLightingAsync(
+                LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Right, 100),
+                deadline.Token);
+            Assert.True(owner.TryGetOwnedAmbientLightingDevice(out IBladeDevice renderer));
+            var frame = new AmbientLightingFrame(new RgbColor[AmbientLightingFrame.SlotCount]);
+            fixture.HoldNextMatrixFrame();
+            Task submitted = renderer.PushAmbientLightingFrameAsync(frame, deadline.Token);
+            await fixture.MatrixFrameStarted.Task.WaitAsync(deadline.Token);
+            int writes = fixture.MatrixWrites;
+            Task<ManagedOwnerHandoff.Lease> transfer = owner.QuiesceForOwnerHandoffAsync(
+                child.SafeHandle, AdapterPowerState.FullPower280W, deadline.Token);
+
+            Assert.True(File.Exists(fixture.Marker));
+            Assert.False(transfer.IsCompleted);
+            Assert.False(owner.TryGetOwnedAmbientLightingDevice(out _));
+            BladeWriteException blocked = await Assert.ThrowsAsync<BladeWriteException>(() =>
+                renderer.PushAmbientLightingFrameAsync(frame, deadline.Token));
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, blocked.SubmissionState);
+            Assert.Equal(writes, fixture.MatrixWrites);
+            Assert.Throws<IOException>(() => fixture.OpenMatrixFile().Dispose());
+
+            fixture.ReleaseMatrixFrame.TrySetResult();
+            await submitted;
+            ManagedOwnerHandoff.Lease lease = await transfer;
+            await ExitChildAsync(child, deadline.Token);
+            Assert.True(await owner.CompleteOwnerHandoffAsync(lease, deadline.Token));
+        }
+        finally
+        {
+            fixture.ReleaseMatrixFrame.TrySetResult();
             StopChild(child);
         }
     }
@@ -156,6 +203,34 @@ public sealed class ManagedOwnerHandoffTests
         {
             StopChild(child);
         }
+    }
+
+    [Fact]
+    public async Task AnUntestedFirmwareOverrideDoesNotCreateAHandoffMarker()
+    {
+        using var deadline = new CancellationTokenSource(Timeout);
+        using var fixture = new Fixture { Firmware = BatteryValidationFirmwareCompatibility.UntestedAllowed };
+        using Process child = StartWaitingChild();
+        using WindowsVerifiedBladeDeviceProvider owner = fixture.CreateOwner();
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => owner.QuiesceForOwnerHandoffAsync(
+                child.SafeHandle, AdapterPowerState.FullPower280W, deadline.Token));
+            Assert.False(File.Exists(fixture.Marker));
+            Assert.True(owner.TryGetVerifiedDevice(out _));
+        }
+        finally
+        {
+            StopChild(child);
+        }
+    }
+
+    [Fact]
+    public void ScopedOwnerRejectsAFanRpmFactoryWithoutTheSharedGate()
+    {
+        using var fixture = new Fixture();
+        Assert.Throws<ArgumentException>(() => fixture.CreateOwner(shareFanRpmGate: false));
+        Assert.False(File.Exists(fixture.Marker));
     }
 
     [Fact]
@@ -242,6 +317,8 @@ public sealed class ManagedOwnerHandoffTests
         private readonly bool holdMatrixClose;
         private readonly bool failMatrixClose;
         private int holdNextRead;
+        private int holdNextMatrixFrame;
+        private int matrixWrites;
 
         internal Fixture(bool holdMatrixClose = false, bool failMatrixClose = false)
         {
@@ -250,9 +327,12 @@ public sealed class ManagedOwnerHandoffTests
         }
 
         internal string Marker => Path.Combine(directory.FullName, "pending");
+        internal BatteryValidationFirmwareCompatibility Firmware { get; init; } =
+            BatteryValidationFirmwareCompatibility.Tested;
         internal int Probes { get; private set; }
         internal int ControlOpens { get; private set; }
         internal int MatrixOpens { get; private set; }
+        internal int MatrixWrites => Volatile.Read(ref matrixWrites);
         internal byte AdapterPowerLevel { get; set; } = 0x11;
         internal FileCommandSession? LightingControl { get; private set; }
         internal TaskCompletionSource ControlReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -260,12 +340,17 @@ public sealed class ManagedOwnerHandoffTests
         internal TaskCompletionSource MatrixCloseStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource ReleaseMatrixClose { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        internal TaskCompletionSource MatrixFrameStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ReleaseMatrixFrame { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal void HoldNextMatrixFrame() => Interlocked.Exchange(ref holdNextMatrixFrame, 1);
+
         internal void HoldNextControlRead() => Interlocked.Exchange(ref holdNextRead, 1);
 
         internal FileStream OpenControlFile() => OpenFile("control");
         internal FileStream OpenMatrixFile() => OpenFile("matrix");
 
-        internal WindowsVerifiedBladeDeviceProvider CreateOwner()
+        internal WindowsVerifiedBladeDeviceProvider CreateOwner(bool shareFanRpmGate = true)
         {
             var pending = new PendingDisposalRegistry();
             var battery = new ProductionBatteryFactory(
@@ -276,16 +361,20 @@ public sealed class ManagedOwnerHandoffTests
             var lighting = new ProductionLightingFactory(
                 admitted: true, () => new ValidationRunContext(),
                 _ => new ActorFactory(() => LightingControl = new FileCommandSession(
-                    OpenFile("lighting-control"), (_, _) => Task.FromResult<byte[]>([0x03, 0x00]))),
+                    OpenFile("lighting-control"), (command, _) => Task.FromResult(LightingResponse(command)))),
                 OpenMatrixWriter, TimeProvider.System, Timeout, Timeout, pending,
                 sharedCommandGate: Rz090581FeatureCommandGate.Shared);
+            var fanRpm = new FanRpmQueryRunFactory(
+                () => new ValidationRunContext(), new ActorFactory(OpenControlSession),
+                TimeProvider.System, Timeout, Timeout, pending,
+                sharedCommandGate: shareFanRpmGate ? Rz090581FeatureCommandGate.Shared : null);
             return new WindowsVerifiedBladeDeviceProvider(
                 () =>
                 {
                     Probes++;
-                    return VerifiedBladeProviderFixture.Probe(BatteryValidationProbeClassification.Ready);
+                    return VerifiedBladeProviderFixture.Probe(BatteryValidationProbeClassification.Ready, Firmware);
                 },
-                battery, VerifiedBladeProviderFixture.UnavailableFanRpmFactory(), lighting,
+                battery, fanRpm, lighting,
                 ownerHandoff: new ManagedOwnerHandoff(Marker, "isolated-build", "isolated-boot"));
         }
 
@@ -326,8 +415,29 @@ public sealed class ManagedOwnerHandoffTests
                 }
             }, file.Dispose);
             return new(new WindowsPid02E0MatrixFeatureWriter(
-                handle, new UnusedMatrixIo(), new SafeGuard(), TimeProvider.System, Timeout,
+                handle, new MatrixIo(this), new SafeGuard(), TimeProvider.System, Timeout,
                 ControllerExclusivityPolicy.Strict, sharedCommandGate: Rz090581FeatureCommandGate.Shared), null);
+        }
+
+        private static byte[] LightingResponse(RazerCommandSpec command) =>
+            (command.ClassId, command.CommandId) switch
+            {
+                (DeviceModeProtocol.OperationClass, DeviceModeProtocol.QueryOperationId) => [0x03, 0x00],
+                (LightingBrightnessProtocol.OperationClass, LightingBrightnessProtocol.QueryOperationId) => [0x01, 0x05, 0xFF],
+                (0x00, 0x86) => [0x01, 0x00, 0x00],
+                (0x03, 0x0A) => [0x05, 0x00],
+                _ => throw new InvalidOperationException("Unexpected fixture lighting command."),
+            };
+
+        internal async Task<HidFeatureIoResult> SubmitMatrixFrameAsync()
+        {
+            Interlocked.Increment(ref matrixWrites);
+            if (Interlocked.Exchange(ref holdNextMatrixFrame, 0) == 1)
+            {
+                MatrixFrameStarted.TrySetResult();
+                await ReleaseMatrixFrame.Task.WaitAsync(Timeout);
+            }
+            return new(new NativeIoCompletion(true, 0, 0), true, HidFeatureTermination.Completed);
         }
 
         private FileStream OpenFile(string name) => new(
@@ -371,11 +481,11 @@ public sealed class ManagedOwnerHandoffTests
         public HardwareAccessDecision Check() => new([], null);
     }
 
-    private sealed class UnusedMatrixIo : IHidFeatureIo
+    private sealed class MatrixIo(Fixture fixture) : IHidFeatureIo
     {
         public Task<HidFeatureIoResult> ExecuteAsync(
             OpenedHidHandle handle, uint controlCode, byte[] buffer,
             CancellationToken callerCancellation, CancellationToken deadlineCancellation) =>
-            throw new InvalidOperationException("Handing off must not submit a matrix report.");
+            fixture.SubmitMatrixFrameAsync();
     }
 }

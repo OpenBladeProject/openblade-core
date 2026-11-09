@@ -85,8 +85,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 || lightingFactory is not ProductionLightingFactory lighting
                 || lighting.SharedCommandGate != Rz090581FeatureCommandGate.Shared
                 || lighting.PendingDisposals != battery.PendingDisposals
-                || fanRpmFactory is FanRpmQueryRunFactory fanRpm
-                    && fanRpm.PendingDisposals != battery.PendingDisposals))
+                || fanRpmFactory is not FanRpmQueryRunFactory fanRpm
+                || fanRpm.SharedCommandGate != Rz090581FeatureCommandGate.Shared
+                || fanRpm.PendingDisposals != battery.PendingDisposals))
         {
             throw new ArgumentException("The handoff is scoped to the PID 02E0 production owners.", nameof(ownerHandoff));
         }
@@ -175,20 +176,18 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
     internal Task<ManagedOwnerHandoff.Lease> QuiesceForOwnerHandoffAsync(
         SafeProcessHandle child, AdapterPowerState baseline, CancellationToken cancellationToken) =>
-        device.QuiesceForOwnerHandoffAsync(child, baseline, probeGate, cancellationToken);
+        device.QuiesceForOwnerHandoffAsync(child, baseline, probeGate,
+            () => IsHandoffProbeReady(ProbeForService()), cancellationToken);
 
     internal Task<bool> CompleteOwnerHandoffAsync(
         ManagedOwnerHandoff.Lease lease, CancellationToken cancellationToken) =>
-        device.CompleteOwnerHandoffAsync(lease, ProbeForHandback, cancellationToken);
+        device.CompleteOwnerHandoffAsync(lease, () => IsHandoffProbeReady(probe()), cancellationToken);
 
-    private bool ProbeForHandback()
-    {
-        // The owner already drained ordinary probes and still holds admission.
-        BatteryValidationProbeResult result = probe();
-        return result.Classification == BatteryValidationProbeClassification.Ready
-            && result.HostIdentityMatched && result.ConflictCheckPassed && result.ExactMatchCount == 1
-            && result.FirmwareCompatibility == BatteryValidationFirmwareCompatibility.Tested;
-    }
+    private static bool IsHandoffProbeReady(BatteryValidationProbeResult? result) =>
+        result is { HostIdentityMatched: true, ConflictCheckPassed: true, ExactMatchCount: 1 }
+        && IsReadyClassification(result.Classification)
+        && result.FirmwareCompatibility is BatteryValidationFirmwareCompatibility.Tested
+            or BatteryValidationFirmwareCompatibility.ModelScoped;
 
     private BatteryValidationProbeResult? ProbeForService()
     {
@@ -1321,7 +1320,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 try
                 {
                     ThrowIfOwnerHandoffBlocked();
-                    opened = await fanRpmFactory.OpenAsync(cancellationToken)
+                    opened = await (ownerHandoff is not null && fanRpmFactory is FanRpmQueryRunFactory production
+                        ? production.OpenAsync(() => !ownerHandoff.IsBlocked, cancellationToken)
+                        : fanRpmFactory.OpenAsync(cancellationToken))
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -2994,7 +2995,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
         internal async Task<ManagedOwnerHandoff.Lease> QuiesceForOwnerHandoffAsync(
             SafeProcessHandle child, AdapterPowerState baseline, SemaphoreSlim? probeGate,
-            CancellationToken cancellationToken)
+            Func<bool> probe, CancellationToken cancellationToken)
         {
             if (ownerHandoff is not { } handoff || probeGate is null)
             {
@@ -3003,6 +3004,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             if (!Enum.IsDefined(baseline) || baseline == AdapterPowerState.Unknown)
             {
                 throw new ArgumentOutOfRangeException(nameof(baseline));
+            }
+
+            ThrowIfClosingOrDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (handoff.IsBlocked || !probe())
+            {
+                throw new InvalidOperationException("Fresh device admission is required before handoff.");
             }
 
             ManagedOwnerHandoff.Lease lease;
@@ -3016,6 +3024,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
                 lease = handoff.Begin(child, baseline);
             }
+            handoff.Persist(lease);
 
             // A canceled or failed drain leaves the marker and admission closed.
             await hardwareOperationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -3031,9 +3040,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     ObjectDisposedException.ThrowIf(closing || disposed, this);
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (!handoff.ChildStillWaiting(lease) || lowPowerGate?.IsActive == true)
+                    if (!handoff.ChildIsRunning(lease) || lowPowerGate?.IsActive == true)
                     {
-                        throw new InvalidOperationException("The waiting child or active session is no longer available.");
+                        throw new InvalidOperationException("The child exited or the active session became unavailable during drain.");
                     }
                     grantedOwnerLease = lease;
                     return lease;
@@ -3064,7 +3073,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
 
                 await ConfirmNativeRetirementAsync(cancellationToken).ConfigureAwait(false);
-                if (!probe())
+                if (!CanReadForHandback() || !probe())
                 {
                     return false;
                 }
@@ -3072,7 +3081,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 // This is the sole opening allowed under a granted handoff. It
                 // reuses the typed control query and independently closes its port.
                 HidSessionResult<IProductionBatteryPort> opened =
-                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                    await ((ProductionBatteryFactory)batteryFactory).OpenAsync(
+                        CanReadForHandback, cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
                     return false;
@@ -3106,6 +3116,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             }
         }
 
+        private bool CanReadForHandback()
+        {
+            lock (lifecycleSync)
+            {
+                return !closing && !disposed && lowPowerGate?.IsActive != true;
+            }
+        }
+
         private async Task ConfirmNativeRetirementAsync(CancellationToken cancellationToken)
         {
             // The constructor binds this scope to the production factories and
@@ -3125,12 +3143,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
         private async Task EnterHardwareOperationAsync(CancellationToken cancellationToken)
         {
+            ThrowIfOwnerHandoffBlocked();
             Task waitForHardware;
+            long? generation;
             lock (lifecycleSync)
             {
                 ObjectDisposedException.ThrowIf(closing || disposed, this);
                 ThrowIfOwnerHandoffBlocked();
                 if (fanStopDelegated) { throw new CapabilityUnavailableException("Ordinary hardware access is blocked by the fan guardian delegation."); }
+                generation = ownerHandoff?.Generation;
                 waitForHardware = hardwareOperationGate.WaitAsync(cancellationToken);
             }
 
@@ -3141,6 +3162,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 lock (lifecycleSync)
                 {
                     ThrowIfOwnerHandoffBlocked();
+                    if (generation != ownerHandoff?.Generation)
+                    {
+                        throw new CapabilityUnavailableException("The queued operation belongs to a retired device owner.");
+                    }
                     if (fanStopDelegated) { throw new CapabilityUnavailableException("Ordinary hardware access is blocked by the fan guardian delegation."); }
                 }
             }

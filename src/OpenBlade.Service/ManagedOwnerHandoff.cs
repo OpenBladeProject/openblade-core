@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
@@ -15,6 +16,7 @@ internal sealed class ManagedOwnerHandoff(string markerPath, string build, strin
     private byte[]? marker;
 
     internal bool IsBlocked => Volatile.Read(ref blocked) != 0;
+    internal long Generation { get; private set; }
 
     // The device owner's lifecycle lock serializes these transitions. The exact
     // process handle must be retained by the private supervisor through handback.
@@ -27,16 +29,24 @@ internal sealed class ManagedOwnerHandoff(string markerPath, string build, strin
         }
 
         Volatile.Write(ref blocked, 1);
-        var lease = new Lease(Guid.NewGuid(), child, baseline);
+        Generation++;
+        current = new Lease(Guid.NewGuid(), child, baseline);
+        return current;
+    }
+
+    // Begin already fenced admission. Keep a partially written marker and the
+    // in-memory fence if durable creation fails.
+    internal void Persist(Lease lease)
+    {
         byte[] record = JsonSerializer.SerializeToUtf8Bytes(new
         {
             Version = 1,
-            Model = "RZ09-0581",
-            ProductId = "02E0",
+            Model = TargetBladeDevice.Model,
+            ProductId = TargetBladeDevice.ProductId,
             Build = build,
             Boot = boot,
             Attempt = lease.Attempt,
-            Baseline = baseline,
+            Baseline = lease.Baseline,
         });
         using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read,
             bufferSize: 4096, FileOptions.WriteThrough))
@@ -45,15 +55,13 @@ internal sealed class ManagedOwnerHandoff(string markerPath, string build, strin
             stream.Flush(flushToDisk: true);
         }
         marker = record;
-        current = lease;
-        return lease;
     }
 
-    internal bool ChildStillWaiting(Lease lease) =>
+    internal bool ChildIsRunning(Lease lease) =>
         ReferenceEquals(lease, current) && ObserveChild(lease.Child) == ChildRunning;
 
     internal bool ChildExited(Lease lease) =>
-        ReferenceEquals(lease, current) && ObserveChild(lease.Child) == ChildExitedNormallyOrAbnormally;
+        ReferenceEquals(lease, current) && ObserveChild(lease.Child) == ChildSignaled;
 
     internal bool TryFinish(Lease lease)
     {
@@ -100,7 +108,7 @@ internal sealed class ManagedOwnerHandoff(string markerPath, string build, strin
     private static uint ObserveChild(SafeProcessHandle child) =>
         child.IsClosed || child.IsInvalid ? uint.MaxValue : WaitForSingleObject(child, 0);
 
-    private const uint ChildExitedNormallyOrAbnormally = 0;
+    private const uint ChildSignaled = 0;
     private const uint ChildRunning = 258;
 
     [DllImport("kernel32.dll", ExactSpelling = true)]

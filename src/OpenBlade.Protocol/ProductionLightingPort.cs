@@ -64,6 +64,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
     // submission; the provider separately retains the desired Windows state
     // across renderer replacement.
     private bool renderPlaybackMuted;
+    private readonly Func<bool>? ownerAdmission;
     private bool ownsDriverMode;
     private bool closing;
     private bool disposed;
@@ -78,12 +79,13 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         TimeSpan cleanupDrainTimeout,
         PendingDisposalRegistry pendingDisposals,
         Func<bool>? driverModeWriteAllowed = null,
-        SemaphoreSlim? sharedCommandGate = null)
+        SemaphoreSlim? sharedCommandGate = null,
+        Func<bool>? ownerAdmission = null)
     {
         this.actor = actor ?? throw new ArgumentNullException(nameof(actor));
         session = sharedCommandGate is null
             ? actor.Session
-            : new RazerCommandSessionGate(actor.Session, sharedCommandGate);
+            : new RazerCommandSessionGate(actor.Session, sharedCommandGate, ownerAdmission: ownerAdmission);
         this.matrixWriter = matrixWriter;
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
@@ -93,6 +95,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         this.pendingDisposals = pendingDisposals
             ?? throw new ArgumentNullException(nameof(pendingDisposals));
         this.driverModeWriteAllowed = driverModeWriteAllowed;
+        this.ownerAdmission = ownerAdmission;
         Capabilities = CreateCapabilities(admitted && matrixWriter is not null);
     }
 
@@ -954,19 +957,19 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         CloseAsync(restoreDriverMode: false);
 
     internal Task<LightingRendererOwnershipState> CloseForOwnerHandoffAsync() =>
-        CloseAsync(restoreDriverMode: false, ownerHandoff: true);
+        CloseAsync(restoreDriverMode: false);
 
-    private Task<LightingRendererOwnershipState> CloseAsync(bool restoreDriverMode = true, bool ownerHandoff = false)
+    private Task<LightingRendererOwnershipState> CloseAsync(bool restoreDriverMode = true)
     {
         lock (lifecycleSync)
         {
             closing = true;
             KeyboardLightingFrameStream.Clear(this);
-            return closeTask ??= CloseCoreAsync(restoreDriverMode, ownerHandoff);
+            return closeTask ??= CloseCoreAsync(restoreDriverMode);
         }
     }
 
-    private async Task<LightingRendererOwnershipState> CloseCoreAsync(bool restoreDriverMode, bool ownerHandoff)
+    private async Task<LightingRendererOwnershipState> CloseCoreAsync(bool restoreDriverMode)
     {
         await operationGate.WaitAsync().ConfigureAwait(false);
         try
@@ -974,7 +977,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             await StopStreamCoreAsync().ConfigureAwait(false);
             LightingRendererOwnershipState observed = OwnershipState;
             SetOwnership(LightingRendererOwnershipState.None);
-            if (restoreDriverMode)
+            if (restoreDriverMode && ownerAdmission?.Invoke() != false)
             {
                 await TryRestoreOwnedDeviceModeCoreAsync().ConfigureAwait(false);
             }
@@ -991,7 +994,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                     await matrixWriter.DisposeAsync().ConfigureAwait(false);
                 }
             }
-            catch when (ownerHandoff)
+            catch when (ownerAdmission is not null)
             {
                 // A fault in one lane must not skip closing the other. The
                 // fault still prevents a handoff grant.
@@ -1007,6 +1010,11 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             }
 
             return observed;
+        }
+        catch
+        {
+            pendingDisposals.RecordUnconfirmedDisposal();
+            throw;
         }
         finally
         {

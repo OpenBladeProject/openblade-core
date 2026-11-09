@@ -17,7 +17,6 @@ internal sealed partial class ProductionLightingSession
     private readonly ILogger<WindowsVerifiedBladeDeviceProvider>? logger;
     private readonly LowPowerGate? lowPowerGate;
     private readonly ManagedOwnerHandoff? ownerHandoff;
-    private bool lightingRetirementUnconfirmed;
     private Func<bool>? recoveryWriteAdmission;
 
     internal void SetRecoveryWriteAdmission(Func<bool> admission)
@@ -879,10 +878,6 @@ internal sealed partial class ProductionLightingSession
     internal async Task RetireForOwnerHandoffAsync(CancellationToken cancellationToken)
     {
         await AwaitLightingPortRetirementCoreAsync(cancellationToken).ConfigureAwait(false);
-        if (lightingRetirementUnconfirmed)
-        {
-            throw new IOException("An earlier lighting retirement did not confirm closure.");
-        }
         if (lightingPort is null)
         {
             return;
@@ -911,10 +906,6 @@ internal sealed partial class ProductionLightingSession
 
         try
         {
-            if (ownerHandoff?.IsBlocked == true && currentLighting is ProductionLightingPort port)
-            {
-                _ = port.CloseForOwnerHandoffAsync();
-            }
             bool drained = await currentLighting
                 .DisposeWithinCleanupDeadlineAsync()
                 .ConfigureAwait(false);
@@ -1431,18 +1422,10 @@ internal sealed partial class ProductionLightingSession
         ClearLightingRefreshRateReconciliation(port);
         try
         {
-            if (ownerHandoff?.IsBlocked == true && port is ProductionLightingPort production)
-            {
-                await production.CloseForOwnerHandoffAsync().ConfigureAwait(false);
-            }
-            else
-            {
-                await port.DisposeAsync().ConfigureAwait(false);
-            }
+            await port.DisposeAsync().ConfigureAwait(false);
         }
         catch
         {
-            lightingRetirementUnconfirmed = true;
         }
     }
 

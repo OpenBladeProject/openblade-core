@@ -318,6 +318,10 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     internal async Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
         Func<bool>? ownerAdmission, CancellationToken cancellationToken)
     {
+        if (ownerAdmission is not null && sharedCommandGate is null)
+        {
+            throw new InvalidOperationException("Scoped owner admission requires a shared native retirement gate.");
+        }
         if (ownerAdmission?.Invoke() == false)
         {
             return Failure(HidSessionFailureKind.ConflictBlocked);
@@ -405,7 +409,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 thxAudioCapabilities,
                 supportsBatterySaverFanStop,
                 stopHardwareAdmission,
-                ownerAdmission),
+                ownerAdmission,
+                pendingDisposals),
             null);
     }
 
