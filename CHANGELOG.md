@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Restore protected machine-data permissions during setup so Fan Stop recovery does not incorrectly block laptop detection after installing or upgrading.
+- Fix laptop detection after a fresh install or upgrade by restoring the required machine-data permissions. ([#912](https://github.com/OSSBlade/openblade-core/pull/912))
 
 ## [0.58.1] - 2026-11-09
 
