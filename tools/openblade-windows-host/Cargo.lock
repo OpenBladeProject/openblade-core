@@ -38,9 +38,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "openblade-protocol"
+version = "0.0.0"
+dependencies = [
+ "openblade-types",
+]
+
+[[package]]
+name = "openblade-types"
+version = "0.0.0"
+
+[[package]]
 name = "openblade-windows-host"
 version = "0.0.0"
 dependencies = [
+ "openblade-protocol",
+ "openblade-types",
  "serde",
  "serde_json",
  "tokio",
