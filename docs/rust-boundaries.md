@@ -532,3 +532,52 @@ The shared matrix and a frozen managed predicate from
 source, plus unmapped values. Host tests exercise all three override slots and
 keep undefined observations and saved candidate values intact. The version
 impact is `none`.
+## Phase 4 Windows runtime and recovery
+
+This first slice runs two portable decisions in `openblade-domain::recovery`.
+The installed service still runs the managed paths. The Rust library has no
+platform I/O, retry executor, or new ABI.
+
+- **Laptop-control pending journal.** [LaptopControlExecutor](../src/OpenBlade.Service/LaptopControlExecutor.cs)
+  is the oracle. Restart and ordinary observation require the exact recorded
+  device identity. Machine name is diagnostic. The version 1 record has no
+  owner or boot-generation fields. A readable control can request a fresh
+  observation. A match proposes removing the entry, a different value proposes
+  a tombstone, and an unavailable observation keeps the entry pending. A
+  tombstone suppresses the same automatic intent. The microphone indicator
+  has no getter. Only an acknowledgement from the live attempt can propose
+  removing its entry. A possible submission, including cancellation after
+  submission may have begun, leaves recovery pending.
+- **Storage-only cleanup.** Pre-submission cancellation and other proof of
+  non-submission can restore the prior document only while the loaded bytes
+  match the exact write-ahead revision. A failed load keeps that in-memory
+  proof, and a replacement discards it. Cleanup ends that recovery pass.
+  Reconciliation after a process restart has no such proof.
+- **Scoped thermal completion.** The reducer classifies the managed outcome's
+  progress, stage, certainty and disposition after the attempt and any
+  applicable read-only reconciliation. A confirmed target after possible
+  submission still has indeterminate transport certainty. Seeing the prior
+  state can leave the managed result failed with an external disposition.
+  Setter acknowledgement alone does not confirm the desired state. The host
+  still owns which getter runs and what constitutes a match for each model.
+
+The [v1 service-runtime fixture](../tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json)
+is shared between the managed executor tests and Rust replay. Its thermal
+rows supply synthetic outcomes to the managed trace classifier. Its laptop
+rows drive the actual managed journal and executor through fake setters and
+getters. The managed tests still cover raw journal version and malformed
+record handling. Rust consumes the validated disposition and a single entry
+at a time. A future host must accumulate per-entry decisions from one document,
+preserve the order of untouched entries, append new tombstones in observation
+order, and compare the expected revision in
+one atomic save. It may report readback independently of the save. A failed
+or raced save must leave authoritative state to a fresh load. None of the
+effects authorizes a hardware mutation.
+
+| Phase 4 area | Remaining Windows work |
+| --- | --- |
+| Startup and durable configuration | Replay bootstrap refusal on unresolved aggregate recovery, distinguish absent/defaulted and quarantined battery, profile and override documents, preserve legacy migration and owner binding, then sequence the run marker, observation and owned-behavior recovery. |
+| Session, power and request admission | Project trusted session ownership, power and transition generations, stale notifications, controller state, cancellation, queue bounds and shutdown ordering. Check each lease and exact device again before effects. |
+| Persistence and recovery | Port validated load dispositions, protected atomic persistence, revision comparison and failed-save reconciliation. Preserve exact pending entries and prior documents. Replay the separate Maintain thermal ledger, HyperBoost, fan-curve and lighting journals, including their own policy revision, owner or boot freshness where present. |
+| Typed command planning and execution | Port admission, declared components, readback matching, compound recipe ordering, preflight recovery leases and documented continuation rules. Add per-backend traces for manual fan targets, HyperBoost and low-power handback, plus the remaining battery, keyboard and lighting paths. |
+| Runtime integration and parity | Replay configuration, session/power and command decisions together against frozen managed results. Verify transport lifetimes, stop and recovery end to end before considering a change of live owner. |
