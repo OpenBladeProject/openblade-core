@@ -2,6 +2,8 @@ use super::*;
 use crate::snap_tap::{Batch, Key, Observation, Stroke, Submission};
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
+mod supervisor;
+
 const TIMER: usize = 7;
 const TARGET: Context = Context {
     foreground: 5,
@@ -21,6 +23,7 @@ enum Step {
     },
     Cancel,
     SignalStop,
+    WaitForSupervisorStop,
     Disconnect,
     RevokeAtStop,
     Revoke,
@@ -182,6 +185,15 @@ impl Messages for FakeMessages {
                     return Ok(Some(id));
                 }
                 Step::SignalStop => self.state.0.borrow_mut().stop = true,
+                Step::WaitForSupervisorStop => {
+                    let mut byte = [0];
+                    assert_eq!(
+                        std::io::Read::read(&mut std::io::stdin(), &mut byte).unwrap(),
+                        0
+                    );
+                    self.state.0.borrow_mut().stop = true;
+                    return Ok(Some(TIMER));
+                }
                 Step::Cancel => {
                     self.state.0.borrow_mut().stop = true;
                     return Ok(Some(TIMER));

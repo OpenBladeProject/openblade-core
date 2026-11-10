@@ -62,3 +62,37 @@ be selected:
 
 The adapter tests use an inert Windows facade. The Win32 code is build-only
 for this slice.
+
+## Private Windows supervisor fixture
+
+The supervisor starts from adapter commit
+`d0edc940baf0c3eb84e82610be7c4dba0642be81` (parent
+`93d2e01a49356f94e5449ef450eb293e9a5a2ffd`). At the adapter commit, the
+managed reference is `SnapTapInputHost` (`--snap-tap-input <parent> windows-hook`),
+`SnapTapInputProcess`, `SnapTapProcessCoordinator` and
+`SnapTapWindowsHookLoop` in `src/OpenBlade.SessionAgent`. The managed coordinator
+tracks a child separately from its status, binds terminal failure to PID and
+launch time, and publishes the result before clearing ownership.
+
+The Windows test harness starts an inert child of the same executable only
+for an explicit Rust fixed A/D selection. Injected current-user, session,
+console, exact-model, controller and ownership evidence is checked before
+spawn and again at the start gate. A private pipe scopes authorization to
+that child. Closing it requests cancellation or signals loss of the parent.
+The child runs the existing adapter with fake messages and output. The
+supervisor observes exit on its retained process handle and requires a
+matching receipt from that child's pipe. Quiescence requires requested
+stop, policy Off, and successful hook and timer retirement. A rejected
+start has a separate no-write receipt. Uncertain output, missing or
+mismatched evidence, stop timeout and publication failure block handoff.
+
+The fixture publishes through an injected callback while it still owns the
+child. The product still selects the managed helper. A production Rust host
+needs independent Windows token, session and image checks, live admission
+and cancellation wiring, a durable boot- and owner-bound journal shared with
+the managed handoff guards, and integration with the managed live and
+terminal status stores. Physical input behavior remains a separate gate.
+
+Run the fixture on Windows with
+`cargo test --locked --offline -p openblade-platform-windows supervisor`
+from the Rust workspace.
