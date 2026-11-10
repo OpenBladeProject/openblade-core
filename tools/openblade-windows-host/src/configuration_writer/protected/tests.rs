@@ -285,3 +285,37 @@ fn live_private_fixtures_refuse_unprotected_roots_and_records() {
         b"replacement fixture"
     );
 }
+
+#[test]
+fn retained_source_replaces_only_a_sibling() {
+    use windows_sys::Win32::Storage::FileSystem::{DELETE, FILE_GENERIC_WRITE};
+
+    let fixture = super::super::TestStore::new().unwrap();
+    let root = &fixture.root;
+    let directory = fixture.pins.last().unwrap();
+    let staged = root.join("private.stage");
+    let target = root.join(PROFILE);
+    fs::write(&staged, b"new bytes").unwrap();
+    fs::write(&target, b"old bytes").unwrap();
+
+    let source = open_relative(
+        directory,
+        OsStr::new("private.stage"),
+        FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE,
+        FILE_SHARE_READ,
+        FILE_OPEN,
+        FILE_OPEN_REPARSE_POINT,
+    )
+    .unwrap();
+    let identity = check_regular_file(&source).unwrap();
+    assert!(rename_same_directory(&source, PROFILE, false).is_err());
+    assert_eq!(fs::read(&target).unwrap(), b"old bytes");
+    rename_same_directory(&source, PROFILE, true).unwrap();
+    source.sync_all().unwrap();
+    drop(source);
+
+    assert!(!staged.exists());
+    let replaced = File::open(target).unwrap();
+    assert_eq!(check_regular_file(&replaced).unwrap(), identity);
+    assert_eq!(read_file(&replaced).unwrap().1, b"new bytes");
+}

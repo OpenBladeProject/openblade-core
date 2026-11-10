@@ -8,7 +8,8 @@
 //! must include the effective ancestor ACLs on the intended Windows layout.
 
 use super::{
-    NAMES, check_regular_file, handle_information, inspect_bytes, open_relative, read_file,
+    FileIdentity, NAMES, check_regular_file, handle_information, inspect_bytes, open_relative,
+    open_relative_with_security, read_file,
 };
 use crate::configuration::{
     File as ObservedFile, Inspection, RECOVERY_REQUIRED, RecoveryRecord, Snapshot, inspect,
@@ -16,7 +17,7 @@ use crate::configuration::{
 use std::{
     ffi::OsStr,
     fs::{File, OpenOptions},
-    io,
+    io::{self, Write},
     os::windows::{ffi::OsStrExt, fs::OpenOptionsExt, io::AsRawHandle},
     path::{Component, Path, PathBuf, Prefix},
     ptr, slice,
@@ -103,7 +104,7 @@ impl ProtectedStorage {
         Ok(result)
     }
 
-    fn check_root(&self) -> io::Result<()> {
+    pub(super) fn check_root(&self) -> io::Result<()> {
         verify_security(&self.root, Policy::Root)?;
         for ancestor in &self.ancestors {
             let info = directory_info(ancestor)?;
@@ -118,7 +119,7 @@ impl ProtectedStorage {
         Ok(())
     }
 
-    fn open_record(&self, name: &str) -> io::Result<Option<File>> {
+    pub(super) fn open_record(&self, name: &str) -> io::Result<Option<File>> {
         // The recovery fence is presence-only and needs no data-read access.
         let access = if name == RECOVERY_REQUIRED {
             use windows_sys::Win32::Storage::FileSystem::{
@@ -128,6 +129,10 @@ impl ProtectedStorage {
         } else {
             FILE_GENERIC_READ
         };
+        self.open_existing(name, access)
+    }
+
+    pub(super) fn open_existing(&self, name: &str, access: u32) -> io::Result<Option<File>> {
         let file = match open_relative(
             &self.root,
             OsStr::new(name),
@@ -140,15 +145,235 @@ impl ProtectedStorage {
             Err(error) if missing_leaf(&error) => return Ok(None),
             Err(error) => return Err(error),
         };
+        self.verify_record(&file)?;
+        Ok(Some(file))
+    }
+
+    fn verify_record(&self, file: &File) -> io::Result<FileIdentity> {
+        let identity = check_regular_file(file)?;
         // SAFETY: file owns a live handle.
         if unsafe { GetFileType(file.as_raw_handle()) } != FILE_TYPE_DISK
-            || check_regular_file(&file)?.volume != self.identity.volume
+            || identity.volume != self.identity.volume
         {
             return Err(denied("configuration record is not on the pinned disk"));
         }
-        verify_security(&file, Policy::Record)?;
-        Ok(Some(file))
+        verify_security(file, Policy::Record)?;
+        Ok(identity)
     }
+
+    pub(super) fn acquire_writer(&self) -> io::Result<File> {
+        use windows_sys::Wdk::Storage::FileSystem::FILE_OPEN_IF;
+        use windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_WRITE;
+
+        self.require_ntfs()?;
+        self.create_or_open(
+            "configuration.writer-lock",
+            FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+            0,
+            FILE_OPEN_IF,
+        )
+        .and_then(|file| {
+            if file.metadata()?.len() != 0 {
+                return Err(denied("configuration writer lease is not empty"));
+            }
+            Ok(file)
+        })
+        .map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("protected configuration writer lease: {error}"),
+            )
+        })
+    }
+
+    fn require_ntfs(&self) -> io::Result<()> {
+        use windows_sys::Win32::Storage::FileSystem::GetVolumeInformationByHandleW;
+
+        let volume = self
+            .ancestors
+            .first()
+            .expect("drive handle retained during admission");
+        let mut filesystem = [0u16; 16];
+        // SAFETY: The retained drive handle is live and the output buffer is writable.
+        if unsafe {
+            GetVolumeInformationByHandleW(
+                volume.as_raw_handle(),
+                ptr::null_mut(),
+                0,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                filesystem.as_mut_ptr(),
+                filesystem.len() as u32,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        if !filesystem
+            .into_iter()
+            .take(5)
+            .eq("NTFS".encode_utf16().chain([0]))
+        {
+            return Err(denied("protected writer requires NTFS"));
+        }
+        Ok(())
+    }
+
+    pub(super) fn create_durable(&self, name: &str, bytes: &[u8]) -> io::Result<File> {
+        use windows_sys::{
+            Wdk::Storage::FileSystem::FILE_CREATE,
+            Win32::Storage::FileSystem::{DELETE, FILE_GENERIC_WRITE},
+        };
+
+        let mut file = self.create_or_open(
+            name,
+            FILE_GENERIC_WRITE | if name == RECOVERY_REQUIRED { DELETE } else { 0 },
+            0,
+            FILE_CREATE,
+        )?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        Ok(file)
+    }
+
+    fn create_or_open(
+        &self,
+        name: &str,
+        access: u32,
+        share: u32,
+        disposition: u32,
+    ) -> io::Result<File> {
+        use windows_sys::Wdk::Storage::FileSystem::{FILE_NON_DIRECTORY_FILE, FILE_WRITE_THROUGH};
+        use windows_sys::Win32::Security::Authorization::{
+            ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+        };
+        use windows_sys::Win32::Storage::FileSystem::READ_CONTROL;
+
+        self.check_root()?;
+        let sddl: Vec<u16> = "O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)"
+            .encode_utf16()
+            .chain([0])
+            .collect();
+        let mut descriptor = ptr::null_mut();
+        // SAFETY: The string is terminated and Windows writes a LocalAlloc descriptor.
+        if unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl.as_ptr(),
+                SDDL_REVISION_1,
+                &mut descriptor,
+                ptr::null_mut(),
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        if descriptor.is_null() {
+            return Err(denied("missing protected creation descriptor"));
+        }
+        let descriptor = LocalDescriptor(descriptor);
+        // The descriptor applies only on creation. Existing lease entries
+        // are verified on their opened handles and never repaired.
+        let file = open_relative_with_security(
+            &self.root,
+            OsStr::new(name),
+            access | READ_CONTROL,
+            share,
+            disposition,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_WRITE_THROUGH,
+            Some(&descriptor),
+        )?;
+        self.verify_record(&file)?;
+        Ok(file)
+    }
+
+    pub(super) fn rename(
+        &self,
+        source: &str,
+        target: &str,
+        replace: bool,
+        identity: FileIdentity,
+        bytes: &[u8],
+    ) -> io::Result<()> {
+        use windows_sys::Win32::Storage::FileSystem::{DELETE, FILE_GENERIC_WRITE};
+
+        self.check_root()?;
+        let file = self
+            .open_existing(source, FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE)?
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "staged record missing"))?;
+        let (actual_id, actual_bytes) = read_file(&file)?;
+        if actual_id != identity || actual_bytes != bytes {
+            return Err(denied("staged record changed before rename"));
+        }
+
+        rename_same_directory(&file, target, replace)?;
+        // A failed flush after submission leaves identity verification to
+        // preserve the recovery marker instead of retrying the rename.
+        file.sync_all()
+    }
+}
+
+fn rename_same_directory(file: &File, target: &str, replace: bool) -> io::Result<()> {
+    use windows_sys::{
+        Wdk::Storage::FileSystem::{
+            FILE_RENAME_INFORMATION, FileRenameInformation, NtSetInformationFile,
+        },
+        Win32::{
+            Foundation::{HANDLE, RtlNtStatusToDosError},
+            System::IO::IO_STATUS_BLOCK,
+        },
+    };
+
+    #[repr(C)]
+    struct Rename {
+        replace: u32,
+        root: HANDLE,
+        byte_len: u32,
+        name: [u16; 128],
+    }
+    // The handle was opened relative to the pinned root. A simple name
+    // with no RootDirectory renames within that same directory.
+    let mut info = Rename {
+        replace: u32::from(replace),
+        root: ptr::null_mut(),
+        byte_len: 0,
+        name: [0; 128],
+    };
+    if target.is_empty()
+        || !target
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+    {
+        return Err(denied("configuration rename target must be a simple name"));
+    }
+    let name: Vec<u16> = target.encode_utf16().collect();
+    if name.len() > info.name.len() {
+        return Err(denied("configuration rename target is too long"));
+    }
+    info.name[..name.len()].copy_from_slice(&name);
+    info.byte_len = (name.len() * size_of::<u16>()) as u32;
+    debug_assert_eq!(
+        std::mem::offset_of!(Rename, name),
+        std::mem::offset_of!(FILE_RENAME_INFORMATION, FileName)
+    );
+    let mut status_block = IO_STATUS_BLOCK::default();
+    // SAFETY: The source and buffers stay live throughout the synchronous call.
+    let status = unsafe {
+        NtSetInformationFile(
+            file.as_raw_handle(),
+            &mut status_block,
+            (&raw const info).cast(),
+            size_of::<Rename>() as u32,
+            FileRenameInformation,
+        )
+    };
+    if status < 0 {
+        // SAFETY: This only translates the returned status code.
+        return Err(io::Error::from_raw_os_error(
+            unsafe { RtlNtStatusToDosError(status) } as i32,
+        ));
+    }
+    Ok(())
 }
 
 fn missing_leaf(error: &io::Error) -> bool {
@@ -313,7 +538,7 @@ fn denied(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, message)
 }
 
-struct LocalDescriptor(HLOCAL);
+pub(super) struct LocalDescriptor(pub(super) HLOCAL);
 
 impl Drop for LocalDescriptor {
     fn drop(&mut self) {

@@ -3,8 +3,8 @@
 use super::profile::{LEGACY_SCHEMA, ProfilePolicy, ProfileTemplate};
 use super::{
     Boundary, CURRENT_SCHEMA, ExpectedPreimage, FILE_SHARE_READ, Inspection, NAMES, Outcome,
-    TestStore, file_identity, handle_information, inspect_bytes, open_relative,
-    pin_directory_with_share, transaction_id,
+    ProtectedWriter, RecordIdentities, TestStore, file_identity, handle_information, inspect_bytes,
+    open_relative, pin_directory_with_share, transaction_id,
 };
 use crate::valid_dev_id;
 use serde::Deserialize;
@@ -14,8 +14,9 @@ use std::{
     fs::File,
     io::{self, Write},
     os::windows::{ffi::OsStrExt, fs::MetadataExt},
-    path::PathBuf,
+    path::{Path, PathBuf},
     ptr,
+    sync::Arc,
 };
 use windows_sys::{
     Wdk::Storage::FileSystem::{FILE_CREATE, FILE_DIRECTORY_FILE},
@@ -145,7 +146,10 @@ impl Fixture {
         Ok((
             profiles,
             BatteryProfileStore {
-                fixture: self,
+                store: self.store,
+                template: self.template,
+                prior: verified.map(String::into_bytes),
+                identities: None,
                 policy,
                 interrupt,
             },
@@ -163,72 +167,176 @@ impl Fixture {
         expected: ExpectedPreimage<'_>,
         interrupt: bool,
     ) -> io::Result<u8> {
-        let bytes = document_bytes(intent);
-        self.template
-            .decode_verified(bytes, inspect_bytes(bytes.map(Some)))?;
-        let report = self.store.commit_from(bytes, expected, |at| {
-            if interrupt && matches!(at, Boundary::AfterReplace(0) | Boundary::BeforeRestore(0)) {
-                return Err(io::Error::other("injected developer interruption"));
-            }
-            Ok(())
-        });
-        match &report.outcome {
-            Outcome::Committed if !interrupt => {
-                // As in the managed writer, failure to remove a backup does
-                // not invalidate a verified commit with no recovery record.
-                for error in &report.artifact_errors {
-                    let _ = writeln!(io::stderr().lock(), "fixture artifact cleanup: {error}");
-                }
-                load(&self.store, &self.template, |actual, _| Ok(actual == bytes))
-            }
-            Outcome::RecoveryRequired {
-                cause,
-                resolution: Some(resolution),
-            } if interrupt => Err(io::Error::other(format!(
-                "fixture interrupted: {cause}; {resolution}"
-            ))),
-            Outcome::InvalidIntent(inspection) | Outcome::Refused(inspection) => Err(
-                io::Error::other(format!("fixture transaction refused: {inspection:?}")),
-            ),
-            Outcome::Unchanged(error) | Outcome::Restored(error) => Err(io::Error::other(format!(
-                "fixture transaction left the prior configuration in place: {error}"
-            ))),
-            _ => Err(io::Error::other(format!(
-                "fixture transaction failed: {report:?}"
-            ))),
-        }
+        write(&self.store, &self.template, intent, expected, interrupt).map(|(percent, _)| percent)
     }
 }
 
-/// Owns the policy whose deterministic encoding was verified after the last commit.
+fn write(
+    store: &TestStore,
+    template: &ProfileTemplate,
+    intent: &[String; 3],
+    expected: ExpectedPreimage<'_>,
+    interrupt: bool,
+) -> io::Result<(u8, RecordIdentities)> {
+    let bytes = document_bytes(intent);
+    template.decode_verified(bytes, inspect_bytes(bytes.map(Some)))?;
+    let report = store.commit_from(bytes, expected, |at| {
+        if interrupt && matches!(at, Boundary::AfterReplace(0) | Boundary::BeforeRestore(0)) {
+            return Err(io::Error::other("injected developer interruption"));
+        }
+        Ok(())
+    });
+    match &report.outcome {
+        Outcome::Committed if !interrupt => {
+            // As in the managed writer, failure to remove a backup does
+            // not invalidate a verified commit with no recovery record.
+            for error in &report.artifact_errors {
+                let _ = writeln!(io::stderr().lock(), "fixture artifact cleanup: {error}");
+            }
+            let (inspection, actual, identities) = store.inspect_with_identities()?;
+            let actual = current_documents(inspection, &actual)?;
+            let policy = template.decode_verified(actual, inspection)?;
+            if actual != bytes || identities != report.identities {
+                return Err(io::Error::other("configuration commit readback changed"));
+            }
+            Ok((policy.charge_limit, identities))
+        }
+        Outcome::RecoveryRequired {
+            cause,
+            resolution: Some(resolution),
+        } if interrupt => Err(io::Error::other(format!(
+            "fixture interrupted: {cause}; {resolution}"
+        ))),
+        Outcome::InvalidIntent(inspection) | Outcome::Refused(inspection) => Err(io::Error::other(
+            format!("fixture transaction refused: {inspection:?}"),
+        )),
+        Outcome::Unchanged(error) | Outcome::Restored(error) => Err(io::Error::other(format!(
+            "fixture transaction left the prior configuration in place: {error}"
+        ))),
+        _ => Err(io::Error::other(format!(
+            "fixture transaction failed: {report:?}"
+        ))),
+    }
+}
+
+/// Owns the admitted aggregate and the private writer lifetime.
 pub struct BatteryProfileStore {
-    fixture: Fixture,
+    store: TestStore,
+    template: ProfileTemplate,
+    prior: [Vec<u8>; 3],
+    identities: Option<RecordIdentities>,
     policy: ProfilePolicy,
     interrupt: bool,
 }
 
 impl BatteryProfileStore {
+    /// Developer-only root, deliberately separate from the installed data path.
+    pub fn run_protected(
+        root: &Path,
+        run: impl FnOnce(Value, Self) -> io::Result<()>,
+    ) -> io::Result<()> {
+        let name = root
+            .file_name()
+            .and_then(OsStr::to_str)
+            .and_then(|name| name.strip_prefix("OpenBlade-Phase4j-"))
+            .filter(|id| valid_dev_id(id));
+        if name.is_none() || root.components().count() != 3 {
+            return Err(io::Error::other(
+                "expected a dedicated Phase 4j fixture at a drive root",
+            ));
+        }
+
+        let storage = super::protected::ProtectedStorage::open(root)?;
+        let lease = storage.acquire_writer()?;
+        // Keep an independent owner through pipe teardown and any blocking
+        // transaction drained when the foreground runtime exits.
+        let writer = Arc::new(ProtectedWriter {
+            storage,
+            _lease: lease,
+        });
+        let store = TestStore {
+            root: root.to_owned(),
+            pins: Vec::new(),
+            cleanup_on_drop: false,
+            held_lock: None,
+            protected: Some(Arc::clone(&writer)),
+        };
+        let documents: Documents = serde_json::from_str(FIXTURE)?;
+        let template = ProfileTemplate::from_managed(&documents.prior)?;
+        let (inspection, prior, identities) = store.inspect_with_identities()?;
+        let docs = current_documents(inspection, &prior)?;
+        let policy = template.decode_verified(docs, inspection)?;
+        let profiles = profiles_from_document(docs[0])?;
+        let result = run(
+            profiles,
+            Self {
+                store,
+                template,
+                prior: docs.map(<[u8]>::to_vec),
+                identities: Some(identities),
+                policy,
+                interrupt: false,
+            },
+        );
+        drop(writer);
+        result
+    }
+
     pub fn save(&mut self, charge_limit: u8) -> io::Result<()> {
         let policy = ProfilePolicy {
             charge_limit,
             ..self.policy
         };
-        let intent = self.fixture.template.encode(policy)?;
-        let prior = self.fixture.template.encode(self.policy)?;
-        let expected = ExpectedPreimage::Fixture(document_bytes(&prior).map(Some));
-        self.fixture.write(&intent, expected, self.interrupt)?;
+        let intent = self.template.encode(policy)?;
+        let prior = self.prior.each_ref().map(Vec::as_slice);
+        let expected = match self.identities {
+            Some(identities) => ExpectedPreimage::Protected(prior, identities),
+            None => ExpectedPreimage::Fixture(prior.map(Some)),
+        };
+        let (_, identities) = write(
+            &self.store,
+            &self.template,
+            &intent,
+            expected,
+            self.interrupt,
+        )?;
+        self.prior = intent.map(String::into_bytes);
+        self.identities = self.identities.map(|_| identities);
         self.policy = policy;
         Ok(())
     }
 
     pub fn verify_prior(&self) -> io::Result<()> {
-        let template = &self.fixture.template;
-        let prior = template.encode(self.policy)?;
-        load(&self.fixture.store, template, |actual, _| {
-            Ok(actual == document_bytes(&prior))
-        })?;
+        let (inspection, bytes, identities) = self.store.inspect_with_identities()?;
+        if current_documents(inspection, &bytes)? != self.prior.each_ref().map(Vec::as_slice)
+            || self.identities.is_some_and(|prior| prior != identities)
+        {
+            return Err(io::Error::other(
+                "configuration no longer matches the admitted preimage",
+            ));
+        }
         Ok(())
     }
+}
+
+fn current_documents(
+    inspection: Inspection,
+    bytes: &[Option<Vec<u8>>; 3],
+) -> io::Result<[&[u8]; 3]> {
+    if inspection
+        != (Inspection::CommittedEnvelope {
+            schema: CURRENT_SCHEMA,
+        })
+    {
+        return Err(io::Error::other(format!(
+            "fixture startup refused: {inspection:?}"
+        )));
+    }
+    let [Some(profile), Some(preferences), Some(marker)] = bytes.each_ref().map(Option::as_deref)
+    else {
+        return Err(io::Error::other("fixture documents missing"));
+    };
+    Ok([profile, preferences, marker])
 }
 
 fn migrated_policy(template: &ProfileTemplate) -> io::Result<ProfilePolicy> {
@@ -270,6 +378,7 @@ fn open_restart(id: &str, expected: &str) -> io::Result<(TestStore, Documents, P
         pins,
         cleanup_on_drop: false,
         held_lock: None,
+        protected: None,
     };
     if identity(&store)? != expected {
         return Err(io::Error::other("fixture root identity changed"));

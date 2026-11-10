@@ -12,7 +12,7 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray.Tests;
 
-public sealed class RustReadOnlyHostTests
+public sealed partial class RustReadOnlyHostTests
 {
     [RustReadOnlyHostFact]
     public async Task TrayClient_ReadsAndWatchesCachedStatus_AndRefusesOtherOperations()
@@ -1361,11 +1361,17 @@ internal sealed class RustReadOnlyHostFactAttribute : FactAttribute
 {
     internal const string PathVariable = "OPENBLADE_RUST_DEV_HOST_EXE";
 
-    public RustReadOnlyHostFactAttribute()
+    internal const string ProtectedFixtureVariable = "OPENBLADE_RUST_PROTECTED_FIXTURE";
+
+    public RustReadOnlyHostFactAttribute(bool requireProtectedFixture = false)
     {
         if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(PathVariable)))
         {
             Skip = $"Requires Windows and an explicit {PathVariable} path.";
+        }
+        else if (requireProtectedFixture && Environment.GetEnvironmentVariable(ProtectedFixtureVariable) != "1")
+        {
+            Skip = $"Requires opt-in {ProtectedFixtureVariable}=1 on a disposable Windows Administrator NTFS runner.";
         }
     }
 }

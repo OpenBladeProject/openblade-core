@@ -40,6 +40,13 @@ pub(super) fn entry() -> io::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.as_slice() {
         [mode] if mode == "--scm" => scm::dispatch(),
+        [mode, id, root] if mode == "foreground-protected-runtime" => {
+            let id = foreground_id(id)?;
+            fixture::BatteryProfileStore::run_protected(
+                std::path::Path::new(root),
+                |profiles, writer| foreground_battery_profiles(id, profiles, Some(writer), true),
+            )
+        }
         [mode, id]
             if mode == "foreground-battery-profile"
                 || mode == "foreground-battery-profile-interrupt"
