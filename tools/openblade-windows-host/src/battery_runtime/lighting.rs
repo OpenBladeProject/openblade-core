@@ -397,20 +397,23 @@ impl Scenario {
     pub(crate) async fn apply_lighting(
         self: &Arc<Self>,
         value: Option<LightingOverride>,
+        started_retirement: &mut bool,
     ) -> io::Result<Result> {
-        // Serialize Off requests without holding the status/device-state lock
-        // while waiting for the producer and its port.
-        let Ok(_operation) = self.lighting_operation.try_lock() else {
-            return Ok(result(
-                ScopedStatus::Blocked,
-                "Keyboard Off is already waiting for retirement.",
-            ));
-        };
+        let mut owned_operation = None;
         let mut retired = None;
         let initial = self
             .update(|state| {
                 let exact = state.current["deviceVerified"] == true;
                 let lighting = state.lighting()?;
+                // Ordinary Off serializes under the state lock as before.
+                // Only the request retiring an owner retains a reservation
+                // after dropping that lock.
+                let Ok(operation) = self.lighting_operation.try_lock() else {
+                    return Ok(result(
+                        ScopedStatus::Blocked,
+                        "Keyboard Off is already waiting for retirement.",
+                    ));
+                };
                 if let Err(refused) = lighting.stage(value, exact) {
                     return Ok(refused);
                 }
@@ -420,7 +423,9 @@ impl Scenario {
 
                 let (publish, done) = watch::channel(false);
                 let worker = renderer.close(done.clone())?;
+                owned_operation = Some(operation);
                 retired = Some(done);
+                *started_retirement = true;
                 let scenario = Arc::clone(self);
                 tokio::spawn(async move {
                     // This task belongs to the renderer retirement, not the pipe
@@ -450,6 +455,7 @@ impl Scenario {
         let Some(mut retired) = retired else {
             return Ok(initial);
         };
+        let _owned_operation = owned_operation;
         wait_for_retirement(&mut retired).await?;
         self.update(|state| {
             let exact = state.current["deviceVerified"] == true;
@@ -463,6 +469,17 @@ impl Scenario {
             Ok(lighting.apply_off(exact))
         })
         .await
+    }
+
+    pub(crate) async fn lighting_wait_disconnected(&self) -> io::Result<()> {
+        self.update(|_| {
+            Ok(result(
+                ScopedStatus::Unchanged,
+                "Caller disconnected while waiting for renderer retirement.",
+            ))
+        })
+        .await?;
+        Ok(())
     }
 
     pub(crate) async fn drive_lighting(
@@ -540,41 +557,52 @@ impl Scenario {
         self.update(|_| Ok(result(ScopedStatus::Unchanged, "Renderer frame in flight.")))
             .await?;
 
-        if advance.recv().await.is_none() {
-            return Ok(false);
-        }
-        let retired = {
+        let retired = loop {
+            if advance.recv().await.is_none() {
+                return Ok(false);
+            }
             let mut state = self.state.lock().await;
             let lighting = state.lighting()?;
             let renderer = lighting
                 .renderer
                 .as_ref()
                 .ok_or_else(|| io::Error::other("Missing owned renderer."))?;
-            if renderer.submit().is_ok() {
-                return Err(io::Error::other(
-                    "Renderer admitted a second frame during retirement.",
-                ));
-            }
             let retired = match renderer {
                 Renderer::Retiring(retired) => Some(retired.clone()),
                 Renderer::Uncertain => None,
                 Renderer::Owned(_) => {
-                    return Err(io::Error::other("Renderer retirement has not started."));
+                    self.update_locked(&mut state, |_| {
+                        Ok(result(
+                            ScopedStatus::Unchanged,
+                            "Waiting for a keyboard Off request.",
+                        ))
+                    })?;
+                    continue;
                 }
             };
-            if lighting.start_renderer().is_ok() {
+            if renderer.submit().is_ok() || lighting.start_renderer().is_ok() {
                 return Err(io::Error::other(
-                    "Renderer admitted a replacement before retirement.",
+                    "Retiring renderer admitted a frame or replacement.",
                 ));
             }
-            retired
+            if lighting.native_lane.try_acquire().is_ok() {
+                return Err(io::Error::other(
+                    "In-flight frame lost its native lighting lease.",
+                ));
+            }
+            break retired;
         };
         script
             .complete_frame
             .send(())
             .map_err(|_| io::Error::other("Frame already ended."))?;
         script.frame_done.await.map_err(io::Error::other)?;
-        self.update(|_| {
+        self.update(|state| {
+            if state.lighting()?.native_lane.try_acquire().is_ok() {
+                return Err(io::Error::other(
+                    "Renderer released its port before native retirement.",
+                ));
+            }
             Ok(result(
                 ScopedStatus::Unchanged,
                 "Frame drained. Renderer port still owned.",
@@ -653,6 +681,46 @@ mod tests {
             }))
             .unwrap(),
         )
+    }
+
+    #[tokio::test]
+    async fn concurrent_unowned_requests_wait_for_state_and_run_in_order() {
+        let status: Value = serde_json::from_str(crate::wire::CURRENT_FIXTURE).unwrap();
+        let baseline = status["status"].clone();
+        let profiles = baseline["profiles"].clone();
+        let scenario = Arc::new(
+            Scenario::composed(
+                baseline,
+                profiles,
+                None,
+                super::super::ProfileReplay::LightingOff {
+                    owned: false,
+                    uncertain: false,
+                },
+            )
+            .unwrap(),
+        );
+        let busy = scenario.state.lock().await;
+        let mut first_started = false;
+        let mut second_started = false;
+        let first = scenario.apply_lighting(request(1), &mut first_started);
+        let second = scenario.apply_lighting(request(0), &mut second_started);
+        tokio::pin!(first, second);
+        std::future::poll_fn(|context| {
+            use std::future::Future;
+            assert!(first.as_mut().poll(context).is_pending());
+            assert!(second.as_mut().poll(context).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        drop(busy);
+
+        let (first, second) = tokio::join!(first, second);
+        assert_eq!(first.unwrap().status, ScopedStatus::Applied);
+        assert_eq!(second.unwrap().status, ScopedStatus::Unchanged);
+        let mut state = scenario.state.lock().await;
+        let lighting = state.lighting().unwrap();
+        assert!(lighting.temporary && !lighting.saved.off && lighting.confirmed_off);
     }
 
     #[test]

@@ -609,13 +609,24 @@ where
                 .as_ref()
                 .ok_or_else(|| invalid("missing lighting scenario"))?;
             let mut probe = [0];
+            let mut started_retirement = false;
             let result = tokio::select! {
                 biased;
-                disconnected = io.read(&mut probe) => match disconnected? {
-                    0 => return Ok(()),
-                    _ => return Err(invalid("unexpected data while awaiting lighting response")),
-                },
-                applied = scenario.apply_lighting(lighting.value) => applied?,
+                disconnected = io.read(&mut probe) => {
+                    match disconnected {
+                        Ok(0) => {}
+                        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => {}
+                        Err(error) => return Err(error),
+                        Ok(_) => return Err(invalid("unexpected data while awaiting lighting response")),
+                    }
+                    // The losing request future and its reservation have
+                    // been dropped. The separate retirement task is still live.
+                    if started_retirement {
+                        scenario.lighting_wait_disconnected().await?;
+                    }
+                    return Ok(());
+                }
+                applied = scenario.apply_lighting(lighting.value, &mut started_retirement) => applied?,
             };
             write_frame(&mut io, request.operation_response(result.into())).await
         }

@@ -13,7 +13,7 @@ use tokio::{
     time::timeout,
 };
 
-pub(super) const RETIRE_LIMIT: Duration = Duration::from_secs(15);
+pub(super) const RETIRE_LIMIT: Duration = Duration::from_secs(60);
 
 pub(super) enum Renderer {
     Owned(Producer),

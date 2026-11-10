@@ -1172,6 +1172,10 @@ public sealed class RustReadOnlyHostTests
             Assert.Equal(LightingRendererOwnershipState.Spectrum, initial.LightingRendererOwnership);
             Assert.Null(initial.ConfirmedState?.Lighting);
             Assert.Null(initial.LightingOverride);
+            await host.AdvanceAsync(token);
+            var waiting = await WaitForStatusAsync("Waiting for a keyboard Off request.");
+            Assert.Equal(LightingRendererOwnershipState.Spectrum, waiting.LightingRendererOwnership);
+            Assert.Null(waiting.LightingOverride);
             byte[][] saved = ConfigurationNames
                 .Select(name => File.ReadAllBytes(Path.Combine(root, name))).ToArray();
 
@@ -1187,6 +1191,8 @@ public sealed class RustReadOnlyHostTests
             {
                 request.Cancel();
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await applying);
+                AssertState(await WaitForStatusAsync("Caller disconnected while waiting for renderer retirement."),
+                    LightingRendererOwnershipState.Spectrum, blocked: true);
             }
 
             Assert.Equal(ControlOperationStatus.Blocked,

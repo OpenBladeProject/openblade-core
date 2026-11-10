@@ -320,12 +320,15 @@ unknown and never repeats the setter during reconciliation.
 Use `foreground-lighting-off-owned <pipe-id>` to start with one
 synthetic Spectrum frame in flight. Submit keyboard Off after the
 "Renderer frame in flight" event. Admission closes while the renderer
-still owns its simulated port. The first `n` completes the frame. The
-second `n` releases the port and lets a connected caller continue to
-the brightness checks. Disconnecting the caller leaves retirement
-running and the stored intent intact. After verified release, a fresh
-request can apply Off. The four brightness steps above then run on
-the same endpoint.
+still owns its simulated port. Send two `n` steps within 60 seconds
+of closure. The first completes the frame and the second releases
+the port so a connected caller can continue to the brightness checks.
+An early `n` leaves the fixture waiting for Off. If the caller
+disconnects, wait for the host's disconnect status before advancing.
+Retirement and stored intent survive that disconnect. A fresh request
+can apply Off after verified release. If the deadline expires, late
+steps can drain the worker while the fence stays in place. The four
+brightness steps above follow successful retirement.
 
 `foreground-lighting-off-uncertain-owner <pipe-id>` follows the same
 first two steps but returns an unverified port release. The third `n`
