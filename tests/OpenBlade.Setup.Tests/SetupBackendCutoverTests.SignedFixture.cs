@@ -60,11 +60,12 @@ public sealed partial class SetupBackendCutoverTests
         byte[] Container, byte[] Manifest, byte[] Signature,
         OpenBladeReleaseTrustPolicy Policy, IReadOnlySet<string> ExpectedPaths);
 
-    private static SignedRustFixture CreateSignedFixture(SignedFixtureFault fault)
+    private static SignedRustFixture CreateSignedFixture(SignedFixtureFault fault,
+        string? scratchRoles = null)
     {
         using var source = new TestTree();
         source.CreateCompletePayload();
-        string rustSource = Environment.GetEnvironmentVariable(LiveFixtureDirectoryVariable)!;
+        string rustSource = scratchRoles ?? Environment.GetEnvironmentVariable(LiveFixtureDirectoryVariable)!;
         Assert.True(Path.IsPathFullyQualified(rustSource));
 
         // Stable ZIP entry order, timestamps and storage method keep the outer
@@ -93,8 +94,8 @@ public sealed partial class SetupBackendCutoverTests
                 using Stream output = entry.Open();
                 string inputFile = inputPath switch
                 {
-                    ServiceFile => Path.Combine(rustSource, LiveServiceFixture),
-                    AgentFile => Path.Combine(rustSource, LiveAgentFixture),
+                    ServiceFile => Path.Combine(rustSource, scratchRoles is null ? LiveServiceFixture : ServiceFile),
+                    AgentFile => Path.Combine(rustSource, scratchRoles is null ? LiveAgentFixture : AgentFile),
                     _ => Path.Combine(source.Payload, inputPath),
                 };
                 using Stream input = File.OpenRead(inputFile);
@@ -163,7 +164,8 @@ public sealed partial class SetupBackendCutoverTests
     }
 
     private static async Task<SortedDictionary<string, string>> StageSignedFixtureAsync(
-        SignedRustFixture fixture, string destination)
+        SignedRustFixture fixture, string destination, string serviceHash = LiveServiceHash,
+        string agentHash = LiveAgentHash)
     {
         OpenBladeVerifiedRelease release = OpenBladeSignedReleaseVerifier.Verify(
             fixture.Manifest, fixture.Signature, fixture.Policy);
@@ -191,8 +193,8 @@ public sealed partial class SetupBackendCutoverTests
             inventory.Add(relativePath, Convert.ToHexString(SHA256.HashData(content)));
         }
 
-        RequireRustRoleHash(inventory, ServiceFile, LiveServiceHash);
-        RequireRustRoleHash(inventory, AgentFile, LiveAgentHash);
+        RequireRustRoleHash(inventory, ServiceFile, serviceHash);
+        RequireRustRoleHash(inventory, AgentFile, agentHash);
         if (files.Count != fixture.ExpectedPaths.Count)
         {
             throw new InvalidDataException("Incomplete fixture inventory.");
