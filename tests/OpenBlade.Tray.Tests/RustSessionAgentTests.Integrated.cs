@@ -93,7 +93,13 @@ public sealed partial class RustSessionAgentTests
                 var gpuQuery = gpu.QueryAsync(token);
                 await Task.WhenAll(displayQuery, gpuQuery);
                 Assert.Equal(FactoryProfile, (await displayQuery).SelectedColorProfileKey);
-                Assert.Equal(SessionGpuOperationStatus.Succeeded, (await gpuQuery).Status);
+                SessionGpuResponse grouped = await gpuQuery;
+                Assert.Equal(SessionGpuOperationStatus.Succeeded, grouped.Status);
+                SessionGpuApp owner = Assert.Single(grouped.Apps, app => app.ProcessId == 41);
+                Assert.Equal(15.0, owner.UtilizationPercent);
+                Assert.DoesNotContain(grouped.Apps, app => app.ProcessId == 46);
+                AssertRejectedGpuClose(await gpu.CloseAsync([owner], force: false, token));
+                AssertRejectedGpuClose(await gpu.CloseAsync([owner], force: true, token));
                 await AssertIccAndDisplayWritesFencedAsync(display, token);
                 Assert.Equal(pending, await File.ReadAllTextAsync(journal, token));
                 await resumed.ReportFocusAsync(true, token);

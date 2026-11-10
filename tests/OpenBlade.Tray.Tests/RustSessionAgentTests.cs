@@ -364,9 +364,11 @@ public sealed partial class RustSessionAgentTests
 
         internal static Host Start(
             string id, string scenario = "available", string? brightness = null, bool gpu = false,
-            string mode = "foreground", string[]? arguments = null)
+            string mode = "foreground", string[]? arguments = null, bool requireGpuClose = false)
         {
-            string path = Environment.GetEnvironmentVariable(RustSessionAgentFactAttribute.PathVariable)!;
+            string path = Environment.GetEnvironmentVariable(requireGpuClose
+                ? RustSessionAgentFactAttribute.GpuClosePathVariable
+                : RustSessionAgentFactAttribute.PathVariable)!;
             Assert.True(Path.IsPathFullyQualified(path)
                 && string.Equals(Path.GetFileName(path), "openblade-rust-session-agent.exe",
                     StringComparison.OrdinalIgnoreCase)
@@ -472,11 +474,17 @@ internal sealed class RustSessionAgentFactAttribute : FactAttribute
 {
     internal const string PathVariable = "OPENBLADE_RUST_SESSION_AGENT_EXE";
 
-    public RustSessionAgentFactAttribute(bool requireService = false)
+    internal const string GpuClosePathVariable = "OPENBLADE_RUST_GPU_CLOSE_FIXTURE_EXE";
+
+    public RustSessionAgentFactAttribute(bool requireService = false, bool requireGpuClose = false)
     {
         if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(PathVariable)))
         {
             Skip = $"Requires Windows and an explicit {PathVariable} path.";
+        }
+        else if (requireGpuClose && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(GpuClosePathVariable)))
+        {
+            Skip = $"Requires an explicit {GpuClosePathVariable} path.";
         }
         else if (requireService && string.IsNullOrWhiteSpace(
             Environment.GetEnvironmentVariable(RustReadOnlyHostFactAttribute.PathVariable)))

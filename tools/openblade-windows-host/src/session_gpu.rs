@@ -222,6 +222,20 @@ impl Drop for CancelScan {
     }
 }
 
+enum Scan {
+    Query,
+    #[cfg(feature = "gpu-close-fixture")]
+    SimulatedClose {
+        force: bool,
+        targets: Vec<Target>,
+    },
+}
+
+struct ActionReport {
+    error: Option<&'static str>,
+    results: Vec<ActionResult>,
+}
+
 pub(super) async fn serve(
     pipe: &mut NamedPipeServer,
     identity: &Identity,
@@ -241,13 +255,29 @@ pub(super) async fn serve(
     // The read supplies the token for this message. No dispatch before admission.
     identity.authorize(pipe)?;
     let request = Request::parse(&body)?;
-    let (request_id, close) = match request {
+    let (request_id, scan) = match request {
+        #[cfg(feature = "gpu-close-fixture")]
         Request::Close {
             request_id,
             force,
             targets,
             ..
         } if matches!(scenario, Scenario::SimulatedClose) => {
+            (request_id, Scan::SimulatedClose { force, targets })
+        }
+        Request::Close { request_id, .. } => {
+            let frame = Response::new(&request_id, FAILED, Some(NO_ACTIONS)).frame()?;
+            return timeout(FRAME_TIMEOUT, pipe.write_all(&frame)).await?;
+        }
+        Request::Query { request_id, .. } => (request_id, Scan::Query),
+    };
+    let cancel = CancelScan(Arc::new(AtomicBool::new(false)));
+    let worker_cancel = Arc::clone(&cancel.0);
+    let mut worker = tokio::task::spawn_blocking(move || match scan {
+        Scan::Query => scripted::sample(scenario, &worker_cancel)
+            .map(|inventory| (inventory, None::<ActionReport>)),
+        #[cfg(feature = "gpu-close-fixture")]
+        Scan::SimulatedClose { force, targets } => {
             let kind = if force {
                 scripted::Kind::ForceClose
             } else {
@@ -261,20 +291,25 @@ pub(super) async fn serve(
                     name: target.name,
                 })
                 .collect::<Vec<_>>();
-            (request_id, Some((kind, targets)))
+            let (inventory, report) = scripted::simulate_close(&targets, kind, &worker_cancel)?;
+            let results = report
+                .results
+                .into_iter()
+                .map(|result| ActionResult {
+                    process_id: result.process_id,
+                    start_time_utc_ticks: result.start_time_utc_ticks,
+                    succeeded: result.error.is_none(),
+                    error: result.error,
+                })
+                .collect();
+            Ok((
+                inventory,
+                Some(ActionReport {
+                    error: report.error,
+                    results,
+                }),
+            ))
         }
-        Request::Close { request_id, .. } => {
-            let frame = Response::new(&request_id, FAILED, Some(NO_ACTIONS)).frame()?;
-            return timeout(FRAME_TIMEOUT, pipe.write_all(&frame)).await?;
-        }
-        Request::Query { request_id, .. } => (request_id, None),
-    };
-    let cancel = CancelScan(Arc::new(AtomicBool::new(false)));
-    let worker_cancel = Arc::clone(&cancel.0);
-    let mut worker = tokio::task::spawn_blocking(move || match close {
-        Some((kind, targets)) => scripted::simulate_close(&targets, kind, &worker_cancel)
-            .map(|(inventory, report)| (inventory, Some(report))),
-        None => scripted::sample(scenario, &worker_cancel).map(|inventory| (inventory, None)),
     });
     let mut extra = [0];
     let response = tokio::select! {
@@ -289,7 +324,7 @@ pub(super) async fn serve(
             Ok((inventory, report)) => {
                 let mut response = Response::inventory(&request_id, inventory)?;
                 if let Some(report) = report {
-                    let succeeded = report.results.iter().filter(|r| r.error.is_none()).count();
+                    let succeeded = report.results.iter().filter(|r| r.succeeded).count();
                     response.status = if report.error.is_none() {
                         SUCCEEDED
                     } else if succeeded == 0 {
@@ -298,12 +333,7 @@ pub(super) async fn serve(
                         PARTIAL
                     };
                     response.error = report.error;
-                    response.results = report.results.into_iter().map(|r| ActionResult {
-                        process_id: r.process_id,
-                        start_time_utc_ticks: r.start_time_utc_ticks,
-                        succeeded: r.error.is_none(),
-                        error: r.error,
-                    }).collect();
+                    response.results = report.results;
                 }
                 response
             }

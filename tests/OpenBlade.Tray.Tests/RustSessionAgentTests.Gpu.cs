@@ -13,6 +13,10 @@ public sealed partial class RustSessionAgentTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         CancellationToken token = timeout.Token;
         string id = Guid.NewGuid().ToString("N");
+        await using (var rejected = Host.Start(id, "simulated-close", gpu: true))
+        {
+            await rejected.AssertRejectedAsync(token);
+        }
         await using var host = Host.Start(id, "available", gpu: true);
         await host.WaitForReadyAsync(token);
         var client = new SessionGpuAppAdapter(GpuPipeName(id));
@@ -40,15 +44,23 @@ public sealed partial class RustSessionAgentTests
         await host.StopAsync(token);
     }
 
-    [RustSessionAgentFact]
+    [RustSessionAgentFact(requireGpuClose: true)]
     public async Task TrayGpuClient_RoundTripsOnlyFixedSimulatedCloseActions()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         CancellationToken token = timeout.Token;
         string id = Guid.NewGuid().ToString("N");
-        await using var host = Host.Start(id, "simulated-close", gpu: true);
-        await host.WaitForReadyAsync(token);
         var client = new SessionGpuAppAdapter(GpuPipeName(id));
+        await using (var queryOnly = Host.Start(id, "available", gpu: true, requireGpuClose: true))
+        {
+            await queryOnly.WaitForReadyAsync(token);
+            SessionGpuApp target = Assert.Single((await client.QueryAsync(token)).Apps, app => app.ProcessId == 41);
+            AssertRejectedGpuClose(await client.CloseAsync([target], force: false, token));
+            AssertRejectedGpuClose(await client.CloseAsync([target], force: true, token));
+            await queryOnly.StopAsync(token);
+        }
+        await using var host = Host.Start(id, "simulated-close", gpu: true, requireGpuClose: true);
+        await host.WaitForReadyAsync(token);
         SessionGpuResponse snapshot = await client.QueryAsync(token);
         Assert.Equal(SessionGpuOperationStatus.Succeeded, snapshot.Status);
         SessionGpuApp owner = Assert.Single(snapshot.Apps, app => app.ProcessId == 41);

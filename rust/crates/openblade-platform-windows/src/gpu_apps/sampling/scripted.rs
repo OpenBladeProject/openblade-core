@@ -3,7 +3,9 @@
 use super::*;
 use std::{thread, time::Instant};
 
+#[cfg(feature = "scripted-gpu-close")]
 use crate::gpu_apps::action::fixture;
+#[cfg(feature = "scripted-gpu-close")]
 pub use crate::gpu_apps::action::{Kind, Report, Target};
 
 const ADAPTER: NvidiaAdapterLuid = NvidiaAdapterLuid {
@@ -16,6 +18,7 @@ pub(in crate::gpu_apps) const SESSION: u32 = 5;
 #[derive(Clone, Copy)]
 pub enum Scenario {
     Available,
+    #[cfg(feature = "scripted-gpu-close")]
     SimulatedClose,
     Empty,
     NoData,
@@ -27,18 +30,21 @@ pub fn sample(
     scenario: Scenario,
     cancelled: &AtomicBool,
 ) -> Result<GpuAppInventory, QueryUnavailable> {
+    #[cfg(feature = "scripted-gpu-close")]
+    let scenario = match scenario {
+        Scenario::SimulatedClose => Scenario::Available,
+        other => other,
+    };
     scan(
         &mut Script {
-            scenario: match scenario {
-                Scenario::SimulatedClose => Scenario::Available,
-                other => other,
-            },
+            scenario,
             sample: 0,
         },
         cancelled,
     )
 }
 
+#[cfg(feature = "scripted-gpu-close")]
 pub fn simulate_close(
     targets: &[Target],
     kind: Kind,

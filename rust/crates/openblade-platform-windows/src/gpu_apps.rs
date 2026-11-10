@@ -12,7 +12,7 @@ use std::{
 
 mod sampling;
 
-#[cfg(any(test, feature = "scripted-gpu"))]
+#[cfg(any(test, feature = "scripted-gpu-close"))]
 mod action;
 
 pub use sampling::sample_windows_gpu_apps;

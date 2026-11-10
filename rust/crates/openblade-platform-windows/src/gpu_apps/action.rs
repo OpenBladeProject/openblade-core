@@ -231,7 +231,7 @@ fn executable_name<'a>(
 
 // The only backend shipped with this seam owns fixed records. No request
 // value becomes an image path or is sent to the operating system.
-#[cfg(feature = "scripted-gpu")]
+#[cfg(feature = "scripted-gpu-close")]
 pub(super) mod fixture;
 
 #[cfg(test)]

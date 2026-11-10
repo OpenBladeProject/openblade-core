@@ -16,6 +16,7 @@ path = "src/discover.rs"
 
 [features]
 cpu-worker-fixture = []
+gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]
 
 [[bin]]
 name = "openblade-cpu-worker-fixture"
