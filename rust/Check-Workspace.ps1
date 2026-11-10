@@ -58,7 +58,7 @@ try {
     $fixtureReaderPackages = @('openblade-protocol', 'openblade-domain')
     $expectedTests = @{
         'openblade-protocol' = @('report_parity', 'report_properties')
-        'openblade-domain' = @('automation_policy', 'profile_policy')
+        'openblade-domain' = @('automation_policy', 'function_row_policy', 'profile_policy')
     }
 
     $metadataJson = cargo metadata --locked --offline --format-version 1

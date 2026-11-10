@@ -44,6 +44,12 @@ topology, identity and the distinct desktop and physical refresh rates from
 the current Windows desktop. It uses the locked `windows-sys` SDK bindings
 and has no production caller. Its tests script native responses.
 
+The standalone `openblade-domain::function_row` module consumes a single typed
+observation per edge. It keeps Windows hook pairing and recovery separate from
+Razer driver forwarding and retirement. RZ09-0484 driver strokes require fresh
+host-managed Fn admission, independent of displayed Fn availability. Scripted
+tests exercise the policy without input capture, injection, or action execution.
+
 The workspace guard checks crate boundaries, reviewed targets and dependencies,
 MSRV and compiler policies. Its regression tests use disposable workspace copies.
 Inner crates retain `no_std` and inherit `unsafe_code = "forbid"`. FFI and Windows
