@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OpenBlade.Service;
 
@@ -11,7 +12,11 @@ public enum ServiceStartupKind
 internal sealed record ServiceRunMarkerDocument(
     int SchemaVersion,
     DateTimeOffset StartedAtUtc,
-    TimeSpan UptimeAtStart);
+    TimeSpan UptimeAtStart)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? RunId { get; init; }
+}
 
 public sealed class ServiceRunMarkerStore
 {
@@ -26,7 +31,10 @@ public sealed class ServiceRunMarkerStore
     private readonly string path;
     private readonly Func<DateTimeOffset> getUtcNow;
     private readonly Func<TimeSpan> getSystemUptime;
+    private readonly Func<string, CancellationToken, IDisposable>? acquireVerifiedWriterLease;
+    private readonly Action? requireRetiredBackend;
     private readonly SemaphoreSlim gate = new(1, 1);
+    private byte[]? ownedMarker;
 
     public ServiceRunMarkerStore(string path)
         : this(
@@ -39,7 +47,9 @@ public sealed class ServiceRunMarkerStore
     internal ServiceRunMarkerStore(
         string path,
         Func<DateTimeOffset> getUtcNow,
-        Func<TimeSpan> getSystemUptime)
+        Func<TimeSpan> getSystemUptime,
+        Func<string, CancellationToken, IDisposable>? acquireVerifiedWriterLease = null,
+        Action? requireRetiredBackend = null)
     {
         this.path = string.IsNullOrWhiteSpace(path)
             ? throw new ArgumentException("A service run-marker path is required.", nameof(path))
@@ -48,6 +58,13 @@ public sealed class ServiceRunMarkerStore
             ?? throw new ArgumentNullException(nameof(getUtcNow));
         this.getSystemUptime = getSystemUptime
             ?? throw new ArgumentNullException(nameof(getSystemUptime));
+        if (requireRetiredBackend is not null && acquireVerifiedWriterLease is null)
+        {
+            throw new ArgumentException("Backend transition requires a verified writer lease.",
+                nameof(requireRetiredBackend));
+        }
+        this.acquireVerifiedWriterLease = acquireVerifiedWriterLease;
+        this.requireRetiredBackend = requireRetiredBackend;
     }
 
     public async Task<ServiceStartupKind> BeginRunAsync(
@@ -56,20 +73,55 @@ public sealed class ServiceRunMarkerStore
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            DateTimeOffset startedAtUtc = getUtcNow();
-            TimeSpan uptimeAtStart = getSystemUptime();
-            ServiceStartupKind startupKind = await ClassifyExistingMarkerAsync(
-                startedAtUtc,
-                uptimeAtStart,
-                cancellationToken).ConfigureAwait(false);
-            byte[] json = JsonSerializer.SerializeToUtf8Bytes(
-                new ServiceRunMarkerDocument(
-                    CurrentSchemaVersion,
-                    startedAtUtc,
-                    uptimeAtStart),
-                SerializerOptions);
-            await AtomicFile.WriteAsync(path, json, cancellationToken)
-                .ConfigureAwait(false);
+            ServiceStartupKind startupKind;
+            byte[] json;
+            using (IDisposable? lease = AcquireWriterLease(cancellationToken))
+            {
+                if (lease is not null)
+                {
+                    if (ownedMarker is not null)
+                    {
+                        throw new InvalidOperationException("This store already owns a service run marker.");
+                    }
+                    cancellationToken.ThrowIfCancellationRequested();
+                    RequireAbsent(path + ".tmp");
+                }
+
+                DateTimeOffset startedAtUtc = getUtcNow();
+                TimeSpan uptimeAtStart = getSystemUptime();
+                if (requireRetiredBackend is null)
+                {
+                    startupKind = await ClassifyExistingMarkerAsync(
+                        startedAtUtc,
+                        uptimeAtStart,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    // The caller verifies durable retirement for the exact outgoing
+                    // generation. The writer lease only excludes concurrent writers.
+                    requireRetiredBackend();
+                    RequireAbsent(path);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    startupKind = ServiceStartupKind.Normal;
+                }
+
+                json = JsonSerializer.SerializeToUtf8Bytes(
+                    new ServiceRunMarkerDocument(
+                        CurrentSchemaVersion,
+                        startedAtUtc,
+                        uptimeAtStart)
+                    {
+                        RunId = lease is null ? null : Guid.NewGuid(),
+                    },
+                    SerializerOptions);
+                await AtomicFile.WriteAsync(path, json, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (acquireVerifiedWriterLease is not null)
+            {
+                ownedMarker = json;
+            }
             return startupKind;
         }
         finally
@@ -130,12 +182,57 @@ public sealed class ServiceRunMarkerStore
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            using IDisposable? lease = AcquireWriterLease(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            if (lease is not null)
+            {
+                if (ownedMarker is null)
+                {
+                    throw new InvalidOperationException("This store has no confirmed run marker to clear.");
+                }
+
+                RequireAbsent(path + ".tmp");
+                byte[] currentMarker = await File.ReadAllBytesAsync(path, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!currentMarker.AsSpan().SequenceEqual(ownedMarker))
+                {
+                    throw new InvalidOperationException("The service run marker no longer belongs to this run.");
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             File.Delete(path);
+            ownedMarker = null;
         }
         finally
         {
             gate.Release();
         }
+    }
+
+    private IDisposable? AcquireWriterLease(CancellationToken cancellationToken)
+    {
+        if (acquireVerifiedWriterLease is null)
+        {
+            return null;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return acquireVerifiedWriterLease(Path.GetDirectoryName(path)!, cancellationToken)
+            ?? throw new InvalidOperationException("A verified machine writer lease is required.");
+    }
+
+    private static void RequireAbsent(string evidencePath)
+    {
+        try
+        {
+            _ = File.GetAttributes(evidencePath);
+        }
+        catch (FileNotFoundException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException("Uncleared service run-marker evidence must be preserved.");
     }
 }
