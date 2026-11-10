@@ -1,9 +1,10 @@
 use std::io::{self, BufRead, Write};
 
+use openblade_platform_windows::display::scripted::Scenario;
 use openblade_windows_host::pipe::{Endpoint, stale_connection};
 use tokio::{runtime::Builder, sync::oneshot};
 
-use crate::session_display::{self, DisplayFixture, Rejected};
+use crate::session_display::{self, Rejected};
 
 const PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Display.Dev.";
 
@@ -16,15 +17,22 @@ pub(super) fn entry() -> io::Result<()> {
     if mode != "foreground" {
         return Err(usage());
     }
-    let fixture = DisplayFixture::load(scenario.to_str().ok_or_else(usage)?)?;
+    let scenario = match scenario.to_str() {
+        Some("available") => Scenario::Available,
+        Some("unavailable") => Scenario::Unavailable,
+        Some("stale-target") => Scenario::StaleTarget,
+        Some("native-error") => Scenario::NativeError,
+        Some("hdr-error") => Scenario::HdrError,
+        _ => return Err(usage()),
+    };
     let runtime = Builder::new_current_thread().enable_all().build()?;
-    runtime.block_on(run(id, fixture))
+    runtime.block_on(run(id, scenario))
 }
 
 fn usage() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
-        "expected foreground <32 lowercase hex digits> <available|unavailable>",
+        "expected foreground <32 lowercase hex digits> <available|unavailable|stale-target|native-error|hdr-error>",
     )
 }
 
@@ -35,7 +43,7 @@ fn valid_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-async fn run(id: &str, fixture: DisplayFixture) -> io::Result<()> {
+async fn run(id: &str, scenario: Scenario) -> io::Result<()> {
     // One reserved claim and one data connection. This endpoint has no
     // subscribers or concurrent dispatch, so partial frames can occupy one slot.
     let endpoint = Endpoint::new(format!("{PREFIX}{id}"), 2)?;
@@ -60,12 +68,12 @@ async fn run(id: &str, fixture: DisplayFixture) -> io::Result<()> {
         loop {
             match listener.connect().await {
                 Ok(()) => {
-                    if let Err(Rejected::InvalidFixture) =
-                        session_display::serve(&mut listener, &endpoint.identity, &fixture).await
+                    if let Err(Rejected::InvalidResponse) =
+                        session_display::serve(&mut listener, &endpoint.identity, scenario).await
                     {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
-                            "embedded Session Display response cannot be framed",
+                            "Session Display response cannot be framed",
                         ));
                     }
                 }

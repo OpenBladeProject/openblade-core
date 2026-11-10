@@ -17,6 +17,8 @@ use windows_sys::Win32::{
 
 mod native;
 mod refresh;
+#[cfg(feature = "scripted-display")]
+pub mod scripted;
 pub use refresh::{
     InternalDisplayRefresh, RefreshOption, RefreshSnapshot, TimingEvidence, VerticalRange,
 };

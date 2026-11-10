@@ -45,6 +45,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "openblade-platform-windows"
+version = "0.0.0"
+dependencies = [
+ "windows-sys",
+]
+
+[[package]]
 name = "openblade-protocol"
 version = "0.0.0"
 dependencies = [
@@ -60,6 +67,7 @@ name = "openblade-windows-host"
 version = "0.0.0"
 dependencies = [
  "openblade-domain",
+ "openblade-platform-windows",
  "openblade-protocol",
  "openblade-types",
  "serde",

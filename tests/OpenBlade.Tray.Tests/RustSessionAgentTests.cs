@@ -10,7 +10,7 @@ namespace OpenBlade.Tray.Tests;
 public sealed class RustSessionAgentTests
 {
     [RustSessionAgentFact]
-    public async Task TrayDisplayClient_ReadsFixtureStateAndPreservesUnavailableQuerySuccess()
+    public async Task TrayDisplayClient_ReadsScriptedAcquisitionAndPreservesUnavailableQuerySuccess()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         CancellationToken token = timeout.Token;
@@ -26,22 +26,30 @@ public sealed class RustSessionAgentTests
             Assert.Equal(scenario == "available", result.IsAvailable);
             Assert.Null(result.BrightnessPercent);
             Assert.Null(result.SelectedColorProfileKey);
+            Assert.Empty(result.ColorProfileOptions);
+            Assert.Empty(result.SupportedBrightnessLevels);
             if (result.IsAvailable)
             {
                 Assert.Equal("Synthetic panel", result.DisplayName);
                 Assert.Equal(2560, result.Width);
                 Assert.Equal(1600, result.Height);
-                Assert.Equal(8, result.BitsPerColorChannel);
-                Assert.Equal("fixed-60", result.SelectedRefreshRateKey);
-                Assert.Single(result.RefreshRateOptions);
+                Assert.Equal(10, result.BitsPerColorChannel);
                 Assert.True(result.IsHdrSupported);
+                Assert.True(result.IsHdrEnabled);
+                // Managed oracle case fixed_split_is_not_fixed (60/240, boost off).
+                Assert.Null(result.SelectedRefreshRateKey);
+                Assert.Collection(result.RefreshRateOptions,
+                    option => Assert.Equal(new DisplayRefreshRateOption("fixed-60", "60 Hz"), option),
+                    option => Assert.Equal(new DisplayRefreshRateOption("fixed-240", "240 Hz"), option));
             }
             else
             {
                 Assert.Null(result.DisplayName);
                 Assert.Null(result.BitsPerColorChannel);
                 Assert.Empty(result.RefreshRateOptions);
-                Assert.Equal("No display topology is available in this fixture.", result.StatusMessage);
+                Assert.False(result.IsHdrSupported);
+                Assert.False(result.IsHdrEnabled);
+                Assert.Equal("No active display topology is available.", result.StatusMessage);
             }
 
             DisplaySettingsSnapshot rejected = await client.SetHdrEnabledAsync(
@@ -49,6 +57,36 @@ public sealed class RustSessionAgentTests
             Assert.False(rejected.OperationSucceeded);
             Assert.Equal(DisplaySettingsFailureKind.ControlsUnavailable, rejected.FailureKind);
             Assert.Equal(result.IsAvailable, (await client.GetStateAsync(token)).IsAvailable);
+            await host.StopAsync(token);
+        }
+    }
+
+    [RustSessionAgentFact]
+    public async Task TrayDisplayClient_DistinguishesStaleIdentityAndNativeErrorsFromUnavailable()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = timeout.Token;
+        foreach ((string scenario, string expected) in new[]
+        {
+            ("stale-target", "Display read failed: TopologyChanging."),
+            ("native-error", "Display read failed: Native { operation: ActivePaths, status: 5 }."),
+            ("hdr-error", "HDR read failed: Native { status: 50 }."),
+        })
+        {
+            string id = Guid.NewGuid().ToString("N");
+            await using var host = Host.Start(id, scenario);
+            await host.WaitForReadyAsync(token);
+            var client = new SessionDisplaySettingsAdapter(PipeName(id));
+
+            DisplaySettingsSnapshot result = await client.GetStateAsync(token);
+            Assert.False(result.OperationSucceeded);
+            Assert.False(result.IsAvailable);
+            Assert.Null(result.DisplayName);
+            Assert.Null(result.BitsPerColorChannel);
+            Assert.Null(result.SelectedRefreshRateKey);
+            Assert.Empty(result.RefreshRateOptions);
+            Assert.False(result.IsHdrEnabled);
+            Assert.Equal(expected, result.StatusMessage);
             await host.StopAsync(token);
         }
     }

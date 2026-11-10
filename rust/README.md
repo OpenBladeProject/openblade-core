@@ -43,9 +43,42 @@ The isolated `openblade-platform-windows` crate reads active internal display
 topology, identity and the distinct desktop and physical refresh rates from
 the current Windows desktop. Its read-only refresh projection also reads GDI
 modes and target-bound preferred timing and EDID evidence for the managed v2
-QueryDisplay options and current key. HDR, color profiles, brightness, and
-Session Agent integration are separate. It uses the locked `windows-sys` SDK bindings
-and has no production caller. Its tests script native responses.
+QueryDisplay options and current key. The HDR read records support, the user
+preference and bits per channel using the target-bound INFO_2 packet. The
+crate uses locked Windows SDK bindings and has no production caller.
+
+### Private Windows Session Agent replay
+
+The development executable in the separate Windows host workspace enables
+the scripted acquisition feature. Its private current-user pipe runs the
+v2 query handler and projects replies from synthetic CCD, GDI and INFO_2
+packets through the same platform acquisition logic as the native adapters.
+Each request starts with a fresh script. The fixed 60 Hz desktop and 240 Hz
+signal with boost off yields two fixed options and an unset current key.
+The HDR result represents an enabled user preference and 10 bits per channel.
+A changed target between observations fails the query, as do a CCD status
+error and an INFO_2 status error. Empty topology succeeds with unavailable
+state.
+
+Run the pipe interoperability checks on Windows from the repository root.
+
+```powershell
+cargo build --offline --locked --manifest-path tools/openblade-windows-host/Cargo.toml --bin openblade-rust-session-agent
+$env:OPENBLADE_RUST_SESSION_AGENT_EXE = (Resolve-Path 'tools/openblade-windows-host/target/debug/openblade-rust-session-agent.exe').Path
+dotnet restore src/OpenBlade.Tray/OpenBlade.Tray.csproj
+dotnet test tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter FullyQualifiedName~RustSessionAgentTests
+```
+
+The managed Display tests check the shared refresh and HDR input oracles.
+The Session tests check the v2 envelopes, including a successful query with
+unavailable state. The replay leaves brightness and color profiles unavailable.
+Current HDR output mode, complete snapshot parity, and native display behavior
+need separate evidence before replacement. Product, Session IPC and persisted
+schema versions are unchanged by this replay.
+
+**Restricted Claude review is pending direct user authorization.** Keep the
+combined branch and its artifacts local. Native display validation,
+production integration and release validation remain separate gates.
 
 The workspace guard checks crate boundaries, reviewed targets and dependencies,
 MSRV and compiler policies. Its regression tests use disposable workspace copies.
