@@ -12,3 +12,6 @@ pub fn valid_dev_id(id: &str) -> bool {
 
 #[cfg(windows)]
 pub mod configuration_writer;
+
+#[cfg(windows)]
+pub mod fan_stop_entry;
