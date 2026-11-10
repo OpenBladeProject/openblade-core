@@ -259,13 +259,17 @@ impl ProfileTemplate {
         preferences["preferences"]["fanStopSettings"] = fan_stop;
         let profile = serde_json::to_string_pretty(&profile)?;
         let preferences = serde_json::to_string_pretty(&preferences)?;
-        let marker = serde_json::to_string_pretty(&json!({
-            "schemaVersion": schema,
-            "profileSha256": digest_hex(profile.as_bytes()),
-            "preferencesSha256": digest_hex(preferences.as_bytes()),
-        }))?;
+        let marker = commit_marker(schema, profile.as_bytes(), preferences.as_bytes())?;
         Ok([profile, preferences, marker])
     }
+}
+
+pub(super) fn commit_marker(schema: i32, profile: &[u8], preferences: &[u8]) -> io::Result<String> {
+    Ok(serde_json::to_string_pretty(&json!({
+        "schemaVersion": schema,
+        "profileSha256": digest_hex(profile),
+        "preferencesSha256": digest_hex(preferences),
+    }))?)
 }
 
 fn take_fields(profile: &mut Value, preferences: &mut Value) -> io::Result<(Value, Value)> {

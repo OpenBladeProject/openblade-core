@@ -1,6 +1,6 @@
 //! Fixed managed-byte fixture for the foreground process harness.
 
-use super::profile::{LEGACY_SCHEMA, ProfilePolicy, ProfileTemplate};
+use super::profile::{LEGACY_SCHEMA, ProfilePolicy, ProfileTemplate, commit_marker};
 use super::{
     Boundary, CURRENT_SCHEMA, ExpectedPreimage, FILE_SHARE_READ, Inspection, NAMES, Outcome,
     ProtectedWriter, RecordIdentities, TestStore, file_identity, handle_information, inspect_bytes,
@@ -167,7 +167,14 @@ impl Fixture {
         expected: ExpectedPreimage<'_>,
         interrupt: bool,
     ) -> io::Result<u8> {
-        write(&self.store, &self.template, intent, expected, interrupt).map(|(percent, _)| percent)
+        write(
+            &self.store,
+            &self.template,
+            intent,
+            expected,
+            interrupt,
+            None,
+        )
     }
 }
 
@@ -177,7 +184,8 @@ fn write(
     intent: &[String; 3],
     expected: ExpectedPreimage<'_>,
     interrupt: bool,
-) -> io::Result<(u8, RecordIdentities)> {
+    tracked: Option<&mut RecordIdentities>,
+) -> io::Result<u8> {
     let bytes = document_bytes(intent);
     template.decode_verified(bytes, inspect_bytes(bytes.map(Some)))?;
     let report = store.commit_from(bytes, expected, |at| {
@@ -199,7 +207,10 @@ fn write(
             if actual != bytes || identities != report.identities {
                 return Err(io::Error::other("configuration commit readback changed"));
             }
-            Ok((policy.charge_limit, identities))
+            if let Some(tracked) = tracked {
+                *tracked = identities;
+            }
+            Ok(policy.charge_limit)
         }
         Outcome::RecoveryRequired {
             cause,
@@ -210,9 +221,18 @@ fn write(
         Outcome::InvalidIntent(inspection) | Outcome::Refused(inspection) => Err(io::Error::other(
             format!("fixture transaction refused: {inspection:?}"),
         )),
-        Outcome::Unchanged(error) | Outcome::Restored(error) => Err(io::Error::other(format!(
-            "fixture transaction left the prior configuration in place: {error}"
-        ))),
+        Outcome::Unchanged(error) | Outcome::Restored(error) => {
+            if matches!(report.outcome, Outcome::Restored(_))
+                && let Some(tracked) = tracked
+            {
+                // Rollback installed independently verified copies of the
+                // prior bytes. Verify those identities again in verify_prior.
+                *tracked = report.identities;
+            }
+            Err(io::Error::other(format!(
+                "fixture transaction left the prior configuration in place: {error}"
+            )))
+        }
         _ => Err(io::Error::other(format!(
             "fixture transaction failed: {report:?}"
         ))),
@@ -287,21 +307,24 @@ impl BatteryProfileStore {
             charge_limit,
             ..self.policy
         };
-        let intent = self.template.encode(policy)?;
+        let mut intent = self.template.encode(policy)?;
         let prior = self.prior.each_ref().map(Vec::as_slice);
         let expected = match self.identities {
-            Some(identities) => ExpectedPreimage::Protected(prior, identities),
+            Some(identities) => {
+                preserve_preferences(&mut intent, prior[1])?;
+                ExpectedPreimage::Protected(prior, identities)
+            }
             None => ExpectedPreimage::Fixture(prior.map(Some)),
         };
-        let (_, identities) = write(
+        write(
             &self.store,
             &self.template,
             &intent,
             expected,
             self.interrupt,
+            self.identities.as_mut(),
         )?;
         self.prior = intent.map(String::into_bytes);
-        self.identities = self.identities.map(|_| identities);
         self.policy = policy;
         Ok(())
     }
@@ -317,6 +340,16 @@ impl BatteryProfileStore {
         }
         Ok(())
     }
+}
+
+fn preserve_preferences(intent: &mut [String; 3], prior: &[u8]) -> io::Result<()> {
+    // A protected battery-only edit leaves the independently admitted
+    // managed preferences intact, including their original byte order.
+    intent[1] = std::str::from_utf8(prior)
+        .map_err(io::Error::other)?
+        .to_owned();
+    intent[2] = commit_marker(CURRENT_SCHEMA, intent[0].as_bytes(), prior)?;
+    Ok(())
 }
 
 fn current_documents(
@@ -528,6 +561,30 @@ fn local_temp() -> io::Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn protected_battery_edit_retains_managed_preferences_bytes() {
+        let docs: Documents = serde_json::from_str(FIXTURE).unwrap();
+        let template = ProfileTemplate::from_managed(&docs.prior).unwrap();
+        let mut policy = template
+            .decode_verified(
+                document_bytes(&docs.prior),
+                Inspection::CommittedEnvelope {
+                    schema: CURRENT_SCHEMA,
+                },
+            )
+            .unwrap();
+        policy.charge_limit = 75;
+        let mut intent = template.encode(policy).unwrap();
+        preserve_preferences(&mut intent, docs.prior[1].as_bytes()).unwrap();
+
+        assert_eq!(intent[1], docs.prior[1]);
+        let bytes = document_bytes(&intent);
+        let verified = template
+            .decode_verified(bytes, inspect_bytes(bytes.map(Some)))
+            .unwrap();
+        assert_eq!(verified, policy);
+    }
+
     use super::*;
 
     #[test]

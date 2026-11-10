@@ -196,12 +196,7 @@ impl TestStore {
             });
             return Ok((inspection, [None, None, None], [None; 3]));
         }
-        let (prior, identities) = self.capture_records()?;
-        if self.record_present()? {
-            return Err(io::Error::other(
-                "recovery record appeared during inspection",
-            ));
-        }
+        let (prior, identities) = self.capture_records(true)?;
         Ok((
             inspect_bytes(prior.each_ref().map(Option::as_deref)),
             prior,
@@ -244,10 +239,10 @@ impl TestStore {
 
     #[cfg(test)]
     fn capture(&self) -> io::Result<RecordBytes> {
-        self.capture_records().map(|(bytes, _)| bytes)
+        self.capture_records(false).map(|(bytes, _)| bytes)
     }
 
-    fn capture_records(&self) -> io::Result<(RecordBytes, RecordIdentities)> {
+    fn capture_records(&self, check_recovery: bool) -> io::Result<(RecordBytes, RecordIdentities)> {
         let files = [
             self.open_record(PROFILE)?,
             self.open_record(PREFERENCES)?,
@@ -264,7 +259,7 @@ impl TestStore {
                 }
             }
         }
-        if self.protected.is_some() && self.record_present()? {
+        if check_recovery && self.record_present()? {
             return Err(io::Error::other(
                 "recovery record appeared while capturing primaries",
             ));
@@ -336,7 +331,8 @@ impl TestStore {
         &self,
         name: &str,
         expected: &[u8],
-        owned_artifact: Option<FileIdentity>,
+        expected_id: Option<FileIdentity>,
+        allow_missing: bool,
     ) -> io::Result<()> {
         if let Some(writer) = &self.protected {
             writer.storage.check_root()?;
@@ -344,7 +340,7 @@ impl TestStore {
                 .storage
                 .open_existing(name, FILE_GENERIC_READ | DELETE)?
             else {
-                return if owned_artifact.is_some() {
+                return if allow_missing {
                     Ok(())
                 } else {
                     Err(io::Error::new(
@@ -354,7 +350,7 @@ impl TestStore {
                 };
             };
             let (identity, bytes) = read_file(&file)?;
-            if bytes != expected || owned_artifact != Some(identity) {
+            if bytes != expected || expected_id != Some(identity) {
                 return Err(io::Error::other(format!(
                     "unexpected file or bytes at {name}"
                 )));
@@ -368,13 +364,13 @@ impl TestStore {
             .open(self.path(name))
         {
             Ok(file) => file,
-            Err(error) if owned_artifact.is_some() && error.kind() == io::ErrorKind::NotFound => {
+            Err(error) if allow_missing && error.kind() == io::ErrorKind::NotFound => {
                 return Ok(());
             }
             Err(error) => return Err(error),
         };
         let (identity, bytes) = read_file(&file)?;
-        if bytes != expected || owned_artifact.is_some_and(|owned| identity != owned) {
+        if bytes != expected || expected_id.is_some_and(|expected| identity != expected) {
             return Err(io::Error::other(format!(
                 "unexpected file or bytes at {name}"
             )));
@@ -438,7 +434,7 @@ impl TestStore {
             return Report::new(Outcome::InvalidIntent(inspection));
         }
 
-        let (prior, identities) = match self.capture_records() {
+        let (prior, identities) = match self.capture_records(true) {
             Ok(observed) => observed,
             Err(error) => return Report::new(Outcome::Unchanged(error)),
         };
@@ -698,6 +694,9 @@ impl<'a> Transaction<'a> {
         for (index, target) in self.targets.iter().enumerate() {
             at(Boundary::BeforeReplace(index))?;
             self.verify_primaries()?;
+            if self.store.protected.is_some() && target.prior == Some(target.intended) {
+                continue;
+            }
             let stage = self.artifact(&target.stage)?;
             let identity = self.store.protected.as_ref().map(|_| stage.identity);
             self.store
@@ -741,8 +740,13 @@ impl<'a> Transaction<'a> {
                 self.store.move_into_place(restore, target.name, true)?;
                 self.identities[index] = identity;
             } else {
-                self.store
-                    .delete_exact(target.name, target.intended, None)?;
+                self.store.delete_exact(
+                    target.name,
+                    target.intended,
+                    self.identities[index],
+                    false,
+                )?;
+                self.identities[index] = None;
             }
             self.replaced[index] = false;
             self.store
@@ -776,9 +780,12 @@ impl<'a> Transaction<'a> {
             return report;
         }
         for artifact in self.artifacts {
-            let cleanup =
-                self.store
-                    .delete_exact(&artifact.name, artifact.bytes, Some(artifact.identity));
+            let cleanup = self.store.delete_exact(
+                &artifact.name,
+                artifact.bytes,
+                Some(artifact.identity),
+                true,
+            );
             if let Err(error) = cleanup {
                 report.artifact_errors.push(error);
             }

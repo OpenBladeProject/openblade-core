@@ -1,11 +1,7 @@
-//! Read-only admission for the machine-wide battery configuration aggregate.
-//! The future host must supply the authoritative local root and exclude other
-//! privileged writers before treating the result as a startup snapshot.
-//! Setup #912 protects only the root during service installation. Existing
-//! records are checked independently and are never re-owned here. The positive
-//! on-disk ACL path still needs validation under the intended Windows identity
-//! with setup-equivalent permissions on an isolated NTFS runner. That exercise
-//! must include the effective ancestor ACLs on the intended Windows layout.
+//! Retained-handle admission and developer transaction I/O for the Windows
+//! battery configuration aggregate. Existing records are checked independently
+//! and are never re-owned. The exclusive writer lease applies to cooperating
+//! test writers. The installed managed service does not participate.
 
 use super::{
     FileIdentity, NAMES, check_regular_file, handle_information, inspect_bytes, open_relative,
@@ -226,14 +222,21 @@ impl ProtectedStorage {
             Win32::Storage::FileSystem::{DELETE, FILE_GENERIC_WRITE},
         };
 
+        let is_record = name == RECOVERY_REQUIRED;
         let mut file = self.create_or_open(
             name,
-            FILE_GENERIC_WRITE | if name == RECOVERY_REQUIRED { DELETE } else { 0 },
-            0,
+            FILE_GENERIC_WRITE | if is_record { DELETE } else { 0 },
+            if is_record { FILE_SHARE_READ } else { 0 },
             FILE_CREATE,
         )?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
+        file.write_all(bytes)
+            .and_then(|()| file.sync_all())
+            .map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("could not write and flush {name}, file retained: {error}"),
+                )
+            })?;
         Ok(file)
     }
 
@@ -542,7 +545,7 @@ pub(super) struct LocalDescriptor(pub(super) HLOCAL);
 
 impl Drop for LocalDescriptor {
     fn drop(&mut self) {
-        // SAFETY: GetSecurityInfo allocated this non-null descriptor with LocalAlloc.
+        // SAFETY: Windows allocated the non-null descriptor for the caller.
         unsafe { LocalFree(self.0) };
     }
 }

@@ -54,11 +54,26 @@ public sealed partial class RustReadOnlyHostTests
             AssertPrimaryBytes(root, prior);
 
             var changed = initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(75) };
+            var profileIdentity = ProtectedFixture.RecordIdentity(paths[0]);
+            var preferencesIdentity = ProtectedFixture.RecordIdentity(paths[1]);
+            // Allow preimage reads but deny replacing the commit marker. The
+            // profile was already replaced when this known failure rolls back.
+            using (var commitPin = new FileStream(paths[2], FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                Assert.Equal(ControlOperationStatus.Failed, (await client.UpdateProfilesAsync(changed, token)).Status);
+                var restored = await client.GetStatusAsync(token);
+                AssertComposedBattery(restored, saved: 80, temporary: null, confirmed: 80);
+                Assert.False(restored.WritesBlocked);
+                AssertPrimaryBytes(root, prior);
+                Assert.NotEqual(profileIdentity, ProtectedFixture.RecordIdentity(paths[0]));
+                Assert.Equal(preferencesIdentity, ProtectedFixture.RecordIdentity(paths[1]));
+            }
             Assert.Equal(ControlOperationStatus.Stored, (await client.UpdateProfilesAsync(changed, token)).Status);
             AssertComposedBattery(await client.GetStatusAsync(token), saved: 75, temporary: null, confirmed: 80);
             committed = paths.Select(File.ReadAllBytes).ToArray();
             Assert.True(JsonNode.DeepEquals(JsonNode.Parse(expected[0]), JsonNode.Parse(committed[0])));
             Assert.Equal(expected[1], committed[1]);
+            Assert.Equal(preferencesIdentity, ProtectedFixture.RecordIdentity(paths[1]));
             AssertCommitHashes(committed);
 
             await AssertCompetingHostRefusedAsync(root, token);
@@ -270,13 +285,19 @@ public sealed partial class RustReadOnlyHostTests
             Assert.False(Directory.Exists(Root));
         }
 
-        private static (uint Volume, ulong Index) ReadIdentity(SafeFileHandle file)
+        internal static (uint Volume, ulong Index) RecordIdentity(string path)
+        {
+            using SafeFileHandle file = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return ReadIdentity(file, directory: false);
+        }
+
+        private static (uint Volume, ulong Index) ReadIdentity(SafeFileHandle file, bool directory = true)
         {
             if (file.IsInvalid || !GetFileInformationByHandle(file, out FileInformation info))
             {
                 throw new Win32Exception(Marshal.GetLastWin32Error());
             }
-            Assert.Equal(FileAttributes.Directory,
+            Assert.Equal(directory ? FileAttributes.Directory : 0,
                 (FileAttributes)info.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint));
             return (info.VolumeSerial, ((ulong)info.IndexHigh << 32) | info.IndexLow);
         }
