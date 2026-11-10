@@ -76,3 +76,42 @@ ownership, command submission and independent readback remain separate gates.
 The local input commits and composed delta await exact external review.
 
 Version impact: none. Product, persisted configuration and IPC versions are unchanged.
+
+## Phase 5q guardian lifecycle replay
+
+The local Windows development library starts at Phase 5p
+`c67b2310bcb0ce51d5827efa77c9ff7fd729e08b`. Its managed oracle is
+`1d2689d163a15c4b9566a3b6660fce68c0dbd078`; the guardian sources and focused
+test files below are unchanged between that oracle and the Phase 5p base.
+
+| Managed reference | Replay boundary |
+| --- | --- |
+| `GuardianFanStopBackend.cs` and `FanStopController.cs:461–673` | Exclusive delegation, operation identity, monotonic evidence, historical Stop confirmation, one logical Auto request, cancellation, and a sticky service recovery disposition. |
+| `FanStopGuardianTransport.cs` and `WindowsFanStopGuardianClient.cs` | Durable reservation before dispatch, authenticated owner observations, exact owner exit and durable receipt equality, archive before lease release. The replay receives these as typed effects. |
+| `FanStopGuardianClient.cs:10–36` | Automatic requires confirmed Auto and readback, cleanup, journal completion, native release and owner exit. A separately proven never-submitted refusal reports Ordinary and does not need Auto or cleanup evidence. |
+| `ServiceControlRuntime.FanStop.cs:138–164` | The background pump consumes only cached continuation evidence. It selects a heartbeat or its fixed Automatic control, independently of the manual entry verdict. |
+
+An admitted entry permits a scripted dispatch; it does not confirm that Stop
+occurred. A matching fan value, owner exit alone, or a canceled waiter cannot
+release the lease. A matching live terminal result needs independent exit and
+durable confirmation. An uncertain reservation or dispatch, a lost channel, or
+invalid evidence retains the fence. A service confirmation timeout still lets
+an intact owner path finish and release the lease on full proof; the service
+recovery disposition remains set. A new service instance uses startup
+disposition and does not adopt a prior owner.
+
+The Rust fixtures exercise these transitions with recorded effect calls.
+Compare with the pinned `GuardianFanStopBackendTests`,
+`FanStopGuardianStoreTests`, `FanStopGuardianTransportTests`,
+`FanStopGuardianProgressTests`, `FanStopContinuationPolicyTests`, and the
+`GuardianHeartbeatUsesOnlyCachedContinuationIncludingAfterReleaseAndLifecycleLoss`
+fixture. Repeated Rust cache reads are harmless; duplicate live revisions are
+rejected at the owner-observation boundary.
+
+The Windows host does not call this library from a live service path. Remaining
+gates include protected reservation and recovery, authenticated private
+transport and the retained process handle, actual exclusion lease and owner
+lifetime, and owner-side exact-device admission, timing, thermal continuation,
+command submission, independent readback and native cleanup. The scripted
+effects do not establish installed or physical behavior. Product, IPC and
+persisted schema versions are unchanged.
