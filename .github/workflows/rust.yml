@@ -242,7 +242,7 @@ jobs:
           if ($testBinaries.Count -ne 1) { throw 'Expected one Rust library test executable.' }
           $env:OPENBLADE_RUST_CONFIG_TEST_EXE = $testBinaries[0].executable
           $results = Join-Path $env:RUNNER_TEMP 'configuration-writer'
-          $filter = 'FullyQualifiedName~WindowsReplay_ConfigurationAggregateFixtureMatchesManagedWriter|FullyQualifiedName~WindowsReplay_RustConfigurationWriterExchangesManagedBytes'
+          $filter = 'FullyQualifiedName~WindowsReplay_ConfigurationAggregateFixtureMatchesManagedWriter|FullyQualifiedName~WindowsReplay_RustConfigurationWriterExchangesManagedBytes|FullyQualifiedName~WindowsReplay_ProfileFixtureMatchesManagedMigration'
           dotnet test ../tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter $filter --results-directory $results --logger 'trx;LogFileName=oracle.trx'
           [xml]$trx = Get-Content (Join-Path $results 'oracle.trx') -Raw
           $exchange = @($trx.TestRun.Results.UnitTestResult | Where-Object {

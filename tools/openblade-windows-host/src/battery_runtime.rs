@@ -1,9 +1,6 @@
 //! Battery-only controller and inert effects for the private foreground scenario.
 
-use std::{
-    io,
-    sync::{Arc, Mutex},
-};
+use std::{io, sync::Arc};
 
 use openblade_domain::{
     automation,
@@ -11,7 +8,7 @@ use openblade_domain::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{Mutex, mpsc, watch};
 
 use crate::battery_policy::{
     self as policy, Capabilities, Command, Confirmation, Confirmed, Desired, Intent, Limit, Plan,
@@ -453,23 +450,54 @@ impl Device for FakeDevice {
     }
 }
 
+#[cfg(windows)]
+type ProfileWriter = openblade_windows_host::configuration_writer::fixture::BatteryProfileStore;
+
 pub(crate) struct Scenario {
-    state: Mutex<ScenarioState>,
+    #[cfg(windows)]
+    editable: bool,
+    state: Arc<Mutex<ScenarioState>>,
     publish: watch::Sender<Arc<Value>>,
 }
 
 struct ScenarioState {
     controller: Controller<FakeDevice>,
     current: Value,
+    #[cfg(windows)]
+    writer: Option<ProfileWriter>,
+    configuration_blocked: bool,
 }
 
 impl Scenario {
     pub(crate) fn new(baseline: Value) -> io::Result<Self> {
+        Self::start(
+            baseline,
+            #[cfg(windows)]
+            None,
+        )
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn composed(
+        mut baseline: Value,
+        profiles: Value,
+        writer: Option<ProfileWriter>,
+    ) -> io::Result<Self> {
+        baseline["profiles"] = profiles;
+        Self::start(baseline, writer)
+    }
+
+    fn start(baseline: Value, #[cfg(windows)] writer: Option<ProfileWriter>) -> io::Result<Self> {
+        #[cfg(windows)]
+        let editable = writer.is_some();
         let mut controller = Controller::fixture(&baseline)?;
         controller.observe();
         let mut state = ScenarioState {
             controller,
             current: baseline,
+            #[cfg(windows)]
+            writer,
+            configuration_blocked: false,
         };
         state.current["deviceVerified"] = true.into();
         state.current["potentialControllers"] = json!([]);
@@ -481,7 +509,9 @@ impl Scenario {
         state.project("Synthetic battery scenario ready.");
         let (publish, _) = watch::channel(Arc::new(state.current.clone()));
         Ok(Self {
-            state: Mutex::new(state),
+            #[cfg(windows)]
+            editable,
+            state: Arc::new(Mutex::new(state)),
             publish,
         })
     }
@@ -501,37 +531,131 @@ impl Scenario {
             if advance.recv().await.is_none() {
                 break;
             }
-            self.update(|controller| step.run(controller))?;
+            self.update(|state| {
+                if state.configuration_blocked {
+                    return Ok(blocked_configuration());
+                }
+                step.run(&mut state.controller)
+            })
+            .await?;
         }
         // Keep the foreground stdin consumer connected until host shutdown.
         while advance.recv().await.is_some() {}
         Ok(())
     }
 
-    pub(crate) fn apply(&self, intent: Intent) -> io::Result<Result> {
-        self.update(|controller| controller.apply(intent))
+    pub(crate) async fn apply(&self, intent: Intent) -> io::Result<Result> {
+        self.update(|state| {
+            if state.configuration_blocked {
+                return Ok(blocked_configuration());
+            }
+            state.controller.apply(intent)
+        })
+        .await
     }
 
-    fn update(
+    #[cfg(windows)]
+    pub(crate) fn accepts_profiles(&self) -> bool {
+        self.editable
+    }
+
+    /// Mirrors UpdateProfiles for a battery-policy-only edit with no active
+    /// app profile or lighting suppression. Disk admission precedes publication.
+    #[cfg(windows)]
+    pub(crate) async fn save_profiles(
+        self: Arc<Self>,
+        profiles: Value,
+        limit: Limit,
+    ) -> io::Result<(i32, &'static str)> {
+        let mut state = Arc::clone(&self.state).lock_owned().await;
+        // After accepting the operation, hold the state until commit and readback finish.
+        // Cancellation of the pipe handler leaves the blocking worker owning the guard.
+        tokio::task::spawn_blocking(move || {
+            let mut stored = false;
+            let result = self.update_locked(&mut state, |state| {
+                if state.configuration_blocked {
+                    return Ok(blocked_configuration());
+                }
+                let mut expected = state.current["profiles"].clone();
+                expected["batteryPolicy"]["chargeLimitPercent"] = limit.percent().into();
+                if profiles != expected {
+                    return Ok(Result {
+                        status: ScopedStatus::Blocked,
+                        message: "Only the saved battery policy can be edited in this fixture.",
+                    });
+                }
+                let writer = state
+                    .writer
+                    .as_mut()
+                    .ok_or_else(|| io::Error::other("missing battery profile writer"))?;
+                if let Err(error) = writer.save(limit.percent() as u8) {
+                    let _ = std::io::Write::write_fmt(
+                        &mut io::stderr().lock(),
+                        format_args!("battery configuration save: {error}\n"),
+                    );
+                    state.configuration_blocked = true;
+                    return Ok(Result {
+                        status: ScopedStatus::Failed,
+                        message: "Battery configuration could not be verified. Writes are blocked.",
+                    });
+                }
+                state.current["profiles"] = profiles;
+                state.controller.saved_limit = limit;
+                if state.controller.policy_override == Some(limit) {
+                    state.controller.policy_override = None;
+                }
+                stored = true;
+                Ok(Result {
+                    status: ScopedStatus::Unchanged,
+                    message: "Profiles stored without automatic hardware application.",
+                })
+            })?;
+            Ok((
+                if stored {
+                    0
+                } else if result.status == ScopedStatus::Failed {
+                    3
+                } else {
+                    2
+                },
+                result.message,
+            ))
+        })
+        .await?
+    }
+
+    async fn update(
         &self,
-        run: impl FnOnce(&mut Controller<FakeDevice>) -> io::Result<Result>,
+        run: impl FnOnce(&mut ScenarioState) -> io::Result<Result>,
     ) -> io::Result<Result> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| io::Error::other("battery scenario state poisoned"))?;
+        let mut state = self.state.lock().await;
+        self.update_locked(&mut state, run)
+    }
+
+    fn update_locked(
+        &self,
+        state: &mut ScenarioState,
+        run: impl FnOnce(&mut ScenarioState) -> io::Result<Result>,
+    ) -> io::Result<Result> {
         let revision = state.current["revision"]
             .as_i64()
             .and_then(|value| value.checked_add(1))
             .ok_or_else(|| io::Error::other("invalid battery status revision"))?;
-        let result = run(&mut state.controller)?;
         let previous = state.current.clone();
+        let result = run(state)?;
         state.project(result.message);
         if state.current != previous {
             state.current["revision"] = revision.into();
             self.publish.send_replace(Arc::new(state.current.clone()));
         }
         Ok(result)
+    }
+}
+
+fn blocked_configuration() -> Result {
+    Result {
+        status: ScopedStatus::Blocked,
+        message: "Battery configuration could not be verified. Writes are blocked.",
     }
 }
 
@@ -557,7 +681,8 @@ impl ScenarioState {
                 "chargeLimitPercent": limit.percent(),
             })));
         self.current["batteryProtectionOverride"] = json!(controller.protection_override);
-        self.current["writesBlocked"] = json!(controller.pending.is_some());
+        self.current["writesBlocked"] =
+            json!(self.configuration_blocked || controller.pending.is_some());
         self.current["unconfirmedWrites"] = if controller.pending.is_some() {
             json!([BATTERY_SUBSYSTEM])
         } else {

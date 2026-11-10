@@ -6,6 +6,45 @@ namespace OpenBlade.Service.Tests;
 public sealed partial class ServiceControlRuntimeTests
 {
     [Fact]
+    public async Task RustBatteryParity_ProfileEditsStoreWithoutApplyingAndRetireOnlyEquivalentOverride()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            ChargeLimits = new HashSet<int> { 50, 55, 60, 65, 70, 75, 80 },
+            SupportsBatteryProtectionOff = true,
+            SupportsTemporaryFullCharge = true,
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, false),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(70), CancellationToken.None)).Status);
+        var changed = profiles with { BatteryPolicy = BatteryPolicy.Create(75) };
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await context.Runtime.UpdateProfilesAsync(changed, CancellationToken.None)).Status);
+        var stored = context.Runtime.GetStatus();
+        Assert.Equal(BatteryPolicy.Create(75),
+            (await context.Store.LoadAsync(CancellationToken.None)).Profiles.BatteryPolicy);
+        Assert.Equal(BatteryPolicy.Create(70), stored.BatteryPolicyOverride);
+        Assert.Equal(BatteryPolicy.Create(70), stored.DesiredState.Battery.ConfiguredPolicy);
+        Assert.Equal(70, stored.ConfirmedState!.Battery!.ChargeLimitPercent);
+        Assert.Equal(["SetChargeLimit"], context.Device.BatterySetterCalls);
+
+        Assert.Equal(ControlOperationStatus.Stored, (await context.Runtime.UpdateProfilesAsync(
+            changed with { BatteryPolicy = BatteryPolicy.Create(70) }, CancellationToken.None)).Status);
+        var equivalent = context.Runtime.GetStatus();
+        Assert.Null(equivalent.BatteryPolicyOverride);
+        Assert.Equal(BatteryPolicy.Create(70), equivalent.Profiles.BatteryPolicy);
+        Assert.Equal(70, equivalent.ConfirmedState!.Battery!.ChargeLimitPercent);
+        Assert.Equal(["SetChargeLimit"], context.Device.BatterySetterCalls);
+    }
+
+    [Fact]
     public async Task RustBatteryParity_ExplicitIntentAndLostAcknowledgementKeepIntentSeparateUntilObservation()
     {
         TestContext context = CreateWritableContext();

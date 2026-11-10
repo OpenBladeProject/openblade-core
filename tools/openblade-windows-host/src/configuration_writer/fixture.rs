@@ -148,6 +148,27 @@ impl Fixture {
         self.write(&intent, ExpectedPreimage::Migration(preimage), false)
     }
 
+    pub fn compose_battery(self, interrupt: bool) -> io::Result<(Value, BatteryProfileStore)> {
+        let limit = self.migrate()?;
+        let policy = migrated_policy(&self.template)?;
+        let documents = self.template.encode(policy)?;
+        let profiles = read_battery_profiles(&self.store, &self.template)?;
+        if profiles["batteryPolicy"]["chargeLimitPercent"] != limit {
+            return Err(io::Error::other(
+                "migrated battery profile changed before startup",
+            ));
+        }
+        Ok((
+            profiles,
+            BatteryProfileStore {
+                fixture: self,
+                documents,
+                policy,
+                interrupt,
+            },
+        ))
+    }
+
     pub fn update(&self, interrupt: bool) -> io::Result<u8> {
         let prior = ExpectedPreimage::Fixture(document_bytes(&self.documents.prior).map(Some));
         self.write(&self.documents.committed, prior, interrupt)
@@ -196,9 +217,66 @@ impl Fixture {
     }
 }
 
+/// Owns the exact last verified bytes for the fixture created by this process.
+pub struct BatteryProfileStore {
+    fixture: Fixture,
+    documents: [String; 3],
+    policy: ProfilePolicy,
+    interrupt: bool,
+}
+
+impl BatteryProfileStore {
+    pub fn save(&mut self, charge_limit: u8) -> io::Result<()> {
+        let policy = ProfilePolicy {
+            charge_limit,
+            ..self.policy
+        };
+        let intent = self.fixture.template.encode(policy)?;
+        let expected = ExpectedPreimage::Fixture(document_bytes(&self.documents).map(Some));
+        self.fixture.write(&intent, expected, self.interrupt)?;
+        self.documents = intent;
+        self.policy = policy;
+        Ok(())
+    }
+}
+
+fn migrated_policy(template: &ProfileTemplate) -> io::Result<ProfilePolicy> {
+    let legacy = legacy_documents(template)?;
+    Ok(template.validate_legacy(document_bytes(&legacy))?.policy)
+}
+
+fn read_battery_profiles(store: &TestStore, template: &ProfileTemplate) -> io::Result<Value> {
+    let mut profiles = Value::Null;
+    let baseline = migrated_policy(template)?;
+    load(store, template, |actual| {
+        let envelope: Value = serde_json::from_slice(actual[0])?;
+        let limit = envelope["profiles"]["batteryPolicy"]["chargeLimitPercent"]
+            .as_u64()
+            .filter(|limit| (50..=99).contains(limit))
+            .ok_or_else(|| io::Error::other("invalid fixture battery policy"))?;
+        let policy = ProfilePolicy {
+            charge_limit: limit as u8,
+            ..baseline
+        };
+        if document_bytes(&template.encode(policy)?) != actual {
+            return Ok(false);
+        }
+        profiles = envelope["profiles"].clone();
+        Ok(true)
+    })?;
+    Ok(profiles)
+}
+
+pub fn restart_battery_profile(id: &str, expected: &str) -> io::Result<Value> {
+    let store = open_restart(id, expected)?;
+    let documents: Documents = serde_json::from_str(FIXTURE)?;
+    let template = ProfileTemplate::from_managed(&documents.prior)?;
+    read_battery_profiles(&store, &template)
+}
+
 /// Reopening is read-only, even with a valid identity and known committed data.
 /// No path, file names, or payload bytes are supplied by the caller.
-pub fn restart(id: &str, expected: &str) -> io::Result<u8> {
+fn open_restart(id: &str, expected: &str) -> io::Result<TestStore> {
     let (temp, mut pins) = TestStore::pin_temp(&local_temp()?)?;
     let root = root(temp, id)?;
     pins.push(pin_directory_with_share(&root, FILE_SHARE_READ)?);
@@ -211,6 +289,11 @@ pub fn restart(id: &str, expected: &str) -> io::Result<u8> {
     if identity(&store)? != expected {
         return Err(io::Error::other("fixture root identity changed"));
     }
+    Ok(store)
+}
+
+pub fn restart(id: &str, expected: &str) -> io::Result<u8> {
+    let store = open_restart(id, expected)?;
     let documents: Documents = serde_json::from_str(FIXTURE)?;
     let template = ProfileTemplate::from_managed(&documents.prior)?;
     load(&store, &template, |actual| {

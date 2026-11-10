@@ -472,7 +472,8 @@ public sealed class RustReadOnlyHostTests
     }
 
     private static async Task AssertQuarantinedRestartAsync(
-        string root, string rootId, string identity, byte[][] prior, byte[][] committed, CancellationToken token)
+        string root, string rootId, string identity, byte[][] prior, byte[][] committed, CancellationToken token,
+        string restartMode = "foreground-durable-restart")
     {
         // Interrupt after the profile replacement and before rollback. The marker
         // and preferences are still the preimages. Backups and remaining stages
@@ -500,13 +501,21 @@ public sealed class RustReadOnlyHostTests
             }
             else
             {
-                Assert.Equal(committed[i], File.ReadAllBytes(artifact + ".stage"));
+                byte[] stage = File.ReadAllBytes(artifact + ".stage");
+                if (i == 2 && restartMode == "foreground-battery-profile-restart")
+                {
+                    Assert.True(JsonNode.DeepEquals(JsonNode.Parse(committed[i]), JsonNode.Parse(stage)));
+                }
+                else
+                {
+                    Assert.Equal(committed[i], stage);
+                }
             }
         }
 
         Dictionary<string, byte[]> artifacts = Directory.GetFiles(root).ToDictionary(path => path, File.ReadAllBytes);
         string endpoint = Guid.NewGuid().ToString("N");
-        await using var refused = DevHost.Start(endpoint, "foreground-durable-restart", rootId, identity);
+        await using var refused = DevHost.Start(endpoint, restartMode, rootId, identity);
         Assert.Contains("Preserve(RecoveryRequired)", await refused.AssertRejectedAsync(token));
         using var connectBudget = CancellationTokenSource.CreateLinkedTokenSource(token);
         connectBudget.CancelAfter(TimeSpan.FromMilliseconds(300));
@@ -674,6 +683,152 @@ public sealed class RustReadOnlyHostTests
     }
 
 
+
+    [RustReadOnlyHostFact]
+    public Task TrayClient_ComposesMigratedProfilesWithTemporaryBatteryPolicy() =>
+        ExerciseComposedBatteryAsync(interrupt: false);
+
+    [RustReadOnlyHostFact]
+    public Task TrayClient_InterruptedProfileSaveLeavesLastVerifiedBatteryStateAndBlocksRestart() =>
+        ExerciseComposedBatteryAsync(interrupt: true);
+
+    private static async Task ExerciseComposedBatteryAsync(bool interrupt)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = timeout.Token;
+        string endpoint = Guid.NewGuid().ToString("N");
+        string mode = interrupt ? "foreground-battery-profile-interrupt" : "foreground-battery-profile";
+        await using var host = DevHost.Start(endpoint, mode);
+        (string rootId, string identity) = await host.ReadFixtureRootAsync(token);
+        string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Temp", $"openblade-durable-host-{rootId}");
+        using SafeFileHandle pin = OpenFixtureDirectory(root);
+        Assert.False(pin.IsInvalid, $"Could not pin fixture directory. Win32 {Marshal.GetLastWin32Error()}");
+        try
+        {
+            await host.WaitUntilReadyAsync(token);
+            await using var client = new ServiceClient(PipeName(endpoint));
+            var initial = await client.GetStatusAsync(token);
+            AssertComposedBattery(initial, saved: 77, temporary: null, confirmed: 80);
+            Assert.True(initial.DeviceVerified);
+            Assert.False(initial.WritesBlocked);
+            byte[][] migrated = ReadPrimaryBytes();
+            using Stream profileFixture = typeof(RustReadOnlyHostTests).Assembly
+                .GetManifestResourceStream("OpenBlade.WindowsReplay.ConfigurationProfile")!;
+            JsonNode vector = (await JsonNode.ParseAsync(profileFixture, cancellationToken: token))!;
+            Assert.True(JsonNode.DeepEquals(vector["currentFanStop"],
+                JsonNode.Parse(migrated[1])!["preferences"]!["fanStopSettings"]));
+
+            var temporary = await client.SetBatteryPolicyAsync(BatteryPolicy.Create(70), token);
+            Assert.Equal(ControlOperationStatus.Applied, temporary.Status);
+            AssertComposedBattery(await client.GetStatusAsync(token), saved: 77, temporary: 70, confirmed: 70);
+            AssertPrimaryBytes(root, migrated);
+
+            var changed = initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(75) };
+            if (!interrupt)
+            {
+                var outsideSubset = changed with
+                {
+                    Battery = changed.Battery with { StopFansInBatterySaver = true },
+                };
+                Assert.Equal(ControlOperationStatus.Blocked,
+                    (await client.UpdateProfilesAsync(outsideSubset, token)).Status);
+                AssertPrimaryBytes(root, migrated);
+            }
+
+            var edit = await client.UpdateProfilesAsync(changed, token);
+            string restartedEndpoint = Guid.NewGuid().ToString("N");
+            if (interrupt)
+            {
+                Assert.Equal(ControlOperationStatus.Failed, edit.Status);
+                var failed = await client.GetStatusAsync(token);
+                AssertComposedBattery(failed, saved: 77, temporary: 70, confirmed: 70);
+                Assert.True(failed.WritesBlocked);
+                Assert.Empty(failed.UnconfirmedWrites);
+                Assert.Equal(ControlOperationStatus.Blocked,
+                    (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(65), token)).Status);
+                Assert.Equal(ControlOperationStatus.Blocked,
+                    (await client.UpdateProfilesAsync(changed, token)).Status);
+                byte[][] interrupted = ReadPrimaryBytes();
+                Assert.Equal(migrated[2], interrupted[2]);
+                Assert.Equal(75, JsonNode.Parse(interrupted[0])!["profiles"]!["batteryPolicy"]!
+                    ["chargeLimitPercent"]!.GetValue<int>());
+                JsonNode proposedMarker = JsonNode.Parse(migrated[2])!;
+                proposedMarker["profileSha256"] = Convert.ToHexString(SHA256.HashData(interrupted[0]));
+                interrupted[2] = JsonSerializer.SerializeToUtf8Bytes(proposedMarker);
+                await host.StopAsync(token);
+                await AssertQuarantinedRestartAsync(root, rootId, identity, migrated, interrupted, token,
+                    "foreground-battery-profile-restart");
+                return;
+            }
+
+            Assert.Equal(ControlOperationStatus.Stored, edit.Status);
+            AssertComposedBattery(await client.GetStatusAsync(token), saved: 75, temporary: 70, confirmed: 70);
+            byte[][] committed = ReadPrimaryBytes();
+            JsonNode expected = JsonNode.Parse(migrated[0])!;
+            expected["profiles"]!["batteryPolicy"]!["chargeLimitPercent"] = 75;
+            Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(committed[0])));
+            Assert.Equal(migrated[1], committed[1]);
+            using var marker = JsonDocument.Parse(committed[2]);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(committed[0])),
+                marker.RootElement.GetProperty("profileSha256").GetString());
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(committed[1])),
+                marker.RootElement.GetProperty("preferencesSha256").GetString());
+
+            await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+            await ReadStatusAsync(watch, subscriptionOpened: true);
+            await host.AdvanceAsync(token);
+            await ReadStatusAsync(watch, subscriptionOpened: false); // Arm pre-submission cancellation.
+            await host.AdvanceAsync(token);
+            await ReadStatusAsync(watch, subscriptionOpened: false); // Arm the lost response.
+            Assert.Equal(ControlOperationStatus.Failed,
+                (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(65), token)).Status);
+            var pending = await ReadStatusAsync(watch, subscriptionOpened: false);
+            AssertComposedBattery(pending, saved: 75, temporary: 70, confirmed: 70);
+            Assert.True(pending.WritesBlocked);
+            Assert.Equal([DeviceSubsystem.Battery], pending.UnconfirmedWrites);
+            AssertPrimaryBytes(root, committed);
+            await host.AdvanceAsync(token);
+            var reconciled = await ReadStatusAsync(watch, subscriptionOpened: false);
+            AssertComposedBattery(reconciled, saved: 75, temporary: 65, confirmed: 65);
+            Assert.False(reconciled.WritesBlocked);
+            Assert.Empty(reconciled.UnconfirmedWrites);
+            AssertPrimaryBytes(root, committed);
+
+            await host.StopAsync(token);
+            await using var restart = DevHost.Start(restartedEndpoint,
+                "foreground-battery-profile-restart", rootId, identity);
+            await restart.WaitUntilReadyAsync(token);
+            await using var restarted = new ServiceClient(PipeName(restartedEndpoint));
+            // The new scripted device starts at its own baseline. There is no
+            // persisted override or setter replay during profile startup.
+            AssertComposedBattery(await restarted.GetStatusAsync(token), saved: 75, temporary: null, confirmed: 80);
+            await restart.StopAsync(token);
+            AssertPrimaryBytes(root, committed);
+        }
+        finally
+        {
+            await host.DisposeAsync();
+            foreach (string file in Directory.EnumerateFiles(root))
+            {
+                File.Delete(file);
+            }
+            pin.Dispose();
+            Directory.Delete(root);
+        }
+
+        byte[][] ReadPrimaryBytes() =>
+            ConfigurationNames.Select(name => File.ReadAllBytes(Path.Combine(root, name))).ToArray();
+    }
+
+    private static void AssertComposedBattery(
+        ServiceStatusSnapshot status, int saved, int? temporary, int confirmed)
+    {
+        Assert.Equal(saved, status.Profiles.BatteryPolicy.ChargeLimitPercent);
+        Assert.Equal(temporary ?? saved, status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent);
+        Assert.Equal(temporary, status.BatteryPolicyOverride?.ChargeLimitPercent);
+        Assert.Equal(new ConfirmedBatteryState(true, confirmed, false), status.ConfirmedState!.Battery);
+    }
 
     private static string PipeName(string endpointId) => $"OpenBlade.Rust.ReadOnly.Dev.{endpointId}";
 
