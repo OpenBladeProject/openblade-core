@@ -1,0 +1,9 @@
+case,status,value,bits_per_channel,managed_supported,managed_enabled,managed_bits_per_channel
+ordinary_sdr,0,0,8,false,false,8
+wide_color_only,0,195,10,false,false,10
+hdr_supported_disabled,0,16,10,true,false,10
+hdr_user_enabled_with_policy_limit,0,56,10,true,true,10
+user_enabled_without_support,0,32,8,false,false,8
+hdr_enabled_without_depth,0,48,0,true,true,
+unsupported_request,50,48,10,false,false,
+stale_target,87,48,10,false,false,
