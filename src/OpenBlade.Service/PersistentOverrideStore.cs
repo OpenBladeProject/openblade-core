@@ -69,6 +69,7 @@ public sealed class PersistentOverrideStore
     private readonly string path;
     private readonly Func<CancellationToken, Task>? beforeWrite;
     private readonly SemaphoreSlim gate;
+    private readonly UserConfigurationWriterScope? writerScope;
     private bool preservationRequired;
 
     public PersistentOverrideStore(string path)
@@ -78,8 +79,10 @@ public sealed class PersistentOverrideStore
 
     internal PersistentOverrideStore(
         string path,
-        Func<CancellationToken, Task>? beforeWrite)
+        Func<CancellationToken, Task>? beforeWrite,
+        UserConfigurationWriterScope? writerScope = null)
     {
+        this.writerScope = writerScope;
         this.path = Path.GetFullPath(string.IsNullOrWhiteSpace(path)
             ? throw new ArgumentException("An override path is required.", nameof(path))
             : path);
@@ -94,6 +97,9 @@ public sealed class PersistentOverrideStore
     public async Task<PersistentOverrideLoadResult> LoadAsync(
         CancellationToken cancellationToken)
     {
+        using IDisposable? admission = writerScope is null
+            ? null
+            : await writerScope.EnterAsync(cancellationToken).ConfigureAwait(false);
         await gate.WaitAsync(cancellationToken);
         try
         {
@@ -131,6 +137,9 @@ public sealed class PersistentOverrideStore
         PersistentOverrideState overrides,
         CancellationToken cancellationToken)
     {
+        using IDisposable? admission = writerScope is null
+            ? null
+            : await writerScope.EnterAsync(cancellationToken).ConfigureAwait(false);
         overrides = NormalizeLegacyGpuClockTuning(
             NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides)));
         Validate(overrides);

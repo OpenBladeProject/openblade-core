@@ -9,7 +9,14 @@ internal sealed class WriterLease(PinnedRoot root, SafeFileHandle file) : IDispo
 {
     internal const string Name = "configuration.writer-lock";
 
-    internal static WriterLease Acquire(string path, string rootId, string lockId)
+    internal static WriterLease Acquire(string path, string rootId, string lockId) =>
+        AcquireCore(path, rootId, lockId, PinnedRoot.Open);
+
+    internal static WriterLease AcquireExactRoot(string path, string rootId, string lockId) =>
+        AcquireCore(path, rootId, lockId, PinnedRoot.OpenPath);
+
+    private static WriterLease AcquireCore(
+        string path, string rootId, string lockId, Func<string, PinnedRoot> pin)
     {
         if (!Regex.IsMatch(rootId, @"\A[0-9a-f]{8}:[0-9a-f]{16}\z") ||
             !Regex.IsMatch(lockId, @"\A[0-9a-f]{8}:[0-9a-f]{16}\z") ||
@@ -19,7 +26,7 @@ internal sealed class WriterLease(PinnedRoot root, SafeFileHandle file) : IDispo
             throw new IOException("Malformed scratch identity.");
         }
 
-        PinnedRoot root = PinnedRoot.Open(path);
+        PinnedRoot root = pin(path);
         try
         {
             if (root.Info.Identity != rootId)

@@ -30,9 +30,13 @@ public sealed class BatteryConfigurationStore
     private readonly Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
         transactionBoundary;
     private readonly SemaphoreSlim gate;
+    private readonly UserConfigurationWriterScope? writerScope;
     private bool preservationRequired;
 
-    private string RecoveryRequiredPath => markerPath + ".recovery-required";
+    private string RecoveryRequiredPath => GetRecoveryRequiredPath(markerPath);
+
+    private static string GetRecoveryRequiredPath(string markerPath) =>
+        markerPath + ".recovery-required";
 
     public BatteryConfigurationStore(
         string profilePath,
@@ -66,8 +70,10 @@ public sealed class BatteryConfigurationStore
         ProfileSetValidator? validator,
         Func<CancellationToken, Task>? postCommitBoundary,
         Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
-            transactionBoundary)
+            transactionBoundary,
+        UserConfigurationWriterScope? writerScope = null)
     {
+        this.writerScope = writerScope;
         this.validator = validator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults();
         string fullProfilePath = Path.GetFullPath(
             profilePath ?? throw new ArgumentNullException(nameof(profilePath)));
@@ -92,6 +98,9 @@ public sealed class BatteryConfigurationStore
 
     public async Task<BatteryConfiguration> LoadAsync(CancellationToken cancellationToken)
     {
+        using IDisposable? admission = writerScope is null
+            ? null
+            : await writerScope.EnterAsync(cancellationToken, checkAggregateRecovery: false).ConfigureAwait(false);
         await gate.WaitAsync(cancellationToken);
         try
         {
@@ -128,6 +137,9 @@ public sealed class BatteryConfigurationStore
         ProfileSet profiles,
         CancellationToken cancellationToken)
     {
+        using IDisposable? admission = writerScope is null
+            ? null
+            : await writerScope.EnterAsync(cancellationToken, checkAggregateRecovery: false).ConfigureAwait(false);
         profiles = ProfileStore.NormalizeLegacyBatteryProfile(
             profiles,
             out _,
@@ -162,6 +174,9 @@ public sealed class BatteryConfigurationStore
         BatteryAutomationPreferences preferences,
         CancellationToken cancellationToken)
     {
+        using IDisposable? admission = writerScope is null
+            ? null
+            : await writerScope.EnterAsync(cancellationToken, checkAggregateRecovery: false).ConfigureAwait(false);
         profiles = ProfileStore.NormalizeLegacyBatteryProfile(
             profiles,
             out _,
@@ -939,7 +954,21 @@ public sealed class BatteryConfigurationStore
     {
         try
         {
-            _ = File.GetAttributes(RecoveryRequiredPath);
+            CheckRecoveryRequired(markerPath);
+        }
+        catch (ConfigurationQuarantinedException)
+        {
+            preservationRequired = true;
+            throw;
+        }
+    }
+
+    internal static void CheckRecoveryRequired(string markerPath)
+    {
+        string recoveryRequiredPath = GetRecoveryRequiredPath(markerPath);
+        try
+        {
+            _ = File.GetAttributes(recoveryRequiredPath);
         }
         catch (FileNotFoundException)
         {
@@ -951,9 +980,8 @@ public sealed class BatteryConfigurationStore
         }
         // Presence is sufficient, including empty/corrupt records and directories.
         // Do not read paths from this evidence or infer an automatic restoration.
-        preservationRequired = true;
         throw new ConfigurationQuarantinedException(
-            $"Configuration transaction recovery is required. Preserve '{RecoveryRequiredPath}' and the original transaction artifacts before changing configuration.",
+            $"Configuration transaction recovery is required. Preserve '{recoveryRequiredPath}' and the original transaction artifacts before changing configuration.",
             ConfigurationQuarantineReason.InvalidDocument);
     }
 

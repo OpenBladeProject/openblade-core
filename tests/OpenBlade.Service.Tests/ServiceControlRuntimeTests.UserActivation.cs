@@ -8,6 +8,127 @@ namespace OpenBlade.Service.Tests;
 public sealed partial class ServiceControlRuntimeTests
 {
     [Fact]
+    public async Task ActivateUserAsync_LeasedHandoffRetiresOldContextAndReusesInterruptedNewContext()
+    {
+        string machineRoot = Path.Combine(directory, "leased-user-handoff");
+        var firstSid = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        var secondSid = new SecurityIdentifier("S-1-5-21-1-2-3-1002");
+        var first = new ScratchConfigurationWriter(machineRoot, firstSid);
+        var second = new ScratchConfigurationWriter(machineRoot, secondSid);
+        int secondAcquisitions = 0;
+        var repository = new UserConfigurationRepository(
+            machineRoot, ProfileSetValidator.CreateUnverifiedSafeDefaults(), (root, token) =>
+            {
+                if (root == second.Root)
+                {
+                    secondAcquisitions++;
+                    return second.Acquire(root, token);
+                }
+                return first.Acquire(root, token);
+            });
+        TestContext context = CreateContext(providerAvailable: false, userConfigurationRepository: repository);
+        using (context.Runtime)
+        {
+            await context.Runtime.ActivateUserAsync(firstSid, CancellationToken.None);
+            await UserConfigurationWriterLeaseTests.AssertContendedAsync(() =>
+                repository.LoadAsync(firstSid, CancellationToken.None));
+
+            int checks = 0;
+            await context.Runtime.ActivateUserAsync(secondSid, () => ++checks <= 2, CancellationToken.None);
+            using (first.Acquire())
+            {
+                await UserConfigurationWriterLeaseTests.AssertContendedAsync(() =>
+                    repository.LoadAsync(secondSid, CancellationToken.None));
+            }
+
+            // A repaired legacy source is reconsidered on retry under the
+            // retained handle. The existing aggregate keeps its own intent.
+            var legacyOverrides = new PersistentOverrideStore(Path.Combine(machineRoot, "manual-overrides.json"));
+            await legacyOverrides.SaveAsync(
+                PersistentOverrideState.Empty with { Performance = PerformancePreset.Silent }, CancellationToken.None);
+            await File.WriteAllTextAsync(Path.Combine(machineRoot, "authorized-user.sid"), secondSid.Value);
+            int acquisitionsBeforeRetry = secondAcquisitions;
+            await context.Runtime.ActivateUserAsync(secondSid, CancellationToken.None);
+            Assert.Equal(acquisitionsBeforeRetry, secondAcquisitions);
+            ProfileSet profiles = context.Runtime.GetStatus().Profiles! with
+            {
+                BatteryPolicy = BatteryPolicy.Create(75),
+            };
+            Assert.Equal(ControlOperationStatus.Stored,
+                (await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None)).Status);
+            Assert.Equal(0, context.Device.TotalSetterCalls);
+        }
+
+        await using UserConfigurationContext reopened = await repository.LoadAsync(secondSid, CancellationToken.None);
+        Assert.Equal(75, reopened.Configuration.Profiles.BatteryPolicy.ChargeLimitPercent);
+        Assert.Equal(PerformancePreset.Silent, reopened.Overrides.Performance);
+        Assert.True(File.Exists(Path.Combine(second.Root, ".legacy-migration-complete")));
+    }
+
+    [Fact]
+    public async Task Dispose_DrainsCanceledLeasedActivationBeforeReleasingRuntimeGate()
+    {
+        string machineRoot = Path.Combine(directory, "leased-user-shutdown");
+        var sid = new SecurityIdentifier("S-1-5-21-1-2-3-1001");
+        var writer = new ScratchConfigurationWriter(machineRoot, sid);
+        var legacyOverrides = new PersistentOverrideStore(Path.Combine(machineRoot, "manual-overrides.json"));
+        await legacyOverrides.SaveAsync(
+            PersistentOverrideState.Empty with { Performance = PerformancePreset.Silent }, CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(machineRoot, "authorized-user.sid"), sid.Value);
+        var migrationWriting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var repository = new UserConfigurationRepository(
+            machineRoot, ProfileSetValidator.CreateUnverifiedSafeDefaults(), writer.Acquire,
+            async token =>
+            {
+                migrationWriting.TrySetResult();
+                await Task.Delay(Timeout.Infinite, token);
+            });
+        TestContext context = CreateContext(providerAvailable: false, userConfigurationRepository: repository);
+        using var cancellation = new CancellationTokenSource();
+        Task activation = context.Runtime.ActivateUserAsync(sid, cancellation.Token);
+        Task? shutdown = null;
+        try
+        {
+            await migrationWriting.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            shutdown = Task.Run(context.Runtime.Dispose);
+
+            // Wait for shutdown to close admission while the first activation
+            // is still in migration. A canceled probe never waits for its gate.
+            using var probeCancellation = new CancellationTokenSource();
+            probeCancellation.Cancel();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            while (true)
+            {
+                deadline.Token.ThrowIfCancellationRequested();
+                try
+                {
+                    await context.Runtime.ActivateUserAsync(sid, probeCancellation.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    await Task.Delay(10, deadline.Token);
+                }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
+            }
+            Assert.False(shutdown.IsCompleted);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            shutdown ??= Task.Run(context.Runtime.Dispose);
+            await shutdown.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => activation);
+        using IDisposable available = writer.Acquire();
+        Assert.False(File.Exists(Path.Combine(writer.Root, ".legacy-migration-complete")));
+        Assert.False(File.Exists(Path.Combine(writer.Root, "manual-overrides.json")));
+    }
+
+    [Fact]
     public async Task HandleAsync_SameUserQueuedStatusDoesNotInvalidateDeferredFanRecoveryActivation()
     {
         var repository = CreateManualCurveRecoveryRepository();
