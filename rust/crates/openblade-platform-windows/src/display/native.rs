@@ -1,0 +1,182 @@
+//! Windows SDK calls and union decoding.
+#![allow(unsafe_code)]
+
+use super::refresh::{DriverMode, RefreshApi};
+use super::*;
+use windows_sys::Win32::{
+    Devices::Display::{
+        DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE, DISPLAYCONFIG_MODE_INFO_TYPE_TARGET,
+        DISPLAYCONFIG_TARGET_PREFERRED_MODE, DISPLAYCONFIG_VIDEO_SIGNAL_INFO,
+        DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes, QueryDisplayConfig,
+    },
+    Foundation::ERROR_INVALID_DATA,
+    Graphics::Gdi::{
+        DEVMODEW, DISPLAYCONFIG_PATH_MODE_IDX_INVALID, DISPLAYCONFIG_PATH_TARGET_MODE_IDX_INVALID,
+        DM_INTERLACED, EnumDisplaySettingsExW,
+    },
+    System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_BINARY, RegGetValueW},
+};
+
+pub(super) struct WindowsDisplay;
+
+impl DisplayApi for WindowsDisplay {
+    fn buffer_sizes(&mut self, flags: u32) -> Result<(u32, u32), u32> {
+        let (mut paths, mut modes) = (0, 0);
+        // SAFETY: Both out-pointers reference initialized, writable u32s.
+        let status = unsafe { GetDisplayConfigBufferSizes(flags, &mut paths, &mut modes) };
+        if status == ERROR_SUCCESS {
+            Ok((paths, modes))
+        } else {
+            Err(status)
+        }
+    }
+
+    fn query(
+        &mut self,
+        flags: u32,
+        counts: &mut (u32, u32),
+        paths: &mut [DISPLAYCONFIG_PATH_INFO],
+        modes: &mut [DISPLAYCONFIG_MODE_INFO],
+    ) -> u32 {
+        assert!(counts.0 as usize <= paths.len() && counts.1 as usize <= modes.len());
+        // SAFETY: Both output buffers hold at least the advertised counts;
+        // their slices and count pointers are disjoint. The active-path query
+        // requires a null topology ID pointer.
+        unsafe {
+            QueryDisplayConfig(
+                flags,
+                &mut counts.0,
+                paths.as_mut_ptr(),
+                &mut counts.1,
+                modes.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+        }
+    }
+
+    fn source_name(&mut self, request: &mut DISPLAYCONFIG_SOURCE_DEVICE_NAME) -> u32 {
+        // SAFETY: Use the whole packet's pointer (the header is its first
+        // field). The initialized header specifies the source type and size.
+        unsafe { DisplayConfigGetDeviceInfo(std::ptr::from_mut(request).cast()) as u32 }
+    }
+
+    fn target_name(&mut self, request: &mut DISPLAYCONFIG_TARGET_DEVICE_NAME) -> u32 {
+        // SAFETY: Use the whole packet's pointer. The initialized header
+        // specifies the target type and size.
+        unsafe { DisplayConfigGetDeviceInfo(std::ptr::from_mut(request).cast()) as u32 }
+    }
+}
+
+impl RefreshApi for WindowsDisplay {
+    fn mode(&mut self, source: &[u16], index: u32) -> Option<DriverMode> {
+        assert_eq!(source.last(), Some(&0));
+        let mut mode = DEVMODEW {
+            dmSize: size_of::<DEVMODEW>() as u16,
+            ..Default::default()
+        };
+        // SAFETY: source is NUL terminated and mode is writable. dmSize
+        // describes the struct and dmDriverExtra is zero.
+        if unsafe { EnumDisplaySettingsExW(source.as_ptr(), index, &mut mode, 0) } == 0 {
+            return None;
+        }
+        Some(DriverMode {
+            width: mode.dmPelsWidth,
+            height: mode.dmPelsHeight,
+            hertz: mode.dmDisplayFrequency,
+            // SAFETY: The display interpretation of the initialized u32 union.
+            interlaced: unsafe { mode.Anonymous2.dmDisplayFlags } & DM_INTERLACED != 0,
+        })
+    }
+
+    fn preferred_mode(&mut self, target: EndpointId) -> Result<SignalTiming, u32> {
+        let mut preferred = DISPLAYCONFIG_TARGET_PREFERRED_MODE {
+            header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
+                r#type: DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE,
+                size: size_of::<DISPLAYCONFIG_TARGET_PREFERRED_MODE>() as u32,
+                adapterId: LUID {
+                    LowPart: target.adapter_low,
+                    HighPart: target.adapter_high,
+                },
+                id: target.id,
+            },
+            ..Default::default()
+        };
+        // SAFETY: The header describes the initialized, writable packet.
+        let status =
+            unsafe { DisplayConfigGetDeviceInfo(std::ptr::from_mut(&mut preferred).cast()) } as u32;
+        if status == ERROR_SUCCESS {
+            Ok(signal_timing(preferred.targetMode.targetVideoSignalInfo))
+        } else {
+            Err(status)
+        }
+    }
+
+    fn edid(&mut self, subkey: &[u16]) -> Result<Vec<u8>, u32> {
+        // One base block and up to 255 extensions. An oversized value
+        // returns ERROR_MORE_DATA and its partial contents are discarded.
+        const MAX_EDID_BYTES: usize = 128 * 256;
+        const VALUE: [u16; 5] = [b'E' as u16, b'D' as u16, b'I' as u16, b'D' as u16, 0];
+        assert_eq!(subkey.last(), Some(&0));
+        let mut data = vec![0_u8; MAX_EDID_BYTES];
+        let mut length = data.len() as u32;
+        // SAFETY: Both strings are NUL terminated. data holds length bytes,
+        // length is writable and the optional type output is omitted.
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_LOCAL_MACHINE,
+                subkey.as_ptr(),
+                VALUE.as_ptr(),
+                RRF_RT_REG_BINARY,
+                std::ptr::null_mut(),
+                data.as_mut_ptr().cast(),
+                &mut length,
+            )
+        };
+        if status != ERROR_SUCCESS {
+            return Err(status);
+        }
+        if length as usize > data.len() {
+            return Err(ERROR_INVALID_DATA);
+        }
+        data.truncate(length as usize);
+        Ok(data)
+    }
+}
+
+pub(super) fn active_signal(
+    path: &DISPLAYCONFIG_PATH_INFO,
+    modes: &[DISPLAYCONFIG_MODE_INFO],
+    target: EndpointId,
+) -> Result<SignalTiming, DisplayReadError> {
+    // SAFETY: Both index layouts are initialized 32-bit words. Virtual mode
+    // packs the target index into the high 16 bits and the desktop image below.
+    let index_word = unsafe { path.targetInfo.Anonymous.modeInfoIdx };
+    let (index, invalid) = if path.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE != 0 {
+        (index_word >> 16, DISPLAYCONFIG_PATH_TARGET_MODE_IDX_INVALID)
+    } else {
+        (index_word, DISPLAYCONFIG_PATH_MODE_IDX_INVALID)
+    };
+    if index == invalid {
+        return Err(DisplayReadError::MissingTargetMode);
+    }
+    let mode = modes
+        .get(index as usize)
+        .ok_or(DisplayReadError::InvalidTargetModeIndex)?;
+    if mode.infoType != DISPLAYCONFIG_MODE_INFO_TYPE_TARGET
+        || EndpointId::new(mode.adapterId, mode.id) != target
+    {
+        return Err(DisplayReadError::MismatchedTargetMode);
+    }
+    // SAFETY: The discriminant and endpoint matched this path's target.
+    let signal = unsafe { mode.Anonymous.targetMode.targetVideoSignalInfo };
+    Ok(signal_timing(signal))
+}
+
+fn signal_timing(signal: DISPLAYCONFIG_VIDEO_SIGNAL_INFO) -> SignalTiming {
+    SignalTiming {
+        width: signal.activeSize.cx,
+        height: signal.activeSize.cy,
+        scanline_ordering: signal.scanLineOrdering,
+        rate: RefreshRate::observed(signal.vSyncFreq),
+    }
+}
