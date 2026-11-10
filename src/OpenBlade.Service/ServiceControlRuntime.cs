@@ -539,6 +539,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private UserConfigurationStores userStores;
     private readonly IUserConfigurationRepository? userConfigurationRepository;
+    private readonly object leasedConfigurationGate = new();
+    private LeasedUserConfiguration? activeLeasedConfiguration;
+    private bool leasedConfigurationDisposed;
+    private int pendingLeasedActivations;
+    private TaskCompletionSource? leasedActivationsDrained;
     private readonly IPowerStateProvider powerStateProvider;
     private readonly IStatusSubscriptionHub subscriptionHub;
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
@@ -1242,6 +1247,54 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         return new ActionDisposable(() => Interlocked.Decrement(ref pendingSessionAdmissions));
     }
 
+    private sealed record LeasedUserConfiguration(string Sid, UserConfigurationWriterScope Scope);
+
+    private IDisposable? TrackLeasedActivation()
+    {
+        if (userConfigurationRepository is not UserConfigurationRepository { UsesWriterLease: true })
+        {
+            return null;
+        }
+
+        lock (leasedConfigurationGate)
+        {
+            ObjectDisposedException.ThrowIf(leasedConfigurationDisposed, this);
+            pendingLeasedActivations++;
+        }
+        return new ActionDisposable(CompleteLeasedActivation);
+    }
+
+    private void CompleteLeasedActivation()
+    {
+        lock (leasedConfigurationGate)
+        {
+            if (--pendingLeasedActivations == 0)
+            {
+                leasedActivationsDrained?.TrySetResult();
+            }
+        }
+    }
+
+    private void RetireLeasedConfiguration()
+    {
+        Task? drain = null;
+        lock (leasedConfigurationGate)
+        {
+            leasedConfigurationDisposed = true;
+            if (pendingLeasedActivations != 0)
+            {
+                leasedActivationsDrained ??= new(TaskCreationOptions.RunContinuationsAsynchronously);
+                drain = leasedActivationsDrained.Task;
+            }
+        }
+
+        // Pending candidates release their own handles before leaving activation.
+        // Wait before retiring the published context or disposing its runtime gate.
+        drain?.GetAwaiter().GetResult();
+        LeasedUserConfiguration? current = Interlocked.Exchange(ref activeLeasedConfiguration, null);
+        current?.Scope.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
     public async Task ActivateUserAsync(
         SecurityIdentifier userSid,
         Func<bool> stillControlsSession,
@@ -1254,6 +1307,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return;
         }
 
+        using IDisposable? leasedActivation = TrackLeasedActivation();
         // A different-user admission must latch its epoch before waiting for
         // ongoing recovery. Only a potentially completed same-user activation
         // takes this fast-path gate; identity is checked again once acquired.
@@ -1286,10 +1340,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         IDisposable sessionAdmission = BeginSessionAdmission();
         try
         {
-            UserConfigurationContext context = await userConfigurationRepository
-                .LoadAsync(userSid, cancellationToken)
-                .ConfigureAwait(false);
+            UserConfigurationContext? context = leasedActivation is null
+                ? await userConfigurationRepository.LoadAsync(userSid, cancellationToken).ConfigureAwait(false)
+                : null;
             await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            UserConfigurationContext? pendingLeasedContext = null;
             try
             {
                 if (!activeUserActivationIncomplete && string.Equals(
@@ -1303,6 +1358,32 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 if (!stillControlsSession())
                 {
                     return;
+                }
+
+                if (context is null)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    LeasedUserConfiguration? existing = activeLeasedConfiguration;
+
+                    // The operation gate serializes leased activations. A retry
+                    // must refresh its own incomplete activation without trying
+                    // to acquire a second native handle to the same user root.
+                    if (existing is not null && string.Equals(
+                            existing.Sid, userSid.Value, StringComparison.OrdinalIgnoreCase))
+                    {
+                        context = await ((UserConfigurationRepository)userConfigurationRepository)
+                            .LoadAsync(userSid, existing.Scope, cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        pendingLeasedContext = await userConfigurationRepository
+                            .LoadAsync(userSid, cancellationToken).ConfigureAwait(false);
+                        context = pendingLeasedContext;
+                    }
+                    if (!stillControlsSession())
+                    {
+                        return;
+                    }
                 }
 
                 ProfileSet profiles = ProfileStore.NormalizeLegacyBatteryProfile(
@@ -1380,6 +1461,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 Volatile.Write(ref activeUserSid, userSid.Value);
                 await coolingPadControl.SetUserAsync(userSid.Value, cancellationToken).ConfigureAwait(false);
                 PublishCoolingPadStatus();
+                if (pendingLeasedContext is not null)
+                {
+                    LeasedUserConfiguration? previous = activeLeasedConfiguration;
+                    activeLeasedConfiguration = new(userSid.Value, pendingLeasedContext.WriterScope!);
+                    pendingLeasedContext = null;
+                    if (previous is not null)
+                    {
+                        await previous.Scope.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
                 Volatile.Write(
                     ref userStores,
                     new UserConfigurationStores(context.Store, context.OverrideStore));
@@ -1505,7 +1596,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
             finally
             {
-                operationGate.Release();
+                try
+                {
+                    if (pendingLeasedContext is not null)
+                    {
+                        await pendingLeasedContext.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    operationGate.Release();
+                }
             }
         }
         finally
@@ -13647,6 +13748,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     public void Dispose()
     {
+        RetireLeasedConfiguration();
         coolingPadControl.Revoke();
         if (fanStopController.Guardian is { } guardian)
         {

@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\OpenBlade.WriterFence.Scratch\WriterLease.cs" Link="ScratchWriterLease.cs" />
     <Compile Include="..\OpenBlade.Testing\ManagedAutomationPolicyBaseline.cs" Link="ManagedAutomationPolicyBaseline.cs" />
     <Compile Include="..\OpenBlade.Testing\ManagedProfilePolicyBaseline.cs" Link="ManagedProfilePolicyBaseline.cs" />
     <Compile Include="..\OpenBlade.Testing\ParityFixture.cs" Link="ParityFixture.cs" />

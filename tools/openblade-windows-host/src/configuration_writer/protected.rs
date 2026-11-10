@@ -50,41 +50,14 @@ impl ProtectedStorage {
     /// Opens an existing local root. The caller supplies its exact location
     /// from trusted setup configuration. No installed path is resolved here.
     pub fn open(root: &Path) -> io::Result<Self> {
-        let (drive, names) = split_path(root)?;
-        let wide: Vec<u16> = drive.as_os_str().encode_wide().chain([0]).collect();
-        // SAFETY: wide is a NUL-terminated local drive root.
-        if unsafe { GetDriveTypeW(wide.as_ptr()) } != DRIVE_FIXED {
-            return Err(denied("configuration drive is not fixed"));
-        }
-        let drive_handle = OpenOptions::new()
-            .read(true)
-            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
-            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
-            .open(&drive)?;
-        check_drive(&drive_handle, &drive)?;
-        let volume = directory_info(&drive_handle)?.dwVolumeSerialNumber;
-        let mut ancestors = vec![drive_handle];
-        let mut names = names.into_iter().peekable();
-        while let Some(name) = names.next() {
-            let parent = ancestors.last().expect("the drive is pinned");
-            let is_leaf = names.peek().is_none();
-            let file = open_directory(parent, name)?;
-            let info = directory_info(&file)?;
-            if info.dwVolumeSerialNumber != volume {
-                return Err(denied("configuration directory changed volumes"));
-            }
-            if is_leaf {
-                let storage = Self {
-                    root: file,
-                    ancestors,
-                    identity: super::file_identity(&info),
-                };
-                storage.check_root()?;
-                return Ok(storage);
-            }
-            ancestors.push(file);
-        }
-        unreachable!("split_path requires a directory below the drive")
+        let (root, ancestors, info) = pin_root(root)?;
+        let storage = Self {
+            root,
+            ancestors,
+            identity: super::file_identity(&info),
+        };
+        storage.check_root()?;
+        Ok(storage)
     }
 
     /// Reads the existing aggregate envelope. A trusted recovery-required
@@ -135,7 +108,7 @@ impl ProtectedStorage {
     #[cfg(feature = "vm-scm-fixture")]
     pub fn open_vm_root(root: &Path) -> io::Result<Self> {
         let storage = Self::open(root)?;
-        storage.require_ntfs()?;
+        require_ntfs(&storage.ancestors[0])?;
         Ok(storage)
     }
 
@@ -192,9 +165,9 @@ impl ProtectedStorage {
         use windows_sys::Wdk::Storage::FileSystem::FILE_OPEN_IF;
         use windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_WRITE;
 
-        self.require_ntfs()?;
+        require_ntfs(&self.ancestors[0])?;
         self.create_or_open(
-            "configuration.writer-lock",
+            super::WRITER_LOCK,
             FILE_GENERIC_READ | FILE_GENERIC_WRITE,
             0,
             FILE_OPEN_IF,
@@ -211,40 +184,6 @@ impl ProtectedStorage {
                 format!("protected configuration writer lease: {error}"),
             )
         })
-    }
-
-    fn require_ntfs(&self) -> io::Result<()> {
-        use windows_sys::Win32::Storage::FileSystem::GetVolumeInformationByHandleW;
-
-        let volume = self
-            .ancestors
-            .first()
-            .expect("drive handle retained during admission");
-        let mut filesystem = [0u16; 16];
-        // SAFETY: The retained drive handle is live and the output buffer is writable.
-        if unsafe {
-            GetVolumeInformationByHandleW(
-                volume.as_raw_handle(),
-                ptr::null_mut(),
-                0,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                filesystem.as_mut_ptr(),
-                filesystem.len() as u32,
-            )
-        } == 0
-        {
-            return Err(io::Error::last_os_error());
-        }
-        if !filesystem
-            .into_iter()
-            .take(5)
-            .eq("NTFS".encode_utf16().chain([0]))
-        {
-            return Err(denied("protected writer requires NTFS"));
-        }
-        Ok(())
     }
 
     pub(super) fn create_durable(&self, name: &str, bytes: &[u8]) -> io::Result<File> {
@@ -345,6 +284,68 @@ impl ProtectedStorage {
         // preserve the recovery marker instead of retrying the rename.
         file.sync_all()
     }
+}
+
+pub(super) fn pin_root(root: &Path) -> io::Result<(File, Vec<File>, BY_HANDLE_FILE_INFORMATION)> {
+    let (drive, names) = split_path(root)?;
+    let wide: Vec<u16> = drive.as_os_str().encode_wide().chain([0]).collect();
+    // SAFETY: wide is a NUL-terminated local drive root.
+    if unsafe { GetDriveTypeW(wide.as_ptr()) } != DRIVE_FIXED {
+        return Err(denied("configuration drive is not fixed"));
+    }
+    let drive_handle = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(&drive)?;
+    check_drive(&drive_handle, &drive)?;
+    let volume = directory_info(&drive_handle)?.dwVolumeSerialNumber;
+    let mut ancestors = vec![drive_handle];
+    let mut names = names.into_iter().peekable();
+    while let Some(name) = names.next() {
+        let parent = ancestors.last().expect("the drive is pinned");
+        let is_leaf = names.peek().is_none();
+        let file = open_directory(parent, name)?;
+        let info = directory_info(&file)?;
+        if info.dwVolumeSerialNumber != volume {
+            return Err(denied("configuration directory changed volumes"));
+        }
+        if is_leaf {
+            return Ok((file, ancestors, info));
+        }
+        ancestors.push(file);
+    }
+    unreachable!("split_path requires a directory below the drive")
+}
+
+pub(super) fn require_ntfs(volume: &File) -> io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::GetVolumeInformationByHandleW;
+
+    let mut filesystem = [0u16; 16];
+    // SAFETY: The retained drive handle is live and the output buffer is writable.
+    if unsafe {
+        GetVolumeInformationByHandleW(
+            volume.as_raw_handle(),
+            ptr::null_mut(),
+            0,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            filesystem.as_mut_ptr(),
+            filesystem.len() as u32,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    if !filesystem
+        .into_iter()
+        .take(5)
+        .eq("NTFS".encode_utf16().chain([0]))
+    {
+        return Err(denied("protected writer requires NTFS"));
+    }
+    Ok(())
 }
 
 fn rename_same_directory(file: &File, target: &str, replace: bool) -> io::Result<()> {

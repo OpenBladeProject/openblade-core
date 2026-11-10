@@ -10,7 +10,7 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class BatteryConfigurationStoreTests : IDisposable
 {
-    private const string LegacyJson = """
+    internal const string LegacyJson = """
         {
           "pluggedIn": { "performance": 1, "fans": 0, "lighting": { "effect": 0, "color": {}, "brightness": 0 } },
           "battery": { "performance": 0, "fans": 0, "lighting": { "effect": 0, "color": {}, "brightness": 0 } },

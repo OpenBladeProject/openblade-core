@@ -24,6 +24,10 @@ use windows_sys::Win32::Storage::FileSystem::{
 use windows_sys::Win32::System::Com::CoCreateGuid;
 
 pub mod fixture;
+#[cfg(feature = "scratch-writer-fence")]
+pub mod scratch;
+
+const WRITER_LOCK: &str = "configuration.writer-lock";
 mod profile;
 pub mod protected;
 
