@@ -5,6 +5,8 @@ namespace OpenBlade.Tray;
 /// <summary>Tracks discharge episodes using fresh, explicitly requested battery readings.</summary>
 internal sealed class ExternalPowerDischargeTracker
 {
+    private bool warnedDuringDischarge;
+
     public bool IsDischarging { get; private set; }
 
     public long Episode { get; private set; }
@@ -18,7 +20,7 @@ internal sealed class ExternalPowerDischargeTracker
         // A temporary unknown source is not confirmed recovery for an active episode.
     }
 
-    public void Observe(int? batteryPowerMilliwatts)
+    public void Observe(int? batteryPowerMilliwatts, bool suppressWarning = false)
     {
         if (batteryPowerMilliwatts is null)
         {
@@ -31,9 +33,12 @@ internal sealed class ExternalPowerDischargeTracker
             return;
         }
 
-        if (!IsDischarging)
+        // The charge-limit exception can hide the badge during an ongoing discharge.
+        // Rearm the notification only when the discharge actually ends.
+        IsDischarging = !suppressWarning;
+        if (IsDischarging && !warnedDuringDischarge)
         {
-            IsDischarging = true;
+            warnedDuringDischarge = true;
             Episode++;
         }
     }
@@ -41,5 +46,6 @@ internal sealed class ExternalPowerDischargeTracker
     public void Reset()
     {
         IsDischarging = false;
+        warnedDuringDischarge = false;
     }
 }

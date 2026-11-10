@@ -228,6 +228,41 @@ public sealed partial class MainViewModelTests
         Assert.Equal(1, viewModel.ExternalPowerDischargeEpisode);
     }
 
+    [Fact]
+    public async Task ChargeLimitThresholdCrossingsDoNotRearmAnOngoingDischargeWarning()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        int batteryPercent = 74;
+        await using var viewModel = new MainViewModel(client, dispatcher)
+        {
+            ReadPluggedInBatteryPercent = () => batteryPercent,
+        };
+        ServiceStatusSnapshot status = CreateLiveStatus() with
+        {
+            LiveReadings = new LiveReadings(-1000, null, null),
+        };
+        await ConnectAsync(viewModel, client, dispatcher, status);
+
+        foreach (int percent in new[] { 74, 75, 74 })
+        {
+            batteryPercent = percent;
+            status = status with { Revision = status.Revision + 1 };
+            await ObserveAsync(client,
+                () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
+            Assert.Equal(percent == 74, viewModel.IsExternalPowerDischarging);
+            Assert.Equal(1, viewModel.ExternalPowerDischargeEpisode);
+        }
+
+        await ObserveAsync(client,
+            () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None),
+            status with { Revision = status.Revision + 1, LiveReadings = new LiveReadings(0, null, null) });
+        await ObserveAsync(client,
+            () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None),
+            status with { Revision = status.Revision + 2 });
+        Assert.Equal(2, viewModel.ExternalPowerDischargeEpisode);
+    }
+
     [Theory]
     [InlineData(false, 80, false)]
     [InlineData(true, 80, true)]

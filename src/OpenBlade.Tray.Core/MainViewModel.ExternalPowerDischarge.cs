@@ -59,14 +59,9 @@ public sealed partial class MainViewModel
         bool wasDischarging = IsExternalPowerDischarging;
         long previousEpisode = ExternalPowerDischargeEpisode;
         int? batteryPower = status.LiveReadings?.BatteryPowerFlowMilliwatts;
-        if (batteryPower is < 0 && IsAtOrAboveChargeLimitWarningThreshold(status))
-        {
-            externalPowerDischarge.Reset();
-        }
-        else
-        {
-            externalPowerDischarge.Observe(batteryPower);
-        }
+        externalPowerDischarge.Observe(
+            batteryPower,
+            suppressWarning: batteryPower is < 0 && IsAtOrAboveChargeLimitWarningThreshold(status));
         PublishExternalPowerDischarge(wasDischarging, previousEpisode);
     }
 
