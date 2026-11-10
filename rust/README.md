@@ -230,6 +230,56 @@ Ordinary long paths still depend on the eventual host's Win32 long-path
 configuration. Managed NLS, invariant mode and app-local ICU overrides are
 outside the checked comparison contract.
 
+#### Private Windows Session Audio read
+
+Run `audio-foreground <32 lowercase hex digits> <available|unavailable|stalled>`
+on the development Session Agent. It claims `OpenBlade.Rust.Session.Audio.Dev.<id>`
+with the existing local-only, current-user pipe owner and checks the peer's
+session and logon before dispatch. Close standard input to stop.
+
+The wire oracle is managed commit `6d6abc9ba28f88c102e295567f73cf11e3bbfabe`.
+At that commit Audio uses protocol **v2**. The source pins are
+[message definitions](../src/OpenBlade.Session/SessionAudioMessages.cs),
+[codec](../src/OpenBlade.Session/SessionAudioIpcCodec.cs),
+[dispatcher](../src/OpenBlade.SessionAgent/SessionAudioRequestDispatcher.cs),
+[audio pipe policy](../src/OpenBlade.SessionAgent/SessionAudioPipeServer.cs) and
+[shared pipe lifecycle](../src/OpenBlade.SessionAgent/SessionAgentPipeServer.cs).
+The pinned [codec tests](../tests/OpenBlade.Session.Tests/SessionAudioIpcCodecTests.cs)
+cover wire validation and diagnostic proof. The pinned
+[dispatcher tests](../tests/OpenBlade.SessionAgent.Tests/SessionAudioRequestDispatcherTests.cs)
+cover diagnostic provenance, fresh helper admission and the distinction between
+explicit Read and Connect after an uncertain mutation.
+
+The fixture implements only `read` for Speakers and Headphones using canonical
+managed request member names, a nonempty GUID and the numeric endpoint enum.
+It uses a signed little-endian length and a 64 KiB UTF-8 JSON limit. One
+connection serves one request. A successful response is `AvailableReadOnly`
+with fixed synthetic state for the requested endpoint. The unavailable fixture
+returns a correlated `Unavailable` result with a synthetic-provider error and
+no state. Both omit `baseAudio`. The private endpoint and selected fixture
+identify the source of the response. The response supplies no native proof.
+
+Frame reads and writes each have two-second deadlines. A stalled headphone
+read expires after ten seconds and retires only its connection without a
+response. Host shutdown cancels the synthetic future and closes the listener.
+A caller can cancel its own wait without producing a typed server result.
+The synthetic future has no external work to drain.
+
+Discover, Connect, spatial and EQ setters, preset selection and custom
+curves, enhancement changes and
+application-profile changes all close the private connection before dispatch.
+Provisioning is a separate production setup workflow. Future parity requires
+reviewed exact-model and endpoint admission, installed-component and controller
+trust, a supervised native worker with bounded lifetime and cancellation,
+base-audio diagnostic proof independent of THX admission, and identity-bound
+confirmed reads and recovery after uncertain mutations. Automation also needs
+its own lease and manual-operation ordering. Production audio IPC, setup and
+native acquisition have no entry point through this fixture.
+
+Run the managed wire test with the private executable selected by
+`OPENBLADE_RUST_SESSION_AGENT_EXE` and the filter
+`FullyQualifiedName~AudioFixture_` on `OpenBlade.Tray.Tests`.
+
 The workspace guard checks crate boundaries, reviewed targets and dependencies,
 MSRV and compiler policies. Its regression tests use disposable workspace copies.
 Inner crates retain `no_std` and inherit `unsafe_code = "forbid"`. FFI and Windows

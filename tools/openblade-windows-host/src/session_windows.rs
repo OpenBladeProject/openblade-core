@@ -14,6 +14,7 @@ use openblade_windows_host::pipe::{Endpoint, Identity, stale_connection};
 use tokio::{net::windows::named_pipe::NamedPipeServer, runtime::Builder, sync::oneshot};
 
 use crate::{
+    session_audio,
     session_brightness::{ScriptedComPolicy, WmiScenario},
     session_display::{
         self, ColorFixture, HdrFixture, RefreshFixture, Rejected, SessionDisplay,
@@ -28,6 +29,8 @@ const PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Display.Dev.";
 
 const GPU_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Gpu.Dev.";
 
+const AUDIO_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Audio.Dev.";
+
 pub(super) fn entry() -> io::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let [mode, id, scenario, brightness @ ..] = args.as_slice() else {
@@ -36,6 +39,16 @@ pub(super) fn entry() -> io::Result<()> {
     let id = id.to_str().filter(|id| valid_id(id)).ok_or_else(usage)?;
     if mode == "integrated" {
         return run_fixture(integrated::run(id, scenario, brightness));
+    }
+    if mode == "audio-foreground" {
+        if !brightness.is_empty() {
+            return Err(usage());
+        }
+        let scenario = scenario
+            .to_str()
+            .and_then(session_audio::Scenario::parse)
+            .ok_or_else(usage)?;
+        return run_fixture(run_audio(id, scenario));
     }
     if mode == "gpu-foreground" {
         if !brightness.is_empty() {
@@ -139,7 +152,7 @@ fn usage() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
         format!(
-            "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <{gpu_scenarios}> or integrated <id> <new|resume|reconcile> <gpu scenario> <service id> <service pid> <reporter id>"
+            "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <{gpu_scenarios}> or audio-foreground <32 lowercase hex digits> <available|unavailable|stalled> or integrated <id> <new|resume|reconcile> <gpu scenario> <service id> <service pid> <reporter id>"
         ),
     )
 }
@@ -194,6 +207,19 @@ async fn run_gpu(id: &str, scenario: GpuScenario) -> io::Result<()> {
         listener,
         Arc::new(AtomicBool::new(false)),
         async |pipe, identity| serve_gpu(pipe, identity, scenario).await,
+    )
+    .await
+}
+
+async fn run_audio(id: &str, scenario: session_audio::Scenario) -> io::Result<()> {
+    let endpoint = Endpoint::new(format!("{AUDIO_PREFIX}{id}"), 2)?;
+    let _claim = endpoint.claim()?;
+    let listener = endpoint.listen()?;
+    serve_connections(
+        &endpoint,
+        listener,
+        Arc::new(AtomicBool::new(false)),
+        async |pipe, identity| session_audio::serve(pipe, identity, scenario).await,
     )
     .await
 }
