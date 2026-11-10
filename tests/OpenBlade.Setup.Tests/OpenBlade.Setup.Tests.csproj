@@ -14,8 +14,10 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\OpenBlade.WriterFence.Scratch\OpenBlade.WriterFence.Scratch.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.Deployment\OpenBlade.Deployment.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.Setup\OpenBlade.Setup.csproj" />
+    <ProjectReference Include="..\..\src\OpenBlade.Service\OpenBlade.Service.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.Session\OpenBlade.Session.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(OpenBladeLocalDevDeployment)' != 'true'">

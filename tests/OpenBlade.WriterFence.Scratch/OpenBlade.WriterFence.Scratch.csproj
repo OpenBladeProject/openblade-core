@@ -6,6 +6,6 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../OpenBlade.Setup.Tests/ScratchWriterRetirementGate.cs" Link="ScratchWriterRetirementGate.cs" />
+    <InternalsVisibleTo Include="OpenBlade.Setup.Tests" />
   </ItemGroup>
 </Project>

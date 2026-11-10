@@ -8,5 +8,6 @@ pub mod controller_presence;
 pub mod display;
 pub mod function_row_hook;
 pub mod gpu_apps;
+mod process_query;
 mod process_snapshot;
 pub mod snap_tap;

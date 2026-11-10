@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.ComponentModel;
 using System.Security.Cryptography;
 using System.Text.Json;
 using OpenBlade.Contracts;
@@ -32,6 +31,8 @@ public sealed class BatteryConfigurationStore
         transactionBoundary;
     private readonly SemaphoreSlim gate;
     private readonly UserConfigurationWriterScope? writerScope;
+    private readonly MachineConfigurationWriterBinding? machineWriter;
+    private byte[]? machineCommit;
     private bool preservationRequired;
 
     private string RecoveryRequiredPath => GetRecoveryRequiredPath(markerPath);
@@ -97,52 +98,69 @@ public sealed class BatteryConfigurationStore
         this.transactionBoundary = transactionBoundary;
     }
 
-    private void CheckMachineBootstrapLayout(string machineRoot)
+    internal BatteryConfigurationStore(
+        MachineConfigurationWriterBinding machineWriter,
+        ProfileSetValidator? validator = null,
+        Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>? transactionBoundary = null)
+        : this(machineWriter.ProfilePath, machineWriter.PreferencesPath, machineWriter.MarkerPath,
+            validator, postCommitBoundary: null, transactionBoundary)
     {
-        if (writerScope is not null
-            || !MatchesMachinePath(profileStore.Path, "profiles.json")
-            || !MatchesMachinePath(preferencesPath, "battery-preferences.json")
-            || !MatchesMachinePath(markerPath, "battery-configuration.commit.json"))
+        this.machineWriter = machineWriter;
+    }
+
+    public Task<BatteryConfiguration> LoadAsync(CancellationToken cancellationToken) =>
+        machineWriter is null
+            ? LoadWithAdmissionAsync(writerScope, machinePersistence: false, cancellationToken)
+            : LoadWithMachineWriterAsync(machineWriter, cancellationToken);
+
+    internal async Task<BatteryConfiguration> LoadForMachineBootstrapAsync(
+        MachineConfigurationWriterBinding binding,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (machineWriter is not null || !HasMachinePaths(binding))
         {
             throw new InvalidOperationException("Machine bootstrap requires the exact configuration paths under one machine root.");
         }
 
-        bool MatchesMachinePath(string actualPath, string fileName) =>
-            string.Equals(actualPath, Path.Combine(machineRoot, fileName), StringComparison.Ordinal);
+        return await LoadWithMachineWriterAsync(binding, cancellationToken).ConfigureAwait(false);
     }
 
-    public Task<BatteryConfiguration> LoadAsync(CancellationToken cancellationToken) =>
-        LoadWithAdmissionAsync(writerScope, machineBootstrap: false, cancellationToken);
-
-    internal async Task<BatteryConfiguration> LoadForMachineBootstrapAsync(
-        string machineRoot,
-        Func<string, CancellationToken, IDisposable> acquireVerifiedWriterLease,
+    internal Task<BatteryConfiguration> LoadForMachineTransitionAsync(
+        MachineConfigurationWriterBinding binding,
+        MachineConfigurationWriterBinding? bootstrapWriter,
+        UserConfigurationWriterScope scope,
         CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        CheckMachineBootstrapLayout(machineRoot);
-
-        IDisposable lease;
-        try
+        MachineConfigurationWriterBinding? configuredWriter = bootstrapWriter ?? machineWriter;
+        if (configuredWriter is null || !binding.Matches(configuredWriter)
+            || (bootstrapWriter is not null && machineWriter is not null) || !HasMachinePaths(binding))
         {
-            lease = acquireVerifiedWriterLease(machineRoot, cancellationToken)
-                ?? throw new InvalidOperationException("The verified machine configuration writer lease was not supplied.");
-        }
-        catch (Win32Exception exception)
-        {
-            throw new IOException("Could not acquire the verified machine configuration writer lease.", exception);
+            throw new InvalidOperationException("Machine startup requires the same enrolled configuration writer.");
         }
 
-        // Acquire native exclusion first, then the 8e scope gate and the
-        // aggregate gate. Release in reverse order after readback or rollback.
-        await using var scope = new UserConfigurationWriterScope(lease, markerPath);
-        return await LoadWithAdmissionAsync(scope, machineBootstrap: true, cancellationToken)
+        scope.CheckRoot(markerPath);
+        return LoadWithAdmissionAsync(scope, machinePersistence: true, cancellationToken);
+    }
+
+    private bool HasMachinePaths(MachineConfigurationWriterBinding binding) =>
+        writerScope is null
+        && string.Equals(profileStore.Path, binding.ProfilePath, StringComparison.Ordinal)
+        && string.Equals(preferencesPath, binding.PreferencesPath, StringComparison.Ordinal)
+        && string.Equals(markerPath, binding.MarkerPath, StringComparison.Ordinal);
+
+    private async Task<BatteryConfiguration> LoadWithMachineWriterAsync(
+        MachineConfigurationWriterBinding binding,
+        CancellationToken cancellationToken)
+    {
+        await using UserConfigurationWriterScope scope = binding.Acquire(cancellationToken);
+        return await LoadWithAdmissionAsync(scope, machinePersistence: true, cancellationToken)
             .ConfigureAwait(false);
     }
 
     private async Task<BatteryConfiguration> LoadWithAdmissionAsync(
         UserConfigurationWriterScope? scope,
-        bool machineBootstrap,
+        bool machinePersistence,
         CancellationToken cancellationToken)
     {
         using IDisposable? admission = scope is null
@@ -154,7 +172,7 @@ public sealed class BatteryConfigurationStore
             BatteryConfigurationInspection inspection = await LoadCoreAsync(
                 materializeAdmittedState: true,
                 cancellationToken,
-                machineBootstrap);
+                machinePersistence);
             preservationRequired = !inspection.Configuration.IsAuthoritative;
             return inspection.Configuration;
         }
@@ -185,9 +203,11 @@ public sealed class BatteryConfigurationStore
         ProfileSet profiles,
         CancellationToken cancellationToken)
     {
-        using IDisposable? admission = writerScope is null
+        await using UserConfigurationWriterScope? machineScope = machineWriter?.Acquire(cancellationToken);
+        UserConfigurationWriterScope? scope = machineScope ?? writerScope;
+        using IDisposable? admission = scope is null
             ? null
-            : await writerScope.EnterAsync(cancellationToken, checkAggregateRecovery: false).ConfigureAwait(false);
+            : await scope.EnterAsync(cancellationToken, checkAggregateRecovery: false).ConfigureAwait(false);
         profiles = ProfileStore.NormalizeLegacyBatteryProfile(
             profiles,
             out _,
@@ -197,6 +217,10 @@ public sealed class BatteryConfigurationStore
         try
         {
             ThrowIfPreservationRequired();
+            if (machineScope is not null)
+            {
+                CheckMachineTargets();
+            }
             AggregateSnapshot snapshot = await CaptureAggregateAsync(cancellationToken);
             if (snapshot.IsEmpty)
             {
@@ -204,12 +228,14 @@ public sealed class BatteryConfigurationStore
                     "The battery configuration aggregate is absent; profile-only save was rejected because preferences cannot be reconstructed safely.");
             }
             CommittedSnapshot committed = ReadCommittedSnapshotForSave(snapshot);
+            CheckMachineCommit(snapshot);
             await SaveConfigurationTransactionAsync(
                 profiles,
                 committed.Configuration.Preferences,
                 cancellationToken,
                 committed.ConfigurationMigrated ? null : committed.PreferenceJson,
-                snapshot);
+                snapshot,
+                machinePersistence: machineScope is not null);
         }
         finally
         {
@@ -222,9 +248,11 @@ public sealed class BatteryConfigurationStore
         BatteryAutomationPreferences preferences,
         CancellationToken cancellationToken)
     {
-        using IDisposable? admission = writerScope is null
+        await using UserConfigurationWriterScope? machineScope = machineWriter?.Acquire(cancellationToken);
+        UserConfigurationWriterScope? scope = machineScope ?? writerScope;
+        using IDisposable? admission = scope is null
             ? null
-            : await writerScope.EnterAsync(cancellationToken, checkAggregateRecovery: false).ConfigureAwait(false);
+            : await scope.EnterAsync(cancellationToken, checkAggregateRecovery: false).ConfigureAwait(false);
         profiles = ProfileStore.NormalizeLegacyBatteryProfile(
             profiles,
             out _,
@@ -235,16 +263,22 @@ public sealed class BatteryConfigurationStore
         try
         {
             ThrowIfPreservationRequired();
+            if (machineScope is not null)
+            {
+                CheckMachineTargets();
+            }
             AggregateSnapshot snapshot = await CaptureAggregateAsync(cancellationToken);
             if (!snapshot.IsEmpty)
             {
                 _ = ReadCommittedSnapshotForSave(snapshot);
             }
+            CheckMachineCommit(snapshot);
             await SaveConfigurationTransactionAsync(
                 profiles,
                 preferences,
                 cancellationToken,
-                priorSnapshot: snapshot);
+                priorSnapshot: snapshot,
+                machinePersistence: machineScope is not null);
         }
         finally
         {
@@ -255,21 +289,19 @@ public sealed class BatteryConfigurationStore
     private async Task<BatteryConfigurationInspection> LoadCoreAsync(
         bool materializeAdmittedState,
         CancellationToken cancellationToken,
-        bool machineBootstrap = false)
+        bool machinePersistence = false)
     {
         // Refuse the load instead of substituting defaults: user activation must
         // retain its prior context while this transaction remains unresolved.
         ThrowIfRecoveryRequired();
-        if (machineBootstrap)
+        if (machinePersistence)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            CheckBootstrapTarget(profileStore.Path);
-            CheckBootstrapTarget(preferencesPath);
-            CheckBootstrapTarget(markerPath);
+            CheckMachineTargets();
         }
         // A verified commit is authoritative even if the bootstrap caller
         // cancels after marker replacement. Finish its final read under the lease.
-        CancellationToken postCommitToken = machineBootstrap ? CancellationToken.None : cancellationToken;
+        CancellationToken postCommitToken = machinePersistence ? CancellationToken.None : cancellationToken;
         AggregateSnapshot snapshot = await CaptureAggregateAsync(cancellationToken);
         if (ContainsFutureSchema(snapshot))
         {
@@ -289,12 +321,13 @@ public sealed class BatteryConfigurationStore
                     configuration.Preferences,
                     cancellationToken,
                     priorSnapshot: snapshot,
-                    machineBootstrap: machineBootstrap);
+                    machinePersistence: machinePersistence);
                 await InvokePostCommitBoundaryAsync(postCommitToken);
                 try
                 {
-                    configuration = ReadCommittedSnapshot(
-                        await CaptureAggregateAsync(postCommitToken)).Configuration;
+                    snapshot = await CaptureAggregateAsync(postCommitToken);
+                    configuration = ReadCommittedSnapshot(snapshot).Configuration;
+                    RememberMachineCommit(snapshot);
                 }
                 catch (ConfigurationAggregateException exception)
                 {
@@ -334,10 +367,11 @@ public sealed class BatteryConfigurationStore
                         configuration.Preferences,
                         cancellationToken,
                         priorSnapshot: snapshot,
-                        machineBootstrap: machineBootstrap);
+                        machinePersistence: machinePersistence);
                     await InvokePostCommitBoundaryAsync(postCommitToken);
-                    configuration = ReadCommittedSnapshot(
-                        await CaptureAggregateAsync(postCommitToken)).Configuration;
+                    snapshot = await CaptureAggregateAsync(postCommitToken);
+                    configuration = ReadCommittedSnapshot(snapshot).Configuration;
+                    RememberMachineCommit(snapshot);
                 }
                 return new BatteryConfigurationInspection(configuration, WasEmpty: false);
             }
@@ -376,10 +410,14 @@ public sealed class BatteryConfigurationStore
                     committed.Configuration.Preferences,
                     cancellationToken,
                     priorSnapshot: snapshot,
-                    machineBootstrap: machineBootstrap);
+                    machinePersistence: machinePersistence);
                 await InvokePostCommitBoundaryAsync(postCommitToken);
-                AggregateSnapshot migrated = await CaptureAggregateAsync(postCommitToken);
-                committed = ReadCommittedSnapshot(migrated);
+                snapshot = await CaptureAggregateAsync(postCommitToken);
+                committed = ReadCommittedSnapshot(snapshot);
+            }
+            if (materializeAdmittedState)
+            {
+                RememberMachineCommit(snapshot);
             }
             return new BatteryConfigurationInspection(
                 committed.Configuration,
@@ -400,19 +438,28 @@ public sealed class BatteryConfigurationStore
         }
     }
 
-    private static void CheckBootstrapTarget(string path)
+    private void CheckMachineTargets()
     {
-        try
+        MachineConfigurationWriterBinding.CheckTarget(profileStore.Path);
+        MachineConfigurationWriterBinding.CheckTarget(preferencesPath);
+        MachineConfigurationWriterBinding.CheckTarget(markerPath);
+    }
+
+    private void RememberMachineCommit(AggregateSnapshot snapshot)
+    {
+        if (machineWriter is not null)
         {
-            const FileAttributes unsupported = FileAttributes.Directory | FileAttributes.ReparsePoint;
-            if ((File.GetAttributes(path) & unsupported) != 0)
-            {
-                throw new IOException($"The machine bootstrap target is not a plain file: '{path}'.");
-            }
+            machineCommit = snapshot.Marker.Contents;
         }
-        catch (FileNotFoundException)
+    }
+
+    private void CheckMachineCommit(AggregateSnapshot snapshot)
+    {
+        // A verified marker binds both documents by hash.
+        if (machineWriter is not null &&
+            (machineCommit is null || !snapshot.Marker.Contents.AsSpan().SequenceEqual(machineCommit)))
         {
-            // A first bootstrap may create any of the three fixed leaves.
+            throw new IOException("Machine configuration changed since it was loaded; reload it before saving.");
         }
     }
 
@@ -629,7 +676,7 @@ public sealed class BatteryConfigurationStore
         CancellationToken cancellationToken,
         byte[]? committedPreferenceJson = null,
         AggregateSnapshot? priorSnapshot = null,
-        bool machineBootstrap = false)
+        bool machinePersistence = false)
     {
         preferences = preferences with { ProtectionEnabled = null, AllowExperimentalFeatures = true };
         byte[] profileJson = SerializeProfiles(profiles);
@@ -657,9 +704,9 @@ public sealed class BatteryConfigurationStore
             markerJson,
             transactionId);
         TransactionTarget[] targets = [profile, preference, marker];
-        // Every artifact is a sibling of an admitted target. During machine
-        // bootstrap, open new files only and track which names this attempt owns.
-        HashSet<string>? createdArtifacts = machineBootstrap ? new(StringComparer.Ordinal) : null;
+        // A leased machine transaction opens new sibling files only and
+        // tracks the names it owns.
+        HashSet<string>? createdArtifacts = machinePersistence ? new(StringComparer.Ordinal) : null;
         bool replacementPhaseStarted = false;
         bool rollbackFailed = false;
         bool recoveryRecordCreated = false;
@@ -789,6 +836,11 @@ public sealed class BatteryConfigurationStore
                     DeleteTransactionArtifact(target.RestorePath, createdArtifacts);
                 }
             }
+        }
+
+        if (machineWriter is not null)
+        {
+            machineCommit = markerJson;
         }
     }
 

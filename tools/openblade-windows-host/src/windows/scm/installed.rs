@@ -9,13 +9,15 @@ use windows_sys::Win32::System::Services::{
 
 use crate::scm_host::{Controls, Phase, check_starting, normalize_startup_stop, run_lifecycle};
 use crate::scm_identity::ScmEvidence;
+use crate::service_install_identity::{IMAGE_NAME, INSTALL_DIRECTORY};
 
 #[path = "installed/native.rs"]
 mod native;
 pub(crate) use native::entry;
+#[path = "installed/readiness.rs"]
+mod readiness;
 
 const NAME: &str = "OpenBlade";
-const IMAGE_NAME: &str = "OpenBlade.Service.exe";
 const PIPE_NAME: &str = "OpenBlade.Service.v2";
 const PROTOCOL_VERSION: i32 = 79;
 
@@ -35,7 +37,10 @@ struct LaunchIdentity {
 
 impl LaunchIdentity {
     fn verify(process: ProcessEvidence) -> io::Result<Self> {
-        let expected = process.program_files.join("OpenBlade").join(IMAGE_NAME);
+        let expected = process
+            .program_files
+            .join(INSTALL_DIRECTORY)
+            .join(IMAGE_NAME);
         if process.has_arguments
             || !process.program_files.is_absolute()
             || process.image.as_os_str() != expected.as_os_str()
@@ -109,7 +114,11 @@ async fn run_candidate<F: Future<Output = io::Result<()>>>(
     process: impl FnOnce() -> io::Result<ProcessEvidence>,
     registration: impl FnOnce(&LaunchIdentity) -> io::Result<ScmEvidence>,
     admit: impl FnOnce(&LaunchIdentity) -> io::Result<()>,
-    prepare: impl AsyncFnOnce(&LaunchIdentity, oneshot::Receiver<()>) -> io::Result<(Readiness, F)>,
+    prepare: impl AsyncFnOnce(
+        &LaunchIdentity,
+        oneshot::Receiver<()>,
+        oneshot::Sender<()>,
+    ) -> io::Result<(Readiness, F)>,
     mut publish: impl FnMut(&SERVICE_STATUS) -> io::Result<()>,
 ) -> io::Result<()> {
     let stop = async {
@@ -126,12 +135,35 @@ async fn run_candidate<F: Future<Output = io::Result<()>>>(
             check_starting(stop.as_mut()).await?;
 
             let (shutdown, retiring) = oneshot::channel();
-            // The provider may drive a typed probe asynchronously. It must
-            // bound preparation and retire partial resources before returning Err.
-            let (readiness, drive) = prepare(&launch, retiring).await?;
-            let startup = readiness
-                .verify(&launch)
-                .and_then(|()| report(Phase::Running));
+            let mut shutdown = Some(shutdown);
+            let (endpoint_failed, failure) = oneshot::channel();
+            let failure = async {
+                if failure.await.is_err() {
+                    std::future::pending::<()>().await;
+                }
+            };
+            let (readiness, drive) = {
+                let preparing = prepare(&launch, retiring, endpoint_failed);
+                tokio::pin!(preparing);
+                tokio::select! {
+                    biased;
+                    result = &mut preparing => result?,
+                    () = &mut stop => {
+                        // The provider must finish its bounded retirement. Dropping
+                        // preparation here would discard its drain outcome.
+                        let _ = shutdown.take().unwrap().send(());
+                        preparing.await?
+                    }
+                }
+            };
+            let startup = if shutdown.is_none() {
+                Err(crate::scm_host::startup_stopped())
+            } else {
+                check_starting(stop.as_mut())
+                    .await
+                    .and_then(|()| readiness.verify(&launch))
+                    .and_then(|()| report(Phase::Running))
+            };
             tokio::pin!(drive);
 
             let (result, stopping, drive_pending) = match startup {
@@ -139,14 +171,20 @@ async fn run_candidate<F: Future<Output = io::Result<()>>>(
                     let (result, pending) = tokio::select! {
                         biased;
                         () = &mut stop => (Ok(()), true),
-                        result = &mut drive => (result, false),
+                        () = failure => (Ok(()), true),
+                        result = &mut drive => (
+                            result.and(Err(io::Error::other("installed endpoint stopped unexpectedly"))),
+                            false,
+                        ),
                     };
                     (result, report(Phase::Stopping), pending)
                 }
                 Err(error) => (Err(error), Ok(()), true),
             };
             // Await provider retirement even when readiness or reporting failed.
-            let _ = shutdown.send(());
+            if let Some(shutdown) = shutdown {
+                let _ = shutdown.send(());
+            }
             let retired = if drive_pending { drive.await } else { Ok(()) };
             normalize_startup_stop(result).and(stopping).and(retired)
         },

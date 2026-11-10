@@ -94,7 +94,6 @@ pub(super) enum Fault {
     LoseConfirmation,
 }
 
-#[derive(Clone, Copy)]
 pub(crate) struct Admission {
     pub(crate) identity: (&'static str, u16, u16),
     pub(crate) full_adapter: bool,
@@ -102,6 +101,9 @@ pub(crate) struct Admission {
     pub(crate) no_competing_controller: bool,
     pub(crate) owns_transport: bool,
     pub(crate) awake: bool,
+    #[cfg(all(windows, feature = "controller-admission-compile-check"))]
+    pub(crate) controller_check:
+        Option<openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission>,
 }
 
 impl Admission {
@@ -113,6 +115,8 @@ impl Admission {
             no_competing_controller: true,
             owns_transport: true,
             awake: true,
+            #[cfg(all(windows, feature = "controller-admission-compile-check"))]
+            controller_check: None,
         }
     }
 
@@ -122,6 +126,19 @@ impl Admission {
 
     pub(crate) fn admits_writes(&self) -> bool {
         self.admits_intent() && self.admits_readback() && self.no_competing_controller
+    }
+
+    pub(crate) fn recheck_writes(&mut self) -> bool {
+        if !self.admits_writes() {
+            return false;
+        }
+        #[cfg(all(windows, feature = "controller-admission-compile-check"))]
+        if let Some(check) = &mut self.controller_check {
+            // Observation can revoke controller clearance. It cannot restore
+            // clearance or any part of the independent device admission.
+            self.no_competing_controller &= check.confirms_fresh_absence();
+        }
+        self.admits_writes()
     }
 
     pub(crate) fn admits_readback(&self) -> bool {
@@ -174,7 +191,7 @@ impl Device {
         preset: Preset,
         mut fresh_power: impl FnMut() -> bool,
     ) -> RecipeResult {
-        if !self.admits_writes() {
+        if !self.admission.recheck_writes() {
             return RecipeResult::Blocked;
         }
 
@@ -212,7 +229,7 @@ impl Device {
             if fault == Fault::DenySecond && channel == Channel::Second {
                 self.admission.owns_transport = false;
             }
-            if !self.admits_writes() || !fresh_power() {
+            if !self.admits_writes() || !fresh_power() || !self.admission.recheck_writes() {
                 return match channel {
                     Channel::First => RecipeResult::KnownNotApplied,
                     Channel::Second => RecipeResult::Indeterminate(baseline),

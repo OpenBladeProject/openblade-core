@@ -17,42 +17,40 @@ public sealed class ServiceStartupCoordinator(
 
     public async Task<bool> InitializeAsync(CancellationToken cancellationToken)
     {
-        BatteryConfiguration configuration;
-        try
+        StartupConfiguration? startup;
+        ServiceStartupKind startupKind;
+        if (runMarkerStore.RequiresBackendRetirement)
         {
-            configuration = await profileBootstrapper.InitializeAsync(cancellationToken);
+            MachineConfigurationWriterBinding binding = overrideStore.MachineWriter
+                ?? throw new InvalidOperationException("Machine startup requires an enrolled override writer.");
+            try
+            {
+                (startupKind, startup) = await runMarkerStore.BeginTransitionAsync(
+                    binding, LoadConfigurationAsync, cancellationToken).ConfigureAwait(false);
+            }
+            catch (ConfigurationQuarantinedException exception)
+            {
+                LogRecoveryRequired(exception);
+                return false;
+            }
         }
-        catch (ConfigurationQuarantinedException exception)
+        else
         {
-            // No authoritative bootstrap intent exists. Do not initialize a
-            // default-valued runtime: nonthermal paths also need known intent.
-            logger.LogError(exception,
-                "Machine configuration transaction recovery is required; service initialization was refused before runtime or background work. Preserve the recovery record and original transaction artifacts.");
+            startup = await LoadConfigurationAsync(null, cancellationToken);
+            if (startup is null)
+            {
+                return false;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            startupKind = await runMarkerStore.BeginRunAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (startup is null)
+        {
             return false;
         }
-        if (configuration.Disposition == ConfigurationLoadDisposition.Quarantined)
-        {
-            logger.LogWarning(
-                "Invalid or unsupported battery configuration was preserved in quarantine; ordinary thermal writes are disabled.");
-        }
 
-        PersistentOverrideLoadResult persistentOverrides =
-            await overrideStore.LoadAsync(cancellationToken);
-        if (persistentOverrides.Disposition == ConfigurationLoadDisposition.Quarantined)
-        {
-            logger.LogWarning(
-                "Invalid or unsupported persistent overrides were preserved in quarantine; ordinary thermal writes are disabled.");
-            configuration = configuration with
-            {
-                Disposition = ConfigurationLoadDisposition.Quarantined,
-                QuarantineReason = persistentOverrides.QuarantineReason,
-            };
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        ServiceStartupKind startupKind = await runMarkerStore
-            .BeginRunAsync(cancellationToken)
-            .ConfigureAwait(false);
         bool recoveringUnexpectedExit =
             startupKind == ServiceStartupKind.UnexpectedExitRecovery;
         if (recoveringUnexpectedExit)
@@ -65,9 +63,9 @@ public sealed class ServiceStartupCoordinator(
         PowerSource powerSource = powerStateProvider.CapturePowerSource();
         cancellationToken.ThrowIfCancellationRequested();
         runtime.Initialize(
-            configuration,
+            startup.Configuration,
             powerSource,
-            persistentOverrides.Overrides,
+            startup.Overrides,
             recoveringUnexpectedExit);
         RuntimeInitialized = true;
 
@@ -100,4 +98,65 @@ public sealed class ServiceStartupCoordinator(
 
         return true;
     }
+
+    private async Task<StartupConfiguration?> LoadConfigurationAsync(
+        UserConfigurationWriterScope? scope,
+        CancellationToken cancellationToken)
+    {
+        BatteryConfiguration configuration;
+        try
+        {
+            configuration = scope is null
+                ? await profileBootstrapper.InitializeAsync(cancellationToken)
+                : await profileBootstrapper.InitializeTransitionAsync(
+                    overrideStore.MachineWriter!, scope, cancellationToken);
+        }
+        catch (ConfigurationQuarantinedException exception)
+        {
+            // No authoritative bootstrap intent exists. Do not initialize a
+            // default-valued runtime: nonthermal paths also need known intent.
+            LogRecoveryRequired(exception);
+            return null;
+        }
+        if (configuration.Disposition == ConfigurationLoadDisposition.Quarantined)
+        {
+            logger.LogWarning(
+                "Invalid or unsupported battery configuration was preserved in quarantine; ordinary thermal writes are disabled.");
+        }
+
+        PersistentOverrideLoadResult persistentOverrides;
+        try
+        {
+            persistentOverrides = scope is null
+                ? await overrideStore.LoadAsync(cancellationToken)
+                : await overrideStore.LoadForMachineTransitionAsync(scope, cancellationToken);
+        }
+        catch (Exception exception) when (overrideStore.MachineWriter is not null &&
+            exception is (IOException or UnauthorizedAccessException or ConfigurationQuarantinedException))
+        {
+            logger.LogError(exception,
+                "Machine overrides could not be admitted; service initialization was refused before runtime or background work.");
+            return null;
+        }
+        if (persistentOverrides.Disposition == ConfigurationLoadDisposition.Quarantined)
+        {
+            logger.LogWarning(
+                "Invalid or unsupported persistent overrides were preserved in quarantine; ordinary thermal writes are disabled.");
+            configuration = configuration with
+            {
+                Disposition = ConfigurationLoadDisposition.Quarantined,
+                QuarantineReason = persistentOverrides.QuarantineReason,
+            };
+        }
+
+        return new StartupConfiguration(configuration, persistentOverrides.Overrides);
+    }
+
+    private void LogRecoveryRequired(ConfigurationQuarantinedException exception) =>
+        logger.LogError(exception,
+            "Machine configuration transaction recovery is required; service initialization was refused before runtime or background work. Preserve the recovery record and original transaction artifacts.");
+
+    private sealed record StartupConfiguration(
+        BatteryConfiguration Configuration,
+        PersistentOverrideState Overrides);
 }

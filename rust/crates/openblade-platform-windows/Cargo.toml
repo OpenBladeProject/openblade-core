@@ -7,7 +7,7 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-controller-process-compile-check = []
+controller-process-compile-check = ["windows-sys/Win32_System_Services"]
 scripted-display = []
 scripted-gpu = []
 scripted-gpu-close = ["scripted-gpu"]

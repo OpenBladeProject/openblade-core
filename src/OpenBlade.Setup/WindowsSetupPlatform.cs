@@ -345,7 +345,29 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     public Task VerifyServiceHealthAsync(CancellationToken cancellationToken)
         => VerifyServiceHealthAsync("install", cancellationToken);
 
-    private async Task VerifyServiceHealthAsync(string purpose, CancellationToken cancellationToken)
+    internal Task VerifyCandidateServiceHealthAsync(
+        SetupCandidateLaunch expectedLaunch,
+        ISetupRetainedCandidateLaunch retainedLaunch,
+        CancellationToken cancellationToken)
+        => VerifyCandidateServiceHealthAsync(expectedLaunch, retainedLaunch,
+            WindowsSetupCandidateService.ReadAsync, SetupServiceHealthProbe.CreateCandidate(), cancellationToken);
+
+    internal Task VerifyCandidateServiceHealthAsync(
+        SetupCandidateLaunch expectedLaunch,
+        ISetupRetainedCandidateLaunch retainedLaunch,
+        Func<CancellationToken, Task<SetupCandidateServiceObservation>> readService,
+        SetupServiceHealthProbe probe,
+        CancellationToken cancellationToken)
+    {
+        var candidate = new SetupCandidateServiceVerification(expectedLaunch, retainedLaunch, readService);
+        return VerifyServiceHealthAsync("candidate", cancellationToken,
+            (token, timing) => probe.VerifyAsync(token, timing, candidate));
+    }
+
+    private async Task VerifyServiceHealthAsync(
+        string purpose,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, SetupServiceHealthTiming, Task>? verify = null)
     {
         var timing = new SetupServiceHealthTiming(purpose, ServiceHealthTimeout);
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -355,7 +377,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         string? cause = null;
         try
         {
-            await healthProbe.VerifyWithTimingAsync(timeout.Token, timing);
+            await (verify ?? healthProbe.VerifyWithTimingAsync)(timeout.Token, timing);
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {

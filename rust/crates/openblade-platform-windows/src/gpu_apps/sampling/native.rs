@@ -4,7 +4,7 @@
 use std::{
     cell::Cell,
     ffi::c_void,
-    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    os::windows::io::AsRawHandle,
     ptr::{NonNull, null, null_mut},
     thread,
     time::Instant,
@@ -12,29 +12,25 @@ use std::{
 
 use windows_sys::{
     Win32::{
-        Foundation::{ERROR_INVALID_PARAMETER, FILETIME, GetLastError, HANDLE, LUID, STILL_ACTIVE},
+        Foundation::{ERROR_INVALID_PARAMETER, HANDLE, LUID, STILL_ACTIVE},
         Globalization::CompareStringOrdinal,
-        Security::{
-            GetTokenInformation, SECURITY_MAX_SID_SIZE, TOKEN_QUERY, TOKEN_USER, TokenSessionId,
-            TokenUser,
-        },
+        Security::{GetTokenInformation, SECURITY_MAX_SID_SIZE, TOKEN_USER, TokenUser},
         System::{
             Performance::*,
-            Threading::{
-                GetCurrentProcess, GetExitCodeProcess, GetProcessTimes, OpenProcess,
-                OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
-            },
+            Threading::{GetCurrentProcess, GetExitCodeProcess},
         },
     },
     core::{GUID, w},
 };
 
 use super::*;
+use crate::process_query::{
+    image_path, open_process, open_process_token, process_times, token_session,
+};
 
 const PDH_FMT_NOCAP100: u32 = 0x8000;
 const MAX_ENGINE_COUNTERS: usize = 65_536;
 const MAX_INSTANCE_UNITS: usize = 1024;
-const MAX_PATH_UNITS: usize = 32_768;
 
 #[derive(Default)]
 pub(super) struct WindowsSampling {
@@ -275,22 +271,17 @@ fn read_process_parents(cancelled: &AtomicBool) -> BTreeMap<i32, i32> {
 }
 
 fn inspect_process(pid: i32) -> Inspection {
-    // SAFETY: Open a positive PID from counters or the parent snapshot with
-    // non-inheritable query-limited access.
-    let raw = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid as u32) };
-    if raw.is_null() {
-        // SAFETY: Read the thread's last error immediately after OpenProcess.
-        return if unsafe { GetLastError() } == ERROR_INVALID_PARAMETER {
-            Inspection::Stale
-        } else {
-            Inspection::Unavailable
-        };
-    }
-    // SAFETY: A successful OpenProcess returns a uniquely owned real handle.
-    let process = unsafe { OwnedHandle::from_raw_handle(raw) };
+    let process = match open_process(pid as u32, 0) {
+        Ok(process) => process,
+        Err(ERROR_INVALID_PARAMETER) => return Inspection::Stale,
+        Err(_) => return Inspection::Unavailable,
+    };
     let handle = process.as_raw_handle();
 
-    let identity = image_name(handle).zip(token_identity(handle));
+    let identity = image_path(&process)
+        .and_then(|path| process_name(&path))
+        .zip(token_identity(handle));
+
     let mut exit_code = 0;
     // SAFETY: The process is held through the last observation and the
     // output is writable.
@@ -301,22 +292,18 @@ fn inspect_process(pid: i32) -> Inspection {
         return Inspection::Stale;
     }
 
-    let mut created = FILETIME::default();
-    let mut exited = FILETIME::default();
-    let mut kernel = FILETIME::default();
-    let mut user = FILETIME::default();
-    // SAFETY: All outputs are distinct writable FILETIMEs on a held handle.
-    if unsafe { GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) } == 0 {
+    let Some((created, exited)) = process_times(&process) else {
         return Inspection::Unavailable;
-    }
-    let created_filetime = filetime(created);
+    };
+    let created_filetime = created as i64;
+
     if dotnet_ticks(created_filetime).is_none() {
         return Inspection::Unavailable;
     }
     // 259 is also a possible application exit code. Conservatively omit a
     // process with a plausible exit time. A live process's exit field is
     // unspecified, so this check can only reduce the observed inventory.
-    if filetime(exited) >= created_filetime {
+    if exited as i64 >= created_filetime {
         return Inspection::Stale;
     }
     match identity {
@@ -330,45 +317,10 @@ fn inspect_process(pid: i32) -> Inspection {
     }
 }
 
-fn filetime(value: FILETIME) -> i64 {
-    ((u64::from(value.dwHighDateTime) << 32) | u64::from(value.dwLowDateTime)) as i64
-}
-
-fn image_name(process: HANDLE) -> Option<String> {
-    let mut path = vec![0; MAX_PATH_UNITS];
-    let mut units = path.len() as u32;
-    // SAFETY: The process handle is held and the path buffer has the advertised
-    // capacity. Flag zero selects the ordinary Win32 executable path.
-    if unsafe { QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut units) } == 0 {
-        return None;
-    }
-    process_name(path.get(..units as usize)?)
-}
-
 fn token_identity(process: HANDLE) -> Option<(Vec<u8>, u32)> {
-    let mut raw = null_mut();
-    // SAFETY: The caller holds the process handle and the output is writable.
-    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut raw) } == 0 || raw.is_null() {
-        return None;
-    }
-    // SAFETY: OpenProcessToken returned a uniquely owned real token handle.
-    let token = unsafe { OwnedHandle::from_raw_handle(raw) };
-    let mut session = 0_u32;
+    let token = open_process_token(process)?;
+    let session = token_session(&token)?;
     let mut used = 0;
-    // SAFETY: TokenSessionId writes a DWORD and a separate length.
-    if unsafe {
-        GetTokenInformation(
-            token.as_raw_handle(),
-            TokenSessionId,
-            (&mut session as *mut u32).cast(),
-            4,
-            &mut used,
-        )
-    } == 0
-        || used != 4
-    {
-        return None;
-    }
 
     const TOKEN_USER_BYTES: usize = size_of::<TOKEN_USER>();
     const BUFFER_WORDS: usize =
@@ -525,7 +477,6 @@ fn locate_nvidia() -> Result<NvidiaAdapterLuid, Unavailable> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn bounds_counter_array_and_instance_strings() {
         let item_bytes = size_of::<PDH_FMT_COUNTERVALUE_ITEM_W>();

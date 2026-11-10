@@ -38,23 +38,32 @@ use windows_sys::{
     },
 };
 
+#[cfg(feature = "installed-service-candidate")]
+pub mod service_image;
+
 /// Retains the actual admitted directory and its ancestors. Opening and
 /// inspecting never creates, repairs, migrates, or deletes any entry.
 pub struct ProtectedStorage {
     root: File,
     ancestors: Vec<File>,
     identity: super::FileIdentity,
+    root_policy: Policy,
 }
 
 impl ProtectedStorage {
     /// Opens an existing local root. The caller supplies its exact location
     /// from trusted setup configuration. No installed path is resolved here.
     pub fn open(root: &Path) -> io::Result<Self> {
+        Self::open_with_root_policy(root, Policy::ROOT)
+    }
+
+    fn open_with_root_policy(root: &Path, root_policy: Policy) -> io::Result<Self> {
         let (root, ancestors, info) = pin_root(root)?;
         let storage = Self {
             root,
             ancestors,
             identity: super::file_identity(&info),
+            root_policy,
         };
         storage.check_root()?;
         Ok(storage)
@@ -74,13 +83,13 @@ impl ProtectedStorage {
     }
 
     pub(super) fn check_root(&self) -> io::Result<()> {
-        verify_security(&self.root, Policy::ROOT)?;
+        verify_security(&self.root, self.root_policy)?;
         for ancestor in &self.ancestors {
             let info = directory_info(ancestor)?;
             if info.dwVolumeSerialNumber != self.identity.volume {
                 return Err(denied("configuration ancestor changed volumes"));
             }
-            verify_security(ancestor, Policy::Ancestor)?;
+            verify_security(ancestor, Policy::ANCESTOR)?;
         }
         if super::file_identity(&directory_info(&self.root)?) != self.identity {
             return Err(denied("configuration root identity changed"));
@@ -348,7 +357,7 @@ pub(super) fn require_ntfs(volume: &File) -> io::Result<()> {
     Ok(())
 }
 
-fn rename_same_directory(file: &File, target: &str, replace: bool) -> io::Result<()> {
+pub(super) fn rename_same_directory(file: &File, target: &str, replace: bool) -> io::Result<()> {
     use windows_sys::{
         Wdk::Storage::FileSystem::{
             FILE_RENAME_INFORMATION, FileRenameInformation, NtSetInformationFile,
@@ -564,12 +573,17 @@ fn directory_info(file: &File) -> io::Result<BY_HANDLE_FILE_INFORMATION> {
 
 #[derive(Clone, Copy)]
 enum Policy {
-    Ancestor,
+    Directory { extra_rights: u32 },
     Setup { ace_flags: u8 },
     Record,
 }
 
 impl Policy {
+    const ANCESTOR: Self = Self::Directory {
+        extra_rights: FILE_ADD_SUBDIRECTORY,
+    };
+    #[cfg(feature = "installed-service-candidate")]
+    const INSTALL_DIRECTORY: Self = Self::Directory { extra_rights: 0 };
     const ROOT: Self = Self::Setup {
         ace_flags: OBJECT_AND_CONTAINER_INHERIT,
     };
@@ -656,7 +670,7 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
     let setup = matches!(policy, Policy::Setup { .. });
     if match policy {
         Policy::Record => owner != ADMINISTRATORS && owner != SYSTEM,
-        Policy::Ancestor => !matches!(owner, ADMINISTRATORS | SYSTEM | TRUSTED_INSTALLER),
+        Policy::Directory { .. } => !matches!(owner, ADMINISTRATORS | SYSTEM | TRUSTED_INSTALLER),
         Policy::Setup { .. } => owner != ADMINISTRATORS || control & SE_DACL_PROTECTED == 0,
     } {
         return Some(false);
@@ -690,14 +704,14 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
             // that can replace an existing child, redirect traversal or change
             // security are refused. Inherit-only grants are checked where
             // they apply, on the next directory or record's own descriptor.
-            Policy::Ancestor => {
+            Policy::Directory { extra_rights } => {
                 if !matches!(kind, 0 | 1)
                     || flags & !DIRECTORY_ACE_FLAGS != 0
                     || kind == 0
                         && flags & INHERIT_ONLY_ACE == 0
                         && principal == 0
                         && trustee != TRUSTED_INSTALLER
-                        && mask & !(SAFE_RECORD_RIGHTS | FILE_ADD_SUBDIRECTORY) != 0
+                        && mask & !(SAFE_RECORD_RIGHTS | extra_rights) != 0
                 {
                     return Some(false);
                 }

@@ -20,17 +20,18 @@ internal sealed class SetupServiceHealthTiming(string purpose, TimeSpan budget)
     {
         try
         {
-            if (connection is NamedPipeClientStream pipe
-                && GetNamedPipeServerProcessId(pipe.SafePipeHandle, out uint processId))
-            {
-                ServerProcessId = processId;
-            }
+            ServerProcessId = ReadPeerProcessId(connection);
         }
         catch (Exception)
         {
             // The connection may already be broken. This ID is for correlation only.
         }
     }
+
+    internal static uint? ReadPeerProcessId(Stream connection)
+        => connection is NamedPipeClientStream pipe
+            && GetNamedPipeServerProcessId(pipe.SafePipeHandle, out uint processId)
+            ? processId : null;
 
     internal void Report(string outcome, string? cause, bool callerCanceled, bool probeCanceled)
     {

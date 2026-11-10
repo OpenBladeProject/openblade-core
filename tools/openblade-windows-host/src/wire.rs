@@ -1,11 +1,14 @@
 use std::future::pending;
-use std::io::{self, ErrorKind};
+use std::io;
+#[cfg(test)]
+use std::io::ErrorKind;
 use std::sync::Arc;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+#[cfg(test)]
+use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::sync::{Semaphore, watch};
 use tokio::time::timeout;
 
@@ -18,8 +21,15 @@ use openblade_domain::recovery::ScopedStatus;
 
 const CURRENT_VERSION: i32 = 79;
 const LEGACY_VERSION: i32 = 51;
-const MAX_FRAME_BYTES: i32 = 65_536;
-const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
+#[path = "service_frame.rs"]
+mod service_frame;
+use service_frame::{FRAME_TIMEOUT, invalid, read_payload};
+
+pub(crate) use service_frame::is_guid;
+
+async fn write_frame(io: &mut (impl AsyncWrite + Unpin), frame: Frame<'_>) -> io::Result<()> {
+    service_frame::write_frame(io, &frame).await
+}
 
 pub(crate) const CURRENT_FIXTURE: &str = include_str!(
     "../../../tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service-status-event.json"
@@ -613,15 +623,6 @@ impl Request {
     }
 }
 
-pub(crate) fn is_guid(id: &str) -> bool {
-    id.len() == 36
-        && id.bytes().enumerate().all(|(index, byte)| match index {
-            8 | 13 | 18 | 23 => byte == b'-',
-            _ => byte.is_ascii_hexdigit(),
-        })
-        && id != "00000000-0000-0000-0000-000000000000"
-}
-
 pub async fn serve<S, A>(
     mut io: S,
     authorize: A,
@@ -965,34 +966,6 @@ async fn write_status_event(
         },
     )
     .await
-}
-
-async fn read_payload(io: &mut (impl AsyncRead + Unpin)) -> io::Result<Vec<u8>> {
-    let length = io.read_i32_le().await?;
-    if !(1..=MAX_FRAME_BYTES).contains(&length) {
-        return Err(invalid("invalid request length"));
-    }
-    let mut payload = vec![0; length as usize];
-    io.read_exact(&mut payload).await?;
-    Ok(payload)
-}
-
-async fn write_frame(io: &mut (impl AsyncWrite + Unpin), frame: Frame<'_>) -> io::Result<()> {
-    let payload = serde_json::to_vec(&frame)?;
-    let length = i32::try_from(payload.len())
-        .ok()
-        .filter(|length| (1..=MAX_FRAME_BYTES).contains(length))
-        .ok_or_else(|| invalid("invalid response length"))?;
-    timeout(FRAME_TIMEOUT, async {
-        io.write_i32_le(length).await?;
-        io.write_all(&payload).await?;
-        io.flush().await
-    })
-    .await?
-}
-
-fn invalid(message: &'static str) -> io::Error {
-    io::Error::new(ErrorKind::InvalidData, message)
 }
 
 #[cfg(test)]

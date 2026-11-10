@@ -97,7 +97,7 @@ fn ancestors_allow_child_creation_without_allowing_redirection() {
     let sddl =
         format!("O:{trusted_installer}D:(A;OICI;FA;;;SY)(A;CIIO;GA;;;CO)(A;;0x4;;;BU)(A;;FR;;;BU)");
     let bytes = descriptor(&sddl);
-    assert_eq!(accepts_descriptor(&bytes, Policy::Ancestor), Some(true));
+    assert_eq!(accepts_descriptor(&bytes, Policy::ANCESTOR), Some(true));
     assert_ne!(accepts_descriptor(&bytes, Policy::ROOT), Some(true));
     assert_ne!(accepts_descriptor(&bytes, Policy::Record), Some(true));
     for invalid in [
@@ -109,9 +109,28 @@ fn ancestors_allow_child_creation_without_allowing_redirection() {
         "O:SYD:(A;;GW;;;BU)",
     ] {
         assert_ne!(
-            accepts_descriptor(&descriptor(invalid), Policy::Ancestor),
+            accepts_descriptor(&descriptor(invalid), Policy::ANCESTOR),
             Some(true),
             "{invalid}"
+        );
+    }
+}
+
+#[cfg(feature = "installed-service-candidate")]
+#[test]
+fn installation_directory_refuses_mutation_by_ordinary_users() {
+    for (sddl, accepted) in [
+        ("O:BAD:AI(A;OICIID;FA;;;SY)(A;OICIID;FRFX;;;BU)", true),
+        ("O:BUD:(A;;FR;;;BU)", false),
+        ("O:BAD:(A;;0x4;;;BU)", false),
+        ("O:BAD:(A;;0x40;;;BU)", false),
+        ("O:BAD:(A;;0x100;;;BU)", false),
+        ("O:BAD:(A;;WD;;;BU)", false),
+    ] {
+        assert_eq!(
+            accepts_descriptor(&descriptor(sddl), Policy::INSTALL_DIRECTORY),
+            Some(accepted),
+            "{sddl}"
         );
     }
 }
@@ -242,6 +261,7 @@ fn live_private_fixtures_refuse_unprotected_roots_and_records() {
     let parent = super::super::pin_directory(root.parent().unwrap()).unwrap();
     let handle = open_directory(&parent, root.file_name().unwrap()).unwrap();
     let candidate = ProtectedStorage {
+        root_policy: Policy::ROOT,
         identity: super::super::file_identity(&directory_info(&handle).unwrap()),
         root: handle,
         ancestors: Vec::new(),

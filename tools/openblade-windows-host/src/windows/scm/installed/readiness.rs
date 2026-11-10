@@ -1,0 +1,313 @@
+//! Installed v79 GetStatus only. Ports must own their resources and acknowledge retirement.
+
+use std::{future::Future, io, pin::Pin, time::Duration};
+
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    sync::oneshot,
+    time::timeout,
+};
+
+use super::{LaunchIdentity, PIPE_NAME, PROTOCOL_VERSION, Readiness, denied};
+use crate::{
+    scm_host::startup_stopped,
+    service_frame::{FRAME_TIMEOUT, invalid, read_payload, write_frame},
+};
+
+#[path = "status_wire.rs"]
+mod status_wire;
+use status_wire::{GetStatus, Snapshot, StatusResponse};
+
+const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+
+type Pending<'a, T> = Pin<Box<dyn Future<Output = io::Result<T>> + 'a>>;
+
+// Each native connection retains its handle and supplies handle-bound
+// evidence; the listener never infers identity from the pipe name.
+trait Stream: AsyncRead + AsyncWrite + Unpin {
+    fn server_pid(&self) -> io::Result<u32>;
+    fn caller_after_read(&self) -> io::Result<Caller>;
+}
+
+struct Listener {
+    pipe_name: &'static str,
+    // Must come from an exclusive first-instance create, held continuously.
+    first_instance: bool,
+    // Protected managed DACL: Network deny, SYSTEM/admin full, Users read/write.
+    managed_acl: bool,
+    local_only: bool,
+}
+
+impl Listener {
+    fn verify(self) -> io::Result<()> {
+        if self.pipe_name != PIPE_NAME
+            || !self.first_instance
+            || !self.managed_acl
+            || !self.local_only
+        {
+            return Err(denied("unverified installed status listener"));
+        }
+        Ok(())
+    }
+}
+
+#[allow(dead_code)] // Native token resolution is a separate prerequisite.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Logon {
+    System,
+    Interactive,
+    RemoteInteractive,
+    Other,
+}
+
+#[derive(Clone, Copy)]
+struct Caller {
+    pid: Option<u32>,
+    logon: Logon,
+    session: u32,
+    control_session: Option<u32>,
+}
+
+impl Caller {
+    fn access(self) -> io::Result<i32> {
+        match self.logon {
+            Logon::System => Ok(0),
+            Logon::Interactive if self.control_session == Some(self.session) => Ok(0),
+            Logon::Interactive | Logon::RemoteInteractive => Ok(1),
+            Logon::Other => Err(denied(
+                "installed status requires SYSTEM or an interactive caller",
+            )),
+        }
+    }
+}
+
+// Concrete implementations must bind all evidence to the live connection, not
+// to a name lookup. Dropping pending I/O must leave no detached work; dropping
+// an accepted stream must close it. Retire confirms listener and I/O closure.
+trait Endpoint {
+    fn listener(&self) -> io::Result<Listener>;
+    fn accept(&self) -> Pending<'_, Box<dyn Stream>>;
+    fn connect_probe(&self) -> Pending<'_, Box<dyn Stream>>;
+    fn retire(&mut self) -> Pending<'_, ()>;
+}
+
+// Owns an already admitted runtime source. Every request takes a fresh status
+// for the resolved caller, including the managed inactive-session projection.
+trait StatusSource {
+    fn snapshot(&mut self, caller: Caller) -> Pending<'_, Snapshot>;
+    fn drain(&mut self) -> Pending<'_, ()>;
+}
+
+struct Ports {
+    endpoint: Box<dyn Endpoint>,
+    source: Box<dyn StatusSource>,
+}
+
+pub(super) async fn prepare_installed_endpoint(
+    launch: &LaunchIdentity,
+    shutdown: oneshot::Receiver<()>,
+    failed: oneshot::Sender<()>,
+) -> io::Result<(Readiness, impl Future<Output = io::Result<()>> + use<>)> {
+    // No installed provider currently proves both the managed endpoint
+    // security contract and the runtime status contract. Never substitute a
+    // fixture or create a pipe with default security.
+    prepare(launch.pid, shutdown, failed, installed_ports()).await
+}
+
+fn installed_ports() -> io::Result<Ports> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "secure installed endpoint and admitted status source are unavailable",
+    ))
+}
+
+async fn prepare(
+    pid: u32,
+    mut shutdown: oneshot::Receiver<()>,
+    failed: oneshot::Sender<()>,
+    ports: io::Result<Ports>,
+) -> io::Result<(Readiness, impl Future<Output = io::Result<()>> + use<>)> {
+    let mut ports = ports?;
+    let result = tokio::select! {
+        biased;
+        result = timeout(PROBE_TIMEOUT, ports.probe(pid)) => result.map_err(io::Error::from).and_then(|r| r),
+        signal = &mut shutdown => signal.map_err(|_| lost_shutdown()).and_then(|()| Err(startup_stopped())),
+    };
+    match result {
+        Ok(()) => Ok((
+            Readiness {
+                pipe_name: PIPE_NAME,
+                server_pid: pid,
+                protocol_version: PROTOCOL_VERSION,
+                correlated_status: true,
+            },
+            ports.drive(shutdown, failed),
+        )),
+        Err(error) => {
+            // In particular, an unconfirmed drain overrides startup cancellation.
+            ports.retire().await?;
+            Err(error)
+        }
+    }
+}
+
+impl Ports {
+    async fn probe(&mut self, pid: u32) -> io::Result<()> {
+        self.endpoint.listener()?.verify()?;
+        let request = GetStatus::new(probe_id()?)?;
+        let endpoint = &*self.endpoint;
+        let served = serve(&mut *self.source, endpoint.accept(), Some((pid, &request)));
+        let probe = async {
+            let mut client = endpoint.connect_probe().await?;
+            verify_peer(&*client, pid)?;
+            write_frame(&mut *client, &request).await?;
+            let reply = timeout(FRAME_TIMEOUT, read_payload(&mut *client)).await??;
+            StatusResponse::verify(&reply, &request)?;
+            verify_peer(&*client, pid)
+        };
+        // Keep the accepted server handle open until the client validates the
+        // response and rechecks the server PID on the original connection.
+        let (_server, ()) =
+            tokio::try_join!(async { served.await.map_err(io::Error::from) }, probe)?;
+        endpoint.listener()?.verify()
+    }
+
+    async fn drive(
+        mut self,
+        mut shutdown: oneshot::Receiver<()>,
+        failed: oneshot::Sender<()>,
+    ) -> io::Result<()> {
+        let (result, signal_consumed) = loop {
+            let accepted = tokio::select! {
+                biased;
+                result = self.endpoint.accept() => result,
+                signal = &mut shutdown => break (signal.map_err(|_| lost_shutdown()), true),
+            };
+            let stream = match accepted {
+                Ok(stream) => stream,
+                Err(error) => break (Err(error), false),
+            };
+            match shutdown.try_recv() {
+                Ok(()) => break (Ok(()), true),
+                Err(oneshot::error::TryRecvError::Closed) => break (Err(lost_shutdown()), true),
+                Err(oneshot::error::TryRecvError::Empty) => {}
+            }
+            let exchange = serve(&mut *self.source, std::future::ready(Ok(stream)), None);
+            match tokio::select! {
+                biased;
+                result = exchange => result,
+                signal = &mut shutdown => break (signal.map_err(|_| lost_shutdown()), true),
+            } {
+                Ok(_) | Err(ExchangeError::Client(_)) => {}
+                Err(ExchangeError::Runtime(error)) => break (Err(error), false),
+            }
+            // Ensure a continuously ready listener cannot starve STOP.
+            tokio::task::yield_now().await;
+        };
+        if !signal_consumed {
+            // Notify SCM before a bounded drain so the service is no longer
+            // reported as running after the listener or source failed.
+            let _ = failed.send(());
+            let _ = shutdown.await;
+        }
+        result.and(self.retire().await)
+    }
+
+    async fn retire(&mut self) -> io::Result<()> {
+        // Stop ingress before draining the source. Attempt both even when
+        // listener ownership or retirement cannot be confirmed.
+        let owned = self.endpoint.listener().and_then(Listener::verify);
+        let listener = timeout(DRAIN_TIMEOUT, self.endpoint.retire()).await;
+        let runtime = timeout(DRAIN_TIMEOUT, self.source.drain()).await;
+        owned.and(listener?).and(runtime?)
+    }
+}
+
+fn lost_shutdown() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::BrokenPipe,
+        "installed shutdown signal was lost",
+    )
+}
+
+fn verify_peer(stream: &dyn Stream, pid: u32) -> io::Result<()> {
+    if stream.server_pid()? != pid {
+        return Err(denied("status probe reached a different server process"));
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+enum ExchangeError {
+    Client(io::Error),
+    Runtime(io::Error),
+}
+
+impl From<ExchangeError> for io::Error {
+    fn from(value: ExchangeError) -> Self {
+        match value {
+            ExchangeError::Client(error) | ExchangeError::Runtime(error) => error,
+        }
+    }
+}
+
+async fn serve(
+    source: &mut dyn StatusSource,
+    accept: impl Future<Output = io::Result<Box<dyn Stream>>>,
+    probe: Option<(u32, &GetStatus)>,
+) -> Result<Box<dyn Stream>, ExchangeError> {
+    use ExchangeError::{Client, Runtime};
+    let mut stream = accept.await.map_err(Runtime)?;
+    let payload = timeout(FRAME_TIMEOUT, read_payload(&mut *stream))
+        .await
+        .map_err(|e| Client(e.into()))?
+        .map_err(Client)?;
+    // Windows impersonation uses the token from the last read on this handle.
+    let caller = stream.caller_after_read().map_err(Client)?;
+    let access = caller.access().map_err(Client)?;
+    let request = GetStatus::decode(&payload).map_err(Client)?;
+    if let Some((pid, expected)) = probe
+        && (caller.pid != Some(pid)
+            || caller.logon != Logon::System
+            || caller.session != 0
+            || !request.matches(expected))
+    {
+        return Err(Client(denied(
+            "unverified installed self-probe caller or request",
+        )));
+    }
+    let status = timeout(FRAME_TIMEOUT, source.snapshot(caller))
+        .await
+        .map_err(|e| Runtime(e.into()))?
+        .map_err(Runtime)?;
+    status.verify(access).map_err(Runtime)?;
+    let response = StatusResponse::success(&request, status);
+    // Encoding errors (including oversized source data) are runtime failures,
+    // while an individual client disconnect or write timeout is isolated.
+    let payload = crate::service_frame::encode(&response).map_err(Runtime)?;
+    crate::service_frame::write_payload(&mut *stream, &payload)
+        .await
+        .map_err(Client)?;
+    Ok(stream)
+}
+
+#[allow(unsafe_code)]
+fn probe_id() -> io::Result<String> {
+    use windows_sys::{Win32::System::Com::CoCreateGuid, core::GUID};
+
+    let mut id = GUID::from_u128(0);
+    // SAFETY: CoCreateGuid writes into an owned GUID-sized allocation.
+    if unsafe { CoCreateGuid(&mut id) } < 0 {
+        return Err(invalid("installed status probe ID generation failed"));
+    }
+    let [a, b, c, d, e, f, g, h] = id.data4;
+    Ok(format!(
+        "{:08x}-{:04x}-{:04x}-{a:02x}{b:02x}-{c:02x}{d:02x}{e:02x}{f:02x}{g:02x}{h:02x}",
+        id.data1, id.data2, id.data3
+    ))
+}
+
+#[cfg(test)]
+#[path = "readiness_tests.rs"]
+mod tests;

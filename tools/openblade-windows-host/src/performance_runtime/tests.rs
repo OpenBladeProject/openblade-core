@@ -19,46 +19,90 @@ fn controller() -> Controller {
     controller
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "controller-admission-compile-check"))]
 #[test]
-fn controller_observation_can_only_invalidate_fixture_admission() {
-    use openblade_platform_windows::controller_presence::{Process, Scan, observe};
+fn controller_observation_is_checked_at_entry_and_each_performance_submission() {
+    use openblade_platform_windows::controller_presence::{
+        Process, Scan,
+        admission::{ReadOnlyAdmission, Sample},
+        observe,
+    };
 
-    let present = [Process {
-        name: "RazerAppEngine",
-        pid: None,
-        identity: None,
-        verified_image: None,
-    }];
-    for (initial, processes, allowed) in [
-        (true, Scan::Complete(&[]), true),
-        (true, Scan::Complete(&present), false),
-        (true, Scan::Incomplete(&[]), false),
-        (false, Scan::Complete(&[]), false),
+    for (deny_on, expected, setters) in [
+        (1, RecipeResult::Blocked, 0),
+        (2, RecipeResult::KnownNotApplied, 0),
+        (3, RecipeResult::Indeterminate(Preset::Balanced), 1),
+        (4, RecipeResult::Acknowledged(Preset::Balanced), 2),
     ] {
-        let observation = observe(
-            processes,
-            Scan::Complete(&[]),
-            None,
-            Scan::Incomplete(&[]),
-            1,
-        );
+        let mut check = 0;
         let mut device = Device::new();
-        device.admission.no_competing_controller = initial;
-        // Project only into the existing fake admission. A clear observation
-        // cannot restore authority that another part of the fixture revoked.
-        device.admission.no_competing_controller &= observation.confirms_absence();
-        assert_eq!(device.admits_writes(), allowed);
-        assert!(device.admission.admits_readback());
-        if !allowed {
+        device.admission.controller_check = Some(ReadOnlyAdmission::from_source(move || {
+            check += 1;
+            Sample::capture(|| {
+                let helper = [Process {
+                    name: "razerwdl",
+                    pid: None,
+                    identity: None,
+                    verified_image: None,
+                }];
+                observe(
+                    if check == deny_on {
+                        Scan::Complete(&helper)
+                    } else {
+                        Scan::Complete(&[])
+                    },
+                    Scan::Complete(&[]),
+                    None,
+                    Scan::Incomplete(&[]),
+                    1,
+                )
+            })
+        }));
+        assert_eq!(device.apply(Preset::Performance, || true), expected);
+        assert_eq!(
+            device
+                .commands
+                .iter()
+                .copied()
+                .filter(|command| matches!(command, Set(..)))
+                .collect::<Vec<_>>(),
+            SET[..setters]
+        );
+        if deny_on <= 3 {
+            assert!(!device.admits_writes());
+            assert!(device.admission.admits_readback());
             assert_eq!(
-                device.apply(Preset::Performance, || panic!(
-                    "blocked before port admission"
-                )),
+                device.apply(Preset::Performance, || true),
                 RecipeResult::Blocked
             );
-            assert!(device.commands.is_empty());
         }
+    }
+}
+
+#[cfg(all(windows, feature = "controller-admission-compile-check"))]
+#[test]
+fn clear_controller_source_cannot_replace_device_session_or_transport_admission() {
+    use openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission;
+
+    for invalidate in [
+        (|admission: &mut device::Admission| admission.no_competing_controller = false)
+            as fn(&mut device::Admission),
+        |admission| admission.identity = ("RZ09-0581", 0x1532, 0x02c6),
+        |admission| admission.owns_transport = false,
+        |admission| admission.active_session = false,
+        |admission| admission.full_adapter = false,
+        |admission| admission.awake = false,
+    ] {
+        let mut device = Device::new();
+        device.admission.controller_check = Some(ReadOnlyAdmission::from_source(|| {
+            panic!("independent admission has already failed")
+        }));
+        invalidate(&mut device.admission);
+        assert_eq!(
+            device.apply(Preset::Performance, || true),
+            RecipeResult::Blocked
+        );
+        assert!(device.commands.is_empty());
     }
 }
 

@@ -3,8 +3,7 @@ namespace OpenBlade.Service;
 public sealed class MachineProfileBootstrapper
 {
     private readonly BatteryConfigurationStore store;
-    private readonly string? machineRoot;
-    private readonly Func<string, CancellationToken, IDisposable>? acquireVerifiedWriterLease;
+    private readonly MachineConfigurationWriterBinding? bootstrapWriter;
 
     public MachineProfileBootstrapper(BatteryConfigurationStore store) => this.store = store;
 
@@ -17,13 +16,17 @@ public sealed class MachineProfileBootstrapper
         Func<string, CancellationToken, IDisposable> acquireVerifiedWriterLease)
         : this(store)
     {
-        this.machineRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(machineRoot));
-        this.acquireVerifiedWriterLease = acquireVerifiedWriterLease
-            ?? throw new ArgumentNullException(nameof(acquireVerifiedWriterLease));
+        bootstrapWriter = new MachineConfigurationWriterBinding(machineRoot, acquireVerifiedWriterLease);
     }
 
+    internal Task<BatteryConfiguration> InitializeTransitionAsync(
+        MachineConfigurationWriterBinding binding,
+        UserConfigurationWriterScope scope,
+        CancellationToken cancellationToken) =>
+        store.LoadForMachineTransitionAsync(binding, bootstrapWriter, scope, cancellationToken);
+
     public Task<BatteryConfiguration> InitializeAsync(CancellationToken cancellationToken) =>
-        acquireVerifiedWriterLease is null
+        bootstrapWriter is null
             ? store.LoadAsync(cancellationToken)
-            : store.LoadForMachineBootstrapAsync(machineRoot!, acquireVerifiedWriterLease, cancellationToken);
+            : store.LoadForMachineBootstrapAsync(bootstrapWriter, cancellationToken);
 }
