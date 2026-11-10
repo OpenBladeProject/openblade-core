@@ -19,6 +19,8 @@ use crate::runtime::DurableUpdate;
 use crate::wire::{self, Session, Status};
 use openblade_windows_host::{configuration_writer::fixture, valid_dev_id};
 
+#[cfg(feature = "vm-scm-fixture")]
+mod fixture_admission;
 mod scm;
 
 #[cfg(test)]
@@ -39,6 +41,11 @@ enum Phase {
 }
 
 pub(super) fn entry() -> io::Result<()> {
+    #[cfg(feature = "vm-scm-fixture")]
+    if env!("CARGO_BIN_NAME") == "openblade-windows-scm-vm" {
+        return scm::vm::entry();
+    }
+
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.as_slice() {
         [mode] if mode == "--scm" => scm::dispatch(),
