@@ -57,6 +57,7 @@ enum Fault {
     WrongCaller,
     InvalidStatus,
     SourceUnavailable,
+    SessionUnavailable,
     ProbeStalled,
     ListenerLost,
     ListenerDrain,
@@ -112,6 +113,13 @@ impl Stream for TestStream {
         }
         assert_eq!(self.read > 0, reads > 0);
         Ok(PID)
+    }
+
+    fn control_session(&self) -> io::Result<Option<u32>> {
+        if self.fault == Fault::SessionUnavailable {
+            return Err(io::Error::other("session authority unavailable"));
+        }
+        Ok(self.caller.control_session)
     }
 
     fn caller_after_read(&self) -> io::Result<Caller> {
@@ -345,7 +353,11 @@ async fn unproven_listener_peer_source_or_timed_out_probe_never_runs() {
 
     let events = Events::default();
     let controls = Controls::new();
-    let error = lifecycle(&controls, installed_ports(), &events, || {
+    let launch = LaunchIdentity {
+        image: IMAGE_NAME.into(),
+        pid: PID,
+    };
+    let error = lifecycle(&controls, installed_ports(&launch), &events, || {
         panic!("unexpected Running")
     })
     .await
@@ -530,4 +542,22 @@ fn closed_v79_get_status_contract_rejects_mutation_duplicates_and_uncorrelated_r
         rejected[key] = value;
         assert!(check(&rejected).is_err());
     }
+}
+
+#[tokio::test]
+async fn session_authority_failure_is_runtime_failure_before_status_read() {
+    let events = Events::default();
+    let mut source = TestSource {
+        fault: Fault::None,
+        events: events.clone(),
+    };
+    let (server, mut client) = duplex(1024);
+    let stream = test_stream(server, SETUP, Fault::SessionUnavailable);
+    write_frame(&mut client, &GetStatus::new(probe_id().unwrap()).unwrap())
+        .await
+        .unwrap();
+    let result = serve(&mut source, std::future::ready(Ok(stream)), None).await;
+    assert!(matches!(result, Err(ExchangeError::Runtime(error))
+        if error.to_string() == "session authority unavailable"));
+    assert!(events.borrow().is_empty());
 }
