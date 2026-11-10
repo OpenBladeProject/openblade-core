@@ -8,6 +8,8 @@ mod session_brightness;
 mod session_display;
 #[cfg(windows)]
 mod session_gpu;
+#[cfg(all(windows, feature = "native-agent-entry-compile-check"))]
+mod session_native;
 #[cfg(windows)]
 mod session_windows;
 
