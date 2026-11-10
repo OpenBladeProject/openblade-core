@@ -21,3 +21,4 @@ third_party/LibreHardwareMonitor/** -text -whitespace
 # Rust tooling uses LF on every platform.
 rust/** text eol=lf
 tools/openblade-discovery/** text eol=lf
+tools/openblade-windows-host/** text eol=lf

@@ -7,6 +7,10 @@ on:
     paths:
       - 'rust/**'
       - 'tools/openblade-discovery/**'
+      - 'tools/openblade-windows-host/**'
+      - 'src/OpenBlade.Tray.Core/ServiceClient.cs'
+      - 'tests/OpenBlade.Tray.Tests/RustReadOnlyHostTests.cs'
+      - 'tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service*.json'
       - 'src/OpenBlade.Core.Native/**'
       - 'src/OpenBlade.Contracts/**'
       - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
@@ -37,6 +41,10 @@ on:
     paths:
       - 'rust/**'
       - 'tools/openblade-discovery/**'
+      - 'tools/openblade-windows-host/**'
+      - 'src/OpenBlade.Tray.Core/ServiceClient.cs'
+      - 'tests/OpenBlade.Tray.Tests/RustReadOnlyHostTests.cs'
+      - 'tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service*.json'
       - 'src/OpenBlade.Core.Native/**'
       - 'src/OpenBlade.Contracts/**'
       - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
@@ -178,6 +186,25 @@ jobs:
               $snapshot.hid.state -cnotin @('none', 'single', 'ambiguous', 'incomplete')) {
             throw 'Invalid discovery snapshot or unavailable hosted macOS metadata APIs.'
           }
+
+      - name: Verify the isolated Windows Rust service host
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = '../tools/openblade-windows-host/Cargo.toml'
+          cargo fmt --all --check --manifest-path $manifest
+          cargo test --locked --manifest-path $manifest --target ${{ matrix.target }}
+          cargo clippy --locked --manifest-path $manifest --target ${{ matrix.target }} --all-targets -- -D warnings
+          cargo build --locked --manifest-path $manifest --target ${{ matrix.target }}
+          $env:OPENBLADE_RUST_DEV_HOST_EXE = (Resolve-Path '../tools/openblade-windows-host/target/${{ matrix.target }}/debug/openblade-windows-host.exe').Path
+          dotnet restore ../src/OpenBlade.Tray/OpenBlade.Tray.csproj
+          dotnet test ../tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter FullyQualifiedName~RustReadOnlyHostTests
+
+      - name: Smoke native SCM lifecycle on the hosted Windows VM
+        if: runner.os == 'Windows' && runner.environment == 'github-hosted' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        timeout-minutes: 5
+        run: ../tools/openblade-windows-host/Test-HostedScm.ps1
 
       - name: Build native libraries and execute C and .NET interop
         run: ./Test-NativeInterop.ps1 -Target ${{ matrix.target }}
