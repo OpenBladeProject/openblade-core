@@ -8,6 +8,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Fix internal display brightness errors when Windows omits the change status. ([#942](https://github.com/OSSBlade/openblade-core/pull/942))
+- Allow Setup to recover from a dropped service connection during startup. ([#942](https://github.com/OSSBlade/openblade-core/pull/942))
 
 ## [0.58.4] - 2026-11-09
 
