@@ -23,8 +23,6 @@ const FANS: i32 = 1;
 pub(crate) struct Override {
     value: i32,
     lifetime: i32,
-    custom_performance: Option<Value>,
-    gpu_clock_tuning: Option<Value>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -74,6 +72,7 @@ struct Controller {
     confirmed: Option<Topology>,
     owned: bool,
     pending: bool,
+    external: bool,
 }
 
 impl Controller {
@@ -85,6 +84,7 @@ impl Controller {
             confirmed,
             owned: false,
             pending: false,
+            external: false,
         }
     }
 
@@ -111,6 +111,8 @@ impl Controller {
 
     fn write_block(&mut self) -> Option<Outcome> {
         if !self.device.admits_writes() {
+            // The fake cannot prove continuous exclusive authority across
+            // this boundary. Only another confirmed write can rearm ownership.
             self.owned = false;
             return Some(Outcome::blocked("Fan write admission is unavailable."));
         }
@@ -144,17 +146,18 @@ impl Controller {
                 }
                 if result == RecipeResult::Acknowledged && readback == Some(target) {
                     self.owned = target == Topology::Manual && self.device.admits_writes();
+                    self.external = false;
                     Outcome::new(
                         ScopedStatus::Applied,
                         "Fan topology was confirmed by readback.",
                     )
                 } else {
                     self.owned = false;
-                    self.pending = true;
-                    if result == RecipeResult::Acknowledged
-                        && target == Topology::Manual
-                        && readback.is_none()
-                    {
+                    self.pending = result == RecipeResult::Uncertain || readback.is_none();
+                    if result == RecipeResult::Acknowledged && readback.is_some() {
+                        self.external = true;
+                        Outcome::failed("Fan readback differed from the requested topology.")
+                    } else if result == RecipeResult::Acknowledged && target == Topology::Manual {
                         Outcome::new(
                             ScopedStatus::Applied,
                             "Fan setter completed. Readback is unresolved.",
@@ -264,8 +267,6 @@ impl Scenario {
                 Some(Override {
                     value: FIXED,
                     lifetime: PERSISTENT,
-                    custom_performance: None,
-                    gpu_clock_tuning: None,
                 }),
                 Some(settings),
             ) if settings.mode == FIXED
@@ -309,9 +310,12 @@ impl Scenario {
             .and_then(|revision| revision.checked_add(1))
             .ok_or_else(|| io::Error::other("invalid fan status revision"))?;
         let outcome = run(&mut state.controller)?;
+        let previous = state.status.clone();
         state.project(outcome.message);
-        state.status["revision"] = revision.into();
-        self.publish.send_replace(Arc::new(state.status.clone()));
+        if state.status != previous {
+            state.status["revision"] = revision.into();
+            self.publish.send_replace(Arc::new(state.status.clone()));
+        }
         Ok(outcome)
     }
 }
@@ -338,6 +342,11 @@ impl State {
         } else {
             json!([])
         };
+        self.status["externalChanges"] = if controller.external {
+            json!([FANS])
+        } else {
+            json!([])
+        };
         self.status["message"] = message.into();
     }
 }
@@ -358,6 +367,7 @@ impl Step {
                 "Synthetic fan response loss armed."
             }
             Self::ObserveSplit => {
+                controller.device.fault = Fault::None;
                 controller.observe();
                 "Synthetic split fan pair observed without writes."
             }

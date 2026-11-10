@@ -72,6 +72,8 @@ pub(super) enum Fault {
     LoseControllerAfterFinalSubmission,
     #[cfg(test)]
     LoseFinalConfirmation,
+    #[cfg(test)]
+    RevertAfterPortConfirmation,
 }
 
 pub(super) struct Device {
@@ -158,10 +160,14 @@ impl Device {
             }
             Some(())
         })();
-        match (result, submitted) {
-            (Some(()), true) => RecipeResult::Acknowledged,
-            (None, true) => RecipeResult::Uncertain,
-            _ => RecipeResult::Unsubmitted,
+        #[cfg(test)]
+        if result.is_some() && fault == Fault::RevertAfterPortConfirmation {
+            self.restore_scripted_pair(Topology::Automatic);
+        }
+        match result {
+            Some(()) => RecipeResult::Acknowledged,
+            None if submitted => RecipeResult::Uncertain,
+            None => RecipeResult::Unsubmitted,
         }
     }
 
@@ -183,7 +189,7 @@ impl Device {
             return None;
         }
         *submitted = true;
-        let reply = self.exchange(command)?;
+        self.exchange(command)?;
         if fault == Fault::LoseFirstModeResponse
             && matches!(command, Command::SetTopology(Channel::First, _))
         {
@@ -205,8 +211,7 @@ impl Device {
                 }
             }
         }
-        let expected = command.report(0).encode();
-        (reply.as_slice() == &expected[8..8 + reply.as_slice().len()]).then_some(())
+        Some(())
     }
 
     fn read_pair(&mut self) -> Option<Topology> {
@@ -245,9 +250,17 @@ impl Device {
                 .push(format!("{:02X}{:02X}:{payload}", bytes[6], bytes[7]));
         }
         let reply = self.transport.exchange(&bytes)?;
-        request
+        let payload = request
             .validate_response(&reply, Some(i32::from(bytes[5])))
-            .ok()
+            .ok()?;
+        if matches!(
+            command,
+            Command::SetTopology(..) | Command::SetFixedTarget(..)
+        ) && payload.as_slice() != &bytes[8..8 + usize::from(bytes[5])]
+        {
+            return None;
+        }
+        Some(payload)
     }
 }
 

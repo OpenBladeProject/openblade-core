@@ -226,3 +226,52 @@ fn ambiguous_handback_does_not_retry_or_change_saved_intent() {
     assert!(setters(&controller.device).is_empty());
     assert_eq!(controller.saved.unwrap().fixed_speed_rpm, 4000);
 }
+
+#[test]
+fn known_mismatching_scoped_readback_reports_drift_without_pending() {
+    let mut controller = Controller::new(Device::new());
+    controller.device.fault = Fault::RevertAfterPortConfirmation;
+
+    assert_eq!(
+        controller.set_fixed(settings()).unwrap().status,
+        ScopedStatus::Failed
+    );
+    assert_eq!(controller.confirmed, Some(Topology::Automatic));
+    assert!(controller.external);
+    assert!(!controller.pending);
+    assert!(!controller.owned);
+    assert_eq!(controller.saved.as_ref().unwrap().fixed_speed_rpm, 4000);
+    assert_eq!(
+        controller.set_fixed(settings()).unwrap().status,
+        ScopedStatus::Applied
+    );
+    assert!(!controller.external);
+}
+
+#[test]
+fn observing_the_split_step_retires_an_unconsumed_fault() {
+    let mut controller = Controller::new(Device::new());
+    Step::ArmSplit.run(&mut controller).unwrap();
+    Step::ObserveSplit.run(&mut controller).unwrap();
+    Step::ObserveRestoredPair.run(&mut controller).unwrap();
+    assert!(setters(&controller.device).is_empty());
+    assert_eq!(
+        controller.set_fixed(settings()).unwrap().status,
+        ScopedStatus::Applied
+    );
+    assert!(!controller.pending);
+}
+
+#[test]
+fn unchanged_status_keeps_the_current_revision_and_does_not_publish() {
+    let event: Value = serde_json::from_str(crate::wire::CURRENT_FIXTURE).unwrap();
+    let scenario = Scenario::new(event["status"].clone()).unwrap();
+    let mut status = scenario.subscribe();
+    let request = || scenario.apply(None, None).unwrap();
+    assert_eq!(request().status, ScopedStatus::Blocked);
+    let revision = status.borrow_and_update()["revision"].clone();
+
+    assert_eq!(request().status, ScopedStatus::Blocked);
+    assert!(!status.has_changed().unwrap());
+    assert_eq!(status.borrow()["revision"], revision);
+}
