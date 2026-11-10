@@ -1,5 +1,5 @@
 //! Standard battery policy for the isolated runtime. All evidence and effects
-//! are supplied by the host. Temporary full charge is only an eligibility input.
+//! are supplied by the host.
 
 use openblade_domain::recovery::{ScopedStatus, SubmissionCertainty};
 
@@ -32,6 +32,7 @@ pub struct Confirmed {
 pub enum Intent {
     Limit(Limit),
     Protection(bool),
+    FullCharge(bool),
     Profile,
 }
 
@@ -43,7 +44,7 @@ impl Intent {
                 protection,
                 ..desired
             },
-            Self::Profile => desired,
+            Self::Profile | Self::FullCharge(_) => desired,
         }
     }
 }
@@ -52,6 +53,7 @@ impl Intent {
 pub enum Command {
     SetLimit(Limit),
     ProtectionOff,
+    FullCharge { enabled: bool, limit: Limit },
 }
 
 #[derive(Clone, Copy)]
@@ -84,6 +86,18 @@ pub fn plan(
     capabilities: Capabilities<'_>,
     observed: Option<Confirmed>,
 ) -> Plan {
+    if let Intent::FullCharge(enabled) = intent {
+        let Some(read) = observed.filter(|_| capabilities.temporary) else {
+            return Plan::Blocked;
+        };
+        return match (read.temporary, read.limit) {
+            (Some(active), _) if active == enabled => Plan::Unchanged,
+            (Some(_), Some(limit)) if capabilities.admitted(limit) => {
+                Plan::Write(Command::FullCharge { enabled, limit })
+            }
+            _ => Plan::Blocked,
+        };
+    }
     let Some(read) = observed.filter(|read| capabilities.policy_admitted(*read)) else {
         return Plan::Blocked;
     };
@@ -117,6 +131,7 @@ pub fn plan(
         Intent::Profile if staged.protection != current.is_some() => protection(staged.protection),
         Intent::Profile if staged.protection && current != Some(limit) => set_limit(),
         Intent::Profile => Plan::Unchanged,
+        Intent::FullCharge(_) => unreachable!("handled before limiter planning"),
     }
 }
 
@@ -127,9 +142,8 @@ pub enum Confirmation {
     Match,
 }
 
-/// Only policy fields are the target of these two setters. A missing temporary
-/// flag on a query-capable model prevents live success but can be ignored in
-/// later read-only confirmation of the recorded policy scope.
+/// A one-shot write requires both readbacks. Limiter-only reconciliation
+/// uses its own recorded scope after submission.
 pub fn confirm(
     command: Command,
     read: Option<Confirmed>,
@@ -141,11 +155,14 @@ pub fn confirm(
     if capabilities.temporary && read.temporary.is_none() {
         return Confirmation::Unavailable;
     }
-    let expected = match command {
-        Command::SetLimit(limit) => Some(limit),
-        Command::ProtectionOff => None,
+    let matches = match command {
+        Command::SetLimit(limit) => read.limit == Some(limit) && read.temporary != Some(true),
+        Command::ProtectionOff => read.limit.is_none() && read.temporary != Some(true),
+        Command::FullCharge { enabled, limit } => {
+            read.limit == Some(limit) && read.temporary == Some(enabled)
+        }
     };
-    if read.limit == expected && read.temporary != Some(true) {
+    if matches {
         Confirmation::Match
     } else {
         Confirmation::Mismatch

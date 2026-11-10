@@ -88,6 +88,23 @@ access. Other profile edits, production recovery, and ownership transfer remain
 outside the scenario.
 
 
+## Exercise temporary full charge
+
+`foreground-full-charge <pipe-id>` starts the unified foreground host with a
+private migrated fixture and no profile writer. The existing v79
+`setFullChargeOverride` request exercises the exact RZ09-0581 recipe through
+encoded scripted Power Mode Control reports. Enable and cancel confirm the
+override and unchanged charge cap and protection independently of the setter
+reply. The fake also exercises an unavailable flag, firmware completion, a
+battery-power enable refusal, an unrelated Power Mode Control bit, and a
+lost SET response. Reconciliation requires both readings and performs no
+setter. A completed one-shot is retired in memory. The managed client test
+checks that every saved configuration file keeps its original bytes.
+
+This mode uses a private pipe and an inert device. Production integration
+still requires Windows owner, lifecycle and fresh exact-device write admission
+and physical verification of the native host.
+
 ## Exercise standard battery policy
 
 Run `foreground-battery-parity <id>` on a fresh private development pipe. The

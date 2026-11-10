@@ -42,6 +42,8 @@ pub struct Status {
     background: Projection,
     #[cfg(windows)]
     composed_thermal: bool,
+    #[cfg(windows)]
+    full_charge: bool,
 }
 
 struct Projection {
@@ -103,6 +105,8 @@ impl Status {
             background: Projection::new(background, background_legacy)?,
             #[cfg(windows)]
             composed_thermal: false,
+            #[cfg(windows)]
+            full_charge: false,
         })
     }
 
@@ -131,6 +135,7 @@ impl Status {
             replay,
         )?);
         self.composed_thermal = matches!(replay, ProfileReplay::Thermal);
+        self.full_charge = matches!(replay, ProfileReplay::FullCharge);
         self.replay = Some(scenario.subscribe());
         // The power script is the only mutation entry point in this mode.
         if !matches!(replay, ProfileReplay::Power { .. }) {
@@ -140,12 +145,24 @@ impl Status {
             match replay {
                 ProfileReplay::Battery => scenario.drive(advance).await,
                 ProfileReplay::Thermal => scenario.drive_thermal(advance).await,
+                ProfileReplay::FullCharge => scenario.drive_full_charge(advance).await,
                 ProfileReplay::Power { lose_response } => {
                     scenario.drive_power_profile(advance, lose_response).await
                 }
             }
         };
         Ok((self, drive))
+    }
+
+    fn admits_full_charge(&self) -> bool {
+        #[cfg(windows)]
+        {
+            self.full_charge
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
     }
 
     fn attach_battery(
@@ -285,16 +302,26 @@ impl OperationResult {
 // Decode the original bytes to retain duplicate-field rejection, including
 // nested policy fields. A map projection would silently discard duplicates.
 #[derive(Deserialize)]
-#[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
+#[serde(tag = "operation", deny_unknown_fields)]
 enum BatteryRequest {
-    SetBatteryPolicy {
+    #[serde(rename = "setBatteryPolicy")]
+    Policy {
         #[serde(rename = "version")]
         _version: i32,
         #[serde(rename = "requestId")]
         _request_id: String,
         value: LimitValue,
     },
-    SetBatteryProtection {
+    #[serde(rename = "setFullChargeOverride")]
+    FullCharge {
+        #[serde(rename = "version")]
+        _version: i32,
+        #[serde(rename = "requestId")]
+        _request_id: String,
+        enabled: bool,
+    },
+    #[serde(rename = "setBatteryProtection")]
+    Protection {
         #[serde(rename = "version")]
         _version: i32,
         #[serde(rename = "requestId")]
@@ -306,10 +333,11 @@ enum BatteryRequest {
 impl BatteryRequest {
     fn decode(payload: &[u8]) -> io::Result<Intent> {
         match serde_json::from_slice(payload).map_err(|_| invalid("invalid battery request"))? {
-            Self::SetBatteryPolicy { value, .. } => Limit::new(value.charge_limit_percent)
+            Self::Policy { value, .. } => Limit::new(value.charge_limit_percent)
                 .map(Intent::Limit)
                 .ok_or_else(|| invalid("invalid battery limit")),
-            Self::SetBatteryProtection { enabled, .. } => Ok(Intent::Protection(enabled)),
+            Self::Protection { enabled, .. } => Ok(Intent::Protection(enabled)),
+            Self::FullCharge { enabled, .. } => Ok(Intent::FullCharge(enabled)),
         }
     }
 }
@@ -548,8 +576,12 @@ where
             )
             .await
         }
-        (CURRENT_VERSION, "setBatteryPolicy" | "setBatteryProtection")
-            if matches!(session, Session::Active) && status.battery.is_some() =>
+        (
+            CURRENT_VERSION,
+            operation @ ("setBatteryPolicy" | "setBatteryProtection" | "setFullChargeOverride"),
+        ) if matches!(session, Session::Active)
+            && status.battery.is_some()
+            && (operation != "setFullChargeOverride" || status.admits_full_charge()) =>
         {
             let intent = BatteryRequest::decode(&payload)?;
             let result = status

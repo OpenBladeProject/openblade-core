@@ -1038,6 +1038,101 @@ public sealed class RustReadOnlyHostTests
 
 
     [RustReadOnlyHostFact]
+    public async Task TrayClient_FullChargeIsAnIndependentlyConfirmedOneShot()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = timeout.Token;
+        string endpoint = Guid.NewGuid().ToString("N");
+        await using var host = DevHost.Start(endpoint, "foreground-full-charge");
+        (string rootId, _) = await host.ReadFixtureRootAsync(token);
+        string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Temp", $"openblade-durable-host-{rootId}");
+        using SafeFileHandle pin = OpenFixtureDirectory(root);
+        Assert.False(pin.IsInvalid, $"Could not pin fixture directory. Win32 {Marshal.GetLastWin32Error()}");
+        try
+        {
+            await host.WaitUntilReadyAsync(token);
+            await using var client = new ServiceClient(PipeName(endpoint));
+            var initial = await client.GetStatusAsync(token);
+            byte[][] saved = ConfigurationNames
+                .Select(name => File.ReadAllBytes(Path.Combine(root, name))).ToArray();
+
+            Assert.True(initial.Capabilities?.SupportsTemporaryFullCharge);
+            AssertState(initial, desired: false, confirmed: false);
+            await SetAsync(true, ControlOperationStatus.Applied);
+            AssertState(await client.GetStatusAsync(token), desired: true, confirmed: true);
+            await SetAsync(false, ControlOperationStatus.Applied);
+            AssertState(await client.GetStatusAsync(token), desired: false, confirmed: false);
+            await SetAsync(true, ControlOperationStatus.Applied);
+
+            AssertState(await AdvanceAsync(), desired: true, confirmed: null);
+            await SetAsync(false, ControlOperationStatus.Blocked);
+            var completed = await AdvanceAsync();
+            AssertState(completed, desired: false, confirmed: false);
+            Assert.Empty(completed.ExternalChanges);
+            Assert.Equal(PowerSource.Battery, (await AdvanceAsync()).ActivePowerSource);
+            await SetAsync(true, ControlOperationStatus.Failed);
+            Assert.Equal(PowerSource.PluggedIn, (await AdvanceAsync()).ActivePowerSource);
+            Assert.Contains("setting is active", (await AdvanceAsync()).Message);
+            await SetAsync(true, ControlOperationStatus.Blocked);
+            AssertState(await client.GetStatusAsync(token), desired: false, confirmed: false);
+
+            Assert.Contains("response loss armed", (await AdvanceAsync()).Message);
+            await SetAsync(true, ControlOperationStatus.Failed);
+            AssertState(await client.GetStatusAsync(token), desired: false, confirmed: false, pending: true);
+            AssertState(await AdvanceAsync(), desired: false, confirmed: null, pending: true);
+            await SetAsync(true, ControlOperationStatus.Blocked);
+            await SetAsync(false, ControlOperationStatus.Blocked);
+            AssertState(await AdvanceAsync(), desired: true, confirmed: true);
+            completed = await AdvanceAsync();
+            AssertState(completed, desired: false, confirmed: false);
+            Assert.Empty(completed.ExternalChanges);
+
+            await host.StopAsync(token);
+            AssertPrimaryBytes(root, saved);
+
+            async Task SetAsync(bool enabled, ControlOperationStatus expected)
+            {
+                var result = await client.SetFullChargeOverrideAsync(enabled, token);
+                Assert.Equal(expected, result.Status);
+            }
+
+            async Task<ServiceStatusSnapshot> AdvanceAsync()
+            {
+                await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+                var previous = await ReadStatusAsync(watch, subscriptionOpened: true);
+                await host.AdvanceAsync(token);
+                var status = await ReadStatusAsync(watch, subscriptionOpened: false);
+                Assert.True(status.Revision > previous.Revision);
+                return status;
+            }
+
+            void AssertState(ServiceStatusSnapshot status, bool desired, bool? confirmed, bool pending = false)
+            {
+                Assert.Equal(initial.Profiles, status.Profiles);
+                Assert.Equal(desired, status.FullChargeOverride);
+                Assert.Equal(desired, status.DesiredState.Battery.TemporaryFullCharge);
+                Assert.Equal(confirmed, status.ConfirmedState!.Battery!.TemporaryFullCharge);
+                Assert.True(status.ConfirmedState.Battery.ProtectionEnabled);
+                Assert.Equal(80, status.ConfirmedState.Battery.ChargeLimitPercent);
+                Assert.Equal(pending, status.WritesBlocked);
+                Assert.Equal(pending ? [DeviceSubsystem.Battery] : Array.Empty<DeviceSubsystem>(),
+                    status.UnconfirmedWrites);
+            }
+        }
+        finally
+        {
+            await host.DisposeAsync();
+            foreach (string file in Directory.EnumerateFiles(root))
+            {
+                File.Delete(file);
+            }
+            pin.Dispose();
+            Directory.Delete(root);
+        }
+    }
+
+    [RustReadOnlyHostFact]
     public Task TrayClient_AppliesFullAdapterProfileFromScriptedPowerEvidence() =>
         ExercisePowerProfileAsync(uncertain: false);
 
