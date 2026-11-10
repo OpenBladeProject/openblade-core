@@ -104,7 +104,9 @@ pub(super) fn entry() -> io::Result<()> {
             if mode == "foreground"
                 || mode == "foreground-background"
                 || mode == "foreground-replay"
-                || mode == "foreground-battery-parity" =>
+                || mode == "foreground-battery-parity"
+                || mode == "foreground-performance-parity"
+                || mode == "foreground-fan-parity" =>
         {
             let id = foreground_id(id)?;
             let session = if mode != "foreground-background" {
@@ -112,11 +114,33 @@ pub(super) fn entry() -> io::Result<()> {
             } else {
                 Session::Background
             };
-            if mode == "foreground-battery-parity" {
+            if matches!(
+                mode.to_str(),
+                Some(
+                    "foreground-battery-parity"
+                        | "foreground-performance-parity"
+                        | "foreground-fan-parity"
+                )
+            ) {
                 foreground(id, session, true, |advance, shutdown| {
                     let advance =
                         advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
-                    let (status, drive) = Status::fixture()?.with_battery(advance)?;
+                    let status = Status::fixture()?;
+                    type Drive = std::pin::Pin<Box<dyn Future<Output = io::Result<()>>>>;
+                    let (status, drive) = match mode.to_str() {
+                        Some("foreground-performance-parity") => {
+                            let (status, drive) = status.with_performance(advance)?;
+                            (status, Box::pin(drive) as Drive)
+                        }
+                        Some("foreground-fan-parity") => {
+                            let (status, drive) = status.with_fan(advance)?;
+                            (status, Box::pin(drive) as Drive)
+                        }
+                        _ => {
+                            let (status, drive) = status.with_battery(advance)?;
+                            (status, Box::pin(drive) as Drive)
+                        }
+                    };
                     let drive = async move {
                         tokio::select! {
                             _ = shutdown => Ok(()),
