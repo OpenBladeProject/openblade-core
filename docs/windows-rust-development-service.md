@@ -4,6 +4,50 @@ The development host serves synthetic status over a local Windows named pipe. Th
 
 For the feature-gated native SCM lifecycle and the LocalSystem managed client, use the [Phase 5j disposable Windows VM runbook](windows-rust-phase5j-vm.md) under separate VM authorization.
 
+## Package the ordinary fixture roles offline
+
+With PowerShell 7.4 or later, give the development script the directory
+containing the two ordinary executables pinned by the Phase 7e signed scratch
+Setup test. The pins at the Phase 9a base identify artifact revision
+`41a3237e81188ed0780e89a2ca2d170da7d61db0`. Use the ordinary pair from that
+build. The separately built simulated GPU-close Agent and VM SCM host have
+different bytes and are outside this package.
+
+```powershell
+$candidate = './build/development-deployment/RustFixtureCandidate.ps1'
+$receipt = & $candidate -FixtureDirectory $ordinaryRoles -Package ./rust-fixture-candidate.zip
+& $candidate @receipt
+```
+
+Run the opt-in package and production-boundary checks against that same pair
+with `./tests/Build.Tests/Test-RustFixtureCandidate.ps1 -FixtureDirectory $ordinaryRoles`.
+
+The ZIP has exactly two native x64 executables, a fixture manifest, and its
+P-256 signature. The script generates a fresh in-memory key for each package
+and returns the public key and complete ZIP SHA-256 in the receipt. Keep the
+receipt separately through a trusted local path for later verification.
+Verification checks the full ZIP against that receipt, then checks the exact
+entry inventory, signature, reviewed per-role hashes, and native PE headers.
+The key authenticates this fixture package relative to the receipt. The
+manifest declares `installable: false` and carries no release or Setup identity.
+
+| Candidate role | Fixture executable | Installed compatibility target |
+| --- | --- | --- |
+| Service | `openblade-windows-host.exe` | `OpenBlade.Service.exe` at the existing automatic LocalSystem SCM service `OpenBlade`, with no fixture arguments |
+| Session Agent | `openblade-rust-session-agent.exe` | `OpenBlade.SessionAgent.exe` at the existing `OpenBlade Session Agent` least-privilege logon task, with the install directory as its working directory and no fixture arguments |
+
+The installed targets describe a future compatibility gate. The current
+Service fixture uses private foreground startup, the SCM executable is gated
+to the disposable VM fixture, and the current Agent requires private fixture
+startup. A separately reviewed native pair must support the installed entry
+points and existing IPC contracts before changing payload admission. That
+work needs protected staging and independent installed hash, image path,
+PID, account, and session readback, followed by typed Service and Session
+Agent readiness tied to those processes. Verify stop, restart, sign-in,
+and rollback to the previous bytes and registrations before admitting an
+installed cutover. Production Publish and Setup continue to use the managed
+roles and their dependency and runtime files.
+
 ## Run the isolated test
 
 Use the pinned Rust toolchain, Windows MSVC tools and the repository's .NET SDK. From the repository root in PowerShell:
