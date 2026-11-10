@@ -427,6 +427,8 @@ where
                     .as_ref()
                     .is_some_and(|scenario| scenario.accepts_profiles()) =>
         {
+            openblade_windows_host::configuration::validate_json_members(&payload)
+                .map_err(|_| invalid("invalid profile request members"))?;
             let update: UpdateProfilesRequest =
                 serde_json::from_slice(&payload).map_err(|_| invalid("invalid profile request"))?;
             let limit: LimitValue =

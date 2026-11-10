@@ -75,8 +75,10 @@ the request without another setter.
 
 With `foreground-battery-profile-interrupt <id>`, the first accepted profile
 edit interrupts the same transaction after profile replacement and before
-rollback. The process retains the last verified status, blocks further writes,
-and preserves the sidecar and staged data. A new
+rollback. If the prior configuration cannot be verified, the process retains
+the last verified saved policy, blocks further writes, and preserves the
+sidecar and staged data. Independent battery observations still settle any
+pending hardware result. A new
 `foreground-battery-profile-restart <id> <root-id> <file-identity>` process
 opens only a verified current snapshot and refuses unresolved artifacts before
 claiming the pipe. On successful restart, the script supplies a fresh

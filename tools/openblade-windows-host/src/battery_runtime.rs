@@ -301,6 +301,25 @@ impl<D: Device> Controller<D> {
         });
     }
 
+    #[cfg(windows)]
+    fn store_limit(&mut self, limit: Limit) {
+        self.saved_limit = limit;
+        if self.policy_override == Some(limit) {
+            self.policy_override = None;
+        }
+        if self.protection_override == Some(self.saved_protection()) {
+            self.protection_override = None;
+        }
+    }
+
+    fn record_power(&mut self, source: Power) {
+        if self.pending.is_some() {
+            self.observed_power_while_pending = (source != self.power).then_some(source);
+        } else if self.power != source {
+            self.select_power(source);
+        }
+    }
+
     fn select_power(&mut self, source: Power) {
         self.power = source;
         self.protection_override = None;
@@ -308,7 +327,7 @@ impl<D: Device> Controller<D> {
 
     fn change_power(&mut self, source: Power) -> io::Result<Result> {
         if self.pending.is_some() {
-            self.observed_power_while_pending = (source != self.power).then_some(source);
+            self.record_power(source);
             return self.apply(Intent::Profile);
         }
         if self.power == source {
@@ -533,7 +552,7 @@ impl Scenario {
             }
             self.update(|state| {
                 if state.configuration_blocked {
-                    return Ok(blocked_configuration());
+                    return step.observe_only(&mut state.controller);
                 }
                 step.run(&mut state.controller)
             })
@@ -593,17 +612,18 @@ impl Scenario {
                         &mut io::stderr().lock(),
                         format_args!("battery configuration save: {error}\n"),
                     );
-                    state.configuration_blocked = true;
+                    state.configuration_blocked = writer.verify_prior().is_err();
                     return Ok(Result {
                         status: ScopedStatus::Failed,
-                        message: "Battery configuration could not be verified. Writes are blocked.",
+                        message: if state.configuration_blocked {
+                            blocked_configuration().message
+                        } else {
+                            "Battery profile save failed. The prior configuration is verified."
+                        },
                     });
                 }
                 state.current["profiles"] = profiles;
-                state.controller.saved_limit = limit;
-                if state.controller.policy_override == Some(limit) {
-                    state.controller.policy_override = None;
-                }
+                state.controller.store_limit(limit);
                 stored = true;
                 Ok(Result {
                     status: ScopedStatus::Unchanged,
@@ -707,6 +727,20 @@ enum Step {
 }
 
 impl Step {
+    fn observe_only(self, controller: &mut Controller<FakeDevice>) -> io::Result<Result> {
+        controller.device.next_submission = None;
+        match self {
+            Self::Recover => return self.run(controller),
+            Self::Battery => controller.record_power(Power::Battery),
+            Self::UsbC => controller.record_power(Power::UsbC),
+            Self::Cancel | Self::LoseResponse => return Ok(blocked_configuration()),
+        }
+        Ok(Result {
+            status: ScopedStatus::Unchanged,
+            message: "Synthetic power source observed while configuration writes are blocked.",
+        })
+    }
+
     fn run(self, controller: &mut Controller<FakeDevice>) -> io::Result<Result> {
         let message = match self {
             Self::Cancel => {

@@ -733,7 +733,22 @@ public sealed class RustReadOnlyHostTests
                 };
                 Assert.Equal(ControlOperationStatus.Blocked,
                     (await client.UpdateProfilesAsync(outsideSubset, token)).Status);
+
+                using var encoded = new MemoryStream();
+                await IpcMessageCodec.WriteRequestAsync(encoded,
+                    new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), changed), token);
+                string body = Encoding.UTF8.GetString(encoded.ToArray().AsSpan(sizeof(int)));
+                string duplicate = body.Replace("\"chargeLimitPercent\":75",
+                    "\"chargeLimitPercent\":99,\"chargeLimitPercent\":75", StringComparison.Ordinal);
+                Assert.NotEqual(body, duplicate);
+                await using NamedPipeClientStream pipe = await ConnectAsync(endpoint, token);
+                await WriteFrameAsync(pipe, Encoding.UTF8.GetBytes(duplicate), token);
+                Assert.Equal(0, await pipe.ReadAsync(new byte[1], token));
                 AssertPrimaryBytes(root, migrated);
+            }
+            else
+            {
+                await LoseBatteryResponseAsync(host, client, token);
             }
 
             var edit = await client.UpdateProfilesAsync(changed, token);
@@ -744,11 +759,25 @@ public sealed class RustReadOnlyHostTests
                 var failed = await client.GetStatusAsync(token);
                 AssertComposedBattery(failed, saved: 77, temporary: 70, confirmed: 70);
                 Assert.True(failed.WritesBlocked);
-                Assert.Empty(failed.UnconfirmedWrites);
+                Assert.Equal([DeviceSubsystem.Battery], failed.UnconfirmedWrites);
                 Assert.Equal(ControlOperationStatus.Blocked,
                     (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(65), token)).Status);
                 Assert.Equal(ControlOperationStatus.Blocked,
                     (await client.UpdateProfilesAsync(changed, token)).Status);
+                await using var observation = client.WatchStatusAsync(token).GetAsyncEnumerator();
+                await ReadStatusAsync(observation, subscriptionOpened: true);
+                await host.AdvanceAsync(token);
+                var recovered = await ReadStatusAsync(observation, subscriptionOpened: false);
+                AssertComposedBattery(recovered, saved: 77, temporary: 65, confirmed: 65);
+                Assert.True(recovered.WritesBlocked);
+                Assert.Empty(recovered.UnconfirmedWrites);
+
+                await host.AdvanceAsync(token);
+                var onBattery = await ReadStatusAsync(observation, subscriptionOpened: false);
+                Assert.Equal(PowerSource.Battery, onBattery.ActivePowerSource);
+                AssertComposedBattery(onBattery, saved: 77, temporary: 65, confirmed: 65);
+                Assert.True(onBattery.WritesBlocked);
+
                 byte[][] interrupted = ReadPrimaryBytes();
                 Assert.Equal(migrated[2], interrupted[2]);
                 Assert.Equal(75, JsonNode.Parse(interrupted[0])!["profiles"]!["batteryPolicy"]!
@@ -775,15 +804,9 @@ public sealed class RustReadOnlyHostTests
             Assert.Equal(Convert.ToHexString(SHA256.HashData(committed[1])),
                 marker.RootElement.GetProperty("preferencesSha256").GetString());
 
+            await LoseBatteryResponseAsync(host, client, token);
             await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
-            await ReadStatusAsync(watch, subscriptionOpened: true);
-            await host.AdvanceAsync(token);
-            await ReadStatusAsync(watch, subscriptionOpened: false); // Arm pre-submission cancellation.
-            await host.AdvanceAsync(token);
-            await ReadStatusAsync(watch, subscriptionOpened: false); // Arm the lost response.
-            Assert.Equal(ControlOperationStatus.Failed,
-                (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(65), token)).Status);
-            var pending = await ReadStatusAsync(watch, subscriptionOpened: false);
+            var pending = await ReadStatusAsync(watch, subscriptionOpened: true);
             AssertComposedBattery(pending, saved: 75, temporary: 70, confirmed: 70);
             Assert.True(pending.WritesBlocked);
             Assert.Equal([DeviceSubsystem.Battery], pending.UnconfirmedWrites);
@@ -819,6 +842,18 @@ public sealed class RustReadOnlyHostTests
 
         byte[][] ReadPrimaryBytes() =>
             ConfigurationNames.Select(name => File.ReadAllBytes(Path.Combine(root, name))).ToArray();
+    }
+
+    private static async Task LoseBatteryResponseAsync(DevHost host, ServiceClient client, CancellationToken token)
+    {
+        await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+        await ReadStatusAsync(watch, subscriptionOpened: true);
+        await host.AdvanceAsync(token);
+        await ReadStatusAsync(watch, subscriptionOpened: false); // Arm pre-submission cancellation.
+        await host.AdvanceAsync(token);
+        await ReadStatusAsync(watch, subscriptionOpened: false); // Arm the lost response.
+        Assert.Equal(ControlOperationStatus.Failed,
+            (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(65), token)).Status);
     }
 
     private static void AssertComposedBattery(
