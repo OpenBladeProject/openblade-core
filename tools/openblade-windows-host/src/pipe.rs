@@ -12,7 +12,7 @@ use std::{
 };
 
 use tokio::{
-    net::windows::named_pipe::{NamedPipeServer, ServerOptions},
+    net::windows::named_pipe::{NamedPipeClient, NamedPipeServer, ServerOptions},
     time::{sleep, timeout},
 };
 use windows_sys::Win32::{
@@ -35,7 +35,8 @@ use windows_sys::Win32::{
     System::{
         Pipes::{
             CreateNamedPipeW, GetNamedPipeClientProcessId, GetNamedPipeClientSessionId,
-            ImpersonateNamedPipeClient, PIPE_REJECT_REMOTE_CLIENTS,
+            GetNamedPipeServerProcessId, GetNamedPipeServerSessionId, ImpersonateNamedPipeClient,
+            PIPE_REJECT_REMOTE_CLIENTS,
         },
         Threading::{GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken},
     },
@@ -181,6 +182,23 @@ impl Identity {
             "{}:{}:{}:{}",
             self.sid, self.session, self.authentication.HighPart, self.authentication.LowPart
         )
+    }
+
+    pub fn authorize_server(&self, pipe: &NamedPipeClient, expected_pid: u32) -> io::Result<()> {
+        let mut pid = 0;
+        let mut session = 0;
+        // SAFETY: the client pipe is borrowed and both output slots are valid.
+        unsafe {
+            check(GetNamedPipeServerProcessId(pipe.as_raw_handle(), &mut pid))?;
+            check(GetNamedPipeServerSessionId(
+                pipe.as_raw_handle(),
+                &mut session,
+            ))?;
+        }
+        if expected_pid == 0 || pid != expected_pid || session == 0 || session != self.session {
+            return Err(denied());
+        }
+        Ok(())
     }
 
     pub fn authorize(&self, pipe: &NamedPipeServer) -> io::Result<()> {

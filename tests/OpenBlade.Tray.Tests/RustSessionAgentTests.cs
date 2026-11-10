@@ -364,7 +364,7 @@ public sealed partial class RustSessionAgentTests
 
         internal static Host Start(
             string id, string scenario = "available", string? brightness = null, bool gpu = false,
-            string mode = "foreground")
+            string mode = "foreground", string[]? arguments = null)
         {
             string path = Environment.GetEnvironmentVariable(RustSessionAgentFactAttribute.PathVariable)!;
             Assert.True(Path.IsPathFullyQualified(path)
@@ -380,13 +380,18 @@ public sealed partial class RustSessionAgentTests
                 RedirectStandardError = true,
             };
             string? scratch = gpu ? null : DisplayFixtureDirectory(id);
-            bool ownsScratch = mode == "foreground" && scratch is not null && !Directory.Exists(scratch);
+            bool createsScratch = mode == "foreground" || mode == "integrated" && scenario == "new";
+            bool ownsScratch = createsScratch && scratch is not null && !Directory.Exists(scratch);
             start.ArgumentList.Add(gpu ? "gpu-foreground" : mode);
             start.ArgumentList.Add(id);
             start.ArgumentList.Add(scenario);
             if (brightness is not null)
             {
                 start.ArgumentList.Add(brightness);
+            }
+            foreach (string argument in arguments ?? [])
+            {
+                start.ArgumentList.Add(argument);
             }
             try
             {
@@ -415,6 +420,12 @@ public sealed partial class RustSessionAgentTests
             await process.WaitForExitAsync(token);
             Assert.NotEqual(0, process.ExitCode);
             Assert.Null(await process.StandardOutput.ReadLineAsync(token));
+        }
+
+        internal async Task ReportFocusAsync(bool active, CancellationToken token)
+        {
+            await process.StandardInput.BaseStream.WriteAsync(new byte[] { active ? (byte)'a' : (byte)'c' }, token);
+            await process.StandardInput.BaseStream.FlushAsync(token);
         }
 
         internal async Task StopAsync(CancellationToken token)
@@ -461,11 +472,16 @@ internal sealed class RustSessionAgentFactAttribute : FactAttribute
 {
     internal const string PathVariable = "OPENBLADE_RUST_SESSION_AGENT_EXE";
 
-    public RustSessionAgentFactAttribute()
+    public RustSessionAgentFactAttribute(bool requireService = false)
     {
         if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(PathVariable)))
         {
             Skip = $"Requires Windows and an explicit {PathVariable} path.";
+        }
+        else if (requireService && string.IsNullOrWhiteSpace(
+            Environment.GetEnvironmentVariable(RustReadOnlyHostFactAttribute.PathVariable)))
+        {
+            Skip = $"Requires an explicit {RustReadOnlyHostFactAttribute.PathVariable} path.";
         }
     }
 }

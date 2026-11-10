@@ -549,7 +549,7 @@ public sealed partial class RustReadOnlyHostTests
         Assert.True(status.WritesBlocked);
     }
 
-    private static SafeFileHandle OpenFixtureDirectory(string root, uint access = 0x80000000) =>
+    internal static SafeFileHandle OpenFixtureDirectory(string root, uint access = 0x80000000) =>
         CreateFile(root, access, FileShare.ReadWrite, IntPtr.Zero, FileMode.Open,
             0x02200000, IntPtr.Zero); // Backup semantics and open reparse point.
 
@@ -2005,7 +2005,7 @@ public sealed partial class RustReadOnlyHostTests
         await pipe.WriteAsync(frame, token);
     }
 
-    private sealed class DevHost : IAsyncDisposable
+    internal sealed class DevHost : IAsyncDisposable
     {
         private readonly Process process;
         private readonly Task<string> standardError;
@@ -2068,6 +2068,8 @@ public sealed partial class RustReadOnlyHostTests
             Assert.Equal("READY", line);
         }
 
+
+        internal int ProcessId => process.Id;
 
         internal Task AdvanceAsync(CancellationToken token) => SendCommandAsync((byte)'n', token);
 

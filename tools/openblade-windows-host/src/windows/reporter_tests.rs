@@ -1,165 +1,28 @@
 //! Scripted current-user caller for the development host's private v79 pipe.
 //! No desktop, process, or native device observations are used here.
 
-use std::{
-    cell::Cell,
-    future::Future,
-    io::{self, ErrorKind},
-    rc::Rc,
-    time::Duration,
-};
+use std::{cell::Cell, future::Future, rc::Rc, time::Duration};
 
 use openblade_application_reporter::{
     ActivationMode, ApplicationProfile, ApplicationProfileReporter, Foreground, Guid,
     LEASE_INTERVAL, ProcessHandle, ProcessIdentity, ReportApplicationContextRequest, ReportOutcome,
 };
 use openblade_platform_windows::application::watcher::replay::{Script, ScriptedWatcher};
-use serde::{Deserialize, Serialize};
+use openblade_windows_host::reporter_pipe::{Response, VERSION, encode, guid_text, receive, send};
 use serde_json::{Value, json};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
     net::windows::named_pipe::NamedPipeClient,
     sync::{mpsc, oneshot},
     time::{Instant, sleep, timeout},
 };
 
 use super::tests::{open_pipe, runtime, test_id};
-use super::{PREFIX, Phase, Session, fixture, prepare_integrated, run_prepared, wire};
+use super::{PREFIX, Phase, Session, fixture, prepare_integrated, run_prepared};
 
-const VERSION: i32 = 79;
-const MAX_FRAME: i32 = 65_536;
 const STATUS_ID: &str = "11111111-2222-4333-8444-555555555555";
 const PROFILE_ID: &str = "e4c7ac58-003c-4f40-adb3-76f2d9e6ea9e";
 const BALANCED: i32 = 1;
 const PERFORMANCE: i32 = 2;
-
-fn invalid() -> io::Error {
-    io::Error::new(
-        ErrorKind::InvalidData,
-        "invalid private v79 application frame",
-    )
-}
-
-fn guid_text(Guid(bytes): Guid) -> String {
-    let hex = format!("{:032x}", u128::from_be_bytes(bytes));
-    format!(
-        "{}-{}-{}-{}-{}",
-        &hex[..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..],
-    )
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ReportWire<'a> {
-    operation: &'static str,
-    version: i32,
-    request_id: String,
-    instance_id: String,
-    sequence: i64,
-    executable_path: Option<&'a str>,
-}
-
-fn encode(request: &ReportApplicationContextRequest) -> io::Result<Vec<u8>> {
-    let request_id = guid_text(request.request_id);
-    if request.version != VERSION || !wire::is_guid(&request_id) {
-        return Err(invalid());
-    }
-    let payload = serde_json::to_vec(&ReportWire {
-        operation: "reportApplicationContext",
-        version: request.version,
-        request_id,
-        instance_id: guid_text(request.instance_id),
-        sequence: request.sequence,
-        executable_path: request.executable_path.as_deref(),
-    })?;
-    crate::application_runtime::Report::decode(&payload)?;
-    Ok(payload)
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Response {
-    frame: String,
-    version: i32,
-    request_id: String,
-    success: bool,
-    error: Option<String>,
-    status: Option<Value>,
-    result: Option<ResultBody>,
-    archive: Option<()>,
-    error_code: Option<i32>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ResultBody {
-    status: u8,
-    message: String,
-    // These optional managed result fields are only applicable to other operations.
-    #[serde(rename = "hyperBoostRestoredPerformance")]
-    _hyper_boost_restored_performance: Option<()>,
-    #[serde(rename = "cpuTuning")]
-    _cpu_tuning: Option<()>,
-}
-
-impl Response {
-    fn decode(payload: &[u8], request_id: &str) -> io::Result<Self> {
-        let response: Self = serde_json::from_slice(payload).map_err(|_| invalid())?;
-        if response.frame != "response"
-            || response.version != VERSION
-            || !response.request_id.eq_ignore_ascii_case(request_id)
-            || response.archive.is_some()
-        {
-            return Err(invalid());
-        }
-        Ok(response)
-    }
-
-    fn report_outcome(self) -> io::Result<(ReportOutcome, String)> {
-        if self.status.is_some() {
-            return Err(invalid());
-        }
-        match (self.success, self.result, self.error, self.error_code) {
-            (true, Some(result), None, None) => {
-                let outcome = match result.status {
-                    0 => ReportOutcome::Stored,
-                    1 => ReportOutcome::Applied,
-                    2 | 3 => ReportOutcome::Rejected,
-                    _ => return Err(invalid()),
-                };
-                Ok((outcome, result.message))
-            }
-            (false, None, Some(error), None) if !error.trim().is_empty() => {
-                Ok((ReportOutcome::Rejected, error))
-            }
-            _ => Err(invalid()),
-        }
-    }
-}
-
-async fn send(mut pipe: NamedPipeClient, payload: &[u8]) -> io::Result<NamedPipeClient> {
-    let length = i32::try_from(payload.len()).map_err(|_| invalid())?;
-    if !(1..=MAX_FRAME).contains(&length) {
-        return Err(invalid());
-    }
-    pipe.write_i32_le(length).await?;
-    pipe.write_all(payload).await?;
-    Ok(pipe)
-}
-
-async fn receive(mut pipe: NamedPipeClient, request_id: &str) -> io::Result<Response> {
-    let length = pipe.read_i32_le().await?;
-    if !(1..=MAX_FRAME).contains(&length) {
-        return Err(invalid());
-    }
-    let mut payload = vec![0; length as usize];
-    pipe.read_exact(&mut payload).await?;
-    Response::decode(&payload, request_id)
-}
 
 // An exchange owns its connection, so canceling it drops the outstanding pipe.
 // Completion carries the sequence of the send that produced it.

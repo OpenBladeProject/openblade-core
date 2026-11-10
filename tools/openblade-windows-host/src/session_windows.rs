@@ -22,6 +22,8 @@ use crate::{
     session_gpu,
 };
 
+mod integrated;
+
 const PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Display.Dev.";
 
 const GPU_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Gpu.Dev.";
@@ -32,6 +34,9 @@ pub(super) fn entry() -> io::Result<()> {
         return Err(usage());
     };
     let id = id.to_str().filter(|id| valid_id(id)).ok_or_else(usage)?;
+    if mode == "integrated" {
+        return run_fixture(integrated::run(id, scenario, brightness));
+    }
     if mode == "gpu-foreground" {
         if !brightness.is_empty() {
             return Err(usage());
@@ -126,7 +131,7 @@ fn run_fixture(fixture: impl Future<Output = io::Result<()>>) -> io::Result<()> 
 fn usage() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
-        "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <available|empty|no-data|large|stalled>",
+        "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <available|empty|no-data|large|stalled> or integrated <id> <new|resume|reconcile> <gpu scenario> <service id> <service pid> <reporter id>",
     )
 }
 
@@ -153,24 +158,20 @@ async fn run_display(
     // The OS closes this one claim and its peer when no thread can act again.
     std::mem::forget(endpoint.claim()?);
     let listener = endpoint.listen()?;
-    let journal = Journal::open(id, &endpoint.identity, mode);
-    let worker = ScriptedComPolicy::start(scenario, brightness, Arc::clone(&journal))?;
-    let session = Arc::new(Mutex::new(SessionDisplay::scripted(
-        scenario, worker, hdr, refresh, color, journal,
-    )));
+    let session = display_fixture(
+        (id, mode),
+        &endpoint.identity,
+        scenario,
+        brightness,
+        hdr,
+        refresh,
+        color,
+    )?;
 
     let stopping = Arc::new(AtomicBool::new(false));
     let stop = Arc::clone(&stopping);
     serve_connections(&endpoint, listener, stop, async |pipe, identity| {
-        if let Err(Rejected::InvalidResponse | Rejected::WorkerFailed) =
-            session_display::serve(pipe, identity, &session, &stopping).await
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Session Display response cannot be framed",
-            ));
-        }
-        Ok(())
+        serve_display(pipe, identity, &session, &stopping).await
     })
     .await
 }
@@ -183,22 +184,67 @@ async fn run_gpu(id: &str, scenario: GpuScenario) -> io::Result<()> {
         &endpoint,
         listener,
         Arc::new(AtomicBool::new(false)),
-        async |pipe, identity| {
-            // A bad client or timed-out frame only retires this connection.
-            match session_gpu::serve(pipe, identity, scenario).await {
-                Err(error) if error.kind() == io::ErrorKind::Other => Err(error),
-                _ => Ok(()),
-            }
-        },
+        async |pipe, identity| serve_gpu(pipe, identity, scenario).await,
     )
     .await
+}
+
+fn display_fixture(
+    (id, mode): (&str, StartMode),
+    identity: &Identity,
+    scenario: Scenario,
+    brightness: WmiScenario,
+    hdr: HdrFixture,
+    refresh: RefreshFixture,
+    color: ColorFixture,
+) -> io::Result<Arc<Mutex<SessionDisplay>>> {
+    let journal = Journal::open(id, identity, mode);
+    let worker = ScriptedComPolicy::start(scenario, brightness, Arc::clone(&journal))?;
+    Ok(Arc::new(Mutex::new(SessionDisplay::scripted(
+        scenario, worker, hdr, refresh, color, journal,
+    ))))
+}
+
+async fn serve_display(
+    pipe: &mut NamedPipeServer,
+    identity: &Identity,
+    session: &Arc<Mutex<SessionDisplay>>,
+    stopping: &Arc<AtomicBool>,
+) -> io::Result<()> {
+    if let Err(Rejected::InvalidResponse | Rejected::WorkerFailed) =
+        session_display::serve(pipe, identity, session, stopping).await
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Session Display response cannot be framed",
+        ));
+    }
+    Ok(())
+}
+
+async fn serve_gpu(
+    pipe: &mut NamedPipeServer,
+    identity: &Identity,
+    scenario: GpuScenario,
+) -> io::Result<()> {
+    // A bad client or timed-out frame only retires this connection.
+    match session_gpu::serve(pipe, identity, scenario).await {
+        Err(error) if error.kind() == io::ErrorKind::Other => Err(error),
+        _ => Ok(()),
+    }
+}
+
+fn announce_ready() -> io::Result<()> {
+    let mut output = io::stdout().lock();
+    writeln!(output, "READY")?;
+    output.flush()
 }
 
 async fn serve_connections(
     endpoint: &Endpoint,
     listener: NamedPipeServer,
     stopping: Arc<AtomicBool>,
-    mut serve_one: impl AsyncFnMut(&mut NamedPipeServer, &Identity) -> io::Result<()>,
+    serve_one: impl AsyncFnMut(&mut NamedPipeServer, &Identity) -> io::Result<()>,
 ) -> io::Result<()> {
     let (stop, stopped) = oneshot::channel();
     let stop_signal = Arc::clone(&stopping);
@@ -209,30 +255,28 @@ async fn serve_connections(
             stop_signal.store(true, SeqCst);
             let _ = stop.send(());
         })?;
-    {
-        let mut output = io::stdout().lock();
-        writeln!(output, "READY")?;
-        output.flush()?;
-    }
-
-    let serve = async {
-        let mut listener = listener;
-        loop {
-            match listener.connect().await {
-                Ok(()) => serve_one(&mut listener, &endpoint.identity).await?,
-                Err(error) if stale_connection(&error) => {}
-                Err(error) => return Err(error),
-            }
-            // Drop the old stream, including any buffered bytes. Keep the
-            // synchronous claim until shutdown so the name never goes unowned.
-            drop(listener);
-            listener = endpoint.next_listener().await?;
-        }
-    };
+    announce_ready()?;
     tokio::select! {
         biased;
         _ = stopped => Ok(()),
-        result = serve => result,
+        result = listen(endpoint, listener, serve_one) => result,
+    }
+}
+
+async fn listen(
+    endpoint: &Endpoint,
+    mut listener: NamedPipeServer,
+    mut serve_one: impl AsyncFnMut(&mut NamedPipeServer, &Identity) -> io::Result<()>,
+) -> io::Result<()> {
+    loop {
+        match listener.connect().await {
+            Ok(()) => serve_one(&mut listener, &endpoint.identity).await?,
+            Err(error) if stale_connection(&error) => {}
+            Err(error) => return Err(error),
+        }
+        // Drop the old stream and any buffered bytes while retaining the claim.
+        drop(listener);
+        listener = endpoint.next_listener().await?;
     }
 }
 

@@ -15,3 +15,6 @@ pub mod configuration_writer;
 
 #[cfg(windows)]
 pub mod pipe;
+
+#[cfg(windows)]
+pub mod reporter_pipe;
