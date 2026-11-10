@@ -6,9 +6,9 @@ use super::*;
 use windows_sys::Win32::{
     Devices::Display::{
         DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE, DISPLAYCONFIG_DEVICE_INFO_TYPE,
-        DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DISPLAYCONFIG_TARGET_PREFERRED_MODE,
-        DISPLAYCONFIG_VIDEO_SIGNAL_INFO, DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes,
-        QueryDisplayConfig,
+        DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DISPLAYCONFIG_TARGET_MODE,
+        DISPLAYCONFIG_TARGET_PREFERRED_MODE, DISPLAYCONFIG_VIDEO_SIGNAL_INFO,
+        DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes, QueryDisplayConfig,
     },
     Foundation::ERROR_INVALID_DATA,
     Graphics::Gdi::{
@@ -203,7 +203,7 @@ impl RefreshApi for WindowsDisplay {
         })
     }
 
-    fn preferred_mode(&mut self, target: EndpointId) -> Result<SignalTiming, u32> {
+    fn preferred_mode(&mut self, target: EndpointId) -> Result<DISPLAYCONFIG_TARGET_MODE, u32> {
         let mut preferred = DISPLAYCONFIG_TARGET_PREFERRED_MODE {
             header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
                 r#type: DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE,
@@ -220,7 +220,7 @@ impl RefreshApi for WindowsDisplay {
         let status =
             unsafe { DisplayConfigGetDeviceInfo(std::ptr::from_mut(&mut preferred).cast()) } as u32;
         if status == ERROR_SUCCESS {
-            Ok(signal_timing(preferred.targetMode.targetVideoSignalInfo))
+            Ok(preferred.targetMode)
         } else {
             Err(status)
         }
@@ -263,6 +263,17 @@ pub(super) fn active_signal(
     modes: &[DISPLAYCONFIG_MODE_INFO],
     target: EndpointId,
 ) -> Result<SignalTiming, DisplayReadError> {
+    let index = target_mode_index(path, modes, target)?;
+    // SAFETY: The discriminant and endpoint matched this path's target.
+    let signal = unsafe { modes[index].Anonymous.targetMode.targetVideoSignalInfo };
+    Ok(signal_timing(signal))
+}
+
+pub(super) fn target_mode_index(
+    path: &DISPLAYCONFIG_PATH_INFO,
+    modes: &[DISPLAYCONFIG_MODE_INFO],
+    target: EndpointId,
+) -> Result<usize, DisplayReadError> {
     // SAFETY: Both index layouts are initialized 32-bit words. Virtual mode
     // packs the target index into the high 16 bits and the desktop image below.
     let index_word = unsafe { path.targetInfo.Anonymous.modeInfoIdx };
@@ -282,12 +293,10 @@ pub(super) fn active_signal(
     {
         return Err(DisplayReadError::MismatchedTargetMode);
     }
-    // SAFETY: The discriminant and endpoint matched this path's target.
-    let signal = unsafe { mode.Anonymous.targetMode.targetVideoSignalInfo };
-    Ok(signal_timing(signal))
+    Ok(index as usize)
 }
 
-fn signal_timing(signal: DISPLAYCONFIG_VIDEO_SIGNAL_INFO) -> SignalTiming {
+pub(super) fn signal_timing(signal: DISPLAYCONFIG_VIDEO_SIGNAL_INFO) -> SignalTiming {
     SignalTiming {
         width: signal.activeSize.cx,
         height: signal.activeSize.cy,

@@ -5,22 +5,23 @@ use std::{collections::BTreeSet, ffi::OsStr, os::windows::ffi::OsStrExt};
 use windows_sys::Win32::{
     Devices::Display::{
         DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE, DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED,
+        DISPLAYCONFIG_TARGET_MODE,
     },
     Graphics::Gdi::ENUM_CURRENT_SETTINGS,
 };
 
-mod edid;
+pub(super) mod edid;
 #[cfg(test)]
 mod tests;
 
 const MAX_DRIVER_MODES: u32 = 4096;
 
 impl SignalTiming {
-    fn matches_size(self, width: u32, height: u32) -> bool {
+    pub(super) fn matches_size(self, width: u32, height: u32) -> bool {
         (self.width, self.height) == (width, height) && width != 0 && height != 0
     }
 
-    fn is_progressive(self) -> bool {
+    pub(super) fn is_progressive(self) -> bool {
         matches!(
             self.scanline_ordering,
             DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED
@@ -123,12 +124,22 @@ pub(super) struct DriverMode {
 
 pub(super) trait RefreshApi: DisplayApi {
     fn mode(&mut self, source: &[u16], index: u32) -> Option<DriverMode>;
-    fn preferred_mode(&mut self, target: EndpointId) -> Result<SignalTiming, u32>;
+    fn preferred_mode(&mut self, target: EndpointId) -> Result<DISPLAYCONFIG_TARGET_MODE, u32>;
     fn edid(&mut self, subkey: &[u16]) -> Result<Vec<u8>, u32>;
 }
 
 pub(super) fn read_refresh_with(
     api: &mut impl RefreshApi,
+) -> Result<InternalDisplayRefresh, DisplayReadError> {
+    observe_refresh(api, false, |_, _, _| {})
+}
+
+// Supplies the last CCD frame and the timing evidence from the bracketed read.
+// Mutation preparation uses those arrays together, never an index from another query.
+pub(super) fn observe_refresh(
+    api: &mut impl RefreshApi,
+    for_mutation: bool,
+    evidence: impl FnOnce(Topology, Option<DISPLAYCONFIG_TARGET_MODE>, Vec<edid::DetailedTiming>),
 ) -> Result<InternalDisplayRefresh, DisplayReadError> {
     let display = match read_with(api)? {
         InternalDisplayTopology::Empty => return Ok(InternalDisplayRefresh::Empty),
@@ -152,12 +163,14 @@ pub(super) fn read_refresh_with(
     }
     let driver_rates = driver_rates(api, &source, current)?;
     let active = display.active_signal;
-    let preferred = display
-        .supports_virtual_mode
-        .then(|| api.preferred_mode(display.target));
-    let preferred_timing = preferred
-        .and_then(Result::ok)
-        .and_then(|timing| accept_preferred(active, timing));
+    let preferred =
+        (display.supports_virtual_mode || for_mutation).then(|| api.preferred_mode(display.target));
+    let preferred_mode = preferred.and_then(Result::ok).filter(|mode| {
+        accept_preferred(active, native::signal_timing(mode.targetVideoSignalInfo)).is_some()
+    });
+    let preferred_timing = preferred_mode
+        .filter(|_| display.supports_virtual_mode)
+        .map(|mode| native::signal_timing(mode.targetVideoSignalInfo));
     let preferred_rate = preferred_timing.and_then(|timing| timing.rate);
     let edid = display
         .monitor_name
@@ -168,8 +181,11 @@ pub(super) fn read_refresh_with(
         .map(|subkey| api.edid(&subkey));
     // The Windows reads are separate. Reject evidence gathered across an
     // observed topology change. This does not make the OS calls atomic.
-    if api.mode(&source, ENUM_CURRENT_SETTINGS) != Some(current)
-        || !matches!(read_with(api)?, InternalDisplayTopology::Single(next) if next == display)
+    if api.mode(&source, ENUM_CURRENT_SETTINGS) != Some(current) {
+        return Err(DisplayReadError::TopologyChanging);
+    }
+    let topology = query_topology(api)?;
+    if !matches!(resolve_internal_display(api, &topology.paths, &topology.modes)?, InternalDisplayTopology::Single(next) if next == display)
     {
         return Err(DisplayReadError::TopologyChanging);
     }
@@ -197,6 +213,8 @@ pub(super) fn read_refresh_with(
     );
     let current_refresh_key = classify(&display, &refresh_options).map(|option| option.key.clone());
 
+    let display_supports_virtual_mode = display.supports_virtual_mode;
+    evidence(topology, preferred_mode, timings);
     Ok(InternalDisplayRefresh::Single(Box::new(RefreshSnapshot {
         display,
         width: current.width,
@@ -207,7 +225,10 @@ pub(super) fn read_refresh_with(
             .then_some("The current refresh-rate mode was not reported as available by Windows."),
         current_refresh_key,
         refresh_options,
-        preferred_rate: TimingEvidence::from_read(preferred, preferred_rate),
+        preferred_rate: TimingEvidence::from_read(
+            preferred.filter(|_| display_supports_virtual_mode),
+            preferred_rate,
+        ),
         edid_range: TimingEvidence::from_read(edid, range),
     })))
 }
@@ -316,7 +337,7 @@ fn select_fixed_rates(driver: &BTreeSet<i32>, advertised: &BTreeSet<i32>) -> Vec
     driver.intersection(advertised).copied().collect()
 }
 
-fn normalize(rate: Option<RefreshRate>) -> Option<i32> {
+pub(super) fn normalize(rate: Option<RefreshRate>) -> Option<i32> {
     let rate = rate?;
     let hertz = (f64::from(rate.numerator) / f64::from(rate.denominator)).round();
     (hertz <= f64::from(i32::MAX)).then_some(hertz as i32)

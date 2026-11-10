@@ -1,23 +1,23 @@
 //! The EDID formats used by the managed refresh read: DisplayID Type 7
 //! detailed timings and the base-block vertical range descriptor.
 
-use super::{DisplayReadError, VerticalRange};
+use super::{DISPLAYCONFIG_RATIONAL, DisplayReadError, VerticalRange};
 
 const BLOCK_LENGTH: usize = 128;
 const HEADER: [u8; 8] = [0, 255, 255, 255, 255, 255, 255, 0];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct DetailedTiming {
-    pub(super) width: u32,
-    pub(super) height: u32,
-    pub(super) hertz: i32,
-    pub(super) pixel_rate: u64,
-    pub(super) total_width: u32,
-    pub(super) total_height: u32,
+pub(in crate::display) struct DetailedTiming {
+    pub(in crate::display) width: u32,
+    pub(in crate::display) height: u32,
+    pub(in crate::display) hertz: i32,
+    pub(in crate::display) pixel_rate: u64,
+    pub(in crate::display) total_width: u32,
+    pub(in crate::display) total_height: u32,
 }
 
 impl DetailedTiming {
-    pub(super) fn ratios_fit(self) -> bool {
+    pub(in crate::display) fn ratios_fit(self) -> bool {
         ratio_fits(self.pixel_rate, u64::from(self.total_width))
             && ratio_fits(
                 self.pixel_rate,
@@ -27,20 +27,33 @@ impl DetailedTiming {
 }
 
 fn ratio_fits(numerator: u64, denominator: u64) -> bool {
+    rational(numerator, denominator).is_some()
+}
+
+pub(in crate::display) fn rational(
+    numerator: u64,
+    denominator: u64,
+) -> Option<DISPLAYCONFIG_RATIONAL> {
+    if numerator == 0 || denominator == 0 {
+        return None;
+    }
     // Match DisplayConfigRational.FromRatio, including reduction before the
     // native u32 numerator/denominator bounds are checked.
     let (mut a, mut b) = (numerator, denominator);
     while b != 0 {
         (a, b) = (b, a % b);
     }
-    u32::try_from(numerator / a).is_ok() && u32::try_from(denominator / a).is_ok()
+    Some(DISPLAYCONFIG_RATIONAL {
+        Numerator: u32::try_from(numerator / a).ok()?,
+        Denominator: u32::try_from(denominator / a).ok()?,
+    })
 }
 
 fn checksum(block: &[u8]) -> bool {
     block.iter().copied().fold(0_u8, u8::wrapping_add) == 0
 }
 
-pub(super) fn vertical_range(edid: &[u8]) -> Option<VerticalRange> {
+pub(in crate::display) fn vertical_range(edid: &[u8]) -> Option<VerticalRange> {
     let base = edid.get(..BLOCK_LENGTH)?;
     if !base.starts_with(&HEADER) || !checksum(base) {
         return None;
@@ -60,7 +73,9 @@ pub(super) fn vertical_range(edid: &[u8]) -> Option<VerticalRange> {
         })
 }
 
-pub(super) fn detailed_timings(edid: &[u8]) -> Result<Vec<DetailedTiming>, DisplayReadError> {
+pub(in crate::display) fn detailed_timings(
+    edid: &[u8],
+) -> Result<Vec<DetailedTiming>, DisplayReadError> {
     let mut blocks = edid
         .as_chunks::<BLOCK_LENGTH>()
         .0

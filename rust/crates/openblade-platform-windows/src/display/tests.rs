@@ -4,7 +4,7 @@ use std::{collections::VecDeque, hint::black_box};
 use windows_sys::Win32::Graphics::Gdi::ENUM_CURRENT_SETTINGS;
 use windows_sys::Win32::{
     Devices::Display::{
-        DISPLAYCONFIG_MODE_INFO_0, DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE,
+        DISPLAYCONFIG_2DREGION, DISPLAYCONFIG_MODE_INFO_0, DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE,
         DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HDMI,
         DISPLAYCONFIG_TARGET_MODE, DISPLAYCONFIG_VIDEO_SIGNAL_INFO,
     },
@@ -602,10 +602,28 @@ impl RefreshApi for Script {
         self.indexed_modes.pop_front()
     }
 
-    fn preferred_mode(&mut self, target: EndpointId) -> Result<SignalTiming, u32> {
+    fn preferred_mode(&mut self, target: EndpointId) -> Result<DISPLAYCONFIG_TARGET_MODE, u32> {
         assert_eq!(target, EndpointId::new(TARGET, 5));
         self.preferred_calls += 1;
-        self.preferred.expect("unexpected preferred mode read")
+        self.preferred
+            .expect("unexpected preferred mode read")
+            .map(|signal| {
+                let rate = signal.rate.unwrap();
+                DISPLAYCONFIG_TARGET_MODE {
+                    targetVideoSignalInfo: DISPLAYCONFIG_VIDEO_SIGNAL_INFO {
+                        activeSize: DISPLAYCONFIG_2DREGION {
+                            cx: signal.width,
+                            cy: signal.height,
+                        },
+                        scanLineOrdering: signal.scanline_ordering,
+                        vSyncFreq: DISPLAYCONFIG_RATIONAL {
+                            Numerator: rate.numerator,
+                            Denominator: rate.denominator,
+                        },
+                        ..Default::default()
+                    },
+                }
+            })
     }
 
     fn edid(&mut self, subkey: &[u16]) -> Result<Vec<u8>, u32> {

@@ -76,8 +76,8 @@ only when the synthetic WMI reading matches the CCD endpoints and monitor path.
 Unavailable brightness leaves the independently observed display fields intact.
 Color profiles remain unavailable.
 
-The private display endpoint accepts query and the existing typed brightness
-and HDR requests. Each process starts one scripted brightness worker; no COM policy is
+The private display endpoint accepts query and the existing typed brightness,
+HDR and refresh-rate requests. Each process starts one scripted brightness worker; no COM policy is
 applied to Windows and no native display or WMI transport is started. A confirmed
 write requires a separate read from the full submitted WMI instance. A lost or
 ambiguous write reply pauses writes for that process; read-only observations
@@ -91,7 +91,7 @@ captures a scripted active session and power generation, checks the exact
 single internal source, target and monitor path again, and verifies HDR support
 and the current preference before deciding whether a write is needed. After
 one typed submission, a separate INFO_2 read must confirm the same panel and
-the requested preference. An uncertain result, readback or reply pauses both
+the requested preference. An uncertain result, readback or reply pauses all
 display mutation paths for that fixture process. A later query can observe
 recovery without clearing the pause or replaying the request. The fixture
 keeps the HDR preference independent of signal mode and does not acquire SDR
@@ -103,9 +103,25 @@ and [DisplayConfigSetDeviceInfo](https://learn.microsoft.com/en-us/windows/win32
 Only the platform unit test links the native setter; the test retains its
 function pointer and checks packet encoding without executing the call.
 
+Phase 6t admits the existing v2 SetRefreshRate request through the Tray client.
+The fixture checks option membership against the initial and fresh snapshots.
+A no-op requires a fresh match on the desktop rate, physical signal rate and
+boost bit. Packet preparation uses paired CCD arrays, retains the source and
+virtual desktop indices, and changes only the chosen path and its target timing.
+A fixed rate without a known target timing omits the target index so Windows can
+select it. A Dynamic rate requires an admitted physical timing. Scripted
+validation and application use the corresponding
+[SetDisplayConfig flags](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayconfig).
+The fixture requires separate CCD readback of the exact panel and mode and pauses
+all display writes on uncertain submission, readback or reply. Only a platform
+unit test retains the refresh setter import, and it never calls it.
+
 Current HDR output mode, complete snapshot parity, and native display behavior
-need separate evidence before replacement. Product, Session IPC and persisted
-schema versions are unchanged by this replay.
+need separate evidence before replacement. Live refresh still needs authorized
+validation of the exact packet on the active console, fresh power/session and
+monitor identity checks around validation and submission, and recovery that
+survives a host restart. Product, Session IPC and persisted schema versions are
+unchanged by this replay.
 
 **Restricted Claude review is pending direct user authorization.** Keep the
 combined branch and its artifacts local. Native display validation,

@@ -1,17 +1,13 @@
-use std::{
-    ffi::OsString,
-    thread,
-    time::{Duration, Instant},
-};
-
 use openblade_platform_windows::display::{
-    ActiveInternalDisplay, DisplayReadError, EndpointId, InternalDisplayRefresh,
-    InternalDisplayTopology,
-    scripted::{Scenario, submit_hdr},
+    ActiveInternalDisplay, DisplayReadError, InternalDisplayRefresh, InternalDisplayTopology,
+    scripted::submit_hdr,
 };
 use serde_json::{Value, json};
 
-use super::{BLOCKED, FAILED, INDETERMINATE, SUCCEEDED, display_state};
+use super::{
+    BLOCKED, FAILED, INDETERMINATE, SUCCEEDED, display_state,
+    panel::{Context, DisplayIdentity, Outcome, ScriptedDisplay, wait_for_disconnect},
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HdrFixture {
@@ -26,15 +22,8 @@ pub(crate) enum HdrFixture {
     StalledSubmission,
 }
 
-#[derive(PartialEq, Eq)]
-struct HdrTarget {
-    source: EndpointId,
-    target: EndpointId,
-    monitor_path: OsString,
-}
-
 pub(super) struct HdrObservation {
-    target: HdrTarget,
+    target: DisplayIdentity,
     supported: bool,
     enabled: bool,
 }
@@ -43,11 +32,7 @@ impl HdrObservation {
     fn from_display(display: &ActiveInternalDisplay) -> Option<Self> {
         let hdr = display.advanced_color.as_ref().ok()?;
         Some(Self {
-            target: HdrTarget {
-                source: display.source,
-                target: display.target,
-                monitor_path: display.monitor_name.as_ref().ok()?.device_path.clone()?,
-            },
+            target: DisplayIdentity::of(display)?,
             supported: hdr.hdr_supported,
             enabled: hdr.hdr_user_enabled,
         })
@@ -63,44 +48,9 @@ impl HdrObservation {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct Context {
-    power_source: u8,
-    generation: u64,
-}
-
-pub(super) struct ScriptedHdr {
-    scenario: Scenario,
-    fixture: HdrFixture,
-    enabled: bool,
-}
-
-type Outcome = (i32, Option<String>, bool);
-
-impl ScriptedHdr {
-    pub(super) fn new(scenario: Scenario, fixture: HdrFixture) -> Self {
-        Self {
-            scenario,
-            fixture,
-            enabled: true,
-        }
-    }
-
-    pub(super) fn read(&self, replaced: bool) -> Result<InternalDisplayRefresh, DisplayReadError> {
-        self.scenario.read_with_hdr(self.enabled, replaced)
-    }
-
-    // This is synthetic session and power evidence only. Pipe token identity
-    // does not prove a real foreground console or a confirmed power source.
-    pub(super) fn context(&self, fresh: bool) -> Option<Context> {
-        (self.fixture != HdrFixture::Inactive).then_some(Context {
-            power_source: 0, // PluggedIn.
-            generation: u64::from(fresh && self.fixture == HdrFixture::StalePower),
-        })
-    }
-
+impl ScriptedDisplay {
     // SessionDisplay holds its single request lock across the entire operation.
-    pub(super) fn apply(
+    pub(super) fn apply_hdr(
         &mut self,
         expected_power_source: u8,
         enabled: bool,
@@ -135,12 +85,16 @@ impl ScriptedHdr {
             );
         }
 
-        if self.fixture == HdrFixture::StalledAdmission {
+        if self.hdr_fixture == HdrFixture::StalledAdmission {
             wait_for_disconnect("HDR ADMISSION", cancelled);
         }
         let fresh = self
             .scenario
-            .topology_with_hdr(self.enabled, self.fixture == HdrFixture::StaleTarget)
+            .topology_with_hdr(
+                self.enabled,
+                self.timing,
+                self.hdr_fixture == HdrFixture::StaleTarget,
+            )
             .ok()
             .and_then(|topology| match topology {
                 InternalDisplayTopology::Single(display) => HdrObservation::from_display(&display),
@@ -179,25 +133,25 @@ impl ScriptedHdr {
         // A native error can occur after Windows accepts the request. Treat
         // every such result as uncertain, even if a later query sees the value.
         let applied = submit_hdr(fresh.target.target, enabled);
-        if self.fixture != HdrFixture::ReadbackMismatch {
+        if self.hdr_fixture != HdrFixture::ReadbackMismatch {
             self.enabled = applied;
         }
-        if self.fixture == HdrFixture::SubmissionError {
+        if self.hdr_fixture == HdrFixture::SubmissionError {
             return pending("the native result was uncertain");
         }
-        if self.fixture == HdrFixture::StalledSubmission {
+        if self.hdr_fixture == HdrFixture::StalledSubmission {
             wait_for_disconnect("HDR SUBMITTED", cancelled);
         }
 
         // Observe the exact same target independently. Do not treat a sibling's
         // matching preference or the physical signal mode as confirmation.
-        let readback = self.read(self.fixture == HdrFixture::SiblingReadback);
+        let readback = self.read(self.hdr_fixture == HdrFixture::SiblingReadback);
         let Some(after) = HdrObservation::from_refresh(&readback)
             .filter(|after| after.target == fresh.target && after.supported)
         else {
             return pending("the exact target could not be read back");
         };
-        *state = display_state(readback).0;
+        *state = display_state(&readback).0;
         if cancelled() {
             return pending("the request was cancelled after submission");
         }
@@ -216,12 +170,4 @@ fn pending(reason: &str) -> Outcome {
         )),
         true,
     )
-}
-
-fn wait_for_disconnect(signal: &str, cancelled: &impl Fn() -> bool) {
-    println!("{signal}");
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while !cancelled() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(5));
-    }
 }

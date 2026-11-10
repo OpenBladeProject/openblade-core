@@ -18,6 +18,8 @@ use windows_sys::Win32::{
 mod native;
 mod refresh;
 #[cfg(feature = "scripted-display")]
+mod refresh_packet;
+#[cfg(feature = "scripted-display")]
 pub mod scripted;
 pub use refresh::{
     InternalDisplayRefresh, RefreshOption, RefreshSnapshot, TimingEvidence, VerticalRange,
@@ -208,6 +210,16 @@ trait DisplayApi {
 }
 
 fn read_with(api: &mut impl DisplayApi) -> Result<InternalDisplayTopology, DisplayReadError> {
+    let topology = query_topology(api)?;
+    resolve_internal_display(api, &topology.paths, &topology.modes)
+}
+
+struct Topology {
+    paths: Vec<DISPLAYCONFIG_PATH_INFO>,
+    modes: Vec<DISPLAYCONFIG_MODE_INFO>,
+}
+
+fn query_topology(api: &mut impl DisplayApi) -> Result<Topology, DisplayReadError> {
     for _ in 0..MAX_ATTEMPTS {
         let capacities =
             api.buffer_sizes(QUERY_FLAGS)
@@ -238,11 +250,9 @@ fn read_with(api: &mut impl DisplayApi) -> Result<InternalDisplayTopology, Displ
             return Err(DisplayReadError::InvalidReturnedCounts);
         }
 
-        return resolve_internal_display(
-            api,
-            &paths[..counts.0 as usize],
-            &modes[..counts.1 as usize],
-        );
+        paths.truncate(counts.0 as usize);
+        modes.truncate(counts.1 as usize);
+        return Ok(Topology { paths, modes });
     }
     Err(DisplayReadError::TopologyChanging)
 }

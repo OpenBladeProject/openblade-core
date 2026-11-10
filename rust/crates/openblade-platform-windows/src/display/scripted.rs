@@ -1,10 +1,15 @@
 //! Synthetic native packets for the private Windows Session Agent replay.
 
-use super::refresh::{DriverMode, RefreshApi};
 use super::*;
+use super::{
+    refresh::{DriverMode, RefreshApi},
+    refresh_packet::{APPLY, RefreshPacket, VALIDATE},
+};
 use windows_sys::Win32::{
     Devices::Display::{
-        DISPLAYCONFIG_MODE_INFO_0, DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DISPLAYCONFIG_TARGET_MODE,
+        DISPLAYCONFIG_2DREGION, DISPLAYCONFIG_MODE_INFO_0,
+        DISPLAYCONFIG_MODE_INFO_TYPE_DESKTOP_IMAGE, DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE,
+        DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DISPLAYCONFIG_TARGET_MODE,
         DISPLAYCONFIG_VIDEO_SIGNAL_INFO,
     },
     Foundation::{ERROR_ACCESS_DENIED, ERROR_NOT_SUPPORTED},
@@ -17,6 +22,7 @@ const MONITOR_PATH: &str = r"\\?\DISPLAY#SYN0001#FIXTURE#{SYNTHETIC}";
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Scenario {
     Available,
+    Dynamic,
     Unavailable,
     StaleTarget,
     NativeError,
@@ -26,34 +32,72 @@ pub enum Scenario {
 
 impl Scenario {
     pub fn topology(self, replaced: bool) -> Result<InternalDisplayTopology, DisplayReadError> {
-        self.topology_with_hdr(true, replaced)
+        self.topology_with_hdr(true, RefreshTiming::default(), replaced)
     }
 
     pub fn read(self) -> Result<InternalDisplayRefresh, DisplayReadError> {
-        self.read_with_hdr(true, false)
+        self.read_with_hdr(true, RefreshTiming::default(), false)
     }
 
     pub fn topology_with_hdr(
         self,
         enabled: bool,
+        timing: RefreshTiming,
         replaced: bool,
     ) -> Result<InternalDisplayTopology, DisplayReadError> {
-        read_with(&mut self.script(enabled, replaced))
+        read_with(&mut self.script(enabled, timing, replaced))
     }
 
     pub fn read_with_hdr(
         self,
         enabled: bool,
+        timing: RefreshTiming,
         replaced: bool,
     ) -> Result<InternalDisplayRefresh, DisplayReadError> {
-        refresh::read_refresh_with(&mut self.script(enabled, replaced))
+        refresh::read_refresh_with(&mut self.script(enabled, timing, replaced))
     }
 
-    fn script(self, hdr_enabled: bool, replaced: bool) -> Script {
+    pub fn prepare_refresh(
+        self,
+        enabled: bool,
+        timing: RefreshTiming,
+        replaced: bool,
+        key: &str,
+    ) -> Result<(InternalDisplayRefresh, Option<PreparedRefresh>), DisplayReadError> {
+        let mut evidence = None;
+        let reading = refresh::observe_refresh(
+            &mut self.script(enabled, timing, replaced),
+            true,
+            |topology, preferred, timings| evidence = Some((topology, preferred, timings)),
+        )?;
+        let packet = match (&reading, evidence) {
+            (InternalDisplayRefresh::Single(snapshot), Some((topology, preferred, timings))) => {
+                snapshot
+                    .refresh_options
+                    .iter()
+                    .find(|option| option.key == key)
+                    .and_then(|option| {
+                        RefreshPacket::prepare(
+                            topology,
+                            &snapshot.display,
+                            option,
+                            preferred,
+                            &timings,
+                        )
+                    })
+                    .map(PreparedRefresh)
+            }
+            _ => None,
+        };
+        Ok((reading, packet))
+    }
+
+    fn script(self, hdr_enabled: bool, timing: RefreshTiming, replaced: bool) -> Script {
         Script {
             scenario: self,
             target: if replaced { 5 } else { 4 },
             hdr_enabled,
+            timing,
         }
     }
 }
@@ -69,10 +113,73 @@ pub fn submit_hdr(target: EndpointId, enabled: bool) -> bool {
     packet.value != 0
 }
 
+#[derive(Clone, Copy)]
+pub struct RefreshTiming {
+    desktop: DISPLAYCONFIG_RATIONAL,
+    physical: DISPLAYCONFIG_TARGET_MODE,
+    boost: bool,
+}
+
+impl Default for RefreshTiming {
+    fn default() -> Self {
+        Self {
+            desktop: rate(60),
+            physical: signal(rate(240)),
+            boost: false,
+        }
+    }
+}
+
+pub struct PreparedRefresh(RefreshPacket);
+
+impl PreparedRefresh {
+    pub fn validate(self, rejected: bool) -> Option<ValidatedRefresh> {
+        // Scripted SDC_VALIDATE has no mutation effect. No native setter is linked here.
+        assert_eq!(VALIDATE, 0x28060);
+        (!rejected).then_some(ValidatedRefresh(self.0))
+    }
+}
+
+pub struct ValidatedRefresh(RefreshPacket);
+
+impl ValidatedRefresh {
+    pub fn submit(self) -> RefreshTiming {
+        assert_eq!(APPLY, 0x282a0);
+        let path = self.0.selected_path();
+        let desktop = path.targetInfo.refreshRate;
+        RefreshTiming {
+            desktop,
+            physical: self.0.selected_mode().unwrap_or_else(|| signal(desktop)),
+            boost: path.flags & PATH_BOOST_REFRESH_RATE != 0,
+        }
+    }
+}
+
+fn rate(hertz: u32) -> DISPLAYCONFIG_RATIONAL {
+    DISPLAYCONFIG_RATIONAL {
+        Numerator: hertz,
+        Denominator: 1,
+    }
+}
+
+fn signal(rate: DISPLAYCONFIG_RATIONAL) -> DISPLAYCONFIG_TARGET_MODE {
+    DISPLAYCONFIG_TARGET_MODE {
+        targetVideoSignalInfo: DISPLAYCONFIG_VIDEO_SIGNAL_INFO {
+            vSyncFreq: rate,
+            activeSize: DISPLAYCONFIG_2DREGION {
+                cx: WIDTH,
+                cy: HEIGHT,
+            },
+            ..Default::default()
+        },
+    }
+}
+
 struct Script {
     scenario: Scenario,
     target: u32,
     hdr_enabled: bool,
+    timing: RefreshTiming,
 }
 
 const ADAPTER: LUID = LUID {
@@ -82,13 +189,23 @@ const ADAPTER: LUID = LUID {
 const WIDTH: u32 = 2560;
 const HEIGHT: u32 = 1600;
 
+impl Script {
+    fn mode_count(&self) -> u32 {
+        if self.scenario == Scenario::Dynamic {
+            3
+        } else {
+            2
+        }
+    }
+}
+
 impl DisplayApi for Script {
     fn buffer_sizes(&mut self, flags: u32) -> Result<(u32, u32), u32> {
         assert_eq!(flags, QUERY_FLAGS);
         Ok(if self.scenario == Scenario::Unavailable {
             (0, 0)
         } else {
-            (1, 1)
+            (1, self.mode_count())
         })
     }
 
@@ -114,33 +231,44 @@ impl DisplayApi for Script {
         if self.scenario == Scenario::StaleTarget {
             self.target += 1;
         }
-        assert_eq!(*counts, (1, 1));
+        assert_eq!(*counts, (1, self.mode_count()));
         let path = &mut paths[0];
         path.flags = DISPLAYCONFIG_PATH_ACTIVE;
+        let virtual_mode = self.scenario == Scenario::Dynamic;
+        if virtual_mode {
+            path.flags |= DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE;
+        }
+        if self.timing.boost {
+            path.flags |= PATH_BOOST_REFRESH_RATE;
+        }
         path.sourceInfo.adapterId = ADAPTER;
         path.sourceInfo.id = 3;
+        path.sourceInfo.Anonymous.modeInfoIdx = if virtual_mode { 0xffff } else { 0 };
         path.targetInfo.adapterId = ADAPTER;
         path.targetInfo.id = self.target;
         path.targetInfo.outputTechnology = DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED;
-        path.targetInfo.Anonymous.modeInfoIdx = 0;
-        path.targetInfo.refreshRate = DISPLAYCONFIG_RATIONAL {
-            Numerator: 60,
-            Denominator: 1,
-        };
+        path.targetInfo.Anonymous.modeInfoIdx = if virtual_mode { (1 << 16) | 2 } else { 1 };
+        path.targetInfo.refreshRate = self.timing.desktop;
         modes[0] = DISPLAYCONFIG_MODE_INFO {
+            infoType: DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE,
+            id: 3,
+            adapterId: ADAPTER,
+            ..Default::default()
+        };
+        if virtual_mode {
+            modes[2] = DISPLAYCONFIG_MODE_INFO {
+                infoType: DISPLAYCONFIG_MODE_INFO_TYPE_DESKTOP_IMAGE,
+                id: self.target,
+                adapterId: ADAPTER,
+                ..Default::default()
+            };
+        }
+        modes[1] = DISPLAYCONFIG_MODE_INFO {
             infoType: DISPLAYCONFIG_MODE_INFO_TYPE_TARGET,
             id: self.target,
             adapterId: ADAPTER,
             Anonymous: DISPLAYCONFIG_MODE_INFO_0 {
-                targetMode: DISPLAYCONFIG_TARGET_MODE {
-                    targetVideoSignalInfo: DISPLAYCONFIG_VIDEO_SIGNAL_INFO {
-                        vSyncFreq: DISPLAYCONFIG_RATIONAL {
-                            Numerator: 240,
-                            Denominator: 1,
-                        },
-                        ..Default::default()
-                    },
-                },
+                targetMode: self.timing.physical,
             },
         };
         ERROR_SUCCESS
@@ -221,8 +349,16 @@ impl RefreshApi for Script {
         })
     }
 
-    fn preferred_mode(&mut self, _: EndpointId) -> Result<SignalTiming, u32> {
-        unreachable!("script uses the legacy mode index layout");
+    fn preferred_mode(&mut self, target: EndpointId) -> Result<DISPLAYCONFIG_TARGET_MODE, u32> {
+        assert_eq!(target, EndpointId::new(ADAPTER, self.target));
+        if self.scenario == Scenario::Dynamic {
+            Ok(signal(DISPLAYCONFIG_RATIONAL {
+                Numerator: 240_000,
+                Denominator: 1_001,
+            }))
+        } else {
+            Err(ERROR_NOT_SUPPORTED)
+        }
     }
 
     fn edid(&mut self, _: &[u16]) -> Result<Vec<u8>, u32> {
@@ -233,6 +369,56 @@ impl RefreshApi for Script {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fixed_fallback_omits_only_the_target_mode_index() {
+        for (scenario, expected) in [
+            (Scenario::Available, (0, u32::MAX)),
+            (Scenario::Dynamic, (0xffff, 0xffff_0002)),
+        ] {
+            let (_, packet) = scenario
+                .prepare_refresh(true, RefreshTiming::default(), false, "fixed-60")
+                .unwrap();
+            let packet = packet.unwrap().0;
+            assert_eq!(packet.index_words(), expected);
+            assert!(packet.selected_mode().is_none());
+            let path = packet.selected_path();
+            assert_eq!(path.targetInfo.refreshRate.Numerator, 60);
+            assert_eq!(path.flags & PATH_BOOST_REFRESH_RATE, 0);
+        }
+    }
+
+    #[test]
+    fn dynamic_and_fixed_keep_the_admitted_fractional_physical_signal() {
+        let scenario = Scenario::Dynamic;
+        let sixty = RefreshTiming {
+            desktop: rate(60),
+            physical: signal(rate(60)),
+            boost: false,
+        };
+        let (_, packet) = scenario
+            .prepare_refresh(true, sixty, false, "dynamic-60-240")
+            .unwrap();
+        let packet = packet.unwrap();
+        assert_eq!(packet.0.index_words(), (0xffff, 0x1_0002));
+        let dynamic = packet.validate(false).unwrap().submit();
+        assert!(dynamic.boost);
+        assert_eq!(dynamic.desktop.Numerator, 60);
+        let physical = dynamic.physical.targetVideoSignalInfo.vSyncFreq;
+        assert_eq!((physical.Numerator, physical.Denominator), (240_000, 1_001));
+
+        let (_, packet) = scenario
+            .prepare_refresh(true, dynamic, false, "fixed-240")
+            .unwrap();
+        let fixed = packet.unwrap().validate(false).unwrap().submit();
+        assert!(!fixed.boost);
+        let physical = fixed.physical.targetVideoSignalInfo.vSyncFreq;
+        assert_eq!((physical.Numerator, physical.Denominator), (240_000, 1_001));
+        assert_eq!(
+            (fixed.desktop.Numerator, fixed.desktop.Denominator),
+            (240_000, 1_001)
+        );
+    }
 
     #[test]
     fn split_rates_and_hdr_are_observed_together_without_boost() {
