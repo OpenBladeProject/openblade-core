@@ -118,6 +118,21 @@ Session Agent. Session power and lifecycle admission, IPC projection and held-ke
 routing belong to that integration. The timeout and stop behavior still need
 native and supervised panel validation.
 
+The same crate projects Session GPU inventory from scripted NVIDIA PDH and
+process observations. It keeps idle engine holders, unavailable counters and
+stable activity with missing or stale process identity distinct. App rows
+require matching start time, user SID, session and name across both samples.
+Grouping also requires stable parent evidence, and a foreign helper cannot
+make a current-user parent eligible. The host supplies the managed ordinal
+name comparison. Tests port examples from the managed GPU activity and Session
+GPU dispatcher tests.
+
+Native query integration still needs a bounded PDH reader, cancelable sampling
+and coherent process and parent metadata tied to the counter observations.
+Session IPC must map the resulting rows, unavailable status and list cap.
+Any later close path needs a fresh scan and revalidation of the retained target
+handle before an action. Inventory eligibility alone does not authorize a close.
+
 The workspace guard checks crate boundaries, reviewed targets and dependencies,
 MSRV and compiler policies. Its regression tests use disposable workspace copies.
 Inner crates retain `no_std` and inherit `unsafe_code = "forbid"`. FFI and Windows

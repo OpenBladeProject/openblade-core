@@ -3,3 +3,4 @@
 
 pub mod brightness;
 pub mod display;
+pub mod gpu_apps;
