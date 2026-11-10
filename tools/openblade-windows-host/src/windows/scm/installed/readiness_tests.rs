@@ -72,6 +72,7 @@ struct TestStream {
     caller: Caller,
     control_session: ControlSession,
     fault: Fault,
+    peer_live: Rc<Cell<bool>>,
 }
 
 impl AsyncRead for TestStream {
@@ -132,6 +133,9 @@ impl Stream for TestStream {
             self.read > 4,
             "client was resolved before its frame was read"
         );
+        if !self.peer_live.get() {
+            return Err(denied("scripted peer lost"));
+        }
         Ok(self.caller)
     }
 }
@@ -158,6 +162,7 @@ fn test_stream_with_authority(
         caller,
         control_session,
         fault,
+        peer_live: Rc::new(Cell::new(true)),
     })
 }
 
@@ -227,6 +232,7 @@ impl Endpoint for TestEndpoint {
 struct TestSource {
     fault: Fault,
     events: Events,
+    publications: Option<watch::Receiver<Arc<Publication>>>,
 }
 
 impl StatusSource for TestSource {
@@ -254,6 +260,10 @@ impl StatusSource for TestSource {
             Ok(())
         })
     }
+
+    fn publications(&self) -> Option<watch::Receiver<Arc<Publication>>> {
+        self.publications.clone()
+    }
 }
 
 fn managed_status() -> Value {
@@ -261,6 +271,14 @@ fn managed_status() -> Value {
 }
 
 fn ports(fault: Fault, events: &Events) -> (Ports, mpsc::UnboundedSender<Box<dyn Stream>>) {
+    ports_with_feed(fault, events, None)
+}
+
+fn ports_with_feed(
+    fault: Fault,
+    events: &Events,
+    publications: Option<watch::Receiver<Arc<Publication>>>,
+) -> (Ports, mpsc::UnboundedSender<Box<dyn Stream>>) {
     let (client, server) = duplex(128);
     let (tx, rx) = mpsc::unbounded_channel();
     let mut caller = SYSTEM;
@@ -276,10 +294,11 @@ fn ports(fault: Fault, events: &Events) -> (Ports, mpsc::UnboundedSender<Box<dyn
                 inbound: tokio::sync::Mutex::new(rx),
                 events: events.clone(),
             }),
-            source: Box::new(TestSource {
+            source: Rc::new(Mutex::new(Box::new(TestSource {
                 fault,
                 events: events.clone(),
-            }),
+                publications,
+            }))),
         },
         tx,
     )
@@ -599,6 +618,7 @@ async fn session_authority_failure_is_runtime_failure_before_status_read() {
     let mut source = TestSource {
         fault: Fault::None,
         events: events.clone(),
+        publications: None,
     };
     let (server, mut client) = duplex(1024);
     let stream = test_stream(server, SETUP, Fault::SessionUnavailable);
@@ -610,3 +630,6 @@ async fn session_authority_failure_is_runtime_failure_before_status_read() {
         if error.to_string() == "session authority unavailable"));
     assert!(events.borrow().is_empty());
 }
+
+#[path = "subscription_tests.rs"]
+mod subscription_tests;

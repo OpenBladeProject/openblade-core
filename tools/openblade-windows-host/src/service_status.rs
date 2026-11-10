@@ -49,13 +49,24 @@ impl GetStatus {
 
     #[cfg(feature = "installed-service-candidate")]
     pub(crate) fn decode(payload: &[u8]) -> io::Result<Self> {
-        let request: Self =
-            serde_json::from_slice(payload).map_err(|_| invalid("invalid GetStatus request"))?;
-        if request.operation != Operation::GetStatus {
+        let request = Self::decode_status(payload)?;
+        if request.is_subscription() {
             return Err(invalid("invalid GetStatus operation"));
         }
+        Ok(request)
+    }
+
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn decode_status(payload: &[u8]) -> io::Result<Self> {
+        let request: Self = serde_json::from_slice(payload)
+            .map_err(|_| invalid("invalid Service status request"))?;
         request.validate()?;
         Ok(request)
+    }
+
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn is_subscription(&self) -> bool {
+        self.operation == Operation::SubscribeStatus
     }
 
     fn validate(&self) -> io::Result<()> {
@@ -107,6 +118,21 @@ impl StatusResponse {
         }
     }
 
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn failure(request: &GetStatus, error: &str, error_code: Option<i32>) -> Self {
+        Self {
+            frame: Frame::Response,
+            version: PROTOCOL_VERSION,
+            request_id: request.request_id.to_ascii_lowercase(),
+            success: false,
+            error: Some(error.to_owned()),
+            status: None,
+            result: None,
+            archive: None,
+            error_code,
+        }
+    }
+
     #[cfg(all(test, feature = "installed-service-candidate"))]
     pub(crate) fn verify(payload: &[u8], request: &GetStatus) -> io::Result<()> {
         Self::decode(payload, request, Some(0)).map(drop)
@@ -153,6 +179,20 @@ impl StatusResponse {
     }
 }
 
+#[cfg(feature = "installed-service-candidate")]
+pub(crate) fn encode_status_event(status: &Snapshot) -> io::Result<Vec<u8>> {
+    #[derive(Serialize)]
+    #[serde(tag = "frame", rename_all = "camelCase")]
+    enum Event<'a> {
+        StatusEvent { version: i32, status: &'a Snapshot },
+    }
+
+    crate::service_frame::encode(&Event::StatusEvent {
+        version: PROTOCOL_VERSION,
+        status,
+    })
+}
+
 #[cfg(feature = "native-agent-entry-compile-check")]
 pub(crate) async fn subscribe<S: AsyncRead + AsyncWrite + Unpin>(
     stream: &mut S,
@@ -189,6 +229,7 @@ pub(crate) async fn read_status_event(
 type FeatureRecord = Map<String, Value>;
 
 #[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "installed-service-candidate", derive(Clone))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Snapshot {
     revision: i64,
@@ -215,6 +256,11 @@ pub(crate) struct Snapshot {
 }
 
 impl Snapshot {
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn revision(&self) -> i64 {
+        self.revision
+    }
+
     // The managed status contract requires profiles and resolved intent even
     // before configuration or device admission. These are safe defaults,
     // never a firmware read or the active user's saved preferences.
@@ -360,7 +406,7 @@ impl Snapshot {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Profiles {
     plugged_in: PowerProfile,
@@ -371,7 +417,7 @@ struct Profiles {
     feature_fields: FeatureRecord,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PowerProfile {
     performance: i32,
@@ -381,13 +427,13 @@ struct PowerProfile {
     feature_fields: FeatureRecord,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BatteryPolicy {
     charge_limit_percent: i32,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesiredState {
     performance: Resolved<i32>,
@@ -398,14 +444,14 @@ struct DesiredState {
     feature_fields: FeatureRecord,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Resolved<T> {
     value: T,
     source: i32,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesiredBattery {
     configured_policy: BatteryPolicy,
@@ -413,7 +459,7 @@ struct DesiredBattery {
     temporary_full_charge: bool,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LiveReadings {
     battery_power_flow_milliwatts: Option<i32>,

@@ -125,8 +125,11 @@ The managed server's protocol-51 compatibility path is limited to cached
 `GetStatus` and `SubscribeStatus` with a read-only projection. The native
 Agent status binding requires v79, matching the ordinary managed Agent. The
 state observation and request dispatch for the remaining operations still
-need native bindings. The installed Service candidate
-currently serves only `GetStatus`.
+need native bindings. The installed Service candidate has a v79
+`SubscribeStatus` handler behind the existing listener admission. Its
+request-driven native status source has no live publication feed, so the
+handler returns a correlated failure without a snapshot. The startup probe
+still requires the exact self-issued `GetStatus` exchange.
 
 The replay in `tools/openblade-windows-host/tests/fixtures/get-status-v79.frames`
 contains two consecutive managed codec frames. The managed
@@ -145,6 +148,20 @@ same managed replay status, and a v79 `ServiceStatusEvent` with the status
 revision incremented by one. The request ID is the same as in the one-shot
 fixture. Rust tests compare the emitted request and read both reply frames
 over in-memory streams with deterministic time and injected peer proof.
+The installed server tests feed the managed replay into the same dispatcher
+the candidate uses, including an update while the initial response is blocked.
+The feed holds one latest revision and supplies both the active and inactive
+views. The server rechecks the connected peer and resolves console-session
+authority before selecting a view for the initial response and every event.
+There are eight persistent status slots within a fourteen-connection budget.
+Disconnect, inbound bytes, write timeout, publisher loss, lease rotation after
+15 minutes, and shutdown release the stream and its slot.
+
+Installed integration still needs an admitted runtime publisher that supplies
+monotonic revisions and a managed inactive-session projection for each revision.
+The current source provides request-time observational metadata with writes
+blocked and has no admitted profile activation, device ownership, or lifecycle
+publication. The offline exchange uses injected publication and peer evidence.
 
 ## Compile the installed service launch boundary
 

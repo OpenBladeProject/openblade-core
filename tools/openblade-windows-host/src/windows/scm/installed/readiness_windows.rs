@@ -58,7 +58,8 @@ use primitives::{LocalAllocation, check, descriptor, peer_token};
 const FULL_CONTROL: u32 = 0x001f_019f;
 const READ_WRITE_SYNC: u32 = 0x0012_019b;
 const BUFFER: u32 = 8192;
-const INSTANCES: u32 = 2;
+#[cfg(feature = "installed-service-candidate")]
+pub(super) const MAX_CONNECTIONS: usize = 14;
 const RETRY: Duration = Duration::from_millis(20);
 
 pub(super) struct NativeEndpoint {
@@ -70,6 +71,7 @@ pub(super) struct NativeEndpoint {
     claim: Option<(OwnedHandle, OwnedHandle)>,
     server_session: u32,
     control_session: ControlSession,
+    instances: u32,
 }
 
 impl NativeEndpoint {
@@ -88,6 +90,7 @@ impl NativeEndpoint {
             descriptor("D:P(D;;0x1f019f;;;NU)(A;;0x1f019f;;;OW)")?,
             session,
             Rc::new(|| Ok(None)),
+            2,
         )?;
         Ok((endpoint, session))
     }
@@ -101,7 +104,14 @@ impl NativeEndpoint {
         if admitted_pid != std::process::id() {
             return Err(denied("installed listener requires the admitted process"));
         }
-        Self::claim(path, managed_descriptor()?, 0, control_session)
+        // The exclusive parked instance is outside the connection budget.
+        Self::claim(
+            path,
+            managed_descriptor()?,
+            0,
+            control_session,
+            1 + MAX_CONNECTIONS as u32,
+        )
     }
 
     fn claim(
@@ -109,6 +119,7 @@ impl NativeEndpoint {
         descriptor: LocalAllocation,
         server_session: u32,
         control_session: ControlSession,
+        instances: u32,
     ) -> io::Result<Self> {
         let mut endpoint = Self {
             path: path.encode_utf16().chain([0]).collect(),
@@ -116,6 +127,7 @@ impl NativeEndpoint {
             claim: None,
             server_session,
             control_session,
+            instances,
         };
         let server = endpoint.create(true)?;
         let client = endpoint.open_client()?;
@@ -140,7 +152,7 @@ impl NativeEndpoint {
                         0
                     },
                 PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS,
-                INSTANCES,
+                self.instances,
                 BUFFER,
                 BUFFER,
                 0,
@@ -310,7 +322,8 @@ struct NativeStream {
     pipe: OwnedHandle,
     side: Side,
     read_bytes: usize,
-    retry: Option<Pin<Box<Sleep>>>,
+    read_retry: Option<Pin<Box<Sleep>>>,
+    write_retry: Option<Pin<Box<Sleep>>>,
 }
 
 impl NativeStream {
@@ -319,24 +332,25 @@ impl NativeStream {
             pipe,
             side,
             read_bytes: 0,
-            retry: None,
+            read_retry: None,
+            write_retry: None,
         }
     }
 
-    fn wait(&mut self, cx: &mut Context<'_>) -> Poll<()> {
-        if let Some(timer) = &mut self.retry {
+    fn wait(retry: &mut Option<Pin<Box<Sleep>>>, cx: &mut Context<'_>) -> Poll<()> {
+        if let Some(timer) = retry {
             ready!(timer.as_mut().poll(cx));
-            self.retry = None;
+            *retry = None;
         }
         Poll::Ready(())
     }
 
-    fn retry<T>(&mut self, cx: &mut Context<'_>) -> Poll<T> {
+    fn retry<T>(retry: &mut Option<Pin<Box<Sleep>>>, cx: &mut Context<'_>) -> Poll<T> {
         let mut timer = Box::pin(sleep(RETRY));
         if timer.as_mut().poll(cx).is_ready() {
             cx.waker().wake_by_ref();
         }
-        self.retry = Some(timer);
+        *retry = Some(timer);
         Poll::Pending
     }
 }
@@ -347,7 +361,7 @@ impl tokio::io::AsyncRead for NativeStream {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        ready!(self.wait(cx));
+        ready!(Self::wait(&mut self.read_retry, cx));
         let target = buf.initialize_unfilled();
         let mut read = 0;
         // SAFETY: synchronous nonblocking read into initialized writable memory.
@@ -366,7 +380,7 @@ impl tokio::io::AsyncRead for NativeStream {
                 self.read_bytes = self.read_bytes.saturating_add(read as usize);
                 Poll::Ready(Ok(()))
             }
-            Err(e) if code(&e) == Some(ERROR_NO_DATA) => self.retry(cx),
+            Err(e) if code(&e) == Some(ERROR_NO_DATA) => Self::retry(&mut self.read_retry, cx),
             Err(e) if matches!(code(&e), Some(ERROR_BROKEN_PIPE | ERROR_PIPE_NOT_CONNECTED)) => {
                 Poll::Ready(Ok(()))
             }
@@ -381,7 +395,7 @@ impl tokio::io::AsyncWrite for NativeStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        ready!(self.wait(cx));
+        ready!(Self::wait(&mut self.write_retry, cx));
         let mut written = 0;
         // SAFETY: synchronous nonblocking write reads only the provided bytes.
         let result = check(unsafe {
@@ -394,7 +408,7 @@ impl tokio::io::AsyncWrite for NativeStream {
             )
         });
         match result {
-            Ok(()) if written == 0 && !buf.is_empty() => self.retry(cx),
+            Ok(()) if written == 0 && !buf.is_empty() => Self::retry(&mut self.write_retry, cx),
             Ok(()) => Poll::Ready(Ok(written as usize)),
             Err(e) => Poll::Ready(Err(e)),
         }
@@ -580,6 +594,7 @@ pub(super) fn private_endpoint(
             descriptor("D:P(A;;0x1f019f;;;OW)")?,
             session,
             Rc::clone(&control_session),
+            2,
         )
     };
     (open, session)
