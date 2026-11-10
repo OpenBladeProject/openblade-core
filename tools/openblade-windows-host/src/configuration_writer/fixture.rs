@@ -35,6 +35,9 @@ const PROFILE_FIXTURE: &str = include_str!(
     "../../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-profile.json"
 );
 
+#[cfg(feature = "vm-scm-fixture")]
+pub const VM_DATA_ROOT: &str = r"C:\OpenBladeRustPhase5jVm\data";
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MigrationFixture {
@@ -264,6 +267,20 @@ impl BatteryProfileStore {
         }
 
         let storage = super::protected::ProtectedStorage::open(root)?;
+        Self::open_protected_store(root, storage)
+    }
+
+    #[cfg(feature = "vm-scm-fixture")]
+    pub fn open_vm_protected(
+        storage: super::protected::ProtectedStorage,
+    ) -> io::Result<(Value, Self)> {
+        Self::open_protected_store(Path::new(VM_DATA_ROOT), storage)
+    }
+
+    fn open_protected_store(
+        root: &Path,
+        storage: super::protected::ProtectedStorage,
+    ) -> io::Result<(Value, Self)> {
         let lease = storage.acquire_writer()?;
         let store = TestStore {
             root: root.to_owned(),

@@ -17,6 +17,7 @@ path = "src/discover.rs"
 [features]
 cpu-worker-fixture = []
 gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]
+vm-scm-fixture = []
 
 [[bin]]
 name = "openblade-cpu-worker-fixture"
@@ -28,6 +29,11 @@ bench = false
 [[bin]]
 name = "openblade-rust-session-agent"
 path = "src/session_agent.rs"
+[[bin]]
+name = "openblade-windows-scm-vm"
+path = "src/vm_main.rs"
+required-features = ["vm-scm-fixture"]
+test = false
 
 [dependencies]
 openblade-domain = { path = '../../rust/crates/openblade-domain' }
