@@ -25,9 +25,13 @@ mod service_image;
 mod service_install_identity;
 #[cfg(windows)]
 mod service_status;
+#[cfg(all(windows, test, feature = "native-agent-entry-compile-check"))]
+mod session_native;
 #[cfg(windows)]
 #[allow(dead_code)] // Shared with the development writer, which is not linked here.
 mod windows_protected_path;
+#[cfg(all(windows, test, feature = "native-agent-entry-compile-check"))]
+mod windows_token;
 
 #[cfg(not(test))]
 fn main() -> std::process::ExitCode {

@@ -7,9 +7,9 @@ use crate::service_frame::write_frame;
 #[cfg(test)]
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::{
-    sync::{Mutex, Semaphore, oneshot, watch},
+    sync::{Mutex, oneshot, watch},
     task::{JoinSet, LocalSet},
-    time::timeout,
+    time::{Instant, timeout},
 };
 
 use super::{Readiness, denied};
@@ -35,7 +35,7 @@ const MAX_SUBSCRIPTIONS: usize = 8;
 
 #[path = "subscription.rs"]
 mod subscription;
-use subscription::{Publication, serve_subscription};
+use subscription::{Publication, Subscriptions, serve_subscription};
 
 fn windows_control_session() -> ControlSession {
     Rc::new(|| Ok(crate::console_session::observe()))
@@ -110,14 +110,17 @@ impl Endpoint for windows::NativeEndpoint {
     }
 }
 
-// Owns an already admitted runtime source. Every request takes a fresh status
-// for the resolved caller, including the managed inactive-session projection.
+// Owns an already admitted runtime source. Requests that overlap an
+// observation can share it, using the projection for the resolved caller.
 trait StatusSource {
-    fn snapshot(&mut self, caller: Caller) -> Pending<'_, Snapshot>;
+    fn snapshot(&mut self, caller: Caller, requested: Instant) -> Pending<'_, Snapshot>;
     // The admitted runtime must seed this feed and publish monotonically,
     // with the managed inactive-session projection for every revision.
     fn publications(&self) -> Option<watch::Receiver<Arc<Publication>>> {
         None
+    }
+    fn refresh_publications(&mut self) -> Pending<'_, ()> {
+        Box::pin(async { Ok(()) })
     }
     fn drain(&mut self) -> Pending<'_, ()>;
 }
@@ -229,13 +232,22 @@ impl Ports {
         shutdown: &mut oneshot::Receiver<()>,
     ) -> (io::Result<()>, bool) {
         let publications = self.source.lock().await.publications();
-        let slots = Rc::new(Semaphore::new(MAX_SUBSCRIPTIONS));
+        let subscriptions = Rc::new(Subscriptions::new(MAX_SUBSCRIPTIONS));
+        let refresh = subscriptions.refresh_while_subscribed(|| async {
+            let mut source = self.source.lock().await;
+            if subscriptions.has_subscribers() {
+                source.refresh_publications().await?;
+            }
+            Ok(())
+        });
+        tokio::pin!(refresh);
         let mut connections = JoinSet::new();
         let mut accept = self.endpoint.accept();
         let outcome = loop {
             tokio::select! {
                 biased;
                 signal = &mut *shutdown => break (signal.map_err(|_| lost_shutdown()), true),
+                result = &mut refresh, if publications.is_some() => break (result, false),
                 joined = connections.join_next(), if !connections.is_empty() => match joined {
                     Some(Ok(Err(ExchangeError::Runtime(error)))) => break (Err(error), false),
                     Some(Err(error)) => break (Err(io::Error::other(error)), false),
@@ -248,9 +260,9 @@ impl Ports {
                     };
                     let source = Rc::clone(&self.source);
                     let publications = publications.clone();
-                    let slots = Rc::clone(&slots);
+                    let subscriptions = Rc::clone(&subscriptions);
                     connections.spawn_local(async move {
-                        serve_connection(stream, source, publications, slots).await
+                        serve_connection(stream, source, publications, subscriptions).await
                     });
                     accept = self.endpoint.accept();
                 }
@@ -328,17 +340,26 @@ async fn serve_connection(
     mut stream: Box<dyn Stream>,
     source: Rc<Mutex<Box<dyn StatusSource>>>,
     publications: Option<watch::Receiver<Arc<Publication>>>,
-    slots: Rc<Semaphore>,
+    subscriptions: Rc<Subscriptions>,
 ) -> Result<(), ExchangeError> {
     let (request, caller) = read_request(&mut *stream, false).await?;
     if request.is_subscription() {
-        serve_subscription(&mut *stream, &request, caller, publications, &slots).await
+        serve_subscription(
+            &mut *stream,
+            &request,
+            caller,
+            publications,
+            &subscriptions,
+            async { source.lock().await.refresh_publications().await },
+        )
+        .await
     } else {
         caller.access().map_err(ExchangeError::Client)?;
+        let requested = Instant::now();
         let payload = {
             let mut source = source.lock().await;
             let caller = resolve_caller(&*stream, caller)?;
-            status_payload(&mut **source, &request, caller).await?
+            status_payload(&mut **source, &request, caller, requested).await?
         };
         crate::service_frame::write_payload(&mut *stream, &payload)
             .await
@@ -382,7 +403,7 @@ async fn serve_get(
     caller: Caller,
 ) -> Result<(), ExchangeError> {
     let caller = resolve_caller(stream, caller)?;
-    let payload = status_payload(source, request, caller).await?;
+    let payload = status_payload(source, request, caller, Instant::now()).await?;
     crate::service_frame::write_payload(stream, &payload)
         .await
         .map_err(ExchangeError::Client)
@@ -392,10 +413,11 @@ async fn status_payload(
     source: &mut dyn StatusSource,
     request: &GetStatus,
     caller: Caller,
+    requested: Instant,
 ) -> Result<Vec<u8>, ExchangeError> {
     use ExchangeError::{Client, Runtime};
     let access = caller.access().map_err(Client)?;
-    let status = timeout(FRAME_TIMEOUT, source.snapshot(caller))
+    let status = timeout(FRAME_TIMEOUT, source.snapshot(caller, requested))
         .await
         .map_err(|e| Runtime(e.into()))?
         .map_err(Runtime)?;

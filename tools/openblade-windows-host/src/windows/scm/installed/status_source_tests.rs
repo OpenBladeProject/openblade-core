@@ -112,6 +112,18 @@ fn matched(hid: HidMetadata) -> DeviceMetadata {
     }
 }
 
+pub(in crate::installed::readiness) fn in_memory_source(
+    on_battery: impl Fn(&AtomicBool) -> bool + Send + Sync + 'static,
+) -> Box<dyn StatusSource> {
+    Box::new(ObservedStatus::new(move |cancel| {
+        if on_battery(cancel) {
+            evidence(matched(HidMetadata::Candidate), Power::Battery)
+        } else {
+            evidence(DeviceMetadata::Unsupported, Power::ExternalUnknown)
+        }
+    }))
+}
+
 fn assert_read_only(status: &Value) {
     assert_eq!(status["deviceVerified"], false);
     assert_eq!(status["writesBlocked"], true);
@@ -140,7 +152,7 @@ async fn supported_and_unsupported_metadata_never_admit_control() {
         .into_iter(),
     );
     let mut source = ObservedStatus::new(move |_| observations.lock().unwrap().next().unwrap());
-    let supported = source.snapshot(SYSTEM).await.unwrap();
+    let supported = source.snapshot(SYSTEM, Instant::now()).await.unwrap();
     supported.verify(0).unwrap();
     let supported = to_value(supported).unwrap();
     assert_read_only(&supported);
@@ -154,7 +166,7 @@ async fn supported_and_unsupported_metadata_never_admit_control() {
     assert!(supported["message"].as_str().unwrap().contains("RZ09-0581"));
     assert!(supported["controllerDetectionWarning"].is_string());
 
-    let unsupported = to_value(source.snapshot(SYSTEM).await.unwrap()).unwrap();
+    let unsupported = to_value(source.snapshot(SYSTEM, Instant::now()).await.unwrap()).unwrap();
     assert_read_only(&unsupported);
     assert_eq!(unsupported["revision"], 1);
     assert_eq!(unsupported["unsupportedLaptop"], true);
@@ -168,7 +180,7 @@ async fn supported_and_unsupported_metadata_never_admit_control() {
         json!({"value": 1, "source": 1})
     );
     source.drain().await.unwrap();
-    assert!(source.snapshot(SYSTEM).await.is_err());
+    assert!(source.snapshot(SYSTEM, Instant::now()).await.is_err());
 }
 
 #[tokio::test]
@@ -188,9 +200,9 @@ async fn partial_observations_replace_prior_fields_and_caller_projection_keeps_r
         .into_iter(),
     );
     let mut source = ObservedStatus::new(move |_| observations.lock().unwrap().next().unwrap());
-    let initial = to_value(source.snapshot(SYSTEM).await.unwrap()).unwrap();
+    let initial = to_value(source.snapshot(SYSTEM, Instant::now()).await.unwrap()).unwrap();
     assert_eq!(initial["potentialControllers"], json!(["RazerAppEngine"]));
-    let partial = to_value(source.snapshot(SYSTEM).await.unwrap()).unwrap();
+    let partial = to_value(source.snapshot(SYSTEM, Instant::now()).await.unwrap()).unwrap();
     assert_eq!(partial["revision"], 1);
     assert_eq!(partial["potentialControllers"], json!([]));
     assert_eq!(partial["controllerDetectionWarning"], CONTROLLER_UNKNOWN);
@@ -202,7 +214,7 @@ async fn partial_observations_replace_prior_fields_and_caller_projection_keeps_r
             .contains("metadata unavailable")
     );
 
-    let inactive = source.snapshot(INACTIVE).await.unwrap();
+    let inactive = source.snapshot(INACTIVE, Instant::now()).await.unwrap();
     inactive.verify(1).unwrap();
     let inactive = to_value(inactive).unwrap();
     assert_read_only(&inactive);
@@ -214,15 +226,64 @@ async fn partial_observations_replace_prior_fields_and_caller_projection_keeps_r
         "Another Windows session currently controls OpenBlade hardware."
     );
 
-    let ambiguous = to_value(source.snapshot(SYSTEM).await.unwrap()).unwrap();
+    let ambiguous = to_value(source.snapshot(SYSTEM, Instant::now()).await.unwrap()).unwrap();
     assert_eq!(ambiguous["revision"], 2);
     assert!(ambiguous["message"].as_str().unwrap().contains("ambiguous"));
-    let unavailable = to_value(source.snapshot(SYSTEM).await.unwrap()).unwrap();
+    let unavailable = to_value(source.snapshot(SYSTEM, Instant::now()).await.unwrap()).unwrap();
     assert_eq!(unavailable["revision"], 3);
     assert_eq!(
         unavailable["message"],
         "Device identity is unavailable. Control ownership is unverified."
     );
+}
+
+#[tokio::test]
+async fn in_memory_observer_publishes_one_revision_for_both_views_and_closes_on_failure() {
+    let observations = Mutex::new(
+        [
+            evidence(matched(HidMetadata::Candidate), Power::Unknown),
+            evidence(matched(HidMetadata::Candidate), Power::ExternalUnknown),
+            evidence(matched(HidMetadata::Candidate), Power::Battery),
+        ]
+        .into_iter(),
+    );
+    let mut source = ObservedStatus::new(move |_| observations.lock().unwrap().next().unwrap());
+    assert!(source.publications().is_none());
+    let initial = source.snapshot(SYSTEM, Instant::now()).await.unwrap();
+    let mut feed = source.publications().unwrap();
+    let seeded = Arc::clone(&feed.borrow_and_update());
+    assert_eq!(
+        to_value(initial).unwrap(),
+        to_value(&seeded.active).unwrap()
+    );
+    seeded.inactive.verify(1).unwrap();
+
+    source.observe_since(Instant::now()).await.unwrap();
+    assert!(!feed.has_changed().unwrap());
+    assert!(Arc::ptr_eq(&seeded, &feed.borrow()));
+
+    let requested = Instant::now();
+    let changed = source.snapshot(SYSTEM, requested).await.unwrap();
+    assert!(feed.has_changed().unwrap());
+    let latest = Arc::clone(&feed.borrow_and_update());
+    assert_eq!(changed.revision(), seeded.active.revision() + 1);
+    assert_eq!(
+        to_value(changed).unwrap(),
+        to_value(&latest.active).unwrap()
+    );
+    let inactive = source.snapshot(INACTIVE, requested).await.unwrap();
+    assert_eq!(inactive.revision(), latest.active.revision());
+    assert_eq!(
+        to_value(inactive).unwrap(),
+        to_value(&latest.inactive).unwrap()
+    );
+
+    // The fake panics on exhaustion, exercising the native worker failure path.
+    assert!(source.observe_since(Instant::now()).await.is_err());
+    assert!(feed.has_changed().is_err());
+    assert!(source.publications().is_none());
+    assert!(source.snapshot(SYSTEM, requested).await.is_err());
+    source.drain().await.unwrap();
 }
 
 #[tokio::test]
@@ -241,15 +302,14 @@ async fn expired_refresh_discards_old_evidence_and_prevents_overlapping_reads() 
         evidence(matched(HidMetadata::Candidate), Power::Battery)
     });
     source
-        .project(
-            0,
-            Some(Evidence {
-                controllers: vec!["RazerAppEngine".to_owned()],
-                ..evidence(matched(HidMetadata::Candidate), Power::Battery)
-            }),
-        )
+        .publish(Some(Evidence {
+            controllers: vec!["RazerAppEngine".to_owned()],
+            ..evidence(matched(HidMetadata::Candidate), Power::Battery)
+        }))
         .unwrap();
-    let (status, ()) = tokio::join!(source.snapshot(SYSTEM), async {
+    let mut feed = source.publications().unwrap();
+    feed.borrow_and_update();
+    let (status, ()) = tokio::join!(source.snapshot(SYSTEM, Instant::now()), async {
         running.await.unwrap();
     });
     let stale = to_value(status.unwrap()).unwrap();
@@ -260,16 +320,19 @@ async fn expired_refresh_discards_old_evidence_and_prevents_overlapping_reads() 
     assert_eq!(stale["potentialControllers"], json!([]));
     assert_eq!(stale["controllerDetectionWarning"], CONTROLLER_UNKNOWN);
     assert!(!stale["message"].as_str().unwrap().contains("RZ09"));
+    assert!(feed.has_changed().unwrap());
+    assert_eq!(to_value(&feed.borrow_and_update().active).unwrap(), stale);
     assert_eq!(
-        to_value(source.snapshot(SYSTEM).await.unwrap()).unwrap(),
+        to_value(source.snapshot(SYSTEM, Instant::now()).await.unwrap()).unwrap(),
         stale
     );
+    assert!(!feed.has_changed().unwrap());
 
     release.send(()).unwrap();
     while !source.refresh.as_ref().unwrap().worker.is_finished() {
         tokio::task::yield_now().await;
     }
-    let recovered = to_value(source.snapshot(SYSTEM).await.unwrap()).unwrap();
+    let recovered = to_value(source.snapshot(SYSTEM, Instant::now()).await.unwrap()).unwrap();
     assert_read_only(&recovered);
     assert_eq!(recovered["revision"], 2);
     assert_eq!(recovered["activePowerSource"], 3);
@@ -298,7 +361,7 @@ async fn dropping_snapshot_preserves_worker_until_drain_acknowledges_completion(
         evidence(matched(HidMetadata::Candidate), Power::Battery)
     });
     tokio::select! {
-        status = source.snapshot(SYSTEM) => panic!("snapshot completed before cancellation: {}", status.is_ok()),
+        status = source.snapshot(SYSTEM, Instant::now()) => panic!("snapshot completed before cancellation: {}", status.is_ok()),
         result = running => result.unwrap(),
     }
 
@@ -317,7 +380,7 @@ async fn dropping_snapshot_preserves_worker_until_drain_acknowledges_completion(
     release.send(()).unwrap();
     source.drain().await.unwrap();
     assert!(source.refresh.is_none());
-    assert!(source.snapshot(SYSTEM).await.is_err());
+    assert!(source.snapshot(SYSTEM, Instant::now()).await.is_err());
 }
 
 #[tokio::test]
@@ -331,6 +394,6 @@ async fn failed_prior_refresh_retires_without_polling_its_result_twice() {
         cancel: Arc::new(AtomicBool::new(true)),
         worker,
     });
-    assert!(source.snapshot(SYSTEM).await.is_err());
+    assert!(source.snapshot(SYSTEM, Instant::now()).await.is_err());
     source.drain().await.unwrap();
 }

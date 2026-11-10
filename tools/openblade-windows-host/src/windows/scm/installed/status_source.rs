@@ -8,9 +8,15 @@ use std::{
     time::Duration,
 };
 
-use tokio::time::{Instant, sleep, timeout_at};
+use tokio::{
+    sync::watch,
+    time::{Instant, sleep, timeout_at},
+};
 
-use super::{Caller, Pending, Snapshot, StatusSource};
+use super::{
+    Caller, Pending, Snapshot, StatusSource,
+    subscription::{Publication, REFRESH_INTERVAL},
+};
 use crate::service_frame::invalid;
 
 const REFRESH_BUDGET: Duration = Duration::from_secs(1);
@@ -77,6 +83,8 @@ struct ObservedStatus {
     read: Option<Arc<ReadEvidence>>,
     refresh: Option<Refresh>,
     last: Option<(i64, StatusFields)>,
+    observed_at: Option<Instant>,
+    publisher: Option<watch::Sender<Arc<Publication>>>,
 }
 
 impl ObservedStatus {
@@ -85,6 +93,8 @@ impl ObservedStatus {
             read: Some(Arc::new(read)),
             refresh: None,
             last: None,
+            observed_at: None,
+            publisher: None,
         }
     }
 
@@ -124,7 +134,34 @@ impl ObservedStatus {
         Ok(evidence.filter(|_| fresh))
     }
 
-    fn project(&mut self, access: i32, evidence: Option<Evidence>) -> io::Result<Snapshot> {
+    async fn observe_since(&mut self, requested: Instant) -> io::Result<()> {
+        if self.read.is_none() {
+            return Err(invalid("status source retired"));
+        }
+        if self
+            .observed_at
+            .is_some_and(|observed| observed > requested)
+        {
+            return Ok(());
+        }
+        let observed = async {
+            let evidence = self.refresh().await?;
+            self.publish(evidence)?;
+            self.observed_at = Some(Instant::now());
+            Ok(())
+        }
+        .await;
+        if observed.is_err() {
+            // A fatal observer failure closes the feed before any other
+            // connection can reuse its last successful publication.
+            self.read = None;
+            self.observed_at = None;
+            self.publisher = None;
+        }
+        observed
+    }
+
+    fn publish(&mut self, evidence: Option<Evidence>) -> io::Result<()> {
         let message = match evidence.as_ref().map(|current| &current.device) {
             Some(DeviceMetadata::Unsupported) => {
                 "No verified supported device is available.".to_owned()
@@ -167,37 +204,67 @@ impl ObservedStatus {
         // changes (such as unknown versus unclassified external power) do not
         // create a new status revision.
         let revision = match &self.last {
-            Some((revision, last)) if *last == fields => *revision,
+            Some((_, last)) if *last == fields => return Ok(()),
             Some((revision, _)) => revision
                 .checked_add(1)
                 .ok_or_else(|| invalid("status revision exhausted"))?,
             None => 0,
         };
-        let message = if access == 1 {
-            "Another Windows session currently controls OpenBlade hardware.".to_owned()
-        } else {
-            fields.message.clone()
+        let project = |access, message| {
+            Snapshot::observed_read_only(
+                revision,
+                access,
+                fields.on_battery,
+                fields.unsupported_laptop,
+                fields.controllers.clone(),
+                fields.controller_warning,
+                message,
+            )
         };
-        let status = Snapshot::observed_read_only(
-            revision,
-            access,
-            fields.on_battery,
-            fields.unsupported_laptop,
-            fields.controllers.clone(),
-            fields.controller_warning,
-            message,
-        );
+        let publication = Arc::new(Publication {
+            active: project(0, fields.message.clone()),
+            inactive: project(
+                1,
+                "Another Windows session currently controls OpenBlade hardware.".to_owned(),
+            ),
+        });
+        if let Some(publisher) = &self.publisher {
+            publisher.send_replace(publication);
+        } else {
+            self.publisher = Some(watch::Sender::new(publication));
+        }
         self.last = Some((revision, fields));
-        Ok(status)
+        Ok(())
     }
 }
 
 impl StatusSource for ObservedStatus {
-    fn snapshot(&mut self, caller: Caller) -> Pending<'_, Snapshot> {
+    fn snapshot(&mut self, caller: Caller, requested: Instant) -> Pending<'_, Snapshot> {
         Box::pin(async move {
             let access = caller.access()?;
-            let evidence = self.refresh().await?;
-            self.project(access, evidence)
+            self.observe_since(requested).await?;
+            let publication = self.publisher.as_ref().expect("observed status").borrow();
+            Ok(if access == 0 {
+                publication.active.clone()
+            } else {
+                publication.inactive.clone()
+            })
+        })
+    }
+
+    fn publications(&self) -> Option<watch::Receiver<Arc<Publication>>> {
+        self.publisher.as_ref().map(watch::Sender::subscribe)
+    }
+
+    fn refresh_publications(&mut self) -> Pending<'_, ()> {
+        Box::pin(async {
+            if self
+                .observed_at
+                .is_some_and(|observed| observed.elapsed() < REFRESH_INTERVAL)
+            {
+                return Ok(());
+            }
+            self.observe_since(Instant::now()).await
         })
     }
 
@@ -205,6 +272,8 @@ impl StatusSource for ObservedStatus {
         Box::pin(async move {
             self.read = None;
             self.last = None;
+            self.observed_at = None;
+            self.publisher = None;
             if let Some(refresh) = &self.refresh {
                 refresh.cancel.store(true, Ordering::Relaxed);
                 refresh.wait().await;
@@ -301,3 +370,6 @@ fn read_windows(cancel: &AtomicBool) -> Evidence {
 #[cfg(test)]
 #[path = "status_source_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+pub(super) use tests::in_memory_source;

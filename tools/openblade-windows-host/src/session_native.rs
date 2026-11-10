@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-mod service_client;
+pub(crate) mod service_client;
 mod token;
 
 use service_client::SubscriptionInitial;

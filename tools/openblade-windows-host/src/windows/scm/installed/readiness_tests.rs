@@ -73,6 +73,7 @@ struct TestStream {
     control_session: ControlSession,
     fault: Fault,
     peer_live: Rc<Cell<bool>>,
+    request_read: Cell<Option<oneshot::Sender<()>>>,
 }
 
 impl AsyncRead for TestStream {
@@ -136,6 +137,9 @@ impl Stream for TestStream {
         if !self.peer_live.get() {
             return Err(denied("scripted peer lost"));
         }
+        if let Some(read) = self.request_read.take() {
+            let _ = read.send(());
+        }
         Ok(self.caller)
     }
 }
@@ -163,6 +167,7 @@ fn test_stream_with_authority(
         control_session,
         fault,
         peer_live: Rc::new(Cell::new(true)),
+        request_read: Cell::new(None),
     })
 }
 
@@ -236,7 +241,7 @@ struct TestSource {
 }
 
 impl StatusSource for TestSource {
-    fn snapshot(&mut self, caller: Caller) -> Pending<'_, Snapshot> {
+    fn snapshot(&mut self, caller: Caller, _requested: Instant) -> Pending<'_, Snapshot> {
         Box::pin(async move {
             self.events.borrow_mut().push("snapshot");
             if self.fault == Fault::SourceUnavailable {

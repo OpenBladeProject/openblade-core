@@ -157,11 +157,16 @@ There are eight persistent status slots within a fourteen-connection budget.
 Disconnect, inbound bytes, write timeout, publisher loss, lease rotation after
 15 minutes, and shutdown release the stream and its slot.
 
-Installed integration still needs an admitted runtime publisher that supplies
-monotonic revisions and a managed inactive-session projection for each revision.
-The current source provides request-time observational metadata with writes
-blocked and has no admitted profile activation, device ownership, or lifecycle
-publication. The offline exchange uses injected publication and peer evidence.
+After installed runtime admission, the startup `GetStatus` probe seeds the
+subscription feed from the native read-only observer. Ordinary reads and
+subscribers share that observer. The first subscription refreshes an observation
+older than two seconds, and one service-lifetime poll checks for changes every
+two seconds while subscriptions are open. Both caller views advance together
+only when projected evidence changes. An expired observation replaces prior
+evidence with unavailable status, and a fatal observer failure closes the feed.
+The source reports observational metadata with writes blocked. Profile activation
+and device ownership require separate admission. The offline exchange scripts
+observer inputs and peer evidence over in-memory streams.
 
 ## Compile the installed service launch boundary
 

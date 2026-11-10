@@ -1,8 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::{future::Future, io, sync::Arc, time::Duration};
 
 use tokio::{
     io::{AsyncReadExt, split},
-    sync::{Semaphore, watch},
+    sync::{Notify, Semaphore, watch},
     time::sleep,
 };
 
@@ -16,6 +16,42 @@ use crate::{
 
 const CONNECTION_LIFETIME: Duration = Duration::from_secs(15 * 60);
 const CAPACITY_UNAVAILABLE: i32 = 0; // ServiceResponseErrorCode.CapacityUnavailable
+pub(super) const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+
+pub(super) struct Subscriptions {
+    capacity: usize,
+    slots: Semaphore,
+    wake: Notify,
+}
+
+impl Subscriptions {
+    pub(super) fn new(capacity: usize) -> Self {
+        Self {
+            capacity,
+            slots: Semaphore::new(capacity),
+            wake: Notify::new(),
+        }
+    }
+
+    pub(super) fn has_subscribers(&self) -> bool {
+        self.slots.available_permits() < self.capacity
+    }
+
+    pub(super) async fn refresh_while_subscribed<F: Future<Output = io::Result<()>>>(
+        &self,
+        mut refresh: impl FnMut() -> F,
+    ) -> io::Result<()> {
+        loop {
+            while !self.has_subscribers() {
+                self.wake.notified().await;
+            }
+            sleep(REFRESH_INTERVAL).await;
+            if self.has_subscribers() {
+                refresh().await?;
+            }
+        }
+    }
+}
 
 // The publisher owns the authoritative projection of private profile and
 // intent fields. The listener chooses a view using fresh session authority.
@@ -59,7 +95,8 @@ pub(super) async fn serve_subscription(
     request: &GetStatus,
     caller: Caller,
     publications: Option<watch::Receiver<Arc<Publication>>>,
-    slots: &Semaphore,
+    subscriptions: &Subscriptions,
+    refresh_initial: impl Future<Output = io::Result<()>>,
 ) -> Result<(), ExchangeError> {
     use ExchangeError::{Client, Runtime};
     caller.access().map_err(Client)?;
@@ -74,7 +111,7 @@ pub(super) async fn serve_subscription(
             .await
             .map_err(Client);
     };
-    let Ok(_slot) = slots.try_acquire() else {
+    let Ok(_slot) = subscriptions.slots.try_acquire() else {
         let response = StatusResponse::failure(
             request,
             "Status subscription capacity is unavailable.",
@@ -84,8 +121,13 @@ pub(super) async fn serve_subscription(
             .await
             .map_err(Client);
     };
+    subscriptions.wake.notify_one();
 
     let stream_updates = async {
+        refresh_initial.await.map_err(Runtime)?;
+        if publications.has_changed().is_err() {
+            return Ok(());
+        }
         // A publication during the initial write remains pending. Cloning the
         // shared snapshot releases the watch lock before any I/O.
         let initial = Arc::clone(&publications.borrow_and_update());

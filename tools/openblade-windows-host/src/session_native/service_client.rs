@@ -27,17 +27,17 @@ const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(5);
 // The authority must independently verify and retain the installed LocalSystem
 // Service process instance in session zero. Each call checks that the same
 // process is still live and authorized, including across a Service restart.
-pub(super) trait InstalledServiceAuthority {
+pub(crate) trait InstalledServiceAuthority {
     fn verify_live_process(&self) -> io::Result<NonZeroU32>;
 }
 
-pub(super) struct StatusObservation {
-    pub(super) snapshot: Snapshot,
+pub(crate) struct StatusObservation {
+    pub(crate) snapshot: Snapshot,
     received_at: Instant,
 }
 
 impl StatusObservation {
-    pub(super) fn require_fresh(&self) -> io::Result<()> {
+    pub(crate) fn require_fresh(&self) -> io::Result<()> {
         if self.received_at.elapsed() >= STATUS_BUDGET {
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
@@ -49,19 +49,19 @@ impl StatusObservation {
 }
 
 // Only a verified SubscribeStatus response can establish a new subscription.
-pub(super) struct SubscriptionInitial(StatusObservation);
+pub(crate) struct SubscriptionInitial(StatusObservation);
 
 impl SubscriptionInitial {
     pub(super) fn require_fresh(&self) -> io::Result<()> {
         self.0.require_fresh()
     }
 
-    pub(super) fn into_observation(self) -> StatusObservation {
+    pub(crate) fn into_observation(self) -> StatusObservation {
         self.0
     }
 }
 
-pub(super) enum StatusUpdate {
+pub(crate) enum StatusUpdate {
     Opened(SubscriptionInitial),
     Event(StatusObservation),
     Reconnecting,
@@ -83,7 +83,7 @@ pub(super) async fn watch_status(
     .await
 }
 
-async fn watch_on<S: AsyncRead + AsyncWrite + Unpin>(
+pub(crate) async fn watch_on<S: AsyncRead + AsyncWrite + Unpin>(
     authority: Option<&dyn InstalledServiceAuthority>,
     canceled: impl Future<Output = ()>,
     mut next_id: impl FnMut() -> io::Result<String>,
