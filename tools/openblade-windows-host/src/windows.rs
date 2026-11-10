@@ -58,22 +58,19 @@ pub(super) fn entry() -> io::Result<()> {
                     "foreground-battery-profile-interrupt" | "foreground-thermal-profile-interrupt"
                 )
             ))?;
-            foreground_battery_profiles(
-                id,
-                profiles,
-                Some(writer),
-                match mode.to_str() {
-                    Some("foreground-thermal-profile" | "foreground-thermal-profile-interrupt") => {
-                        ProfileReplay::Thermal
+            let replay = match mode.to_str() {
+                Some("foreground-thermal-profile" | "foreground-thermal-profile-interrupt") => {
+                    ProfileReplay::Thermal
+                }
+                Some("foreground-power-profile" | "foreground-power-profile-uncertain") => {
+                    ProfileReplay::Power {
+                        lose_response: mode == "foreground-power-profile-uncertain",
                     }
-                    Some("foreground-power-profile" | "foreground-power-profile-uncertain") => {
-                        ProfileReplay::Power {
-                            lose_response: mode == "foreground-power-profile-uncertain",
-                        }
-                    }
-                    _ => ProfileReplay::Battery,
-                },
-            )
+                }
+                _ => ProfileReplay::Battery,
+            };
+            let writer = (!matches!(replay, ProfileReplay::Power { .. })).then_some(writer);
+            foreground_battery_profiles(id, profiles, writer, replay)
         }
         [mode, id, root, identity]
             if mode == "foreground-battery-profile-restart"

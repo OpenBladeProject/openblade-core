@@ -1079,11 +1079,13 @@ public sealed class RustReadOnlyHostTests
             AssertState(await AdvanceAsync(), PowerSource.UsbC, initial.Profiles.UsbC.Performance,
                 PerformancePreset.Performance, blocked: true);
 
+            var currentPlan = await AdvanceAsync();
+            Assert.Contains("Full-adapter profile planned", currentPlan.Message);
+            AssertState(currentPlan, PowerSource.UsbC, initial.Profiles.UsbC.Performance,
+                PerformancePreset.Performance, blocked: true);
             var stale = await AdvanceAsync();
             Assert.Contains("superseded", stale.Message);
             AssertState(stale, PowerSource.UsbC, initial.Profiles.UsbC.Performance,
-                PerformancePreset.Performance, blocked: true);
-            AssertState(await AdvanceAsync(), PowerSource.UsbC, initial.Profiles.UsbC.Performance,
                 PerformancePreset.Performance, blocked: true);
 
             var applied = await AdvanceAsync();
@@ -1102,6 +1104,10 @@ public sealed class RustReadOnlyHostTests
                 AssertState(recovered, PowerSource.PluggedIn, PerformancePreset.Balanced,
                     PerformancePreset.Balanced, blocked: true);
                 Assert.Empty(recovered.UnconfirmedWrites);
+                var reclassified = await AdvanceAsync();
+                AssertState(reclassified, PowerSource.UsbC, initial.Profiles.UsbC.Performance,
+                    PerformancePreset.Balanced, blocked: true);
+                Assert.Empty(reclassified.UnconfirmedWrites);
             }
             else
             {

@@ -12,6 +12,7 @@ const LIMITED: Reply = Some([0x07, 0x11]);
 const OTHER_FULL: Reply = Some([0x12, 0x11]);
 const UNKNOWN: Reply = Some([0x10, 0x11]);
 const MAX_ATTEMPTS: usize = 5;
+const CONFIRMATIONS: &[Reply] = &[UNKNOWN, FULL, None, UNKNOWN, FULL];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Adapter {
@@ -86,8 +87,8 @@ fn resolve(ac_line: u8, mut read: impl FnMut() -> Reply) -> io::Result<Option<Po
 }
 
 struct Lifecycle {
-    epoch: u8,
-    planned_full: Option<u8>,
+    epoch: u64,
+    planned_full: Option<u64>,
 }
 
 impl Lifecycle {
@@ -97,7 +98,11 @@ impl Lifecycle {
         ac_line: u8,
         replies: &[Reply],
     ) -> io::Result<Result> {
-        self.epoch += 1; // One increment per event in the finite script below.
+        self.epoch = self
+            .epoch
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("power observation epoch exhausted"))?;
+        self.planned_full = None;
         let mut replies = replies.iter().copied();
         let thermal = state.thermal()?;
         thermal.power_unresolved = true;
@@ -135,21 +140,24 @@ impl Lifecycle {
     fn apply(
         &mut self,
         state: &mut ScenarioState,
+        plan: Option<u64>,
         fresh: Reply,
         lose_response: bool,
     ) -> io::Result<Result> {
-        let plan = self.planned_full.take();
-        if let Some(blocked) = state.thermal_block() {
-            return Ok(blocked);
-        }
-        if plan != Some(self.epoch) {
+        if plan != Some(self.epoch) || plan != self.planned_full {
             return Ok(result(
                 ScopedStatus::Blocked,
                 "Pending full-adapter authority was superseded.",
             ));
         }
+        // Each notification grants at most one attempt. A failed admission
+        // needs another observation, and a stale callback cannot spend it.
+        self.planned_full = None;
+        if let Some(blocked) = state.thermal_block() {
+            return Ok(blocked);
+        }
         let thermal = state.thermal()?;
-        if !thermal.fans.automatic_confirmed() {
+        if !thermal.fans.fresh_automatic() {
             return Ok(result(
                 ScopedStatus::Blocked,
                 "The scoped preset recipe requires a confirmed Automatic fan pair.",
@@ -192,6 +200,14 @@ fn result(status: ScopedStatus, message: &'static str) -> Result {
     Result { status, message }
 }
 
+enum Step {
+    Notify(u8, &'static [Reply]),
+    SaveFullPlan,
+    ApplySuperseded,
+    ApplyFull,
+    Reconcile,
+}
+
 impl Scenario {
     pub(crate) async fn drive_power_profile(
         &self,
@@ -202,46 +218,42 @@ impl Scenario {
             epoch: 0,
             planned_full: None,
         };
-        let confirmations = &[UNKNOWN, FULL, None, UNKNOWN, FULL];
-        for (ac_line, replies) in [
-            (1, &[FULL, OTHER_FULL][..]),
-            (0, &[][..]),
-            (1, &confirmations[..]),
-            (1, &[LIMITED, UNKNOWN, LIMITED][..]),
-        ] {
+        use Step::*;
+        let steps = [
+            Notify(1, &[FULL, OTHER_FULL]),
+            Notify(0, &[]),
+            SaveFullPlan,
+            Notify(1, &[LIMITED, UNKNOWN, LIMITED]),
+            Notify(1, CONFIRMATIONS),
+            ApplySuperseded,
+            ApplyFull,
+        ];
+        let recovery = [
+            Notify(1, &[LIMITED, LIMITED]),
+            Reconcile,
+            Notify(1, &[LIMITED, LIMITED]),
+        ];
+        let mut superseded = None;
+        for step in steps
+            .into_iter()
+            .chain(lose_response.then_some(recovery).into_iter().flatten())
+        {
             if advance.recv().await.is_none() {
                 return Ok(());
             }
-            self.update(|state| lifecycle.notify(state, ac_line, replies))
-                .await?;
-        }
-        if advance.recv().await.is_none() {
-            return Ok(());
-        }
-        self.update(|state| lifecycle.apply(state, FULL, false))
-            .await?;
-        if advance.recv().await.is_none() {
-            return Ok(());
-        }
-        self.update(|state| lifecycle.notify(state, 1, confirmations))
-            .await?;
-        if advance.recv().await.is_none() {
-            return Ok(());
-        }
-        self.update(|state| lifecycle.apply(state, FULL, lose_response))
-            .await?;
-        if lose_response {
-            if advance.recv().await.is_none() {
-                return Ok(());
-            }
-            self.update(|state| lifecycle.notify(state, 1, &[LIMITED, LIMITED]))
-                .await?;
-            if advance.recv().await.is_none() {
-                return Ok(());
-            }
-            self.update(|state| {
-                let outcome = PerformanceStep::Recover.run(&mut state.thermal()?.performance);
-                Ok(result(outcome.status, outcome.message))
+            self.update(|state| match step {
+                Notify(ac_line, replies) => lifecycle.notify(state, ac_line, replies),
+                SaveFullPlan => {
+                    let outcome = lifecycle.notify(state, 1, CONFIRMATIONS)?;
+                    superseded = lifecycle.planned_full;
+                    Ok(outcome)
+                }
+                ApplySuperseded => lifecycle.apply(state, superseded, FULL, false),
+                ApplyFull => lifecycle.apply(state, lifecycle.planned_full, FULL, lose_response),
+                Reconcile => {
+                    let outcome = PerformanceStep::Recover.run(&mut state.thermal()?.performance);
+                    Ok(result(outcome.status, outcome.message))
+                }
             })
             .await?;
         }

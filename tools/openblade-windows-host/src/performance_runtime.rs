@@ -207,6 +207,11 @@ impl Controller {
         if self.pending.is_some() {
             return Ok(Outcome::blocked(PENDING));
         }
+        if self.temporary.is_some() || self.store.persistent.is_some() {
+            return Ok(Outcome::blocked(
+                "The scoped power-profile recipe requires profile-only intent.",
+            ));
+        }
         let preset = Preset::try_from(value)
             .map_err(|()| io::Error::other("unsupported scripted full-adapter preset"))?;
         self.apply_preset(preset, fresh_power)

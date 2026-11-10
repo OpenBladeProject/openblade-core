@@ -259,4 +259,13 @@ fn lost_power_admission_stops_remaining_preset_setters() {
     c.observe();
     assert_eq!(c.device.commands, READ);
     assert_eq!(c.pending, Some(Preset::Performance));
+
+    // A coherent pair can return independently of the refused second setter.
+    c.device.replace_observed(Preset::Balanced);
+    c.device.commands.clear();
+    c.observe();
+    assert_eq!(c.device.commands, READ);
+    assert_eq!(c.confirmed, Some(Preset::Balanced));
+    assert_eq!(c.pending, None);
+    assert!(c.external);
 }

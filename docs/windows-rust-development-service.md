@@ -252,17 +252,18 @@ enough power. The last external profile can stay visible with writes blocked.
 Battery and limited adapter notifications select their saved profiles for
 display. Their preset command and thermal admission are outside this replay.
 
-A limited-power notification supersedes a pending full-adapter effect. On a
-later full-adapter notification, the host applies the saved Balanced preset
-directly from confirmed Performance with Automatic fans. Fresh scripted
-adapter reads guard the two typed channel setters. Independent readback
-confirms Balanced and the stored profile documents remain byte-for-byte intact.
+A limited-power notification supersedes a pending full-adapter effect. The old
+callback remains stale even after another full-adapter notification. The current
+effect applies the saved Balanced preset directly from confirmed Performance
+with a freshly observed Automatic pair. Scripted adapter reads guard the two
+typed channel setters. Independent readback confirms Balanced and the stored
+profile documents remain byte-for-byte intact.
 
 Run `foreground-power-profile-uncertain <pipe-id>` to lose the final setter
 response and immediate readback. The previous confirmed preset stays visible.
 A newer limited-power notification cannot consume its transition while the
 write remains unresolved. A later getter settles the preset without replaying
-a setter. The source stays blocked pending fresh classification.
+a setter. A fresh notification can then select the limited-power profile.
 
 Live Windows notification delivery, protected recovery, and exact-device
 preflight and submission through the production lifecycle are separate gates.
