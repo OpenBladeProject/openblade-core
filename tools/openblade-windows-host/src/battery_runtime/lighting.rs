@@ -62,8 +62,8 @@ struct Parameters {
 }
 
 impl LightingOverride {
-    fn off_lifetime(self) -> Option<Lifetime> {
-        let settings = self.value;
+    fn off_lifetime(&self) -> Option<Lifetime> {
+        let settings = &self.value;
         if settings.effect != 0
             || settings.brightness != 0
             || settings.color.red != 0
@@ -71,6 +71,7 @@ impl LightingOverride {
             || settings.color.blue != 0
             || settings
                 .parameters
+                .as_ref()
                 .is_some_and(|p| p.kind != "off" || !p.fields.is_empty())
             || settings.logo_mode.is_some()
             || settings.independent_controls.is_some()
@@ -90,6 +91,7 @@ pub(super) struct Lighting {
     device: Keyboard,
     native_lane: Arc<Semaphore>,
     renderer: Option<Renderer>,
+    renderer_start_pending: bool,
     script: Option<Script>,
     temporary: bool,
     saved: SavedIntent,
@@ -199,12 +201,23 @@ impl Lighting {
             },
             native_lane: Arc::new(Semaphore::new(1)),
             renderer: None,
+            renderer_start_pending: false,
             script: None,
             temporary: false,
             saved: SavedIntent::default(),
             confirmed_off: false,
             pending: false,
         })
+    }
+
+    pub(super) fn integrated(status: &mut Value) -> io::Result<Self> {
+        let mut lighting = Self::new(status)?;
+        lighting.renderer_start_pending = true;
+        Ok(lighting)
+    }
+
+    pub(super) fn expire_power_override(&mut self) {
+        self.temporary = false;
     }
 
     pub(super) fn start_renderer(&mut self) -> io::Result<()> {
@@ -218,6 +231,7 @@ impl Lighting {
             .map_err(io::Error::other)?;
         let (renderer, script) = Renderer::start(permit, Arc::clone(&self.device.raw))?;
         self.renderer = Some(renderer);
+        self.renderer_start_pending = false;
         self.script = Some(script);
         Ok(())
     }
@@ -227,6 +241,12 @@ impl Lighting {
         value: Option<LightingOverride>,
         exact: bool,
     ) -> std::result::Result<(), Result> {
+        if self.renderer_start_pending {
+            return Err(result(
+                ScopedStatus::Blocked,
+                "Renderer startup is pending.",
+            ));
+        }
         if self.pending {
             return Err(result(
                 ScopedStatus::Blocked,
@@ -345,8 +365,6 @@ impl Lighting {
     }
 
     pub(super) fn project(&self, status: &mut Value) {
-        status["capabilities"]["chargeLimits"] = json!([]);
-        status["capabilities"]["supportsBatteryProtectionOff"] = false.into();
         let (source, lifetime) = if self.temporary {
             (3, Some(0))
         } else if self.saved.off {
@@ -358,11 +376,11 @@ impl Lighting {
             json!(lifetime.map(|lifetime| json!({"value": self.off, "lifetime": lifetime})));
         status["desiredState"]["lighting"] = json!({"value": self.off, "source": source});
         status["confirmedState"]["lighting"] = json!(self.confirmed_off.then_some(&self.off));
-        status["potentialControllers"] = if self.device.controller_present {
-            json!(["scripted lighting controller"])
-        } else {
-            json!([])
-        };
+        if self.device.controller_present
+            && let Some(controllers) = status["potentialControllers"].as_array_mut()
+        {
+            controllers.push("scripted lighting controller".into());
+        }
         status["lightingRendererOwnership"] = match &self.renderer {
             None => 0,                      // None
             Some(Renderer::Uncertain) => 9, // Faulted
@@ -399,10 +417,15 @@ impl Scenario {
         value: Option<LightingOverride>,
         started_retirement: &mut bool,
     ) -> io::Result<Result> {
+        let temporary =
+            value.as_ref().and_then(LightingOverride::off_lifetime) == Some(Lifetime::Temporary);
         let mut owned_operation = None;
         let mut retired = None;
         let initial = self
             .update(|state| {
+                if state.configuration_blocked {
+                    return Ok(super::blocked_configuration());
+                }
                 let exact = state.current["deviceVerified"] == true;
                 let lighting = state.lighting()?;
                 // Ordinary Off serializes under the state lock as before.
@@ -417,35 +440,13 @@ impl Scenario {
                 if let Err(refused) = lighting.stage(value, exact) {
                     return Ok(refused);
                 }
-                let Some(renderer) = &mut lighting.renderer else {
+                if lighting.renderer.is_none() {
                     return Ok(lighting.apply_off(exact));
-                };
+                }
 
-                let (publish, done) = watch::channel(false);
-                let worker = renderer.close(done.clone())?;
+                retired = Some(self.begin_retirement(lighting)?);
                 owned_operation = Some(operation);
-                retired = Some(done);
                 *started_retirement = true;
-                let scenario = Arc::clone(self);
-                tokio::spawn(async move {
-                    // This task belongs to the renderer retirement, not the pipe
-                    // request. A disconnected client drops only its waiter.
-                    let known = worker.retire(RETIRE_LIMIT).await;
-                    let updated = scenario
-                        .update(|state| {
-                            let lighting = state.lighting()?;
-                            let message = if known {
-                                lighting.renderer = None;
-                                "Renderer port retired."
-                            } else {
-                                lighting.renderer = Some(Renderer::Uncertain);
-                                "Renderer retirement could not be verified."
-                            };
-                            Ok(result(ScopedStatus::Unchanged, message))
-                        })
-                        .await;
-                    publish.send_replace(updated.is_ok());
-                });
                 Ok(result(
                     ScopedStatus::Unchanged,
                     "Renderer frame admission closed.",
@@ -466,9 +467,155 @@ impl Scenario {
                     "Renderer retirement could not be verified.",
                 ));
             }
+            if state.configuration_blocked {
+                return Ok(super::blocked_configuration());
+            }
+            let lighting = state.lighting()?;
+            if temporary && !lighting.temporary {
+                return Ok(result(
+                    ScopedStatus::Blocked,
+                    "Keyboard Off intent expired on a power change.",
+                ));
+            }
             Ok(lighting.apply_off(exact))
         })
         .await
+    }
+
+    fn begin_retirement(
+        self: &Arc<Self>,
+        lighting: &mut Lighting,
+    ) -> io::Result<watch::Receiver<bool>> {
+        let (publish, done) = watch::channel(false);
+        let worker = lighting
+            .renderer
+            .as_mut()
+            .ok_or_else(|| io::Error::other("Missing owned renderer."))?
+            .close(done.clone())?;
+        let scenario = Arc::clone(self);
+        tokio::spawn(async move {
+            // This task belongs to the owner, even when the pipe waiter is canceled.
+            let known = worker.retire(RETIRE_LIMIT).await;
+            let updated = scenario
+                .update(|state| {
+                    let (renderer, message) = if known {
+                        (None, "Renderer port retired.")
+                    } else {
+                        (
+                            Some(Renderer::Uncertain),
+                            "Renderer retirement could not be verified.",
+                        )
+                    };
+                    state.lighting()?.renderer = renderer;
+                    Ok(result(ScopedStatus::Unchanged, message))
+                })
+                .await;
+            publish.send_replace(updated.is_ok());
+        });
+        Ok(done)
+    }
+
+    pub(crate) async fn drive_integrated(
+        self: &Arc<Self>,
+        mut advance: mpsc::Receiver<()>,
+        mut shutdown: tokio::sync::oneshot::Receiver<()>,
+    ) -> io::Result<()> {
+        // Renderer creation is after RUNNING. Failed durable or endpoint
+        // admission therefore never starts an owner that would need draining.
+        if !matches!(
+            shutdown.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ) {
+            return Ok(());
+        }
+        let script = {
+            let mut state = self.state.lock().await;
+            let lighting = state.lighting()?;
+            lighting.start_renderer()?;
+            lighting
+                .script
+                .take()
+                .ok_or_else(|| io::Error::other("Missing renderer script."))?
+        };
+        let Script {
+            started,
+            complete_frame,
+            frame_done,
+            release_port,
+        } = script;
+        started.await.map_err(io::Error::other)?;
+        self.update(|_| Ok(result(ScopedStatus::Unchanged, "Renderer frame in flight.")))
+            .await?;
+
+        let power = tokio::select! {
+            biased;
+            _ = &mut shutdown => None,
+            result = self.drive_power_steps(&mut advance, false) => Some(result),
+        };
+        let mut stopping = power.as_ref().is_none_or(|result| result.is_err());
+        let mut retired = loop {
+            if !stopping {
+                stopping = tokio::select! {
+                    biased;
+                    _ = &mut shutdown => true,
+                    step = advance.recv() => step.is_none(),
+                };
+            }
+            let mut state = self.state.lock().await;
+            let lighting = state.lighting()?;
+            match &lighting.renderer {
+                Some(Renderer::Retiring(done)) => break done.clone(),
+                Some(Renderer::Owned(_)) if stopping => {
+                    let done = self.begin_retirement(lighting)?;
+                    self.update_locked(&mut state, |_| {
+                        Ok(result(
+                            ScopedStatus::Unchanged,
+                            "Renderer frame admission closed.",
+                        ))
+                    })?;
+                    break done;
+                }
+                Some(Renderer::Owned(_)) => {}
+                _ => {
+                    return Err(io::Error::other(
+                        "Renderer ownership could not be verified.",
+                    ));
+                }
+            }
+        };
+        let release = async move {
+            complete_frame
+                .send(())
+                .map_err(|_| io::Error::other("Frame already ended."))?;
+            frame_done.await.map_err(io::Error::other)?;
+            self.update(|state| {
+                if state.lighting()?.native_lane.try_acquire().is_ok() {
+                    return Err(io::Error::other("Renderer lost the port before release."));
+                }
+                Ok(result(
+                    ScopedStatus::Unchanged,
+                    "Frame drained. Renderer port still owned.",
+                ))
+            })
+            .await?;
+            // One fixture step acknowledges port release. EOF also finishes the
+            // synthetic port. A missing acknowledgement leaves it faulted.
+            let known = tokio::time::timeout(RETIRE_LIMIT / 2, advance.recv())
+                .await
+                .is_ok();
+            release_port
+                .send(known)
+                .map_err(|_| io::Error::other("Port already released."))
+        }
+        .await;
+        wait_for_retirement(&mut retired).await?;
+        release?;
+        if self.state.lock().await.lighting()?.renderer.is_some() {
+            return Err(io::Error::other(
+                "Renderer retirement could not be verified.",
+            ));
+        }
+        power.unwrap_or(Ok(()))
     }
 
     pub(crate) async fn lighting_wait_disconnected(&self) -> io::Result<()> {
@@ -721,6 +868,83 @@ mod tests {
         let mut state = scenario.state.lock().await;
         let lighting = state.lighting().unwrap();
         assert!(lighting.temporary && !lighting.saved.off && lighting.confirmed_off);
+    }
+
+    #[tokio::test]
+    async fn interrupted_configuration_stays_fenced_across_renderer_retirement() {
+        use openblade_windows_host::configuration_writer::fixture::Fixture;
+
+        for known in [true, false] {
+            let status: Value = serde_json::from_str(crate::wire::CURRENT_FIXTURE).unwrap();
+            let (profiles, writer) = Fixture::create(true)
+                .unwrap()
+                .compose_battery(true)
+                .unwrap();
+            let scenario = Arc::new(
+                Scenario::composed(
+                    status["status"].clone(),
+                    profiles.clone(),
+                    Some(writer),
+                    super::super::ProfileReplay::Integrated,
+                )
+                .unwrap(),
+            );
+            let script = {
+                let mut state = scenario.state.lock().await;
+                let lighting = state.lighting().unwrap();
+                lighting.start_renderer().unwrap();
+                lighting.script.take().unwrap()
+            };
+            script.started.await.unwrap();
+            let mut watch = scenario.subscribe();
+            let mut started = false;
+            let off = scenario.apply_lighting(request(1), &mut started);
+            let transaction = async {
+                watch
+                    .wait_for(|state| state["message"] == "Renderer frame admission closed.")
+                    .await
+                    .unwrap();
+                let mut changed = profiles;
+                changed["batteryPolicy"]["chargeLimitPercent"] = 75.into();
+                assert_eq!(
+                    Arc::clone(&scenario)
+                        .save_profiles(changed, super::super::Limit::new(75).unwrap())
+                        .await
+                        .unwrap()
+                        .0,
+                    3
+                );
+                script.complete_frame.send(()).unwrap();
+                script.frame_done.await.unwrap();
+                script.release_port.send(known).unwrap();
+            };
+            let (off, ()) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                tokio::join!(off, transaction)
+            })
+            .await
+            .unwrap();
+            assert_eq!(
+                off.unwrap().status,
+                if known {
+                    ScopedStatus::Blocked
+                } else {
+                    ScopedStatus::Failed
+                }
+            );
+            assert!(started);
+            let mut state = scenario.state.lock().await;
+            assert!(state.configuration_blocked);
+            assert_eq!(
+                state.current["profiles"]["batteryPolicy"]["chargeLimitPercent"],
+                77
+            );
+            assert_eq!(state.current["writesBlocked"], true);
+            assert_eq!(
+                state.current["unconfirmedWrites"],
+                if known { json!([]) } else { json!([LIGHTING]) }
+            );
+            assert!(state.lighting().unwrap().device.trace.is_empty());
+        }
     }
 
     #[test]

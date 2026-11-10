@@ -99,6 +99,13 @@ impl Controller {
     }
 
     #[cfg(windows)]
+    pub(crate) fn expire_power_override(&mut self) {
+        self.saved = None;
+        // Source changes cannot prove continuous ownership of the manual pair.
+        self.owned = false;
+    }
+
+    #[cfg(windows)]
     pub(crate) fn fresh_automatic(&mut self) -> bool {
         self.automatic_confirmed() && self.device.observe() == Some(Topology::Automatic)
     }

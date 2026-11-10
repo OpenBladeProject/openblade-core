@@ -1296,6 +1296,132 @@ public sealed partial class RustReadOnlyHostTests
     }
 
     [RustReadOnlyHostFact]
+    public async Task TrayClient_IntegratedPrivateHostRunsScopedControlsAndDrainsRendererOnStop()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = timeout.Token;
+        string endpoint = Guid.NewGuid().ToString("N");
+        await using var host = DevHost.Start(endpoint, "foreground-integrated");
+        await host.ExpectLineAsync("START_PENDING", token);
+        (string rootId, _) = await host.ReadFixtureRootAsync(token);
+        string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Temp", $"openblade-durable-host-{rootId}");
+        using SafeFileHandle pin = OpenFixtureDirectory(root);
+        Assert.False(pin.IsInvalid, $"Could not pin fixture directory. Win32 {Marshal.GetLastWin32Error()}");
+        try
+        {
+            await host.WaitUntilReadyAsync(token);
+            await using var client = new ServiceClient(PipeName(endpoint));
+            await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+            var initial = await ReadStatusAsync(watch, subscriptionOpened: true);
+            if (initial.Message != "Renderer frame in flight.")
+            {
+                initial = await WaitForMessageAsync("Renderer frame in flight.");
+            }
+            Assert.Equal(LightingRendererOwnershipState.Spectrum, initial.LightingRendererOwnership);
+            Assert.True(initial.Capabilities?.SupportsTemporaryFullCharge);
+            AssertComposedBattery(initial, saved: 77, temporary: null, confirmed: 80);
+
+            var profiles = initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(75) };
+            Assert.Equal(ControlOperationStatus.Stored, (await client.UpdateProfilesAsync(profiles, token)).Status);
+            byte[][] saved = ConfigurationNames.Select(name => File.ReadAllBytes(Path.Combine(root, name))).ToArray();
+            Assert.Equal(ControlOperationStatus.Applied,
+                (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(70), token)).Status);
+            AssertComposedBattery(await client.GetStatusAsync(token), saved: 75, temporary: 70, confirmed: 70);
+            Assert.Equal(ControlOperationStatus.Applied, (await client.SetFullChargeOverrideAsync(true, token)).Status);
+            Assert.True((await client.GetStatusAsync(token)).ConfirmedState?.Battery?.TemporaryFullCharge);
+            Assert.Equal(ControlOperationStatus.Applied, (await client.SetFullChargeOverrideAsync(false, token)).Status);
+
+            var preset = new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance, OverrideLifetime.UntilPowerSourceChange);
+            var alreadySelected = await client.SetPerformanceOverrideAsync(preset, token);
+            Assert.Equal(ControlOperationStatus.Applied, alreadySelected.Status);
+            Assert.Contains("already confirmed", alreadySelected.Message);
+            var power = await AdvanceAsync();
+            Assert.Contains("classification unresolved", power.Message);
+            Assert.Equal((PerformanceOverride?)preset, power.PerformanceOverride);
+            Assert.True(power.WritesBlocked);
+            Assert.Equal(ControlOperationStatus.Blocked,
+                (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(80), token)).Status);
+            power = await AdvanceAsync();
+            Assert.Equal(PowerSource.Battery, power.ActivePowerSource);
+            Assert.Null(power.PerformanceOverride);
+            Assert.Equal(PowerSource.ExternalUnknown, (await AdvanceAsync()).ActivePowerSource);
+            Assert.Equal(PowerSource.UsbC, (await AdvanceAsync()).ActivePowerSource);
+            Assert.Equal(ControlOperationStatus.Blocked, (await client.SetPerformanceOverrideAsync(preset, token)).Status);
+            Assert.Contains("profile planned", (await AdvanceAsync()).Message);
+            Assert.Contains("superseded", (await AdvanceAsync()).Message);
+            power = await AdvanceAsync();
+            Assert.Equal(PowerSource.PluggedIn, power.ActivePowerSource);
+            Assert.Equal(PerformancePreset.Balanced, power.ConfirmedState?.Performance);
+            Assert.Empty(power.UnconfirmedWrites);
+
+            Assert.Equal(ControlOperationStatus.Applied, (await client.SetPerformanceOverrideAsync(preset, token)).Status);
+            var fan = new ManualOverride<FanMode>(FanMode.Fixed, OverrideLifetime.UntilPowerSourceChange);
+            var settings = new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default);
+            Assert.Equal(ControlOperationStatus.Applied, (await client.SetFanControlOverrideAsync(fan, settings, token)).Status);
+            var thermal = await client.GetStatusAsync(token);
+            Assert.Equal(PerformancePreset.Performance, thermal.ConfirmedState?.Performance);
+            // The getter confirms manual topology, while the 4,000 RPM target is intent.
+            Assert.Equal(FanMode.Maximum, thermal.ConfirmedState?.Fans);
+            Assert.Equal(FanMode.Fixed, thermal.DesiredState.Fans.Value);
+            Assert.Equal(settings, thermal.DesiredState.FanControl);
+            Assert.Equal(SettingValueSource.TemporaryOverride, thermal.DesiredState.Performance.Source);
+            AssertPrimaryBytes(root, saved);
+
+            var off = new ManualOverride<LightingSettings>(LightingSettingsFactory.Off(), OverrideLifetime.Persistent);
+            Task<ControlOperationResult> applying = client.SetLightingOverrideAsync(off, token);
+            var closed = await WaitForMessageAsync("Renderer frame admission closed.");
+            Assert.Null(closed.ConfirmedState?.Lighting);
+            await host.AdvanceAsync(token);
+            var drained = await WaitForMessageAsync("Frame drained. Renderer port still owned.");
+            Assert.Equal(LightingRendererOwnershipState.Spectrum, drained.LightingRendererOwnership);
+            Assert.True(drained.WritesBlocked);
+            Assert.False(applying.IsCompleted);
+
+            await host.RequestStopAsync(token);
+            await host.ExpectLineAsync("STOP_PENDING", token);
+            await Assert.ThrowsAnyAsync<IOException>(async () => await applying);
+            await host.AdvanceAsync(token); // Only the scripted port acknowledgement completes retirement.
+            await host.ExpectLineAsync("STOPPED", token);
+            await host.StopAsync(token);
+            AssertPrimaryBytes(root, saved);
+
+            async Task<ServiceStatusSnapshot> AdvanceAsync()
+            {
+                await using var stepWatch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+                var previous = await ReadStatusAsync(stepWatch, subscriptionOpened: true);
+                await host.AdvanceAsync(token);
+                var current = await ReadStatusAsync(stepWatch, subscriptionOpened: false);
+                Assert.True(current.Revision > previous.Revision);
+                return current;
+            }
+
+            async Task<ServiceStatusSnapshot> WaitForMessageAsync(string message)
+            {
+                while (true)
+                {
+                    var status = await ReadStatusAsync(watch, subscriptionOpened: false);
+                    if (status.Message == message)
+                    {
+                        return status;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            await host.DisposeAsync();
+            foreach (string file in Directory.EnumerateFiles(root))
+            {
+                File.Delete(file);
+            }
+            pin.Dispose();
+            Directory.Delete(root);
+        }
+    }
+
+    [RustReadOnlyHostFact]
     public async Task TrayClient_FullChargeIsAnIndependentlyConfirmedOneShot()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -1791,9 +1917,16 @@ public sealed partial class RustReadOnlyHostTests
         }
 
 
-        internal async Task AdvanceAsync(CancellationToken token)
+        internal Task AdvanceAsync(CancellationToken token) => SendCommandAsync((byte)'n', token);
+
+        internal Task RequestStopAsync(CancellationToken token) => SendCommandAsync((byte)'s', token);
+
+        internal async Task ExpectLineAsync(string expected, CancellationToken token) =>
+            Assert.Equal(expected, await process.StandardOutput.ReadLineAsync(token));
+
+        private async Task SendCommandAsync(byte command, CancellationToken token)
         {
-            await process.StandardInput.BaseStream.WriteAsync(new byte[] { (byte)'n' }, token);
+            await process.StandardInput.BaseStream.WriteAsync(new byte[] { command }, token);
             await process.StandardInput.BaseStream.FlushAsync(token);
         }
 

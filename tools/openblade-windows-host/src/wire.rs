@@ -121,6 +121,7 @@ impl Status {
         profiles: Value,
         writer: Option<openblade_windows_host::configuration_writer::fixture::BatteryProfileStore>,
         replay: crate::battery_runtime::ProfileReplay,
+        shutdown: tokio::sync::oneshot::Receiver<()>,
     ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
         use crate::battery_runtime::ProfileReplay;
 
@@ -130,23 +131,35 @@ impl Status {
             writer,
             replay,
         )?);
-        self.composed_thermal = matches!(replay, ProfileReplay::Thermal);
+        self.composed_thermal =
+            matches!(replay, ProfileReplay::Thermal | ProfileReplay::Integrated);
         self.replay = Some(scenario.subscribe());
         // The power script is the only mutation entry point in this mode.
         if !matches!(replay, ProfileReplay::Power { .. }) {
             self.battery = Some(Arc::clone(&scenario));
         }
         let drive = async move {
-            match replay {
-                ProfileReplay::Battery => scenario.drive(advance).await,
-                ProfileReplay::Thermal => scenario.drive_thermal(advance).await,
-                ProfileReplay::FullCharge => scenario.drive_full_charge(advance).await,
-                ProfileReplay::LightingOff { owned, uncertain } => {
-                    scenario.drive_lighting(advance, owned, uncertain).await
+            if matches!(replay, ProfileReplay::Integrated) {
+                return scenario.drive_integrated(advance, shutdown).await;
+            }
+            let replay = async {
+                match replay {
+                    ProfileReplay::Battery => scenario.drive(advance).await,
+                    ProfileReplay::Thermal => scenario.drive_thermal(advance).await,
+                    ProfileReplay::FullCharge => scenario.drive_full_charge(advance).await,
+                    ProfileReplay::LightingOff { owned, uncertain } => {
+                        scenario.drive_lighting(advance, owned, uncertain).await
+                    }
+                    ProfileReplay::Power { lose_response } => {
+                        scenario.drive_power_profile(advance, lose_response).await
+                    }
+                    ProfileReplay::Integrated => unreachable!(),
                 }
-                ProfileReplay::Power { lose_response } => {
-                    scenario.drive_power_profile(advance, lose_response).await
-                }
+            };
+            tokio::select! {
+                biased;
+                _ = shutdown => Ok(()),
+                result = replay => result,
             }
         };
         Ok((self, drive))
@@ -163,11 +176,13 @@ impl Status {
     }
 
     #[cfg(all(windows, test))]
-    pub fn set_profile_save_barrier(&self, barrier: crate::battery_runtime::ProfileSaveBarrier) {
-        self.battery
-            .as_ref()
-            .unwrap()
-            .set_profile_save_barrier(barrier);
+    pub fn set_profile_save_barrier(
+        &self,
+        barrier: crate::battery_runtime::ProfileSaveBarrier,
+    ) -> watch::Receiver<Arc<Value>> {
+        let scenario = self.battery.as_ref().unwrap();
+        scenario.set_profile_save_barrier(barrier);
+        scenario.subscribe()
     }
 
     fn attach_battery(

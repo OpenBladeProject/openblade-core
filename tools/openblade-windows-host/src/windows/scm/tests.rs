@@ -1,4 +1,3 @@
-use crate::battery_runtime::ProfileReplay;
 use std::{cell::Cell, time::Duration};
 
 use openblade_windows_host::configuration_writer::fixture;
@@ -10,7 +9,7 @@ use tokio::{
 };
 
 use super::*;
-use crate::battery_runtime::ProfileSaveBarrier;
+use crate::battery_runtime::{ProfileReplay, ProfileSaveBarrier};
 use crate::windows::{
     PREFIX,
     pipe::Endpoint,
@@ -27,7 +26,7 @@ fn phase(status: &SERVICE_STATUS) -> (u32, u32, u32) {
 }
 
 #[test]
-fn scripted_controls_run_the_composed_fixture_and_retire_the_endpoint() {
+fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
     runtime().block_on(async {
         let controls = Controls(Mutex::new(None));
         let id = test_id();
@@ -39,7 +38,8 @@ fn scripted_controls_run_the_composed_fixture_and_retire_the_endpoint() {
         let (resume, wait_resume) = oneshot::channel();
         let (saved, wait_saved) = oneshot::channel();
         let stopped = Cell::new(false);
-        let (_steps, advance) = mpsc::channel(1);
+        let (steps, advance) = mpsc::channel(1);
+        let (watch, wait_watch) = oneshot::channel();
         let mut phases = Vec::new();
         let host = run_service(
             &controls,
@@ -64,13 +64,14 @@ fn scripted_controls_run_the_composed_fixture_and_retire_the_endpoint() {
                     shutdown,
                     profiles,
                     Some(writer),
-                    ProfileReplay::Thermal,
+                    ProfileReplay::Integrated,
                 )?;
-                prepared.0.set_profile_save_barrier(ProfileSaveBarrier {
+                let status = prepared.0.set_profile_save_barrier(ProfileSaveBarrier {
                     entered,
                     resume: wait_resume,
                     saved,
                 });
+                assert!(watch.send(status).is_ok());
                 Ok(prepared)
             },
             |status| {
@@ -92,6 +93,11 @@ fn scripted_controls_run_the_composed_fixture_and_retire_the_endpoint() {
         let client = async {
             wait_ready.await.unwrap();
             read_status(&path).await;
+            let mut status = wait_watch.await.unwrap();
+            status
+                .wait_for(|value| value["message"] == "Renderer frame in flight.")
+                .await
+                .unwrap();
             let request = wait_request.await.unwrap();
             let mut pipe = open_pipe(&path).await;
             pipe.write_i32_le(request.len() as i32).await.unwrap();
@@ -111,6 +117,27 @@ fn scripted_controls_run_the_composed_fixture_and_retire_the_endpoint() {
                 wait_saved.await.unwrap(),
                 "the admitted fixture write did not commit"
             );
+            let drained = status
+                .wait_for(|value| value["message"] == "Frame drained. Renderer port still owned.")
+                .await
+                .unwrap()
+                .clone();
+            assert_eq!(
+                drained["profiles"]["batteryPolicy"]["chargeLimitPercent"],
+                75
+            );
+            assert_eq!(drained["lightingRendererOwnership"], 2);
+            assert!(drained["confirmedState"]["lighting"].is_null());
+            assert!(!stopped.get());
+            assert_eq!(
+                endpoint.claim().unwrap_err().kind(),
+                io::ErrorKind::PermissionDenied
+            );
+            steps.send(()).await.unwrap();
+            status
+                .wait_for(|value| value["message"] == "Renderer port retired.")
+                .await
+                .unwrap();
         };
         let (result, ()) = timeout(Duration::from_secs(5), async { tokio::join!(host, client) })
             .await
@@ -147,7 +174,13 @@ fn scripted_stop_during_fixture_admission_never_publishes_running() {
             |shutdown| {
                 let (profiles, writer) = fixture::Fixture::create(true)?.compose_battery(false)?;
                 assert_eq!(controls.handle(SERVICE_CONTROL_STOP), NO_ERROR);
-                prepare_battery_profiles(Some(advance), shutdown, profiles, Some(writer), ProfileReplay::Thermal)
+                prepare_battery_profiles(
+                    Some(advance),
+                    shutdown,
+                    profiles,
+                    Some(writer),
+                    ProfileReplay::Thermal,
+                )
             },
             |status| {
                 phases.push(phase(status));
@@ -200,7 +233,13 @@ fn scripted_startup_refusals_never_publish_running() {
         let (_steps, advance) = mpsc::channel(1);
         assert_startup_refused(&controls, &id, |shutdown| {
             let (profiles, writer) = fixture::Fixture::create(true)?.compose_battery(false)?;
-            prepare_battery_profiles(Some(advance), shutdown, profiles, Some(writer), ProfileReplay::Thermal)
+            prepare_battery_profiles(
+                Some(advance),
+                shutdown,
+                profiles,
+                Some(writer),
+                ProfileReplay::Thermal,
+            )
         })
         .await;
         assert_eq!(
@@ -215,7 +254,13 @@ fn scripted_startup_refusals_never_publish_running() {
         let (_steps, advance) = mpsc::channel(1);
         let error = assert_startup_refused(&controls, &id, |shutdown| {
             let (profiles, writer) = fixture.compose_battery(false)?;
-            prepare_battery_profiles(Some(advance), shutdown, profiles, Some(writer), ProfileReplay::Thermal)
+            prepare_battery_profiles(
+                Some(advance),
+                shutdown,
+                profiles,
+                Some(writer),
+                ProfileReplay::Thermal,
+            )
         })
         .await;
         assert!(

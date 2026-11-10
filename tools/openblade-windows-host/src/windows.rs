@@ -42,6 +42,35 @@ pub(super) fn entry() -> io::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.as_slice() {
         [mode] if mode == "--scm" => scm::dispatch(),
+        [mode, id] if mode == "foreground-integrated" => {
+            let id = foreground_id(id)?;
+            foreground_with_stop(id, Session::Active, true, true, |advance, shutdown| {
+                let mut fixture = fixture::Fixture::create(true)?;
+                announce_fixture(&mut fixture)?;
+                let (profiles, writer) = fixture.compose_battery(false)?;
+                prepare_battery_profiles(
+                    advance,
+                    shutdown,
+                    profiles,
+                    Some(writer),
+                    ProfileReplay::Integrated,
+                )
+            })
+        }
+        [mode, id, root] if mode == "foreground-protected-integrated" => {
+            let id = foreground_id(id)?;
+            foreground_with_stop(id, Session::Active, true, true, |advance, shutdown| {
+                let (profiles, writer) =
+                    fixture::BatteryProfileStore::open_protected(std::path::Path::new(root))?;
+                prepare_battery_profiles(
+                    advance,
+                    shutdown,
+                    profiles,
+                    Some(writer),
+                    ProfileReplay::Integrated,
+                )
+            })
+        }
         [mode, id, root] if mode == "foreground-protected-runtime" => {
             let id = foreground_id(id)?;
             foreground(id, Session::Active, true, |advance, shutdown| {
@@ -247,7 +276,13 @@ fn prepare_protected(
     shutdown: oneshot::Receiver<()>,
 ) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
     let (profiles, writer) = fixture::BatteryProfileStore::open_protected(root)?;
-    prepare_battery_profiles(advance, shutdown, profiles, Some(writer), ProfileReplay::Thermal)
+    prepare_battery_profiles(
+        advance,
+        shutdown,
+        profiles,
+        Some(writer),
+        ProfileReplay::Thermal,
+    )
 }
 
 fn prepare_battery_profiles(
@@ -259,14 +294,7 @@ fn prepare_battery_profiles(
 ) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
     let advance = advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
     let (status, drive) =
-        Status::fixture()?.with_battery_profiles(advance, profiles, writer, replay)?;
-    let drive = async move {
-        tokio::select! {
-            biased;
-            _ = shutdown => Ok(()),
-            result = drive => result,
-        }
-    };
+        Status::fixture()?.with_battery_profiles(advance, profiles, writer, replay, shutdown)?;
     Ok((status, Some(drive)))
 }
 
@@ -283,6 +311,19 @@ fn foreground<F: Future<Output = io::Result<()>>>(
     id: &str,
     session: Session,
     accept_steps: bool,
+    prepare: impl FnOnce(
+        Option<mpsc::Receiver<()>>,
+        oneshot::Receiver<()>,
+    ) -> io::Result<(Status, Option<F>)>,
+) -> io::Result<()> {
+    foreground_with_stop(id, session, accept_steps, false, prepare)
+}
+
+fn foreground_with_stop<F: Future<Output = io::Result<()>>>(
+    id: &str,
+    session: Session,
+    accept_steps: bool,
+    controlled_stop: bool,
     prepare: impl FnOnce(
         Option<mpsc::Receiver<()>>,
         oneshot::Receiver<()>,
@@ -313,11 +354,16 @@ fn foreground<F: Future<Output = io::Result<()>>>(
                         let advance = advance.take();
                         move || {
                             let mut input = io::stdin().lock();
-                            if let Some(advance) = advance {
+                            if let Some(advance) = advance.as_ref() {
                                 let mut byte = [0];
                                 while input.read_exact(&mut byte).is_ok() {
-                                    if byte[0] == b'n' && advance.blocking_send(()).is_err() {
-                                        break;
+                                    match byte[0] {
+                                        b'n' if controlled_stop => {
+                                            let _ = advance.try_send(());
+                                        }
+                                        b'n' if advance.blocking_send(()).is_err() => break,
+                                        b's' if controlled_stop => controls.request_stop(),
+                                        _ => {}
                                     }
                                 }
                             } else {
@@ -328,6 +374,19 @@ fn foreground<F: Future<Output = io::Result<()>>>(
                     })?;
                 let mut output = io::stdout().lock();
                 writeln!(output, "READY")?;
+                output.flush()?;
+            } else if controlled_stop {
+                use windows_sys::Win32::System::Services::{
+                    SERVICE_START_PENDING, SERVICE_STOP_PENDING, SERVICE_STOPPED,
+                };
+                let phase = match status.dwCurrentState {
+                    SERVICE_START_PENDING => "START_PENDING",
+                    SERVICE_STOP_PENDING => "STOP_PENDING",
+                    SERVICE_STOPPED => "STOPPED",
+                    _ => return Ok(()),
+                };
+                let mut output = io::stdout().lock();
+                writeln!(output, "{phase}")?;
                 output.flush()?;
             }
             Ok(())

@@ -193,6 +193,11 @@ impl Controller {
     }
 
     #[cfg(windows)]
+    pub(crate) fn expire_power_override(&mut self) {
+        self.temporary = None;
+    }
+
+    #[cfg(windows)]
     pub(crate) fn profile_replay_baseline(&mut self) {
         self.device.replace_observed(Preset::Performance);
         self.confirmed = self.device.observe();
@@ -422,9 +427,13 @@ impl State {
 
 impl Controller {
     pub(crate) fn project(&self, status: &mut Value) {
+        self.project_desired(status);
+        self.project_readback(status);
+    }
+
+    pub(crate) fn project_desired(&self, status: &mut Value) {
         let (desired, source) = self.desired();
         status["desiredState"]["performance"] = json!({"value": desired as i32, "source": source});
-        self.project_readback(status);
     }
 
     pub(crate) fn project_readback(&self, status: &mut Value) {

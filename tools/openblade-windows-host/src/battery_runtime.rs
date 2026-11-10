@@ -666,6 +666,7 @@ pub(crate) enum ProfileReplay {
     Thermal,
     Power { lose_response: bool },
     FullCharge,
+    Integrated,
     LightingOff { owned: bool, uncertain: bool },
 }
 
@@ -704,13 +705,18 @@ impl Scenario {
         writer: Option<ProfileWriter>,
         replay: ProfileReplay,
     ) -> io::Result<Self> {
+        if matches!(replay, ProfileReplay::Integrated) && writer.is_none() {
+            return Err(io::Error::other(
+                "The integrated fixture requires an admitted writer.",
+            ));
+        }
         baseline["profiles"] = profiles;
         let thermal = match replay {
             ProfileReplay::Battery
             | ProfileReplay::FullCharge
             | ProfileReplay::LightingOff { .. } => None,
             ProfileReplay::Thermal => Some(thermal::Thermal::new(&mut baseline)?),
-            ProfileReplay::Power { .. } => {
+            ProfileReplay::Power { .. } | ProfileReplay::Integrated => {
                 Some(thermal::Thermal::for_power_profile(&mut baseline)?)
             }
         };
@@ -722,11 +728,15 @@ impl Scenario {
                 }
                 Some(lighting)
             }
+            ProfileReplay::Integrated => Some(lighting::Lighting::integrated(&mut baseline)?),
             _ => None,
         };
         Self::start(
             baseline,
-            matches!(replay, ProfileReplay::FullCharge),
+            matches!(
+                replay,
+                ProfileReplay::FullCharge | ProfileReplay::Integrated
+            ),
             lighting,
             writer,
             thermal,
@@ -761,7 +771,6 @@ impl Scenario {
             configuration_blocked: false,
         };
         state.current["deviceVerified"] = true.into();
-        state.current["potentialControllers"] = json!([]);
         state.current["capabilities"]["chargeLimits"] = json!(LIMITS);
         state.current["capabilities"]["supportsBatteryProtectionOff"] =
             CAPABILITIES.protection_off.into();
@@ -784,7 +793,7 @@ impl Scenario {
 
     pub(crate) fn accepts_battery(&self, full_charge: bool) -> bool {
         #[cfg(windows)]
-        if self.lighting_off {
+        if self.lighting_off && !self.full_charge {
             return false;
         }
         !full_charge || self.full_charge
@@ -906,6 +915,10 @@ impl Scenario {
                 .is_some_and(thermal::Thermal::pending_write)
             {
                 return Ok(thermal::await_readback());
+            }
+            #[cfg(windows)]
+            if let Some(blocked) = state.unresolved_power() {
+                return Ok(blocked);
             }
             state.controller.apply(intent)
         })
@@ -1047,6 +1060,7 @@ impl ScenarioState {
         let controller = &self.controller;
         let desired = controller.desired();
         self.current["activePowerSource"] = json!(controller.power.index());
+        self.current["potentialControllers"] = json!([]);
         self.current["desiredState"]["performance"]["value"] =
             json!(controller.profile().performance);
         self.current["desiredState"]["battery"] = json!({
@@ -1083,6 +1097,10 @@ impl ScenarioState {
         }
         #[cfg(windows)]
         if let Some(lighting) = &self.lighting {
+            if !self.controller.device.report_reads {
+                self.current["capabilities"]["chargeLimits"] = json!([]);
+                self.current["capabilities"]["supportsBatteryProtectionOff"] = false.into();
+            }
             lighting.project(&mut self.current);
         }
         self.current["message"] = message.into();

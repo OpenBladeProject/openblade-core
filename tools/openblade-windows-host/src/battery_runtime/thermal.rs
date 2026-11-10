@@ -56,6 +56,9 @@ impl Thermal {
     pub(super) fn project(&self, status: &mut Value) {
         if self.power_profile {
             self.performance.project_readback(status);
+            if !status["performanceOverride"].is_null() {
+                self.performance.project_desired(status);
+            }
             if self.power_unresolved && status["activePowerSource"] == 1 {
                 status["activePowerSource"] = 3.into();
             }
@@ -87,6 +90,26 @@ impl ScenarioState {
             .ok_or_else(|| io::Error::other("missing composed thermal fixture"))
     }
 
+    pub(super) fn unresolved_power(&self) -> Option<Result> {
+        self.thermal
+            .as_ref()
+            .is_some_and(|thermal| thermal.power_unresolved)
+            .then(|| blocked("Fresh external adapter classification is required."))
+    }
+
+    fn direct_thermal_block(&self) -> Option<Result> {
+        self.thermal_block()
+            .or_else(|| self.unresolved_power())
+            .or_else(|| {
+                (self
+                    .thermal
+                    .as_ref()
+                    .is_some_and(|thermal| thermal.power_profile)
+                    && self.controller.power != super::Power::PluggedIn)
+                    .then(|| blocked("The scoped thermal recipe requires full adapter power."))
+            })
+    }
+
     pub(super) fn thermal_block(&self) -> Option<Result> {
         if self.configuration_blocked {
             return Some(blocked_configuration());
@@ -103,7 +126,7 @@ impl Scenario {
         value: Option<performance::Override>,
     ) -> io::Result<Result> {
         self.update(|state| {
-            if let Some(blocked) = state.thermal_block() {
+            if let Some(blocked) = state.direct_thermal_block() {
                 return Ok(blocked);
             }
             if value.as_ref().is_some_and(|value| !value.is_temporary()) {
@@ -132,7 +155,7 @@ impl Scenario {
         settings: Option<fan::Settings>,
     ) -> io::Result<Result> {
         self.update(|state| {
-            if let Some(blocked) = state.thermal_block() {
+            if let Some(blocked) = state.direct_thermal_block() {
                 return Ok(blocked);
             }
             let thermal = state.thermal()?;

@@ -127,7 +127,7 @@ impl Lifecycle {
             Some(source) => {
                 // Selection is available here. The battery preset command and
                 // limited-power thermal admission are outside this replay.
-                state.controller.record_power(source);
+                select_power(state, source)?;
                 state.thermal()?.power_unresolved = false;
                 Ok(result(
                     ScopedStatus::Unchanged,
@@ -156,6 +156,21 @@ impl Lifecycle {
         if let Some(blocked) = state.thermal_block() {
             return Ok(blocked);
         }
+        if !fresh_full(&mut state.thermal()?.fans, fresh) {
+            return Ok(result(
+                ScopedStatus::Blocked,
+                "Fresh adapter evidence does not confirm full power.",
+            ));
+        }
+        state.thermal()?.power_unresolved = false;
+        if state.controller.power == Power::PluggedIn {
+            return Ok(result(
+                ScopedStatus::Unchanged,
+                "Full-adapter profile is already selected.",
+            ));
+        }
+        select_power(state, Power::PluggedIn)?;
+        let value = state.controller.profile().performance;
         let thermal = state.thermal()?;
         if !thermal.fans.fresh_automatic() {
             return Ok(result(
@@ -163,22 +178,6 @@ impl Lifecycle {
                 "The scoped preset recipe requires a confirmed Automatic fan pair.",
             ));
         }
-        if !fresh_full(&mut thermal.fans, fresh) {
-            return Ok(result(
-                ScopedStatus::Blocked,
-                "Fresh adapter evidence does not confirm full power.",
-            ));
-        }
-        thermal.power_unresolved = false;
-        if state.controller.power == Power::PluggedIn {
-            return Ok(result(
-                ScopedStatus::Unchanged,
-                "Full-adapter profile is already selected.",
-            ));
-        }
-        state.controller.record_power(Power::PluggedIn);
-        let value = state.controller.profile().performance;
-        let thermal = state.thermal()?;
         if lose_response {
             PerformanceStep::LoseResponse.run(&mut thermal.performance);
         }
@@ -187,6 +186,19 @@ impl Lifecycle {
             .apply_power_profile(value, || fresh_full(&mut thermal.fans, fresh))?;
         Ok(result(outcome.status, outcome.message))
     }
+}
+
+fn select_power(state: &mut ScenarioState, source: Power) -> io::Result<()> {
+    if state.controller.power != source {
+        let thermal = state.thermal()?;
+        thermal.performance.expire_power_override();
+        thermal.fans.expire_power_override();
+        if let Some(lighting) = &mut state.lighting {
+            lighting.expire_power_override();
+        }
+        state.controller.record_power(source);
+    }
+    Ok(())
 }
 
 fn fresh_full(fans: &mut fan_runtime::Controller, reply: Reply) -> bool {
@@ -212,6 +224,17 @@ impl Scenario {
     pub(crate) async fn drive_power_profile(
         &self,
         mut advance: mpsc::Receiver<()>,
+        lose_response: bool,
+    ) -> io::Result<()> {
+        self.drive_power_steps(&mut advance, lose_response).await?;
+        // The process stays available for passive clients until stdin closes.
+        while advance.recv().await.is_some() {}
+        Ok(())
+    }
+
+    pub(super) async fn drive_power_steps(
+        &self,
+        advance: &mut mpsc::Receiver<()>,
         lose_response: bool,
     ) -> io::Result<()> {
         let mut lifecycle = Lifecycle {
@@ -257,8 +280,6 @@ impl Scenario {
             })
             .await?;
         }
-        // The process stays available for passive clients until stdin closes.
-        while advance.recv().await.is_some() {}
         Ok(())
     }
 }
