@@ -122,7 +122,10 @@ public sealed partial class MainViewModelTests
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
         var time = new MutableTimeProvider(NotificationTestTime);
-        await using var viewModel = new MainViewModel(client, dispatcher, time);
+        await using var viewModel = new MainViewModel(client, dispatcher, time)
+        {
+            ReadPluggedInBatteryPercent = () => 79,
+        };
         ServiceStatusSnapshot status = CreateLiveStatus() with
         {
             ActivePowerSource = source,
@@ -178,13 +181,97 @@ public sealed partial class MainViewModelTests
         Assert.Equal(0, client.MutationCalls);
     }
 
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, true)]
+    [InlineData(PowerSource.UsbC, false)]
+    public async Task ChargeLimitSuppressesRepeatedWarningsUntilBatteryDropsBelowCap(
+        PowerSource source,
+        bool supportsTemporaryFullCharge)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        int batteryPercent = 75;
+        await using var viewModel = new MainViewModel(client, dispatcher)
+        {
+            ReadPluggedInBatteryPercent = () => batteryPercent,
+        };
+        ServiceStatusSnapshot baseline = CreateLiveStatus();
+        ServiceStatusSnapshot status = baseline with
+        {
+            ActivePowerSource = source,
+            Capabilities = baseline.Capabilities! with { SupportsTemporaryFullCharge = supportsTemporaryFullCharge },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(true, 75, supportsTemporaryFullCharge ? false : null),
+            },
+        };
+        await ConnectAsync(viewModel, client, dispatcher, status);
+
+        foreach (int rate in new[] { -500, 0, -1000 })
+        {
+            status = status with { Revision = status.Revision + 1, LiveReadings = new LiveReadings(rate, null, null) };
+            await ObserveAsync(client,
+                () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
+            Assert.Equal(rate, viewModel.LiveReadings?.BatteryPowerFlowMilliwatts);
+            Assert.False(viewModel.IsExternalPowerDischarging);
+            Assert.Equal(0, viewModel.ExternalPowerDischargeEpisode);
+        }
+
+        batteryPercent--;
+        await ObserveAsync(client,
+            () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None),
+            status with { Revision = status.Revision + 1 });
+        Assert.True(viewModel.IsExternalPowerDischarging);
+        Assert.Equal(1, viewModel.ExternalPowerDischargeEpisode);
+    }
+
+    [Theory]
+    [InlineData(false, 80, false)]
+    [InlineData(true, 80, true)]
+    [InlineData(true, 80, null)]
+    [InlineData(true, null, false)]
+    [InlineData(true, 81, false)]
+    public async Task DischargeStillWarnsWhenActiveCapIsNotEstablished(
+        bool protectionEnabled,
+        int? batteryPercent,
+        bool? temporaryFullCharge)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher)
+        {
+            ReadPluggedInBatteryPercent = () => batteryPercent,
+        };
+        ServiceStatusSnapshot baseline = CreateLiveStatus();
+        ServiceStatusSnapshot status = baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(
+                    protectionEnabled,
+                    protectionEnabled ? 80 : null,
+                    temporaryFullCharge),
+            },
+            LiveReadings = new LiveReadings(-5000, null, null),
+        };
+        await ConnectAsync(viewModel, client, dispatcher, status);
+        await ObserveAsync(client,
+            () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
+
+        Assert.True(viewModel.IsExternalPowerDischarging);
+        Assert.Equal(1, viewModel.ExternalPowerDischargeEpisode);
+    }
+
     [Fact]
     public async Task HyperBoostUsbCExitRefreshesCachedDischargeTooltipAndOverflow()
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
         var time = new MutableTimeProvider(NotificationTestTime);
-        await using var viewModel = new MainViewModel(client, dispatcher, time);
+        await using var viewModel = new MainViewModel(client, dispatcher, time)
+        {
+            ReadPluggedInBatteryPercent = () => 79,
+        };
         ServiceStatusSnapshot baseline = CreatePadlessHyperBoostStatus(CreateLiveStatus());
         ServiceStatusSnapshot status = baseline with
         {

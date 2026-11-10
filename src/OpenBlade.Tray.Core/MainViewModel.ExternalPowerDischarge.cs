@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
@@ -5,6 +6,8 @@ namespace OpenBlade.Tray;
 public sealed partial class MainViewModel
 {
     private readonly ExternalPowerDischargeTracker externalPowerDischarge;
+
+    internal Func<int?> ReadPluggedInBatteryPercent { get; init; } = ReadWindowsBatteryPercent;
 
     public bool IsExternalPowerDischarging => externalPowerDischarge.IsDischarging;
 
@@ -53,9 +56,47 @@ public sealed partial class MainViewModel
 
         bool wasDischarging = IsExternalPowerDischarging;
         long previousEpisode = ExternalPowerDischargeEpisode;
-        externalPowerDischarge.Observe(status.LiveReadings?.BatteryPowerFlowMilliwatts);
+        int? batteryPower = status.LiveReadings?.BatteryPowerFlowMilliwatts;
+        if (batteryPower is < 0 && IsAtActiveChargeLimit(status))
+        {
+            externalPowerDischarge.Reset();
+        }
+        else
+        {
+            externalPowerDischarge.Observe(batteryPower);
+        }
         PublishExternalPowerDischarge(wasDischarging, previousEpisode);
     }
+
+    private bool IsAtActiveChargeLimit(ServiceStatusSnapshot status) =>
+        status.ConfirmedState?.Battery is { ProtectionEnabled: true, ChargeLimitPercent: int limit } battery
+        && (battery.TemporaryFullCharge is false
+            || battery.TemporaryFullCharge is null && status.Capabilities?.SupportsTemporaryFullCharge is false)
+        // Only the exact cap qualifies. A negative sample below the cap can start an episode immediately.
+        && ReadPluggedInBatteryPercent() == limit;
+
+    private static int? ReadWindowsBatteryPercent() =>
+        OperatingSystem.IsWindows()
+        && GetSystemPowerStatus(out SystemPowerStatus power)
+        && power.AcLineStatus == 1
+        && power.BatteryLifePercent <= 100
+            ? power.BatteryLifePercent
+            : null;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SystemPowerStatus
+    {
+        internal byte AcLineStatus;
+        internal byte BatteryFlag;
+        internal byte BatteryLifePercent;
+        internal byte SystemStatusFlag;
+        internal uint BatteryLifeTime;
+        internal uint BatteryFullLifeTime;
+    }
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
 
     private void PublishExternalPowerDischarge(bool wasDischarging, long previousEpisode)
     {
