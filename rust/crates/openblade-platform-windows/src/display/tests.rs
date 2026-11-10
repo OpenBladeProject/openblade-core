@@ -65,6 +65,11 @@ struct Script {
     preferred: Option<Result<SignalTiming, u32>>,
     monitor_path: Option<&'static str>,
     edid: Option<Result<Vec<u8>, u32>>,
+    expected_target: EndpointId,
+    color_status: u32,
+    color_value: u32,
+    color_depth: u32,
+    color_reads: usize,
 }
 
 impl Script {
@@ -86,6 +91,11 @@ impl Script {
             preferred: None,
             monitor_path: None,
             edid: None,
+            expected_target: EndpointId::new(TARGET, 5),
+            color_status: ERROR_SUCCESS,
+            color_value: 0,
+            color_depth: 0,
+            color_reads: 0,
         }
     }
 }
@@ -144,7 +154,7 @@ impl DisplayApi for Script {
         assert_eq!(request.header.size as usize, size_of_val(request));
         assert_eq!(
             EndpointId::new(request.header.adapterId, request.header.id),
-            EndpointId::new(TARGET, 5)
+            self.expected_target
         );
         request.monitorFriendlyDeviceName[0] = b'T'.into();
         if let Some(path) = self.monitor_path {
@@ -159,6 +169,20 @@ impl DisplayApi for Script {
             request.monitorDevicePath[0] = b'P'.into();
         }
         self.target_status
+    }
+
+    fn advanced_color(&mut self, request: &mut native::GetAdvancedColorInfo2) -> u32 {
+        self.color_reads += 1;
+        assert_eq!(request.header.r#type, 15);
+        assert_eq!(request.header.size, 36);
+        assert_eq!(
+            EndpointId::new(request.header.adapterId, request.header.id),
+            self.expected_target
+        );
+        assert_eq!((request.value, request.bits_per_color_channel), (0, 0));
+        request.value = self.color_value;
+        request.bits_per_color_channel = self.color_depth;
+        self.color_status
     }
 }
 
@@ -280,8 +304,90 @@ fn distinguishes_empty_non_internal_and_ambiguous_topology() {
     ] {
         let mut api = Script::new([Frame::success(paths, vec![])]);
         assert_eq!(read_with(&mut api), Ok(expected));
+        assert_eq!(api.color_reads, 0);
         assert_eq!(api.reads, (0, 0));
     }
+}
+
+#[test]
+fn advanced_color_matches_managed_query_projection_and_retains_native_status() {
+    let fixture = include_str!(
+        "../../../../../tests/OpenBlade.Display.Tests/Fixtures/display-advanced-color.csv"
+    );
+    for line in fixture.lines().skip(1) {
+        let fields: Vec<_> = line.split(',').collect();
+        let [
+            case,
+            status,
+            value,
+            depth,
+            supported,
+            enabled,
+            projected_depth,
+        ] = fields[..]
+        else {
+            panic!("invalid Advanced Color fixture row: {line}");
+        };
+        let mut api = Script::new([Frame::success(
+            vec![path(0, DISPLAYCONFIG_PATH_ACTIVE)],
+            vec![target_mode()],
+        )]);
+        api.color_status = status.parse().unwrap();
+        api.color_value = value.parse().unwrap();
+        api.color_depth = depth.parse().unwrap();
+
+        let InternalDisplayTopology::Single(display) = read_with(&mut api).unwrap() else {
+            panic!("{case}: expected a single active internal target");
+        };
+        let expected = if api.color_status == ERROR_SUCCESS {
+            Ok(AdvancedColorState {
+                hdr_supported: supported.parse().unwrap(),
+                hdr_user_enabled: enabled.parse().unwrap(),
+                bits_per_color_channel: (!projected_depth.is_empty())
+                    .then(|| projected_depth.parse().unwrap()),
+            })
+        } else {
+            Err(AdvancedColorReadError::Native {
+                status: api.color_status,
+            })
+        };
+        assert_eq!(display.advanced_color, expected, "{case}");
+        assert_eq!(api.color_reads, 1, "{case}");
+    }
+}
+
+#[test]
+fn advanced_color_uses_only_the_target_from_the_successful_topology_query() {
+    let old_path = path(0, DISPLAYCONFIG_PATH_ACTIVE);
+    let mut raced = Frame::success(vec![old_path], vec![target_mode()]);
+    raced.result = ERROR_INSUFFICIENT_BUFFER;
+
+    let mut new_path = old_path;
+    new_path.targetInfo.adapterId = LUID {
+        LowPart: 45,
+        HighPart: -4,
+    };
+    new_path.targetInfo.id = 19;
+    let new_mode = DISPLAYCONFIG_MODE_INFO {
+        adapterId: new_path.targetInfo.adapterId,
+        id: new_path.targetInfo.id,
+        ..target_mode()
+    };
+    let stable = Frame::success(vec![new_path], vec![new_mode]);
+    let mut api = Script::new([raced, stable]);
+    api.expected_target = EndpointId::new(new_path.targetInfo.adapterId, new_path.targetInfo.id);
+    api.color_depth = i32::MAX as u32 + 1;
+    let InternalDisplayTopology::Single(display) = read_with(&mut api).unwrap() else {
+        panic!("expected the new internal target");
+    };
+    assert_eq!(display.target, api.expected_target);
+    assert_eq!(api.color_reads, 1);
+    assert_eq!(
+        display.advanced_color,
+        Err(AdvancedColorReadError::InvalidBitsPerColorChannel(
+            api.color_depth
+        ))
+    );
 }
 
 #[test]

@@ -38,6 +38,11 @@ fn display(
     };
     let physical_rate = parse_rate(physical);
     ActiveInternalDisplay {
+        advanced_color: Ok(AdvancedColorState {
+            hdr_supported: false,
+            hdr_user_enabled: false,
+            bits_per_color_channel: None,
+        }),
         source: target,
         target,
         source_name: "fixture".into(),

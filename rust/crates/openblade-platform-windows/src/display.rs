@@ -77,6 +77,8 @@ pub struct ActiveInternalDisplay {
     pub source_name: OsString,
     /// Target name is best-effort. An error retains the native status.
     pub monitor_name: Result<MonitorName, u32>,
+    /// Best-effort HDR query for this target, with failure kept separate.
+    pub advanced_color: Result<AdvancedColorState, AdvancedColorReadError>,
     /// Desktop/virtual rate reported by the path.
     pub desktop_rate: Option<RefreshRate>,
     /// Physical signal rate reported by the matching target mode.
@@ -86,6 +88,20 @@ pub struct ActiveInternalDisplay {
     pub supports_virtual_mode: bool,
     /// The OS path flag for DRR. Rates alone do not establish DRR state.
     pub boost_refresh_rate: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct AdvancedColorState {
+    pub hdr_supported: bool,
+    /// The Windows user preference, gated on HDR support.
+    pub hdr_user_enabled: bool,
+    pub bits_per_color_channel: Option<i32>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum AdvancedColorReadError {
+    Native { status: u32 },
+    InvalidBitsPerColorChannel(u32),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -154,6 +170,8 @@ trait DisplayApi {
 
     fn source_name(&mut self, request: &mut DISPLAYCONFIG_SOURCE_DEVICE_NAME) -> u32;
     fn target_name(&mut self, request: &mut DISPLAYCONFIG_TARGET_DEVICE_NAME) -> u32;
+
+    fn advanced_color(&mut self, request: &mut native::GetAdvancedColorInfo2) -> u32;
 }
 
 fn read_with(api: &mut impl DisplayApi) -> Result<InternalDisplayTopology, DisplayReadError> {
@@ -247,6 +265,7 @@ fn resolve_internal_display(
         source_name: native_name(&source_name.viewGdiDeviceName)
             .ok_or(DisplayReadError::MissingSourceName)?,
         monitor_name: monitor_name(api, path),
+        advanced_color: query_advanced_color(api, path),
         desktop_rate: RefreshRate::observed(path.targetInfo.refreshRate),
         physical_rate: active_signal.rate,
         active_signal,
@@ -275,6 +294,30 @@ fn monitor_name(
     Ok(MonitorName {
         friendly_name: native_name(&name.monitorFriendlyDeviceName),
         device_path: native_name(&name.monitorDevicePath),
+    })
+}
+
+fn query_advanced_color(
+    api: &mut impl DisplayApi,
+    path: &DISPLAYCONFIG_PATH_INFO,
+) -> Result<AdvancedColorState, AdvancedColorReadError> {
+    let mut request =
+        native::GetAdvancedColorInfo2::new(path.targetInfo.adapterId, path.targetInfo.id);
+    let status = api.advanced_color(&mut request);
+    if status != ERROR_SUCCESS {
+        return Err(AdvancedColorReadError::Native { status });
+    }
+
+    // The managed snapshot gates the user preference on HDR support.
+    let hdr_supported = request.value & native::HDR_SUPPORTED != 0;
+    let hdr_user_enabled = hdr_supported && request.value & native::HDR_USER_ENABLED != 0;
+    let bits = i32::try_from(request.bits_per_color_channel).map_err(|_| {
+        AdvancedColorReadError::InvalidBitsPerColorChannel(request.bits_per_color_channel)
+    })?;
+    Ok(AdvancedColorState {
+        hdr_supported,
+        hdr_user_enabled,
+        bits_per_color_channel: (bits != 0).then_some(bits),
     })
 }
 
