@@ -2,6 +2,29 @@
 
 #[cfg(feature = "controller-process-compile-check")]
 pub mod process_inventory;
+#[cfg(feature = "controller-process-compile-check")]
+pub mod service_inventory;
+
+/// Collects read-only native evidence for development callers. Patch, helper
+/// image verification and LampArray acquisition are unresolved in this path.
+#[cfg(feature = "controller-process-compile-check")]
+pub fn read_native() -> Observation {
+    let processes = process_inventory::read();
+    let services = service_inventory::read();
+    let process_rows = processes.process_rows();
+    let service_rows = services.service_rows();
+    observe(
+        if processes.is_complete() {
+            Scan::Complete(&process_rows)
+        } else {
+            Scan::Incomplete(&process_rows)
+        },
+        services.scan(&service_rows),
+        Some(&processes.parent_snapshot()),
+        Scan::Incomplete(&[]),
+        process_inventory::now(),
+    )
+}
 
 const ENGINE: &str = "RazerAppEngine";
 const HELPER: &str = "razerwdl";
