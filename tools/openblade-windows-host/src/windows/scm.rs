@@ -19,6 +19,10 @@ use windows_sys::Win32::{
 
 use super::{Phase, SCM_ID, Session, Status, replay_status, run_prepared, startup_stopped};
 
+#[cfg(any(test, feature = "lifecycle-evidence-compile-check"))]
+#[allow(dead_code)] // Inactive until the native lifecycle composition is admitted.
+mod lifecycle;
+
 const NAME: &str = "OpenBladeRustReadOnlyDev";
 static CONTROLS: Controls = Controls::new();
 
