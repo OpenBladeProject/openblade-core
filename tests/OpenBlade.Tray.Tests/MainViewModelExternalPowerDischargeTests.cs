@@ -124,7 +124,7 @@ public sealed partial class MainViewModelTests
         var time = new MutableTimeProvider(NotificationTestTime);
         await using var viewModel = new MainViewModel(client, dispatcher, time)
         {
-            ReadPluggedInBatteryPercent = () => 79,
+            ReadPluggedInBatteryPercent = () => 74,
         };
         ServiceStatusSnapshot status = CreateLiveStatus() with
         {
@@ -182,15 +182,18 @@ public sealed partial class MainViewModelTests
     }
 
     [Theory]
-    [InlineData(PowerSource.PluggedIn, true)]
-    [InlineData(PowerSource.UsbC, false)]
-    public async Task ChargeLimitSuppressesRepeatedWarningsUntilBatteryDropsBelowCap(
+    [InlineData(PowerSource.PluggedIn, true, 75, 69)]
+    [InlineData(PowerSource.PluggedIn, true, 70, 69)]
+    [InlineData(PowerSource.UsbC, false, 80, 81)]
+    public async Task ChargeLimitSuppressesRepeatedWarningsWithinFivePercentagePoints(
         PowerSource source,
-        bool supportsTemporaryFullCharge)
+        bool supportsTemporaryFullCharge,
+        int insideBandPercent,
+        int outsideBandPercent)
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
-        int batteryPercent = 75;
+        int batteryPercent = insideBandPercent;
         await using var viewModel = new MainViewModel(client, dispatcher)
         {
             ReadPluggedInBatteryPercent = () => batteryPercent,
@@ -217,7 +220,7 @@ public sealed partial class MainViewModelTests
             Assert.Equal(0, viewModel.ExternalPowerDischargeEpisode);
         }
 
-        batteryPercent--;
+        batteryPercent = outsideBandPercent;
         await ObserveAsync(client,
             () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None),
             status with { Revision = status.Revision + 1 });
@@ -230,7 +233,6 @@ public sealed partial class MainViewModelTests
     [InlineData(true, 80, true)]
     [InlineData(true, 80, null)]
     [InlineData(true, null, false)]
-    [InlineData(true, 81, false)]
     public async Task DischargeStillWarnsWhenActiveCapIsNotEstablished(
         bool protectionEnabled,
         int? batteryPercent,
@@ -270,7 +272,7 @@ public sealed partial class MainViewModelTests
         var time = new MutableTimeProvider(NotificationTestTime);
         await using var viewModel = new MainViewModel(client, dispatcher, time)
         {
-            ReadPluggedInBatteryPercent = () => 79,
+            ReadPluggedInBatteryPercent = () => 74,
         };
         ServiceStatusSnapshot baseline = CreatePadlessHyperBoostStatus(CreateLiveStatus());
         ServiceStatusSnapshot status = baseline with

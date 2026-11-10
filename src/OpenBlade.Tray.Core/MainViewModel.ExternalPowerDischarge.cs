@@ -5,6 +5,8 @@ namespace OpenBlade.Tray;
 
 public sealed partial class MainViewModel
 {
+    private const int ChargeLimitWarningTolerancePercent = 5;
+
     private readonly ExternalPowerDischargeTracker externalPowerDischarge;
 
     internal Func<int?> ReadPluggedInBatteryPercent { get; init; } = ReadWindowsBatteryPercent;
@@ -57,7 +59,7 @@ public sealed partial class MainViewModel
         bool wasDischarging = IsExternalPowerDischarging;
         long previousEpisode = ExternalPowerDischargeEpisode;
         int? batteryPower = status.LiveReadings?.BatteryPowerFlowMilliwatts;
-        if (batteryPower is < 0 && IsAtActiveChargeLimit(status))
+        if (batteryPower is < 0 && IsNearActiveChargeLimit(status))
         {
             externalPowerDischarge.Reset();
         }
@@ -68,12 +70,12 @@ public sealed partial class MainViewModel
         PublishExternalPowerDischarge(wasDischarging, previousEpisode);
     }
 
-    private bool IsAtActiveChargeLimit(ServiceStatusSnapshot status) =>
+    private bool IsNearActiveChargeLimit(ServiceStatusSnapshot status) =>
         status.ConfirmedState?.Battery is { ProtectionEnabled: true, ChargeLimitPercent: int limit } battery
         && (battery.TemporaryFullCharge is false
             || battery.TemporaryFullCharge is null && status.Capabilities?.SupportsTemporaryFullCharge is false)
-        // Only the exact cap qualifies. A negative sample below the cap can start an episode immediately.
-        && ReadPluggedInBatteryPercent() == limit;
+        && ReadPluggedInBatteryPercent() is int percent
+        && Math.Abs(percent - limit) <= ChargeLimitWarningTolerancePercent;
 
     private static int? ReadWindowsBatteryPercent() =>
         OperatingSystem.IsWindows()
