@@ -67,17 +67,46 @@ public sealed class ServiceRunMarkerStore
         this.requireRetiredBackend = requireRetiredBackend;
     }
 
-    public async Task<ServiceStartupKind> BeginRunAsync(
-        CancellationToken cancellationToken)
+    internal bool RequiresBackendRetirement => requireRetiredBackend is not null;
+
+    public async Task<ServiceStartupKind> BeginRunAsync(CancellationToken cancellationToken)
+    {
+        var (kind, _) = await BeginRunCoreAsync<object>(null, null, cancellationToken).ConfigureAwait(false);
+        return kind;
+    }
+
+    internal Task<(ServiceStartupKind Kind, T? Configuration)> BeginTransitionAsync<T>(
+        MachineConfigurationWriterBinding binding,
+        Func<UserConfigurationWriterScope, CancellationToken, Task<T?>> loadConfiguration,
+        CancellationToken cancellationToken) where T : class
+    {
+        string root = Path.TrimEndingDirectorySeparator(Path.GetDirectoryName(path)!);
+        if (requireRetiredBackend is null || acquireVerifiedWriterLease is null
+            || !binding.Matches(root, acquireVerifiedWriterLease)
+            || !string.Equals(path, binding.RunMarkerPath, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Machine startup and run marker require the same enrolled writer.");
+        }
+
+        return BeginRunCoreAsync(binding, loadConfiguration, cancellationToken);
+    }
+
+    private async Task<(ServiceStartupKind Kind, T? Configuration)> BeginRunCoreAsync<T>(
+        MachineConfigurationWriterBinding? binding,
+        Func<UserConfigurationWriterScope, CancellationToken, Task<T?>>? loadConfiguration,
+        CancellationToken cancellationToken) where T : class
     {
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             ServiceStartupKind startupKind;
             byte[] json;
-            using (IDisposable? lease = AcquireWriterLease(cancellationToken))
+            T? configuration = null;
+            using (IDisposable? lease = binding is null ? AcquireWriterLease(cancellationToken) : null)
+            await using (UserConfigurationWriterScope? scope = binding?.Acquire(cancellationToken))
             {
-                if (lease is not null)
+                bool hasLease = lease is not null || scope is not null;
+                if (hasLease)
                 {
                     if (ownedMarker is not null)
                     {
@@ -106,13 +135,25 @@ public sealed class ServiceRunMarkerStore
                     startupKind = ServiceStartupKind.Normal;
                 }
 
+                if (scope is not null)
+                {
+                    // Keep proof, configuration writes and marker publication under
+                    // the same native exclusion. Stores enter the scope individually.
+                    BatteryConfigurationStore.CheckRecoveryRequired(binding!.MarkerPath);
+                    configuration = await loadConfiguration!(scope, cancellationToken).ConfigureAwait(false);
+                    if (configuration is null)
+                    {
+                        return (startupKind, null);
+                    }
+                }
+
                 json = JsonSerializer.SerializeToUtf8Bytes(
                     new ServiceRunMarkerDocument(
                         CurrentSchemaVersion,
                         startedAtUtc,
                         uptimeAtStart)
                     {
-                        RunId = lease is null ? null : Guid.NewGuid(),
+                        RunId = hasLease ? Guid.NewGuid() : null,
                     },
                     SerializerOptions);
                 await AtomicFile.WriteAsync(path, json, cancellationToken).ConfigureAwait(false);
@@ -122,7 +163,7 @@ public sealed class ServiceRunMarkerStore
             {
                 ownedMarker = json;
             }
-            return startupKind;
+            return (startupKind, configuration);
         }
         finally
         {

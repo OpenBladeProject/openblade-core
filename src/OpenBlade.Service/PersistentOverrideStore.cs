@@ -105,20 +105,35 @@ public sealed class PersistentOverrideStore
         this.machineWriter = machineWriter;
     }
 
-    internal bool HasMachineWriter => machineWriter is not null;
+    internal MachineConfigurationWriterBinding? MachineWriter => machineWriter;
 
-    public async Task<PersistentOverrideLoadResult> LoadAsync(
-        CancellationToken cancellationToken)
+    public async Task<PersistentOverrideLoadResult> LoadAsync(CancellationToken cancellationToken)
     {
         await using UserConfigurationWriterScope? machineScope = machineWriter?.Acquire(cancellationToken);
-        UserConfigurationWriterScope? scope = machineScope ?? writerScope;
+        return await LoadWithAdmissionAsync(machineScope ?? writerScope, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal Task<PersistentOverrideLoadResult> LoadForMachineTransitionAsync(
+        UserConfigurationWriterScope scope,
+        CancellationToken cancellationToken)
+    {
+        MachineConfigurationWriterBinding binding = machineWriter
+            ?? throw new InvalidOperationException("Machine startup requires an enrolled override writer.");
+        scope.CheckRoot(binding.MarkerPath);
+        return LoadWithAdmissionAsync(scope, cancellationToken);
+    }
+
+    private async Task<PersistentOverrideLoadResult> LoadWithAdmissionAsync(
+        UserConfigurationWriterScope? scope,
+        CancellationToken cancellationToken)
+    {
         using IDisposable? admission = scope is null
             ? null
             : await scope.EnterAsync(cancellationToken).ConfigureAwait(false);
         await gate.WaitAsync(cancellationToken);
         try
         {
-            if (machineScope is not null)
+            if (machineWriter is not null)
             {
                 MachineConfigurationWriterBinding.CheckTarget(path);
             }

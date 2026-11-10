@@ -114,22 +114,40 @@ public sealed class BatteryConfigurationStore
             : LoadWithMachineWriterAsync(machineWriter, cancellationToken);
 
     internal async Task<BatteryConfiguration> LoadForMachineBootstrapAsync(
-        string machineRoot,
-        Func<string, CancellationToken, IDisposable> acquireVerifiedWriterLease,
+        MachineConfigurationWriterBinding binding,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var binding = new MachineConfigurationWriterBinding(machineRoot, acquireVerifiedWriterLease);
-        if (writerScope is not null || machineWriter is not null
-            || !string.Equals(profileStore.Path, binding.ProfilePath, StringComparison.Ordinal)
-            || !string.Equals(preferencesPath, binding.PreferencesPath, StringComparison.Ordinal)
-            || !string.Equals(markerPath, binding.MarkerPath, StringComparison.Ordinal))
+        if (machineWriter is not null || !HasMachinePaths(binding))
         {
             throw new InvalidOperationException("Machine bootstrap requires the exact configuration paths under one machine root.");
         }
 
         return await LoadWithMachineWriterAsync(binding, cancellationToken).ConfigureAwait(false);
     }
+
+    internal Task<BatteryConfiguration> LoadForMachineTransitionAsync(
+        MachineConfigurationWriterBinding binding,
+        MachineConfigurationWriterBinding? bootstrapWriter,
+        UserConfigurationWriterScope scope,
+        CancellationToken cancellationToken)
+    {
+        MachineConfigurationWriterBinding? configuredWriter = bootstrapWriter ?? machineWriter;
+        if (configuredWriter is null || !binding.Matches(configuredWriter)
+            || (bootstrapWriter is not null && machineWriter is not null) || !HasMachinePaths(binding))
+        {
+            throw new InvalidOperationException("Machine startup requires the same enrolled configuration writer.");
+        }
+
+        scope.CheckRoot(markerPath);
+        return LoadWithAdmissionAsync(scope, machinePersistence: true, cancellationToken);
+    }
+
+    private bool HasMachinePaths(MachineConfigurationWriterBinding binding) =>
+        writerScope is null
+        && string.Equals(profileStore.Path, binding.ProfilePath, StringComparison.Ordinal)
+        && string.Equals(preferencesPath, binding.PreferencesPath, StringComparison.Ordinal)
+        && string.Equals(markerPath, binding.MarkerPath, StringComparison.Ordinal);
 
     private async Task<BatteryConfiguration> LoadWithMachineWriterAsync(
         MachineConfigurationWriterBinding binding,

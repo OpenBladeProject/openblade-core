@@ -22,6 +22,13 @@ internal sealed class MachineConfigurationWriterBinding
     internal string PreferencesPath => Path.Combine(root, "battery-preferences.json");
     internal string MarkerPath => Path.Combine(root, "battery-configuration.commit.json");
     internal string OverridePath => Path.Combine(root, "manual-overrides.json");
+    internal string RunMarkerPath => Path.Combine(root, "service-running.json");
+
+    internal bool Matches(MachineConfigurationWriterBinding other) =>
+        Matches(other.root, other.acquireVerifiedWriterLease);
+
+    internal bool Matches(string expectedRoot, Func<string, CancellationToken, IDisposable> acquire) =>
+        string.Equals(root, expectedRoot, StringComparison.Ordinal) && acquireVerifiedWriterLease == acquire;
 
     internal UserConfigurationWriterScope Acquire(CancellationToken cancellationToken)
     {
