@@ -192,8 +192,13 @@ internal sealed class ScratchConfigurationWriter
     private readonly string lockId;
 
     internal ScratchConfigurationWriter(string machineRoot, SecurityIdentifier sid)
+        : this(Path.Combine(machineRoot, "users", sid.Value))
     {
-        Root = Path.Combine(machineRoot, "users", sid.Value);
+    }
+
+    internal ScratchConfigurationWriter(string rootPath)
+    {
+        Root = rootPath;
         Directory.CreateDirectory(Root);
         using var root = PinnedRoot.OpenPath(Root);
         rootId = root.Info.Identity;
