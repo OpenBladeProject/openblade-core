@@ -9,6 +9,12 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{Semaphore, watch};
 use tokio::time::timeout;
 
+use crate::{
+    battery_policy::{Intent, Limit},
+    battery_runtime::{self, LimitValue, Scenario},
+};
+use openblade_domain::recovery::ScopedStatus;
+
 const CURRENT_VERSION: i32 = 79;
 const LEGACY_VERSION: i32 = 51;
 const MAX_FRAME_BYTES: i32 = 65_536;
@@ -29,6 +35,7 @@ pub enum Session {
 pub struct Status {
     active: Projection,
     replay: Option<watch::Receiver<Arc<Value>>>,
+    battery: Option<Arc<Scenario>>,
     background: Projection,
 }
 
@@ -85,8 +92,43 @@ impl Status {
         Ok(Self {
             active: Projection::new(current, legacy)?,
             replay: None,
+            battery: None,
             background: Projection::new(background, background_legacy)?,
         })
+    }
+
+    pub fn with_battery(
+        self,
+        advance: tokio::sync::mpsc::Receiver<()>,
+    ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
+        let scenario = Arc::new(Scenario::new(self.active.current.clone())?);
+        Ok(self.attach_battery(scenario, advance))
+    }
+
+    #[cfg(windows)]
+    pub fn with_battery_profiles(
+        self,
+        advance: tokio::sync::mpsc::Receiver<()>,
+        profiles: Value,
+        writer: Option<openblade_windows_host::configuration_writer::fixture::BatteryProfileStore>,
+    ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
+        let scenario = Arc::new(Scenario::composed(
+            self.active.current.clone(),
+            profiles,
+            writer,
+        )?);
+        Ok(self.attach_battery(scenario, advance))
+    }
+
+    fn attach_battery(
+        mut self,
+        scenario: Arc<Scenario>,
+        advance: tokio::sync::mpsc::Receiver<()>,
+    ) -> (Self, impl Future<Output = io::Result<()>>) {
+        self.replay = Some(scenario.subscribe());
+        self.battery = Some(Arc::clone(&scenario));
+        let drive = async move { scenario.drive(advance).await };
+        (self, drive)
     }
 
     pub fn with_replay(
@@ -149,6 +191,71 @@ fn select_fields(source: &Value, keys: &[&str]) -> io::Result<Value> {
         .map(Value::Object)
 }
 
+#[derive(Serialize)]
+struct OperationResult {
+    status: i32,
+    message: &'static str,
+}
+
+impl From<battery_runtime::Result> for OperationResult {
+    fn from(result: battery_runtime::Result) -> Self {
+        let status = match result.status {
+            ScopedStatus::Applied | ScopedStatus::Unchanged => 1,
+            ScopedStatus::Blocked => 2,
+            ScopedStatus::Failed => 3,
+        };
+        Self {
+            status,
+            message: result.message,
+        }
+    }
+}
+
+// Decode the original bytes to retain duplicate-field rejection, including
+// nested policy fields. A map projection would silently discard duplicates.
+#[derive(Deserialize)]
+#[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
+enum BatteryRequest {
+    SetBatteryPolicy {
+        #[serde(rename = "version")]
+        _version: i32,
+        #[serde(rename = "requestId")]
+        _request_id: String,
+        value: LimitValue,
+    },
+    SetBatteryProtection {
+        #[serde(rename = "version")]
+        _version: i32,
+        #[serde(rename = "requestId")]
+        _request_id: String,
+        enabled: bool,
+    },
+}
+
+impl BatteryRequest {
+    fn decode(payload: &[u8]) -> io::Result<Intent> {
+        match serde_json::from_slice(payload).map_err(|_| invalid("invalid battery request"))? {
+            Self::SetBatteryPolicy { value, .. } => Limit::new(value.charge_limit_percent)
+                .map(Intent::Limit)
+                .ok_or_else(|| invalid("invalid battery limit")),
+            Self::SetBatteryProtection { enabled, .. } => Ok(Intent::Protection(enabled)),
+        }
+    }
+}
+
+#[cfg(windows)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UpdateProfilesRequest {
+    #[serde(rename = "operation")]
+    _operation: String,
+    #[serde(rename = "version")]
+    _version: i32,
+    #[serde(rename = "requestId")]
+    _request_id: String,
+    profiles: Value,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Request {
@@ -172,7 +279,7 @@ enum Frame<'a> {
         success: bool,
         error: Option<&'static str>,
         status: Option<&'a Value>,
-        result: Option<()>,
+        result: Option<OperationResult>,
         archive: Option<()>,
         error_code: Option<i32>,
     },
@@ -215,6 +322,18 @@ impl Request {
             result: None,
             archive: None,
             error_code,
+        }
+    }
+    fn operation_response(&self, result: OperationResult) -> Frame<'_> {
+        Frame::Response {
+            version: self.version,
+            request_id: &self.request_id,
+            success: true,
+            error: None,
+            status: None,
+            result: Some(result),
+            archive: None,
+            error_code: None,
         }
     }
 }
@@ -299,6 +418,48 @@ where
                     pending::<io::Result<()>>().await
                 } => streamed,
             }
+        }
+        #[cfg(windows)]
+        (CURRENT_VERSION, "updateProfiles")
+            if matches!(session, Session::Active)
+                && status
+                    .battery
+                    .as_ref()
+                    .is_some_and(|scenario| scenario.accepts_profiles()) =>
+        {
+            openblade_windows_host::configuration::validate_json_members(&payload)
+                .map_err(|_| invalid("invalid profile request members"))?;
+            let update: UpdateProfilesRequest =
+                serde_json::from_slice(&payload).map_err(|_| invalid("invalid profile request"))?;
+            let limit: LimitValue =
+                serde_json::from_value(update.profiles["batteryPolicy"].clone())
+                    .map_err(|_| invalid("invalid saved battery policy"))?;
+            let limit = Limit::new(limit.charge_limit_percent)
+                .ok_or_else(|| invalid("invalid saved battery limit"))?;
+            let scenario = Arc::clone(
+                status
+                    .battery
+                    .as_ref()
+                    .ok_or_else(|| invalid("missing battery scenario"))?,
+            );
+            let (status, message) = scenario.save_profiles(update.profiles, limit).await?;
+            write_frame(
+                &mut io,
+                request.operation_response(OperationResult { status, message }),
+            )
+            .await
+        }
+        (CURRENT_VERSION, "setBatteryPolicy" | "setBatteryProtection")
+            if matches!(session, Session::Active) && status.battery.is_some() =>
+        {
+            let intent = BatteryRequest::decode(&payload)?;
+            let result = status
+                .battery
+                .as_ref()
+                .ok_or_else(|| invalid("missing battery scenario"))?
+                .apply(intent)
+                .await?;
+            write_frame(&mut io, request.operation_response(result.into())).await
         }
         _ => {
             write_frame(

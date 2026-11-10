@@ -214,7 +214,7 @@ impl<'a> Document<'a> {
 
     fn strict_object(&self) -> Result<&Object<'a>, Reason> {
         let root = self.root.as_ref().ok_or(Reason::InvalidDocument)?;
-        serde_json::from_slice::<StrictJson>(self.bytes).map_err(|_| Reason::InvalidDocument)?;
+        validate_json_members(self.bytes).map_err(|_| Reason::InvalidDocument)?;
         Ok(root)
     }
 }
@@ -307,6 +307,11 @@ impl<'de> Deserialize<'de> for Object<'de> {
 
         deserializer.deserialize_map(ObjectVisitor)
     }
+}
+
+/// Checks all nested member names before projecting a payload into a JSON map.
+pub fn validate_json_members(bytes: &[u8]) -> serde_json::Result<()> {
+    serde_json::from_slice::<StrictJson>(bytes).map(|_| ())
 }
 
 // Validate nested members in one streaming pass. No payload numbers are

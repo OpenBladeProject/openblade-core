@@ -41,6 +41,26 @@ pub(super) fn entry() -> io::Result<()> {
     match args.as_slice() {
         [mode] if mode == "--scm" => scm::dispatch(),
         [mode, id]
+            if mode == "foreground-battery-profile"
+                || mode == "foreground-battery-profile-interrupt" =>
+        {
+            let id = foreground_id(id)?;
+            let mut fixture = fixture::Fixture::create(true)?;
+            announce_fixture(&mut fixture)?;
+            let (profiles, writer) =
+                fixture.compose_battery(mode == "foreground-battery-profile-interrupt")?;
+            foreground_battery_profiles(id, profiles, Some(writer))
+        }
+        [mode, id, root, identity] if mode == "foreground-battery-profile-restart" => {
+            let id = foreground_id(id)?;
+            let root = foreground_id(root)?;
+            let identity = identity
+                .to_str()
+                .ok_or_else(|| io::Error::other("invalid root identity"))?;
+            let profiles = fixture::restart_battery_profile(root, identity)?;
+            foreground_battery_profiles(id, profiles, None)
+        }
+        [mode, id]
             if mode == "foreground-durable"
                 || mode == "foreground-durable-interrupt"
                 || mode == "foreground-profile-bootstrap"
@@ -48,12 +68,7 @@ pub(super) fn entry() -> io::Result<()> {
         {
             let id = foreground_id(id)?;
             let mut fixture = fixture::Fixture::create(mode == "foreground-profile-migrate")?;
-            let (root, identity) = fixture.restart_key()?;
-            let mut output = io::stdout().lock();
-            writeln!(output, "ROOT {root} {identity}")?;
-            output.flush()?;
-            drop(output);
-            fixture.hand_off_cleanup();
+            announce_fixture(&mut fixture)?;
             let (percent, accepts_steps) = match mode.to_str() {
                 Some("foreground-profile-bootstrap") => (fixture.bootstrap()?, false),
                 Some("foreground-profile-migrate") => (fixture.migrate()?, false),
@@ -88,7 +103,8 @@ pub(super) fn entry() -> io::Result<()> {
         [mode, id]
             if mode == "foreground"
                 || mode == "foreground-background"
-                || mode == "foreground-replay" =>
+                || mode == "foreground-replay"
+                || mode == "foreground-battery-parity" =>
         {
             let id = foreground_id(id)?;
             let session = if mode != "foreground-background" {
@@ -96,13 +112,56 @@ pub(super) fn entry() -> io::Result<()> {
             } else {
                 Session::Background
             };
-            foreground(id, session, mode == "foreground-replay", replay_status)
+            if mode == "foreground-battery-parity" {
+                foreground(id, session, true, |advance, shutdown| {
+                    let advance =
+                        advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
+                    let (status, drive) = Status::fixture()?.with_battery(advance)?;
+                    let drive = async move {
+                        tokio::select! {
+                            _ = shutdown => Ok(()),
+                            result = drive => result,
+                        }
+                    };
+                    Ok((status, Some(drive)))
+                })
+            } else {
+                foreground(id, session, mode == "foreground-replay", replay_status)
+            }
         }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "expected a development foreground mode with its hex ID(s), or --scm",
         )),
     }
+}
+
+fn announce_fixture(fixture: &mut fixture::Fixture) -> io::Result<()> {
+    let (root, identity) = fixture.restart_key()?;
+    let mut output = io::stdout().lock();
+    writeln!(output, "ROOT {root} {identity}")?;
+    output.flush()?;
+    fixture.hand_off_cleanup();
+    Ok(())
+}
+
+fn foreground_battery_profiles(
+    id: &str,
+    profiles: serde_json::Value,
+    writer: Option<fixture::BatteryProfileStore>,
+) -> io::Result<()> {
+    foreground(id, Session::Active, true, |advance, shutdown| {
+        let advance = advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
+        let (status, drive) =
+            Status::fixture()?.with_battery_profiles(advance, profiles, writer)?;
+        let drive = async move {
+            tokio::select! {
+                _ = shutdown => Ok(()),
+                result = drive => result,
+            }
+        };
+        Ok((status, Some(drive)))
+    })
 }
 
 fn foreground_id(id: &std::ffi::OsStr) -> io::Result<&str> {

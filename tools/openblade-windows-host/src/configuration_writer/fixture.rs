@@ -128,6 +128,11 @@ impl Fixture {
     }
 
     pub fn migrate(&self) -> io::Result<u8> {
+        self.migrate_documents()
+            .map(|(policy, _)| policy.charge_limit)
+    }
+
+    fn migrate_documents(&self) -> io::Result<(ProfilePolicy, [String; 3])> {
         let legacy = legacy_documents(&self.template)?;
         let legacy = document_bytes(&legacy);
 
@@ -144,8 +149,23 @@ impl Fixture {
             )));
         }
         let preimage = self.template.validate_legacy(legacy)?;
-        let intent = self.template.encode(preimage.policy)?;
-        self.write(&intent, ExpectedPreimage::Migration(preimage), false)
+        let policy = preimage.policy;
+        let intent = self.template.encode(policy)?;
+        self.write(&intent, ExpectedPreimage::Migration(preimage), false)?;
+        Ok((policy, intent))
+    }
+
+    pub fn compose_battery(self, interrupt: bool) -> io::Result<(Value, BatteryProfileStore)> {
+        let (policy, verified) = self.migrate_documents()?;
+        let profiles = profiles_from_document(verified[0].as_bytes())?;
+        Ok((
+            profiles,
+            BatteryProfileStore {
+                fixture: self,
+                policy,
+                interrupt,
+            },
+        ))
     }
 
     pub fn update(&self, interrupt: bool) -> io::Result<u8> {
@@ -175,7 +195,7 @@ impl Fixture {
                 for error in &report.artifact_errors {
                     let _ = writeln!(io::stderr().lock(), "fixture artifact cleanup: {error}");
                 }
-                load(&self.store, &self.template, |actual| Ok(actual == bytes))
+                load(&self.store, &self.template, |actual, _| Ok(actual == bytes))
             }
             Outcome::RecoveryRequired {
                 cause,
@@ -196,9 +216,68 @@ impl Fixture {
     }
 }
 
+/// Owns the policy whose deterministic encoding was verified after the last commit.
+pub struct BatteryProfileStore {
+    fixture: Fixture,
+    policy: ProfilePolicy,
+    interrupt: bool,
+}
+
+impl BatteryProfileStore {
+    pub fn save(&mut self, charge_limit: u8) -> io::Result<()> {
+        let policy = ProfilePolicy {
+            charge_limit,
+            ..self.policy
+        };
+        let intent = self.fixture.template.encode(policy)?;
+        let prior = self.fixture.template.encode(self.policy)?;
+        let expected = ExpectedPreimage::Fixture(document_bytes(&prior).map(Some));
+        self.fixture.write(&intent, expected, self.interrupt)?;
+        self.policy = policy;
+        Ok(())
+    }
+
+    pub fn verify_prior(&self) -> io::Result<()> {
+        let template = &self.fixture.template;
+        let prior = template.encode(self.policy)?;
+        load(&self.fixture.store, template, |actual, _| {
+            Ok(actual == document_bytes(&prior))
+        })?;
+        Ok(())
+    }
+}
+
+fn migrated_policy(template: &ProfileTemplate) -> io::Result<ProfilePolicy> {
+    let legacy = legacy_documents(template)?;
+    Ok(template.validate_legacy(document_bytes(&legacy))?.policy)
+}
+
+fn profiles_from_document(profile: &[u8]) -> io::Result<Value> {
+    let envelope: Value = serde_json::from_slice(profile)?;
+    Ok(envelope["profiles"].clone())
+}
+
+pub fn restart_battery_profile(id: &str, expected: &str) -> io::Result<Value> {
+    let (store, _, template) = open_restart(id, expected)?;
+    let mut profiles = Value::Null;
+    let baseline = migrated_policy(&template)?;
+    load(&store, &template, |actual, decoded| {
+        let policy = ProfilePolicy {
+            charge_limit: decoded.charge_limit,
+            ..baseline
+        };
+        if document_bytes(&template.encode(policy)?) != actual {
+            return Ok(false);
+        }
+        profiles = profiles_from_document(actual[0])?;
+        Ok(true)
+    })?;
+    Ok(profiles)
+}
+
 /// Reopening is read-only, even with a valid identity and known committed data.
 /// No path, file names, or payload bytes are supplied by the caller.
-pub fn restart(id: &str, expected: &str) -> io::Result<u8> {
+fn open_restart(id: &str, expected: &str) -> io::Result<(TestStore, Documents, ProfileTemplate)> {
     let (temp, mut pins) = TestStore::pin_temp(&local_temp()?)?;
     let root = root(temp, id)?;
     pins.push(pin_directory_with_share(&root, FILE_SHARE_READ)?);
@@ -213,7 +292,12 @@ pub fn restart(id: &str, expected: &str) -> io::Result<u8> {
     }
     let documents: Documents = serde_json::from_str(FIXTURE)?;
     let template = ProfileTemplate::from_managed(&documents.prior)?;
-    load(&store, &template, |actual| {
+    Ok((store, documents, template))
+}
+
+pub fn restart(id: &str, expected: &str) -> io::Result<u8> {
+    let (store, documents, template) = open_restart(id, expected)?;
+    load(&store, &template, |actual, _| {
         if [&documents.prior, &documents.committed]
             .into_iter()
             .any(|allowed| document_bytes(allowed) == actual)
@@ -247,7 +331,7 @@ fn legacy_documents(template: &ProfileTemplate) -> io::Result<[String; 3]> {
 fn load(
     store: &TestStore,
     template: &ProfileTemplate,
-    allowed: impl FnOnce([&[u8]; 3]) -> io::Result<bool>,
+    allowed: impl FnOnce([&[u8]; 3], ProfilePolicy) -> io::Result<bool>,
 ) -> io::Result<u8> {
     let (inspection, bytes) = store.inspect_snapshot()?;
     if inspection
@@ -265,7 +349,7 @@ fn load(
     };
     let docs = [profile, preferences, marker];
     let policy = template.decode_verified(docs, inspection)?;
-    if !allowed(docs)? {
+    if !allowed(docs, policy)? {
         return Err(io::Error::other(
             "configuration outside the managed fixture",
         ));
@@ -535,6 +619,16 @@ mod tests {
         );
         assert_eq!(actual, damaged.map(|doc| Some(doc.into_bytes())));
         assert_eq!(std::fs::read_dir(&fixture.store.root).unwrap().count(), 4);
+    }
+
+    #[test]
+    fn rejected_battery_profile_save_leaves_the_exact_prior_verified() {
+        let fixture = Fixture::create(true).unwrap();
+        let (_, mut store) = fixture.compose_battery(false).unwrap();
+        assert!(store.save(0).is_err());
+        store.verify_prior().unwrap();
+        store.save(75).unwrap();
+        store.verify_prior().unwrap();
     }
 
     #[test]
