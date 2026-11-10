@@ -9,6 +9,7 @@ use tokio::{
 };
 
 use super::*;
+use crate::battery_runtime::ProfileSaveBarrier;
 use crate::windows::{
     PREFIX,
     pipe::Endpoint,
@@ -32,7 +33,10 @@ fn scripted_controls_run_the_composed_fixture_and_retire_the_endpoint() {
         let path = format!("{PREFIX}{id}");
         let (ready, wait_ready) = oneshot::channel();
         let mut ready = Some(ready);
-        let (writer_held, wait_writer_held) = oneshot::channel();
+        let (request, wait_request) = oneshot::channel();
+        let (entered, wait_entered) = oneshot::channel();
+        let (resume, wait_resume) = oneshot::channel();
+        let (saved, wait_saved) = oneshot::channel();
         let stopped = Cell::new(false);
         let (_steps, advance) = mpsc::channel(1);
         let mut phases = Vec::new();
@@ -44,6 +48,16 @@ fn scripted_controls_run_the_composed_fixture_and_retire_the_endpoint() {
             |shutdown| {
                 let fixture = fixture::Fixture::create(true)?;
                 let (profiles, writer) = fixture.compose_battery(false)?;
+                let mut changed = profiles.clone();
+                changed["batteryPolicy"]["chargeLimitPercent"] = 75.into();
+                request
+                    .send(serde_json::to_vec(&serde_json::json!({
+                        "operation": "updateProfiles",
+                        "version": 79,
+                        "requestId": "11111111-2222-4333-8444-555555555555",
+                        "profiles": changed
+                    }))?)
+                    .unwrap();
                 let prepared = prepare_battery_profiles(
                     Some(advance),
                     shutdown,
@@ -51,10 +65,11 @@ fn scripted_controls_run_the_composed_fixture_and_retire_the_endpoint() {
                     Some(writer),
                     true,
                 )?;
-                writer_held
-                    .send(prepared.0.hold_profile_writer())
-                    .ok()
-                    .unwrap();
+                prepared.0.set_profile_save_barrier(ProfileSaveBarrier {
+                    entered,
+                    resume: wait_resume,
+                    saved,
+                });
                 Ok(prepared)
             },
             |status| {
@@ -76,9 +91,11 @@ fn scripted_controls_run_the_composed_fixture_and_retire_the_endpoint() {
         let client = async {
             wait_ready.await.unwrap();
             read_status(&path).await;
-            let writer = wait_writer_held.await.unwrap();
+            let request = wait_request.await.unwrap();
             let mut pipe = open_pipe(&path).await;
-            pipe.write_all(&[10]).await.unwrap();
+            pipe.write_i32_le(request.len() as i32).await.unwrap();
+            pipe.write_all(&request).await.unwrap();
+            wait_entered.await.unwrap();
             assert_eq!(controls.handle(SERVICE_CONTROL_SHUTDOWN), NO_ERROR);
             assert_eq!(controls.handle(SERVICE_CONTROL_STOP), NO_ERROR);
             assert_closed(pipe.read(&mut [0]).await);
@@ -88,7 +105,11 @@ fn scripted_controls_run_the_composed_fixture_and_retire_the_endpoint() {
                 endpoint.claim().unwrap_err().kind(),
                 io::ErrorKind::PermissionDenied
             );
-            drop(writer);
+            resume.send(()).unwrap();
+            assert!(
+                wait_saved.await.unwrap(),
+                "the admitted fixture write did not commit"
+            );
         };
         let (result, ()) = timeout(Duration::from_secs(5), async { tokio::join!(host, client) })
             .await
@@ -133,14 +154,14 @@ fn scripted_stop_during_fixture_admission_never_publishes_running() {
             },
         )
         .await;
-        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+        result.unwrap();
         let late_ready = controls.publish(Phase::Running, &mut |_| panic!("RUNNING after STOP"));
         assert_eq!(late_ready.unwrap_err().kind(), io::ErrorKind::Interrupted);
         assert_eq!(
             phases,
             [
                 (SERVICE_START_PENDING, 0, NO_ERROR),
-                (SERVICE_STOPPED, 0, ERROR_GEN_FAILURE),
+                (SERVICE_STOPPED, 0, NO_ERROR),
             ]
         );
         assert_eq!(
@@ -151,6 +172,19 @@ fn scripted_stop_during_fixture_admission_never_publishes_running() {
             io::ErrorKind::NotFound
         );
     });
+}
+
+#[test]
+fn stop_can_arrive_during_running_status_io() {
+    let controls = Controls::new();
+    let mut stop = controls.arm();
+    controls
+        .publish(Phase::Running, &mut |_| {
+            assert_eq!(controls.handle(SERVICE_CONTROL_STOP), NO_ERROR);
+            Ok(())
+        })
+        .unwrap();
+    stop.try_recv().unwrap();
 }
 
 #[test]

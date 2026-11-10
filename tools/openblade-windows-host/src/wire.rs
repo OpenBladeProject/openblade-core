@@ -152,8 +152,11 @@ impl Status {
     }
 
     #[cfg(all(windows, test))]
-    pub fn hold_profile_writer(&self) -> impl Send + use<> {
-        self.battery.as_ref().unwrap().hold_profile_writer()
+    pub fn set_profile_save_barrier(&self, barrier: crate::battery_runtime::ProfileSaveBarrier) {
+        self.battery
+            .as_ref()
+            .unwrap()
+            .set_profile_save_barrier(barrier);
     }
 
     fn attach_battery(

@@ -61,17 +61,19 @@ impl Controls {
         phase: Phase,
         publish: &mut impl FnMut(&SERVICE_STATUS) -> io::Result<()>,
     ) -> io::Result<()> {
-        let status = status_for(phase);
         if phase == Phase::Running {
-            // Commit readiness and accepting STOP in the same order as the callback.
-            let stop = self.0.lock().unwrap_or_else(|error| error.into_inner());
-            if stop.is_none() {
+            // The endpoint is live. STOP before this decision cancels startup,
+            // and STOP after it retires the ready host. Keep I/O outside the lock.
+            let stopped = self
+                .0
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .is_none();
+            if stopped {
                 return Err(startup_stopped());
             }
-            publish(&status)
-        } else {
-            publish(&status)
         }
+        publish(&status_for(phase))
     }
 }
 

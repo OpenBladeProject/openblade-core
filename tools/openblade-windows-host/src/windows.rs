@@ -391,11 +391,23 @@ async fn run_prepared<F: Future<Output = io::Result<()>>>(
         while clients.join_next().await.is_some() {}
         let driven = if drive_pending { drive.await } else { Ok(()) };
         let writer = status.take_profile_writer().await;
-        drop(claim);
+        // The listener and clients are gone. Keep the name reserved until
+        // a replacement can acquire the released writer lease.
         drop(writer);
+        drop(claim);
         result.and(stopping).and(driven)
     }
     .await;
+    let result = match result {
+        Err(error)
+            if error
+                .get_ref()
+                .is_some_and(|cause| cause.is::<StartupStopped>()) =>
+        {
+            Ok(())
+        }
+        result => result,
+    };
     let stopped = report(Phase::Stopped {
         failed: result.is_err(),
     });
@@ -410,11 +422,19 @@ async fn check_starting(stop: std::pin::Pin<&mut impl Future<Output = ()>>) -> i
     }
 }
 
+#[derive(Debug)]
+struct StartupStopped;
+
+impl std::fmt::Display for StartupStopped {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("development host startup stopped")
+    }
+}
+
+impl std::error::Error for StartupStopped {}
+
 fn startup_stopped() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::Interrupted,
-        "development host startup stopped",
-    )
+    io::Error::new(io::ErrorKind::Interrupted, StartupStopped)
 }
 
 async fn accept(

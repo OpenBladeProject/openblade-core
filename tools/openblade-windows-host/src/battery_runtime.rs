@@ -482,6 +482,13 @@ pub(crate) struct Scenario {
 #[cfg(windows)]
 mod thermal;
 
+#[cfg(all(windows, test))]
+pub(crate) struct ProfileSaveBarrier {
+    pub entered: tokio::sync::oneshot::Sender<()>,
+    pub resume: tokio::sync::oneshot::Receiver<()>,
+    pub saved: tokio::sync::oneshot::Sender<bool>,
+}
+
 struct ScenarioState {
     #[cfg(windows)]
     thermal: Option<thermal::Thermal>,
@@ -489,6 +496,8 @@ struct ScenarioState {
     current: Value,
     #[cfg(windows)]
     writer: Option<ProfileWriter>,
+    #[cfg(all(windows, test))]
+    profile_save_barrier: Option<ProfileSaveBarrier>,
     configuration_blocked: bool,
 }
 
@@ -533,6 +542,8 @@ impl Scenario {
             current: baseline,
             #[cfg(windows)]
             writer,
+            #[cfg(all(windows, test))]
+            profile_save_barrier: None,
             configuration_blocked: false,
         };
         state.current["deviceVerified"] = true.into();
@@ -612,8 +623,8 @@ impl Scenario {
     }
 
     #[cfg(all(windows, test))]
-    pub(crate) fn hold_profile_writer(&self) -> impl Send + use<> {
-        Arc::clone(&self.state).try_lock_owned().unwrap()
+    pub(crate) fn set_profile_save_barrier(&self, barrier: ProfileSaveBarrier) {
+        self.state.try_lock().unwrap().profile_save_barrier = Some(barrier);
     }
 
     /// Mirrors UpdateProfiles for a battery-policy-only edit with no active
@@ -641,11 +652,22 @@ impl Scenario {
                         message: "Only the saved battery policy can be edited in this fixture.",
                     });
                 }
+                #[cfg(test)]
+                let saved = state.profile_save_barrier.take().map(|barrier| {
+                    let _ = barrier.entered.send(());
+                    let _ = barrier.resume.blocking_recv();
+                    barrier.saved
+                });
                 let writer = state
                     .writer
                     .as_mut()
                     .ok_or_else(|| io::Error::other("missing battery profile writer"))?;
-                if let Err(error) = writer.save(limit.percent() as u8) {
+                let outcome = writer.save(limit.percent() as u8);
+                #[cfg(test)]
+                if let Some(saved) = saved {
+                    let _ = saved.send(outcome.is_ok());
+                }
+                if let Err(error) = outcome {
                     let _ = std::io::Write::write_fmt(
                         &mut io::stderr().lock(),
                         format_args!("battery configuration save: {error}\n"),
