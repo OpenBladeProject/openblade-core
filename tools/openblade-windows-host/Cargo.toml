@@ -16,6 +16,7 @@ path = "src/discover.rs"
 
 [features]
 cpu-worker-fixture = []
+scratch-writer-fence = []
 gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]
 vm-scm-fixture = []
 
@@ -78,3 +79,10 @@ windows-sys = { version = "=0.61.2", features = [
 [lints.rust]
 unsafe_code = "deny"
 unsafe_op_in_unsafe_fn = "deny"
+
+[[bin]]
+name = "openblade-scratch-rust-writer"
+path = "tests/fixtures/writer_fence.rs"
+required-features = ["scratch-writer-fence"]
+test = false
+bench = false
