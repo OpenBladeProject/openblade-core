@@ -92,11 +92,19 @@ and that it has not exited. Closing the caller's handle does not affect the
 retained duplicate. A live observation is a snapshot and does not attest to the
 loaded image bytes.
 
-Setup still needs an independently verified build pin held from before launch
-and tied to that process through readiness. The current stage types do not
-provide that evidence, so process observation alone cannot supply
-`ISetupRetainedCandidateLaunch`. The production install and rollback routes
-remain unchanged.
+The offline Setup fixture supplies the expected Service-role length and digest
+from a separate source before staging. Setup retains the local NTFS ancestor
+handles without delete sharing and the exact image without write or delete
+sharing. It checks the held objects' identities, paths, reparse status and ACLs,
+and hashes the image through the same bounded read handle. The trusted fixture
+launcher receives the pinned path and returns the original launch handle. The
+combined `ISetupRetainedCandidateLaunch` rechecks both pins at the readiness
+boundaries and rejects loss of either.
+
+The fixture test launches a scratch copy of the Windows command interpreter.
+Its build expectation is fixture authority only. Installed activation still
+requires authenticated Service-role evidence from the package and a trusted
+handoff for the actual SCM launch.
 
 A separately authorized disposable VM must confirm the actual SCM callback
 arguments, LocalSystem session, image command and PID availability in
