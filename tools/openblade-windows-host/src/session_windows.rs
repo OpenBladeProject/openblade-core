@@ -15,7 +15,10 @@ use tokio::{net::windows::named_pipe::NamedPipeServer, runtime::Builder, sync::o
 
 use crate::{
     session_brightness::{ScriptedComPolicy, WmiScenario},
-    session_display::{self, ColorFixture, HdrFixture, RefreshFixture, Rejected, SessionDisplay},
+    session_display::{
+        self, ColorFixture, HdrFixture, RefreshFixture, Rejected, SessionDisplay,
+        journal::{Journal, StartMode},
+    },
     session_gpu,
 };
 
@@ -43,9 +46,12 @@ pub(super) fn entry() -> io::Result<()> {
         };
         return run_fixture(run_gpu(id, scenario));
     }
-    if mode != "foreground" {
-        return Err(usage());
-    }
+    let mode = match mode.to_str() {
+        Some("foreground") => StartMode::New,
+        Some("resume-display") => StartMode::Resume,
+        Some("reconcile-display") => StartMode::Reconcile,
+        _ => return Err(usage()),
+    };
     let refresh = match scenario.to_str() {
         Some("refresh-dynamic") => Some(RefreshFixture::Available),
         Some("refresh-stale-target") => Some(RefreshFixture::StaleTarget),
@@ -92,12 +98,14 @@ pub(super) fn entry() -> io::Result<()> {
             Some("sibling-readback") => WmiScenario::SiblingReadback,
             Some("stalled-write") => WmiScenario::StalledWrite,
             Some("stalled-admission") => WmiScenario::StalledAdmission,
+            Some("starts-at-70") => WmiScenario::StartsAt70,
+            Some("starts-at-10") => WmiScenario::StartsAt10,
             _ => return Err(usage()),
         },
         _ => return Err(usage()),
     };
     run_fixture(run_display(
-        id,
+        (id, mode),
         scenario,
         brightness,
         hdr,
@@ -118,7 +126,7 @@ fn run_fixture(fixture: impl Future<Output = io::Result<()>>) -> io::Result<()> 
 fn usage() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
-        "expected foreground <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <available|empty|no-data|large|stalled>",
+        "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <available|empty|no-data|large|stalled>",
     )
 }
 
@@ -130,7 +138,7 @@ fn valid_id(id: &str) -> bool {
 }
 
 async fn run_display(
-    id: &str,
+    (id, mode): (&str, StartMode),
     scenario: Scenario,
     brightness: WmiScenario,
     hdr: HdrFixture,
@@ -140,11 +148,15 @@ async fn run_display(
     // One reserved claim and one data connection. This endpoint has no
     // subscribers or concurrent dispatch, so partial frames can occupy one slot.
     let endpoint = Endpoint::new(format!("{PREFIX}{id}"), 2)?;
-    let _claim = endpoint.claim()?;
+    // Keep the exclusive claim until process exit. The runtime can stop
+    // waiting for a blocked worker before that worker has actually stopped.
+    // The OS closes this one claim and its peer when no thread can act again.
+    std::mem::forget(endpoint.claim()?);
     let listener = endpoint.listen()?;
-    let worker = ScriptedComPolicy::start(scenario, brightness)?;
+    let journal = Journal::open(id, &endpoint.identity, mode);
+    let worker = ScriptedComPolicy::start(scenario, brightness, Arc::clone(&journal))?;
     let session = Arc::new(Mutex::new(SessionDisplay::scripted(
-        scenario, worker, hdr, refresh, color,
+        scenario, worker, hdr, refresh, color, journal,
     )));
 
     let stopping = Arc::new(AtomicBool::new(false));

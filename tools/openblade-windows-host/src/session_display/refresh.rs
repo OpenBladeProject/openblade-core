@@ -3,8 +3,9 @@ use openblade_platform_windows::display::{
 };
 
 use super::{
-    BLOCKED, FAILED, INDETERMINATE, SUCCEEDED, Value, display_state,
-    panel::{Context, DisplayIdentity, Outcome, ScriptedDisplay, wait_for_disconnect},
+    Attempt, BLOCKED, FAILED, INDETERMINATE, SUCCEEDED, Value, display_state,
+    journal::{Change, Panel, RefreshBaseline},
+    panel::{Context, Outcome, ScriptedDisplay, wait_for_disconnect},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -29,8 +30,9 @@ impl ScriptedDisplay {
         context: Option<Context>,
         reading: &Result<InternalDisplayRefresh, DisplayReadError>,
         state: &mut Value,
-        cancelled: &impl Fn() -> bool,
+        attempt: Attempt<'_>,
     ) -> Outcome {
+        let cancelled = attempt.cancelled;
         let Some(context) = context.filter(|context| context.power_source == power) else {
             return rejected(
                 BLOCKED,
@@ -40,7 +42,7 @@ impl ScriptedDisplay {
         let Some(before) = single(reading) else {
             return rejected(FAILED, "The internal display is unavailable.");
         };
-        let Some(identity) = DisplayIdentity::of(&before.display) else {
+        let Some(identity) = Panel::observe(&before.display) else {
             return rejected(FAILED, "The exact internal display is unavailable.");
         };
         let Some(option) = before
@@ -97,6 +99,21 @@ impl ScriptedDisplay {
             return rejected(FAILED, "Refresh-rate change cancelled before submission.");
         }
 
+        let Some(before_value) = RefreshBaseline::observe(&fresh) else {
+            return rejected(BLOCKED, "The refresh-rate baseline could not be confirmed.");
+        };
+        if !(attempt.record)(
+            identity.clone(),
+            Change::Refresh {
+                before: before_value,
+                requested: key.into(),
+            },
+        ) {
+            return rejected(BLOCKED, super::JOURNAL_BLOCKED);
+        }
+        if cancelled() {
+            return rejected(FAILED, "Refresh-rate change cancelled before submission.");
+        }
         let applied = validated.submit();
         if self.refresh_fixture != RefreshFixture::ReadbackMismatch {
             self.timing = applied;
@@ -107,7 +124,7 @@ impl ScriptedDisplay {
         // Reconcile independently even when the native result could have been lost.
         let readback = self.read(self.refresh_fixture == RefreshFixture::SiblingReadback);
         let after = single(&readback).filter(|after| {
-            DisplayIdentity::of(&after.display).as_ref() == Some(&identity)
+            Panel::observe(&after.display).as_ref() == Some(&identity)
                 && (after.width, after.height) == (before.width, before.height)
                 && after.display.supports_virtual_mode == before.display.supports_virtual_mode
         });
@@ -147,6 +164,16 @@ fn rejected(status: i32, reason: &str) -> Outcome {
     (status, Some(reason.into()), false)
 }
 
+fn pending(reason: &str) -> Outcome {
+    (
+        INDETERMINATE,
+        Some(format!(
+            "Refresh-rate submission is indeterminate ({reason}); writes are paused."
+        )),
+        true,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,7 +195,10 @@ mod tests {
                 panel.context(false),
                 &reading,
                 &mut state,
-                &|| false,
+                Attempt {
+                    cancelled: &|| false,
+                    record: &|_, _| true,
+                },
             )
         }
         // The desktop and physical rates already match this DRR option. The
@@ -180,14 +210,4 @@ mod tests {
         panel.refresh_fixture = RefreshFixture::StaleTarget;
         assert_eq!(apply(&mut panel, key).0, BLOCKED);
     }
-}
-
-fn pending(reason: &str) -> Outcome {
-    (
-        INDETERMINATE,
-        Some(format!(
-            "Refresh-rate submission is indeterminate ({reason}); writes are paused."
-        )),
-        true,
-    )
 }

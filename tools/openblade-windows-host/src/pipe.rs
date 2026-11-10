@@ -176,6 +176,13 @@ pub struct Identity {
 }
 
 impl Identity {
+    pub fn fixture_owner(&self) -> String {
+        format!(
+            "{}:{}:{}:{}",
+            self.sid, self.session, self.authentication.HighPart, self.authentication.LowPart
+        )
+    }
+
     pub fn authorize(&self, pipe: &NamedPipeServer) -> io::Result<()> {
         // Verify the connecting process session independently of the read token.
         let mut session = 0;

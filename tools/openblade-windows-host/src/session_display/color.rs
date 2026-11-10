@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 
 use super::{
     BLOCKED, FAILED, INDETERMINATE, SUCCEEDED,
-    panel::{DisplayIdentity, Outcome, ScriptedDisplay, wait_for_disconnect},
+    journal::Panel,
+    panel::{Outcome, ScriptedDisplay, wait_for_disconnect},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -108,7 +109,7 @@ impl ColorDisplay {
                 false,
             );
         };
-        let Some(identity) = DisplayIdentity::of(&before.display) else {
+        let Some(identity) = Panel::observe(&before.display) else {
             return (
                 BLOCKED,
                 Some("The exact internal display is unavailable.".into()),
@@ -133,7 +134,7 @@ impl ColorDisplay {
                 fixture == ColorFixture::StaleTarget && topology_reads > 1,
             )?;
             if matches!(&topology, InternalDisplayTopology::Single(display)
-                if DisplayIdentity::of(display).as_ref() == Some(&identity))
+                if Panel::observe(display).as_ref() == Some(&identity))
             {
                 Ok(topology)
             } else {

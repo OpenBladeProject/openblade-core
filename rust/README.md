@@ -80,11 +80,9 @@ The private display endpoint accepts query and the existing typed brightness,
 HDR and refresh-rate requests. Each process starts one scripted brightness worker; no COM policy is
 applied to Windows and no native display or WMI transport is started. A confirmed
 write requires a separate read from the full submitted WMI instance. A lost or
-ambiguous write reply pauses writes for that process; read-only observations
-remain available when the worker drains. Stopping the fixture is bounded and
-does not assert that an outstanding submission completed. A native host still
-needs process-wide COM security, a confirmed current-user session and power
-source, and recovery that survives host restart before live writes can be tried.
+ambiguous write reply pauses all display mutations. Read-only observations
+remain available when the worker drains. A native host still needs process-wide
+COM security and confirmed current-user session and power evidence.
 
 Phase 6s reuses v2 SetHdr through the actual Tray client. The serialized fixture
 captures a scripted active session and power generation, checks the exact
@@ -115,6 +113,19 @@ validation and application use the corresponding
 The fixture requires separate CCD readback of the exact panel and mode and pauses
 all display writes on uncertain submission, readback or reply. Only a platform
 unit test retains the refresh setter import, and it never calls it.
+
+Phase 6v extends the private fence across process restarts. `foreground` uses
+a fresh pipe ID and creates its matching fixture directory under the process's
+local temp directory. `resume-display` uses the same ID and temp directory
+and retains pending intent across ordinary queries.
+`reconcile-display` explicitly authorizes a fresh query to retire the owned
+intent after the old fixture process has exited. The replacement process must
+claim the same private endpoint, match its logon and session, and observe the
+exact panel at the recorded baseline or requested value. The simulator starts
+with its scripted values after each launch, so that read establishes the state
+of the replacement fixture only. Missing, invalid or unreadable evidence
+leaves writes paused and queries available. Recovery never replays a setter.
+The integration tests own and remove their scratch directories.
 
 Current HDR output mode, complete snapshot parity, and native display behavior
 need separate evidence before replacement. Live refresh still needs authorized
