@@ -87,29 +87,6 @@ These modes own no hardware, and the restart mode has read-only configuration
 access. Other profile edits, production recovery, and ownership transfer remain
 outside the scenario.
 
-## Compose durable profiles with thermal replay
-
-`foreground-thermal-profile <pipe-id>` loads the migrated configuration used by
-the battery/profile scenario. One private pipe serves battery, profile, standard
-performance and ordinary Fixed fan operations. The scenario guard serializes
-these effects and publishes one status revision. The thermal recipes use the
-existing exact-device scripted transports. The bounded composition runs at
-full-adapter power with an Automatic baseline. Fan entry and handback require
-confirmed Performance.
-
-The C# client exercises preset cancellation, explicit preset selection, Fixed
-entry and owned Automatic handback. A lost final fan response leaves the last
-confirmed topology visible until a later getter reads the pair. That observation
-does not acquire ownership. The durable battery profile edit remains separate
-from temporary battery and thermal requests. The temporary Fixed intent stays in
-memory through handback. `foreground-thermal-profile-restart <pipe-id> <fixture-id>
-<file-identity>` loads the verified profile from disk with a fresh scripted device.
-Production override persistence and device recovery are separate work.
-
-`foreground-thermal-profile-interrupt <pipe-id>` interrupts the same profile
-transaction while the fan write is unresolved. Quarantine blocks further mutations
-while a read-only fan observation can still resolve the device state.
-
 ## Compatibility boundary
 
 - Each connection accepts one v79 `getStatus` or `subscribeStatus` request, or one v51 `getStatus` request. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every pipe read uses a cached snapshot and has no activation or state changes.
