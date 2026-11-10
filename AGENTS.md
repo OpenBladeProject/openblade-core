@@ -726,13 +726,18 @@ unrelated worktrees and checkout changes.
     proof that credentials expired when the same output includes config or
     keyring access-denied warnings. Retry the exact read with approved host
     access; ask for reauthentication only if that host-level check also fails.
-13. After a pull request is merged or closed, complete its branch cleanup:
-    remove any dedicated worktree, then delete the local and remote pull-request
-    branch. First verify the pull request's final state and exact branch, preserve
-    dirty or untracked worktree artifacts, and ensure no other live worktree uses
-    the branch. For a merged pull request, also prove that the branch tip is
-    reachable from `origin/main`. If any safety check fails, report the blocker
-    instead of silently leaving cleanup incomplete or deleting uncertain work.
+13. Branch cleanup is part of finishing every task that creates or uses a task
+    branch, including local-only work and merged or closed pull requests. Before
+    handing back, verify the task's final state, the exact local and remote tips,
+    and all linked worktrees. For landed work, prove the tips are reachable from
+    the refreshed `origin/main`. For closed or abandoned work with unique
+    commits, delete only after the user explicitly authorizes discarding them
+    or the commits have been preserved in an agreed location. Preserve dirty
+    files, untracked artifacts, and worktrees used by other tasks. Remove the
+    clean, dedicated worktree through its owning tool, then delete the retired
+    local branch and any matching remote branch. Never force-remove a worktree
+    or branch to get past a failed check. Verify the refs are gone and report
+    any cleanup blocker before handing back.
     After any successful branch merge, also update the primary non-linked-
     worktree checkout to the latest `main` with `git pull --ff-only origin main`;
     this synchronization is the required exception to the landing-checkout
