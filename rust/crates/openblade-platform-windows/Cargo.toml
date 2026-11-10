@@ -7,7 +7,7 @@ license.workspace = true
 publish.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.61.2", default-features = false, features = ["Win32_Devices_Display", "Win32_Foundation", "Win32_Graphics_Gdi"] }
+windows-sys = { version = "=0.61.2", default-features = false, features = ["Win32_Devices_Display", "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_System_SystemInformation", "Win32_UI_ColorSystem"] }
 
 [lints.rust]
 unsafe_code = "deny"
