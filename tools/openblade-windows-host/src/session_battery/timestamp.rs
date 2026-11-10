@@ -1,4 +1,4 @@
-//! ISO 8601 timestamps at the report's 100 ns precision.
+//! Report timestamps at 100 ns precision, with pinned invariant date forms.
 #![allow(unsafe_code)]
 
 use serde::{Serialize, Serializer};
@@ -21,49 +21,79 @@ pub(super) struct Timestamp(i64);
 impl Timestamp {
     pub fn parse(value: &str) -> Option<Self> {
         let value = value.trim();
-        let number = |start, end| digits(value.get(start..end)?);
-        let year = number(0, 4)?;
-        if year == 0 || value.get(4..5)? != "-" || value.get(7..8)? != "-" {
+        let slash_date = value.as_bytes().get(2) == Some(&b'/');
+        let (year, month, day) = if slash_date {
+            if value.get(5..6)? != "/" {
+                return None;
+            }
+            (
+                digits(value.get(6..10)?)?,
+                digits(&value[..2])?,
+                digits(value.get(3..5)?)?,
+            )
+        } else {
+            if value.get(4..5)? != "-" || value.get(7..8)? != "-" {
+                return None;
+            }
+            (
+                digits(value.get(..4)?)?,
+                digits(value.get(5..7)?)?,
+                digits(value.get(8..10)?)?,
+            )
+        };
+        if year == 0 {
             return None;
         }
         let mut time = SYSTEMTIME {
             wYear: year + YEAR_SHIFT,
-            wMonth: number(5, 7)?,
-            wDay: number(8, 10)?,
+            wMonth: month,
+            wDay: day,
             ..SYSTEMTIME::default()
         };
         let mut rest = value.get(10..)?;
-        if rest.starts_with(['T', 't', ' ']) {
-            if rest.get(3..4)? != ":" || rest.get(6..7)? != ":" {
-                return None;
-            }
-            time.wHour = number(11, 13)?;
-            time.wMinute = number(14, 16)?;
-            time.wSecond = number(17, 19)?;
-            rest = value.get(19..)?;
-        }
         let mut fraction = 0;
-        if let Some(decimal) = rest.strip_prefix('.') {
-            let width = decimal.bytes().take_while(u8::is_ascii_digit).count();
-            if !(1..=7).contains(&width) {
+        if rest.starts_with(['T', 't', ' ']) {
+            let separator = rest.as_bytes()[0];
+            rest = &rest[1..];
+            if separator == b' ' {
+                rest = rest.trim_start();
+            } else if slash_date {
                 return None;
             }
-            fraction = decimal[..width].parse::<i64>().ok()? * 10_i64.pow((7 - width) as u32);
-            rest = &decimal[width..];
-        }
-        let offset = match rest.as_bytes() {
-            b"" | b"Z" | b"z" => 0,
-            [sign @ (b'+' | b'-'), _, _, b':', _, _] => {
-                let hours = digits(&rest[1..3])?;
-                let minutes = digits(&rest[4..6])?;
-                if hours > 14 || minutes > 59 || (hours == 14 && minutes != 0) {
-                    return None;
+            time.wHour = digits(rest.get(..2)?)?;
+            time.wMinute = digits(rest.get(2..5)?.strip_prefix(':')?)?;
+            rest = &rest[5..];
+            if let Some(seconds) = rest.strip_prefix(':') {
+                time.wSecond = digits(seconds.get(..2)?)?;
+                rest = &seconds[2..];
+                if let Some(decimal) = rest.strip_prefix('.') {
+                    let width = decimal.bytes().take_while(u8::is_ascii_digit).count();
+                    let significant = width.min(7);
+                    fraction = decimal[..significant].parse::<i64>().ok()?
+                        * 10_i64.pow((7 - significant) as u32);
+                    if width > 7 && decimal.as_bytes()[7] >= b'5' {
+                        fraction += 1;
+                    }
+                    rest = &decimal[width..];
                 }
-                let seconds = i64::from(hours) * 3600 + i64::from(minutes) * 60;
-                if *sign == b'-' { -seconds } else { seconds }
             }
-            _ => return None,
-        };
+            if slash_date && rest.starts_with(' ') {
+                let marker = rest.trim_start();
+                if let Some(meridiem) = marker.get(..2)
+                    && (meridiem.eq_ignore_ascii_case("AM") || meridiem.eq_ignore_ascii_case("PM"))
+                {
+                    if !(1..=12).contains(&time.wHour) {
+                        return None;
+                    }
+                    time.wHour %= 12;
+                    if meridiem.eq_ignore_ascii_case("PM") {
+                        time.wHour += 12;
+                    }
+                    rest = &marker[2..];
+                }
+            }
+        }
+        let offset = offset_seconds(rest.trim_start())?;
         let mut ft = FILETIME::default();
         // SAFETY: The pointers refer to live SYSTEMTIME/FILETIME values.
         if unsafe { SystemTimeToFileTime(&time, &mut ft) } == 0 {
@@ -117,4 +147,25 @@ fn digits(value: &str) -> Option<u16> {
         return None;
     }
     value.parse().ok()
+}
+
+fn offset_seconds(value: &str) -> Option<i64> {
+    if matches!(value, "" | "Z" | "z") {
+        return Some(0);
+    }
+    let (sign, zone) = value.split_at_checked(1)?;
+    if !matches!(sign, "+" | "-") {
+        return None;
+    }
+    let (hours, minutes) = match zone.as_bytes() {
+        [_] | [_, _] => (digits(zone)?, 0),
+        [_, _, _, _] => (digits(zone.get(..2)?)?, digits(zone.get(2..)?)?),
+        [_, _, b':', _, _] => (digits(zone.get(..2)?)?, digits(zone.get(3..)?)?),
+        _ => return None,
+    };
+    if hours > 14 || minutes > 59 || (hours == 14 && minutes != 0) {
+        return None;
+    }
+    let seconds = i64::from(hours) * 3600 + i64::from(minutes) * 60;
+    Some(if sign == "-" { -seconds } else { seconds })
 }

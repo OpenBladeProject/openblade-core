@@ -9,6 +9,39 @@ fn typed(xml: impl AsRef<[u8]>) -> Option<Value> {
 }
 
 #[test]
+fn shared_timestamp_cases_match_managed_parser() {
+    for case in include_str!("datetime-cases.tsv").lines() {
+        let (input, expected) = case.split_once('\t').unwrap();
+        let xml = format!(
+            "<BatteryReport><ReportInformation><ScanTime>{input}</ScanTime></ReportInformation></BatteryReport>"
+        );
+        let report = typed(xml);
+        if expected == "invalid" {
+            assert!(report.is_none(), "{input}");
+        } else {
+            assert_eq!(
+                report.unwrap_or_else(|| panic!("rejected {input}"))["generatedAtUtc"],
+                expected,
+                "{input}"
+            );
+        }
+    }
+}
+
+#[test]
+fn equal_clipped_starts_keep_report_order_across_large_sort() {
+    let report = typed(include_bytes!("equal-start.xml")).unwrap();
+    let intervals = report["intervals"].as_array().unwrap();
+    assert_eq!(intervals.len(), 2);
+    assert_eq!(intervals[0]["startUtc"], report["windowStartUtc"]);
+    assert_eq!(intervals[0]["endUtc"], "2026-01-01T13:00:00+00:00");
+    assert_eq!(intervals[0]["startChargeMilliwattHours"], 1);
+    assert_eq!(intervals[1]["startUtc"], intervals[0]["endUtc"]);
+    assert_eq!(intervals[1]["endUtc"], "2026-01-01T14:00:00+00:00");
+    assert_eq!(intervals[1]["startChargeMilliwattHours"], 2);
+}
+
+#[test]
 fn pinned_managed_timeline_clips_and_marks_interior_gap() {
     let value = typed(TIMELINE).expect("pinned report must parse");
     assert_eq!(value["generatedAtUtc"], "2026-01-02T12:00:00+00:00");

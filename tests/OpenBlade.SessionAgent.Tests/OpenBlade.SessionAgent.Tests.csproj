@@ -30,6 +30,8 @@
              Link="WindowsRegistryReader.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\tools\openblade-windows-host\src\session_battery\datetime-cases.tsv" Link="Fixtures\datetime-cases.tsv" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\openblade-windows-host\src\session_battery\equal-start.xml" Link="Fixtures\equal-start.xml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\OpenBlade.Tray.Tests\Fixtures\ThxRznb11StackCatalog.json" Link="Fixtures\ThxRznb11StackCatalog.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\OpenBlade.Tray.Tests\Fixtures\ThxRznb12StackCatalog.json" Link="Fixtures\ThxRznb12StackCatalog.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\OpenBlade.Tray.Tests\Fixtures\ThxRznb12CachedStackCatalog.json" Link="Fixtures\ThxRznb12CachedStackCatalog.json" CopyToOutputDirectory="PreserveNewest" />

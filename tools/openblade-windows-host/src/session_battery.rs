@@ -14,6 +14,9 @@ use tokio::{
 
 use crate::session_windows::{read_frame_body, valid_request_id};
 
+// Keep the acquisition seam compiled and disconnected from the private replay.
+#[cfg_attr(not(test), allow(dead_code))]
+mod acquisition;
 mod report;
 mod timestamp;
 mod xml;
