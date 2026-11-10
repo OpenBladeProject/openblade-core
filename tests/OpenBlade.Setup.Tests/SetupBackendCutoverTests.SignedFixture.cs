@@ -116,7 +116,7 @@ public sealed partial class SetupBackendCutoverTests
             Channel = ManifestCodec.LocalDevChannel,
             Product = ManifestCodec.Product,
             Version = "65535.1.2.3",
-            SourceRevision = "692c09a12cd9b59c72d085c34440e2aacc91681f",
+            SourceRevision = LiveFixtureRevision,
             Architecture = ManifestCodec.Architecture,
             MinimumWindowsBuild = ManifestCodec.MinimumWindowsBuild,
             InstallerFileName = ManifestCodec.InstallerFileName,

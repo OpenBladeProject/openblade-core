@@ -310,6 +310,7 @@ public sealed partial class SetupBackendCutoverTests
         public SetupServiceState ServiceState { get; private set; } = SetupServiceState.Running;
         public Action<string>? InspectStagedPayload { get; set; }
         public Func<Task>? BeforeStopAsync { get; set; }
+        public Func<CancellationToken, Task>? AfterStartAsync { get; set; }
         public SortedDictionary<string, string>? StartedPayload { get; private set; }
         public List<SortedDictionary<string, string>> StoppedPayloads { get; } = [];
 
@@ -338,6 +339,10 @@ public sealed partial class SetupBackendCutoverTests
                     Assert.Equal(SetupServiceState.Stopped, ServiceState);
                     StartedPayload = ReadManifest(paths.InstallDirectory);
                     ServiceState = SetupServiceState.Running;
+                    if (AfterStartAsync is not null)
+                    {
+                        await AfterStartAsync(cancellationToken);
+                    }
                     break;
                 case "description" or "failure" or "failureflag":
                     break;

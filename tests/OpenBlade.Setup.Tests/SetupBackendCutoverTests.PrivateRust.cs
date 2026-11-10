@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.Pipes;
-using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -16,21 +16,22 @@ namespace OpenBlade.Setup.Tests;
 
 public sealed partial class SetupBackendCutoverTests
 {
-    internal const string LiveFixtureDirectoryVariable = "OPENBLADE_PHASE_7C_FIXTURES";
+    internal const string LiveFixtureDirectoryVariable = "OPENBLADE_PHASE_7E_FIXTURES";
 
-    // Separate, frozen local builds of the reviewed fixture entry points. Neither
-    // the caller's environment nor the staged payload can select the expected hashes.
-    private const string LiveServiceFixture = "openblade-windows-host.exe"; // 1ec18766f3afdeeb819d07c7f91771d5da9c44e4
-    private const string LiveServiceHash = "18782F1B760CA2F983D7547785F4C1D6E8C3977D576B74B361EA417478AF2555";
-    private const string LiveAgentFixture = "openblade-rust-session-agent.exe"; // 7e4781de5144bcc72a16dd3d195057a5db878c8a
-    private const string LiveAgentHash = "4B2F551C3AC495DC3CE5AD583D79443CC9CEB167F18EA034ED7DCC291AC10E51";
+    // Frozen builds of the two Phase 6y entry points, with independent role pins.
+    // Neither the caller's environment nor the signed archive selects the pins.
+    private const string LiveFixtureRevision = "3a7befde461e50f9cc54ee5903a703f48b19681a";
+    private const string LiveServiceFixture = "openblade-windows-host.exe";
+    private const string LiveServiceHash = "3C4339A45850D214FA84E31A98D990CE3BE8B4A62FEDD8EF356FC8959228D285";
+    private const string LiveAgentFixture = "openblade-rust-session-agent.exe";
+    private const string LiveAgentHash = "0CBC4CFBDAC071EE5C8738082C3265007C53A69C20661A1CE5ACEADEC0CF4130";
 
-    private const string AgentRefusal = "GPU activity data is unavailable.";
+    private const string AgentRefusal = "The GPU inventory scan timed out.";
 
     [LocalLiveRustFixtureTheory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task BundleUpgrade_RequiresSignedFixtureAndBothPrivateRustPeersBeforeCommit(bool refuseAgent)
+    public async Task BundleUpgrade_RequiresSignedServiceAndUnifiedAgentReadinessBeforeCommit(bool refuseAgent)
     {
         using var identity = WindowsIdentity.GetCurrent();
         Assert.False(identity.IsSystem);
@@ -65,13 +66,16 @@ public sealed partial class SetupBackendCutoverTests
         var windows = new OfflineWindows(paths);
         var tasks = new InMemorySignInTaskScheduler();
         using var progress = new RecordingSetupProgressReporter();
-        using var rehearsalDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var rehearsalDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         string childDirectory = Path.Combine(tree.Root, "private-fixtures");
         Directory.CreateDirectory(childDirectory);
         await using var children = new PrivateFixturePair(tree.Install, childDirectory);
         SortedDictionary<string, string>? staged = null;
+        bool candidateStarted = false;
         bool candidateHealthEntered = false;
         bool serviceReady = false;
+        bool displayReady = false;
+        bool reporterRoundTrip = false;
         SessionGpuResponse? agentResponse = null;
         int rollbackHealthChecks = 0;
         int candidateStops = 0;
@@ -97,6 +101,18 @@ public sealed partial class SetupBackendCutoverTests
             VerifyLiveRoles(directory, staged);
             Assert.Equal(candidate, staged);
         };
+        windows.AfterStartAsync = async token =>
+        {
+            // The simulated start step owns the foreground startup barriers.
+            // Setup's ten-second health window covers only the typed probes.
+            windows.AfterStartAsync = null;
+            AssertCandidateBeforeCommit();
+            Assert.Equal(SignInTaskState.Missing, tasks.GetState(SignInTaskNames.SessionAgent));
+            VerifyLiveRoles(tree.Install, candidate);
+            token.ThrowIfCancellationRequested();
+            await children.StartAsync(refuseAgent, token);
+            candidateStarted = true;
+        };
         windows.BeforeStopAsync = async () =>
         {
             if (children.Started)
@@ -113,6 +129,8 @@ public sealed partial class SetupBackendCutoverTests
             {
                 AssertCandidateBeforeCommit();
                 Assert.True(serviceReady);
+                Assert.True(displayReady);
+                Assert.True(reporterRoundTrip);
                 Assert.Equal(SessionGpuOperationStatus.Succeeded, agentResponse?.Status);
                 Assert.Equal(agentPath, definition.ExecutablePath);
                 Assert.Equal(tree.Install, definition.WorkingDirectory);
@@ -121,7 +139,7 @@ public sealed partial class SetupBackendCutoverTests
 
         var health = new RehearsalHealthProbe(async (token, timing) =>
         {
-            if (candidateHealthEntered)
+            if (!candidateStarted || candidateHealthEntered)
             {
                 // Setup's rollback probes the prior managed tree. It stays
                 // simulated, and may only run after the retained children exit.
@@ -140,14 +158,19 @@ public sealed partial class SetupBackendCutoverTests
             candidateHealthEntered = true;
             AssertCandidateBeforeCommit();
             Assert.Equal(SignInTaskState.Missing, tasks.GetState(SignInTaskNames.SessionAgent));
-            VerifyLiveRoles(tree.Install, candidate);
-            token.ThrowIfCancellationRequested();
-            children.Start(refuseAgent);
+            Assert.Equal(79, OpenBladeIpc.ProtocolVersion);
             var serviceProbe = new SetupServiceHealthProbe(children.ConnectServiceAsync, NewStatusRequest);
             await serviceProbe.VerifyAsync(token, timing);
             serviceReady = true;
 
-            agentResponse = await children.QueryAgentAsync(token);
+            var display = await children.QueryDisplayAsync(token);
+            Assert.Equal(SessionDisplayOperationStatus.Succeeded, display.Status);
+            Assert.Null(display.Error);
+            Assert.True(display.State.IsAvailable);
+            Assert.Equal("Synthetic Factory.icm", display.State.ActiveColorProfileId);
+            displayReady = true;
+
+            agentResponse = await children.QueryGpuAsync(token);
             if (agentResponse.Status != SessionGpuOperationStatus.Succeeded)
             {
                 throw new InvalidDataException(agentResponse.Error ?? "Session Agent readiness failed.");
@@ -157,6 +180,15 @@ public sealed partial class SetupBackendCutoverTests
             Assert.Equal(new[] { "active-game", "idle-holder", "other-session" },
                 agentResponse.Apps.Select(app => app.Name));
             Assert.All(agentResponse.Apps, app => Assert.False(app.CanClose));
+
+            var baseline = await children.ReadServiceStatusAsync(token);
+            Guid profile = Assert.Single(baseline.Profiles.ApplicationProfiles).Id;
+            Assert.Null(baseline.ActiveApplicationProfileId);
+            await children.ReportFocusAsync(true, token);
+            await children.WaitForProfileAsync(profile, token);
+            await children.ReportFocusAsync(false, token);
+            await children.WaitForProfileAsync(null, token);
+            reporterRoundTrip = true;
         });
 
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
@@ -205,6 +237,8 @@ public sealed partial class SetupBackendCutoverTests
         }
 
         Assert.True(serviceReady);
+        Assert.True(displayReady);
+        Assert.Equal(!refuseAgent, reporterRoundTrip);
         Assert.Empty(agentResponse!.Results);
         Assert.True(children.BothExitedCleanly);
         Assert.Equal(trayPath, File.ReadAllText(paths.StartMenuFile));
@@ -252,20 +286,25 @@ public sealed partial class SetupBackendCutoverTests
     private sealed class PrivateFixturePair(string install, string scratch) : IAsyncDisposable
     {
         private const string ServicePrefix = "OpenBlade.Rust.ReadOnly.Dev.";
-        private const string AgentPrefix = "OpenBlade.Rust.Session.Gpu.Dev.";
+        private const string DisplayPrefix = "OpenBlade.Rust.Session.Display.Dev.";
+        private const string GpuPrefix = "OpenBlade.Rust.Session.Gpu.Dev.";
         private readonly string serviceId = Guid.NewGuid().ToString("N");
         private readonly string agentId = Guid.NewGuid().ToString("N");
         private Process? service;
         private Process? agent;
+        private string? serviceRoot;
+        private SafeFileHandle? serviceRootPin;
+        private bool serviceBarrierPassed;
+        private bool serviceReportedStopped;
         private bool stopped;
 
         public bool Started => service is not null;
         public bool BothRunning => service is { HasExited: false } && agent is { HasExited: false };
         public bool AllStartedExited => (service is null || service.HasExited) && (agent is null || agent.HasExited);
         public bool BothExitedCleanly => service is { HasExited: true, ExitCode: 0 }
-            && agent is { HasExited: true, ExitCode: 0 };
+            && serviceReportedStopped && agent is { HasExited: true, ExitCode: 0 };
 
-        public void Start(bool refuseAgent)
+        public async Task StartAsync(bool refuseAgent, CancellationToken token)
         {
             Assert.False(Started);
             Assert.NotEqual(serviceId, agentId);
@@ -278,28 +317,98 @@ public sealed partial class SetupBackendCutoverTests
             using FileStream agentBytes = CopyPinned(Path.Combine(install, AgentFile), agentPath, LiveAgentHash);
 
             var serviceStart = NewStartInfo(servicePath);
-            serviceStart.ArgumentList.Add("foreground");
+            serviceStart.ArgumentList.Add("foreground-integrated-application");
             serviceStart.ArgumentList.Add(serviceId);
-            var agentStart = NewStartInfo(agentPath);
-            agentStart.ArgumentList.Add("gpu-foreground");
-            agentStart.ArgumentList.Add(agentId);
-            agentStart.ArgumentList.Add(refuseAgent ? "no-data" : "available");
             service = Process.Start(serviceStart) ?? throw new InvalidOperationException("Could not start the service fixture.");
+            Assert.Equal("START_PENDING", await service.StandardOutput.ReadLineAsync(token));
+            string? root = await service.StandardOutput.ReadLineAsync(token);
+            Assert.NotNull(root);
+            Assert.Matches("^ROOT [0-9a-f]{32} [0-9a-f]{24}$", root);
+            PinServiceRoot(root.Split(' ')[1]);
+            await ExpectReadyAsync(service, token);
+            serviceBarrierPassed = true;
+
+            var agentStart = NewStartInfo(agentPath);
+            agentStart.ArgumentList.Add("integrated");
+            agentStart.ArgumentList.Add(agentId);
+            agentStart.ArgumentList.Add("new");
+            agentStart.ArgumentList.Add(refuseAgent ? "stalled" : "available");
+            agentStart.ArgumentList.Add(serviceId);
+            agentStart.ArgumentList.Add(service.Id.ToString(CultureInfo.InvariantCulture));
+            agentStart.ArgumentList.Add(Guid.NewGuid().ToString("N"));
             agent = Process.Start(agentStart) ?? throw new InvalidOperationException("Could not start the Session Agent fixture.");
+            await ExpectReadyAsync(agent, token);
         }
 
         public async ValueTask<Stream> ConnectServiceAsync(CancellationToken token)
             => await ConnectAsync(service!, ServicePrefix + serviceId, token);
 
-        public async Task<SessionGpuResponse> QueryAgentAsync(CancellationToken token)
+        public async Task<SessionDisplayResponse> QueryDisplayAsync(CancellationToken token)
         {
-            await using var pipe = await ConnectAsync(agent!, AgentPrefix + agentId, token);
+            await using var pipe = await ConnectAsync(agent!, DisplayPrefix + agentId, token);
+            var request = new QueryDisplayRequest(SessionDisplayIpc.ProtocolVersion, Guid.NewGuid());
+            await SessionDisplayIpcCodec.WriteRequestAsync(pipe, request, token);
+            var response = await SessionDisplayIpcCodec.ReadResponseAsync(pipe, token);
+            Assert.Equal(request.RequestId, response.RequestId);
+            Assert.Equal(request.Version, response.Version);
+            return response;
+        }
+
+        public async Task<SessionGpuResponse> QueryGpuAsync(CancellationToken token)
+        {
+            await using var pipe = await ConnectAsync(agent!, GpuPrefix + agentId, token);
             var request = new QueryGpuAppsRequest(SessionGpuIpc.ProtocolVersion, Guid.NewGuid());
             await SessionGpuIpcCodec.WriteRequestAsync(pipe, request, token);
             SessionGpuResponse response = await SessionGpuIpcCodec.ReadResponseAsync(pipe, token);
             Assert.Equal(request.RequestId, response.RequestId);
             Assert.Equal(request.Version, response.Version);
             return response;
+        }
+
+        public async Task<ServiceStatusSnapshot> ReadServiceStatusAsync(CancellationToken token)
+        {
+            await using var pipe = await ConnectServiceAsync(token);
+            GetStatusRequest request = NewStatusRequest();
+            await IpcMessageCodec.WriteRequestAsync(pipe, request, token);
+            var response = Assert.IsType<ServiceResponse>(await IpcMessageCodec.ReadServerFrameAsync(pipe, token));
+            Assert.Equal(request.RequestId, response.RequestId);
+            Assert.Equal(request.Version, response.Version);
+            Assert.True(response.Success, response.Error);
+            return Assert.IsType<ServiceStatusSnapshot>(response.Status);
+        }
+
+        public async Task WaitForProfileAsync(Guid? expected, CancellationToken token)
+        {
+            while ((await ReadServiceStatusAsync(token)).ActiveApplicationProfileId != expected)
+            {
+                await Task.Delay(25, token);
+            }
+        }
+
+        public Task ReportFocusAsync(bool active, CancellationToken token)
+            => SendCommandAsync(agent!, active ? (byte)'a' : (byte)'c', token);
+
+        private static async Task SendCommandAsync(Process child, byte command, CancellationToken token)
+        {
+            Stream input = child.StandardInput.BaseStream;
+            await input.WriteAsync(new byte[] { command }, token);
+            await input.FlushAsync(token);
+        }
+
+        private void PinServiceRoot(string id)
+        {
+            // The existing service mode hands off a random, plain directory in
+            // the current user's known-folder Temp. The Agent journal uses scratch.
+            string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Temp", $"openblade-durable-host-{id}");
+            RequireUnlinkedPath(root);
+            serviceRootPin = OpenDirectory(root, 0x80000000, FileShare.ReadWrite, IntPtr.Zero, FileMode.Open,
+                0x02200000, IntPtr.Zero); // Backup semantics and open reparse point.
+            if (serviceRootPin.IsInvalid)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            serviceRoot = root;
         }
 
         private ProcessStartInfo NewStartInfo(string path)
@@ -313,7 +422,6 @@ public sealed partial class SetupBackendCutoverTests
                 RedirectStandardOutput = true,
             };
             // Do not inherit product config, search paths, or fixture overrides.
-            // Both selected modes are in-memory; even temp paths are confined.
             start.Environment.Clear();
             start.Environment["SystemRoot"] = Path.GetDirectoryName(Environment.SystemDirectory)!;
             start.Environment["TEMP"] = scratch;
@@ -348,11 +456,16 @@ public sealed partial class SetupBackendCutoverTests
             }
         }
 
+        private static async Task ExpectReadyAsync(Process child, CancellationToken token)
+        {
+            Assert.False(child.SafeHandle.IsInvalid);
+            Assert.Equal("READY", await child.StandardOutput.ReadLineAsync(token));
+        }
+
         private static async Task<NamedPipeClientStream> ConnectAsync(Process child, string name, CancellationToken token)
         {
-            // READY is only a startup barrier. Readiness itself requires a typed
-            // response on a local pipe whose server is this retained process.
-            Assert.Equal("READY", await child.StandardOutput.ReadLineAsync(token));
+            // Every typed query uses the PID of the still-live retained child,
+            // including subsequent connections to the same endpoint.
             var pipe = new NamedPipeClientStream(".", name, PipeDirection.InOut,
                 PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
             try
@@ -379,22 +492,42 @@ public sealed partial class SetupBackendCutoverTests
             {
                 return;
             }
-            await Task.WhenAll(StopAsync(service), StopAsync(agent));
+            try
+            {
+                await StopAsync(agent, stopService: false);
+            }
+            finally
+            {
+                await StopAsync(service, stopService: true);
+            }
             stopped = true;
         }
 
-        private static async Task StopAsync(Process? child)
+        private async Task StopAsync(Process? child, bool stopService)
         {
             if (child is null || child.HasExited)
             {
                 return;
             }
-            child.StandardInput.Close();
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            CancellationToken token = timeout.Token;
             try
             {
-                await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3));
+                if (stopService)
+                {
+                    await SendCommandAsync(child, (byte)'s', token);
+                    bool pending = serviceBarrierPassed
+                        && await child.StandardOutput.ReadLineAsync(token) == "STOP_PENDING";
+                    await SendCommandAsync(child, (byte)'r', token);
+                    serviceReportedStopped = pending
+                        && await child.StandardOutput.ReadLineAsync(token) == "STOPPED";
+                }
+
+                child.StandardInput.Close();
+                await child.WaitForExitAsync(token);
             }
-            catch (TimeoutException)
+            catch (Exception failure) when (failure is OperationCanceledException or IOException)
             {
                 if (!child.HasExited)
                 {
@@ -412,10 +545,32 @@ public sealed partial class SetupBackendCutoverTests
             }
             finally
             {
+                bool exited = AllStartedExited;
                 agent?.Dispose();
                 service?.Dispose();
+                try
+                {
+                    if (serviceRoot is not null && exited)
+                    {
+                        foreach (string file in Directory.EnumerateFiles(serviceRoot))
+                        {
+                            RequireUnlinkedPath(file);
+                            File.Delete(file);
+                        }
+                        serviceRootPin?.Dispose();
+                        Directory.Delete(serviceRoot);
+                    }
+                }
+                finally
+                {
+                    serviceRootPin?.Dispose();
+                }
             }
         }
+
+        [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFileHandle OpenDirectory(
+            string path, uint access, FileShare share, IntPtr security, FileMode mode, uint flags, IntPtr template);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -430,7 +585,7 @@ internal sealed class LocalLiveRustFixtureTheoryAttribute : TheoryAttribute
         if (!OperatingSystem.IsWindows()
             || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(SetupBackendCutoverTests.LiveFixtureDirectoryVariable)))
         {
-            Skip = "Requires Windows and OPENBLADE_PHASE_7C_FIXTURES containing the two pinned private Rust fixtures.";
+            Skip = "Requires Windows and OPENBLADE_PHASE_7E_FIXTURES containing the two pinned Phase 6y Rust fixtures.";
         }
     }
 }
