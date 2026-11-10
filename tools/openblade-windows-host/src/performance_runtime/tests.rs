@@ -90,6 +90,35 @@ fn direct_transition_reads_both_channels_before_and_after_the_pair() {
 }
 
 #[test]
+fn target_seen_at_port_preflight_is_confirmed_without_attributing_a_write() {
+    let mut c = controller();
+    c.device.arm(Fault::TargetDuringPortBaseline);
+    let result = c.apply(Intent::Persistent(Preset::Performance)).unwrap();
+    assert_eq!(result.status, ScopedStatus::Unchanged);
+    assert_eq!(c.device.commands, [READ, READ, READ].concat());
+    assert_eq!(c.confirmed, Some(Preset::Performance));
+    assert_eq!(c.pending, None);
+    assert!(c.external);
+}
+
+#[test]
+fn incompatible_fixture_context_is_rejected() {
+    let fixture: Value = serde_json::from_str(crate::wire::CURRENT_FIXTURE).unwrap();
+    for (field, replacement) in [
+        ("performanceOverride", json!({"value": 2, "lifetime": 1})),
+        (
+            "activeApplicationProfileId",
+            json!("11111111-2222-4333-8444-555555555555"),
+        ),
+        ("fanOverride", json!({"value": 1, "lifetime": 0})),
+    ] {
+        let mut status = fixture["status"].clone();
+        status[field] = replacement;
+        assert!(Scenario::new(status).is_err(), "{field}");
+    }
+}
+
+#[test]
 fn cancellation_does_not_submit_or_roll_back_accepted_intent() {
     let mut c = controller();
     c.device.arm(Fault::CancelBeforeFirst);

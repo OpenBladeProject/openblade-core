@@ -144,9 +144,27 @@ async fn performance_mutation_requires_explicit_v79_mode_active_session_and_stri
         assert_eq!(client.read(&mut [0]).await.unwrap(), 0);
     }
 
-    let replay = performance.replay.as_ref().unwrap().borrow();
-    assert_eq!(replay["confirmedState"]["performance"], 1);
-    assert_eq!(replay["performanceOverride"], Value::Null);
+    let replay = performance.replay.as_ref().unwrap();
+    assert_eq!(replay.borrow()["confirmedState"]["performance"], 1);
+    assert_eq!(replay.borrow()["performanceOverride"], Value::Null);
+
+    let (mut client, server) = connect(performance.clone(), slots, Session::Active, 256);
+    let request = json!({
+        "operation": "setPerformanceOverride", "version": 79, "requestId": ID,
+        "value": {"value": 2, "lifetime": 1}
+    });
+    send(&mut client, &serde_json::to_vec(&request).unwrap()).await;
+    assert_eq!(
+        receive(&mut client, "response").await["result"]["status"],
+        1
+    );
+    server.await.unwrap().unwrap();
+    assert_eq!(
+        replay.borrow()["performanceOverride"],
+        json!({
+            "value": 2, "lifetime": 1, "customPerformance": null, "gpuClockTuning": null,
+        })
+    );
 }
 
 #[tokio::test]

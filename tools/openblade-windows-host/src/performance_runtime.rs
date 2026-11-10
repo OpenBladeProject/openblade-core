@@ -164,6 +164,19 @@ impl Controller {
                 self.confirm(value);
                 Outcome::new(ScopedStatus::Unchanged, "Performance is already confirmed.")
             }
+            RecipeResult::MatchedAtPort => {
+                // The port skipped both setters. Observe independently without
+                // attributing a change to this operation or creating a pending write.
+                let observed = self.device.observe();
+                if let Some(observed) = observed {
+                    self.record_observation(observed);
+                }
+                if observed == Some(value) {
+                    Outcome::new(ScopedStatus::Unchanged, "Performance is already confirmed.")
+                } else {
+                    Outcome::failed("Performance could not be confirmed without a write.")
+                }
+            }
             RecipeResult::Blocked => {
                 Outcome::blocked("The laptop could not be admitted for this control operation.")
             }
@@ -214,6 +227,10 @@ impl Controller {
         let Some(observed) = self.device.observe() else {
             return;
         };
+        self.record_observation(observed);
+    }
+
+    fn record_observation(&mut self, observed: Preset) {
         self.external = match self.pending.take() {
             Some(target) => observed != target,
             None => self.external || self.confirmed.is_some_and(|previous| previous != observed),
@@ -261,6 +278,13 @@ impl Scenario {
         if status["profiles"]["pluggedIn"]["performance"] != Preset::Balanced as i32
             || status["profiles"]["pluggedIn"]["fans"] != AUTOMATIC
             || status["activePowerSource"] != FULL_ADAPTER
+            || !status["performanceOverride"].is_null()
+            || !status["activeApplicationProfileId"].is_null()
+            || !status["fanOverride"].is_null()
+            || !status["fanControlOverride"].is_null()
+            || status["desiredState"]["performance"]
+                != json!({"value": Preset::Balanced as i32, "source": 1})
+            || status["desiredState"]["fans"]["value"] != AUTOMATIC
         {
             return Err(io::Error::other("unexpected performance replay fixture"));
         }
@@ -342,7 +366,12 @@ impl State {
                 .persistent
                 .map(|value| (value, 1))
                 .or_else(|| controller.temporary.map(|value| (value, 0)))
-                .map(|(value, lifetime)| json!({"value": value as i32, "lifetime": lifetime}))
+                .map(|(value, lifetime)| json!({
+                    "value": value as i32,
+                    "lifetime": lifetime,
+                    "customPerformance": null,
+                    "gpuClockTuning": null,
+                }))
         );
         self.status["writesBlocked"] =
             json!(controller.pending.is_some() || !controller.device.admits_writes());

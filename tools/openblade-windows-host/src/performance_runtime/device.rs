@@ -72,6 +72,7 @@ pub(super) enum RecipeResult {
     Blocked,
     BaselineUnavailable,
     Unchanged,
+    MatchedAtPort,
     Canceled,
     KnownNotApplied,
     Acknowledged(Preset),
@@ -85,6 +86,8 @@ pub(super) enum Fault {
     LoseSecondResponse,
     #[cfg(test)]
     WrongFirstEcho,
+    #[cfg(test)]
+    TargetDuringPortBaseline,
     #[cfg(test)]
     DenySecond,
     #[cfg(test)]
@@ -165,8 +168,14 @@ impl Device {
             Some(current) => current,
             None => return RecipeResult::BaselineUnavailable,
         };
+
+        #[cfg(test)]
+        if self.fault == Fault::TargetDuringPortBaseline {
+            self.fault = Fault::None;
+            self.replace_observed(preset);
+        }
         match self.read_pair() {
-            Some(current) if current == preset => return RecipeResult::Acknowledged(baseline),
+            Some(current) if current == preset => return RecipeResult::MatchedAtPort,
             None => return RecipeResult::BaselineUnavailable,
             _ => {}
         }
