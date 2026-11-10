@@ -230,3 +230,42 @@ fn storage_and_admission_failures_never_submit() {
     assert_eq!(c.store.persistent, Some(Preset::Performance));
     assert!(c.device.commands.is_empty());
 }
+
+#[test]
+fn lost_power_admission_stops_remaining_preset_setters() {
+    let mut c = controller();
+    let mut checks = 0;
+    let outcome = c
+        .apply_preset(Preset::Performance, || {
+            checks += 1;
+            checks == 1
+        })
+        .unwrap();
+    assert_eq!(outcome.status, ScopedStatus::Failed);
+    assert_eq!(c.pending, Some(Preset::Performance));
+    assert_eq!(c.confirmed, Some(Preset::Balanced));
+    assert_eq!(checks, 2);
+    assert_eq!(
+        c.device
+            .commands
+            .iter()
+            .filter(|command| matches!(command, Set(..)))
+            .copied()
+            .collect::<Vec<_>>(),
+        [Set(First, Preset::Performance)]
+    );
+
+    c.device.commands.clear();
+    c.observe();
+    assert_eq!(c.device.commands, READ);
+    assert_eq!(c.pending, Some(Preset::Performance));
+
+    // A coherent pair can return independently of the refused second setter.
+    c.device.replace_observed(Preset::Balanced);
+    c.device.commands.clear();
+    c.observe();
+    assert_eq!(c.device.commands, READ);
+    assert_eq!(c.confirmed, Some(Preset::Balanced));
+    assert_eq!(c.pending, None);
+    assert!(c.external);
+}

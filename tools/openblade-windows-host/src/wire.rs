@@ -120,22 +120,33 @@ impl Status {
         advance: tokio::sync::mpsc::Receiver<()>,
         profiles: Value,
         writer: Option<openblade_windows_host::configuration_writer::fixture::BatteryProfileStore>,
-        composed_thermal: bool,
+        replay: crate::battery_runtime::ProfileReplay,
     ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
+        use crate::battery_runtime::ProfileReplay;
+
         let scenario = Arc::new(Scenario::composed(
             self.active.current.clone(),
             profiles,
             writer,
-            composed_thermal,
+            replay,
         )?);
-        self.composed_thermal = composed_thermal;
+        self.composed_thermal = matches!(replay, ProfileReplay::Thermal);
         self.replay = Some(scenario.subscribe());
-        self.battery = Some(Arc::clone(&scenario));
+        // The power script is the only mutation entry point in this mode.
+        if !matches!(replay, ProfileReplay::Power { .. }) {
+            self.battery = Some(Arc::clone(&scenario));
+        }
         let drive = async move {
-            if composed_thermal {
-                scenario.drive_thermal(advance).await
-            } else {
-                scenario.drive(advance).await
+            match replay {
+                ProfileReplay::Battery => scenario.drive(advance).await,
+                ProfileReplay::Thermal => scenario.drive_thermal(advance).await,
+                ProfileReplay::FullCharge => scenario.drive_full_charge(advance).await,
+                ProfileReplay::LightingOff { owned, uncertain } => {
+                    scenario.drive_lighting(advance, owned, uncertain).await
+                }
+                ProfileReplay::Power { lose_response } => {
+                    scenario.drive_power_profile(advance, lose_response).await
+                }
             }
         };
         Ok((self, drive))
@@ -296,16 +307,26 @@ impl OperationResult {
 // Decode the original bytes to retain duplicate-field rejection, including
 // nested policy fields. A map projection would silently discard duplicates.
 #[derive(Deserialize)]
-#[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
+#[serde(tag = "operation", deny_unknown_fields)]
 enum BatteryRequest {
-    SetBatteryPolicy {
+    #[serde(rename = "setBatteryPolicy")]
+    Policy {
         #[serde(rename = "version")]
         _version: i32,
         #[serde(rename = "requestId")]
         _request_id: String,
         value: LimitValue,
     },
-    SetBatteryProtection {
+    #[serde(rename = "setFullChargeOverride")]
+    FullCharge {
+        #[serde(rename = "version")]
+        _version: i32,
+        #[serde(rename = "requestId")]
+        _request_id: String,
+        enabled: bool,
+    },
+    #[serde(rename = "setBatteryProtection")]
+    Protection {
         #[serde(rename = "version")]
         _version: i32,
         #[serde(rename = "requestId")]
@@ -317,12 +338,27 @@ enum BatteryRequest {
 impl BatteryRequest {
     fn decode(payload: &[u8]) -> io::Result<Intent> {
         match serde_json::from_slice(payload).map_err(|_| invalid("invalid battery request"))? {
-            Self::SetBatteryPolicy { value, .. } => Limit::new(value.charge_limit_percent)
+            Self::Policy { value, .. } => Limit::new(value.charge_limit_percent)
                 .map(Intent::Limit)
                 .ok_or_else(|| invalid("invalid battery limit")),
-            Self::SetBatteryProtection { enabled, .. } => Ok(Intent::Protection(enabled)),
+            Self::Protection { enabled, .. } => Ok(Intent::Protection(enabled)),
+            Self::FullCharge { enabled, .. } => Ok(Intent::FullCharge(enabled)),
         }
     }
+}
+
+#[cfg(windows)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LightingRequest {
+    #[serde(rename = "operation")]
+    _operation: String,
+    #[serde(rename = "version")]
+    _version: i32,
+    #[serde(rename = "requestId")]
+    _request_id: String,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    value: Option<battery_runtime::lighting::LightingOverride>,
 }
 
 #[cfg(windows)]
@@ -559,8 +595,13 @@ where
             )
             .await
         }
-        (CURRENT_VERSION, "setBatteryPolicy" | "setBatteryProtection")
-            if matches!(session, Session::Active) && status.battery.is_some() =>
+        (
+            CURRENT_VERSION,
+            operation @ ("setBatteryPolicy" | "setBatteryProtection" | "setFullChargeOverride"),
+        ) if matches!(session, Session::Active)
+            && status.battery.as_ref().is_some_and(|scenario| {
+                scenario.accepts_battery(operation == "setFullChargeOverride")
+            }) =>
         {
             let intent = BatteryRequest::decode(&payload)?;
             let result = status
@@ -569,6 +610,42 @@ where
                 .ok_or_else(|| invalid("missing battery scenario"))?
                 .apply(intent)
                 .await?;
+            write_frame(&mut io, request.operation_response(result.into())).await
+        }
+        #[cfg(windows)]
+        (CURRENT_VERSION, "setLightingOverride")
+            if matches!(session, Session::Active)
+                && status
+                    .battery
+                    .as_ref()
+                    .is_some_and(|scenario| scenario.accepts_lighting()) =>
+        {
+            let lighting: LightingRequest = serde_json::from_slice(&payload)
+                .map_err(|_| invalid("invalid lighting request"))?;
+            let scenario = status
+                .battery
+                .as_ref()
+                .ok_or_else(|| invalid("missing lighting scenario"))?;
+            let mut probe = [0];
+            let mut started_retirement = false;
+            let result = tokio::select! {
+                biased;
+                disconnected = io.read(&mut probe) => {
+                    match disconnected {
+                        Ok(0) => {}
+                        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => {}
+                        Err(error) => return Err(error),
+                        Ok(_) => return Err(invalid("unexpected data while awaiting lighting response")),
+                    }
+                    // The losing request future and its reservation have
+                    // been dropped. The separate retirement task is still live.
+                    if started_retirement {
+                        scenario.lighting_wait_disconnected().await?;
+                    }
+                    return Ok(());
+                }
+                applied = scenario.apply_lighting(lighting.value, &mut started_retirement) => applied?,
+            };
             write_frame(&mut io, request.operation_response(result.into())).await
         }
         (CURRENT_VERSION, "setPerformanceOverride")

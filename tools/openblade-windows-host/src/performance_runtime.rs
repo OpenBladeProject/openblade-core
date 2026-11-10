@@ -189,7 +189,40 @@ impl Controller {
         }
         self.temporary = temporary;
 
-        let outcome = match self.device.apply(value) {
+        self.apply_preset(value, || true)
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn profile_replay_baseline(&mut self) {
+        self.device.replace_observed(Preset::Performance);
+        self.confirmed = self.device.observe();
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn apply_power_profile(
+        &mut self,
+        value: i32,
+        fresh_power: impl FnMut() -> bool,
+    ) -> io::Result<Outcome> {
+        if self.pending.is_some() {
+            return Ok(Outcome::blocked(PENDING));
+        }
+        if self.temporary.is_some() || self.store.persistent.is_some() {
+            return Ok(Outcome::blocked(
+                "The scoped power-profile recipe requires profile-only intent.",
+            ));
+        }
+        let preset = Preset::try_from(value)
+            .map_err(|()| io::Error::other("unsupported scripted full-adapter preset"))?;
+        self.apply_preset(preset, fresh_power)
+    }
+
+    fn apply_preset(
+        &mut self,
+        value: Preset,
+        fresh_power: impl FnMut() -> bool,
+    ) -> io::Result<Outcome> {
+        let outcome = match self.device.apply(value, fresh_power) {
             RecipeResult::Unchanged => {
                 self.confirm(value);
                 Outcome::new(ScopedStatus::Unchanged, "Performance is already confirmed.")
@@ -389,9 +422,13 @@ impl State {
 
 impl Controller {
     pub(crate) fn project(&self, status: &mut Value) {
-        let controller = self;
-        let (desired, source) = controller.desired();
+        let (desired, source) = self.desired();
         status["desiredState"]["performance"] = json!({"value": desired as i32, "source": source});
+        self.project_readback(status);
+    }
+
+    pub(crate) fn project_readback(&self, status: &mut Value) {
+        let controller = self;
         status["confirmedState"]["performance"] =
             json!(controller.confirmed.map(|value| value as i32));
         status["performanceOverride"] = json!(

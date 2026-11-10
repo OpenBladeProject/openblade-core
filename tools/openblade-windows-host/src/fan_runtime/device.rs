@@ -95,7 +95,7 @@ impl Device {
             transport: ScriptedTransport {
                 topology: [Topology::Automatic; 2],
                 targets: [0; 2],
-                power: FULL_ADAPTER,
+                power: Some(FULL_ADAPTER),
                 readable: true,
             },
             transaction: 0,
@@ -214,7 +214,7 @@ impl Device {
             if fault == Fault::LoseFullPowerAfterFirstSubmission
                 && command == Command::SetTopology(Channel::First, Topology::Manual)
             {
-                self.transport.power = [0, 0];
+                self.transport.power = Some([0, 0]);
             }
             if command == Command::SetFixedTarget(Channel::Second) {
                 if fault == Fault::LoseFinalConfirmation {
@@ -226,6 +226,18 @@ impl Device {
             }
         }
         Some(())
+    }
+
+    #[cfg(windows)]
+    pub(super) fn read_scripted_adapter(&mut self, reply: Option<[u8; 2]>) -> Option<[u8; 2]> {
+        if !self.admission.admits_readback() {
+            return None;
+        }
+        self.transaction = 0;
+        let previous = std::mem::replace(&mut self.transport.power, reply);
+        let result = self.exchange(Command::ReadPower);
+        self.transport.power = previous;
+        result?.as_slice().try_into().ok()
     }
 
     fn read_pair(&mut self) -> Option<Topology> {
@@ -283,7 +295,7 @@ impl Device {
 struct ScriptedTransport {
     topology: [Topology; 2],
     targets: [u8; 2],
-    power: [u8; 2],
+    power: Option<[u8; 2]>,
     readable: bool,
 }
 
@@ -294,7 +306,7 @@ impl ScriptedTransport {
         let args = &request[8..8 + usize::from(request[5])];
         let index = |channel: u8| usize::from(channel - 1);
         let response: &[_] = match (class, id, args) {
-            (POWER, 0x8c, [0, 0]) => &self.power,
+            (POWER, 0x8c, [0, 0]) => self.power.as_ref()?,
             (THERMAL, 0x82, [1, channel @ 1..=2, 0, 0]) if self.readable => &[
                 1,
                 *channel,
@@ -336,6 +348,6 @@ impl Device {
     }
 
     pub(super) fn set_full_adapter(&mut self, full: bool) {
-        self.transport.power = if full { FULL_ADAPTER } else { [0, 0] };
+        self.transport.power = Some(if full { FULL_ADAPTER } else { [0, 0] });
     }
 }

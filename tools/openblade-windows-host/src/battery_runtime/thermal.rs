@@ -8,8 +8,10 @@ use tokio::sync::mpsc;
 // Both thermal recipes and battery policy share the scenario guard and one
 // status publication. The scripted transport behind each recipe is fixture-only.
 pub(super) struct Thermal {
-    performance: performance::Controller,
-    fans: fan::Controller,
+    pub(super) performance: performance::Controller,
+    pub(super) fans: fan::Controller,
+    power_profile: bool,
+    pub(super) power_unresolved: bool,
 }
 
 impl Thermal {
@@ -33,7 +35,18 @@ impl Thermal {
         Ok(Self {
             performance: performance::Controller::standard(),
             fans: fan::Controller::temporary(),
+            power_profile: false,
+            power_unresolved: false,
         })
+    }
+
+    pub(super) fn for_power_profile(status: &mut Value) -> io::Result<Self> {
+        let mut thermal = Self::new(status)?;
+        thermal.power_profile = true;
+        // A prior confirmed standard preset provides a differing getter
+        // baseline. The durable plugged-in destination remains Balanced.
+        thermal.performance.profile_replay_baseline();
+        Ok(thermal)
     }
 
     pub(super) fn pending_write(&self) -> bool {
@@ -41,7 +54,17 @@ impl Thermal {
     }
 
     pub(super) fn project(&self, status: &mut Value) {
-        self.performance.project(status);
+        if self.power_profile {
+            self.performance.project_readback(status);
+            if self.power_unresolved && status["activePowerSource"] == 1 {
+                status["activePowerSource"] = 3.into();
+            }
+            if self.power_unresolved || status["activePowerSource"] != 0 {
+                status["writesBlocked"] = true.into();
+            }
+        } else {
+            self.performance.project(status);
+        }
         self.fans.project(status);
     }
 }
@@ -58,13 +81,13 @@ pub(super) fn await_readback() -> Result {
 }
 
 impl ScenarioState {
-    fn thermal(&mut self) -> io::Result<&mut Thermal> {
+    pub(super) fn thermal(&mut self) -> io::Result<&mut Thermal> {
         self.thermal
             .as_mut()
             .ok_or_else(|| io::Error::other("missing composed thermal fixture"))
     }
 
-    fn thermal_block(&self) -> Option<Result> {
+    pub(super) fn thermal_block(&self) -> Option<Result> {
         if self.configuration_blocked {
             return Some(blocked_configuration());
         }

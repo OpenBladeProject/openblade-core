@@ -1,3 +1,4 @@
+use crate::battery_runtime::ProfileReplay;
 use std::{cell::Cell, time::Duration};
 
 use openblade_windows_host::configuration_writer::fixture;
@@ -63,7 +64,7 @@ fn scripted_controls_run_the_composed_fixture_and_retire_the_endpoint() {
                     shutdown,
                     profiles,
                     Some(writer),
-                    true,
+                    ProfileReplay::Thermal,
                 )?;
                 prepared.0.set_profile_save_barrier(ProfileSaveBarrier {
                     entered,
@@ -146,7 +147,7 @@ fn scripted_stop_during_fixture_admission_never_publishes_running() {
             |shutdown| {
                 let (profiles, writer) = fixture::Fixture::create(true)?.compose_battery(false)?;
                 assert_eq!(controls.handle(SERVICE_CONTROL_STOP), NO_ERROR);
-                prepare_battery_profiles(Some(advance), shutdown, profiles, Some(writer), true)
+                prepare_battery_profiles(Some(advance), shutdown, profiles, Some(writer), ProfileReplay::Thermal)
             },
             |status| {
                 phases.push(phase(status));
@@ -199,7 +200,7 @@ fn scripted_startup_refusals_never_publish_running() {
         let (_steps, advance) = mpsc::channel(1);
         assert_startup_refused(&controls, &id, |shutdown| {
             let (profiles, writer) = fixture::Fixture::create(true)?.compose_battery(false)?;
-            prepare_battery_profiles(Some(advance), shutdown, profiles, Some(writer), true)
+            prepare_battery_profiles(Some(advance), shutdown, profiles, Some(writer), ProfileReplay::Thermal)
         })
         .await;
         assert_eq!(
@@ -214,7 +215,7 @@ fn scripted_startup_refusals_never_publish_running() {
         let (_steps, advance) = mpsc::channel(1);
         let error = assert_startup_refused(&controls, &id, |shutdown| {
             let (profiles, writer) = fixture.compose_battery(false)?;
-            prepare_battery_profiles(Some(advance), shutdown, profiles, Some(writer), true)
+            prepare_battery_profiles(Some(advance), shutdown, profiles, Some(writer), ProfileReplay::Thermal)
         })
         .await;
         assert!(

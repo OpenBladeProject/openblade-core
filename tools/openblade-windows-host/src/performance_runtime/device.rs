@@ -169,7 +169,11 @@ impl Device {
         self.admission.admits_readback()
     }
 
-    pub(super) fn apply(&mut self, preset: Preset) -> RecipeResult {
+    pub(super) fn apply(
+        &mut self,
+        preset: Preset,
+        mut fresh_power: impl FnMut() -> bool,
+    ) -> RecipeResult {
         if !self.admits_writes() {
             return RecipeResult::Blocked;
         }
@@ -208,7 +212,7 @@ impl Device {
             if fault == Fault::DenySecond && channel == Channel::Second {
                 self.admission.owns_transport = false;
             }
-            if !self.admits_writes() {
+            if !self.admits_writes() || !fresh_power() {
                 return match channel {
                     Channel::First => RecipeResult::KnownNotApplied,
                     Channel::Second => RecipeResult::Indeterminate(baseline),
@@ -261,7 +265,7 @@ impl Device {
             .ok()
     }
 
-    #[cfg(test)]
+    #[cfg(any(windows, test))]
     pub(super) fn replace_observed(&mut self, preset: Preset) {
         self.transport.channels = [preset; 2];
     }
