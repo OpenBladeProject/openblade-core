@@ -8,8 +8,18 @@ use tokio::{
     time::timeout,
 };
 
+use windows_sys::Win32::{
+    Foundation::{ERROR_GEN_FAILURE, NO_ERROR},
+    System::Services::{
+        SERVICE_ACCEPT_SHUTDOWN, SERVICE_ACCEPT_STOP, SERVICE_CONTROL_SHUTDOWN,
+        SERVICE_CONTROL_STOP, SERVICE_RUNNING, SERVICE_START_PENDING, SERVICE_STOP_PENDING,
+        SERVICE_STOPPED,
+    },
+};
+
 use super::*;
 use crate::battery_runtime::{ProfileReplay, ProfileSaveBarrier};
+use crate::scm_host::{Phase, control};
 use crate::windows::{
     PREFIX,
     pipe::Endpoint,
@@ -59,7 +69,7 @@ fn native_control_trampoline_signals_the_registered_stop_channel() {
 #[test]
 fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
     runtime().block_on(async {
-        let controls = Controls(Mutex::new(None));
+        let controls = Controls::new();
         let id = test_id();
         let path = format!("{PREFIX}{id}");
         let (ready, wait_ready) = oneshot::channel();
@@ -195,7 +205,7 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
 #[test]
 fn scripted_stop_during_fixture_admission_never_publishes_running() {
     runtime().block_on(async {
-        let controls = Controls(Mutex::new(None));
+        let controls = Controls::new();
         let id = test_id();
         let (_steps, advance) = mpsc::channel(1);
         let mut phases = Vec::new();
@@ -257,7 +267,7 @@ fn stop_can_arrive_during_running_status_io() {
 #[test]
 fn scripted_startup_refusals_never_publish_running() {
     runtime().block_on(async {
-        let controls = Controls(Mutex::new(None));
+        let controls = Controls::new();
         let id = test_id();
         let path = format!("{PREFIX}{id}");
         let endpoint = Endpoint::new(path.clone(), super::super::PIPE_INSTANCES).unwrap();

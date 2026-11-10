@@ -16,6 +16,11 @@ mod performance_runtime;
 #[cfg(any(windows, test))]
 mod runtime;
 #[cfg(windows)]
+mod scm_host;
+#[cfg(all(windows, feature = "vm-scm-fixture"))]
+#[path = "windows/scm/identity.rs"]
+mod scm_identity;
+#[cfg(windows)]
 mod windows;
 #[cfg(any(windows, test))]
 mod wire;
