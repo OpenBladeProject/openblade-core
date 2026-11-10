@@ -7,10 +7,27 @@ on:
     paths:
       - 'rust/**'
       - 'tools/openblade-discovery/**'
+      - 'tools/openblade-windows-host/**'
+      - 'evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-adapter-power-readback-fixture.json'
+      - 'src/OpenBlade.Tray.Core/ServiceClient.cs'
+      - 'tests/OpenBlade.Tray.Tests/RustReadOnlyHostTests.cs'
+      - 'tests/OpenBlade.Service.Tests/ServiceControlRuntimeTests*.cs'
+      - 'tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service*.json'
+      - 'tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json'
+      - 'tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-*.json'
+      - 'tests/OpenBlade.Service.Tests/BatteryConfigurationStoreTests.cs'
+      - 'src/OpenBlade.Service/BatteryConfigurationStore.cs'
+      - 'src/OpenBlade.Service/ProfileStore.cs'
       - 'src/OpenBlade.Core.Native/**'
       - 'src/OpenBlade.Contracts/**'
       - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
       - 'src/OpenBlade.Service/ProfileAutomationState.cs'
+      - 'src/OpenBlade.Service/BatteryOperationExecutor.cs'
+      - 'src/OpenBlade.Service/BatteryOperationPlanner.cs'
+      - 'src/OpenBlade.Service/ControlCoordinator.cs'
+      - 'src/OpenBlade.Service/ConfirmedStateDriftTracker.cs'
+      - 'src/OpenBlade.Service/ServiceControlRuntime.cs'
+      - 'src/OpenBlade.Service/WriteConfirmationPolicy.cs'
       - 'src/OpenBlade.Service/OverrideResolver.cs'
       - 'src/OpenBlade.Protocol/**'
       - 'tests/OpenBlade.Protocol.Tests/**'
@@ -37,10 +54,27 @@ on:
     paths:
       - 'rust/**'
       - 'tools/openblade-discovery/**'
+      - 'tools/openblade-windows-host/**'
+      - 'evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-adapter-power-readback-fixture.json'
+      - 'src/OpenBlade.Tray.Core/ServiceClient.cs'
+      - 'tests/OpenBlade.Tray.Tests/RustReadOnlyHostTests.cs'
+      - 'tests/OpenBlade.Service.Tests/ServiceControlRuntimeTests*.cs'
+      - 'tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service*.json'
+      - 'tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json'
+      - 'tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-*.json'
+      - 'tests/OpenBlade.Service.Tests/BatteryConfigurationStoreTests.cs'
+      - 'src/OpenBlade.Service/BatteryConfigurationStore.cs'
+      - 'src/OpenBlade.Service/ProfileStore.cs'
       - 'src/OpenBlade.Core.Native/**'
       - 'src/OpenBlade.Contracts/**'
       - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
       - 'src/OpenBlade.Service/ProfileAutomationState.cs'
+      - 'src/OpenBlade.Service/BatteryOperationExecutor.cs'
+      - 'src/OpenBlade.Service/BatteryOperationPlanner.cs'
+      - 'src/OpenBlade.Service/ControlCoordinator.cs'
+      - 'src/OpenBlade.Service/ConfirmedStateDriftTracker.cs'
+      - 'src/OpenBlade.Service/ServiceControlRuntime.cs'
+      - 'src/OpenBlade.Service/WriteConfirmationPolicy.cs'
       - 'src/OpenBlade.Service/OverrideResolver.cs'
       - 'src/OpenBlade.Protocol/**'
       - 'tests/OpenBlade.Protocol.Tests/**'
@@ -178,6 +212,67 @@ jobs:
               $snapshot.hid.state -cnotin @('none', 'single', 'ambiguous', 'incomplete')) {
             throw 'Invalid discovery snapshot or unavailable hosted macOS metadata APIs.'
           }
+
+      - name: Verify the isolated Windows Rust service host
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = '../tools/openblade-windows-host/Cargo.toml'
+          cargo fmt --all --check --manifest-path $manifest
+          cargo test --locked --manifest-path $manifest --target ${{ matrix.target }}
+          cargo clippy --locked --manifest-path $manifest --target ${{ matrix.target }} --all-targets -- -D warnings
+          cargo build --locked --manifest-path $manifest --target ${{ matrix.target }}
+          $env:OPENBLADE_RUST_DEV_HOST_EXE = (Resolve-Path '../tools/openblade-windows-host/target/${{ matrix.target }}/debug/openblade-windows-host.exe').Path
+          dotnet restore ../src/OpenBlade.Tray/OpenBlade.Tray.csproj
+          dotnet test ../tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter FullyQualifiedName~RustReadOnlyHostTests
+          dotnet test ../tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter 'FullyQualifiedName~RustBatteryParity|FullyQualifiedName~RustPerformanceParity|FullyQualifiedName~RustFanParity'
+          dotnet test ../tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj --filter FullyQualifiedName~RustFanParity
+
+      - name: Verify the Windows configuration writer against the managed store
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = '../tools/openblade-windows-host/Cargo.toml'
+          $messages = cargo test --locked --lib --no-run --message-format=json --manifest-path $manifest --target ${{ matrix.target }}
+          $testBinaries = @($messages | ConvertFrom-Json | Where-Object {
+            $_.reason -eq 'compiler-artifact' -and $_.profile.test -and
+              $_.target.name -eq 'openblade_windows_host' -and $_.executable
+          })
+          if ($testBinaries.Count -ne 1) { throw 'Expected one Rust library test executable.' }
+          $env:OPENBLADE_RUST_CONFIG_TEST_EXE = $testBinaries[0].executable
+          $results = Join-Path $env:RUNNER_TEMP 'configuration-writer'
+          $filter = 'FullyQualifiedName~WindowsReplay_ConfigurationAggregateFixtureMatchesManagedWriter|FullyQualifiedName~WindowsReplay_RustConfigurationWriterExchangesManagedBytes|FullyQualifiedName~WindowsReplay_ProfileFixtureMatchesManagedMigration'
+          dotnet test ../tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter $filter --results-directory $results --logger 'trx;LogFileName=oracle.trx'
+          [xml]$trx = Get-Content (Join-Path $results 'oracle.trx') -Raw
+          $exchange = @($trx.TestRun.Results.UnitTestResult | Where-Object {
+            $_.testName -like '*.WindowsReplay_RustConfigurationWriterExchangesManagedBytes' -and $_.outcome -eq 'Passed'
+          })
+          if ($exchange.Count -ne 1) { throw 'The Rust and managed byte exchange did not pass.' }
+
+      - name: Smoke Windows discovery metadata on the hosted VM
+        if: runner.os == 'Windows' && runner.environment == 'github-hosted' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        timeout-minutes: 2
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $binary = '../tools/openblade-windows-host/target/${{ matrix.target }}/debug/openblade-windows-discovery.exe'
+          $output = & $binary
+          if (@($output).Count -ne 1) { throw 'Expected one Windows metadata snapshot.' }
+          $snapshot = $output | ConvertFrom-Json -AsHashtable
+          if ($snapshot.schemaVersion -ne 1 -or $snapshot.platform -cne 'unsupported' -or
+              $snapshot.registryMatch.state -cnotin @('unknown', 'incomplete') -or
+              $snapshot.hid.inventory -cnotin @('complete', 'incomplete') -or
+              $snapshot.hid.candidates -cne 'notEvaluated' -or $null -ne $snapshot.hid.counts) {
+            throw "Unexpected hosted Windows discovery result: $output"
+          }
+          Write-Output $output
+
+      - name: Smoke native SCM lifecycle on the hosted Windows VM
+        if: runner.os == 'Windows' && runner.environment == 'github-hosted' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        timeout-minutes: 5
+        run: ../tools/openblade-windows-host/Test-HostedScm.ps1
 
       - name: Build native libraries and execute C and .NET interop
         run: ./Test-NativeInterop.ps1 -Target ${{ matrix.target }}
