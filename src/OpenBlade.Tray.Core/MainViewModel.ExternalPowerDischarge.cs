@@ -59,7 +59,7 @@ public sealed partial class MainViewModel
         bool wasDischarging = IsExternalPowerDischarging;
         long previousEpisode = ExternalPowerDischargeEpisode;
         int? batteryPower = status.LiveReadings?.BatteryPowerFlowMilliwatts;
-        if (batteryPower is < 0 && IsNearActiveChargeLimit(status))
+        if (batteryPower is < 0 && IsAtOrAboveChargeLimitWarningThreshold(status))
         {
             externalPowerDischarge.Reset();
         }
@@ -70,12 +70,12 @@ public sealed partial class MainViewModel
         PublishExternalPowerDischarge(wasDischarging, previousEpisode);
     }
 
-    private bool IsNearActiveChargeLimit(ServiceStatusSnapshot status) =>
+    private bool IsAtOrAboveChargeLimitWarningThreshold(ServiceStatusSnapshot status) =>
         status.ConfirmedState?.Battery is { ProtectionEnabled: true, ChargeLimitPercent: int limit } battery
         && (battery.TemporaryFullCharge is false
             || battery.TemporaryFullCharge is null && status.Capabilities?.SupportsTemporaryFullCharge is false)
         && ReadPluggedInBatteryPercent() is int percent
-        && Math.Abs(percent - limit) <= ChargeLimitWarningTolerancePercent;
+        && percent >= limit - ChargeLimitWarningTolerancePercent;
 
     private static int? ReadWindowsBatteryPercent() =>
         OperatingSystem.IsWindows()

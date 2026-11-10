@@ -184,16 +184,16 @@ public sealed partial class MainViewModelTests
     [Theory]
     [InlineData(PowerSource.PluggedIn, true, 75, 69)]
     [InlineData(PowerSource.PluggedIn, true, 70, 69)]
-    [InlineData(PowerSource.UsbC, false, 80, 81)]
-    public async Task ChargeLimitSuppressesRepeatedWarningsWithinFivePercentagePoints(
+    [InlineData(PowerSource.UsbC, false, 100, 69)]
+    public async Task ChargeLimitSuppressesRepeatedWarningsUntilBatteryFallsMoreThanFivePointsBelowLimit(
         PowerSource source,
         bool supportsTemporaryFullCharge,
-        int insideBandPercent,
-        int outsideBandPercent)
+        int initialBatteryPercent,
+        int dischargedBatteryPercent)
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
-        int batteryPercent = insideBandPercent;
+        int batteryPercent = initialBatteryPercent;
         await using var viewModel = new MainViewModel(client, dispatcher)
         {
             ReadPluggedInBatteryPercent = () => batteryPercent,
@@ -220,7 +220,7 @@ public sealed partial class MainViewModelTests
             Assert.Equal(0, viewModel.ExternalPowerDischargeEpisode);
         }
 
-        batteryPercent = outsideBandPercent;
+        batteryPercent = dischargedBatteryPercent;
         await ObserveAsync(client,
             () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None),
             status with { Revision = status.Revision + 1 });
