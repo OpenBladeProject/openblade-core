@@ -30,7 +30,7 @@ fn descriptor(sddl: &str) -> Vec<u8> {
 #[test]
 fn root_requires_the_applied_setup_acl() {
     assert_eq!(
-        accepts_descriptor(&descriptor(ROOT), Policy::Root),
+        accepts_descriptor(&descriptor(ROOT), Policy::ROOT),
         Some(true)
     );
     for invalid in [
@@ -47,7 +47,7 @@ fn root_requires_the_applied_setup_acl() {
         "O:BA",
     ] {
         assert_ne!(
-            accepts_descriptor(&descriptor(invalid), Policy::Root),
+            accepts_descriptor(&descriptor(invalid), Policy::ROOT),
             Some(true),
             "{invalid}"
         );
@@ -98,7 +98,7 @@ fn ancestors_allow_child_creation_without_allowing_redirection() {
         format!("O:{trusted_installer}D:(A;OICI;FA;;;SY)(A;CIIO;GA;;;CO)(A;;0x4;;;BU)(A;;FR;;;BU)");
     let bytes = descriptor(&sddl);
     assert_eq!(accepts_descriptor(&bytes, Policy::Ancestor), Some(true));
-    assert_ne!(accepts_descriptor(&bytes, Policy::Root), Some(true));
+    assert_ne!(accepts_descriptor(&bytes, Policy::ROOT), Some(true));
     assert_ne!(accepts_descriptor(&bytes, Policy::Record), Some(true));
     for invalid in [
         "O:BUD:(A;;FR;;;BU)",
@@ -121,7 +121,7 @@ fn malformed_descriptors_fail_closed() {
     let valid = descriptor(ROOT);
     for end in 0..valid.len() {
         assert_ne!(
-            accepts_descriptor(&valid[..end], Policy::Root),
+            accepts_descriptor(&valid[..end], Policy::ROOT),
             Some(true),
             "length {end}"
         );
@@ -131,7 +131,7 @@ fn malformed_descriptors_fail_closed() {
         let mut malformed = valid.clone();
         malformed[offset] = bad;
         assert_ne!(
-            accepts_descriptor(&malformed, Policy::Root),
+            accepts_descriptor(&malformed, Policy::ROOT),
             Some(true),
             "offset {offset}"
         );

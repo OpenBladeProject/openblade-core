@@ -17,6 +17,12 @@ vm-scm-fixture = []
 name = "openblade-windows-discovery"
 path = "src/discover.rs"
 
+[[bin]]
+name = "openblade-windows-scm-vm"
+path = "src/vm_main.rs"
+required-features = ["vm-scm-fixture"]
+test = false
+
 [dependencies]
 openblade-domain = { path = '../../rust/crates/openblade-domain' }
 openblade-protocol = { path = '../../rust/crates/openblade-protocol' }

@@ -62,6 +62,13 @@ impl Controls {
         }
     }
 
+    fn stop_requested(&self) -> bool {
+        self.0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .is_none()
+    }
+
     fn publish(
         &self,
         phase: Phase,
@@ -70,12 +77,7 @@ impl Controls {
         if phase == Phase::Running {
             // The endpoint is live. STOP before this decision cancels startup,
             // and STOP after it retires the ready host. Keep I/O outside the lock.
-            let stopped = self
-                .0
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .is_none();
-            if stopped {
+            if self.stop_requested() {
                 return Err(startup_stopped());
             }
         }

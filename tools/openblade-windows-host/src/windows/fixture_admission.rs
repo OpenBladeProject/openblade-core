@@ -1,7 +1,9 @@
 //! Admission for the fixed Windows VM fixture only.
 #![allow(unsafe_code)]
 
-use openblade_windows_host::configuration_writer::protected::ProtectedStorage;
+use openblade_windows_host::configuration_writer::{
+    fixture::VM_DATA_ROOT, protected::ProtectedStorage,
+};
 use std::{
     env,
     ffi::OsStr,
@@ -31,7 +33,6 @@ use windows_sys::Win32::{
 pub(super) const NAME: &str = "OpenBladeRustPhase5jVm";
 pub(super) const ROOT: &str = r"C:\OpenBladeRustPhase5jVm";
 pub(super) const IMAGE: &str = r"C:\OpenBladeRustPhase5jVm\OpenBladeRustPhase5jVm.exe";
-pub(super) const DATA: &str = r"C:\OpenBladeRustPhase5jVm\data";
 const IMAGE_NAME: &str = "OpenBladeRustPhase5jVm.exe";
 pub(super) const START_MARKER: &str = "start.release";
 pub(super) const RENDERER_MARKER: &str = "renderer.release";
@@ -103,7 +104,6 @@ pub(super) unsafe fn callback_matches(argc: u32, argv: *mut *mut u16) -> bool {
 
 pub(super) struct FixtureAdmission {
     root: ProtectedStorage,
-    _data: ProtectedStorage,
     _image: File,
 }
 
@@ -127,19 +127,21 @@ fn marker_allowed(name: &str) -> bool {
 }
 
 /// Call only from the admitted SCM callback after reporting START_PENDING.
-pub(super) fn admit() -> io::Result<FixtureAdmission> {
+pub(super) fn admit() -> io::Result<(FixtureAdmission, ProtectedStorage)> {
     require_process()?;
     require_registration()?;
     let root = ProtectedStorage::open_vm_root(Path::new(ROOT))?;
     let image = root
         .open_vm_file(IMAGE_NAME)?
         .ok_or_else(|| denied("missing protected VM fixture image"))?;
-    let data = ProtectedStorage::open_vm_root(Path::new(DATA))?;
-    Ok(FixtureAdmission {
-        root,
-        _data: data,
-        _image: image,
-    })
+    let data = ProtectedStorage::open_vm_root(Path::new(VM_DATA_ROOT))?;
+    Ok((
+        FixtureAdmission {
+            root,
+            _image: image,
+        },
+        data,
+    ))
 }
 
 struct ServiceHandle(SC_HANDLE);

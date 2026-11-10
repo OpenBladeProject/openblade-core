@@ -19,6 +19,7 @@ internal static class Program
 {
     private const string Root = @"C:\OpenBladeRustPhase5jVm";
     private const string Data = Root + @"\data";
+    private const string ServiceName = "OpenBladeRustPhase5jVm";
     private const string Image = Root + @"\OpenBladeRustPhase5jVm.exe";
     private const string PipeName = "OpenBlade.Rust.ReadOnly.Dev.phase5j-vm";
     private const string LeaseName = "configuration.writer-lock";
@@ -50,11 +51,19 @@ internal static class Program
                         WriteProtected(Path.Combine(Data, Documents[index]), baseline[index]);
                     }
                     break;
-                case ["stage", var source]:
+                case ["stage", var source, var digest]:
                     var build = new FileInfo(source);
+                    Require(Path.IsPathFullyQualified(source)
+                        && Path.GetPathRoot(build.FullName) is { Length: 3 } drive
+                        && new DriveInfo(drive).DriveType == DriveType.Fixed
+                        && build.Name is "openblade-windows-scm-vm.exe" or "OpenBladeRustPhase5jVm.exe",
+                        "Expected the dedicated VM binary on a local fixed drive.");
                     Require(build.Exists && !build.Attributes.HasFlag(FileAttributes.ReparsePoint),
                         "Expected a plain fixture build artifact.");
-                    WriteProtected(Image, File.ReadAllBytes(build.FullName));
+                    byte[] image = File.ReadAllBytes(build.FullName);
+                    Require(Convert.ToHexString(SHA256.HashData(image)).Equals(digest, StringComparison.OrdinalIgnoreCase),
+                        "The staged bytes do not match the reviewed image digest.");
+                    WriteProtected(Image, image);
                     break;
                 case ["seal-client"]:
                     string clientDirectory = Path.Combine(Root, "client");
@@ -92,7 +101,7 @@ internal static class Program
                     AssertLeaseHeld();
                     break;
                 default:
-                    throw new ArgumentException("Expected prepare, stage <image>, seal-client, release-start, release-renderer, pipe-absent, deny, exercise <SCM PID>, lease-held, or verify.");
+                    throw new ArgumentException("Expected prepare, stage <image> <SHA-256>, seal-client, release-start, release-renderer, pipe-absent, deny, exercise <SCM PID>, lease-held, or verify.");
             }
 
             return 0;
@@ -153,8 +162,9 @@ internal static class Program
         {
             await applying;
         }
-        catch (IOException) when (!token.IsCancellationRequested)
+        catch (IOException error) when (!token.IsCancellationRequested && IsPipeClosure(error))
         {
+            AssertStopPending();
             WriteProtected(Path.Combine(Root, "client.drained"), "lighting-response-closed\n"u8);
             return;
         }
@@ -188,6 +198,48 @@ internal static class Program
                 await pipe.DisposeAsync();
                 throw;
             }
+        }
+    }
+
+    private static bool IsPipeClosure(IOException error) =>
+        error is EndOfStreamException
+        || error.HResult is unchecked((int)0x8007006D) // ERROR_BROKEN_PIPE
+            or unchecked((int)0x800700E8)             // ERROR_NO_DATA
+            or unchecked((int)0x800700E9);            // ERROR_PIPE_NOT_CONNECTED
+
+    private static void AssertStopPending()
+    {
+        IntPtr manager = OpenSCManager(IntPtr.Zero, IntPtr.Zero, 1); // SC_MANAGER_CONNECT
+        if (manager == IntPtr.Zero)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Opening the local SCM database");
+        }
+
+        try
+        {
+            IntPtr service = OpenService(manager, ServiceName, 4); // SERVICE_QUERY_STATUS
+            if (service == IntPtr.Zero)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Opening the fixed VM service");
+            }
+
+            try
+            {
+                if (!QueryServiceStatus(service, out ServiceStatus status))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Reading the fixed VM service status");
+                }
+
+                Require(status.CurrentState == 3, "The lighting response closed outside SCM STOP_PENDING.");
+            }
+            finally
+            {
+                CloseServiceHandle(service);
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(manager);
         }
     }
 
@@ -240,8 +292,9 @@ internal static class Program
             && actual[1].AsSpan().SequenceEqual(expected[1]),
             "The managed oracle differs from the committed profile or unchanged preferences.");
         using var commit = JsonDocument.Parse(actual[2]);
+        using var oracleCommit = JsonDocument.Parse(expected[2]);
         JsonElement marker = commit.RootElement;
-        Require(marker.GetProperty("schemaVersion").GetInt32() == 25
+        Require(marker.GetProperty("schemaVersion").GetInt32() == oracleCommit.RootElement.GetProperty("schemaVersion").GetInt32()
             && marker.GetProperty("profileSha256").GetString() == Convert.ToHexString(SHA256.HashData(actual[0]))
             && marker.GetProperty("preferencesSha256").GetString() == Convert.ToHexString(SHA256.HashData(actual[1])),
             "The commit marker does not describe the actual aggregate.");
@@ -332,6 +385,32 @@ internal static class Program
             throw new InvalidOperationException(message);
         }
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ServiceStatus
+    {
+        internal uint Type;
+        internal uint CurrentState;
+        internal uint AcceptedControls;
+        internal uint Win32ExitCode;
+        internal uint ServiceExitCode;
+        internal uint Checkpoint;
+        internal uint WaitHint;
+    }
+
+    [DllImport("advapi32.dll", EntryPoint = "OpenSCManagerW", ExactSpelling = true, SetLastError = true)]
+    private static extern IntPtr OpenSCManager(IntPtr machine, IntPtr database, uint access);
+
+    [DllImport("advapi32.dll", EntryPoint = "OpenServiceW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr OpenService(IntPtr manager, string service, uint access);
+
+    [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryServiceStatus(IntPtr service, out ServiceStatus status);
+
+    [DllImport("advapi32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseServiceHandle(IntPtr handle);
 
     [DllImport("kernel32.dll", EntryPoint = "CreateDirectoryW", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

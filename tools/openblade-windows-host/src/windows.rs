@@ -42,11 +42,8 @@ enum Phase {
 
 pub(super) fn entry() -> io::Result<()> {
     #[cfg(feature = "vm-scm-fixture")]
-    const VM_ENTRY: Option<fn() -> io::Result<()>> = Some(scm::vm::entry);
-    #[cfg(not(feature = "vm-scm-fixture"))]
-    const VM_ENTRY: Option<fn() -> io::Result<()>> = None;
-    if let Some(entry) = VM_ENTRY {
-        return entry();
+    if env!("CARGO_BIN_NAME") == "openblade-windows-scm-vm" {
+        return scm::vm::entry();
     }
 
     let args: Vec<_> = std::env::args_os().skip(1).collect();

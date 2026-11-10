@@ -101,7 +101,7 @@ impl ProtectedStorage {
     }
 
     pub(super) fn check_root(&self) -> io::Result<()> {
-        verify_security(&self.root, Policy::Root)?;
+        verify_security(&self.root, Policy::ROOT)?;
         for ancestor in &self.ancestors {
             let info = directory_info(ancestor)?;
             if info.dwVolumeSerialNumber != self.identity.volume {
@@ -151,7 +151,7 @@ impl ProtectedStorage {
             return Err(denied("expected one plain VM fixture filename"));
         }
         self.check_root()?;
-        self.open_with_policy(name, FILE_GENERIC_READ, Policy::VmFile)
+        self.open_with_policy(name, FILE_GENERIC_READ, Policy::VM_FILE)
     }
 
     fn open_with_policy(
@@ -564,21 +564,16 @@ fn directory_info(file: &File) -> io::Result<BY_HANDLE_FILE_INFORMATION> {
 #[derive(Clone, Copy)]
 enum Policy {
     Ancestor,
-    Root,
+    Setup { ace_flags: u8 },
     Record,
-    #[cfg(feature = "vm-scm-fixture")]
-    VmFile,
 }
 
 impl Policy {
-    fn setup_ace_flags(self) -> Option<u8> {
-        match self {
-            Self::Root => Some(OBJECT_AND_CONTAINER_INHERIT),
-            #[cfg(feature = "vm-scm-fixture")]
-            Self::VmFile => Some(0),
-            Self::Record | Self::Ancestor => None,
-        }
-    }
+    const ROOT: Self = Self::Setup {
+        ace_flags: OBJECT_AND_CONTAINER_INHERIT,
+    };
+    #[cfg(feature = "vm-scm-fixture")]
+    const VM_FILE: Self = Self::Setup { ace_flags: 0 };
 }
 
 fn denied(message: &'static str) -> io::Error {
@@ -657,11 +652,11 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
         return Some(false);
     }
     let owner = sid(section(bytes, 4)?)?;
-    let setup_flags = policy.setup_ace_flags();
+    let setup = matches!(policy, Policy::Setup { .. });
     if match policy {
         Policy::Record => owner != ADMINISTRATORS && owner != SYSTEM,
         Policy::Ancestor => !matches!(owner, ADMINISTRATORS | SYSTEM | TRUSTED_INSTALLER),
-        _ => owner != ADMINISTRATORS || control & SE_DACL_PROTECTED == 0,
+        Policy::Setup { .. } => owner != ADMINISTRATORS || control & SE_DACL_PROTECTED == 0,
     } {
         return Some(false);
     }
@@ -671,7 +666,7 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
     }
     let count = word(acl, 4)?;
     let mut aces = acl.get(8..usize::from(word(acl, 2)?))?;
-    if count == 0 || setup_flags.is_some() && count != 2 {
+    if count == 0 || setup && count != 2 {
         return Some(false);
     }
     let mut setup_principals = 0;
@@ -717,12 +712,8 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
                 }
             }
             // Setup grants FullControl to exactly SYSTEM and Administrators.
-            _ => {
-                if kind != 0
-                    || Some(flags) != setup_flags
-                    || mask != FILE_ALL_ACCESS
-                    || principal == 0
-                {
+            Policy::Setup { ace_flags } => {
+                if kind != 0 || flags != ace_flags || mask != FILE_ALL_ACCESS || principal == 0 {
                     return Some(false);
                 }
                 setup_principals |= principal;
@@ -730,7 +721,7 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
         }
         aces = &aces[length..];
     }
-    Some(setup_flags.is_none() || setup_principals == 3)
+    Some(!setup || setup_principals == 3)
 }
 
 fn section(bytes: &[u8], field: usize) -> Option<&[u8]> {
@@ -794,6 +785,6 @@ fn vm_file_requires_the_setup_file_descriptor() {
         let descriptor = LocalDescriptor(descriptor);
         // SAFETY: Windows allocated length bytes and descriptor owns them.
         let bytes = unsafe { slice::from_raw_parts(descriptor.0.cast(), length as usize) };
-        assert_eq!(accepts_descriptor(bytes, Policy::VmFile), Some(expected));
+        assert_eq!(accepts_descriptor(bytes, Policy::VM_FILE), Some(expected));
     }
 }

@@ -26,6 +26,35 @@ fn phase(status: &SERVICE_STATUS) -> (u32, u32, u32) {
 }
 
 #[test]
+fn native_control_trampoline_signals_the_registered_stop_channel() {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::{
+        Foundation::NO_ERROR,
+        System::Services::{SERVICE_CONTROL_INTERROGATE, SERVICE_CONTROL_STOP},
+    };
+
+    let mut stopping = CONTROLS.arm();
+    // SAFETY: this callback ignores its event and context pointers.
+    unsafe {
+        assert_eq!(
+            control(SERVICE_CONTROL_INTERROGATE, 0, null_mut(), null_mut()),
+            NO_ERROR
+        );
+        assert_eq!(
+            stopping.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        );
+        for _ in 0..2 {
+            assert_eq!(
+                control(SERVICE_CONTROL_STOP, 0, null_mut(), null_mut()),
+                NO_ERROR
+            );
+        }
+    }
+    assert_eq!(stopping.try_recv(), Ok(()));
+}
+
+#[test]
 fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
     runtime().block_on(async {
         let controls = Controls(Mutex::new(None));

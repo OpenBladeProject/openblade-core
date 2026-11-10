@@ -11,7 +11,7 @@ From the repository root on the reviewed Phase 5j checkout:
 ```powershell
 Push-Location rust
 try {
-    cargo build --locked --release --target x86_64-pc-windows-msvc --features vm-scm-fixture --bin openblade-windows-host --manifest-path ../tools/openblade-windows-host/Cargo.toml
+    cargo build --locked --release --target x86_64-pc-windows-msvc --features vm-scm-fixture --bin openblade-windows-scm-vm --manifest-path ../tools/openblade-windows-host/Cargo.toml
     if ($LASTEXITCODE -ne 0) { throw 'Rust fixture build failed.' }
 } finally {
     Pop-Location
@@ -24,7 +24,7 @@ Use the exact checkout revision and Rust binary SHA-256 from the separately revi
 
 ## Run one cycle in the authorized VM
 
-Run the following as one block from the same checkout. START_PENDING and STOP_PENDING have bounded observation windows. Avoid stepping through the block interactively. The input markers are created once with the Setup-style protected leaf ACL. The script verifies the process and pipe separately from SCM state. The task starts the protected client DLL directly via the absolute, machine-installed .NET runtime path.
+Run the following as one block from the same checkout. START_PENDING and STOP_PENDING have bounded observation windows. Avoid stepping through the block interactively. The input markers are created once with the Setup-style protected leaf ACL. The script verifies the process and pipe separately from SCM state. It requires STOP_PENDING within 15 seconds of launching the peer, then allows up to 12 seconds for renderer acknowledgement. This fits inside the shared 30-second release deadline, which starts when the pending Off request drains its frame. The task starts the protected client DLL directly via the absolute, machine-installed .NET runtime path.
 
 ```powershell
 $ErrorActionPreference = 'Stop'
@@ -36,7 +36,7 @@ $image = Join-Path $root 'OpenBladeRustPhase5jVm.exe'
 $stagedClient = Join-Path $root 'client'
 $dotnet = 'C:\Program Files\dotnet\dotnet.exe'
 $sc = 'C:\Windows\System32\sc.exe'
-$hostBuild = (Resolve-Path 'tools/openblade-windows-host/target/x86_64-pc-windows-msvc/release/openblade-windows-host.exe').Path
+$hostBuild = (Resolve-Path 'tools/openblade-windows-host/target/x86_64-pc-windows-msvc/release/openblade-windows-scm-vm.exe').Path
 $clientBuild = (Resolve-Path 'tools/openblade-windows-host/vm-client/bin/Release/net10.0-windows').Path
 $adminClient = Join-Path $clientBuild 'OpenBlade.VmFixture.exe'
 $privateEvidence = [Collections.Generic.List[string]]::new()
@@ -109,7 +109,7 @@ $owner = $null
 try {
     Invoke-Fixture @('prepare')
     Invoke-Fixture @('pipe-absent')
-    Invoke-Fixture @('stage', $hostBuild)
+    Invoke-Fixture @('stage', $hostBuild, $expectedHostHash)
     if ((Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash -cne $sourceHash) {
         throw 'Staged Rust image differs from the reviewed build.'
     }
@@ -162,12 +162,14 @@ try {
     $runAs = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 1)
     Register-ScheduledTask -TaskName $task -Action $action -Principal $runAs -Settings $settings | Out-Null
+    $peerClock = [Diagnostics.Stopwatch]::StartNew()
     Start-ScheduledTask -TaskName $task
     $accepted = Join-Path $root 'client.accepted'
-    Wait-For { Test-Path -LiteralPath $accepted -PathType Leaf } 25 'Managed peer did not verify the profile commit and pending Off.'
+    Wait-For { Test-Path -LiteralPath $accepted -PathType Leaf } 12 'Managed peer did not verify the profile commit and pending Off.'
     Invoke-Sc @('stop', $name)
 
-    $stopping = Wait-For { Read-State 3 } 8 'Missing STOP_PENDING.'
+    $stopping = Wait-For { Read-State 3 } 4 'Missing STOP_PENDING.'
+    if ($peerClock.Elapsed.TotalSeconds -ge 15) { throw 'The managed launch-to-STOP_PENDING budget expired.' }
     $privateEvidence.Add($stopping)
     $drained = Join-Path $root 'client.drained'
     Wait-For {
