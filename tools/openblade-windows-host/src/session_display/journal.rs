@@ -15,6 +15,8 @@ use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 
 use crate::session_windows::valid_request_id;
 
+use super::color::ColorChange;
+
 const VERSION: u8 = 1;
 const MAX_BYTES: usize = 4096;
 
@@ -137,6 +139,9 @@ pub(super) enum Change {
         before: u8,
         requested: u8,
     },
+    Icc {
+        evidence: Box<ColorChange>,
+    },
 }
 
 impl Change {
@@ -161,6 +166,7 @@ impl Change {
                     )
             }
             Self::Hdr { before, requested } => before != requested,
+            Self::Icc { evidence } => evidence.valid(),
             Self::Brightness { before, requested } => {
                 before != requested && *before <= 100 && *requested <= 100
             }

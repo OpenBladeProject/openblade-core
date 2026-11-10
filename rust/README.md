@@ -74,7 +74,7 @@ The Session tests check the v2 envelopes, including a successful query with
 unavailable state. The private query includes brightness and supported levels
 only when the synthetic WMI reading matches the CCD endpoints and monitor path.
 Unavailable brightness leaves the independently observed display fields intact.
-Color profiles remain unavailable.
+ICC profiles are available only in the scripted ICC scenarios.
 
 The private display endpoint accepts query and the existing typed brightness,
 HDR and refresh-rate requests. Each process starts one scripted brightness worker; no COM policy is
@@ -126,6 +126,16 @@ with its scripted values after each launch, so that read establishes the state
 of the replacement fixture only. Missing, invalid or unreadable evidence
 leaves writes paused and queries available. Recovery never replays a setter.
 The integration tests own and remove their scratch directories.
+
+Phase 6x extends the same fence to typed v2 SetColorProfile through the
+managed Tray adapter. The scripted WCS transaction records the exact panel
+and monitor key, SDR preference, selected scope, and the defaults and
+associations in both scopes before any possible submission. A confirmed
+selection or restoration needs a separate complete WCS observation and a
+delivered reply to clear its intent in the original process. An explicit
+recovery query after process exit can settle the saved baseline or the
+complete expected selection. The displayed profile ID alone cannot settle
+intent. While intent is unresolved, all four display setters remain fenced.
 
 Current HDR output mode, complete snapshot parity, and native display behavior
 need separate evidence before replacement. Live refresh still needs authorized

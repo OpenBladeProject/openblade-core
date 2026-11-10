@@ -1,4 +1,5 @@
 use std::{
+    cell::Cell,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering::SeqCst},
@@ -71,7 +72,7 @@ impl SessionDisplay {
         journal: SharedJournal,
     ) -> Self {
         let mut panel = ScriptedDisplay::new(scenario, hdr, refresh);
-        panel.enabled = color == ColorFixture::Disabled;
+        panel.enabled = matches!(color, ColorFixture::Disabled | ColorFixture::RecoveryHdr);
         Self {
             panel,
             color: ColorDisplay::new(color),
@@ -85,11 +86,15 @@ impl SessionDisplay {
         &mut self,
         query: Query,
         cancelled: impl Fn() -> bool,
-    ) -> Result<(Vec<u8>, Option<String>, bool), Rejected> {
+    ) -> Result<(Vec<u8>, Option<String>), Rejected> {
+        let began = Cell::new(false);
         let record = |panel, change| {
-            self.journal
+            let recorded = self
+                .journal
                 .lock()
-                .is_ok_and(|mut journal| journal.begin(&query.request_id, panel, change))
+                .is_ok_and(|mut journal| journal.begin(&query.request_id, panel, change));
+            began.set(recorded);
+            recorded
         };
         let attempt = Attempt {
             cancelled: &cancelled,
@@ -133,6 +138,10 @@ impl SessionDisplay {
                                     && (hdr.enabled == *before || hdr.enabled == *requested)
                             })
                         }
+                        Change::Icc { evidence } => self
+                            .color
+                            .observe(&self.panel, &panel, context, &cancelled)
+                            .is_some_and(|observed| evidence.classifies(&observed)),
                         Change::Brightness { before, requested } => {
                             // Before any submission, the scripted transport can
                             // only return this panel's fixed _0 instance.
@@ -202,7 +211,7 @@ impl SessionDisplay {
                 &self.panel,
                 &reading,
                 &mut state,
-                &cancelled,
+                attempt,
             ),
             Operation::SetBrightness {
                 expected_power_source,
@@ -266,27 +275,27 @@ impl SessionDisplay {
                 }
             }
         };
-        if is_query || (status == SUCCEEDED && !is_icc) {
+        if is_query {
+            self.color.project(&reading, &mut state);
+        } else if status == SUCCEEDED && !is_icc {
             self.color.project(&self.panel.read(false), &mut state);
         }
         if status == INDETERMINATE {
             self.writes_paused = true;
         }
-        if status == SUCCEEDED && possible_submission {
+        // For ICC, Failed with possible submission means that independent
+        // readback confirmed the entire baseline after the transaction ended.
+        if possible_submission && (status == SUCCEEDED || (is_icc && status == FAILED)) {
             retirement = Some(query.request_id.clone());
         } else if !possible_submission && !is_query {
             // Cancellation after publishing intent but before the call can
             // retire that exact intent. An existing fence is never cleared
             // by a rejected retry, including one with the same request ID.
-            if status == FAILED && cancelled() && !self.writes_paused {
+            if (is_icc && began.get()) || (status == FAILED && cancelled() && !self.writes_paused) {
                 self.finish(&query.request_id);
             }
         }
-        let frame = encode(&query.request_id, status, error, state);
-        if frame.is_err() && is_icc && possible_submission {
-            self.writes_paused = true;
-        }
-        Ok((frame?, retirement, is_icc && possible_submission))
+        Ok((encode(&query.request_id, status, error, state)?, retirement))
     }
 
     fn finish(&mut self, id: &str) {
@@ -551,7 +560,7 @@ pub(super) async fn serve(
         }
         result = &mut task => (result, false),
     };
-    let (frame, retirement, icc_submitted) = result.map_err(|_| Rejected::WorkerFailed)??;
+    let (frame, retirement) = result.map_err(|_| Rejected::WorkerFailed)??;
     let delivery = if disconnected {
         Err(Rejected::WriteFailed)
     } else {
@@ -567,12 +576,6 @@ pub(super) async fn serve(
             .lock()
             .map_err(|_| Rejected::WorkerFailed)?
             .finish(&id);
-    }
-    if delivery.is_err() && icc_submitted {
-        session
-            .lock()
-            .map_err(|_| Rejected::WorkerFailed)?
-            .writes_paused = true;
     }
     delivery
 }

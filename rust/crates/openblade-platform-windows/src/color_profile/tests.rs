@@ -49,7 +49,7 @@ fn set_color_profile(
     topology: impl FnMut() -> Result<InternalDisplayTopology, DisplayReadError>,
     hdr: impl FnMut(&ActiveInternalDisplay) -> HdrState,
 ) -> Result<Outcome, super::transaction::Rejected> {
-    guarded_set_color_profile(request, api, topology, hdr, &|| true)
+    guarded_set_color_profile(request, api, topology, hdr, &|| true, |_, _, _| Ok(()))
 }
 
 fn sdr() -> Result<InternalDisplayTopology, DisplayReadError> {
@@ -561,6 +561,7 @@ fn lost_admission_stops_before_submission_or_after_the_first_known_change() {
                 calls.set(count + 1);
                 count < admitted_reads
             },
+            |_, _, _| Ok(()),
         )
         .unwrap_err();
         assert_eq!(failure.cause, Failure::Context);
@@ -772,7 +773,8 @@ fn unreadable_or_rebound_target_stops_restoration() {
     let failure = set_color_profile(SetColorProfile(OsStr::new(NATIVE)), &mut api, sdr, |_| {
         let count = hdr_reads.get();
         hdr_reads.set(count + 1);
-        if count < 2 {
+        // Initial read, journal preflight, and the first setter admission.
+        if count < 3 {
             HdrState::Off
         } else {
             HdrState::On

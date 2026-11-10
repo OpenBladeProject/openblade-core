@@ -54,6 +54,7 @@ pub enum Failure {
     Context,
     Readback,
     NullDefault,
+    IntentUnavailable,
 }
 
 impl From<ProfileReadError> for Failure {
@@ -82,12 +83,13 @@ pub enum Outcome {
     Applied(ColorProfileSnapshot),
 }
 
-pub(super) fn set_color_profile(
+pub(super) fn set_color_profile<Api: ScriptedOperations>(
     request: SetColorProfile<'_>,
-    api: &mut impl ScriptedOperations,
+    api: &mut Api,
     mut topology: impl FnMut() -> Result<InternalDisplayTopology, DisplayReadError>,
     mut hdr: impl FnMut(&ActiveInternalDisplay) -> HdrState,
     admitted: &dyn Fn() -> bool,
+    prepare: impl FnOnce(&mut Api, &ActiveInternalDisplay, &OsStr) -> Result<(), Failure>,
 ) -> Result<Outcome, Rejected> {
     let before_submission = |cause| Rejected {
         cause,
@@ -148,6 +150,12 @@ pub(super) fn set_color_profile(
         added: false,
         ownership_lost: false,
     };
+    // Publish intent only for a real transaction and after fresh admission.
+    // advance rechecks the exact state and context before calling the setter.
+    transaction
+        .require_known_state()
+        .map_err(before_submission)?;
+    prepare(transaction.api, &display, &profile.id).map_err(before_submission)?;
     let result = transaction.apply(&profile.id);
     match result {
         Ok(verified) => Ok(Outcome::Applied(verified)),
@@ -192,7 +200,7 @@ fn same_display(before: &ActiveInternalDisplay, after: &ActiveInternalDisplay) -
         && same_default(monitor_path(before), monitor_path(after))
 }
 
-fn monitor_key(
+pub(super) fn monitor_key(
     api: &mut impl ScriptedOperations,
     display: &ActiveInternalDisplay,
 ) -> Result<OsString, Failure> {
@@ -223,7 +231,7 @@ fn same_name(left: &OsStr, right: &OsStr) -> bool {
 
 // Transaction state retains full returned paths. Filename equivalence identifies
 // the requested profile but cannot prove an unrelated full path was preserved.
-fn same_effect_name(expected: &OsStr, observed: &OsStr) -> bool {
+pub(super) fn same_effect_name(expected: &OsStr, observed: &OsStr) -> bool {
     if same_name(expected, observed) {
         return true;
     }
