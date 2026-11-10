@@ -48,8 +48,6 @@ const BUFFER: u32 = 8192;
 const INSTANCES: u32 = 2;
 const RETRY: Duration = Duration::from_millis(20);
 
-type ControlSession = Rc<dyn Fn() -> io::Result<Option<u32>>>;
-
 pub(super) struct NativeEndpoint {
     path: Vec<u16>,
     descriptor: LocalAllocation,
@@ -62,8 +60,9 @@ pub(super) struct NativeEndpoint {
 }
 
 impl NativeEndpoint {
+    #[cfg(not(test))]
     pub(super) fn open(
-        launch: &LaunchIdentity,
+        launch: &super::super::LaunchIdentity,
         control_session: ControlSession,
     ) -> io::Result<Self> {
         if launch.pid != std::process::id() {
@@ -548,15 +547,34 @@ fn classify_logon(interactive: bool, remote: bool) -> Logon {
 }
 
 #[cfg(test)]
+pub(super) fn private_endpoint() -> (impl Fn() -> io::Result<NativeEndpoint>, u32) {
+    use windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId;
+
+    let path = format!(
+        r"\\.\pipe\OpenBlade.Rust.Readiness.Test.{}",
+        probe_id().unwrap()
+    );
+    let mut session = 0;
+    // SAFETY: the PID is the current process and session is writable.
+    check(unsafe { ProcessIdToSessionId(std::process::id(), &mut session) }).unwrap();
+    let open = move || {
+        NativeEndpoint::claim(
+            &path,
+            descriptor("D:P(A;;0x1f019f;;;OW)")?,
+            session,
+            Rc::new(move || Ok(Some(session))),
+        )
+    };
+    (open, session)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use windows_sys::Win32::{
-        Security::{
-            ACCESS_ALLOWED_ACE, GetAce, GetSecurityDescriptorControl, GetSecurityDescriptorDacl,
-            SE_DACL_PROTECTED, WinBuiltinAdministratorsSid, WinBuiltinUsersSid, WinNetworkSid,
-        },
-        System::RemoteDesktop::ProcessIdToSessionId,
+    use windows_sys::Win32::Security::{
+        ACCESS_ALLOWED_ACE, GetAce, GetSecurityDescriptorControl, GetSecurityDescriptorDacl,
+        SE_DACL_PROTECTED, WinBuiltinAdministratorsSid, WinBuiltinUsersSid, WinNetworkSid,
     };
 
     #[test]
@@ -639,22 +657,8 @@ mod tests {
     #[tokio::test]
     async fn private_pipe_checks_same_handle_and_retires_canceled_accept() {
         timeout(Duration::from_secs(5), async {
-            let path = format!(
-                r"\\.\pipe\OpenBlade.Rust.Readiness.Test.{}",
-                probe_id().unwrap()
-            );
             let pid = std::process::id();
-            let mut session = 0;
-            // SAFETY: pid is this process and session is writable.
-            check(unsafe { ProcessIdToSessionId(pid, &mut session) }).unwrap();
-            let open = || {
-                NativeEndpoint::claim(
-                    &path,
-                    descriptor("D:P(A;;0x1f019f;;;OW)").unwrap(),
-                    session,
-                    Rc::new(move || Ok(Some(session))),
-                )
-            };
+            let (open, session) = private_endpoint();
             let mut endpoint = open().unwrap();
             assert!(open().is_err(), "duplicate first instance was admitted");
             let (server, client) =

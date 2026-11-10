@@ -11,8 +11,10 @@ use crate::scm_host::{Controls, Phase, check_starting, normalize_startup_stop, r
 use crate::scm_identity::ScmEvidence;
 use crate::service_install_identity::{IMAGE_NAME, INSTALL_DIRECTORY};
 
+#[cfg(not(test))]
 #[path = "installed/native.rs"]
 mod native;
+#[cfg(not(test))]
 pub(crate) use native::entry;
 #[path = "installed/readiness.rs"]
 mod readiness;
@@ -108,14 +110,15 @@ impl Readiness {
     }
 }
 
-async fn run_candidate<F: Future<Output = io::Result<()>>>(
+async fn run_candidate<A, F: Future<Output = io::Result<()>>>(
     controls: &Controls,
     stop: oneshot::Receiver<()>,
     process: impl FnOnce() -> io::Result<ProcessEvidence>,
     registration: impl FnOnce(&LaunchIdentity) -> io::Result<ScmEvidence>,
-    admit: impl FnOnce(&LaunchIdentity) -> io::Result<()>,
+    admit: impl FnOnce(&LaunchIdentity) -> io::Result<A>,
     prepare: impl AsyncFnOnce(
         &LaunchIdentity,
+        A,
         oneshot::Receiver<()>,
         oneshot::Sender<()>,
     ) -> io::Result<(Readiness, F)>,
@@ -131,7 +134,7 @@ async fn run_candidate<F: Future<Output = io::Result<()>>>(
             check_starting(stop.as_mut()).await?;
             let launch = LaunchIdentity::verify(process()?)?;
             launch.verify_registration(registration(&launch)?)?;
-            admit(&launch)?;
+            let admission = admit(&launch)?;
             check_starting(stop.as_mut()).await?;
 
             let (shutdown, retiring) = oneshot::channel();
@@ -143,7 +146,7 @@ async fn run_candidate<F: Future<Output = io::Result<()>>>(
                 }
             };
             let (readiness, drive) = {
-                let preparing = prepare(&launch, retiring, endpoint_failed);
+                let preparing = prepare(&launch, admission, retiring, endpoint_failed);
                 tokio::pin!(preparing);
                 tokio::select! {
                     biased;

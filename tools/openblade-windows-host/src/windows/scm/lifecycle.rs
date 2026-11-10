@@ -288,6 +288,7 @@ impl Drop for Worker {
 }
 
 #[cfg(all(not(test), feature = "lifecycle-evidence-compile-check"))]
+#[path = "lifecycle/native.rs"]
 pub(super) mod native;
 
 #[cfg(test)]

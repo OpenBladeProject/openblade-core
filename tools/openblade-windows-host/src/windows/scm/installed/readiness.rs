@@ -8,7 +8,7 @@ use tokio::{
     time::timeout,
 };
 
-use super::{LaunchIdentity, PIPE_NAME, PROTOCOL_VERSION, Readiness, denied};
+use super::{PIPE_NAME, PROTOCOL_VERSION, Readiness, denied};
 use crate::{
     scm_host::startup_stopped,
     service_frame::{FRAME_TIMEOUT, invalid, read_payload, write_frame},
@@ -21,10 +21,14 @@ mod windows;
 mod status_wire;
 use status_wire::{GetStatus, Snapshot, StatusResponse};
 
+#[path = "status_source.rs"]
+mod status_source;
+
 const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 type Pending<'a, T> = Pin<Box<dyn Future<Output = io::Result<T>> + 'a>>;
+pub(super) type ControlSession = Rc<dyn Fn() -> io::Result<Option<u32>>>;
 
 // Each native connection retains its handle and supplies handle-bound
 // evidence; the listener never infers identity from the pipe name.
@@ -107,38 +111,25 @@ struct Ports {
     source: Box<dyn StatusSource>,
 }
 
+#[cfg(not(test))]
 pub(super) async fn prepare_installed_endpoint(
-    launch: &LaunchIdentity,
+    launch: &super::LaunchIdentity,
+    admission: super::native::AdmittedRuntime,
     shutdown: oneshot::Receiver<()>,
     failed: oneshot::Sender<()>,
 ) -> io::Result<(Readiness, impl Future<Output = io::Result<()>> + use<>)> {
-    // The outer SCM path separately requires installed launch admission. Do
-    // not create even the first instance until the installed status source
-    // and its control-session authority have also been admitted.
-    prepare(launch.pid, shutdown, failed, installed_ports(launch)).await
-}
-
-struct AdmittedStatus {
-    source: Box<dyn StatusSource>,
-    control_session: Rc<dyn Fn() -> io::Result<Option<u32>>>,
-}
-
-fn installed_ports(launch: &LaunchIdentity) -> io::Result<Ports> {
-    let status = installed_status(launch)?;
-    Ok(Ports {
-        endpoint: Box::new(windows::NativeEndpoint::open(
-            launch,
-            status.control_session,
-        )?),
-        source: status.source,
-    })
-}
-
-fn installed_status(_: &LaunchIdentity) -> io::Result<AdmittedStatus> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "admitted installed runtime status and session authority are unavailable",
-    ))
+    let source = status_source::native_status_source();
+    let endpoint = windows::NativeEndpoint::open(launch, admission.into_control_session())?;
+    prepare(
+        launch.pid,
+        shutdown,
+        failed,
+        Ok(Ports {
+            endpoint: Box::new(endpoint),
+            source,
+        }),
+    )
+    .await
 }
 
 async fn prepare(

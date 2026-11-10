@@ -296,7 +296,7 @@ async fn lifecycle(
             })
         },
         |_| Ok(()),
-        async |launch, shutdown, failed| prepare(launch.pid, shutdown, failed, ports).await,
+        async |launch, (), shutdown, failed| prepare(launch.pid, shutdown, failed, ports).await,
         |status| {
             let event = match (status.dwCurrentState, status.dwWin32ExitCode) {
                 (SERVICE_START_PENDING, NO_ERROR) => "starting",
@@ -353,15 +353,13 @@ async fn unproven_listener_peer_source_or_timed_out_probe_never_runs() {
 
     let events = Events::default();
     let controls = Controls::new();
-    let launch = LaunchIdentity {
-        image: IMAGE_NAME.into(),
-        pid: PID,
-    };
-    let error = lifecycle(&controls, installed_ports(&launch), &events, || {
-        panic!("unexpected Running")
-    })
-    .await
-    .unwrap_err();
+    let ports = Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "ports unavailable",
+    ));
+    let error = lifecycle(&controls, ports, &events, || panic!("unexpected Running"))
+        .await
+        .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::Unsupported);
     assert_eq!(*events.borrow(), ["starting", "failed"]);
 }

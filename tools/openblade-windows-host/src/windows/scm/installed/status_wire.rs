@@ -132,13 +132,142 @@ pub(super) struct Snapshot {
     lighting_override: Option<FeatureRecord>,
     full_charge_override: bool,
     control_access: i32,
+    service_version: String,
     #[serde(flatten)]
     feature_fields: FeatureRecord,
 }
 
 impl Snapshot {
+    // The managed status contract requires profiles and resolved intent even
+    // before configuration or device admission. These are safe defaults,
+    // never a firmware read or the active user's saved preferences.
+    pub(super) fn observed_read_only(
+        revision: i64,
+        control_access: i32,
+        on_battery: bool,
+        unsupported_laptop: bool,
+        potential_controllers: Vec<String>,
+        controller_detection_warning: Option<&str>,
+        message: String,
+    ) -> Self {
+        use serde_json::json;
+
+        const BALANCED: i32 = 1;
+        const BATTERY_SAVER: i32 = 3;
+        const AUTOMATIC: i32 = 0;
+        const POWER_PROFILE: i32 = 1;
+        const EXTERNAL_UNKNOWN: i32 = 3;
+        const BATTERY: i32 = 1;
+        const DEFAULT_CHARGE_LIMIT: i32 = 80;
+
+        let lighting = Map::from_iter([
+            ("effect".into(), json!(0)),
+            ("color".into(), json!({"red": 0, "green": 0, "blue": 0})),
+            ("brightness".into(), json!(0)),
+            ("parameters".into(), json!({"kind": "off"})),
+        ]);
+        let profile = |performance, custom_performance| {
+            let mut feature_fields = Map::from_iter([
+                (
+                    "display".into(),
+                    json!({
+                        "refreshRateKey": null, "hdrEnabled": null, "colorProfileKey": null
+                    }),
+                ),
+                (
+                    "lightingPowerPolicy".into(),
+                    json!({
+                        "turnOffWhenDisplayTurnsOff": false, "idleTimeoutMinutes": null
+                    }),
+                ),
+                ("batteryProtectionEnabled".into(), json!(true)),
+            ]);
+            if custom_performance {
+                feature_fields.insert("customPerformance".into(), json!({"cpu": 1, "gpu": 2}));
+            }
+            PowerProfile {
+                performance,
+                fans: AUTOMATIC,
+                lighting: lighting.clone(),
+                feature_fields,
+            }
+        };
+        let profiles = Profiles {
+            plugged_in: profile(BALANCED, true),
+            battery: profile(BATTERY_SAVER, false),
+            usb_c: profile(BALANCED, false),
+            battery_policy: BatteryPolicy {
+                charge_limit_percent: DEFAULT_CHARGE_LIMIT,
+            },
+            feature_fields: Map::from_iter([(
+                "windowsPowerModes".into(),
+                json!({
+                    "silent": null, "balanced": null, "performance": null,
+                    "batterySaver": null, "batteryBalanced": null, "custom": null,
+                    "turbo": null, "maximumPower": null, "gaming": null, "creator": null
+                }),
+            )]),
+        };
+        let desired_state = DesiredState {
+            performance: Resolved {
+                value: if on_battery { BATTERY_SAVER } else { BALANCED },
+                source: POWER_PROFILE,
+            },
+            fans: Resolved {
+                value: AUTOMATIC,
+                source: POWER_PROFILE,
+            },
+            lighting: Resolved {
+                value: lighting,
+                source: POWER_PROFILE,
+            },
+            battery: DesiredBattery {
+                configured_policy: BatteryPolicy {
+                    charge_limit_percent: DEFAULT_CHARGE_LIMIT,
+                },
+                protection_enabled: true,
+                temporary_full_charge: false,
+            },
+            feature_fields: Map::new(),
+        };
+
+        Self {
+            revision,
+            device_verified: false,
+            writes_blocked: true,
+            potential_controllers,
+            controller_detection_warning: controller_detection_warning.map(str::to_owned),
+            external_changes: Vec::new(),
+            message,
+            capabilities: None,
+            confirmed_state: None,
+            profiles,
+            desired_state,
+            // v79 has no fully unknown power source. Use its conservative
+            // unresolved encoding for both unknown and unclassified external.
+            active_power_source: if on_battery {
+                BATTERY
+            } else {
+                EXTERNAL_UNKNOWN
+            },
+            live_readings: None,
+            performance_override: None,
+            fan_override: None,
+            lighting_override: None,
+            full_charge_override: false,
+            control_access,
+            service_version: env!("CARGO_PKG_VERSION").into(),
+            feature_fields: Map::from_iter([(
+                "unsupportedLaptop".into(),
+                json!(unsupported_laptop),
+            )]),
+        }
+    }
     pub(super) fn verify(&self, access: i32) -> io::Result<()> {
         if self.revision < 0
+            || self.service_version.trim().is_empty()
+            || self.service_version.trim() != self.service_version
+            || self.service_version.encode_utf16().count() > 64
             || !(0..=3).contains(&self.active_power_source)
             || !(0..=2).contains(&self.control_access)
             || self.control_access != access
