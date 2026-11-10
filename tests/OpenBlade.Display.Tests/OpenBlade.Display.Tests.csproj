@@ -14,5 +14,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenBlade.Display\OpenBlade.Display.csproj" />
+    <EmbeddedResource Include="Fixtures\display-advanced-color.csv" LogicalName="display-advanced-color.csv" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\Fixtures\Parity\display-refresh.psv" Link="display-refresh.psv" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

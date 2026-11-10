@@ -536,7 +536,8 @@ try {
     }
     Assert-ProductionBundleFootprint -Bundle $footprint
 
-    foreach ($toolName in @('openblade-discovery.exe', 'openblade-status-cli.exe')) {
+    $developerTools = @('openblade-discovery.exe', 'openblade-rust-session-agent.exe', 'openblade-status-cli.exe')
+    foreach ($toolName in $developerTools) {
         $toolFile = Join-Path $footprintPayload $toolName
         Set-Content -LiteralPath $toolFile -Value 'developer tool' -NoNewline
         $toolRejected = $false

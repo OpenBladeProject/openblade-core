@@ -18,3 +18,9 @@ pub mod configuration_writer;
 pub mod fan_stop_entry;
 #[cfg(windows)]
 pub mod fan_stop_guardian;
+
+#[cfg(windows)]
+pub mod pipe;
+
+#[cfg(windows)]
+pub mod reporter_pipe;

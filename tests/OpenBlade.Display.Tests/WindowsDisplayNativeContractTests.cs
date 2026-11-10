@@ -40,6 +40,42 @@ public sealed class WindowsDisplayNativeContractTests
         Assert.Equal(enabled, AdvancedColorBits.IsHdrUserEnabled(value));
     }
 
+    [Fact]
+    public void AdvancedColorInfo2_ProjectsSharedQueryCases()
+    {
+        using Stream fixture = typeof(WindowsDisplayNativeContractTests).Assembly
+            .GetManifestResourceStream("display-advanced-color.csv")!;
+        using StreamReader reader = new(fixture);
+        Assert.NotNull(reader.ReadLine());
+
+        while (reader.ReadLine() is { } line)
+        {
+            string[] fields = line.Split(',');
+            int status = int.Parse(fields[1], System.Globalization.CultureInfo.InvariantCulture);
+            DisplayConfigGetAdvancedColorInfo2 packet = new()
+            {
+                Value = uint.Parse(fields[2], System.Globalization.CultureInfo.InvariantCulture),
+                BitsPerColorChannel = uint.Parse(fields[3], System.Globalization.CultureInfo.InvariantCulture),
+            };
+            var projected = WindowsDisplaySettingsController.ProjectAdvancedColor(status, packet);
+            Assert.Equal(
+                new WindowsDisplaySettingsController.AdvancedColorState(
+                    bool.Parse(fields[4]),
+                    bool.Parse(fields[5]),
+                    fields[6].Length == 0
+                        ? null
+                        : int.Parse(fields[6], System.Globalization.CultureInfo.InvariantCulture)),
+                projected);
+        }
+    }
+
+    [Fact]
+    public void AdvancedColorInfo2_RejectsDepthOutsideSnapshotRange()
+    {
+        DisplayConfigGetAdvancedColorInfo2 packet = new() { BitsPerColorChannel = (uint)int.MaxValue + 1 };
+        Assert.Throws<OverflowException>(() => WindowsDisplaySettingsController.ProjectAdvancedColor(0, packet));
+    }
+
     [Theory]
     [InlineData(6u)]
     [InlineData(11u)]

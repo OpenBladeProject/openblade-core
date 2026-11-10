@@ -109,7 +109,7 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
             assert_eq!(controls.handle(SERVICE_CONTROL_STOP), NO_ERROR);
             assert_closed(pipe.read(&mut [0]).await);
             assert!(!stopped.get());
-            let endpoint = Endpoint::new(path.clone()).unwrap();
+            let endpoint = Endpoint::new(path.clone(), super::super::PIPE_INSTANCES).unwrap();
             assert_eq!(
                 endpoint.claim().unwrap_err().kind(),
                 io::ErrorKind::PermissionDenied
@@ -229,7 +229,7 @@ fn scripted_startup_refusals_never_publish_running() {
         let controls = Controls(Mutex::new(None));
         let id = test_id();
         let path = format!("{PREFIX}{id}");
-        let endpoint = Endpoint::new(path.clone()).unwrap();
+        let endpoint = Endpoint::new(path.clone(), super::super::PIPE_INSTANCES).unwrap();
         let claim = endpoint.claim().unwrap();
 
         let (_steps, advance) = mpsc::channel(1);

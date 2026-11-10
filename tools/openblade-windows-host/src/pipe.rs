@@ -11,9 +11,15 @@ use std::{
     sync::Arc,
 };
 
-use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+use tokio::{
+    net::windows::named_pipe::{NamedPipeClient, NamedPipeServer, ServerOptions},
+    time::{sleep, timeout},
+};
 use windows_sys::Win32::{
-    Foundation::{HANDLE, INVALID_HANDLE_VALUE, LUID, LocalFree},
+    Foundation::{
+        ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_NOT_CONNECTED, HANDLE,
+        INVALID_HANDLE_VALUE, LUID, LocalFree,
+    },
     Security::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
@@ -29,25 +35,24 @@ use windows_sys::Win32::{
     System::{
         Pipes::{
             CreateNamedPipeW, GetNamedPipeClientProcessId, GetNamedPipeClientSessionId,
-            ImpersonateNamedPipeClient, PIPE_REJECT_REMOTE_CLIENTS,
+            GetNamedPipeServerProcessId, GetNamedPipeServerSessionId, ImpersonateNamedPipeClient,
+            PIPE_REJECT_REMOTE_CLIENTS,
         },
         Threading::{GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken},
     },
 };
 
-use super::CLIENTS;
-
-const PIPE_INSTANCES: u32 = CLIENTS as u32 + 2;
 const PIPE_BUFFER_BYTES: u32 = 8192;
 
-pub(super) struct Endpoint {
+pub struct Endpoint {
     path: String,
+    instances: u32,
     descriptor: LocalAllocation,
-    pub(super) identity: Arc<Identity>,
+    pub identity: Arc<Identity>,
 }
 
 impl Endpoint {
-    pub(super) fn new(path: String) -> io::Result<Self> {
+    pub fn new(path: String, instances: u32) -> io::Result<Self> {
         let identity = Identity::read(&process_token()?)?;
         // Explicit dev DACL. The managed duplex client uses generic write access,
         // which grants the same SID the ability to create additional instances.
@@ -68,12 +73,13 @@ impl Endpoint {
         })?;
         Ok(Self {
             path,
+            instances,
             descriptor: LocalAllocation(descriptor),
             identity: Arc::new(identity),
         })
     }
 
-    pub(super) fn claim(&self) -> io::Result<(OwnedHandle, File)> {
+    pub fn claim(&self) -> io::Result<(OwnedHandle, File)> {
         // A synchronous instance makes no I/O submissions, so dropping the
         // claim does not depend on Tokio draining overlapped read completions.
         let path: Vec<_> = self.path.encode_utf16().chain([0]).collect();
@@ -83,7 +89,7 @@ impl Endpoint {
                 path.as_ptr(),
                 PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
                 PIPE_REJECT_REMOTE_CLIENTS,
-                PIPE_INSTANCES,
+                self.instances,
                 PIPE_BUFFER_BYTES,
                 PIPE_BUFFER_BYTES,
                 0,
@@ -112,14 +118,14 @@ impl Endpoint {
         Ok((server, client))
     }
 
-    pub(super) fn listen(&self) -> io::Result<NamedPipeServer> {
+    pub fn listen(&self) -> io::Result<NamedPipeServer> {
         let mut attributes = self.security_attributes();
         // SAFETY: the Win32 SECURITY_ATTRIBUTES and its descriptor remain valid
         // for synchronous CreateNamedPipeW. Tokio owns a successful pipe handle.
         unsafe {
             ServerOptions::new()
                 .reject_remote_clients(true)
-                .max_instances(PIPE_INSTANCES as usize)
+                .max_instances(self.instances as usize)
                 .in_buffer_size(PIPE_BUFFER_BYTES)
                 .out_buffer_size(PIPE_BUFFER_BYTES)
                 .create_with_security_attributes_raw(
@@ -127,6 +133,23 @@ impl Endpoint {
                     (&mut attributes as *mut SECURITY_ATTRIBUTES).cast(),
                 )
         }
+    }
+
+    pub async fn next_listener(&self) -> io::Result<NamedPipeServer> {
+        use std::time::Duration;
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                match self.listen() {
+                    Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
+                        // A retired overlapped operation can briefly retain its handle.
+                        sleep(Duration::from_millis(20)).await;
+                    }
+                    result => return result,
+                }
+            }
+        })
+        .await?
     }
 
     fn security_attributes(&self) -> SECURITY_ATTRIBUTES {
@@ -147,14 +170,38 @@ impl Drop for LocalAllocation {
     }
 }
 
-pub(super) struct Identity {
+pub struct Identity {
     sid: String,
     authentication: LUID,
     session: u32,
 }
 
 impl Identity {
-    pub(super) fn authorize(&self, pipe: &NamedPipeServer) -> io::Result<()> {
+    pub fn fixture_owner(&self) -> String {
+        format!(
+            "{}:{}:{}:{}",
+            self.sid, self.session, self.authentication.HighPart, self.authentication.LowPart
+        )
+    }
+
+    pub fn authorize_server(&self, pipe: &NamedPipeClient, expected_pid: u32) -> io::Result<()> {
+        let mut pid = 0;
+        let mut session = 0;
+        // SAFETY: the client pipe is borrowed and both output slots are valid.
+        unsafe {
+            check(GetNamedPipeServerProcessId(pipe.as_raw_handle(), &mut pid))?;
+            check(GetNamedPipeServerSessionId(
+                pipe.as_raw_handle(),
+                &mut session,
+            ))?;
+        }
+        if expected_pid == 0 || pid != expected_pid || session == 0 || session != self.session {
+            return Err(denied());
+        }
+        Ok(())
+    }
+
+    pub fn authorize(&self, pipe: &NamedPipeServer) -> io::Result<()> {
         // Verify the connecting process session independently of the read token.
         let mut session = 0;
         // SAFETY: the pipe is connected and borrowed, with a valid output slot.
@@ -278,4 +325,11 @@ fn check(success: i32) -> io::Result<()> {
     } else {
         Ok(())
     }
+}
+
+pub fn stale_connection(error: &io::Error) -> bool {
+    matches!(
+        error.raw_os_error().map(|code| code as u32),
+        Some(ERROR_BROKEN_PIPE | ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED)
+    )
 }

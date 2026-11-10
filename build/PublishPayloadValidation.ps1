@@ -482,6 +482,7 @@ function Assert-ProductionBundleFootprint {
     $forbiddenFileNames = @(
         'appsettings.Development.json',
         'openblade-discovery.exe',
+        'openblade-rust-session-agent.exe',
         'openblade-status-cli.exe',
         'DirectML.dll',
         'onnxruntime.dll',

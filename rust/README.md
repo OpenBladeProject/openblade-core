@@ -39,13 +39,202 @@ The separate developer-only `openblade-status-cli` uses the same JSON parsers
 and Tokio 1.54.1 for bounded asynchronous Windows pipe I/O and cancellation.
 Its locked OS/runtime dependencies stay in the CLI. Production libraries have
 only inward local dependencies. See [the read-only status guide](crates/openblade-status-cli/README.md).
-The workspace guard
-checks the four libraries, reviewed test targets/dependencies, MSRV and compiler
-policies independently of the caller's directory. Its regression tests use
-disposable workspace copies. Inner crates retain `no_std` and inherit
-`unsafe_code = "forbid"`. Only the FFI
-crate permits the documented pointer/export boundary, with unsafe operations
-explicitly marked and `unsafe_op_in_unsafe_fn` denied. Both dev and release
+The isolated `openblade-platform-windows` crate reads active internal display
+topology, identity and the distinct desktop and physical refresh rates from
+the current Windows desktop. Its read-only refresh projection also reads GDI
+modes and target-bound preferred timing and EDID evidence for the managed v2
+QueryDisplay options and current key. The HDR read records support, the user
+preference and bits per channel using the target-bound INFO_2 packet. The
+crate uses locked Windows SDK bindings and has no production caller.
+
+### Private Windows Session Agent replay
+
+The development executable in the separate Windows host workspace enables
+the scripted acquisition feature. Its private current-user pipe runs the
+v2 query handler and projects replies from synthetic CCD, GDI and INFO_2
+packets through the same platform acquisition logic as the native adapters.
+Each request acquires a fresh synthetic snapshot from the fixture state. The fixed 60 Hz desktop and 240 Hz
+signal with boost off yields two fixed options and an unset current key.
+The HDR result represents an enabled user preference and 10 bits per channel.
+A changed target between observations fails the query, as do a CCD status
+error and an INFO_2 status error. Empty topology succeeds with unavailable
+state.
+
+Run the pipe interoperability checks on Windows from the repository root.
+
+```powershell
+cargo build --offline --locked --manifest-path tools/openblade-windows-host/Cargo.toml --bin openblade-rust-session-agent
+$env:OPENBLADE_RUST_SESSION_AGENT_EXE = (Resolve-Path 'tools/openblade-windows-host/target/debug/openblade-rust-session-agent.exe').Path
+dotnet restore src/OpenBlade.Tray/OpenBlade.Tray.csproj
+dotnet test tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter FullyQualifiedName~RustSessionAgentTests
+```
+
+The managed Display tests check the shared refresh and HDR input oracles.
+The Session tests check the v2 envelopes, including a successful query with
+unavailable state. The private query includes brightness and supported levels
+only when the synthetic WMI reading matches the CCD endpoints and monitor path.
+Unavailable brightness leaves the independently observed display fields intact.
+ICC profiles are available only in the scripted ICC scenarios.
+
+The private display endpoint accepts query and the existing typed brightness,
+HDR and refresh-rate requests. Each process starts one scripted brightness worker; no COM policy is
+applied to Windows and no native display or WMI transport is started. A confirmed
+write requires a separate read from the full submitted WMI instance. A lost or
+ambiguous write reply pauses all display mutations. Read-only observations
+remain available when the worker drains. A native host still needs process-wide
+COM security and confirmed current-user session and power evidence.
+
+Phase 6s reuses v2 SetHdr through the actual Tray client. The serialized fixture
+captures a scripted active session and power generation, checks the exact
+single internal source, target and monitor path again, and verifies HDR support
+and the current preference before deciding whether a write is needed. After
+one typed submission, a separate INFO_2 read must confirm the same panel and
+the requested preference. An uncertain result, readback or reply pauses all
+display mutation paths for that fixture process. A later query can observe
+recovery without clearing the pause or replaying the request. The fixture
+keeps the HDR preference independent of signal mode and does not acquire SDR
+profiles in either state.
+
+The packet layout and command type follow the
+[Microsoft SDK header](https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/um/wingdi.h)
+and [DisplayConfigSetDeviceInfo](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-displayconfigsetdeviceinfo).
+Only the platform unit test links the native setter; the test retains its
+function pointer and checks packet encoding without executing the call.
+
+Phase 6t admits the existing v2 SetRefreshRate request through the Tray client.
+The fixture checks option membership against the initial and fresh snapshots.
+A no-op requires a fresh match on the desktop rate, physical signal rate and
+boost bit. Packet preparation uses paired CCD arrays, retains the source and
+virtual desktop indices, and changes only the chosen path and its target timing.
+A fixed rate without a known target timing omits the target index so Windows can
+select it. A Dynamic rate requires an admitted physical timing. Scripted
+validation and application use the corresponding
+[SetDisplayConfig flags](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayconfig).
+The fixture requires separate CCD readback of the exact panel and mode and pauses
+all display writes on uncertain submission, readback or reply. Only a platform
+unit test retains the refresh setter import, and it never calls it.
+
+Phase 6v extends the private fence across process restarts. `foreground` uses
+a fresh pipe ID and creates its matching fixture directory under the process's
+local temp directory. `resume-display` uses the same ID and temp directory
+and retains pending intent across ordinary queries.
+`reconcile-display` explicitly authorizes a fresh query to retire the owned
+intent after the old fixture process has exited. The replacement process must
+claim the same private endpoint, match its logon and session, and observe the
+exact panel at the recorded baseline or requested value. The simulator starts
+with its scripted values after each launch, so that read establishes the state
+of the replacement fixture only. Missing, invalid or unreadable evidence
+leaves writes paused and queries available. Recovery never replays a setter.
+The integration tests own and remove their scratch directories.
+
+Phase 6x extends the same fence to typed v2 SetColorProfile through the
+managed Tray adapter. The scripted WCS transaction records the exact panel
+and monitor key, SDR preference, selected scope, and the defaults and
+associations in both scopes before any possible submission. A confirmed
+selection or restoration needs a separate complete WCS observation and a
+delivered reply to clear its intent in the original process. An explicit
+recovery query after process exit can settle the saved baseline or the
+complete expected selection. The displayed profile ID alone cannot settle
+intent. While intent is unresolved, all four display setters remain fenced.
+
+Current HDR output mode, complete snapshot parity, and native display behavior
+need separate evidence before replacement. Live refresh still needs authorized
+validation of the exact packet on the active console, fresh power/session and
+monitor identity checks around validation and submission, and recovery that
+survives a host restart. Product, Session IPC and persisted schema versions are
+unchanged by this replay.
+
+**Restricted Claude review is pending direct user authorization.** Keep the
+combined branch and its artifacts local. Native display validation,
+production integration and release validation remain separate gates.
+
+The same crate contains the WMI brightness backend logic behind
+`WmiBrightnessNative`. Display settings supply a percentage and resolve it to
+the nearest supported level, with ties going to the lower level. Function-row
+actions use a ten-point directional step and report brightness only on a
+confirmed change. The [managed brightness oracle](https://github.com/OpenBladeProject/openblade-core/pull/939)
+pins the level, acknowledgement and readback cases.
+
+The Rust path requires one CCD internal target and one matching active WMI
+brightness row for both entry points. A write also requires one active method
+row with the full instance identity, then fresh topology and supported-level
+admission. It submits once. UInt32 zero or either Boolean acknowledgement
+requires independent readback from the submitted instance at the selected level.
+An acknowledged write with delayed confirmation can resolve through a later
+read of the same panel and level. An uncertain native result keeps writes paused
+even if a later read happens to match. Preparation, submission completion, and
+readback have separate deadlines. Caller cancellation stops preparation and
+cannot discard readback after possible submission.
+
+This slice uses scripted WMI effects. The current-user WMI transport must enforce
+the native deadline and submission contract before wiring the backend to the
+Session Agent. Session power and lifecycle admission, IPC projection and held-key
+routing belong to that integration. The timeout and stop behavior still need
+native and supervised panel validation.
+
+The same crate projects Session GPU inventory from scripted NVIDIA PDH and
+process observations. It keeps idle engine holders, unavailable counters and
+stable activity with missing or stale process identity distinct. App rows
+require matching start time, user SID, session and name across both samples.
+Grouping also requires stable parent evidence, and a foreign helper cannot
+make a current-user parent eligible. The host supplies the managed ordinal
+name comparison. Tests port examples from the managed GPU activity and Session
+GPU dispatcher tests.
+
+#### Private Windows Session GPU replay
+
+The same development executable can run one GPU endpoint instead of Display:
+`gpu-foreground <32 lowercase hex digits> <available|empty|no-data|large|stalled>`.
+It claims a separate `OpenBlade.Rust.Session.Gpu.Dev.<id>` pipe for the
+current user. It also checks the peer's session and logon before dispatch.
+Use the same Windows build and managed interoperability test commands above.
+
+The fixture supplies fixed observations to the Phase 6n sampler and projection.
+It uses the managed v2 GPU request and response format. A successful empty
+inventory is distinct from unavailable data; stable idle holders still appear
+with zero utilization. Partial replies retain the ordered prefix that fits both
+the row and frame limits. The endpoint accepts one request per connection.
+Frame I/O has deadlines, and a disconnect, extra input, deadline or shutdown
+cancels a pending scripted scan. The fixture drains a cancelled scan before
+accepting another connection.
+
+The private endpoint reports every row as unavailable for closing. The internal
+inventory retains policy eligibility and its reasons for later use. Both normal
+and forced close return a correlated failure before sampling. The host has no
+process action or fallback on this endpoint.
+
+Live GPU query and coherent parent metadata still need separate validation.
+The Phase 6n native sampler does not supply a process parent table. A later
+close implementation needs fresh identity checks on a retained target handle
+and separate action validation. This fixture does not run the native sampler,
+inspect system processes or change the installed product.
+
+
+Its application reporter binding accepts an already observed foreground HWND.
+It confirms that the window and its owner still belong to the active local
+console and Default input desktop around image lookup. It retains the same
+query/synchronize-only process handle for lifetime checks and treats unavailable
+evidence and `ApplicationFrameHost.exe` as unknown. Pending foreground samples
+coalesce to the newest one. No watcher, timer, exit callback or IPC is started;
+the owner supplies observations, elapsed time and transport outcomes.
+
+Executable identity uses bounded Win32 paths and .NET 10 ordinal casing:
+system ICU for BMP characters and the managed uppercase ranges for
+supplementary characters. Recheck parity if the managed runtime or Windows
+ICU changes. Ordinary drive and UNC paths use
+`GetFullPathNameW`; extended drive and UNC paths retain their literal spelling.
+This binding declines nonstandard device namespaces, alternate data streams,
+malformed UTF-16, paths beyond the fixed buffer, and ordinary names containing
+`~` rather than attempt .NET's filesystem-dependent short-name expansion.
+Ordinary long paths still depend on the eventual host's Win32 long-path
+configuration. Managed NLS, invariant mode and app-local ICU overrides are
+outside the checked comparison contract.
+
+The workspace guard checks crate boundaries, reviewed targets and dependencies,
+MSRV and compiler policies. Its regression tests use disposable workspace copies.
+Inner crates retain `no_std` and inherit `unsafe_code = "forbid"`. FFI and Windows
+platform unsafe operations are limited to their documented interop boundaries,
+with `unsafe_op_in_unsafe_fn` denied. Both dev and release
 profiles retain unwind panic handling; aborts and process faults are not caught.
 
 ## Report API
@@ -94,8 +283,8 @@ coverage and a 20,000-input malformed corpus. These software checks establish
 codec parity and portability; physical validation remains separate.
 
 All 14 profile vectors run through Rust and the real native C# policy wrapper.
-Production loading and runtime selection are described below. OS adapters
-remain future work. Windows ARM64, Linux ARM64, musl and 32-bit targets are
+Production loading and runtime selection are described below. Windows ARM64,
+Linux ARM64, musl and 32-bit targets are
 unvalidated. CI publishes no artifacts and
 accepts stacked PRs. Existing Windows CI retains its conservative full-validation
 fallback for Rust changes.

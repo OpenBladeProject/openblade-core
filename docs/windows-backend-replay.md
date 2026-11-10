@@ -27,6 +27,7 @@ The existing affected-project CI runs the test projects and the publish contract
 | [configuration-aggregate.json](../tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-aggregate.json) | Managed configuration transaction bytes and recovery-required evidence for [Phase 4b](windows-configuration-recovery.md). |
 | [configuration-inspection.json](../tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-inspection.json) | Managed and Rust read outcomes for transaction-envelope edge cases. |
 | [session.json](../tests/OpenBlade.Session.Tests/WindowsReplay/v1/session.json) | Every display, GPU apps, THX audio, and battery report request, with numeric fields, version and frame rejection, and an audio response with the older optional-field shape. |
+| [Display query responses](../tests/OpenBlade.Session.Tests/WindowsReplay/v1/session-display-query.json) | Synthetic available and unavailable snapshots verified through the managed Session Display codec. |
 | [Model evidence](../tests/OpenBlade.Protocol.Tests/Fixtures/windows-rust-model-evidence-inventory.json) | All 19 catalog profiles, production feature-evidence rows for the 17 source-reviewed profiles, and separate physical-evidence pointers for the two physically validated models. |
 | [Inventory](windows-backend-replay-inventory.json) | Windows publish entry points, helper modes, persistence owners, and the phase responsible for remaining parity. |
 
@@ -91,3 +92,63 @@ The integration test target is the only entry point to the transport. It has no 
 - Windows tests link the real APIs. A blank GET is rejected on a fresh private named pipe. A pending connect on a second fresh pipe exercises targeted cancellation and observes terminal `ERROR_OPERATION_ABORTED`. These kernel tests and the scripted races establish software behavior. Physical HID timing and device replies require separate evidence.
 
 The next Phase 3 gate is a reviewed, read-only activation slice. It needs an exact-model lease with fresh platform, host, collection, HID attributes and 91-byte feature geometry checks on the **opened** handle, the existing exact-command and competing-controller policy, and separately authorized single-owner verification of the query on Windows hardware. The metadata snapshot cannot supply this lease. Remaining transport work includes model-specific transaction and pacing policies, other typed commands, SET-only and batch feature operations, and separate matrix or accessory routes where the production backend uses them. Any mutating path also requires fresh per-write admission, independent readback and durable restoration.
+
+## Phase 6a current-user Session Agent
+
+The developer executable `openblade-rust-session-agent.exe` lives in the
+standalone `tools/openblade-windows-host` workspace. From the repository root
+on Windows x64 with the pinned Rust toolchain, MSVC, and .NET 10, run the following commands.
+
+```powershell
+$manifest = 'tools/openblade-windows-host/Cargo.toml'
+cargo +1.99.1 fmt --all --check --manifest-path $manifest
+cargo +1.99.1 test --locked --manifest-path $manifest --target x86_64-pc-windows-msvc
+cargo +1.99.1 clippy --locked --manifest-path $manifest --target x86_64-pc-windows-msvc --all-targets -- -D warnings
+cargo +1.99.1 build --locked --manifest-path $manifest --target x86_64-pc-windows-msvc --bin openblade-rust-session-agent
+$env:OPENBLADE_RUST_SESSION_AGENT_EXE = (Resolve-Path 'tools/openblade-windows-host/target/x86_64-pc-windows-msvc/debug/openblade-rust-session-agent.exe').Path
+dotnet test tests/OpenBlade.Session.Tests/OpenBlade.Session.Tests.csproj --filter FullyQualifiedName~WindowsReplaySessionTests
+dotnet restore src/OpenBlade.Tray/OpenBlade.Tray.csproj
+dotnet test tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter FullyQualifiedName~RustSessionAgentTests
+```
+
+To run the process on its own, use
+`& $env:OPENBLADE_RUST_SESSION_AGENT_EXE foreground ([guid]::NewGuid().ToString('N')) available`.
+The last argument selects the embedded `available` or `unavailable` scenario.
+The process prints `READY` after claiming and listening on the private pipe.
+Stdin EOF or input requests shutdown. The interop tests start fresh hidden
+child processes, supply their private names to the source-linked
+`SessionDisplaySettingsAdapter`, and join the children on exit.
+
+- The endpoint is `OpenBlade.Rust.Session.Display.Dev.<32 lowercase hex digits>`.
+  It uses the process user's protected DACL and rejects remote clients.
+  Before dispatch it verifies the client's Windows session and the SID, session,
+  and logon LUID from the pipe message's security token. The managed duplex
+  client requests generic write, which includes instance-creation rights for
+  the allowed account. The endpoint trusts that account. The synchronous first
+  claim rejects a second host and holds the name through listener replacement.
+  See [Windows named pipe access rights](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights).
+- The listener handles one connection and one frame at a time. The signed
+  little-endian length admits 1 through 65,536 bytes, with two-second read
+  and write deadlines. Invalid, unauthenticated, and unsupported requests
+  close the connection without a response. The host retains no peer state and
+  replaces retired listeners so buffered bytes cannot reach a later client.
+  Closing stdin cancels a pending accept or exchange.
+- The only operation is the canonical version 2 `query` request with a
+  nonempty hyphenated GUID. The development parser requires the exact field
+  names and numeric version emitted by the managed codec. The frozen display
+  [requests](../tests/OpenBlade.Session.Tests/WindowsReplay/v1/session.json)
+  test scope and rejection. The managed codec round-trips the frozen
+  [responses](../tests/OpenBlade.Session.Tests/WindowsReplay/v1/session-display-query.json).
+  An unavailable snapshot still represents a completed query. Unknown
+  brightness and active color profile remain null. Both outcomes are
+  synthetic, with no Windows display API calls or settings changes.
+- The product still launches the managed Session Agent. The Rust executable is
+  excluded from production publish and the installer payload. This slice has
+  no service registration, elevation, device access, or production pipe mode.
+
+Remaining Phase 6 gates include native display query parity, display mode,
+HDR, ICC and brightness mutations with restoration, Windows power mode and
+GPU-app scan and termination, THX discovery/control and provisioning, battery
+reports, foreground context and function keys/SnapTap, reactive lighting
+and LampArray ownership, and worker, restart and journal parity. Each needs
+its own managed contract, admission, recovery and appropriate validation.

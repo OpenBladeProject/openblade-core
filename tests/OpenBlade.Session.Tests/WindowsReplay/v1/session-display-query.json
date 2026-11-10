@@ -1,0 +1,57 @@
+{
+  "available": {
+    "version": 2,
+    "requestId": "11111111-2222-4333-8444-555555555555",
+    "status": 0,
+    "error": null,
+    "state": {
+      "isAvailable": true,
+      "displayName": "Synthetic panel",
+      "width": 2560,
+      "height": 1600,
+      "currentRefreshKey": "fixed-60",
+      "refreshOptions": [
+        {
+          "key": "fixed-60",
+          "name": "60 Hz",
+          "minimumHertz": 60,
+          "maximumHertz": 60,
+          "desktopHertz": 60,
+          "isDynamic": false
+        }
+      ],
+      "hdrSupported": true,
+      "hdrEnabled": false,
+      "colorProfilesEnabled": false,
+      "activeColorProfileId": null,
+      "colorProfiles": [],
+      "message": null,
+      "bitsPerColorChannel": 8,
+      "brightnessPercent": null,
+      "supportedBrightnessLevels": []
+    }
+  },
+  "unavailable": {
+    "version": 2,
+    "requestId": "11111111-2222-4333-8444-555555555555",
+    "status": 0,
+    "error": null,
+    "state": {
+      "isAvailable": false,
+      "displayName": null,
+      "width": 0,
+      "height": 0,
+      "currentRefreshKey": null,
+      "refreshOptions": [],
+      "hdrSupported": false,
+      "hdrEnabled": false,
+      "colorProfilesEnabled": false,
+      "activeColorProfileId": null,
+      "colorProfiles": [],
+      "message": "No display topology is available in this fixture.",
+      "bitsPerColorChannel": null,
+      "brightnessPercent": null,
+      "supportedBrightnessLevels": []
+    }
+  }
+}

@@ -78,7 +78,7 @@ fn valid_path(path: &str) -> bool {
 }
 
 #[allow(unsafe_code)]
-fn same_path(left: &str, right: &str) -> bool {
+pub(crate) fn same_path(left: &str, right: &str) -> bool {
     use windows_sys::Win32::Globalization::CompareStringOrdinal;
 
     let left: Vec<u16> = left.encode_utf16().collect();

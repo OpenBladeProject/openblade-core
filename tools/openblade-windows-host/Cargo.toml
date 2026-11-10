@@ -24,6 +24,10 @@ required-features = ["cpu-worker-fixture"]
 test = false
 bench = false
 
+[[bin]]
+name = "openblade-rust-session-agent"
+path = "src/session_agent.rs"
+
 [dependencies]
 openblade-domain = { path = '../../rust/crates/openblade-domain' }
 openblade-protocol = { path = '../../rust/crates/openblade-protocol' }
@@ -34,9 +38,12 @@ tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt", "sy
 
 [dev-dependencies]
 tokio = { version = "=1.54.1", features = ["test-util"] }
+openblade-application-reporter = { path = '../../rust/crates/openblade-application-reporter' }
 openblade-types = { path = '../../rust/crates/openblade-types' }
 
 [target.'cfg(windows)'.dependencies]
+openblade-application-reporter = { path = '../../rust/crates/openblade-application-reporter' }
+openblade-platform-windows = { path = '../../rust/crates/openblade-platform-windows', features = ["scripted-display", "scripted-gpu", "foreground-watcher-replay"] }
 windows-sys = { version = "=0.61.2", features = [
     "Wdk_Storage_FileSystem",
     "Wdk_System_SystemServices",
