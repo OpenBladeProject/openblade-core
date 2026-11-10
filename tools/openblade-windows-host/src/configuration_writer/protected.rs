@@ -318,11 +318,18 @@ fn denied(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, message)
 }
 
-pub(super) struct LocalDescriptor(pub(super) HLOCAL);
+pub(super) struct LocalDescriptor(HLOCAL);
+
+#[cfg(test)]
+impl LocalDescriptor {
+    pub(super) fn as_ptr(&self) -> *const windows_sys::Win32::Security::SECURITY_DESCRIPTOR {
+        self.0.cast_const().cast()
+    }
+}
 
 impl Drop for LocalDescriptor {
     fn drop(&mut self) {
-        // SAFETY: GetSecurityInfo allocated this non-null descriptor with LocalAlloc.
+        // SAFETY: Windows allocated this non-null descriptor for release by LocalFree.
         unsafe { LocalFree(self.0) };
     }
 }

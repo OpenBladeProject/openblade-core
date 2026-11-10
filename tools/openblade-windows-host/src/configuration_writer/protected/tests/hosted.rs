@@ -1,11 +1,11 @@
 use super::*;
 use crate::configuration_writer::{
     FileIdentity, LOCK, Outcome, TestStore, check_regular_file, file_identity,
-    fixture::managed_documents, open_relative_with_security, pin_directory, transaction_id,
+    fixture::managed_documents, mark_for_deletion, open_relative_inner, transaction_id,
 };
 use windows_sys::{
     Wdk::Storage::FileSystem::FILE_CREATE,
-    Win32::Storage::FileSystem::{FILE_SHARE_DELETE, GetVolumeInformationByHandleW},
+    Win32::Storage::FileSystem::{DELETE, FILE_SHARE_DELETE, GetVolumeInformationByHandleW},
 };
 
 #[test]
@@ -62,7 +62,7 @@ fn hosted_ntfs_admits_managed_configuration() -> io::Result<()> {
     if accepts_descriptor(setup.bytes(), Policy::Root) != Some(true) {
         return Err(denied("Setup descriptor does not match Rust admission"));
     }
-    let created = open_relative_with_security(
+    let created = open_relative_inner(
         &drive_pin,
         leaf,
         FILE_GENERIC_READ,
@@ -127,7 +127,7 @@ fn exercise_admission(root: &Path, created: FileIdentity) -> io::Result<()> {
     let prior_profile = check_regular_file(&storage.open_record(PROFILE)?.unwrap())?;
     // Request a delete-capable handle without deleting or renaming anything.
     let delete_open = OpenOptions::new()
-        .access_mode(windows_sys::Win32::Storage::FileSystem::DELETE)
+        .access_mode(DELETE)
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
         .open(root);
@@ -194,7 +194,12 @@ fn assert_snapshot(storage: &ProtectedStorage, expected: [&[u8]; 3]) -> io::Resu
 fn cleanup_fixture(root: &Path, created: File) -> io::Result<()> {
     // No recursion, no retries, and no traversal into unexpected entries.
     use std::os::windows::fs::MetadataExt;
-    let pin = pin_directory(root)?;
+    // Retain the checked directory itself through the deletion request.
+    let pin = OpenOptions::new()
+        .access_mode(FILE_GENERIC_READ | DELETE)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(root)?;
     if file_identity(&directory_info(&created)?) != file_identity(&directory_info(&pin)?) {
         return Err(denied("fixture identity changed before cleanup"));
     }
@@ -214,9 +219,9 @@ fn cleanup_fixture(root: &Path, created: File) -> io::Result<()> {
     for file in files {
         fs::remove_file(file)?;
     }
-    drop(pin);
+    mark_for_deletion(&pin)?;
     drop(created);
-    fs::remove_dir(root)?;
+    drop(pin);
     match fs::symlink_metadata(root) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             println!("NTFS fixture removed");
