@@ -3,3 +3,4 @@
 
 pub mod display;
 pub mod function_row_hook;
+pub mod snap_tap;
