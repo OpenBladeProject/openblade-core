@@ -1,13 +1,20 @@
 use std::{
+    ffi::OsString,
     io,
     path::{Path, PathBuf},
 };
 
-use openblade_windows_host::pipe::{Identity, ProcessTokenEvidence};
+mod token;
+
+use token::ProcessTokenEvidence;
 
 const SIGN_IN_IMAGE: &str = "OpenBlade.SessionAgent.exe";
 
-pub(super) fn entry() -> io::Result<()> {
+pub(super) fn entry(mut args: impl Iterator<Item = OsString>) -> io::Result<()> {
+    if args.next().is_some() {
+        return Err(denied("unexpected Session Agent arguments"));
+    }
+
     let image = std::env::current_exe()?;
     let working_directory = std::env::current_dir()?;
     // This compile-only build has no trusted installed launch binding or
@@ -15,7 +22,7 @@ pub(super) fn entry() -> io::Result<()> {
     run(
         &image,
         &working_directory,
-        Identity::process_token_evidence,
+        token::process_token_evidence,
         None,
     )
 }

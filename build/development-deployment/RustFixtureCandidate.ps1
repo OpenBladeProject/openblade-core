@@ -97,10 +97,23 @@ try {
         foreach ($role in $roles) {
             $inputPath = Join-Path $FixtureDirectory $role.file
             $inputFile = Get-Item -LiteralPath $inputPath -Force
-            if ($inputFile -isnot [IO.FileInfo] -or $inputFile.Length -gt $maximumImageLength) {
+            if ($inputFile -isnot [IO.FileInfo]) {
                 throw "Expected a bounded fixture executable: $inputPath"
             }
-            $images[$role.file] = [IO.File]::ReadAllBytes($inputFile.FullName)
+            $stream = [IO.File]::Open($inputFile.FullName, 'Open', 'Read', 'Read')
+            try {
+                $length = $stream.Length
+                if ($length -le 0 -or $length -gt $maximumImageLength) {
+                    throw "Expected a bounded fixture executable: $inputPath"
+                }
+                $bytes = [byte[]]::new([int]$length)
+                $stream.ReadExactly($bytes, 0, $bytes.Length)
+                if ($stream.ReadByte() -ne -1) {
+                    throw "Expected a bounded fixture executable: $inputPath"
+                }
+                $images[$role.file] = $bytes
+            }
+            finally { $stream.Dispose() }
         }
         $manifest = $utf8.GetBytes((New-FixtureManifest $images))
         $entries = @{

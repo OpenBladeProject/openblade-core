@@ -16,6 +16,7 @@ use openblade_windows_host::pipe::{self, stale_connection};
 use windows_sys::Win32::System::Services::SERVICE_RUNNING;
 
 use crate::runtime::DurableUpdate;
+use crate::scm_host::{Controls, Phase, check_starting, run_lifecycle};
 use crate::wire::{self, Session, Status};
 use openblade_windows_host::{configuration_writer::fixture, valid_dev_id};
 
@@ -31,14 +32,6 @@ const SCM_ID: &str = "scm";
 const CLIENTS: usize = 8;
 const PIPE_INSTANCES: u32 = CLIENTS as u32 + 2;
 const SUBSCRIPTIONS: usize = 4;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Phase {
-    Starting,
-    Running,
-    Stopping,
-    Stopped { failed: bool },
-}
 
 pub(super) fn entry() -> io::Result<()> {
     #[cfg(feature = "vm-scm-fixture")]
@@ -425,7 +418,7 @@ fn foreground_with_stop<F: Future<Output = io::Result<()>>>(
     } else {
         (None, None)
     };
-    let controls = Arc::new(scm::Controls::new());
+    let controls = Arc::new(Controls::new());
     let stop = controls.arm();
     let runtime = Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(scm::run_service(
@@ -536,11 +529,10 @@ async fn run_prepared<F: Future<Output = io::Result<()>>>(
     id: &str,
     session: Session,
     prepare: impl FnOnce(oneshot::Receiver<()>) -> io::Result<(Status, Option<F>)>,
-    mut report: impl FnMut(Phase) -> io::Result<()>,
+    report: impl FnMut(Phase) -> io::Result<()>,
     stop: impl Future<Output = ()>,
 ) -> io::Result<()> {
-    let result = async {
-        report(Phase::Starting)?;
+    run_lifecycle(report, async |report| {
         tokio::pin!(stop);
         check_starting(stop.as_mut()).await?;
         let (shutdown, retiring) = oneshot::channel();
@@ -590,45 +582,8 @@ async fn run_prepared<F: Future<Output = io::Result<()>>>(
         drop(writer);
         drop(claim);
         result.and(stopping).and(driven)
-    }
-    .await;
-    let result = match result {
-        Err(error)
-            if error
-                .get_ref()
-                .is_some_and(|cause| cause.is::<StartupStopped>()) =>
-        {
-            Ok(())
-        }
-        result => result,
-    };
-    let stopped = report(Phase::Stopped {
-        failed: result.is_err(),
-    });
-    result.and(stopped)
-}
-
-async fn check_starting(stop: std::pin::Pin<&mut impl Future<Output = ()>>) -> io::Result<()> {
-    tokio::select! {
-        biased;
-        () = stop => Err(startup_stopped()),
-        () = std::future::ready(()) => Ok(()),
-    }
-}
-
-#[derive(Debug)]
-struct StartupStopped;
-
-impl std::fmt::Display for StartupStopped {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("development host startup stopped")
-    }
-}
-
-impl std::error::Error for StartupStopped {}
-
-fn startup_stopped() -> io::Error {
-    io::Error::new(io::ErrorKind::Interrupted, StartupStopped)
+    })
+    .await
 }
 
 async fn accept(

@@ -1,0 +1,168 @@
+//! Installed SCM candidate. This boundary never borrows the development host's pipe or data.
+
+use std::{ffi::OsString, future::Future, io, path::PathBuf};
+
+use openblade_windows_host::configuration_writer::protected::service_image::{
+    self, IMAGE_NAME, INSTALL_DIRECTORY,
+};
+use tokio::sync::oneshot;
+use windows_sys::Win32::System::Services::{
+    SERVICE_START_PENDING, SERVICE_STATUS, SERVICE_WIN32_OWN_PROCESS,
+};
+
+use crate::scm_host::{Controls, Phase, check_starting, normalize_startup_stop, run_lifecycle};
+use crate::scm_identity::ScmEvidence;
+
+#[path = "installed/native.rs"]
+mod native;
+pub(crate) use native::entry;
+
+const NAME: &str = "OpenBlade";
+const PIPE_NAME: &str = "OpenBlade.Service.v2";
+const PROTOCOL_VERSION: i32 = 79;
+
+struct ProcessEvidence {
+    has_arguments: bool,
+    program_files: PathBuf,
+    image: PathBuf,
+    pid: u32,
+    local_system: bool,
+    session: u32,
+}
+
+struct LaunchIdentity {
+    image: PathBuf,
+    pid: u32,
+}
+
+impl LaunchIdentity {
+    fn verify(process: ProcessEvidence) -> io::Result<Self> {
+        let expected = process
+            .program_files
+            .join(INSTALL_DIRECTORY)
+            .join(IMAGE_NAME);
+        if process.has_arguments
+            || !process.program_files.is_absolute()
+            || process.image.as_os_str() != expected.as_os_str()
+            || process.pid == 0
+            || !process.local_system
+            || process.session != 0
+        {
+            return Err(denied("unexpected installed service process identity"));
+        }
+        Ok(Self {
+            image: expected,
+            pid: process.pid,
+        })
+    }
+
+    fn image_command(&self) -> OsString {
+        let mut command = OsString::from("\"");
+        command.push(&self.image);
+        command.push("\"");
+        command
+    }
+
+    fn verify_registration(&self, scm: ScmEvidence) -> io::Result<()> {
+        if !scm.matches_config
+            || scm.service_type != SERVICE_WIN32_OWN_PROCESS
+            || scm.state != SERVICE_START_PENDING
+            || scm.process_id != self.pid
+        {
+            // SCM may omit the PID in START_PENDING. For installed admission,
+            // missing PID evidence must fail until there is an independent binding.
+            return Err(denied("unverified installed SCM registration or process"));
+        }
+        Ok(())
+    }
+}
+
+fn dispatch_candidate(
+    process: impl FnOnce() -> io::Result<ProcessEvidence>,
+    dispatch: impl FnOnce() -> io::Result<()>,
+) -> io::Result<()> {
+    LaunchIdentity::verify(process()?)?;
+    dispatch()
+}
+
+// The installed endpoint provider must establish listener ownership and a
+// matching, successful current GetStatus response with a status snapshot. The
+// candidate seam consumes this evidence before publishing RUNNING.
+struct Readiness {
+    pipe_name: &'static str,
+    server_pid: u32,
+    protocol_version: i32,
+    correlated_status: bool,
+}
+
+impl Readiness {
+    fn verify(self, launch: &LaunchIdentity) -> io::Result<()> {
+        if self.pipe_name != PIPE_NAME
+            || self.server_pid != launch.pid
+            || self.protocol_version != PROTOCOL_VERSION
+            || !self.correlated_status
+        {
+            return Err(denied("installed status IPC is not ready"));
+        }
+        Ok(())
+    }
+}
+
+async fn run_candidate<F: Future<Output = io::Result<()>>>(
+    controls: &Controls,
+    stop: oneshot::Receiver<()>,
+    process: impl FnOnce() -> io::Result<ProcessEvidence>,
+    registration: impl FnOnce(&LaunchIdentity) -> io::Result<ScmEvidence>,
+    admit: impl FnOnce(&LaunchIdentity) -> io::Result<()>,
+    prepare: impl AsyncFnOnce(&LaunchIdentity, oneshot::Receiver<()>) -> io::Result<(Readiness, F)>,
+    mut publish: impl FnMut(&SERVICE_STATUS) -> io::Result<()>,
+) -> io::Result<()> {
+    let stop = async {
+        let _ = stop.await;
+    };
+    tokio::pin!(stop);
+    run_lifecycle(
+        |phase| controls.publish(phase, &mut publish),
+        async |report| {
+            check_starting(stop.as_mut()).await?;
+            let launch = LaunchIdentity::verify(process()?)?;
+            launch.verify_registration(registration(&launch)?)?;
+            admit(&launch)?;
+            check_starting(stop.as_mut()).await?;
+
+            let (shutdown, retiring) = oneshot::channel();
+            // The provider may drive a typed probe asynchronously. It must
+            // bound preparation and retire partial resources before returning Err.
+            let (readiness, drive) = prepare(&launch, retiring).await?;
+            let startup = readiness
+                .verify(&launch)
+                .and_then(|()| report(Phase::Running));
+            tokio::pin!(drive);
+
+            let (result, stopping, drive_pending) = match startup {
+                Ok(()) => {
+                    let (result, pending) = tokio::select! {
+                        biased;
+                        () = &mut stop => (Ok(()), true),
+                        result = &mut drive => (result, false),
+                    };
+                    (result, report(Phase::Stopping), pending)
+                }
+                Err(error) => (Err(error), Ok(()), true),
+            };
+            // Await provider retirement even when readiness or reporting failed.
+            let _ = shutdown.send(());
+            let retired = if drive_pending { drive.await } else { Ok(()) };
+            normalize_startup_stop(result).and(stopping).and(retired)
+        },
+    )
+    .await
+}
+
+fn denied(message: &'static str) -> io::Error {
+    io::Error::new(io::ErrorKind::PermissionDenied, message)
+}
+
+#[cfg(test)]
+#[path = "installed/tests.rs"]
+mod tests;

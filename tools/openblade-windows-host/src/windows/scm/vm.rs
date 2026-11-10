@@ -4,13 +4,11 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 use windows_sys::Win32::System::Services::{
-    SERVICE_START_PENDING, SERVICE_STOP_PENDING, SERVICE_STOPPED,
+    SERVICE_START_PENDING, SERVICE_STATUS_HANDLE, SERVICE_STOP_PENDING, SERVICE_STOPPED,
 };
 
-use super::{
-    CONTROLS, Phase, SERVICE_STATUS_HANDLE, Session, dispatch_named, io, oneshot,
-    registered_service, report, run_service, status_for,
-};
+use super::{Session, io, oneshot, run_service};
+use crate::scm_host::{CONTROLS, Phase, dispatch_named, registered_service, report, status_for};
 use crate::windows::{fixture_admission as admission, prepare_integrated};
 use openblade_windows_host::configuration_writer::{
     fixture::BatteryProfileStore, protected::ProtectedStorage,

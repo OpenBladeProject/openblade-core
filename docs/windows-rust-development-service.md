@@ -48,6 +48,50 @@ and rollback to the previous bytes and registrations before admitting an
 installed cutover. Production Publish and Setup continue to use the managed
 roles and their dependency and runtime files.
 
+## Compile the installed Session Agent launch boundary
+
+The Windows host workspace also exposes the standalone
+`openblade-windows-agent-candidate` binary behind
+`native-agent-entry-compile-check`. It accepts the managed sign-in action
+with no arguments and requires independent evidence for the installed image,
+authorized interactive logon, and managed endpoint ownership. Those bindings
+are absent, so startup fails closed. The development
+`openblade-rust-session-agent` binary still requires an explicit fixture
+command when the candidate feature is enabled.
+
+The two installed-role candidates are compile-only. Their binary entry points
+have separate module trees from the fixture roles. Neither is a Setup payload.
+
+## Compile the installed service launch boundary
+
+The standalone Windows host workspace has a separate `openblade-windows-service-candidate`
+binary behind the `installed-service-candidate` feature. It compiles separately
+from both fixtures and accepts no process arguments. The SCM callback must supply only the service name
+`OpenBlade`. Startup checks the exact quoted image command for
+`<Program Files>\OpenBlade\OpenBlade.Service.exe`, automatic own-process
+registration, the LocalSystem token, session zero, and the same nonzero PID from
+SCM in `START_PENDING`.
+
+```powershell
+cargo +1.99.1 check --offline --locked --manifest-path tools/openblade-windows-host/Cargo.toml --features installed-service-candidate --bin openblade-windows-service-candidate
+```
+
+The installed admission seam currently returns failure. Integration needs
+independent signed image and protected path evidence for the running candidate,
+plus the installed controller and ownership checks. The separate endpoint seam
+requires the installed ACL, caller admission, and a successful correlated v79
+`GetStatus` response with a status snapshot on `OpenBlade.Service.v2`, bound to
+the admitted PID. The candidate publishes `SERVICE_RUNNING` only after that
+evidence. Setup's external probe still runs afterward. The fixture endpoints
+and their scripted status have separate roles.
+
+A separately authorized disposable VM must confirm the actual SCM callback
+arguments, LocalSystem session, image command and PID availability in
+`START_PENDING`. If SCM omits the PID, the candidate rejects the launch until
+there is another independent binding. Once the installed providers are
+integrated, verify the typed probe, stop and endpoint retirement, restart, and
+rollback in that VM before any payload admission.
+
 ## Run the isolated test
 
 Use the pinned Rust toolchain, Windows MSVC tools and the repository's .NET SDK. From the repository root in PowerShell:

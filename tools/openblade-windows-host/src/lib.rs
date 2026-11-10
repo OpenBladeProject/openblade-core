@@ -24,3 +24,6 @@ pub mod pipe;
 
 #[cfg(windows)]
 pub mod reporter_pipe;
+
+#[cfg(windows)]
+mod windows_token;

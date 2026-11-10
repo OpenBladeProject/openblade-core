@@ -20,6 +20,7 @@ cpu-worker-fixture = []
 scratch-writer-fence = []
 gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]
 vm-scm-fixture = []
+installed-service-candidate = ["windows-sys/Win32_System_RemoteDesktop"]
 hid-identity-compile-check = []
 controller-admission-compile-check = ["openblade-platform-windows/controller-process-compile-check"]
 lifecycle-evidence-compile-check = [
@@ -43,6 +44,16 @@ name = "openblade-windows-scm-vm"
 path = "src/vm_main.rs"
 required-features = ["vm-scm-fixture"]
 test = false
+
+[[bin]]
+name = "openblade-windows-service-candidate"
+path = "src/installed_main.rs"
+required-features = ["installed-service-candidate"]
+
+[[bin]]
+name = "openblade-windows-agent-candidate"
+path = "src/installed_agent_main.rs"
+required-features = ["native-agent-entry-compile-check"]
 
 [dependencies]
 openblade-domain = { path = '../../rust/crates/openblade-domain' }
