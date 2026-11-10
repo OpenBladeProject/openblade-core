@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix internal display brightness errors when Windows omits the change status. ([#942](https://github.com/OSSBlade/openblade-core/pull/942))
+
 ## [0.58.4] - 2026-11-09
 
 ### Fixed
