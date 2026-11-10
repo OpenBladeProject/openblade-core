@@ -9,8 +9,10 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
 {
     private const string FixtureVariable = "OPENBLADE_PHASE_9P_BURN_FIXTURE";
     private const string SignedFixtureVariable = "OPENBLADE_PHASE_9U_SIGNED_BURN_FIXTURE";
+    private const string ProductSizeFixtureVariable = "OPENBLADE_PHASE_9V_PRODUCT_SIZE_BURN_FIXTURE";
     private const string FixtureSha256 = "eec934f595a1f35831c3051ea0f45d2c3829547720764e7b38e98690805c4e10";
     private const string SignedFixtureSha256 = "cc01de2afa4b92cf4756d0565eb2baddd1a50344b900f483405badbfa8f5b5b6";
+    private const string ProductSizeFixtureSha256 = "65c49b47ab7421f7316f52dd1dde3a257e008b8ae1fbb0d5c74162800e596fda";
     private const string InventorySha256 = "c11e8bd73c0f9926e76f69b9df9af1bb510d4c0fe4413fbe22e3e7964ecdba09";
     private const string CanonicalPath = WindowsNativeRoleInventory.ResourcePath;
     private const int PeOffset = 128;
@@ -30,13 +32,71 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
     public void ReadsTheExactDetachedAndReattachedSignedWiX7Fixture()
         => ReadPinnedFixture(SignedFixtureVariable, SignedFixtureSha256);
 
+    [PinnedBurnFixture(ProductSizeFixtureVariable)]
+    public void ReadsTheExactProductSizeWiX7FixtureWithBoundedManagedAllocations()
+    {
+        using FileStream snapshot = OpenPinnedFixture(ProductSizeFixtureVariable, ProductSizeFixtureSha256);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+
+        AssertPinnedInventory(snapshot);
+
+        // The attached cabinet is 19,641,520 bytes. This leaves ample room for
+        // runtime setup while catching a return to a full managed cabinet buffer.
+        Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < 12 * 1024 * 1024);
+    }
+
+    [PinnedBurnFixture(ProductSizeFixtureVariable)]
+    public void CancelsAfterReadingIntoTheProductSizeCabinet()
+    {
+        using FileStream snapshot = OpenPinnedFixture(ProductSizeFixtureVariable, ProductSizeFixtureSha256);
+        using var cancellation = new CancellationTokenSource();
+        using var stream = new CancelAfterReadStream(snapshot, snapshot.Length - 1024 * 1024, cancellation);
+
+        var failure = Assert.Throws<OperationCanceledException>(() =>
+            WindowsNativeInventoryBurnExtractor.Extract(stream, cancellation.Token));
+        Assert.Equal(cancellation.Token, failure.CancellationToken);
+        Assert.True(snapshot.CanRead);
+    }
+
+    [PinnedBurnFixture(ProductSizeFixtureVariable)]
+    public void RefusesProductSizeCabinetMutationOutsideTheInventory()
+    {
+        using FileStream snapshot = OpenPinnedFixture(ProductSizeFixtureVariable, ProductSizeFixtureSha256);
+        byte[] bytes = new byte[snapshot.Length];
+        snapshot.ReadExactly(bytes);
+        // The final block lies past the selected inventory's folder range.
+        using var changing = new ChangingSnapshotStream(bytes, truncate: false, bytes.Length - 1);
+
+        var failure = Assert.Throws<InvalidDataException>(() =>
+            WindowsNativeInventoryBurnExtractor.Extract(changing, default));
+        Assert.Contains("changed during extraction", failure.Message, StringComparison.Ordinal);
+    }
+
     private static void ReadPinnedFixture(string variable, string sha256)
     {
-        using FileStream snapshot = File.Open(Environment.GetEnvironmentVariable(variable)!,
-            FileMode.Open, FileAccess.Read, FileShare.Read);
-        Assert.Equal(sha256, Convert.ToHexStringLower(SHA256.HashData(snapshot)));
-        snapshot.Position = 0;
+        using FileStream snapshot = OpenPinnedFixture(variable, sha256);
+        AssertPinnedInventory(snapshot);
+    }
 
+    private static FileStream OpenPinnedFixture(string variable, string sha256)
+    {
+        FileStream snapshot = File.Open(Environment.GetEnvironmentVariable(variable)!,
+            FileMode.Open, FileAccess.Read, FileShare.Read);
+        try
+        {
+            Assert.Equal(sha256, Convert.ToHexStringLower(SHA256.HashData(snapshot)));
+            snapshot.Position = 0;
+            return snapshot;
+        }
+        catch
+        {
+            snapshot.Dispose();
+            throw;
+        }
+    }
+
+    private static void AssertPinnedInventory(Stream snapshot)
+    {
         var entry = Assert.Single(WindowsNativeInventoryBurnExtractor.Extract(snapshot, default));
         Assert.Equal(CanonicalPath, entry.FilePath);
         Assert.Equal("OpenBladeSetup", entry.OwnerPackageId);
@@ -155,8 +215,12 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
     [InlineData("physical-case", "physical member")]
     [InlineData("physical-overlap", "members overlap")]
     [InlineData("physical-extra", "do not reconcile")]
-    [InlineData("expanded-limit", "expanded size")]
+    [InlineData("expanded-overflow", "expanded size")]
+    [InlineData("member-limit", "expanded size")]
+    [InlineData("aggregate-limit", "expanded size")]
+    [InlineData("compressed-overflow", "cabinet sizes")]
     [InlineData("cabinet-span", "cabinet header")]
+    [InlineData("cabinet-folder-offset-overflow", "cabinet folder")]
     [InlineData("cabinet-continuation", "cabinet header")]
     [InlineData("block-length", "blocks do not cover")]
     [InlineData("signed-pe", "certificate ranges")]
@@ -166,6 +230,7 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
     [InlineData("truncated", "exactly cover")]
     public void RefusesUnsupportedOrAmbiguousPhysicalLayouts(string mutation, string diagnostic)
     {
+        const uint maxMember = 128 * 1024 * 1024;
         byte[] resource = Resource();
         byte[] bundle = Bundle(resource, editCabinet: cabinet =>
         {
@@ -174,8 +239,16 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
                 case "physical-duplicate": cabinet[44 + 19 + 17] = (byte)'0'; break;
                 case "physical-case": cabinet[44 + 16] = (byte)'A'; break;
                 case "physical-overlap": U32(cabinet, 44 + 19 + 4, 0); break;
-                case "expanded-limit": U32(cabinet, 44, 128 * 1024 * 1024); break;
+                case "expanded-overflow": U32(cabinet, 44, uint.MaxValue); break;
+                case "member-limit": U32(cabinet, 44, maxMember + 1); break;
+                case "aggregate-limit":
+                    U32(cabinet, 44, maxMember);
+                    U32(cabinet, 44 + 19, maxMember);
+                    U32(cabinet, 44 + 19 + 4, maxMember);
+                    U32(cabinet, 44 + 38 + 4, 2 * maxMember);
+                    break;
                 case "cabinet-span": U32(cabinet, 8, (uint)cabinet.Length + 1); break;
+                case "cabinet-folder-offset-overflow": U32(cabinet, 36, uint.MaxValue); break;
                 case "cabinet-continuation": U16(cabinet, 30, 1); break;
                 case "block-length":
                     int dataOffset = (int)BinaryPrimitives.ReadUInt32LittleEndian(cabinet.AsSpan(36));
@@ -184,7 +257,7 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
                     U16(cabinet, dataOffset + 6, shortSize);
                     break;
             }
-        }, extraMember: mutation == "physical-extra");
+        }, extraMember: mutation is "physical-extra" or "aggregate-limit");
 
         switch (mutation)
         {
@@ -197,6 +270,7 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
                 U32(bundle, BurnOffset + 36, 8);
                 break;
             case "extra-container": U32(bundle, BurnOffset + 44, 3); break;
+            case "compressed-overflow": U32(bundle, BurnOffset + 52, uint.MaxValue); break;
             case "appended": bundle = [.. bundle, 0]; break;
             case "truncated": bundle = bundle[..^1]; break;
         }
@@ -430,6 +504,32 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset), value);
     private static int ReadU32(byte[] bytes, int offset) =>
         checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset)));
+
+    private sealed class CancelAfterReadStream(Stream snapshot, long offset, CancellationTokenSource cancellation)
+        : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => true;
+        public override bool CanWrite => false;
+        public override long Length => snapshot.Length;
+        public override long Position { get => snapshot.Position; set => snapshot.Position = value; }
+        public override long Seek(long offset, SeekOrigin origin) => snapshot.Seek(offset, origin);
+        public override void Flush() => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            int read = snapshot.Read(buffer);
+            if (read > 0 && Position > offset)
+            {
+                cancellation.Cancel();
+            }
+
+            return read;
+        }
+    }
 
     private sealed class ChangingSnapshotStream(byte[] bytes, bool truncate, int changedOffset)
         : MemoryStream(bytes, 0, bytes.Length, writable: false, publiclyVisible: true)

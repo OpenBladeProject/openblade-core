@@ -18,7 +18,14 @@ internal static class WindowsNativeInventoryBurnExtractor
     private const int MiB = 1024 * 1024;
     private const int MaxStub = 8 * MiB;
     private const int MaxUxCabinet = 2 * MiB;
-    private const int MaxAttachedCabinet = 16 * MiB;
+    // The inert probe uses 18.73 MiB compressed and 71.27 MiB expanded.
+    // Allow headroom over the observed 108.05 MiB installed payload while staying
+    // well below the 1 GiB release artifact cap. The member cap matches the
+    // deployment closure's per-file bound.
+    private const int MaxAttachedCabinet = 128 * MiB;
+    private const int MaxAttachedExpanded = 256 * MiB;
+    private const int MaxAttachedMember = 128 * MiB;
+    private const int MaxUxExpanded = 4 * MiB;
     private const int MaxManifest = MiB;
     private const int MaxCertificateTable = MiB;
     private const int CertificateAlignment = 8;
@@ -49,13 +56,17 @@ internal static class WindowsNativeInventoryBurnExtractor
             }
 
             Layout layout = ReadLayout(snapshot, length, cancellationToken);
-            byte[] uxBytes = ReadAt(snapshot, layout.Stub, layout.UxSize, cancellationToken);
-            byte[] attachedBytes = ReadAt(snapshot, layout.AttachedOffset,
+            // The caller's write-excluding lease covers all passes over these ranges.
+            // Record their starting digests so persistent changes fail closed.
+            byte[] uxHash = HashAt(snapshot, layout.Stub, layout.UxSize, cancellationToken);
+            byte[] attachedHash = HashAt(snapshot, layout.AttachedOffset,
                 layout.AttachedSize, cancellationToken);
 
             // Enumerate both physical tables before asking FDI to expand even the manifest.
-            var ux = BurnFixtureCabinet.Open(uxBytes, ux: true, 4 * MiB);
-            var attached = BurnFixtureCabinet.Open(attachedBytes, ux: false, 64 * MiB);
+            var ux = BurnFixtureCabinet.Open(snapshot, layout.Stub, layout.UxSize, ux: true,
+                MaxUxExpanded, MaxUxExpanded, cancellationToken);
+            var attached = BurnFixtureCabinet.Open(snapshot, layout.AttachedOffset, layout.AttachedSize, ux: false,
+                MaxAttachedExpanded, MaxAttachedMember, cancellationToken);
             int manifestLength = ux.SizeOf("0");
             if (manifestLength > MaxManifest)
             {
@@ -63,7 +74,7 @@ internal static class WindowsNativeInventoryBurnExtractor
             }
 
             byte[] manifest = ux.Extract("0", cancellationToken);
-            Payload inventory = Select(manifest, layout.BundleId, ux, attached, attachedBytes);
+            Payload inventory = Select(manifest, layout, ux, attached, attachedHash);
             byte[] resource = attached.Extract(inventory.Member, cancellationToken);
             if (!CryptographicOperations.FixedTimeEquals(SHA512.HashData(resource), inventory.Hash))
             {
@@ -71,8 +82,10 @@ internal static class WindowsNativeInventoryBurnExtractor
             }
 
             if (snapshot.Length != length || ReadLayout(snapshot, length, cancellationToken) != layout
-                || !MatchesAt(snapshot, layout.Stub, uxBytes, cancellationToken)
-                || !MatchesAt(snapshot, layout.AttachedOffset, attachedBytes, cancellationToken)
+                || !CryptographicOperations.FixedTimeEquals(uxHash,
+                    HashAt(snapshot, layout.Stub, layout.UxSize, cancellationToken))
+                || !CryptographicOperations.FixedTimeEquals(attachedHash,
+                    HashAt(snapshot, layout.AttachedOffset, layout.AttachedSize, cancellationToken))
                 || snapshot.Length != length)
             {
                 throw Invalid("The Burn snapshot changed during extraction.");
@@ -243,8 +256,8 @@ internal static class WindowsNativeInventoryBurnExtractor
     private static long AlignCertificate(long offset) =>
         (offset + CertificateAlignment - 1) & -CertificateAlignment;
 
-    private static Payload Select(byte[] manifest, Guid bundleId, BurnFixtureCabinet ux,
-        BurnFixtureCabinet attached, byte[] attachedBytes)
+    private static Payload Select(byte[] manifest, Layout layout, BurnFixtureCabinet ux,
+        BurnFixtureCabinet attached, byte[] attachedHash)
     {
         using var stream = new MemoryStream(manifest, writable: false);
         using var reader = XmlReader.Create(stream, new XmlReaderSettings
@@ -269,13 +282,13 @@ internal static class WindowsNativeInventoryBurnExtractor
             || Attr(container, "Id") != Attached || Attr(container, "AttachedIndex") != "1"
             || Attr(container, "Attached") != "yes" || Attr(container, "Primary") != "yes"
             || !Guid.TryParseExact(Attr(registration, "Code"), "B", out Guid registrationId)
-            || bundleId == Guid.Empty || bundleId != registrationId
-            || ParseSize(container) != attachedBytes.Length)
+            || layout.BundleId == Guid.Empty || layout.BundleId != registrationId
+            || ParseSize(container) != layout.AttachedSize)
         {
             throw Invalid("The Burn manifest has an unsupported package or container layout.");
         }
 
-        if (!CryptographicOperations.FixedTimeEquals(SHA512.HashData(attachedBytes), Digest(container)))
+        if (!CryptographicOperations.FixedTimeEquals(attachedHash, Digest(container)))
         {
             throw Invalid("The attached cabinet does not match its Burn container digest.");
         }
@@ -413,25 +426,21 @@ internal static class WindowsNativeInventoryBurnExtractor
         return bytes;
     }
 
-    private static bool MatchesAt(Stream snapshot, int offset, ReadOnlySpan<byte> expected,
-        CancellationToken cancellationToken)
+    private static byte[] HashAt(Stream snapshot, int offset, int count, CancellationToken cancellationToken)
     {
         snapshot.Position = offset;
-        Span<byte> buffer = stackalloc byte[8192];
-        while (!expected.IsEmpty)
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA512);
+        var buffer = new byte[Math.Min(64 * 1024, count)];
+        while (count > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Span<byte> chunk = buffer[..Math.Min(expected.Length, buffer.Length)];
+            Span<byte> chunk = buffer.AsSpan(0, Math.Min(count, buffer.Length));
             snapshot.ReadExactly(chunk);
-            if (!chunk.SequenceEqual(expected[..chunk.Length]))
-            {
-                return false;
-            }
-
-            expected = expected[chunk.Length..];
+            hash.AppendData(chunk);
+            count -= chunk.Length;
         }
 
-        return true;
+        return hash.GetHashAndReset();
     }
 
     private static InvalidDataException Invalid(string message) => new(message);

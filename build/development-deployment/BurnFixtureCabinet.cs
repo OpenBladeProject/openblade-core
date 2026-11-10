@@ -5,7 +5,7 @@ using System.Text;
 
 namespace OpenBlade.Deployment;
 
-// Restrict the SDK FDI callbacks to one in-memory cabinet and one bounded output.
+// Restrict the SDK FDI callbacks to one range of the held snapshot and one bounded output.
 // The raw table is reconciled before decompression because a name-keyed extractor
 // alone cannot distinguish duplicate members or overlapping file ranges.
 internal sealed class BurnFixtureCabinet
@@ -18,12 +18,16 @@ internal sealed class BurnFixtureCabinet
     private const int MaxMembers = 512;
     private const int Lzx18 = 0x1203;
     private const int ArchiveAttribute = 0x20;
-    private readonly byte[] bytes;
+    private readonly Stream snapshot;
+    private readonly int offset;
+    private readonly int length;
     private readonly Dictionary<string, int> members;
 
-    private BurnFixtureCabinet(byte[] bytes, Dictionary<string, int> members)
+    private BurnFixtureCabinet(Stream snapshot, int offset, int length, Dictionary<string, int> members)
     {
-        this.bytes = bytes;
+        this.snapshot = snapshot;
+        this.offset = offset;
+        this.length = length;
         this.members = members;
     }
 
@@ -33,25 +37,36 @@ internal sealed class BurnFixtureCabinet
     internal int SizeOf(string name) => members.TryGetValue(name, out int size)
         ? size : throw Invalid("A declared Burn cabinet member is missing.");
 
-    internal static BurnFixtureCabinet Open(byte[] bytes, bool ux, int maxExpandedBytes)
+    internal static BurnFixtureCabinet Open(Stream snapshot, int offset, int length, bool ux,
+        int maxExpandedBytes, int maxMemberBytes, CancellationToken cancellationToken)
     {
+        var members = new Dictionary<string, int>(StringComparer.Ordinal);
+        var cabinet = new BurnFixtureCabinet(snapshot, offset, length, members);
+
         // CFHEADER plus exactly one CFFOLDER. Continuations, reserves, alternate
         // compression and multi-folder cabinets are outside the pinned fixture shape.
-        if (bytes.Length < FileTableOffset || !bytes.AsSpan(0, 4).SequenceEqual("MSCF"u8)
-            || U32(bytes, 4) != 0 || U32(bytes, 8) != bytes.Length || U32(bytes, 12) != 0
-            || U32(bytes, 16) != FileTableOffset || U32(bytes, 20) != 0
-            || bytes[24] != 3 || bytes[25] != 1 || U16(bytes, 26) != 1
-            || U16(bytes, 30) != 0 || U16(bytes, 32) != 0 || U16(bytes, 34) != 0)
+        if (length < FileTableOffset)
+        {
+            throw Invalid("The Burn cabinet header is truncated.");
+        }
+
+        Span<byte> header = stackalloc byte[FileTableOffset];
+        cabinet.ReadAt(0, header, cancellationToken);
+        if (!header[..4].SequenceEqual("MSCF"u8)
+            || U32(header, 4) != 0 || U32(header, 8) != length || U32(header, 12) != 0
+            || U32(header, 16) != FileTableOffset || U32(header, 20) != 0
+            || header[24] != 3 || header[25] != 1 || U16(header, 26) != 1
+            || U16(header, 30) != 0 || U16(header, 32) != 0 || U16(header, 34) != 0)
         {
             throw Invalid("The Burn cabinet header is outside the verified fixture layout.");
         }
 
-        int memberCount = U16(bytes, 28);
-        uint dataOffset = U32(bytes, 36);
-        int blockCount = U16(bytes, 40);
-        int compression = U16(bytes, 42);
-        if (memberCount is < 1 or > MaxMembers || dataOffset > bytes.Length || dataOffset < FileTableOffset
-            || blockCount == 0 || blockCount > (maxExpandedBytes + MaxBlockSize - 1) / MaxBlockSize
+        int memberCount = U16(header, 28);
+        uint dataOffset = U32(header, 36);
+        int blockCount = U16(header, 40);
+        int compression = U16(header, 42);
+        if (memberCount is < 1 or > MaxMembers || dataOffset > length || dataOffset < FileTableOffset
+            || blockCount == 0 || blockCount > maxExpandedBytes / MaxBlockSize
             || compression is not (0 or Lzx18))
         {
             throw Invalid("The Burn cabinet folder exceeds the fixture bounds or uses unsupported compression.");
@@ -59,21 +74,27 @@ internal sealed class BurnFixtureCabinet
 
         int cursor = FileTableOffset;
         long expanded = 0;
-        var members = new Dictionary<string, int>(memberCount, StringComparer.Ordinal);
+        Span<byte> file = stackalloc byte[FileHeaderSize + 6];
         for (int index = 0; index < memberCount; index++)
         {
-            if (cursor + FileHeaderSize >= dataOffset || U32(bytes, cursor + 4) != expanded
-                || U16(bytes, cursor + 8) != 0 || U16(bytes, cursor + 14) != ArchiveAttribute)
+            int available = (int)dataOffset - cursor;
+            if (available <= FileHeaderSize)
+            {
+                throw Invalid("A Burn cabinet file header is truncated.");
+            }
+
+            Span<byte> entry = file[..Math.Min(file.Length, available)];
+            cabinet.ReadAt(cursor, entry, cancellationToken);
+            if (U32(entry, 4) != expanded || U16(entry, 8) != 0 || U16(entry, 14) != ArchiveAttribute)
             {
                 throw Invalid("Burn cabinet members overlap or use unsupported metadata.");
             }
 
-            uint size = U32(bytes, cursor);
+            uint size = U32(entry, 0);
             expanded += size;
-            cursor += FileHeaderSize;
-            ReadOnlySpan<byte> nameBytes = bytes.AsSpan(cursor, Math.Min(6, (int)dataOffset - cursor));
+            ReadOnlySpan<byte> nameBytes = entry[FileHeaderSize..];
             int terminator = nameBytes.IndexOf((byte)0);
-            if (terminator <= 0 || size == 0 || expanded > maxExpandedBytes)
+            if (terminator <= 0 || size == 0 || size > maxMemberBytes || expanded > maxExpandedBytes)
             {
                 throw Invalid("A Burn cabinet member name or expanded size is invalid.");
             }
@@ -88,7 +109,7 @@ internal sealed class BurnFixtureCabinet
             }
 
             members.Add(name, (int)size);
-            cursor += terminator + 1;
+            cursor += FileHeaderSize + terminator + 1;
         }
 
         if (cursor != dataOffset)
@@ -97,15 +118,17 @@ internal sealed class BurnFixtureCabinet
         }
 
         long totalOutput = 0;
+        Span<byte> block = stackalloc byte[BlockHeaderSize];
         for (int index = 0; index < blockCount; index++)
         {
-            if (cursor > bytes.Length - BlockHeaderSize)
+            if (cursor > length - BlockHeaderSize)
             {
                 throw Invalid("A Burn cabinet data block header is truncated.");
             }
 
-            int compressed = U16(bytes, cursor + 4);
-            int output = U16(bytes, cursor + 6);
+            cabinet.ReadAt(cursor, block, cancellationToken);
+            int compressed = U16(block, 4);
+            int output = U16(block, 6);
             if (compressed is < 1 or > MaxCompressedBlockSize || output is < 1 or > MaxBlockSize
                 || (index < blockCount - 1 && output != MaxBlockSize)
                 || (compression == 0 && compressed != output))
@@ -117,12 +140,19 @@ internal sealed class BurnFixtureCabinet
             totalOutput += output;
         }
 
-        if (cursor != bytes.Length || totalOutput != expanded)
+        if (cursor != length || totalOutput != expanded)
         {
             throw Invalid("The Burn cabinet blocks do not cover the declared file ranges.");
         }
 
-        return new(bytes, members);
+        return cabinet;
+    }
+
+    private void ReadAt(int position, Span<byte> destination, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        snapshot.Position = (long)offset + position;
+        snapshot.ReadExactly(destination);
     }
 
     internal byte[] Extract(string name, CancellationToken cancellationToken)
@@ -163,6 +193,11 @@ internal sealed class BurnFixtureCabinet
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        if (extraction.ReadError is { } readError)
+        {
+            throw new InvalidDataException("Could not read the held Burn cabinet range.", readError);
+        }
+
         if (!copied || !destroyed || error.HasError != 0 || !extraction.Complete)
         {
             throw Invalid($"Windows Cabinet FDI could not read the selected Burn member (error {error.Operation}).");
@@ -178,11 +213,13 @@ internal sealed class BurnFixtureCabinet
         private const int OutputHandle = MaxInputHandles + 1;
         // FDI can open the same cabinet more than once with independent cursors.
         private readonly int[] cursors = [Closed, Closed, Closed, Closed];
+        private readonly byte[] input = new byte[64 * 1024];
         private int written;
         private bool selected;
         private bool finished;
         private readonly HashSet<string> seen = new(cabinet.Count, StringComparer.Ordinal);
 
+        internal Exception? ReadError { get; private set; }
         internal byte[] Output { get; } = new byte[cabinet.SizeOf(target)];
         internal bool Complete => finished && seen.Count == cabinet.Count;
 
@@ -212,8 +249,24 @@ internal sealed class BurnFixtureCabinet
             }
 
             int position = cursors[slot];
-            int available = (int)Math.Min(count, cabinet.bytes.Length - position);
-            Marshal.Copy(cabinet.bytes, position, buffer, available);
+            int available = (int)Math.Min(count, cabinet.length - position);
+            try
+            {
+                for (int copied = 0; copied < available;)
+                {
+                    int chunk = Math.Min(input.Length, available - copied);
+                    cabinet.ReadAt(position + copied, input.AsSpan(0, chunk), token);
+                    Marshal.Copy(input, 0, buffer + copied, chunk);
+                    copied += chunk;
+                }
+            }
+            catch (Exception exception)
+            {
+                // Stream I/O and cancellation must not unwind through native FDI.
+                ReadError ??= exception;
+                return uint.MaxValue;
+            }
+
             cursors[slot] += available;
             return (uint)available;
         }
@@ -254,9 +307,9 @@ internal sealed class BurnFixtureCabinet
                 return -1;
             }
 
-            long basis = origin switch { 0 => 0, 1 => cursors[slot], 2 => cabinet.bytes.Length, _ => -1 };
+            long basis = origin switch { 0 => 0, 1 => cursors[slot], 2 => cabinet.length, _ => -1 };
             long offset = basis + distance;
-            if (basis < 0 || offset < 0 || offset > cabinet.bytes.Length)
+            if (basis < 0 || offset < 0 || offset > cabinet.length)
             {
                 return -1;
             }
