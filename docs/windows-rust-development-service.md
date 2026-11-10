@@ -64,24 +64,41 @@ have separate module trees from the fixture roles. Neither is a Setup payload.
 
 ### Read-only Service status binding
 
-The candidate lease requires a fresh Service status observation after the other
-adapter checks pass. The one-shot client uses the shared Service v79
+After the other adapter checks pass, the candidate lease must start its
+retained Service watcher and obtain a fresh initial subscription snapshot.
+The separate one-shot client uses the shared Service v79
 `GetStatus` request and response on the local `OpenBlade.Service.v2` endpoint.
 The exchange is limited to a 64 KiB frame and a two-second deadline, including
 connection establishment. Only listener absence or a busy pipe is retried
 before submission. Cancellation or failure closes the attempt and a subsequent
-read starts with a new request ID. The lease rejects an observation retained
-for two seconds or more. Service revision is scoped to the producer, so it is
-not used as a freshness clock across Service restarts.
+read starts with a new request ID. The lease rejects an initial snapshot
+retained for two seconds or more. Service revision is scoped to the producer,
+so receipt time is used for freshness.
 
 The client requires independently admitted, still-live installed Service
 process evidence and checks its PID and session zero on the connected handle
-before sending and after validating the response. The proof provider and
-installed lease remain unwired. A correlated snapshot establishes Service
-status reachability. Its device, access, and write-blocked fields retain the
-producer's meaning, including inactive or unsupported states. Feature records
-are preserved for future consumers. A successful read grants no write authority
-and does not satisfy the lease's separate full Service-client readiness check.
+before sending, after the response, and before delivering each event on the
+retained connection. The proof provider and installed lease remain unwired.
+Status fields retain the producer's meaning, including inactive or unsupported
+states. Feature records are preserved for future consumers.
+
+The native watcher sends a fresh v79 `SubscribeStatus` request on each
+connection and delivers an open marker only after a successful correlated
+response with a snapshot. It reads subsequent typed `statusEvent` frames in
+wire order. A new open always establishes a new baseline, including after a
+producer restart with a lower revision. The Service can suppress unchanged or
+live-reading-only publications and rotate an idle subscription after its
+15-minute lease. The client applies the two-second budget to opening and
+validating the initial response. Event reads have the same frame size bound
+and can wait for data or cancellation while idle.
+
+After a transport disconnect the watcher drops the old connection and reopens
+immediately. Failed opens emit a reconnect marker with no snapshot, and retry
+delays double from 250 ms up to five seconds. A verified open resets the delay.
+Malformed protocol frames and failed peer proof end the watcher. Cancellation
+releases the owned connection, including during a partial frame. The Rust
+watcher delivers updates directly to one consumer. The managed shared fan-out
+and its per-consumer coalescing remain in the managed Agent.
 
 Managed Agent call sites use the following Service operations:
 
@@ -107,8 +124,8 @@ Managed Agent call sites use the following Service operations:
 The managed server's protocol-51 compatibility path is limited to cached
 `GetStatus` and `SubscribeStatus` with a read-only projection. The native
 Agent status binding requires v79, matching the ordinary managed Agent. The
-status subscription, state observation, and request dispatch for the remaining
-operations still need native bindings. The installed Service candidate
+state observation and request dispatch for the remaining operations still
+need native bindings. The installed Service candidate
 currently serves only `GetStatus`.
 
 The replay in `tools/openblade-windows-host/tests/fixtures/get-status-v79.frames`
@@ -120,6 +137,14 @@ The status comes from decoding the checked-in
 through the managed codec. The ID is
 `11111111-2222-4333-8444-555555555555`. Tests replay the bytes in memory without
 opening a named pipe.
+
+`tools/openblade-windows-host/tests/fixtures/subscribe-status-v79.frames`
+contains three consecutive frames written by the same managed codec.
+It uses `SubscribeStatusRequest(79, id)`, the correlated response with the
+same managed replay status, and a v79 `ServiceStatusEvent` with the status
+revision incremented by one. The request ID is the same as in the one-shot
+fixture. Rust tests compare the emitted request and read both reply frames
+over in-memory streams with deterministic time and injected peer proof.
 
 ## Compile the installed service launch boundary
 

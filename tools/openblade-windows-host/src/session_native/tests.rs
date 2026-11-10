@@ -1,5 +1,6 @@
 use super::*;
 use std::{cell::Cell, rc::Rc};
+use tokio::io::DuplexStream;
 
 const IMAGE: &str = r"C:\Synthetic\OpenBlade\OpenBlade.SessionAgent.exe";
 const DIRECTORY: &str = r"C:\Synthetic\OpenBlade";
@@ -33,7 +34,7 @@ struct Bindings {
     held: Rc<Cell<bool>>,
     waited: Rc<Cell<bool>>,
     ready: Readiness,
-    probe_error: Option<io::ErrorKind>,
+    subscription_error: Option<io::ErrorKind>,
     stop_error: bool,
 }
 
@@ -49,7 +50,7 @@ impl Default for Bindings {
             held: Rc::default(),
             waited: Rc::default(),
             ready: complete(),
-            probe_error: None,
+            subscription_error: None,
             stop_error: false,
         }
     }
@@ -71,7 +72,8 @@ impl SignInBindings for Bindings {
             held: Rc::clone(&self.held),
             waited: Rc::clone(&self.waited),
             ready: std::mem::take(&mut self.ready),
-            probe_error: self.probe_error,
+            subscription_error: self.subscription_error,
+            subscription: None,
             stop_error: self.stop_error,
         }))
     }
@@ -81,7 +83,8 @@ struct Lease {
     held: Rc<Cell<bool>>,
     waited: Rc<Cell<bool>>,
     ready: Readiness,
-    probe_error: Option<io::ErrorKind>,
+    subscription_error: Option<io::ErrorKind>,
+    subscription: Option<(DuplexStream, DuplexStream)>,
     stop_error: bool,
 }
 
@@ -91,16 +94,19 @@ impl AgentLease for Lease {
         self.ready
     }
 
-    fn probe_service_status(&self) -> io::Result<StatusObservation> {
+    fn open_service_status(&mut self) -> io::Result<SubscriptionInitial> {
         assert!(self.held.get());
-        match self.probe_error {
-            Some(error) => Err(error.into()),
-            None => service_client::tests::fixture_observation(),
+        if let Some(error) = self.subscription_error {
+            return Err(error.into());
         }
+        let (stream, initial) = service_client::tests::fixture_initial()?;
+        self.subscription = Some(stream);
+        Ok(initial)
     }
 
     fn serve_until_stopped(&mut self) -> io::Result<()> {
         assert!(self.held.get());
+        assert!(self.subscription.is_some());
         self.waited.set(true);
         if self.stop_error {
             return Err(io::ErrorKind::BrokenPipe.into());
@@ -242,7 +248,7 @@ fn any_missing_role_releases_the_claim_without_serving() {
     for change in cases {
         let mut bindings = Bindings::default();
         change(&mut bindings.ready);
-        bindings.probe_error = Some(io::ErrorKind::InvalidData);
+        bindings.subscription_error = Some(io::ErrorKind::InvalidData);
         let result = start(token(), Some(&mut bindings));
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Unsupported);
         assert!(!bindings.held.get());
@@ -251,9 +257,9 @@ fn any_missing_role_releases_the_claim_without_serving() {
 }
 
 #[test]
-fn status_probe_failure_releases_claim_without_serving() {
+fn subscription_open_failure_releases_claim_without_serving() {
     let mut bindings = Bindings {
-        probe_error: Some(io::ErrorKind::PermissionDenied),
+        subscription_error: Some(io::ErrorKind::PermissionDenied),
         ..Bindings::default()
     };
     let result = start(token(), Some(&mut bindings));

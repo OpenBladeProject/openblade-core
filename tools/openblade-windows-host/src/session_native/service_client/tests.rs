@@ -9,6 +9,9 @@ use tokio::{
 use super::*;
 use crate::service_frame::read_payload;
 
+mod subscription;
+pub(in crate::session_native) use subscription::fixture_initial;
+
 const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v79.frames");
 const REQUEST_ID: &str = "11111111-2222-4333-8444-555555555555";
 const PID: u32 = 42;
@@ -68,13 +71,6 @@ async fn replay(
         }
     };
     tokio::join!(read, serve).0
-}
-
-pub(in crate::session_native) fn fixture_observation() -> io::Result<StatusObservation> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()?
-        .block_on(replay(&Authority::live(), frames().1, |_| Ok((PID, 0))))
 }
 
 fn response_with(edit: impl FnOnce(&mut serde_json::Value)) -> Vec<u8> {

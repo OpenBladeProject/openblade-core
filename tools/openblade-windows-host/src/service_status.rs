@@ -25,6 +25,7 @@ pub(crate) fn production_path() -> String {
 #[serde(rename_all = "camelCase")]
 enum Operation {
     GetStatus,
+    SubscribeStatus,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -50,6 +51,9 @@ impl GetStatus {
     pub(crate) fn decode(payload: &[u8]) -> io::Result<Self> {
         let request: Self =
             serde_json::from_slice(payload).map_err(|_| invalid("invalid GetStatus request"))?;
+        if request.operation != Operation::GetStatus {
+            return Err(invalid("invalid GetStatus operation"));
+        }
         request.validate()?;
         Ok(request)
     }
@@ -113,24 +117,73 @@ impl StatusResponse {
         request: &GetStatus,
         expected_access: Option<i32>,
     ) -> io::Result<Snapshot> {
-        let reply: Self =
-            serde_json::from_slice(payload).map_err(|_| invalid("invalid GetStatus response"))?;
+        let reply: Self = serde_json::from_slice(payload)
+            .map_err(|_| invalid("invalid Service status response"))?;
         if reply.version != PROTOCOL_VERSION
             || !reply.request_id.eq_ignore_ascii_case(&request.request_id)
-            || !reply.success
+        {
+            return Err(invalid("uncorrelated Service status response"));
+        }
+        if request.operation == Operation::SubscribeStatus
+            && !reply.success
+            && reply.error_code == Some(0) // ServiceResponseErrorCode.CapacityUnavailable
+            && reply.error.as_ref().is_some_and(|error| !error.trim().is_empty())
+            && reply.status.is_none()
+            && reply.result.is_none()
+            && reply.archive.is_none()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "Service subscription capacity is unavailable",
+            ));
+        }
+        if !reply.success
             || reply.error.is_some()
             || reply.result.is_some()
             || reply.archive.is_some()
             || reply.error_code.is_some()
         {
-            return Err(invalid("uncorrelated or unsuccessful GetStatus response"));
+            return Err(invalid("unsuccessful Service status response"));
         }
         let status = reply
             .status
-            .ok_or_else(|| invalid("GetStatus response has no snapshot"))?;
+            .ok_or_else(|| invalid("Service status response has no snapshot"))?;
         status.verify(expected_access.unwrap_or(status.control_access))?;
         Ok(status)
     }
+}
+
+#[cfg(feature = "native-agent-entry-compile-check")]
+pub(crate) async fn subscribe<S: AsyncRead + AsyncWrite + Unpin>(
+    stream: &mut S,
+    id: String,
+    verify_peer: impl FnMut(&S) -> io::Result<()>,
+) -> io::Result<Snapshot> {
+    let mut request = GetStatus::new(id)?;
+    request.operation = Operation::SubscribeStatus;
+    exchange(stream, &request, None, verify_peer).await
+}
+
+#[cfg(feature = "native-agent-entry-compile-check")]
+pub(crate) async fn read_status_event(
+    stream: &mut (impl AsyncRead + Unpin),
+) -> io::Result<Snapshot> {
+    #[derive(Deserialize)]
+    #[serde(tag = "frame", rename_all = "camelCase", deny_unknown_fields)]
+    enum Event {
+        StatusEvent { version: i32, status: Snapshot },
+    }
+
+    // The producer can go quiet when status is unchanged. Only the handshake
+    // has a receive deadline. The owning watcher cancels or drops this stream.
+    let payload = read_payload(stream).await?;
+    let Event::StatusEvent { version, status } =
+        serde_json::from_slice(&payload).map_err(|_| invalid("invalid Service status event"))?;
+    if version != PROTOCOL_VERSION {
+        return Err(invalid("Service status event version mismatch"));
+    }
+    status.verify(status.control_access)?;
+    Ok(status)
 }
 
 type FeatureRecord = Map<String, Value>;
@@ -381,9 +434,11 @@ pub(crate) async fn exchange<S: AsyncRead + AsyncWrite + Unpin + ?Sized>(
     verify_peer(stream)?;
     write_frame(stream, request).await?;
     let reply = timeout(FRAME_TIMEOUT, read_payload(stream)).await??;
-    let status = StatusResponse::decode(&reply, request, expected_access)?;
-    verify_peer(stream)?;
-    Ok(status)
+    let status = StatusResponse::decode(&reply, request, expected_access);
+    if status.is_ok() || request.operation == Operation::SubscribeStatus {
+        verify_peer(stream)?;
+    }
+    status
 }
 
 #[allow(unsafe_code)]

@@ -559,6 +559,7 @@ fn closed_v79_get_status_contract_rejects_mutation_duplicates_and_uncorrelated_r
     assert!(request.matches(&GetStatus::new(id.to_owned()).unwrap()));
     for rejected in [
         json!({"operation": "shutdownOpenBlade", "version": 79, "requestId": id}).to_string(),
+        json!({"operation": "subscribeStatus", "version": 79, "requestId": id}).to_string(),
         json!({"operation": "getStatus", "version": 51, "requestId": id}).to_string(),
         json!({"operation": "getStatus", "version": 79, "requestId": "not-a-guid"}).to_string(),
         json!({"operation": "getStatus", "version": 79, "requestId": id, "value": null})

@@ -7,7 +7,7 @@ use std::{
 mod service_client;
 mod token;
 
-use service_client::StatusObservation;
+use service_client::SubscriptionInitial;
 use token::ProcessTokenEvidence;
 
 const SIGN_IN_IMAGE: &str = "OpenBlade.SessionAgent.exe";
@@ -48,9 +48,9 @@ trait SignInBindings {
 
 trait AgentLease {
     fn readiness(&self) -> Readiness;
-    // The installed lease must use the status adapter with independent Service
-    // process authority and the Agent stop signal. Probe after the other gates.
-    fn probe_service_status(&self) -> io::Result<StatusObservation>;
+    // Start the retained watcher with independent Service process authority
+    // and the Agent stop signal. Wait for its first verified open.
+    fn open_service_status(&mut self) -> io::Result<SubscriptionInitial>;
     // Return Ok only after a confirmed stop and completion of owned work.
     // Drop must release the claim on all startup and stop exit paths.
     fn serve_until_stopped(&mut self) -> io::Result<()>;
@@ -63,7 +63,7 @@ struct Readiness {
     audio: bool,
     battery: bool,
     tray_events: bool,
-    service_client: bool, // All required Service operations, beyond GetStatus.
+    service_client: bool, // All required Service operations.
     stop: bool,
 }
 
@@ -135,7 +135,7 @@ fn run(
 
     let mut lease = bindings.claim(&context)?;
     lease.readiness().require_complete()?;
-    lease.probe_service_status()?.require_fresh()?;
+    lease.open_service_status()?.require_fresh()?;
     lease.serve_until_stopped()
 }
 
