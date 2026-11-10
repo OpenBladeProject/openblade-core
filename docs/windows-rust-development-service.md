@@ -311,8 +311,8 @@ After `READY`, send one lowercase `n` per step and wait for the status event.
 | 2 | The controller leaves. The next setter's port verification sees zero, then the final scoped getter loses its response. |
 | 3 | A read-only getter still observes nonzero brightness and the write fence stays set. |
 | 4 | A read-only getter observes zero after an external change and clears the fence. |
-| 5 | Expire an unused getter failure. |
 
+The getter fault expires at the next script step if unused.
 A matching setter echo or intermediate read cannot settle an unavailable
 final read. The replay keeps the accepted override while the final state is
 unknown and never repeats the setter during reconciliation. An owned

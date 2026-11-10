@@ -76,9 +76,10 @@ public sealed partial class ServiceControlRuntimeTests
         }
         else
         {
-            context.Device.AfterSetter = _ => throw new InvalidOperationException("Off is already confirmed.");
-            await context.Runtime.SetLightingOverrideAsync(
+            ControlOperationResult repeated = await context.Runtime.SetLightingOverrideAsync(
                 new(off, OverrideLifetime.UntilPowerSourceChange), default);
+            Assert.Equal(ControlOperationStatus.Applied, repeated.Status);
+            Assert.Equal(writes + 1, context.Device.LightingSetCalls);
             Assert.Null((await store.LoadAsync(default)).Overrides.Lighting);
             Assert.Equal(OverrideLifetime.UntilPowerSourceChange, context.Runtime.GetStatus().LightingOverride?.Lifetime);
         }

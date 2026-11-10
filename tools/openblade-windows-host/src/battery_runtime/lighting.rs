@@ -3,7 +3,7 @@ use openblade_domain::recovery::ScopedStatus;
 use openblade_protocol::{REPORT_LENGTH, RazerReport};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::io;
+use std::{collections::BTreeMap, io};
 use tokio::sync::mpsc;
 
 const LIGHTING: i32 = 3;
@@ -45,9 +45,10 @@ struct Color {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Parameters {
     kind: String,
+    #[serde(flatten)]
+    fields: BTreeMap<String, serde::de::IgnoredAny>,
 }
 
 impl LightingOverride {
@@ -58,7 +59,9 @@ impl LightingOverride {
             || settings.color.red != 0
             || settings.color.green != 0
             || settings.color.blue != 0
-            || settings.parameters.is_some_and(|p| p.kind != "off")
+            || settings
+                .parameters
+                .is_some_and(|p| p.kind != "off" || !p.fields.is_empty())
             || settings.logo_mode.is_some()
             || settings.independent_controls.is_some()
         {
@@ -238,10 +241,12 @@ impl Lighting {
             );
         };
         if baseline != 0 {
-            if self.device.transaction == u8::MAX || self.device.controller_present {
+            // Reserve the setter, two confirmation reads and the two
+            // possible scripted observations before the allocator runs out.
+            if self.device.transaction.checked_add(5).is_none() {
                 return result(
                     ScopedStatus::Blocked,
-                    "Fresh lighting submission admission is unavailable.",
+                    "Lighting transaction space cannot cover submission and readback.",
                 );
             }
             self.pending = true;
@@ -253,9 +258,12 @@ impl Lighting {
                 );
             }
         }
-        self.confirmed_off = self.device.query() == Some(0);
-        if self.confirmed_off {
+        let final_read = self.device.query();
+        self.confirmed_off = final_read == Some(0);
+        if final_read.is_some() {
             self.pending = false;
+        }
+        if self.confirmed_off {
             result(
                 ScopedStatus::Applied,
                 "Keyboard Off independently confirmed.",
@@ -269,9 +277,11 @@ impl Lighting {
     }
 
     fn observe(&mut self) {
-        self.confirmed_off = self.device.query() == Some(0);
-        if self.confirmed_off {
-            self.pending = false;
+        if let Some(raw) = self.device.query() {
+            self.confirmed_off = raw == 0;
+            if self.confirmed_off {
+                self.pending = false;
+            }
         }
     }
 
@@ -321,15 +331,6 @@ impl Scenario {
         value: Option<LightingOverride>,
     ) -> io::Result<Result> {
         self.update(|state| {
-            if state.configuration_blocked {
-                return Ok(super::blocked_configuration());
-            }
-            if state.controller.pending.is_some() {
-                return Ok(result(
-                    ScopedStatus::Blocked,
-                    "Battery write awaits independent readback.",
-                ));
-            }
             let exact = state.current["deviceVerified"] == true;
             Ok(state.lighting()?.apply(value, exact))
         })
@@ -338,7 +339,7 @@ impl Scenario {
 
     pub(crate) async fn drive_lighting(&self, mut advance: mpsc::Receiver<()>) -> io::Result<()> {
         type Step = (&'static str, fn(&mut Lighting));
-        let steps: [Step; 5] = [
+        let steps: [Step; 4] = [
             (
                 "A competing lighting controller was observed.",
                 |lighting| {
@@ -366,19 +367,16 @@ impl Scenario {
                     lighting.observe();
                 },
             ),
-            (
-                "Unused final brightness getter failure expired.",
-                |lighting| {
-                    lighting.device.lose_final_read = false;
-                },
-            ),
         ];
         for (message, step) in steps {
             if advance.recv().await.is_none() {
                 return Ok(());
             }
             self.update(|state| {
-                step(state.lighting()?);
+                let lighting = state.lighting()?;
+                lighting.device.lose_final_read = false;
+                lighting.device.after_set_reads = None;
+                step(lighting);
                 Ok(result(ScopedStatus::Unchanged, message))
             })
             .await?;
@@ -461,6 +459,19 @@ mod tests {
         assert!(lighting.temporary && !lighting.saved.off);
         assert_eq!(lighting.apply(None, true).status, ScopedStatus::Unchanged);
         assert!(!lighting.temporary && !lighting.saved.off);
+    }
+
+    #[test]
+    fn lighting_refuses_a_setter_without_ids_for_confirmation_and_reconciliation() {
+        let mut lighting = fixture();
+        lighting.device.transaction = 249;
+        assert_eq!(
+            lighting.apply(request(1), true).status,
+            ScopedStatus::Blocked
+        );
+        assert_eq!(lighting.device.trace, [(GET_BRIGHTNESS, [1, 5, 0]); 2]);
+        assert_eq!(lighting.device.raw, LIT);
+        assert!(!lighting.pending);
     }
 
     #[test]

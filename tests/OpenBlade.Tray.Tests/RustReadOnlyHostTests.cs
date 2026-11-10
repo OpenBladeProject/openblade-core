@@ -1063,6 +1063,11 @@ public sealed class RustReadOnlyHostTests
 
             Assert.Equal(LightingEffect.Off, Assert.Single(initial.Capabilities!.LightingEffects));
             AssertState(initial, null, confirmed: false);
+            var visible = new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50), OverrideLifetime.Persistent);
+            Assert.Equal(ControlOperationStatus.Blocked,
+                (await client.SetLightingOverrideAsync(visible, token)).Status);
+            AssertState(await client.GetStatusAsync(token), null, confirmed: false);
             Assert.Equal(ControlOperationStatus.Applied,
                 (await client.SetLightingOverrideAsync(persistent, token)).Status);
             AssertState(await client.GetStatusAsync(token), persistent, confirmed: true);
