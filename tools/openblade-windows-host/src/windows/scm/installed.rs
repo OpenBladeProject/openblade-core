@@ -2,6 +2,9 @@
 
 use std::{ffi::OsString, future::Future, io, path::PathBuf};
 
+use openblade_windows_host::configuration_writer::protected::service_image::{
+    self, IMAGE_NAME, INSTALL_DIRECTORY,
+};
 use tokio::sync::oneshot;
 use windows_sys::Win32::System::Services::{
     SERVICE_START_PENDING, SERVICE_STATUS, SERVICE_WIN32_OWN_PROCESS,
@@ -15,7 +18,6 @@ mod native;
 pub(crate) use native::entry;
 
 const NAME: &str = "OpenBlade";
-const IMAGE_NAME: &str = "OpenBlade.Service.exe";
 const PIPE_NAME: &str = "OpenBlade.Service.v2";
 const PROTOCOL_VERSION: i32 = 79;
 
@@ -35,7 +37,10 @@ struct LaunchIdentity {
 
 impl LaunchIdentity {
     fn verify(process: ProcessEvidence) -> io::Result<Self> {
-        let expected = process.program_files.join("OpenBlade").join(IMAGE_NAME);
+        let expected = process
+            .program_files
+            .join(INSTALL_DIRECTORY)
+            .join(IMAGE_NAME);
         if process.has_arguments
             || !process.program_files.is_absolute()
             || process.image.as_os_str() != expected.as_os_str()

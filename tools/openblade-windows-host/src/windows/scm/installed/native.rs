@@ -1,20 +1,15 @@
 #![allow(unsafe_code)]
 
-use std::{
-    ffi::OsString, future, os::windows::ffi::OsStringExt, path::PathBuf, ptr::null_mut, slice,
-};
+use std::future;
 
-use windows_sys::Win32::{
-    System::{
-        Com::CoTaskMemFree, RemoteDesktop::ProcessIdToSessionId, Services::SERVICE_AUTO_START,
-        Threading::GetCurrentProcessId,
-    },
-    UI::Shell::{FOLDERID_ProgramFiles, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath},
+use windows_sys::Win32::System::{
+    RemoteDesktop::ProcessIdToSessionId, Services::SERVICE_AUTO_START,
+    Threading::GetCurrentProcessId,
 };
 
 use super::{
     LaunchIdentity, NAME, ProcessEvidence, Readiness, denied, dispatch_candidate, io, oneshot,
-    run_candidate,
+    run_candidate, service_image,
 };
 use crate::scm_host::{CONTROLS, dispatch_named, registered_service, report};
 use crate::scm_identity as identity;
@@ -59,7 +54,7 @@ fn process_evidence() -> io::Result<ProcessEvidence> {
     }
     Ok(ProcessEvidence {
         has_arguments: std::env::args_os().nth(1).is_some(),
-        program_files: program_files()?,
+        program_files: service_image::program_files()?,
         image: std::env::current_exe()?,
         pid,
         local_system: identity::is_local_system()?,
@@ -67,41 +62,14 @@ fn process_evidence() -> io::Result<ProcessEvidence> {
     })
 }
 
-fn program_files() -> io::Result<PathBuf> {
-    let mut path = null_mut();
-    // SAFETY: Windows supplies a task-allocated NUL-terminated path on success.
-    // DONT_VERIFY resolves the known folder without opening it.
-    let result = unsafe {
-        SHGetKnownFolderPath(
-            &FOLDERID_ProgramFiles,
-            KF_FLAG_DONT_VERIFY as u32,
-            null_mut(),
-            &mut path,
-        )
-    };
-    let folder = if result >= 0 && !path.is_null() {
-        let mut len = 0;
-        // SAFETY: A successful known-folder query returned a live UTF-16 string.
-        while unsafe { *path.add(len) } != 0 {
-            len += 1;
-        }
-        // SAFETY: len excludes the terminator and the memory is still owned here.
-        Ok(PathBuf::from(OsString::from_wide(unsafe {
-            slice::from_raw_parts(path, len)
-        })))
-    } else {
-        Err(denied("Program Files known folder is unavailable"))
-    };
-    // SAFETY: Windows requires this allocation to be freed, including on failure.
-    unsafe { CoTaskMemFree(path.cast()) };
-    folder
-}
-
 fn admit_candidate(_: &LaunchIdentity) -> io::Result<()> {
-    // Integration seam for independent installed image digest and protected
-    // path admission, plus the installed controller/ownership prerequisites.
-    // The signed development ZIP proves none of these for this process.
-    Err(denied("installed candidate prerequisites are unavailable"))
+    // service_image::ProtectedServiceImage needs an authenticated expected
+    // build digest. This entry has no provider for one. Startup also needs
+    // independent proof that the retained staged generation is executing.
+    // Controller and ownership admission are also pending.
+    Err(denied(
+        "installed build, launch or runtime evidence is unavailable",
+    ))
 }
 
 async fn prepare_installed_endpoint(
