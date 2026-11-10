@@ -139,7 +139,7 @@ try {
                 $null -eq $dependency.PSObject.Properties['path'] -and
                 $dependency.source -ceq 'registry+https://github.com/rust-lang/crates.io-index' -and
                 $dependency.req -ceq '=0.61.2' -and -not $dependency.uses_default_features -and
-                (@($dependency.features | Sort-Object) -join ',') -ceq 'Win32_Devices_Display,Win32_Foundation,Win32_Graphics_Gdi') {
+                (@($dependency.features | Sort-Object) -join ',') -ceq 'Win32_Devices_Display,Win32_Foundation,Win32_Graphics_Gdi,Win32_System_Registry') {
                 $windowsSdkCount++
                 continue
             }

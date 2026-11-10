@@ -1,15 +1,20 @@
 //! Windows SDK calls and union decoding.
 #![allow(unsafe_code)]
 
+use super::refresh::{DriverMode, RefreshApi};
 use super::*;
 use windows_sys::Win32::{
     Devices::Display::{
-        DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DisplayConfigGetDeviceInfo,
-        GetDisplayConfigBufferSizes, QueryDisplayConfig,
+        DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE, DISPLAYCONFIG_MODE_INFO_TYPE_TARGET,
+        DISPLAYCONFIG_TARGET_PREFERRED_MODE, DISPLAYCONFIG_VIDEO_SIGNAL_INFO,
+        DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes, QueryDisplayConfig,
     },
+    Foundation::ERROR_INVALID_DATA,
     Graphics::Gdi::{
-        DISPLAYCONFIG_PATH_MODE_IDX_INVALID, DISPLAYCONFIG_PATH_TARGET_MODE_IDX_INVALID,
+        DEVMODEW, DISPLAYCONFIG_PATH_MODE_IDX_INVALID, DISPLAYCONFIG_PATH_TARGET_MODE_IDX_INVALID,
+        DM_INTERLACED, EnumDisplaySettingsExW,
     },
+    System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_BINARY, RegGetValueW},
 };
 
 pub(super) struct WindowsDisplay;
@@ -62,11 +67,87 @@ impl DisplayApi for WindowsDisplay {
     }
 }
 
-pub(super) fn physical_rate(
+impl RefreshApi for WindowsDisplay {
+    fn mode(&mut self, source: &[u16], index: u32) -> Option<DriverMode> {
+        assert_eq!(source.last(), Some(&0));
+        let mut mode = DEVMODEW {
+            dmSize: size_of::<DEVMODEW>() as u16,
+            ..Default::default()
+        };
+        // SAFETY: source is NUL terminated and mode is writable. dmSize
+        // describes the struct and dmDriverExtra is zero.
+        if unsafe { EnumDisplaySettingsExW(source.as_ptr(), index, &mut mode, 0) } == 0 {
+            return None;
+        }
+        Some(DriverMode {
+            width: mode.dmPelsWidth,
+            height: mode.dmPelsHeight,
+            hertz: mode.dmDisplayFrequency,
+            // SAFETY: The display interpretation of the initialized u32 union.
+            interlaced: unsafe { mode.Anonymous2.dmDisplayFlags } & DM_INTERLACED != 0,
+        })
+    }
+
+    fn preferred_mode(&mut self, target: EndpointId) -> Result<SignalTiming, u32> {
+        let mut preferred = DISPLAYCONFIG_TARGET_PREFERRED_MODE {
+            header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
+                r#type: DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE,
+                size: size_of::<DISPLAYCONFIG_TARGET_PREFERRED_MODE>() as u32,
+                adapterId: LUID {
+                    LowPart: target.adapter_low,
+                    HighPart: target.adapter_high,
+                },
+                id: target.id,
+            },
+            ..Default::default()
+        };
+        // SAFETY: The header describes the initialized, writable packet.
+        let status =
+            unsafe { DisplayConfigGetDeviceInfo(std::ptr::from_mut(&mut preferred).cast()) } as u32;
+        if status == ERROR_SUCCESS {
+            Ok(signal_timing(preferred.targetMode.targetVideoSignalInfo))
+        } else {
+            Err(status)
+        }
+    }
+
+    fn edid(&mut self, subkey: &[u16]) -> Result<Vec<u8>, u32> {
+        // One base block and up to 255 extensions. An oversized value
+        // returns ERROR_MORE_DATA and its partial contents are discarded.
+        const MAX_EDID_BYTES: usize = 128 * 256;
+        const VALUE: [u16; 5] = [b'E' as u16, b'D' as u16, b'I' as u16, b'D' as u16, 0];
+        assert_eq!(subkey.last(), Some(&0));
+        let mut data = vec![0_u8; MAX_EDID_BYTES];
+        let mut length = data.len() as u32;
+        // SAFETY: Both strings are NUL terminated. data holds length bytes,
+        // length is writable and the optional type output is omitted.
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_LOCAL_MACHINE,
+                subkey.as_ptr(),
+                VALUE.as_ptr(),
+                RRF_RT_REG_BINARY,
+                std::ptr::null_mut(),
+                data.as_mut_ptr().cast(),
+                &mut length,
+            )
+        };
+        if status != ERROR_SUCCESS {
+            return Err(status);
+        }
+        if length as usize > data.len() {
+            return Err(ERROR_INVALID_DATA);
+        }
+        data.truncate(length as usize);
+        Ok(data)
+    }
+}
+
+pub(super) fn active_signal(
     path: &DISPLAYCONFIG_PATH_INFO,
     modes: &[DISPLAYCONFIG_MODE_INFO],
     target: EndpointId,
-) -> Result<Option<RefreshRate>, DisplayReadError> {
+) -> Result<SignalTiming, DisplayReadError> {
     // SAFETY: Both index layouts are initialized 32-bit words. Virtual mode
     // packs the target index into the high 16 bits and the desktop image below.
     let index_word = unsafe { path.targetInfo.Anonymous.modeInfoIdx };
@@ -88,5 +169,14 @@ pub(super) fn physical_rate(
     }
     // SAFETY: The discriminant and endpoint matched this path's target.
     let signal = unsafe { mode.Anonymous.targetMode.targetVideoSignalInfo };
-    Ok(RefreshRate::observed(signal.vSyncFreq))
+    Ok(signal_timing(signal))
+}
+
+fn signal_timing(signal: DISPLAYCONFIG_VIDEO_SIGNAL_INFO) -> SignalTiming {
+    SignalTiming {
+        width: signal.activeSize.cx,
+        height: signal.activeSize.cy,
+        scanline_ordering: signal.scanLineOrdering,
+        rate: RefreshRate::observed(signal.vSyncFreq),
+    }
 }

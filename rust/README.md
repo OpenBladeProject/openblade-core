@@ -41,7 +41,10 @@ Its locked OS/runtime dependencies stay in the CLI. Production libraries have
 only inward local dependencies. See [the read-only status guide](crates/openblade-status-cli/README.md).
 The isolated `openblade-platform-windows` crate reads active internal display
 topology, identity and the distinct desktop and physical refresh rates from
-the current Windows desktop. It uses the locked `windows-sys` SDK bindings
+the current Windows desktop. Its read-only refresh projection also reads GDI
+modes and target-bound preferred timing and EDID evidence for the managed v2
+QueryDisplay options and current key. HDR, color profiles, brightness, and
+Session Agent integration are separate. It uses the locked `windows-sys` SDK bindings
 and has no production caller. Its tests script native responses.
 
 The workspace guard checks crate boundaries, reviewed targets and dependencies,

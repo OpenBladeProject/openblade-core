@@ -16,6 +16,8 @@ use windows_sys::Win32::{
 };
 
 mod native;
+mod refresh;
+pub use refresh::{InternalDisplayRefresh, RefreshOption, RefreshSnapshot, VerticalRange};
 #[cfg(test)]
 mod tests;
 
@@ -77,6 +79,7 @@ pub struct ActiveInternalDisplay {
     pub desktop_rate: Option<RefreshRate>,
     /// Physical signal rate reported by the matching target mode.
     pub physical_rate: Option<RefreshRate>,
+    active_signal: SignalTiming,
     /// Whether the path uses the virtual-mode-aware layout.
     pub supports_virtual_mode: bool,
     /// The OS path flag for DRR. Rates alone do not establish DRR state.
@@ -108,6 +111,9 @@ pub enum DisplayReadError {
     InvalidTargetModeIndex,
     MismatchedTargetMode,
     MissingSourceName,
+    CurrentModeUnavailable,
+    InvalidCurrentMode,
+    DriverModeLimit,
 }
 
 /// Read the active topology and resolve the single internal path using the
@@ -115,6 +121,21 @@ pub enum DisplayReadError {
 /// current-user desktop. Endpoint IDs describe this observation only.
 pub fn read_internal_display() -> Result<InternalDisplayTopology, DisplayReadError> {
     read_with(&mut native::WindowsDisplay)
+}
+
+/// Read the refresh portion of v2 QueryDisplay on the current-user desktop.
+/// The topology and its target mode come from one CCD query. GDI and
+/// optional timing evidence are separate, subsequent Windows reads.
+pub fn read_internal_display_refresh() -> Result<InternalDisplayRefresh, DisplayReadError> {
+    refresh::read_refresh_with(&mut native::WindowsDisplay)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SignalTiming {
+    width: u32,
+    height: u32,
+    scanline_ordering: i32,
+    rate: Option<RefreshRate>,
 }
 
 trait DisplayApi {
@@ -199,7 +220,7 @@ fn resolve_internal_display(
 
     let source = EndpointId::new(path.sourceInfo.adapterId, path.sourceInfo.id);
     let target = EndpointId::new(path.targetInfo.adapterId, path.targetInfo.id);
-    let physical_rate = native::physical_rate(path, modes, target)?;
+    let active_signal = native::active_signal(path, modes, target)?;
     let mut source_name = DISPLAYCONFIG_SOURCE_DEVICE_NAME {
         header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
             r#type: DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
@@ -224,7 +245,8 @@ fn resolve_internal_display(
             .ok_or(DisplayReadError::MissingSourceName)?,
         monitor_name: monitor_name(api, path),
         desktop_rate: RefreshRate::observed(path.targetInfo.refreshRate),
-        physical_rate,
+        physical_rate: active_signal.rate,
+        active_signal,
         supports_virtual_mode: path.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE != 0,
         boost_refresh_rate: path.flags & PATH_BOOST_REFRESH_RATE != 0,
     }))

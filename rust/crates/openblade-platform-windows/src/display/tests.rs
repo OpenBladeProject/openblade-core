@@ -1,5 +1,7 @@
+use super::refresh::{DriverMode, RefreshApi};
 use super::*;
 use std::{collections::VecDeque, hint::black_box};
+use windows_sys::Win32::Graphics::Gdi::ENUM_CURRENT_SETTINGS;
 use windows_sys::Win32::{
     Devices::Display::{
         DISPLAYCONFIG_MODE_INFO_0, DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE,
@@ -53,6 +55,14 @@ struct Script {
     source_name: [u16; 32],
     target_status: u32,
     reads: (usize, usize),
+    current_mode: Option<DriverMode>,
+    indexed_modes: VecDeque<DriverMode>,
+    indexed_reads: u32,
+    unbounded_modes: bool,
+    preferred_calls: usize,
+    preferred: Option<Result<SignalTiming, u32>>,
+    monitor_path: Option<&'static str>,
+    edid: Option<Result<Vec<u8>, u32>>,
 }
 
 impl Script {
@@ -64,6 +74,14 @@ impl Script {
             source_name: std::array::from_fn(|i| if i == 0 { u16::from(b'S') } else { 0 }),
             target_status: ERROR_SUCCESS,
             reads: (0, 0),
+            current_mode: None,
+            indexed_modes: VecDeque::new(),
+            indexed_reads: 0,
+            unbounded_modes: false,
+            preferred_calls: 0,
+            preferred: None,
+            monitor_path: None,
+            edid: None,
         }
     }
 }
@@ -125,7 +143,17 @@ impl DisplayApi for Script {
             EndpointId::new(TARGET, 5)
         );
         request.monitorFriendlyDeviceName[0] = b'T'.into();
-        request.monitorDevicePath[0] = b'P'.into();
+        if let Some(path) = self.monitor_path {
+            for (unit, value) in request
+                .monitorDevicePath
+                .iter_mut()
+                .zip(path.encode_utf16())
+            {
+                *unit = value;
+            }
+        } else {
+            request.monitorDevicePath[0] = b'P'.into();
+        }
         self.target_status
     }
 }
@@ -171,6 +199,7 @@ fn target_mode() -> DISPLAYCONFIG_MODE_INFO {
 #[test]
 fn links_windows_entry_point_without_calling_it() {
     black_box(read_internal_display as fn() -> _);
+    black_box(read_internal_display_refresh as fn() -> _);
 }
 
 #[test]
@@ -438,4 +467,207 @@ fn rejects_empty_and_unterminated_source_names() {
         );
         assert_eq!(api.reads, (1, 0));
     }
+}
+
+impl RefreshApi for Script {
+    fn mode(&mut self, source: &[u16], index: u32) -> Option<DriverMode> {
+        assert_eq!(source, &[b'S'.into(), 0]);
+        if index == ENUM_CURRENT_SETTINGS {
+            assert_eq!(self.indexed_reads, 0);
+            return self.current_mode.take();
+        }
+
+        assert_eq!(index, self.indexed_reads);
+        self.indexed_reads += 1;
+        if self.unbounded_modes {
+            return Some(mode_at(60));
+        }
+        self.indexed_modes.pop_front()
+    }
+
+    fn preferred_mode(&mut self, target: EndpointId) -> Result<SignalTiming, u32> {
+        assert_eq!(target, EndpointId::new(TARGET, 5));
+        self.preferred_calls += 1;
+        self.preferred.expect("unexpected preferred mode read")
+    }
+
+    fn edid(&mut self, subkey: &[u16]) -> Result<Vec<u8>, u32> {
+        assert_eq!(
+            String::from_utf16(subkey).unwrap(),
+            "SYSTEM\\CurrentControlSet\\Enum\\DISPLAY\\PANEL\\INSTANCE\\Device Parameters\0"
+        );
+        self.edid.take().expect("unexpected EDID read")
+    }
+}
+
+fn mode_at(hertz: u32) -> DriverMode {
+    DriverMode {
+        width: 2560,
+        height: 1600,
+        hertz,
+        interlaced: false,
+    }
+}
+
+fn refresh_script(flags: u32) -> Script {
+    let path = path(0, DISPLAYCONFIG_PATH_ACTIVE | flags);
+    let mut mode = target_mode();
+    mode.Anonymous.targetMode = DISPLAYCONFIG_TARGET_MODE {
+        targetVideoSignalInfo: DISPLAYCONFIG_VIDEO_SIGNAL_INFO {
+            activeSize: windows_sys::Win32::Devices::Display::DISPLAYCONFIG_2DREGION {
+                cx: 2560,
+                cy: 1600,
+            },
+            vSyncFreq: DISPLAYCONFIG_RATIONAL {
+                Numerator: 240_000,
+                Denominator: 1001,
+            },
+            ..Default::default()
+        },
+    };
+    let mut script = Script::new([Frame::success(vec![path], vec![mode])]);
+    script.current_mode = Some(mode_at(60));
+    script
+}
+
+#[test]
+fn refresh_reads_one_topology_and_uses_the_selected_source_and_target() {
+    for boost in [0, PATH_BOOST_REFRESH_RATE] {
+        let mut api = refresh_script(DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE | boost);
+        api.preferred = Some(Ok(SignalTiming {
+            width: 2560,
+            height: 1600,
+            scanline_ordering: 1,
+            rate: Some(RefreshRate {
+                numerator: 165,
+                denominator: 1,
+            }),
+        }));
+        api.monitor_path = Some(r"\\?\DISPLAY#PANEL#INSTANCE#{fixture}");
+        api.edid = Some(Err(ERROR_ACCESS_DENIED));
+        api.indexed_modes = [
+            mode_at(240),
+            mode_at(60),
+            mode_at(165),
+            mode_at(60),
+            mode_at(90),
+            mode_at(1001),
+            DriverMode {
+                interlaced: true,
+                ..mode_at(120)
+            },
+            DriverMode {
+                width: 1920,
+                ..mode_at(144)
+            },
+        ]
+        .into();
+        let InternalDisplayRefresh::Single(snapshot) =
+            refresh::read_refresh_with(&mut api).unwrap()
+        else {
+            panic!("expected refresh snapshot");
+        };
+        assert_eq!(api.reads, (1, 1));
+        assert!(api.frames.is_empty());
+        assert_eq!(api.indexed_reads, 9);
+        assert_eq!(api.preferred_calls, 1);
+        assert!(api.edid.is_none());
+        assert_eq!(
+            (snapshot.width, snapshot.height, snapshot.current_mode_hertz),
+            (2560, 1600, 60)
+        );
+        assert_eq!(snapshot.edid_range, Err(ERROR_ACCESS_DENIED));
+        assert_eq!(snapshot.display.desktop_rate.unwrap().numerator, 60);
+        assert_eq!(snapshot.display.physical_rate.unwrap().numerator, 240_000);
+        assert_eq!(snapshot.display.boost_refresh_rate, boost != 0);
+        assert!(snapshot.display.supports_virtual_mode);
+        assert_eq!(
+            snapshot
+                .refresh_options
+                .iter()
+                .map(|option| option.key.as_str())
+                .collect::<Vec<_>>(),
+            ["fixed-60", "fixed-165", "fixed-240", "dynamic-60-240"]
+        );
+        assert_eq!(
+            snapshot.current_refresh_key.as_deref(),
+            (boost != 0).then_some("dynamic-60-240")
+        );
+        assert_eq!(snapshot.message.is_some(), boost == 0);
+    }
+}
+
+#[test]
+fn refresh_retains_native_failures_and_bounds_driver_mode_enumeration() {
+    let mut missing = refresh_script(0);
+    missing.current_mode = None;
+    assert_eq!(
+        refresh::read_refresh_with(&mut missing),
+        Err(DisplayReadError::CurrentModeUnavailable)
+    );
+    assert_eq!(missing.indexed_reads, 0);
+
+    let mut invalid = refresh_script(0);
+    invalid.current_mode = Some(DriverMode {
+        width: 0,
+        ..mode_at(60)
+    });
+    assert_eq!(
+        refresh::read_refresh_with(&mut invalid),
+        Err(DisplayReadError::InvalidCurrentMode)
+    );
+
+    let mut unbounded = refresh_script(0);
+    unbounded.unbounded_modes = true;
+    assert_eq!(
+        refresh::read_refresh_with(&mut unbounded),
+        Err(DisplayReadError::DriverModeLimit)
+    );
+    assert_eq!(unbounded.indexed_reads, 4096);
+
+    let mut denied = Script::new([Frame::status(ERROR_ACCESS_DENIED)]);
+    assert_eq!(
+        refresh::read_refresh_with(&mut denied),
+        Err(DisplayReadError::Native {
+            operation: Operation::ActivePaths,
+            status: ERROR_ACCESS_DENIED,
+        })
+    );
+}
+
+#[test]
+fn refresh_does_not_read_modes_for_ambiguous_topology_or_guess_options() {
+    let active = path(0, DISPLAYCONFIG_PATH_ACTIVE);
+    let mut ambiguous = Script::new([Frame::success(vec![active, active], vec![])]);
+    assert_eq!(
+        refresh::read_refresh_with(&mut ambiguous),
+        Ok(InternalDisplayRefresh::MultipleInternalDisplays)
+    );
+    assert_eq!(ambiguous.reads, (0, 0));
+
+    let mut no_driver = refresh_script(DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE);
+    no_driver.preferred = Some(Err(ERROR_NOT_SUPPORTED));
+    let InternalDisplayRefresh::Single(snapshot) =
+        refresh::read_refresh_with(&mut no_driver).unwrap()
+    else {
+        panic!("expected refresh snapshot");
+    };
+    assert_eq!(snapshot.preferred_rate, Err(ERROR_NOT_SUPPORTED));
+    assert!(snapshot.refresh_options.is_empty());
+    assert!(snapshot.current_refresh_key.is_none());
+
+    let mut legacy = refresh_script(0);
+    legacy.indexed_modes = [mode_at(60), mode_at(240)].into();
+    let InternalDisplayRefresh::Single(snapshot) = refresh::read_refresh_with(&mut legacy).unwrap()
+    else {
+        panic!("expected refresh snapshot");
+    };
+    assert_eq!(legacy.preferred_calls, 0);
+    assert!(
+        snapshot
+            .refresh_options
+            .iter()
+            .all(|option| !option.is_dynamic)
+    );
+    assert!(snapshot.current_refresh_key.is_none());
 }
