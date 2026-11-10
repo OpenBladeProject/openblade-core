@@ -1,6 +1,6 @@
 //! Installed v79 GetStatus only. Ports must own their resources and acknowledge retirement.
 
-use std::{future::Future, io, pin::Pin, time::Duration};
+use std::{future::Future, io, pin::Pin, rc::Rc, time::Duration};
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -8,26 +8,38 @@ use tokio::{
     time::timeout,
 };
 
-use super::{LaunchIdentity, PIPE_NAME, PROTOCOL_VERSION, Readiness, denied};
+use super::{PIPE_NAME, PROTOCOL_VERSION, Readiness, denied};
 use crate::{
     scm_host::startup_stopped,
     service_frame::{FRAME_TIMEOUT, invalid, read_payload, write_frame},
 };
 
+#[path = "readiness_windows.rs"]
+mod windows;
+
 #[path = "status_wire.rs"]
 mod status_wire;
 use status_wire::{GetStatus, Snapshot, StatusResponse};
+
+#[path = "status_source.rs"]
+mod status_source;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 type Pending<'a, T> = Pin<Box<dyn Future<Output = io::Result<T>> + 'a>>;
+pub(super) type ControlSession = Rc<dyn Fn() -> io::Result<Option<u32>>>;
+
+fn windows_control_session() -> ControlSession {
+    Rc::new(|| Ok(crate::console_session::observe()))
+}
 
 // Each native connection retains its handle and supplies handle-bound
 // evidence; the listener never infers identity from the pipe name.
 trait Stream: AsyncRead + AsyncWrite + Unpin {
     fn server_pid(&self) -> io::Result<u32>;
     fn caller_after_read(&self) -> io::Result<Caller>;
+    fn control_session(&self) -> io::Result<Option<u32>>;
 }
 
 struct Listener {
@@ -52,7 +64,6 @@ impl Listener {
     }
 }
 
-#[allow(dead_code)] // Native token resolution is a separate prerequisite.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Logon {
     System,
@@ -104,22 +115,26 @@ struct Ports {
     source: Box<dyn StatusSource>,
 }
 
+#[cfg(not(test))]
 pub(super) async fn prepare_installed_endpoint(
-    launch: &LaunchIdentity,
+    launch: &super::LaunchIdentity,
+    admission: super::native::AdmittedRuntime,
     shutdown: oneshot::Receiver<()>,
     failed: oneshot::Sender<()>,
 ) -> io::Result<(Readiness, impl Future<Output = io::Result<()>> + use<>)> {
-    // No installed provider currently proves both the managed endpoint
-    // security contract and the runtime status contract. Never substitute a
-    // fixture or create a pipe with default security.
-    prepare(launch.pid, shutdown, failed, installed_ports()).await
-}
-
-fn installed_ports() -> io::Result<Ports> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "secure installed endpoint and admitted status source are unavailable",
-    ))
+    admission.verify_launch(launch)?;
+    let source = status_source::native_status_source();
+    let endpoint = windows::NativeEndpoint::open(launch, windows_control_session())?;
+    prepare(
+        launch.pid,
+        shutdown,
+        failed,
+        Ok(Ports {
+            endpoint: Box::new(endpoint),
+            source,
+        }),
+    )
+    .await
 }
 
 async fn prepare(
@@ -264,8 +279,7 @@ async fn serve(
         .map_err(|e| Client(e.into()))?
         .map_err(Client)?;
     // Windows impersonation uses the token from the last read on this handle.
-    let caller = stream.caller_after_read().map_err(Client)?;
-    let access = caller.access().map_err(Client)?;
+    let mut caller = stream.caller_after_read().map_err(Client)?;
     let request = GetStatus::decode(&payload).map_err(Client)?;
     if let Some((pid, expected)) = probe
         && (caller.pid != Some(pid)
@@ -277,6 +291,12 @@ async fn serve(
             "unverified installed self-probe caller or request",
         )));
     }
+    if caller.logon == Logon::Interactive {
+        // Failure of the admitted session authority is a runtime failure,
+        // not an inactive session or a bad client.
+        caller.control_session = stream.control_session().map_err(Runtime)?;
+    }
+    let access = caller.access().map_err(Client)?;
     let status = timeout(FRAME_TIMEOUT, source.snapshot(caller))
         .await
         .map_err(|e| Runtime(e.into()))?

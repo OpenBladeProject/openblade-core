@@ -4,6 +4,8 @@ mod application_runtime;
 mod battery_policy;
 #[cfg(any(windows, test))]
 mod battery_runtime;
+#[cfg(all(windows, not(test), feature = "lifecycle-evidence-compile-check"))]
+mod console_session;
 #[cfg(all(windows, test))]
 #[allow(dead_code)] // The host tests use scripted discovery only.
 mod discovery;

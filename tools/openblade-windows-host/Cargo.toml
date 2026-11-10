@@ -20,7 +20,10 @@ cpu-worker-fixture = []
 scratch-writer-fence = []
 gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]
 vm-scm-fixture = []
-installed-service-candidate = ["windows-sys/Win32_System_RemoteDesktop"]
+installed-service-candidate = [
+    "lifecycle-evidence-compile-check",
+    "openblade-platform-windows/controller-process-compile-check",
+]
 hid-identity-compile-check = []
 controller-admission-compile-check = ["openblade-platform-windows/controller-process-compile-check"]
 lifecycle-evidence-compile-check = [

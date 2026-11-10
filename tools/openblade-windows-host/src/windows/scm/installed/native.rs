@@ -59,12 +59,26 @@ fn process_evidence() -> io::Result<ProcessEvidence> {
     })
 }
 
-fn admit_candidate(_: &LaunchIdentity) -> io::Result<()> {
+pub(super) struct AdmittedRuntime {
+    launch_pid: u32,
+}
+
+impl AdmittedRuntime {
+    pub(super) fn verify_launch(self, launch: &LaunchIdentity) -> io::Result<()> {
+        if self.launch_pid != launch.pid {
+            return Err(denied(
+                "installed runtime admission belongs to another launch",
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn admit_candidate(_: &LaunchIdentity) -> io::Result<AdmittedRuntime> {
     // service_image::ProtectedServiceImage needs an authenticated expected
     // build digest. This entry has no provider for one. Startup also needs
     // independent proof that the retained staged generation is executing.
-    // Controller and ownership admission are also pending.
     Err(denied(
-        "installed build, launch or runtime evidence is unavailable",
+        "installed build or loaded generation evidence is unavailable",
     ))
 }

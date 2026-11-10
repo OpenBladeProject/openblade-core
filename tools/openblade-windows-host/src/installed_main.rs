@@ -1,6 +1,11 @@
 //! Standalone installed SCM entry. Fixture modules are outside this binary.
 
 #[cfg(windows)]
+mod console_session;
+#[cfg(all(windows, not(test)))]
+#[allow(dead_code)] // Only metadata observation is used by the installed candidate.
+mod discovery;
+#[cfg(windows)]
 #[path = "windows/scm/installed.rs"]
 mod installed;
 #[cfg(windows)]
@@ -13,6 +18,7 @@ mod service_frame;
 #[cfg(windows)]
 mod service_install_identity;
 
+#[cfg(not(test))]
 fn main() -> std::process::ExitCode {
     #[cfg(windows)]
     let result = installed::entry();

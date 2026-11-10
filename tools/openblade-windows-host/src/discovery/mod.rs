@@ -314,6 +314,56 @@ fn discover(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result
     Ok(snapshot)
 }
 
+#[cfg(all(windows, not(test), feature = "installed-service-candidate"))]
+#[allow(unused_imports)] // The standalone discovery binary also compiles this module.
+pub(crate) use status_metadata::{StatusHid, StatusMetadata, observe_status_metadata};
+
+#[cfg(all(windows, not(test), feature = "installed-service-candidate"))]
+#[allow(dead_code)]
+mod status_metadata {
+    use super::*;
+
+    pub(crate) enum StatusMetadata {
+        Unsupported,
+        Unavailable,
+        MatchedHost { model: String, hid: StatusHid },
+    }
+
+    pub(crate) enum StatusHid {
+        NoCandidate,
+        Candidate,
+        Ambiguous,
+        Unavailable,
+    }
+
+    pub(crate) fn observe_status_metadata(cancel: &AtomicBool) -> io::Result<StatusMetadata> {
+        let inventory = Inventory::load()?;
+        let host = windows::WindowsMetadata.read_host(cancel)?;
+        let (host_match, model) = host.resolve(&inventory);
+        let Some(model) = model else {
+            return Ok(match (host.platform, host_match) {
+                (Platform::Supported, HostMatch::Unknown) => StatusMetadata::Unsupported,
+                _ => StatusMetadata::Unavailable,
+            });
+        };
+        // A SetupAPI/PnP hint does not open a device or verify a lease.
+        let hid = match discover_hid(&windows::WindowsMetadata, Some(model), cancel) {
+            Ok((evidence, _)) => match evidence.candidates {
+                CandidateState::None => StatusHid::NoCandidate,
+                CandidateState::SingleUnresolved => StatusHid::Candidate,
+                CandidateState::Ambiguous => StatusHid::Ambiguous,
+                CandidateState::NotEvaluated | CandidateState::Incomplete => StatusHid::Unavailable,
+            },
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => return Err(error),
+            Err(_) => StatusHid::Unavailable,
+        };
+        Ok(StatusMetadata::MatchedHost {
+            model: model.model_number.to_owned(),
+            hid,
+        })
+    }
+}
+
 #[cfg_attr(
     not(any(test, feature = "hid-identity-compile-check")),
     allow(dead_code)

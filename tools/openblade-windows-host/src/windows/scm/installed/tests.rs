@@ -150,7 +150,7 @@ async fn failed_identity_or_prerequisites_never_prepare_the_endpoint() {
     ] {
         let controls = Controls::new();
         let phases = RefCell::new(Vec::new());
-        let result = run_candidate::<future::Ready<io::Result<()>>>(
+        let result = run_candidate::<(), future::Ready<io::Result<()>>>(
             &controls,
             controls.arm(),
             || Ok(process()),
@@ -159,7 +159,7 @@ async fn failed_identity_or_prerequisites_never_prepare_the_endpoint() {
                 assert!(allowed);
                 Err(denied("missing installed candidate admission"))
             },
-            async |_, _, _| panic!("unexpected endpoint preparation"),
+            async |_, _, _, _| panic!("unexpected endpoint preparation"),
             |status| {
                 phases
                     .borrow_mut()
@@ -229,7 +229,7 @@ async fn readiness_and_stop_order() {
                 events.borrow_mut().push("admission");
                 Ok(())
             },
-            async |_, shutdown, _| {
+            async |_, (), shutdown, _| {
                 events.borrow_mut().push("prepare");
                 Ok((ready, async {
                     shutdown.await.unwrap();
@@ -269,7 +269,7 @@ async fn readiness_and_stop_order() {
 async fn stop_before_prepare_cancels_startup() {
     let controls = Controls::new();
     let phases = RefCell::new(Vec::new());
-    run_candidate::<future::Ready<io::Result<()>>>(
+    run_candidate::<(), future::Ready<io::Result<()>>>(
         &controls,
         controls.arm(),
         || Ok(process()),
@@ -278,7 +278,7 @@ async fn stop_before_prepare_cancels_startup() {
             controls.request_stop();
             Ok(())
         },
-        async |_, _, _| panic!("prepare must not run after STOP"),
+        async |_, _, _, _| panic!("prepare must not run after STOP"),
         |status| {
             phases
                 .borrow_mut()
@@ -307,7 +307,7 @@ async fn stop_during_prepare_still_reports_retirement_failure() {
         || Ok(process()),
         |_| Ok(registration()),
         |_| Ok(()),
-        async |_, shutdown, _| {
+        async |_, (), shutdown, _| {
             controls.request_stop();
             Ok((readiness(), async {
                 shutdown.await.unwrap();
