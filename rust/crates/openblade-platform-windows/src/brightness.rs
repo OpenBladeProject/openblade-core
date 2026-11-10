@@ -100,43 +100,48 @@ impl CallBudget<'_> {
         if (self.cancelled)() {
             return Err(NativeFailure::Cancelled);
         }
-        self.time_left()
+        time_left(self.deadline)
     }
+}
 
-    fn time_left(&self) -> Result<Duration, NativeFailure> {
-        self.deadline
-            .checked_duration_since(Instant::now())
-            .filter(|remaining| !remaining.is_zero())
-            .ok_or(NativeFailure::DeadlineExceeded)
-    }
+fn time_left(deadline: Instant) -> Result<Duration, NativeFailure> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or(NativeFailure::DeadlineExceeded)
 }
 
 /// The native layer calls begin immediately before its one possible
 /// WmiSetBrightness invocation. All fallible method preparation precedes it.
 pub struct Submission<'a> {
     budget: &'a CallBudget<'a>,
-    started: bool,
+    completion_deadline: Option<Instant>,
 }
 
 impl Submission<'_> {
     pub fn begin(&mut self) -> Result<(), NativeFailure> {
-        if self.started {
+        if self.completion_deadline.is_some() {
             return Err(NativeFailure::SubmissionAlreadyStarted);
         }
         self.budget.remaining()?;
-        self.started = true;
+        self.completion_deadline = Some(Instant::now() + CALL_LIMIT);
         Ok(())
     }
 
-    /// Completion waits share the deadline. Caller cancellation is ignored once
-    /// the invocation may have reached the provider.
+    /// A started call has a separate completion window and ignores caller
+    /// cancellation. The transport returns a response or a timeout from that wait.
     pub fn remaining(&self) -> Result<Duration, NativeFailure> {
-        if self.started {
-            self.budget.time_left()
-        } else {
-            self.budget.remaining()
+        match self.completion_deadline {
+            Some(deadline) => time_left(deadline),
+            None => self.budget.remaining(),
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TopologyFailure {
+    Display(DisplayReadError),
+    Native(NativeFailure),
 }
 
 /// Current-user Windows boundary. Implementations must stop enumeration at the
@@ -149,7 +154,7 @@ pub trait WmiBrightnessNative {
     fn topology(
         &mut self,
         budget: &CallBudget<'_>,
-    ) -> Result<InternalDisplayTopology, BrightnessError>;
+    ) -> Result<InternalDisplayTopology, TopologyFailure>;
 
     /// Decode the active Root\WMI WmiMonitorBrightness query. Bound each raw
     /// Level array to 256 entries before allocation.
@@ -180,14 +185,31 @@ pub trait WmiBrightnessNative {
 
 pub struct WmiBrightness<N> {
     native: N,
-    unresolved: bool,
+    pause: Option<WritePause>,
+}
+
+enum WritePause {
+    NativeUncertain,
+    AwaitingReadback(SubmittedTarget),
+}
+
+struct SubmittedTarget {
+    panel: Panel,
+    instance: String,
+    percent: u8,
+}
+
+impl SubmittedTarget {
+    fn matches_panel(&self, panel: &Panel, reading: &Reading) -> bool {
+        self.panel.same_as(panel) && self.instance.eq_ignore_ascii_case(&reading.instance)
+    }
 }
 
 impl<N: WmiBrightnessNative> WmiBrightness<N> {
     pub fn new(native: N) -> Self {
         Self {
             native,
-            unresolved: false,
+            pause: None,
         }
     }
 
@@ -198,7 +220,13 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         cancelled: impl Fn() -> bool,
     ) -> Result<BrightnessSnapshot, BrightnessError> {
         let admission = budget(&cancelled);
-        let (_, reading) = self.observe(&admission)?;
+        let (panel, reading) = self.observe(&admission)?;
+        if let Some(WritePause::AwaitingReadback(submitted)) = &self.pause
+            && submitted.matches_panel(&panel, &reading)
+            && submitted.percent == reading.snapshot.percent
+        {
+            self.pause = None;
+        }
         Ok(reading.snapshot)
     }
 
@@ -212,13 +240,10 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         let mut submitted = false;
         let mut state = None;
         let result = self.apply_core(request, &cancelled, &mut submitted, &mut state);
-        result.map_err(|reason| {
-            self.unresolved |= submitted;
-            BrightnessFailure {
-                reason,
-                submission_may_have_occurred: submitted,
-                state,
-            }
+        result.map_err(|reason| BrightnessFailure {
+            reason,
+            submission_may_have_occurred: submitted,
+            state,
         })
     }
 
@@ -232,7 +257,7 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         if matches!(request, BrightnessRequest::SetPercent(101..)) {
             return Err(BrightnessError::InvalidPercent);
         }
-        if self.unresolved {
+        if self.pause.is_some() {
             return Err(BrightnessError::SubmissionUnresolved);
         }
 
@@ -245,7 +270,9 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         *state = Some(baseline.snapshot);
 
         let methods = checked(&admission, |budget| {
-            self.native.active_methods(budget, MAX_ROWS)
+            self.native
+                .active_methods(budget, MAX_ROWS)
+                .map_err(BrightnessError::Native)
         })?;
         let method = unique_matching(
             methods,
@@ -262,19 +289,17 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         {
             return Err(BrightnessError::PanelChanged);
         }
-        if !fresh.snapshot.supported_levels.contains(&target) {
+        if matches!(request, BrightnessRequest::SetPercent(_))
+            && !fresh.snapshot.supported_levels.contains(&target)
+        {
             *state = Some(fresh.snapshot);
             return Err(BrightnessError::UnsupportedLevel);
         }
-        if !matches!(request, BrightnessRequest::SetPercent(_))
-            && select_level(request, &fresh.snapshot) != Some(target)
-        {
-            *state = Some(fresh.snapshot);
-            return Err(BrightnessError::PanelChanged);
-        }
-        if fresh.snapshot.percent == target {
+        let Some(target) =
+            select_level(request, &fresh.snapshot).filter(|level| *level != fresh.snapshot.percent)
+        else {
             return Ok(BrightnessOutcome::Unchanged(fresh.snapshot));
-        }
+        };
         // WMI enumeration may outlive the CCD observation used to select its
         // row. Recheck topology before allowing native submission.
         if !panel.same_as(&self.panel(&admission)?) {
@@ -284,10 +309,10 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
 
         let mut submission = Submission {
             budget: &admission,
-            started: false,
+            completion_deadline: None,
         };
         let response = self.native.set_brightness(method, target, &mut submission);
-        *submitted = submission.started;
+        *submitted = submission.completion_deadline.is_some();
         if !*submitted {
             return Err(BrightnessError::Native(
                 response.err().unwrap_or(NativeFailure::InvalidData),
@@ -295,7 +320,6 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         }
 
         let ack = response
-            .and_then(|ack| submission.remaining().map(|_| ack))
             .map_err(BrightnessError::Native)
             .and_then(|ack| match ack {
                 Acknowledgement::Status(0) | Acknowledgement::Boolean(_) => Ok(()),
@@ -306,26 +330,47 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         // Always replace the pre-write snapshot with an independent observation
         // or no state. A caller's cancellation cannot discard this readback.
         *state = None;
-        let (observed_panel, observed) = match self.observe(&budget(&|| false)) {
-            Ok(observation) => observation,
-            Err(error) => return Err(ack.err().unwrap_or(error)),
+        let target = SubmittedTarget {
+            panel,
+            instance: baseline.instance,
+            percent: target,
         };
-        if !panel.same_as(&observed_panel)
-            || !observed.instance.eq_ignore_ascii_case(&baseline.instance)
-        {
-            return Err(ack.err().unwrap_or(BrightnessError::PanelChanged));
+        let readback = self
+            .observe(&budget(&|| false))
+            .and_then(|(panel, observed)| {
+                if target.matches_panel(&panel, &observed) {
+                    Ok(observed.snapshot)
+                } else {
+                    Err(BrightnessError::PanelChanged)
+                }
+            });
+
+        let readback = match readback {
+            Ok(observed) if ack.is_ok() && observed.percent == target.percent => {
+                return Ok(BrightnessOutcome::Confirmed(observed));
+            }
+            other => other,
+        };
+        self.pause = Some(if ack.is_ok() {
+            WritePause::AwaitingReadback(target)
+        } else {
+            WritePause::NativeUncertain
+        });
+        match readback {
+            Ok(observed) => {
+                *state = Some(observed);
+                Err(ack.err().unwrap_or(BrightnessError::Unconfirmed))
+            }
+            Err(error) => Err(ack.err().unwrap_or(error)),
         }
-        if ack.is_ok() && observed.snapshot.percent == target {
-            return Ok(BrightnessOutcome::Confirmed(observed.snapshot));
-        }
-        *state = Some(observed.snapshot);
-        Err(ack.err().unwrap_or(BrightnessError::Unconfirmed))
     }
 
     fn observe(&mut self, budget: &CallBudget<'_>) -> Result<(Panel, Reading), BrightnessError> {
         let panel = self.panel(budget)?;
         let rows = checked(budget, |budget| {
-            self.native.active_readings(budget, MAX_ROWS)
+            self.native
+                .active_readings(budget, MAX_ROWS)
+                .map_err(BrightnessError::Native)
         })?;
         let row = unique_matching(
             rows,
@@ -338,9 +383,12 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
     }
 
     fn panel(&mut self, budget: &CallBudget<'_>) -> Result<Panel, BrightnessError> {
-        budget.remaining().map_err(BrightnessError::Native)?;
-        let topology = self.native.topology(budget)?;
-        budget.remaining().map_err(BrightnessError::Native)?;
+        let topology = checked(budget, |budget| {
+            self.native.topology(budget).map_err(|error| match error {
+                TopologyFailure::Display(error) => BrightnessError::Topology(error),
+                TopologyFailure::Native(error) => BrightnessError::Native(error),
+            })
+        })?;
         Panel::from_topology(topology)
     }
 }
@@ -354,10 +402,10 @@ fn budget(cancelled: &dyn Fn() -> bool) -> CallBudget<'_> {
 
 fn checked<T>(
     budget: &CallBudget<'_>,
-    read: impl FnOnce(&CallBudget<'_>) -> Result<T, NativeFailure>,
+    read: impl FnOnce(&CallBudget<'_>) -> Result<T, BrightnessError>,
 ) -> Result<T, BrightnessError> {
     budget.remaining().map_err(BrightnessError::Native)?;
-    let value = read(budget).map_err(BrightnessError::Native)?;
+    let value = read(budget)?;
     budget.remaining().map_err(BrightnessError::Native)?;
     Ok(value)
 }
@@ -473,10 +521,15 @@ fn unique_matching<T>(
     let mut selected = None;
     for row in rows {
         let name = identity(&row)
-            .filter(|name| valid_identity(name))
+            .filter(|name| !name.trim().is_empty())
             .ok_or(BrightnessError::Native(NativeFailure::InvalidData))?;
-        if matches(name) && selected.replace(row).is_some() {
-            return Err(ambiguous);
+        if matches(name) {
+            if !valid_identity(name) {
+                return Err(BrightnessError::Native(NativeFailure::InvalidData));
+            }
+            if selected.replace(row).is_some() {
+                return Err(ambiguous);
+            }
         }
     }
     selected.ok_or(missing)

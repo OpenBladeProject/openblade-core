@@ -11,6 +11,7 @@ const EXTERNAL: &str = r"DISPLAY\OTHER\4&abc&0&UID8388688_0";
 
 enum Call {
     Topology(InternalDisplayTopology),
+    TopologyError(TopologyFailure),
     Read(Result<Vec<ReadingRow>, NativeFailure>),
     Methods(Vec<MethodRow<u32>>),
     Set {
@@ -42,12 +43,13 @@ impl WmiBrightnessNative for Script<'_> {
     fn topology(
         &mut self,
         budget: &CallBudget<'_>,
-    ) -> Result<InternalDisplayTopology, BrightnessError> {
+    ) -> Result<InternalDisplayTopology, TopologyFailure> {
         assert!(budget.remaining().is_ok());
-        let Some(Call::Topology(value)) = self.calls.pop_front() else {
-            panic!("unexpected topology query");
-        };
-        Ok(value)
+        match self.calls.pop_front() {
+            Some(Call::Topology(value)) => Ok(value),
+            Some(Call::TopologyError(error)) => Err(error),
+            _ => panic!("unexpected topology query"),
+        }
     }
 
     fn active_readings(
@@ -203,6 +205,7 @@ fn read_reports_one_internal_panel_and_normalizes_finite_levels() {
         topology(PATH, 2),
         Call::Read(Ok(vec![
             row(EXTERNAL, 80, &[80]),
+            row(r"DISPLAY\VIRTUAL\Nichtgerät", 95, &[95]),
             row(INSTANCE, 25, &[100, 30, 20, 0, 20, 255]),
         ])),
     ]));
@@ -216,6 +219,12 @@ fn read_reports_one_internal_panel_and_normalizes_finite_levels() {
 #[test]
 fn rejects_absent_or_ambiguous_topology_and_malformed_rows() {
     for (calls, expected) in [
+        (
+            vec![Call::TopologyError(TopologyFailure::Display(
+                DisplayReadError::TopologyChanging,
+            ))],
+            BrightnessError::Topology(DisplayReadError::TopologyChanging),
+        ),
         (
             vec![Call::Topology(InternalDisplayTopology::NoInternalDisplay)],
             BrightnessError::PanelUnavailable,
@@ -395,11 +404,6 @@ fn stale_endpoint_instance_or_supported_level_stops_before_submit() {
             BrightnessRequest::SetPercent(40),
             BrightnessError::UnsupportedLevel,
         ),
-        (
-            observe(INSTANCE, 25, &[25, 30, 35, 40]),
-            BrightnessRequest::StepUp,
-            BrightnessError::PanelChanged,
-        ),
     ] {
         let mut controller = WmiBrightness::new(Script::new(
             observe(INSTANCE, 30, &[30, 40])
@@ -525,7 +529,7 @@ fn preparation_failure_and_pre_submission_cancellation_leave_no_uncertain_write(
             .unwrap_err();
         assert_eq!(failure.reason, BrightnessError::Native(error));
         assert!(!failure.submission_may_have_occurred);
-        assert!(!controller.unresolved);
+        assert!(controller.pause.is_none());
         assert!(controller.native.calls.is_empty());
     }
 }
@@ -560,10 +564,10 @@ fn expired_budget_prevents_native_work_and_submission() {
     ));
     let mut submission = Submission {
         budget: &budget,
-        started: false,
+        completion_deadline: None,
     };
     assert_eq!(submission.begin(), Err(NativeFailure::DeadlineExceeded));
-    assert!(!submission.started);
+    assert!(submission.completion_deadline.is_none());
 }
 
 #[test]
@@ -582,4 +586,84 @@ fn topology_changed_during_fresh_wmi_enumeration_never_submits() {
     assert!(!failure.submission_may_have_occurred);
     assert_eq!(failure.state, None);
     assert!(controller.native.calls.is_empty());
+}
+
+#[test]
+fn fresh_levels_and_current_drive_the_first_and_only_submission() {
+    for (request, fresh, target) in [
+        (BrightnessRequest::SetPercent(45), 30, 45),
+        (BrightnessRequest::StepUp, 35, 45),
+    ] {
+        let calls = observe(INSTANCE, 30, &[30, 40])
+            .into_iter()
+            .chain([Call::Methods(vec![method(INSTANCE, 42)])])
+            .chain(observe(INSTANCE, fresh, &[30, 35, 40, 45]))
+            .chain([
+                topology(PATH, 2),
+                Call::Set {
+                    start: true,
+                    level: target,
+                    response: Ok(Acknowledgement::Status(0)),
+                },
+            ])
+            .chain(observe(INSTANCE, target, &[30, 35, 40, 45]));
+        let mut controller = WmiBrightness::new(Script::new(calls));
+        assert_eq!(
+            controller.apply(request, || false),
+            Ok(BrightnessOutcome::Confirmed(snapshot(
+                target,
+                &[30, 35, 40, 45]
+            )))
+        );
+        assert!(controller.native.calls.is_empty());
+    }
+}
+
+#[test]
+fn only_same_instance_target_readback_can_resolve_acknowledged_uncertainty() {
+    let mut calls = change(
+        Ok(Acknowledgement::Boolean(false)),
+        observe(INSTANCE, 30, &[30, 40]),
+    );
+    calls.extend(observe(SIBLING, 40, &[30, 40]));
+    calls.extend(observe(INSTANCE, 40, &[30, 40]));
+    calls.extend(observe(INSTANCE, 40, &[30, 40]));
+    let mut controller = WmiBrightness::new(Script::new(calls));
+    let failure = controller
+        .apply(BrightnessRequest::StepUp, || false)
+        .unwrap_err();
+    assert_eq!(failure.reason, BrightnessError::Unconfirmed);
+    assert!(failure.submission_may_have_occurred);
+    assert_eq!(controller.read(|| false), Ok(snapshot(40, &[30, 40])));
+    assert_eq!(
+        controller
+            .apply(BrightnessRequest::StepUp, || false)
+            .unwrap_err()
+            .reason,
+        BrightnessError::SubmissionUnresolved
+    );
+    assert_eq!(controller.read(|| false), Ok(snapshot(40, &[30, 40])));
+    assert_eq!(
+        controller.apply(BrightnessRequest::StepUp, || false),
+        Ok(BrightnessOutcome::Unchanged(snapshot(40, &[30, 40])))
+    );
+    assert!(controller.native.calls.is_empty());
+}
+
+#[test]
+fn submission_gets_its_own_completion_budget() {
+    let admission = CallBudget {
+        deadline: Instant::now() + Duration::from_millis(500),
+        cancelled: &|| false,
+    };
+    let mut submission = Submission {
+        budget: &admission,
+        completion_deadline: None,
+    };
+    submission.begin().unwrap();
+    assert!(submission.completion_deadline.unwrap() > admission.deadline);
+    assert_eq!(
+        submission.begin(),
+        Err(NativeFailure::SubmissionAlreadyStarted)
+    );
 }

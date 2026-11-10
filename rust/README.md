@@ -56,9 +56,11 @@ brightness row for both entry points. A write also requires one active method
 row with the full instance identity, then fresh topology and supported-level
 admission. It submits once. UInt32 zero or either Boolean acknowledgement
 requires independent readback from the submitted instance at the selected level.
-Failed confirmation leaves writes paused on that owner and allows read-only
-observations. Caller cancellation stops preparation and cannot discard readback
-after possible submission.
+An acknowledged write with delayed confirmation can resolve through a later
+read of the same panel and level. An uncertain native result keeps writes paused
+even if a later read happens to match. Preparation, submission completion, and
+readback have separate deadlines. Caller cancellation stops preparation and
+cannot discard readback after possible submission.
 
 This slice uses scripted WMI effects. The current-user WMI transport must enforce
 the native deadline and submission contract before wiring the backend to the
