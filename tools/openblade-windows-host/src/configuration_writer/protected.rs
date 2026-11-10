@@ -4,42 +4,34 @@
 //! test writers. The installed managed service does not participate.
 
 use super::{
-    FileIdentity, NAMES, check_regular_file, handle_information, inspect_bytes, open_relative,
+    FileIdentity, NAMES, check_regular_file, inspect_bytes, open_relative,
     open_relative_with_security, read_file,
 };
 use crate::configuration::{
     File as ObservedFile, Inspection, RECOVERY_REQUIRED, RecoveryRecord, Snapshot, inspect,
 };
+#[cfg(feature = "vm-scm-fixture")]
+use crate::windows_protected_path::reserved_device;
+use crate::windows_protected_path::{
+    LocalDescriptor, Policy, denied, directory_info, missing_leaf, verify_security,
+};
+#[cfg(test)]
+use crate::windows_protected_path::{accepts_descriptor, split_path};
+#[cfg(test)]
+use std::slice;
+pub(super) use crate::windows_protected_path::{pin_root, require_ntfs};
 use std::{
     ffi::OsStr,
-    fs::{File, OpenOptions},
+    fs::File,
     io::{self, Write},
-    os::windows::{ffi::OsStrExt, fs::OpenOptionsExt, io::AsRawHandle},
-    path::{Component, Path, PathBuf, Prefix},
-    ptr, slice,
+    os::windows::io::AsRawHandle,
+    path::Path,
+    ptr,
 };
 use windows_sys::{
-    Wdk::Storage::FileSystem::{FILE_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_REPARSE_POINT},
-    Win32::{
-        Foundation::{ERROR_FILE_NOT_FOUND, GENERIC_EXECUTE, GENERIC_READ, HLOCAL, LocalFree},
-        Security::{
-            Authorization::{GetSecurityInfo, SE_FILE_OBJECT},
-            DACL_SECURITY_INFORMATION, GetSecurityDescriptorLength, OWNER_SECURITY_INFORMATION,
-            SE_DACL_PRESENT, SE_DACL_PROTECTED, SE_SELF_RELATIVE,
-        },
-        Storage::FileSystem::{
-            BY_HANDLE_FILE_INFORMATION, FILE_ADD_SUBDIRECTORY, FILE_ALL_ACCESS,
-            FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
-            FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_EXECUTE, FILE_GENERIC_READ, FILE_SHARE_READ,
-            FILE_SHARE_WRITE, FILE_TYPE_DISK, GetDriveTypeW, GetFileType,
-            GetFinalPathNameByHandleW,
-        },
-        System::WindowsProgramming::DRIVE_FIXED,
-    },
+    Wdk::Storage::FileSystem::{FILE_OPEN, FILE_OPEN_REPARSE_POINT},
+    Win32::Storage::FileSystem::{FILE_GENERIC_READ, FILE_SHARE_READ, FILE_TYPE_DISK, GetFileType},
 };
-
-#[cfg(feature = "installed-service-candidate")]
-pub mod service_image;
 
 /// Retains the actual admitted directory and its ancestors. Opening and
 /// inspecting never creates, repairs, migrates, or deletes any entry.
@@ -295,68 +287,6 @@ impl ProtectedStorage {
     }
 }
 
-pub(super) fn pin_root(root: &Path) -> io::Result<(File, Vec<File>, BY_HANDLE_FILE_INFORMATION)> {
-    let (drive, names) = split_path(root)?;
-    let wide: Vec<u16> = drive.as_os_str().encode_wide().chain([0]).collect();
-    // SAFETY: wide is a NUL-terminated local drive root.
-    if unsafe { GetDriveTypeW(wide.as_ptr()) } != DRIVE_FIXED {
-        return Err(denied("configuration drive is not fixed"));
-    }
-    let drive_handle = OpenOptions::new()
-        .read(true)
-        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(&drive)?;
-    check_drive(&drive_handle, &drive)?;
-    let volume = directory_info(&drive_handle)?.dwVolumeSerialNumber;
-    let mut ancestors = vec![drive_handle];
-    let mut names = names.into_iter().peekable();
-    while let Some(name) = names.next() {
-        let parent = ancestors.last().expect("the drive is pinned");
-        let is_leaf = names.peek().is_none();
-        let file = open_directory(parent, name)?;
-        let info = directory_info(&file)?;
-        if info.dwVolumeSerialNumber != volume {
-            return Err(denied("configuration directory changed volumes"));
-        }
-        if is_leaf {
-            return Ok((file, ancestors, info));
-        }
-        ancestors.push(file);
-    }
-    unreachable!("split_path requires a directory below the drive")
-}
-
-pub(super) fn require_ntfs(volume: &File) -> io::Result<()> {
-    use windows_sys::Win32::Storage::FileSystem::GetVolumeInformationByHandleW;
-
-    let mut filesystem = [0u16; 16];
-    // SAFETY: The retained drive handle is live and the output buffer is writable.
-    if unsafe {
-        GetVolumeInformationByHandleW(
-            volume.as_raw_handle(),
-            ptr::null_mut(),
-            0,
-            ptr::null_mut(),
-            ptr::null_mut(),
-            ptr::null_mut(),
-            filesystem.as_mut_ptr(),
-            filesystem.len() as u32,
-        )
-    } == 0
-    {
-        return Err(io::Error::last_os_error());
-    }
-    if !filesystem
-        .into_iter()
-        .take(5)
-        .eq("NTFS".encode_utf16().chain([0]))
-    {
-        return Err(denied("protected writer requires NTFS"));
-    }
-    Ok(())
-}
-
 pub(super) fn rename_same_directory(file: &File, target: &str, replace: bool) -> io::Result<()> {
     use windows_sys::{
         Wdk::Storage::FileSystem::{
@@ -420,12 +350,6 @@ pub(super) fn rename_same_directory(file: &File, target: &str, replace: bool) ->
     Ok(())
 }
 
-fn missing_leaf(error: &io::Error) -> bool {
-    // The open is relative to an already pinned directory. PATH_NOT_FOUND,
-    // access failures, reparse errors and sharing violations remain errors.
-    error.raw_os_error() == Some(ERROR_FILE_NOT_FOUND as i32)
-}
-
 fn inspect_records<T>(
     mut open: impl FnMut(&str) -> io::Result<Option<T>>,
     mut read: impl FnMut(&T) -> io::Result<Vec<u8>>,
@@ -449,322 +373,6 @@ fn inspect_records<T>(
         return Err(denied("recovery record appeared during admission"));
     }
     Ok(inspect_bytes(bytes.each_ref().map(Option::as_deref)))
-}
-
-fn split_path(path: &Path) -> io::Result<(PathBuf, Vec<&OsStr>)> {
-    let mut components = path.components();
-    let Some(Component::Prefix(prefix)) = components.next() else {
-        return Err(denied("configuration root is not a local absolute path"));
-    };
-    if !matches!(prefix.kind(), Prefix::Disk(_)) || components.next() != Some(Component::RootDir) {
-        return Err(denied("configuration root is not a local absolute path"));
-    }
-    let drive: PathBuf = [Component::Prefix(prefix), Component::RootDir]
-        .into_iter()
-        .collect();
-    let mut names = Vec::new();
-    let mut exact = drive.clone();
-    for component in components {
-        let Component::Normal(name) = component else {
-            return Err(denied("unexpected configuration path component"));
-        };
-        let name_text = name
-            .to_str()
-            .ok_or_else(|| denied("invalid configuration path text"))?;
-        if name_text
-            .chars()
-            .any(|ch| ch < ' ' || r#"<>:"|?*"#.contains(ch))
-            || name_text.ends_with([' ', '.'])
-            || reserved_device(name_text)
-        {
-            return Err(denied("ambiguous configuration path component"));
-        }
-        names.push(name);
-        exact.push(name);
-    }
-    if names.is_empty() || exact.as_os_str() != path.as_os_str() {
-        return Err(denied(
-            "configuration root must be an exact path below a drive",
-        ));
-    }
-    Ok((drive, names))
-}
-
-fn reserved_device(name: &str) -> bool {
-    let base = name
-        .split('.')
-        .next()
-        .unwrap_or_default()
-        .trim_end_matches(' ');
-    let base = base.to_ascii_uppercase();
-    matches!(
-        base.as_str(),
-        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
-    ) || base
-        .strip_prefix("COM")
-        .or_else(|| base.strip_prefix("LPT"))
-        .is_some_and(|suffix| {
-            matches!(
-                suffix,
-                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
-            )
-        })
-}
-
-fn check_drive(file: &File, drive: &Path) -> io::Result<()> {
-    let mut actual = [0u16; 16];
-    // SAFETY: The file owns a live handle and actual is writable UTF-16 storage.
-    let len = unsafe {
-        GetFinalPathNameByHandleW(
-            file.as_raw_handle(),
-            actual.as_mut_ptr(),
-            actual.len() as u32,
-            0,
-        )
-    } as usize;
-    if len == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let expected: Vec<_> = OsStr::new(r"\\?\")
-        .encode_wide()
-        .chain(drive.as_os_str().encode_wide())
-        .collect();
-    let matches = actual.get(..len).is_some_and(|actual| {
-        actual.len() == expected.len()
-            && actual.iter().zip(expected).all(|(&left, right)| {
-                left == right
-                    || left < 128
-                        && right < 128
-                        && (left as u8).eq_ignore_ascii_case(&(right as u8))
-            })
-    });
-    if !matches {
-        return Err(denied("configuration drive is redirected"));
-    }
-    Ok(())
-}
-
-fn open_directory(parent: &File, name: &OsStr) -> io::Result<File> {
-    // Allow same-directory replacement after admission. Withholding delete
-    // sharing pins this directory without interfering with child renames.
-    open_relative(
-        parent,
-        name,
-        FILE_GENERIC_READ,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        FILE_OPEN,
-        FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
-    )
-}
-
-fn directory_info(file: &File) -> io::Result<BY_HANDLE_FILE_INFORMATION> {
-    let info = handle_information(file)?;
-    // SAFETY: file owns a live handle.
-    if unsafe { GetFileType(file.as_raw_handle()) } != FILE_TYPE_DISK
-        || info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)
-            != FILE_ATTRIBUTE_DIRECTORY
-    {
-        return Err(denied(
-            "configuration path component is not a plain disk directory",
-        ));
-    }
-    Ok(info)
-}
-
-#[derive(Clone, Copy)]
-enum Policy {
-    Directory { extra_rights: u32 },
-    Setup { ace_flags: u8 },
-    Record,
-}
-
-impl Policy {
-    const ANCESTOR: Self = Self::Directory {
-        extra_rights: FILE_ADD_SUBDIRECTORY,
-    };
-    #[cfg(feature = "installed-service-candidate")]
-    const INSTALL_DIRECTORY: Self = Self::Directory { extra_rights: 0 };
-    const ROOT: Self = Self::Setup {
-        ace_flags: OBJECT_AND_CONTAINER_INHERIT,
-    };
-    #[cfg(feature = "vm-scm-fixture")]
-    const VM_FILE: Self = Self::Setup { ace_flags: 0 };
-}
-
-fn denied(message: &'static str) -> io::Error {
-    io::Error::new(io::ErrorKind::PermissionDenied, message)
-}
-
-pub(super) struct LocalDescriptor(pub(super) HLOCAL);
-
-impl Drop for LocalDescriptor {
-    fn drop(&mut self) {
-        // SAFETY: Windows allocated the non-null descriptor for the caller.
-        unsafe { LocalFree(self.0) };
-    }
-}
-
-fn verify_security(file: &File, policy: Policy) -> io::Result<()> {
-    let mut descriptor = ptr::null_mut();
-    // SAFETY: file owns the handle opened with READ_CONTROL, and descriptor is
-    // writable. Only the owner and DACL are requested.
-    let status = unsafe {
-        GetSecurityInfo(
-            file.as_raw_handle(),
-            SE_FILE_OBJECT,
-            OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
-            ptr::null_mut(),
-            ptr::null_mut(),
-            ptr::null_mut(),
-            ptr::null_mut(),
-            &mut descriptor,
-        )
-    };
-    if status != 0 {
-        return Err(io::Error::from_raw_os_error(status as i32));
-    }
-    if descriptor.is_null() {
-        return Err(denied("missing configuration security descriptor"));
-    }
-    let descriptor = LocalDescriptor(descriptor);
-    // SAFETY: The live self-relative descriptor and its allocation come from Windows.
-    let size = unsafe { GetSecurityDescriptorLength(descriptor.0) } as usize;
-    const MAX_DESCRIPTOR: usize = 20 + u16::MAX as usize + 2 * (8 + 15 * 4);
-    if !(20..=MAX_DESCRIPTOR).contains(&size) {
-        return Err(denied("invalid configuration security descriptor size"));
-    }
-    // SAFETY: Windows reports the size of this descriptor. The allocation
-    // remains owned by descriptor for the duration of validation.
-    let bytes = unsafe { slice::from_raw_parts(descriptor.0.cast(), size) };
-    if !accepts_descriptor(bytes, policy).unwrap_or(false) {
-        return Err(denied("untrusted configuration security descriptor"));
-    }
-    Ok(())
-}
-
-const SYSTEM: &[u8] = &[1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0];
-const ADMINISTRATORS: &[u8] = &[1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0];
-// Windows Modules Installer is trusted on ancestors only, using the same SID as the
-// managed guardian path policy. It is not part of setup's machine-data ACL.
-const TRUSTED_INSTALLER: &[u8] = &[
-    1, 6, 0, 0, 0, 0, 0, 5, 80, 0, 0, 0, 181, 137, 251, 56, 25, 132, 194, 203, 92, 108, 35, 109,
-    87, 0, 119, 110, 192, 2, 100, 135,
-];
-const OBJECT_AND_CONTAINER_INHERIT: u8 = 0x03;
-const INHERIT_ONLY_ACE: u8 = 0x08;
-const DIRECTORY_ACE_FLAGS: u8 = 0x1f;
-const INHERITED_ACE: u8 = 0x10;
-const SAFE_RECORD_RIGHTS: u32 =
-    FILE_GENERIC_READ | FILE_GENERIC_EXECUTE | GENERIC_READ | GENERIC_EXECUTE;
-
-// Parse only the self-relative owner and DACL from GetSecurityInfo. Reject
-// ambiguous ACE formats rather than treating unknown grants as harmless.
-fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
-    let control = word(bytes, 2)?;
-    if *bytes.first()? != 1
-        || control & (SE_SELF_RELATIVE | SE_DACL_PRESENT) != SE_SELF_RELATIVE | SE_DACL_PRESENT
-    {
-        return Some(false);
-    }
-    let owner = sid(section(bytes, 4)?)?;
-    let setup = matches!(policy, Policy::Setup { .. });
-    if match policy {
-        Policy::Record => owner != ADMINISTRATORS && owner != SYSTEM,
-        Policy::Directory { .. } => !matches!(owner, ADMINISTRATORS | SYSTEM | TRUSTED_INSTALLER),
-        Policy::Setup { .. } => owner != ADMINISTRATORS || control & SE_DACL_PROTECTED == 0,
-    } {
-        return Some(false);
-    }
-    let acl = section(bytes, 16)?;
-    if !matches!(acl.first()?, 2 | 4) {
-        return Some(false);
-    }
-    let count = word(acl, 4)?;
-    let mut aces = acl.get(8..usize::from(word(acl, 2)?))?;
-    if count == 0 || setup && count != 2 {
-        return Some(false);
-    }
-    let mut setup_principals = 0;
-    for _ in 0..count {
-        let length = usize::from(word(aces, 2)?);
-        let ace = aces.get(..length)?;
-        let (kind, flags) = (*ace.first()?, *ace.get(1)?);
-        let mask = dword(ace, 4)?;
-        let trustee = sid(ace.get(8..)?)?;
-        if trustee.len() + 8 != length {
-            return Some(false);
-        }
-        let principal = match trustee {
-            SYSTEM => 1,
-            ADMINISTRATORS => 2,
-            _ => 0,
-        };
-        match policy {
-            // An ancestor may allow creation of a subdirectory. Direct grants
-            // that can replace an existing child, redirect traversal or change
-            // security are refused. Inherit-only grants are checked where
-            // they apply, on the next directory or record's own descriptor.
-            Policy::Directory { extra_rights } => {
-                if !matches!(kind, 0 | 1)
-                    || flags & !DIRECTORY_ACE_FLAGS != 0
-                    || kind == 0
-                        && flags & INHERIT_ONLY_ACE == 0
-                        && principal == 0
-                        && trustee != TRUSTED_INSTALLER
-                        && mask & !(SAFE_RECORD_RIGHTS | extra_rights) != 0
-                {
-                    return Some(false);
-                }
-            }
-            // Legacy files may have explicit or inherited grants. Denies and
-            // read/execute grants convey no write authority.
-            Policy::Record => {
-                if !matches!(kind, 0 | 1)
-                    || flags & !INHERITED_ACE != 0
-                    || kind == 0 && principal == 0 && mask & !SAFE_RECORD_RIGHTS != 0
-                {
-                    return Some(false);
-                }
-            }
-            // Setup grants FullControl to exactly SYSTEM and Administrators.
-            Policy::Setup { ace_flags } => {
-                if kind != 0 || flags != ace_flags || mask != FILE_ALL_ACCESS || principal == 0 {
-                    return Some(false);
-                }
-                setup_principals |= principal;
-            }
-        }
-        aces = &aces[length..];
-    }
-    Some(!setup || setup_principals == 3)
-}
-
-fn section(bytes: &[u8], field: usize) -> Option<&[u8]> {
-    let offset = dword(bytes, field)? as usize;
-    if offset < 20 || !offset.is_multiple_of(4) {
-        return None;
-    }
-    bytes.get(offset..)
-}
-
-fn sid(bytes: &[u8]) -> Option<&[u8]> {
-    let count = usize::from(*bytes.get(1)?);
-    if bytes[0] != 1 || count > 15 {
-        return None;
-    }
-    bytes.get(..8 + 4 * count)
-}
-
-fn word(bytes: &[u8], offset: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(
-        bytes.get(offset..offset + 2)?.try_into().ok()?,
-    ))
-}
-
-fn dword(bytes: &[u8], offset: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(
-        bytes.get(offset..offset + 4)?.try_into().ok()?,
-    ))
 }
 
 #[cfg(test)]

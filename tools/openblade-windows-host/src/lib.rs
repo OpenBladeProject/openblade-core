@@ -25,7 +25,7 @@ pub mod pipe;
 #[cfg(windows)]
 pub mod reporter_pipe;
 
-#[cfg(all(windows, feature = "installed-service-candidate"))]
-mod service_install_identity;
+#[cfg(windows)]
+mod windows_protected_path;
 #[cfg(windows)]
 mod windows_token;

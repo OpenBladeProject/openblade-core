@@ -30,6 +30,13 @@
     <ProjectReference Include="../../src/OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj" />
     <ProjectReference Include="../OpenBlade.CandidateReceipt.Scratch/OpenBlade.CandidateReceipt.Scratch.csproj" />
   </ItemGroup>
+  <PropertyGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(OpenBladeCandidateReceiptRustProbe)' != ''">
+    <DefineConstants>$(DefineConstants);OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(OpenBladeCandidateReceiptRustProbe)' != ''">
+    <None Include="$(OpenBladeCandidateReceiptRustProbe)" Link="openblade-scratch-candidate-receipt.exe"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup Condition="'$(OpenBladeLocalDevDeployment)' != 'true'">
     <Compile Remove="LocalDevRelatedBundleCompatibilityTests.cs" />
   </ItemGroup>

@@ -75,10 +75,10 @@ impl AdmittedRuntime {
 }
 
 fn admit_candidate(_: &LaunchIdentity) -> io::Result<AdmittedRuntime> {
-    // service_image::ProtectedServiceImage needs an authenticated expected
-    // build digest. This entry has no provider for one. Startup also needs
-    // independent proof that the retained staged generation is executing.
+    let _disk = crate::candidate_receipt::read_installed()?;
+    // The retained files describe disk state. Startup also requires independent
+    // proof that this process loaded that exact Service generation.
     Err(denied(
-        "installed build or loaded generation evidence is unavailable",
+        "installed loaded generation evidence is unavailable",
     ))
 }

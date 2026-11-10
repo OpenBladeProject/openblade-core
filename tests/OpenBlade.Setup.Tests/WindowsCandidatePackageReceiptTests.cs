@@ -15,6 +15,68 @@ public sealed class WindowsCandidatePackageReceiptTests
     private const string Revision = "af61a8c842429bc0564390dee39b466ee0da9023";
     private const string Version = "65535.1.2.3";
 
+#if OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE
+    [Fact]
+    public async Task RustReopensCommittedBytesAfterSetupExitsAndRefusesInvalidEvidence()
+    {
+        using var fixture = await Fixture.CreateAsync();
+        Guid first = Guid.NewGuid();
+        var original = await fixture.PrepareAsync(first);
+        await fixture.RunReceiverAsync(process =>
+            new BrokerInFlightStore(fixture.Paths).BindInstallerProcess(first, process.Id, DateTimeOffset.UtcNow),
+            expectedExit: 0);
+        original.VerifyCommitted(fixture.Tree.Install, default);
+        byte[] committed = File.ReadAllBytes(fixture.Committed);
+        byte[] expected = SHA256.HashData(committed);
+        byte[] claimed = File.ReadAllBytes(fixture.Claimed(first));
+        await fixture.RunRustReaderAsync(expected);
+
+        string json = System.Text.Encoding.UTF8.GetString(committed);
+        foreach ((byte[] bytes, string diagnostic) in new[]
+        {
+            (claimed, "invalid canonical"),
+            (System.Text.Encoding.UTF8.GetBytes(json + " "), "invalid canonical"),
+            (System.Text.Encoding.UTF8.GetBytes(json.Replace("\"schema\":2", "\"schema\":2,\"schema\":2")),
+                "invalid canonical"),
+            (new byte[4097], "invalid canonical"),
+            (System.Text.Encoding.UTF8.GetBytes(json.Replace("\"Role\":0", "\"Role\":1")), "invalid canonical"),
+            (System.Text.Encoding.UTF8.GetBytes(json.Replace(first.ToString("D"), Guid.NewGuid().ToString("D"))),
+                "authenticated release binding"),
+        })
+        {
+            string replacement = fixture.Committed + ".replacement";
+            File.WriteAllBytes(replacement, bytes);
+            File.Move(replacement, fixture.Committed, overwrite: true);
+            await fixture.RunRustReaderAsync(expected, diagnostic);
+        }
+        File.WriteAllBytes(fixture.Committed, committed);
+
+        string image = Path.Combine(fixture.Tree.Install, "OpenBlade.Service.exe");
+        byte[] imageBytes = File.ReadAllBytes(image);
+        File.WriteAllBytes(image, imageBytes[..^1]);
+        await fixture.RunRustReaderAsync(expected, "Service length");
+        byte[] modified = imageBytes.ToArray();
+        modified[^1] ^= 1;
+        File.WriteAllBytes(image, modified);
+        await fixture.RunRustReaderAsync(expected, "authenticated build evidence");
+        File.WriteAllBytes(image, imageBytes);
+
+        using (File.Open(fixture.Committed, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            await fixture.RunRustReaderAsync(expected, expectedRefusal: "");
+        }
+        var file = new FileInfo(fixture.Committed);
+        FileSecurity modifiedAcl = file.GetAccessControl();
+        modifiedAcl.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+            FileSystemRights.ReadData, AccessControlType.Allow));
+        file.SetAccessControl(modifiedAcl);
+        await fixture.RunRustReaderAsync(expected, "untrusted");
+        File.Delete(fixture.Committed);
+        File.WriteAllBytes(fixture.Committed, committed);
+        await fixture.RunRustReaderAsync(expected);
+    }
+#endif
+
     [Fact]
     public async Task ReceiverReopensAfterBrokerBindsItsProcessAndConsumesReceiptOnce()
     {
@@ -206,6 +268,10 @@ public sealed class WindowsCandidatePackageReceiptTests
         await original.CommitAsync(default);
         byte[] priorProof = File.ReadAllBytes(fixture.Committed);
         await fixture.ReconcileAsync(old, first);
+#if OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE
+        byte[] priorCommitment = SHA256.HashData(priorProof);
+        await fixture.RunRustReaderAsync(priorCommitment);
+#endif
 
         fixture.WriteSignedInbox(sequence: 2);
         Guid second = Guid.NewGuid();
@@ -234,9 +300,15 @@ public sealed class WindowsCandidatePackageReceiptTests
         File.Delete(fixture.Claimed(second));
         await Assert.ThrowsAnyAsync<IOException>(() => update.CommitAsync(default));
         Assert.False(File.Exists(fixture.Committed));
+#if OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE
+        await fixture.RunRustReaderAsync(priorCommitment, expectedRefusal: "");
+#endif
         await update.RollbackAsync(default);
         Assert.Equal(priorProof, File.ReadAllBytes(fixture.Committed));
         old.VerifyCommitted(fixture.Tree.Install, default);
+#if OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE
+        await fixture.RunRustReaderAsync(priorCommitment);
+#endif
         await Assert.ThrowsAsync<InvalidDataException>(() => fixture.ReconcileAsync(current, second));
         Assert.True(File.Exists(fixture.Paths.InFlightPath));
     }
@@ -375,29 +447,41 @@ public sealed class WindowsCandidatePackageReceiptTests
         internal Task ReconcileAsync(WindowsCandidatePackageReceipt receipt, Guid request) =>
             broker.ReconcileCommittedAsync(receipt, Installation, request, default);
 
-        internal async Task RunReceiverAsync(Action<Process> bind, int expectedExit, string? expectedDiagnostic = null)
+        internal Task RunReceiverAsync(Action<Process> bind, int expectedExit, string? expectedDiagnostic = null) =>
+            RunScratchChildAsync("OpenBlade.CandidateReceipt.Scratch.exe", scratchId.ToByteArray(),
+                expectedExit, expectedDiagnostic, bind);
+
+#if OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE
+        internal Task RunRustReaderAsync(byte[] expected, string? expectedRefusal = null) =>
+            RunScratchChildAsync("openblade-scratch-candidate-receipt.exe",
+                [.. System.Text.Encoding.ASCII.GetBytes(scratchId.ToString("D")), .. expected],
+                expectedRefusal is null ? 0 : 3, expectedRefusal, timeoutSeconds: 15);
+#endif
+
+        private static async Task RunScratchChildAsync(string name, byte[] input, int expectedExit,
+            string? expectedDiagnostic, Action<Process>? bind = null, int timeoutSeconds = 75)
         {
             string testDirectory = Path.GetDirectoryName(typeof(WindowsCandidatePackageReceiptTests).Assembly.Location)!;
-            string image = Path.Combine(testDirectory, "OpenBlade.CandidateReceipt.Scratch.exe");
+            string image = Path.Combine(testDirectory, name);
             using var child = Process.Start(new ProcessStartInfo(image)
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardInput = true,
                 RedirectStandardError = true,
-            }) ?? throw new InvalidOperationException("Unable to start the scratch receiver.");
-            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(75));
+            }) ?? throw new InvalidOperationException($"Unable to start scratch child {name}.");
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             try
             {
-                bind(child);
-                await child.StandardInput.BaseStream.WriteAsync(scratchId.ToByteArray(), deadline.Token);
+                bind?.Invoke(child);
+                await child.StandardInput.BaseStream.WriteAsync(input, deadline.Token);
                 child.StandardInput.Close();
                 var error = child.StandardError.ReadToEndAsync(deadline.Token);
                 await child.WaitForExitAsync(deadline.Token);
                 string diagnostics = await error;
                 Assert.True(child.ExitCode == expectedExit,
-                    $"Scratch receiver exit {child.ExitCode}, expected {expectedExit}. {diagnostics}");
-                if (expectedDiagnostic is not null)
+                    $"{name} exit {child.ExitCode}, expected {expectedExit}. {diagnostics}");
+                if (expectedDiagnostic is { Length: > 0 })
                 {
                     Assert.Contains(expectedDiagnostic, diagnostics, StringComparison.Ordinal);
                 }
@@ -411,6 +495,7 @@ public sealed class WindowsCandidatePackageReceiptTests
                 }
             }
         }
+
 
         internal void WriteSignedInbox(long sequence, bool changePackage = false)
         {

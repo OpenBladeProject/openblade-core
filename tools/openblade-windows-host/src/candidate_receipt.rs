@@ -1,0 +1,338 @@
+//! Startup-side binding of a committed package receipt to the retained Service file.
+
+use std::{
+    ffi::OsStr,
+    fs::File,
+    io::{self, Read},
+    os::windows::io::AsRawHandle,
+    path::Path,
+};
+
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use windows_sys::{
+    Wdk::Storage::FileSystem::{FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_REPARSE_POINT},
+    Win32::Storage::FileSystem::{FILE_GENERIC_READ, FILE_SHARE_READ, FILE_TYPE_DISK, GetFileType},
+};
+
+#[cfg(feature = "installed-service-candidate")]
+use crate::windows_protected_path::{Policy, verify_security};
+use crate::{
+    service_image::{self, MAX_IMAGE_BYTES, snapshot},
+    service_install_identity::IMAGE_NAME,
+    windows_protected_path::{
+        check_regular_file, denied, directory_info, file_identity, open_relative, pin_root,
+        require_ntfs,
+    },
+};
+
+const COMMITTED_NAME: &str = "candidate-package.committed.json";
+const MAX_RECEIPT_BYTES: u64 = 4096;
+const EMPTY_GUID: &str = "00000000-0000-0000-0000-000000000000";
+const AGENT_NAME: &str = "OpenBlade.SessionAgent.exe";
+
+/// Evidence about files on disk. The process must separately prove that it
+/// loaded this generation before it can open the production endpoint.
+pub(crate) struct CommittedServiceImage {
+    _image: File,
+    _receipt: File,
+    _install_directory: File,
+    _ancestors: Vec<File>,
+}
+
+#[cfg(feature = "installed-service-candidate")]
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn read_installed() -> io::Result<CommittedServiceImage> {
+    use crate::service_install_identity::{INSTALL_DIRECTORY, program_files};
+
+    let install = program_files()?.join(INSTALL_DIRECTORY);
+    read(
+        &install,
+        EMPTY_GUID,
+        |file, _, is_root, _| {
+            verify_security(
+                file,
+                if is_root {
+                    Policy::Directory { extra_rights: 0 }
+                } else {
+                    Policy::ANCESTOR
+                },
+            )
+        },
+        |file| verify_security(file, Policy::Record),
+        // Production needs a separately authenticated commitment to the exact
+        // canonical record (including release, installation, request and both
+        // role identities). No production Burn-to-Setup authority is wired yet.
+        || None,
+    )
+}
+
+pub(super) fn read(
+    install: &Path,
+    scope: &str,
+    check_directory: impl Fn(&File, usize, bool, usize) -> io::Result<()>,
+    check_file: impl Fn(&File) -> io::Result<()>,
+    expected_receipt: impl FnOnce() -> Option<[u8; 32]>,
+) -> io::Result<CommittedServiceImage> {
+    let (root, ancestors, info) = pin_root(install)?;
+    require_ntfs(&ancestors[0])?;
+    let check_directories = || {
+        for (index, directory) in ancestors.iter().enumerate() {
+            if directory_info(directory)?.dwVolumeSerialNumber != info.dwVolumeSerialNumber {
+                return Err(denied("candidate directory ancestry changed volumes"));
+            }
+            check_directory(directory, index, false, ancestors.len())?;
+        }
+        if file_identity(&directory_info(&root)?) != file_identity(&info) {
+            return Err(denied("candidate install directory identity changed"));
+        }
+        check_directory(&root, ancestors.len(), true, ancestors.len())
+    };
+    check_directories()?;
+    let open = |name| {
+        open_relative(
+            &root,
+            OsStr::new(name),
+            FILE_GENERIC_READ,
+            FILE_SHARE_READ,
+            FILE_OPEN,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+        )
+    };
+    let verify_file = |file: &File| {
+        let identity = check_regular_file(file)?;
+        // SAFETY: file owns a live handle.
+        if identity.index == 0
+            || identity.volume != info.dwVolumeSerialNumber
+            || unsafe_disk_type(file) != FILE_TYPE_DISK
+        {
+            return Err(denied(
+                "candidate evidence is outside the retained NTFS tree",
+            ));
+        }
+        check_file(file)
+    };
+
+    let mut receipt = open(COMMITTED_NAME)?;
+    verify_file(&receipt)?;
+    let before = snapshot(&receipt)?;
+    if !(1..=MAX_RECEIPT_BYTES).contains(&before.size) {
+        return Err(invalid_receipt());
+    }
+    let mut bytes = Vec::with_capacity(before.size as usize);
+    (&mut receipt)
+        .take(before.size + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 != before.size || snapshot(&receipt)? != before {
+        return Err(denied(
+            "committed candidate receipt changed during verification",
+        ));
+    }
+    let record = parse(&bytes, scope)?;
+    let expected = expected_receipt()
+        .ok_or_else(|| denied("authenticated committed release identity is unavailable"))?;
+    if <[u8; 32]>::from(Sha256::digest(&bytes)) != expected {
+        return Err(denied(
+            "committed candidate receipt differs from the authenticated release binding",
+        ));
+    }
+
+    let mut image = open(IMAGE_NAME)?;
+    verify_file(&image)?;
+    service_image::verify(
+        &mut image,
+        record.service.length,
+        digest(&record.service.sha256)?,
+    )?;
+    verify_file(&image)?;
+    verify_file(&receipt)?;
+    check_directories()?;
+    if snapshot(&receipt)? != before {
+        return Err(denied(
+            "committed candidate receipt changed during verification",
+        ));
+    }
+    Ok(CommittedServiceImage {
+        _image: image,
+        _receipt: receipt,
+        _install_directory: root,
+        _ancestors: ancestors,
+    })
+}
+
+#[allow(unsafe_code)]
+fn unsafe_disk_type(file: &File) -> u32 {
+    // SAFETY: The borrowed file owns a live handle for the call.
+    unsafe { GetFileType(file.as_raw_handle()) }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct Receipt {
+    schema: u8,
+    phase: String,
+    scratch_id: String,
+    installation_id: String,
+    request_id: String,
+    issued_at: String,
+    package_sha256: String,
+    package_length: u64,
+    version: String,
+    source_revision: String,
+    manifest_sha256: String,
+    enrollment_sha256: String,
+    broker_binding_sha256: String,
+    signing_key_id: String,
+    sequence: i64,
+    service: RoleImage,
+    session_agent: RoleImage,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "PascalCase")]
+struct RoleImage {
+    role: u8,
+    payload_id: String,
+    payload_path: String,
+    cabinet_member: String,
+    installed_name: String,
+    length: u64,
+    sha256: String,
+}
+
+impl RoleImage {
+    fn matches(&self, role: u8, name: &str) -> bool {
+        self.role == role
+            && self.installed_name == name
+            && self.payload_path.strip_prefix("payload\\") == Some(name)
+            && canonical_id(&self.payload_id)
+            && canonical_id(&self.cabinet_member)
+            && (1..=MAX_IMAGE_BYTES).contains(&self.length)
+            && lower_hex(&self.sha256, 64)
+    }
+}
+
+fn parse(bytes: &[u8], scope: &str) -> io::Result<Receipt> {
+    let record: Receipt = serde_json::from_slice(bytes).map_err(|_| invalid_receipt())?;
+    // Compare the canonical serializer order and spellings, including integer
+    // syntax, escaping and whitespace. Serde also rejects duplicate fields.
+    if record.schema != 2
+        || record.phase != "SetupPayloadCommitted"
+        || record.scratch_id != scope
+        || !guid(scope)
+        || !nonempty_guid(&record.installation_id)
+        || !nonempty_guid(&record.request_id)
+        || !utc_timestamp(&record.issued_at)
+        || !lower_hex(&record.package_sha256, 64)
+        || !(1..=1024 * 1024 * 1024).contains(&record.package_length)
+        || !version(&record.version)
+        || !lower_hex(&record.source_revision, 40)
+        || !lower_hex(&record.manifest_sha256, 64)
+        || !lower_hex(&record.enrollment_sha256, 64)
+        || !lower_hex(&record.broker_binding_sha256, 64)
+        || !lower_hex(&record.signing_key_id, 64)
+        || record.sequence <= 0
+        || !record.service.matches(0, IMAGE_NAME)
+        || !record.session_agent.matches(1, AGENT_NAME)
+        || record
+            .service
+            .payload_id
+            .eq_ignore_ascii_case(&record.session_agent.payload_id)
+        || record.service.cabinet_member == record.session_agent.cabinet_member
+        || serde_json::to_vec(&record).map_err(io::Error::other)? != bytes
+    {
+        return Err(invalid_receipt());
+    }
+    Ok(record)
+}
+
+fn invalid_receipt() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        "invalid canonical committed candidate receipt",
+    )
+}
+
+fn canonical_id(value: &str) -> bool {
+    (1..=128).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_.".contains(&byte))
+}
+
+pub(super) fn lower_hex(value: &str, len: usize) -> bool {
+    value.len() == len
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn guid(value: &str) -> bool {
+    value.len() == 36
+        && value.split('-').map(str::len).eq([8, 4, 4, 4, 12])
+        && value.split('-').all(|part| lower_hex(part, part.len()))
+}
+
+fn nonempty_guid(value: &str) -> bool {
+    value != EMPTY_GUID && guid(value)
+}
+
+fn version(value: &str) -> bool {
+    let parts = value.split('.');
+    parts.clone().count() == 4
+        && parts.into_iter().all(|part| {
+            part.parse::<i32>()
+                .is_ok_and(|n| n >= 0 && n.to_string() == part)
+        })
+}
+
+fn utc_timestamp(value: &str) -> bool {
+    // System.Text.Json emits UTC DateTimeOffset with +00:00 and up to seven
+    // fractional digits, dropping trailing zeroes.
+    let Some(value) = value.strip_suffix("+00:00") else {
+        return false;
+    };
+    let (whole, fraction) = value.split_once('.').unwrap_or((value, ""));
+    if (value.len() != whole.len()
+        && (!(1..=7).contains(&fraction.len())
+            || fraction.ends_with('0')
+            || !fraction.bytes().all(|byte| byte.is_ascii_digit())))
+        || whole.len() != 19
+        || !whole.bytes().enumerate().all(|(i, byte)| match i {
+            4 | 7 => byte == b'-',
+            10 => byte == b'T',
+            13 | 16 => byte == b':',
+            _ => byte.is_ascii_digit(),
+        })
+    {
+        return false;
+    }
+    let number = |start, end| whole[start..end].parse::<u32>().expect("validated digits");
+    let year = number(0, 4);
+    let days = match number(5, 7) {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) => {
+            29
+        }
+        2 => 28,
+        _ => 0,
+    };
+    year > 0
+        && (1..=days).contains(&number(8, 10))
+        && number(11, 13) < 24
+        && number(14, 16) < 60
+        && number(17, 19) < 60
+}
+
+pub(super) fn digest(value: &str) -> io::Result<[u8; 32]> {
+    if !lower_hex(value, 64) {
+        return Err(invalid_receipt());
+    }
+    let mut bytes = [0; 32];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[2 * index..2 * index + 2], 16)
+            .map_err(|_| invalid_receipt())?;
+    }
+    Ok(bytes)
+}

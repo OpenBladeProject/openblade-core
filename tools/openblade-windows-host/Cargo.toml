@@ -18,6 +18,7 @@ path = "src/discover.rs"
 native-agent-entry-compile-check = ["windows-sys/Win32_System_RemoteDesktop"]
 cpu-worker-fixture = []
 scratch-writer-fence = []
+scratch-candidate-receipt = []
 gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]
 vm-scm-fixture = []
 installed-service-candidate = [
@@ -57,6 +58,13 @@ required-features = ["installed-service-candidate"]
 name = "openblade-windows-agent-candidate"
 path = "src/installed_agent_main.rs"
 required-features = ["native-agent-entry-compile-check"]
+
+[[bin]]
+name = "openblade-scratch-candidate-receipt"
+path = "tests/fixtures/candidate_receipt.rs"
+required-features = ["scratch-candidate-receipt"]
+test = false
+bench = false
 
 [dependencies]
 openblade-domain = { path = '../../rust/crates/openblade-domain' }

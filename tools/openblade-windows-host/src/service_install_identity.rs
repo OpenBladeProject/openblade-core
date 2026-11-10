@@ -14,15 +14,14 @@ pub const IMAGE_NAME: &str = "OpenBlade.Service.exe";
 
 /// Resolves the fixed known folder without consulting environment overrides.
 pub fn program_files() -> io::Result<PathBuf> {
+    known_folder(&FOLDERID_ProgramFiles)
+}
+
+pub(crate) fn known_folder(folder_id: &windows_sys::core::GUID) -> io::Result<PathBuf> {
     let mut path = null_mut();
     // SAFETY: Windows supplies a task-allocated NUL-terminated path on success.
     let result = unsafe {
-        SHGetKnownFolderPath(
-            &FOLDERID_ProgramFiles,
-            KF_FLAG_DONT_VERIFY as u32,
-            null_mut(),
-            &mut path,
-        )
+        SHGetKnownFolderPath(folder_id, KF_FLAG_DONT_VERIFY as u32, null_mut(), &mut path)
     };
     let folder = if result >= 0 && !path.is_null() {
         let mut len = 0;
@@ -37,7 +36,7 @@ pub fn program_files() -> io::Result<PathBuf> {
     } else {
         Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "Program Files known folder is unavailable",
+            "Windows known folder is unavailable",
         ))
     };
     // SAFETY: The returned allocation, if present, belongs to this caller.

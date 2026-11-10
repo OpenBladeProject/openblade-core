@@ -1,5 +1,6 @@
 use super::*;
 use crate::configuration::{COMMIT, PREFERENCES, PROFILE, Reason};
+use crate::windows_protected_path::{dword, open_directory};
 use std::fs;
 use windows_sys::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW;
 
@@ -116,7 +117,6 @@ fn ancestors_allow_child_creation_without_allowing_redirection() {
     }
 }
 
-#[cfg(feature = "installed-service-candidate")]
 #[test]
 fn installation_directory_refuses_mutation_by_ordinary_users() {
     for (sddl, accepted) in [
@@ -128,7 +128,7 @@ fn installation_directory_refuses_mutation_by_ordinary_users() {
         ("O:BAD:(A;;WD;;;BU)", false),
     ] {
         assert_eq!(
-            accepts_descriptor(&descriptor(sddl), Policy::INSTALL_DIRECTORY),
+            accepts_descriptor(&descriptor(sddl), Policy::Directory { extra_rights: 0 }),
             Some(accepted),
             "{sddl}"
         );

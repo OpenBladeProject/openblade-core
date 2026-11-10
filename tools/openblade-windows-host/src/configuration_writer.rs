@@ -5,6 +5,10 @@ use crate::configuration::{
     COMMIT, CURRENT_SCHEMA, File as ObservedFile, Inspection, PREFERENCES, PROFILE,
     RECOVERY_REQUIRED, RecoveryRecord, Snapshot, inspect,
 };
+use crate::windows_protected_path::{
+    FileIdentity, check_regular_file, file_identity, handle_information, open_relative,
+    open_relative_with_security,
+};
 use serde::Serialize;
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
@@ -15,11 +19,10 @@ use std::os::windows::io::AsRawHandle;
 use std::path::{Component, Path, PathBuf, Prefix};
 use std::sync::Arc;
 use windows_sys::Win32::Storage::FileSystem::{
-    BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
-    FILE_DISPOSITION_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-    FILE_FLAG_WRITE_THROUGH, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, FileDispositionInfo, GetFileInformationByHandle, MOVEFILE_REPLACE_EXISTING,
-    MOVEFILE_WRITE_THROUGH, MoveFileExW, SetFileInformationByHandle,
+    DELETE, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_INFO,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_WRITE_THROUGH,
+    FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileDispositionInfo,
+    MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW, SetFileInformationByHandle,
 };
 use windows_sys::Win32::System::Com::CoCreateGuid;
 
@@ -510,12 +513,6 @@ impl Drop for TestStore {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct FileIdentity {
-    volume: u32,
-    index: u64,
-}
-
 struct Artifact<'a> {
     name: String,
     bytes: &'a [u8],
@@ -811,94 +808,6 @@ fn inspect_bytes(bytes: [Option<&[u8]>; 3]) -> Inspection {
 
 // Open a single known child relative to a retained directory. The fixture
 // creates its private child; protected admission only opens existing entries.
-fn open_relative(
-    parent: &File,
-    name: &OsStr,
-    access: u32,
-    share: u32,
-    disposition: u32,
-    options: u32,
-) -> io::Result<File> {
-    open_relative_with_security(parent, name, access, share, disposition, options, None)
-}
-
-fn open_relative_with_security(
-    parent: &File,
-    name: &OsStr,
-    access: u32,
-    share: u32,
-    disposition: u32,
-    options: u32,
-    security: Option<&protected::LocalDescriptor>,
-) -> io::Result<File> {
-    use std::{os::windows::io::FromRawHandle, ptr};
-    use windows_sys::{
-        Wdk::{
-            Foundation::OBJECT_ATTRIBUTES,
-            Storage::FileSystem::{
-                FILE_DIRECTORY_FILE, FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
-            },
-        },
-        Win32::{
-            Foundation::{
-                OBJ_CASE_INSENSITIVE, OBJ_DONT_REPARSE, RtlNtStatusToDosError, UNICODE_STRING,
-            },
-            System::IO::IO_STATUS_BLOCK,
-        },
-    };
-
-    let mut wide: Vec<u16> = name.encode_wide().collect();
-    let length = u16::try_from(wide.len() * size_of::<u16>()).map_err(io::Error::other)?;
-    let mut name = UNICODE_STRING {
-        Length: length,
-        MaximumLength: length,
-        Buffer: wide.as_mut_ptr(),
-    };
-    let attributes = OBJECT_ATTRIBUTES {
-        Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
-        RootDirectory: parent.as_raw_handle(),
-        ObjectName: &mut name,
-        Attributes: OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE,
-        SecurityDescriptor: security.map_or(ptr::null(), |descriptor| descriptor.0.cast()),
-        ..Default::default()
-    };
-    let mut handle = ptr::null_mut();
-    let mut io_status = IO_STATUS_BLOCK::default();
-    let file_attributes = if options & FILE_DIRECTORY_FILE != 0 {
-        FILE_ATTRIBUTE_DIRECTORY
-    } else {
-        0
-    };
-    // SAFETY: The retained parent owns its handle, and all buffers stay live
-    // for this synchronous call. The only callers supply a single child name.
-    let status = unsafe {
-        NtCreateFile(
-            &mut handle,
-            access,
-            &attributes,
-            &mut io_status,
-            ptr::null(),
-            file_attributes,
-            share,
-            disposition,
-            options | FILE_SYNCHRONOUS_IO_NONALERT,
-            ptr::null(),
-            0,
-        )
-    };
-    if status < 0 {
-        // SAFETY: The returned NTSTATUS is the sole input.
-        return Err(io::Error::from_raw_os_error(
-            unsafe { RtlNtStatusToDosError(status) } as i32,
-        ));
-    }
-    if handle.is_null() || handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
-        return Err(io::Error::other("relative open returned no handle"));
-    }
-    // SAFETY: A successful synchronous open transferred ownership of the handle.
-    Ok(unsafe { File::from_raw_handle(handle) })
-}
-
 fn pin_directory(path: &Path) -> io::Result<File> {
     pin_directory_with_share(path, FILE_SHARE_READ | FILE_SHARE_WRITE)
 }
@@ -946,34 +855,6 @@ fn mark_for_deletion(file: &File) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     Ok(())
-}
-
-fn check_regular_file(file: &File) -> io::Result<FileIdentity> {
-    let metadata = file.metadata()?;
-    if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(io::Error::other("configuration entry is not a plain file"));
-    }
-    let info = handle_information(file)?;
-    if info.nNumberOfLinks != 1 {
-        return Err(io::Error::other("configuration entry has multiple links"));
-    }
-    Ok(file_identity(&info))
-}
-
-fn handle_information(file: &File) -> io::Result<BY_HANDLE_FILE_INFORMATION> {
-    let mut info = BY_HANDLE_FILE_INFORMATION::default();
-    // SAFETY: The file owns the live handle and info is writable for the call.
-    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(info)
-}
-
-fn file_identity(info: &BY_HANDLE_FILE_INFORMATION) -> FileIdentity {
-    FileIdentity {
-        volume: info.dwVolumeSerialNumber,
-        index: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
-    }
 }
 
 fn move_file(source: &Path, target: &Path, replace: bool) -> io::Result<()> {
