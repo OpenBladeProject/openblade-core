@@ -10,6 +10,15 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
     private const string FixtureVariable = "OPENBLADE_PHASE_9P_BURN_FIXTURE";
     private const string SignedFixtureVariable = "OPENBLADE_PHASE_9U_SIGNED_BURN_FIXTURE";
     private const string ProductSizeFixtureVariable = "OPENBLADE_PHASE_9V_PRODUCT_SIZE_BURN_FIXTURE";
+    private const string AuthoredEmbeddedFixture = "OPENBLADE_PHASE_9X_EMBEDDED";
+    private const string AuthoredExternalFixture = "OPENBLADE_PHASE_9X_EXTERNAL";
+    private const string AuthoredLocalDevFixture = "OPENBLADE_PHASE_9X_LOCALDEV";
+    private const string SignedLocalDevFixture = "OPENBLADE_PHASE_9X_SIGNED_SINGLE";
+    private const string LocalDevVersion = "65535.1.2.3";
+    private const string LocalDevSource = "af61a8c842429bc0564390dee39b466ee0da9023";
+    private const string LocalDevInventorySha256 = "360527ec5ed988bf2f1bf278356965df9e9e08cb212f52ec3b3806c598c83690";
+    private const string ServiceSha256 = "6235dfd6b3aa304f3be525d51de05733d3678cf006547a1f94cfed367a00885c";
+    private const string AgentSha256 = "ddd3112e117dd8ae4c8969aba0e91b7768a69e95bdb5bb0be54974a71efe38da";
     private const string FixtureSha256 = "eec934f595a1f35831c3051ea0f45d2c3829547720764e7b38e98690805c4e10";
     private const string SignedFixtureSha256 = "cc01de2afa4b92cf4756d0565eb2baddd1a50344b900f483405badbfa8f5b5b6";
     private const string ProductSizeFixtureSha256 = "65c49b47ab7421f7316f52dd1dde3a257e008b8ae1fbb0d5c74162800e596fda";
@@ -23,6 +32,162 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
     private const int CertificateSize = 32;
     private static readonly XNamespace Burn = "http://wixtoolset.org/schemas/v4/2008/Burn";
     private static readonly Guid BundleId = new("4cd501f3-23d0-4c58-9a83-ed511e3d2ec5");
+
+    [PinnedBurnFixture(AuthoredEmbeddedFixture)]
+    public void ReadsCheckedInAuthoringWithAttachedDotNet() =>
+        CheckAuthoredLayout(AuthoredEmbeddedFixture,
+            "8ff94dc435c688ad208a7abd35e5d50a3e7299a81265067242160be336576899", "a3", "a4");
+
+    [PinnedBurnFixture(AuthoredExternalFixture)]
+    public void ReadsCheckedInAuthoringWithManifestOnlyDotNet() =>
+        CheckAuthoredLayout(AuthoredExternalFixture,
+            "04c50c923a4763582847dbf8210c93b3b2f544215e578480920560e13f044a09", "a2", "a3");
+
+    [PinnedBurnFixture(AuthoredLocalDevFixture)]
+    public Task AuthenticatesAuthoredLocalDevAndReadsRolesWithoutExternalPrerequisite() =>
+        CheckAuthenticatedLocalDev(AuthoredLocalDevFixture,
+            "4079c110978af3008ef929fac309b9637e9e77b0c68a660dd8d956758449359f",
+            WindowsNativeBurnProfile.AuthoredOpenBlade, "a2", "a3");
+
+    [PinnedBurnFixture(SignedLocalDevFixture)]
+    public Task AuthenticatesLocalDevWithSinglePackageAndDualCertificateLayout() =>
+        CheckAuthenticatedLocalDev(SignedLocalDevFixture,
+            "e36766891d501156364ed00606a3ec910bb1d75bfac467aefa70b30c2e278fea",
+            WindowsNativeBurnProfile.SinglePackageFixture, "a1", "a2");
+
+    private static void CheckAuthoredLayout(string variable, string hash, string serviceMember, string agentMember)
+    {
+        using var snapshot = OpenPinnedFixture(variable, hash);
+        var roles = WindowsNativeInventoryBurnExtractor.ExtractRoles(snapshot,
+            WindowsNativeBurnProfile.AuthoredOpenBlade, "0.58.4.0", default);
+        Assert.Equal((@"payload\OpenBlade.Service.exe", serviceMember, 337920, ServiceSha256),
+            (roles.Service.PayloadPath, roles.Service.CabinetMember, roles.Service.Length, roles.Service.Sha256));
+        Assert.Equal((@"payload\OpenBlade.SessionAgent.exe", agentMember, 144896, AgentSha256),
+            (roles.SessionAgent.PayloadPath, roles.SessionAgent.CabinetMember, roles.SessionAgent.Length, roles.SessionAgent.Sha256));
+    }
+
+    private static async Task CheckAuthenticatedLocalDev(string variable, string hash, WindowsNativeBurnProfile profile,
+        string serviceMember, string agentMember)
+    {
+        using var snapshot = OpenPinnedFixture(variable, hash);
+        var raw = WindowsNativeInventoryBurnExtractor.ExtractRoles(snapshot, profile, LocalDevVersion, default);
+        Assert.Equal(LocalDevInventorySha256, Convert.ToHexStringLower(SHA256.HashData(raw.Resource.AsSpan())));
+        snapshot.Position = 0;
+        byte[] bytes = new byte[snapshot.Length];
+        snapshot.ReadExactly(bytes);
+        using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bytes, LocalDevSource);
+        var selected = new WindowsNativePayloadIdentity(hash, new(LocalDevSource, Version.Parse(LocalDevVersion)));
+        DirectoryInfo scratch = Directory.CreateTempSubdirectory("openblade-authored-burn-");
+        string path = Path.Combine(scratch.FullName, OpenBladeReleaseManifestCodec.InstallerFileName);
+        try
+        {
+            // Only the outer bundle is staged. The external .NET file is absent.
+            File.WriteAllBytes(path, bytes);
+            var proof = await WindowsNativePackageRoleProof.ReadFixtureAsync(path, signed.ManifestBytes,
+                signed.SignatureBytes, signed.Policy, selected, profile);
+            Assert.Equal(selected, proof.Identity);
+            Assert.Equal(("OpenBlade.Service.exe", serviceMember, 337920, ServiceSha256),
+                (proof.Service.InstalledName, proof.Service.CabinetMember, proof.Service.Length, proof.Service.Sha256));
+            Assert.Equal(("OpenBlade.SessionAgent.exe", agentMember, 144896, AgentSha256),
+                (proof.SessionAgent.InstalledName, proof.SessionAgent.CabinetMember, proof.SessionAgent.Length, proof.SessionAgent.Sha256));
+
+            using var wrongKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            byte[] wrongSignature = wrongKey.SignHash(
+                OpenBladeSignedReleaseVerifier.ComputeSigningDigest(signed.ManifestBytes),
+                DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+            var failure = await Assert.ThrowsAsync<OpenBladeReleaseVerificationException>(() =>
+                WindowsNativePackageRoleProof.ReadFixtureAsync(path, signed.ManifestBytes, wrongSignature,
+                    signed.Policy, selected, profile));
+            Assert.Equal(OpenBladeReleaseVerificationFailure.SignatureInvalid, failure.Failure);
+
+            var wrongProfile = profile == WindowsNativeBurnProfile.AuthoredOpenBlade
+                ? WindowsNativeBurnProfile.SinglePackageFixture : WindowsNativeBurnProfile.AuthoredOpenBlade;
+            await Assert.ThrowsAsync<InvalidDataException>(() => WindowsNativePackageRoleProof.ReadFixtureAsync(path,
+                signed.ManifestBytes, signed.SignatureBytes, signed.Policy, selected, wrongProfile));
+
+            using var wrongSource = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bytes,
+                new string('b', 40));
+            var sourceFailure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                WindowsNativePackageRoleProof.ReadFixtureAsync(path, wrongSource.ManifestBytes, wrongSource.SignatureBytes,
+                    wrongSource.Policy, selected with { Build = selected.Build with { SourceRevision = new string('b', 40) } },
+                    profile));
+            Assert.Contains("selected Windows x64 build", sourceFailure.Message, StringComparison.Ordinal);
+
+            using var wrongVersion = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bytes,
+                LocalDevSource, "65535.1.2.4");
+            var versionFailure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                WindowsNativePackageRoleProof.ReadFixtureAsync(path, wrongVersion.ManifestBytes,
+                    wrongVersion.SignatureBytes, wrongVersion.Policy,
+                    selected with { Build = selected.Build with { ProductVersion = new(65535, 1, 2, 4) } }, profile));
+            Assert.Contains("Burn registration", versionFailure.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+            scratch.Delete();
+        }
+    }
+
+    [Theory]
+    [InlineData("external-source", "external .NET prerequisite")]
+    [InlineData("external-container", "external .NET prerequisite")]
+    [InlineData("external-origin", ".NET prerequisite manifest origin")]
+    [InlineData("external-size", "external .NET prerequisite")]
+    [InlineData("role-borrowed", "do not reconcile")]
+    [InlineData("inventory-borrowed", "do not reconcile")]
+    [InlineData("duplicate-owner", "ambiguous payload reference")]
+    [InlineData("setup-external", "attached payload mapping")]
+    [InlineData("wrong-role-name", "not canonical and unique")]
+    [InlineData("case-alias", "not canonical and unique")]
+    [InlineData("chain-order", "unsupported package or container")]
+    [InlineData("extra-chain-package", "unsupported package or container")]
+    [InlineData("role-digest", "Burn payload digest")]
+    public void RefusesInconsistentAuthoredChains(string mutation, string diagnostic)
+    {
+        byte[] bundle = Bundle(Resource(), includeRoles: true, authored: true, editManifest: root =>
+        {
+            var chain = root.Element(Burn + "Chain")!;
+            var setup = chain.Elements().Last();
+            var net = chain.Elements().ElementAt(1);
+            XElement PayloadWithId(string id) =>
+                root.Elements(Burn + "Payload").Single(element => (string?)element.Attribute("Id") == id);
+            XElement Reference(string id) =>
+                setup.Elements(Burn + "PayloadRef").Single(element => (string?)element.Attribute("Id") == id);
+            var external = PayloadWithId("OpenBladeDotNetRuntime");
+            var service = PayloadWithId("Service");
+            switch (mutation)
+            {
+                case "external-source": external.SetAttributeValue("SourcePath", "a3"); break;
+                case "external-container": external.SetAttributeValue("Container", "WixAttachedContainer"); break;
+                case "external-origin": external.SetAttributeValue("DownloadUrl", "file:///local/runtime.exe"); break;
+                case "external-size": external.SetAttributeValue("FileSize", int.MaxValue); break;
+                case "role-borrowed":
+                case "inventory-borrowed":
+                    var reference = Reference(mutation == "role-borrowed" ? "Service" : "Inventory");
+                    reference.Remove();
+                    net.Add(reference);
+                    break;
+                case "duplicate-owner": net.Add(new XElement(Reference("Agent"))); break;
+                case "setup-external": PayloadWithId("OpenBladeSetup").SetAttributeValue("Packaging", "external"); break;
+                case "wrong-role-name":
+                    service.SetAttributeValue("FilePath", WindowsNativeRoleInventory.PayloadPath(WindowsNativeRole.Service));
+                    break;
+                case "case-alias":
+                    service.SetAttributeValue("FilePath", @"payload\OPENBLADE.SERVICE.EXE");
+                    break;
+                case "chain-order":
+                    net.Remove();
+                    chain.AddFirst(net);
+                    break;
+                case "extra-chain-package": chain.Add(new XElement(setup)); break;
+                case "role-digest": service.SetAttributeValue("Hash", new string('0', 128)); break;
+            }
+        });
+        using var snapshot = new MemoryStream(bundle, writable: false);
+        var failure = Assert.Throws<InvalidDataException>(() => WindowsNativeInventoryBurnExtractor.ExtractRoles(
+            snapshot, WindowsNativeBurnProfile.AuthoredOpenBlade, LocalDevVersion, default));
+        Assert.Contains(diagnostic, failure.Message, StringComparison.Ordinal);
+    }
 
     [PinnedBurnFixture(FixtureVariable)]
     public void ReadsTheExactInertWiX7Fixture()
@@ -167,7 +332,7 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
     [InlineData("duplicate-id", "invalid or aliased")]
     [InlineData("duplicate-source", "mapping is invalid or ambiguous")]
     [InlineData("missing-reference", "do not reconcile")]
-    [InlineData("other-owner", "missing or duplicated")]
+    [InlineData("other-owner", "unsupported package or container")]
     [InlineData("extra-reference", "ambiguous payload reference")]
     [InlineData("ux-shadow", "UX payload mapping")]
     [InlineData("missing-declaration", "do not reconcile")]
@@ -394,6 +559,7 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
         {
             if (mutation == "missing")
             {
+                root.Element(Burn + "Registration")!.SetAttributeValue("Version", LocalDevVersion);
                 return;
             }
 
@@ -432,7 +598,8 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
         {
             File.WriteAllBytes(path, bundle);
             var failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
-                WindowsNativePackageRoleProof.ReadFixtureAsync(path, signed.ManifestBytes, signed.SignatureBytes, signed.Policy, selected));
+                WindowsNativePackageRoleProof.ReadFixtureAsync(path, signed.ManifestBytes, signed.SignatureBytes,
+                    signed.Policy, selected, WindowsNativeBurnProfile.SinglePackageFixture));
             Assert.Contains(diagnostic, failure.Message, StringComparison.Ordinal);
 
             if (mutation == "missing")
@@ -440,7 +607,8 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
                 var badSignature = (byte[])signed.SignatureBytes.Clone();
                 badSignature[0] ^= 1;
                 var authentication = await Assert.ThrowsAsync<OpenBladeReleaseVerificationException>(() =>
-                    WindowsNativePackageRoleProof.ReadFixtureAsync(path, signed.ManifestBytes, badSignature, signed.Policy, selected));
+                    WindowsNativePackageRoleProof.ReadFixtureAsync(path, signed.ManifestBytes, badSignature,
+                        signed.Policy, selected, WindowsNativeBurnProfile.SinglePackageFixture));
                 Assert.Equal(OpenBladeReleaseVerificationFailure.SignatureInvalid, authentication.Failure);
             }
         }
@@ -458,12 +626,13 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
          .. SHA256.HashData("service"u8), .. SHA256.HashData("agent"u8)];
 
     private static byte[] Bundle(byte[] resource, Action<XElement>? editManifest = null,
-        Action<byte[]>? editCabinet = null, bool extraMember = false, bool includeRoles = false)
+        Action<byte[]>? editCabinet = null, bool extraMember = false, bool includeRoles = false, bool authored = false)
     {
         byte[] setup = "abc"u8.ToArray();
         byte[] service = "service"u8.ToArray();
         byte[] agent = "agent"u8.ToArray();
-        byte[] attached = includeRoles ? Cabinet(("a0", resource), ("a1", setup), ("a2", service), ("a3", agent))
+        byte[] attached = authored ? Cabinet(("a0", resource), ("a1", setup), ("a2", service), ("a3", agent), ("a4", [2]))
+            : includeRoles ? Cabinet(("a0", resource), ("a1", setup), ("a2", service), ("a3", agent))
             : extraMember ? Cabinet(("a0", resource), ("a1", setup), ("a2", [1]))
             : Cabinet(("a0", resource), ("a1", setup));
         editCabinet?.Invoke(attached);
@@ -483,6 +652,7 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
                 new XElement(Burn + "PayloadRef", new XAttribute("Id", "OpenBladeSetup")))));
         if (includeRoles)
         {
+            root.Element(Burn + "Registration")!.SetAttributeValue("Version", LocalDevVersion);
             root.Add(Payload("Service", WindowsNativeRoleInventory.PayloadPath(WindowsNativeRole.Service), "a2", service),
                 Payload("Agent", WindowsNativeRoleInventory.PayloadPath(WindowsNativeRole.SessionAgent), "a3", agent));
             XElement owner = root.Element(Burn + "Chain")!.Element(Burn + "ExePackage")!;
@@ -490,6 +660,32 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
             owner.AddFirst(new XElement(Burn + "PayloadRef", new XAttribute("Id", "OpenBladeSetup")));
             owner.Add(new XElement(Burn + "PayloadRef", new XAttribute("Id", "Service")),
                 new XElement(Burn + "PayloadRef", new XAttribute("Id", "Agent")));
+        }
+        if (authored)
+        {
+            var registration = root.Element(Burn + "Registration")!;
+            registration.SetAttributeValue("BundleId", "OSSBlade.OpenBlade");
+            registration.SetAttributeValue("ProviderKey", "OSSBlade.OpenBlade");
+            registration.SetAttributeValue("PrimaryUpgradeCode", "{FF859CA9-D69F-4995-A2AD-69E540E45724}");
+            registration.SetAttributeValue("Scope", "perMachine");
+            XElement PayloadWithId(string id) =>
+                root.Elements(Burn + "Payload").Single(element => (string?)element.Attribute("Id") == id);
+            PayloadWithId("OpenBladeSetup").SetAttributeValue("FilePath", "OpenBlade.Setup.exe");
+            PayloadWithId("Service").SetAttributeValue("FilePath", @"payload\OpenBlade.Service.exe");
+            PayloadWithId("Agent").SetAttributeValue("FilePath", @"payload\OpenBlade.SessionAgent.exe");
+            const string vc = "OpenBladeVcRuntime", net = "OpenBladeDotNetRuntime";
+            const string filename = "windowsdesktop-runtime-10.0.12-win-x64.exe";
+            var external = Payload(net, filename, filename, [3]);
+            external.SetAttributeValue("Packaging", "external");
+            external.SetAttributeValue("Container", null);
+            external.SetAttributeValue("DownloadUrl",
+                "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.12/" + filename);
+            root.Add(Payload(vc, "VC_redist.x64.exe", "a4", [2]), external);
+            root.Element(Burn + "Chain")!.AddFirst(
+                new XElement(Burn + "ExePackage", new XAttribute("Id", vc),
+                    new XElement(Burn + "PayloadRef", new XAttribute("Id", vc))),
+                new XElement(Burn + "ExePackage", new XAttribute("Id", net),
+                    new XElement(Burn + "PayloadRef", new XAttribute("Id", net))));
         }
         editManifest?.Invoke(root);
         byte[] ux = Cabinet(("0", Encoding.UTF8.GetBytes(root.ToString(SaveOptions.DisableFormatting))), ("u0", [1]));

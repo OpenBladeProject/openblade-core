@@ -69,6 +69,13 @@ internal sealed class WindowsNativeRoleInventory
 
     internal static string PayloadPath(WindowsNativeRole role) => @"payload\" + FileName(role);
 
+    internal static string InstalledFileName(WindowsNativeRole role) => role switch
+    {
+        WindowsNativeRole.Service => "OpenBlade.Service.exe",
+        WindowsNativeRole.SessionAgent => "OpenBlade.SessionAgent.exe",
+        _ => throw new ArgumentOutOfRangeException(nameof(role)),
+    };
+
     // Build output alone is not a trust decision. Take both roles from one controlled x64 build.
     internal static ImmutableArray<byte> CreateResource(
         WindowsNativeBuildIdentity build, Func<string, ImmutableArray<byte>> readBuildOutput)

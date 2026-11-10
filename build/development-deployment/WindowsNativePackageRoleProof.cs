@@ -20,12 +20,14 @@ internal sealed class WindowsNativePackageRoleProof
     internal static Task<WindowsNativePackageRoleProof> ReadFixtureAsync(
         string installerPath, ReadOnlyMemory<byte> manifest, ReadOnlyMemory<byte> signature,
         OpenBladeReleaseTrustPolicy fixturePolicy, WindowsNativePayloadIdentity selected,
+        WindowsNativeBurnProfile profile,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var release = OpenBladeSignedReleaseVerifier.Verify(manifest.Span, signature.Span, fixturePolicy);
         return WindowsNativeRoleInventory.WithVerifiedSnapshotAsync(installerPath, release, selected,
-            (snapshot, token) => ReadRoles(snapshot, selected, token), cancellationToken);
+            (snapshot, token) => ReadRoles(snapshot, selected, profile, release.Manifest.Version, token),
+            cancellationToken);
     }
 
 #if OPENBLADE_PACKAGE_PROOF_FIXTURE
@@ -50,22 +52,25 @@ internal sealed class WindowsNativePackageRoleProof
         }
 
         snapshot.Position = 0;
-        return ReadRoles(snapshot, identity, cancellationToken);
+        return ReadRoles(snapshot, identity, WindowsNativeBurnProfile.SinglePackageFixture,
+            identity.Build.ProductVersion.ToString(4), cancellationToken);
     }
 #endif
 
     private static WindowsNativePackageRoleProof ReadRoles(
-        Stream snapshot, WindowsNativePayloadIdentity identity, CancellationToken cancellationToken)
+        Stream snapshot, WindowsNativePayloadIdentity identity, WindowsNativeBurnProfile profile,
+        string expectedVersion, CancellationToken cancellationToken)
     {
-        var roles = WindowsNativeInventoryBurnExtractor.ExtractRoles(snapshot, cancellationToken);
+        var roles = WindowsNativeInventoryBurnExtractor.ExtractRoles(snapshot, profile, expectedVersion, cancellationToken);
         var inventory = WindowsNativeRoleInventory.DecodeForBuild(identity.Build, roles.Resource.AsSpan());
+        cancellationToken.ThrowIfCancellationRequested();
         return new(identity,
-            Bind(inventory, WindowsNativeRole.Service, roles.Service, "OpenBlade.Service.exe"),
-            Bind(inventory, WindowsNativeRole.SessionAgent, roles.SessionAgent, "OpenBlade.SessionAgent.exe"));
+            Bind(inventory, WindowsNativeRole.Service, roles.Service),
+            Bind(inventory, WindowsNativeRole.SessionAgent, roles.SessionAgent));
     }
 
     private static RoleImage Bind(WindowsNativeRoleInventory inventory, WindowsNativeRole role,
-        WindowsNativeInventoryBurnExtractor.RoleMember member, string installedName)
+        WindowsNativeInventoryBurnExtractor.RoleMember member)
     {
         string sha256 = inventory.GetExpectedSha256(role);
         if (!string.Equals(member.Sha256, sha256, StringComparison.Ordinal))
@@ -73,8 +78,8 @@ internal sealed class WindowsNativePackageRoleProof
             throw new InvalidDataException($"The {role} cabinet bytes differ from the authenticated role inventory.");
         }
 
-        return new(role, member.PayloadId, WindowsNativeRoleInventory.PayloadPath(role), member.CabinetMember,
-            installedName, member.Length, sha256);
+        return new(role, member.PayloadId, member.PayloadPath, member.CabinetMember,
+            WindowsNativeRoleInventory.InstalledFileName(role), member.Length, sha256);
     }
 
     internal sealed record RoleImage(WindowsNativeRole Role, string PayloadId, string PayloadPath, string CabinetMember,

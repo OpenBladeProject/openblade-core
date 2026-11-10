@@ -370,16 +370,17 @@ public sealed class OpenBladeSignedReleaseVerifierTests
             return CreateWithInstallerBytes("synthetic OpenBlade installer fixture"u8.ToArray());
         }
 
-        internal static TestRelease CreateWithInstallerBytes(byte[] installerBytes)
+        internal static TestRelease CreateWithInstallerBytes(byte[] installerBytes,
+            string? sourceRevision = null, string version = "65535.1.2.3")
         {
             string installerSha256 = Convert.ToHexStringLower(SHA256.HashData(installerBytes));
-            return CreateCore(installerBytes.Length, installerSha256, installerBytes);
+            return CreateCore(installerBytes.Length, installerSha256, installerBytes, sourceRevision, version);
         }
 
         private static TestRelease CreateCore(
             long installerSize,
             string installerSha256,
-            byte[] installerBytes)
+            byte[] installerBytes, string? sourceRevision = null, string version = "65535.1.2.3")
         {
             ECDsa signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             byte[] subjectPublicKeyInfo = signingKey.ExportSubjectPublicKeyInfo();
@@ -394,8 +395,8 @@ public sealed class OpenBladeSignedReleaseVerifierTests
                 Sequence = 1,
                 Channel = OpenBladeReleaseManifestCodec.LocalDevChannel,
                 Product = OpenBladeReleaseManifestCodec.Product,
-                Version = "65535.1.2.3",
-                SourceRevision = new string('a', 40),
+                Version = version,
+                SourceRevision = sourceRevision ?? new string('a', 40),
                 Architecture = OpenBladeReleaseManifestCodec.Architecture,
                 MinimumWindowsBuild = OpenBladeReleaseManifestCodec.MinimumWindowsBuild,
                 InstallerFileName = OpenBladeReleaseManifestCodec.InstallerFileName,

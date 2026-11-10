@@ -11,7 +11,8 @@ namespace OpenBlade.Deployment;
 // alone cannot distinguish duplicate members or overlapping file ranges.
 internal sealed class BurnFixtureCabinet
 {
-    private const int FileTableOffset = 44;
+    private const int CabinetHeaderSize = 36;
+    private const int FolderHeaderSize = 8;
     private const int FileHeaderSize = 16;
     private const int BlockHeaderSize = 8;
     private const int MaxBlockSize = 32 * 1024;
@@ -39,46 +40,64 @@ internal sealed class BurnFixtureCabinet
         ? size : throw Invalid("A declared Burn cabinet member is missing.");
 
     internal static BurnFixtureCabinet Open(Stream snapshot, int offset, int length, bool ux,
-        int maxExpandedBytes, int maxMemberBytes, CancellationToken cancellationToken)
+        int maxExpandedBytes, int maxMemberBytes, CancellationToken cancellationToken, bool authoredUx = false)
     {
         var members = new Dictionary<string, int>(StringComparer.Ordinal);
         var cabinet = new BurnFixtureCabinet(snapshot, offset, length, members);
 
-        // CFHEADER plus exactly one CFFOLDER. Continuations, reserves, alternate
-        // compression and multi-folder cabinets are outside the pinned fixture shape.
-        if (length < FileTableOffset)
+        // Authored WiX UX can use two folders and deduplicate identical UX files.
+        // Setup payloads retain the single-folder, disjoint-member contract.
+        if (length < CabinetHeaderSize + FolderHeaderSize)
         {
             throw Invalid("The Burn cabinet header is truncated.");
         }
 
-        Span<byte> header = stackalloc byte[FileTableOffset];
+        Span<byte> header = stackalloc byte[CabinetHeaderSize];
         cabinet.ReadAt(0, header, cancellationToken);
+        int folderCount = U16(header, 26);
+        int fileTableOffset = CabinetHeaderSize + folderCount * FolderHeaderSize;
         if (!header[..4].SequenceEqual("MSCF"u8)
             || U32(header, 4) != 0 || U32(header, 8) != length || U32(header, 12) != 0
-            || U32(header, 16) != FileTableOffset || U32(header, 20) != 0
-            || header[24] != 3 || header[25] != 1 || U16(header, 26) != 1
+            || U32(header, 16) != fileTableOffset || U32(header, 20) != 0
+            || header[24] != 3 || header[25] != 1 || folderCount < 1
+            || folderCount > (ux && authoredUx ? 2 : 1) || fileTableOffset > length
             || U16(header, 30) != 0 || U16(header, 32) != 0 || U16(header, 34) != 0)
         {
             throw Invalid("The Burn cabinet header is outside the verified fixture layout.");
         }
 
         int memberCount = U16(header, 28);
-        uint dataOffset = U32(header, 36);
-        int blockCount = U16(header, 40);
-        int compression = U16(header, 42);
-        if (memberCount is < 1 or > MaxMembers || dataOffset > length || dataOffset < FileTableOffset
-            || blockCount == 0 || blockCount > maxExpandedBytes / MaxBlockSize
-            || compression is not (0 or Lzx18))
+        var folders = new Folder[folderCount];
+        Span<byte> folderHeader = stackalloc byte[FolderHeaderSize];
+        for (int index = 0; index < folderCount; index++)
+        {
+            cabinet.ReadAt(CabinetHeaderSize + index * FolderHeaderSize, folderHeader, cancellationToken);
+            uint offsetInCabinet = U32(folderHeader, 0);
+            int blocks = U16(folderHeader, 4);
+            int compression = U16(folderHeader, 6);
+            if (offsetInCabinet > length || offsetInCabinet < fileTableOffset
+                || blocks == 0 || blocks > maxExpandedBytes / MaxBlockSize
+                || compression is not (0 or Lzx18))
+            {
+                throw Invalid("The Burn cabinet folder exceeds the fixture bounds or uses unsupported compression.");
+            }
+            folders[index] = new((int)offsetInCabinet, blocks, compression);
+        }
+
+        if (memberCount is < 1 or > MaxMembers)
         {
             throw Invalid("The Burn cabinet folder exceeds the fixture bounds or uses unsupported compression.");
         }
 
-        int cursor = FileTableOffset;
+        int cursor = fileTableOffset;
+        int currentFolder = 0;
+        int previousOffset = -1, previousSize = 0;
+        long totalDeclared = 0;
         long expanded = 0;
         Span<byte> file = stackalloc byte[FileHeaderSize + 6];
         for (int index = 0; index < memberCount; index++)
         {
-            int available = (int)dataOffset - cursor;
+            int available = folders[0].Offset - cursor;
             if (available <= FileHeaderSize)
             {
                 throw Invalid("A Burn cabinet file header is truncated.");
@@ -86,16 +105,33 @@ internal sealed class BurnFixtureCabinet
 
             Span<byte> entry = file[..Math.Min(file.Length, available)];
             cabinet.ReadAt(cursor, entry, cancellationToken);
-            if (U32(entry, 4) != expanded || U16(entry, 8) != 0 || U16(entry, 14) != ArchiveAttribute)
+            int folder = U16(entry, 8);
+            if (folder == currentFolder + 1 && folder < folderCount && expanded > 0)
+            {
+                folders[currentFolder].Expanded = (int)expanded;
+                currentFolder = folder;
+                expanded = 0;
+                previousOffset = -1;
+            }
+
+            uint memberOffset = U32(entry, 4);
+            uint size = U32(entry, 0);
+            bool deduplicatedUx = ux && authoredUx && index > 1
+                && memberOffset == previousOffset && size == previousSize;
+            if (folder != currentFolder || (memberOffset != expanded && !deduplicatedUx)
+                || U16(entry, 14) != ArchiveAttribute)
             {
                 throw Invalid("Burn cabinet members overlap or use unsupported metadata.");
             }
 
-            uint size = U32(entry, 0);
-            expanded += size;
+            totalDeclared += size;
+            if (!deduplicatedUx)
+            {
+                expanded += size;
+            }
             ReadOnlySpan<byte> nameBytes = entry[FileHeaderSize..];
             int terminator = nameBytes.IndexOf((byte)0);
-            if (terminator <= 0 || size == 0 || size > maxMemberBytes || expanded > maxExpandedBytes)
+            if (terminator <= 0 || size == 0 || size > maxMemberBytes || totalDeclared > maxExpandedBytes)
             {
                 throw Invalid("A Burn cabinet member name or expanded size is invalid.");
             }
@@ -110,43 +146,64 @@ internal sealed class BurnFixtureCabinet
             }
 
             members.Add(name, (int)size);
+            previousOffset = (int)memberOffset;
+            previousSize = (int)size;
             cursor += FileHeaderSize + terminator + 1;
         }
 
-        if (cursor != dataOffset)
+        if (cursor != folders[0].Offset || currentFolder != folderCount - 1)
         {
             throw Invalid("The Burn cabinet file table does not end at the folder data.");
         }
 
-        long totalOutput = 0;
+        folders[currentFolder].Expanded = (int)expanded;
         Span<byte> block = stackalloc byte[BlockHeaderSize];
-        for (int index = 0; index < blockCount; index++)
+        foreach (Folder folder in folders)
         {
-            if (cursor > length - BlockHeaderSize)
+            if (cursor != folder.Offset)
             {
-                throw Invalid("A Burn cabinet data block header is truncated.");
+                throw Invalid("The Burn cabinet folder ranges overlap or leave gaps.");
             }
 
-            cabinet.ReadAt(cursor, block, cancellationToken);
-            int compressed = U16(block, 4);
-            int output = U16(block, 6);
-            if (compressed is < 1 or > MaxCompressedBlockSize || output is < 1 or > MaxBlockSize
-                || (index < blockCount - 1 && output != MaxBlockSize)
-                || (compression == 0 && compressed != output))
+            long totalOutput = 0;
+            for (int index = 0; index < folder.Blocks; index++)
             {
-                throw Invalid("A Burn cabinet data block has an invalid size.");
+                if (cursor > length - BlockHeaderSize)
+                {
+                    throw Invalid("A Burn cabinet data block header is truncated.");
+                }
+
+                cabinet.ReadAt(cursor, block, cancellationToken);
+                int compressed = U16(block, 4);
+                int output = U16(block, 6);
+                if (compressed is < 1 or > MaxCompressedBlockSize || output is < 1 or > MaxBlockSize
+                    || (index < folder.Blocks - 1 && output != MaxBlockSize)
+                    || (folder.Compression == 0 && compressed != output))
+                {
+                    throw Invalid("A Burn cabinet data block has an invalid size.");
+                }
+
+                cursor += BlockHeaderSize + compressed;
+                totalOutput += output;
             }
 
-            cursor += BlockHeaderSize + compressed;
-            totalOutput += output;
+            if (totalOutput != folder.Expanded)
+            {
+                throw Invalid("The Burn cabinet blocks do not cover the declared file ranges.");
+            }
         }
 
-        if (cursor != length || totalOutput != expanded)
+        if (cursor != length)
         {
             throw Invalid("The Burn cabinet blocks do not cover the declared file ranges.");
         }
 
         return cabinet;
+    }
+
+    private sealed record Folder(int Offset, int Blocks, int Compression)
+    {
+        internal int Expanded { get; set; }
     }
 
     private void ReadAt(int position, Span<byte> destination, CancellationToken cancellationToken)
