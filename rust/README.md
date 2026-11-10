@@ -44,6 +44,28 @@ topology, identity and the distinct desktop and physical refresh rates from
 the current Windows desktop. It uses the locked `windows-sys` SDK bindings
 and has no production caller. Its tests script native responses.
 
+The same crate contains the WMI brightness backend logic behind
+`WmiBrightnessNative`. Display settings supply a percentage and resolve it to
+the nearest supported level, with ties going to the lower level. Function-row
+actions use a ten-point directional step and report brightness only on a
+confirmed change. The [managed brightness oracle](https://github.com/OpenBladeProject/openblade-core/pull/939)
+pins the level, acknowledgement and readback cases.
+
+The Rust path requires one CCD internal target and one matching active WMI
+brightness row for both entry points. A write also requires one active method
+row with the full instance identity, then fresh topology and supported-level
+admission. It submits once. UInt32 zero or either Boolean acknowledgement
+requires independent readback from the submitted instance at the selected level.
+Failed confirmation leaves writes paused on that owner and allows read-only
+observations. Caller cancellation stops preparation and cannot discard readback
+after possible submission.
+
+This slice uses scripted WMI effects. The current-user WMI transport must enforce
+the native deadline and submission contract before wiring the backend to the
+Session Agent. Session power and lifecycle admission, IPC projection and held-key
+routing belong to that integration. The timeout and stop behavior still need
+native and supervised panel validation.
+
 The workspace guard checks crate boundaries, reviewed targets and dependencies,
 MSRV and compiler policies. Its regression tests use disposable workspace copies.
 Inner crates retain `no_std` and inherit `unsafe_code = "forbid"`. FFI and Windows
