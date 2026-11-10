@@ -96,3 +96,47 @@ terminal status stores. Physical input behavior remains a separate gate.
 Run the fixture on Windows with
 `cargo test --locked --offline -p openblade-platform-windows supervisor`
 from the Rust workspace.
+
+## Private supervisor restart boundary
+
+The restart fixture is based on `a4cc57c8f058393d69f6f13c0994185fc6944849`.
+The managed references below are pinned to that commit under
+`src/OpenBlade.SessionAgent`.
+
+| Managed reference | Contract |
+| --- | --- |
+| `SnapTapInputHost.cs:98–211` | Rechecks preferences, validates the parent, observes stop, shutdown and parent exit, and checks competing keyboard ownership before selecting the Windows helper. |
+| `SnapTapWindowsHookLoop.cs:44–85, 251–328` | Admits the exact host and active console, acquires a marker before the hook loop, and explicitly completes the marker on clean return. Shutdown attempts only the confirmed output release in the original focus and layout, then retires the native hook and timer. |
+| `SnapTapWindowsOwnershipJournal.cs:11–96, 131–151` | Exclusively creates and flushes a boot-bound marker with PID, start time, helper version and executable path hash. Clean completion checks the exact marker before deleting it. A surviving valid marker requires recovery in the same boot. A separately validated later boot may discard it. |
+| `SnapTapProcessCoordinator.cs:155–205, 325–385` | Observes exit separately, matches terminal status to the launched child, publishes before clearing ownership, and retains recovery on ambiguous cleanup or a stop timeout. |
+| `SnapTapDriverSupervisor.cs:130–249, 280–331` | The Razer driver path observes worker exit and independently reconciles its owned records against a driver hook baseline before completing its own journal. |
+
+The fixture uses one exclusive, size-bounded, append-only file in trusted
+scratch storage. Explicit creation and reopening are separate operations.
+Before spawning it flushes a reservation for the modeled generation. Before
+sending the gate byte it flushes the child binding and activation intent.
+The generation and PID bind receipts to one launch in this journal. The
+named inert worker, private pipe and retained process handle supply the
+remaining fixture identity. Reopening rejects malformed or conflicting
+history, including a file with only its header, and refuses to recreate a
+missing file. It requires a fresh successful
+flush before trusting a complete persisted terminal record.
+
+A gate cancellation needs the exact child's no-write receipt and independently
+observed successful exit. An activated child needs requested stop, confirmed
+policy Off, successful hook and timer retirement, and independently observed
+successful exit. The supervisor publishes while it still owns the child and
+flushes the terminal record before relinquishing ownership. Only those terminal
+records admit a strictly newer generation. Timeout, uncertain output,
+retirement errors, failed status publication and loss of the supervisor leave
+an unresolved reservation. A later receipt or exit cannot complete it. This
+intentionally models the conservative same-boot boundary without importing
+the managed later-boot discard rule or Razer driver restoration.
+
+The scratch tests cover reopen after modeled supervisor loss, successful
+pre-activation cancellation and post-activation retirement, same-generation
+reentry, missing or conflicting evidence, timeout and failed publication. The
+managed product path remains the default. Production activation still requires
+real boot, token, session, image and host identity, the shared managed
+ownership and status integration, review of protected storage and abrupt
+host/power loss, and live native input and recovery validation.
