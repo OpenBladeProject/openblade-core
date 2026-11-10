@@ -3,7 +3,7 @@
 
 use super::{Power, Result, Scenario, ScenarioState, power_profile};
 use crate::{
-    application_runtime::{INACTIVE, Lease, Report, STALE, project_behavior, rules},
+    application_runtime::{INACTIVE, Lease, Report, project_behavior, rules},
     performance_runtime::Step as PerformanceStep,
 };
 use openblade_domain::{automation::performance_source_eligible, recovery::ScopedStatus};
@@ -158,10 +158,11 @@ impl Scenario {
             ..
         } = &mut *state;
         let context = application.as_mut().expect("guarded application runtime");
-        let message = context
+        let effect = context
             .lease
             .report(rules(&current["profiles"]), report, Instant::now());
-        if message == STALE {
+        let message = effect.message();
+        if !effect.updates_status() {
             return Ok(outcome(ScopedStatus::Unchanged, message));
         }
         self.application_changed

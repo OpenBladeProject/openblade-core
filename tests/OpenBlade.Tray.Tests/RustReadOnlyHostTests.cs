@@ -1829,9 +1829,21 @@ public sealed partial class RustReadOnlyHostTests
         Assert.Equal(ApplicationActivationMode.WhileRunningAfterActivation, rule.ActivationMode);
         AssertBase(initial, initial.Profiles.PluggedIn.Performance);
 
+        Guid idle = Guid.NewGuid();
+        const string matching = @"c:\games\GAME.EXE";
+        var idleReset = await ReportAsync(idle, 1, null);
+        var idleUnmatched = await ReportAsync(idle, 2, @"C:\Other\Game.exe");
+        Assert.Equal(ControlOperationStatus.Stored, idleReset.Status);
+        Assert.Equal(ControlOperationStatus.Stored, idleUnmatched.Status);
+        Assert.Equal("No application profile is active.", idleReset.Message);
+        Assert.Equal(idleReset.Message, idleUnmatched.Message);
+        Assert.Contains("stale", (await ReportAsync(idle, 2, matching)).Message);
+        ServiceStatusSnapshot unchanged = await client.GetStatusAsync(token);
+        Assert.Equal(initial.Revision, unchanged.Revision);
+        Assert.Equal(initial.Message, unchanged.Message);
+
         Guid first = Guid.NewGuid();
         Guid replacement = Guid.NewGuid();
-        const string matching = @"c:\games\GAME.EXE";
         Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(first, 1, matching)).Status);
         var selected = await NextAsync();
         AssertSelected(selected, PerformancePreset.Performance, SettingValueSource.ApplicationProfile);

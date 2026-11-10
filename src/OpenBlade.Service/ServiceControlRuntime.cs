@@ -1977,6 +1977,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     request.Sequence,
                     leaseCancellation);
             }
+            else if (!changed)
+            {
+                // Keep the accepted sequence without publishing a lease that does not exist.
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    "No application profile is active.");
+            }
 
             PublishApplicationContextStatus(
                 changed

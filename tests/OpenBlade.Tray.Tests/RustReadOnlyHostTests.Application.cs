@@ -31,8 +31,22 @@ public sealed partial class RustReadOnlyHostTests
             var manual = new ManualOverride<PerformancePreset>(
                 PerformancePreset.Balanced, OverrideLifetime.UntilPowerSourceChange);
 
-            Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(1, rule.ExecutablePath)).Status);
-            AssertSelection(await client.GetStatusAsync(token), rule.Id, PerformancePreset.Performance,
+            await AssertIdleAsync(initial, 1, null, initial.Profiles.PluggedIn.Performance,
+                PerformancePreset.Balanced);
+            await AssertIdleAsync(initial, 2, @"C:\Other\Game.exe", initial.Profiles.PluggedIn.Performance,
+                PerformancePreset.Balanced);
+
+            Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(3, rule.ExecutablePath)).Status);
+            var selected = await client.GetStatusAsync(token);
+            AssertSelection(selected, rule.Id, PerformancePreset.Performance,
+                SettingValueSource.ApplicationProfile, PerformancePreset.Balanced);
+            var renewal = await ReportAsync(4, rule.ExecutablePath);
+            Assert.Equal(ControlOperationStatus.Stored, renewal.Status);
+            Assert.Equal("The active application profile lease was renewed.", renewal.Message);
+            var renewed = await client.GetStatusAsync(token);
+            Assert.True(renewed.Revision > selected.Revision);
+            Assert.Equal(renewal.Message, renewed.Message);
+            AssertSelection(renewed, rule.Id, PerformancePreset.Performance,
                 SettingValueSource.ApplicationProfile, PerformancePreset.Balanced);
             Assert.Equal(ControlOperationStatus.Blocked,
                 (await client.UpdateProfilesAsync(initial.Profiles with { ApplicationProfiles = [] }, token)).Status);
@@ -76,11 +90,17 @@ public sealed partial class RustReadOnlyHostTests
             Assert.Equal(inactive.Revision, (await client.GetStatusAsync(token)).Revision);
             Assert.Equal(ControlOperationStatus.Blocked,
                 (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(70), token)).Status);
-            Assert.Equal(SessionControlAccess.Active, (await AdvanceAsync()).ControlAccess);
-            Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(2, null)).Status);
-            AssertSelection(await client.GetStatusAsync(token), null, initial.Profiles.Battery.Performance,
+            var reactivated = await AdvanceAsync();
+            Assert.Equal(SessionControlAccess.Active, reactivated.ControlAccess);
+            var clear = await ReportAsync(5, null);
+            Assert.Equal(ControlOperationStatus.Stored, clear.Status);
+            Assert.Equal("The active application profile was recorded.", clear.Message);
+            var cleared = await client.GetStatusAsync(token);
+            Assert.True(cleared.Revision > reactivated.Revision);
+            Assert.Equal(clear.Message, cleared.Message);
+            AssertSelection(cleared, null, initial.Profiles.Battery.Performance,
                 SettingValueSource.PowerProfile, PerformancePreset.Balanced);
-            Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(3, rule.ExecutablePath)).Status);
+            Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(6, rule.ExecutablePath)).Status);
 
             var planned = await AdvanceAsync();
             Assert.Equal(PowerSource.ExternalUnknown, planned.ActivePowerSource);
@@ -95,7 +115,7 @@ public sealed partial class RustReadOnlyHostTests
             var expired = await WaitAsync(status => status.Message?.Contains("lease expired", StringComparison.Ordinal) == true);
             AssertSelection(expired, null, initial.Profiles.PluggedIn.Performance,
                 SettingValueSource.PowerProfile, PerformancePreset.Performance);
-            Assert.Contains("stale", (await ReportAsync(3, rule.ExecutablePath)).Message);
+            Assert.Contains("stale", (await ReportAsync(6, rule.ExecutablePath)).Message);
             Assert.Equal(expired.Revision, (await client.GetStatusAsync(token)).Revision);
 
             var uncertain = await AdvanceAsync();
@@ -104,7 +124,9 @@ public sealed partial class RustReadOnlyHostTests
             Assert.Equal(DeviceSubsystem.Performance, Assert.Single(uncertain.UnconfirmedWrites));
             AssertSelection(uncertain, null, initial.Profiles.PluggedIn.Performance,
                 SettingValueSource.PowerProfile, PerformancePreset.Performance);
-            Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(4, rule.ExecutablePath)).Status);
+            await AssertIdleAsync(uncertain, 7, null, initial.Profiles.PluggedIn.Performance,
+                PerformancePreset.Performance);
+            Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(8, rule.ExecutablePath)).Status);
             var fenced = await AdvanceAsync();
             Assert.Contains("awaits read-only reconciliation", fenced.Message);
             Assert.Equal(DeviceSubsystem.Performance, Assert.Single(fenced.UnconfirmedWrites));
@@ -114,12 +136,12 @@ public sealed partial class RustReadOnlyHostTests
             Assert.Empty(settled.UnconfirmedWrites);
             AssertSelection(settled, rule.Id, PerformancePreset.Performance,
                 SettingValueSource.ApplicationProfile, PerformancePreset.Balanced);
-            Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(5, null)).Status);
+            Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(9, null)).Status);
 
             var off = new ManualOverride<LightingSettings>(LightingSettingsFactory.Off(), OverrideLifetime.Persistent);
             Task<ControlOperationResult> applyingOff = client.SetLightingOverrideAsync(off, token);
             await WaitAsync(status => status.Message == "Frame drained. Renderer port still owned.");
-            Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(6, rule.ExecutablePath)).Status);
+            Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(10, rule.ExecutablePath)).Status);
             var draining = await client.GetStatusAsync(token);
             AssertSelection(draining, rule.Id, PerformancePreset.Performance,
                 SettingValueSource.ApplicationProfile, PerformancePreset.Balanced);
@@ -141,6 +163,28 @@ public sealed partial class RustReadOnlyHostTests
                 client.ReportApplicationContextAsync(
                     new ReportApplicationContextRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), instance, sequence, path),
                     token);
+
+            async Task AssertIdleAsync(
+                ServiceStatusSnapshot before,
+                long sequence,
+                string? path,
+                PerformancePreset desired,
+                PerformancePreset observed)
+            {
+                var idle = await ReportAsync(sequence, path);
+                Assert.Equal(ControlOperationStatus.Stored, idle.Status);
+                Assert.Equal("No application profile is active.", idle.Message);
+                var stale = await ReportAsync(sequence, rule.ExecutablePath);
+                Assert.Equal(ControlOperationStatus.Stored, stale.Status);
+                Assert.Contains("stale", stale.Message);
+
+                var after = await client.GetStatusAsync(token);
+                Assert.Equal(before.Revision, after.Revision);
+                Assert.Equal(before.Message, after.Message);
+                Assert.Equal(before.WritesBlocked, after.WritesBlocked);
+                Assert.Equal(before.UnconfirmedWrites.ToArray(), after.UnconfirmedWrites.ToArray());
+                AssertSelection(after, null, desired, SettingValueSource.PowerProfile, observed);
+            }
 
             async Task<ServiceStatusSnapshot> AdvanceAsync()
             {

@@ -95,6 +95,29 @@ fn same_path(left: &str, right: &str) -> bool {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum ReportEffect {
+    Stale,
+    Idle,
+    Changed,
+    Renewed,
+}
+
+impl ReportEffect {
+    pub(crate) fn message(self) -> &'static str {
+        match self {
+            Self::Stale => STALE,
+            Self::Idle => "No application profile is active.",
+            Self::Changed => "The active application profile was recorded.",
+            Self::Renewed => "The active application profile lease was renewed.",
+        }
+    }
+
+    pub(crate) fn updates_status(self) -> bool {
+        matches!(self, Self::Changed | Self::Renewed)
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Lease {
     last: Option<(String, i64)>,
@@ -112,9 +135,9 @@ impl Lease {
         rules: &[Value],
         report: &Report,
         now: Instant,
-    ) -> &'static str {
+    ) -> ReportEffect {
         if !self.accept(report) {
-            return STALE;
+            return ReportEffect::Stale;
         }
         let selected = report.executable_path.as_deref().and_then(|path| {
             rules
@@ -122,13 +145,16 @@ impl Lease {
                 .filter_map(SelectedRule::read)
                 .find(|rule| same_path(path, &rule.path))
         });
+        if self.selected.is_none() && selected.is_none() {
+            return ReportEffect::Idle;
+        }
         self.deadline = selected.as_ref().map(|_| now + LEASE);
         let changed = self.selected != selected;
         self.selected = selected;
         if changed {
-            "The active application profile was recorded."
+            ReportEffect::Changed
         } else {
-            "The active application profile lease was renewed."
+            ReportEffect::Renewed
         }
     }
 
@@ -260,19 +286,16 @@ impl State {
                 "Application context requires the active local Windows session.",
             );
         }
-        let message = self
+        let effect = self
             .lease
             .report(rules(&self.status["profiles"]), report, now);
-        if message != STALE {
-            self.project(
-                if message == "The active application profile was recorded." {
-                    "The active application profile changed."
-                } else {
-                    message
-                },
-            );
+        if effect.updates_status() {
+            self.project(match effect {
+                ReportEffect::Changed => "The active application profile changed.",
+                _ => effect.message(),
+            });
         }
-        (0, message)
+        (0, effect.message())
     }
 
     fn expire(&mut self, expected: Instant, now: Instant) {
@@ -466,7 +489,12 @@ mod tests {
         let now = Instant::now();
         state.report(&report(ID, 1, Some(PATH)), now);
         let first = state.lease.deadline().unwrap();
-        state.report(&report(ID, 2, Some(PATH)), now + Duration::from_secs(5));
+        let renewed = now + Duration::from_secs(5);
+        assert_eq!(
+            state.report(&report(ID, 2, Some(PATH)), renewed).1,
+            ReportEffect::Renewed.message()
+        );
+        assert_eq!(state.lease.deadline(), Some(renewed + LEASE));
         state.expire(first, first);
         assert!(state.selected_rule().is_some());
         let second = state.lease.deadline().unwrap();
