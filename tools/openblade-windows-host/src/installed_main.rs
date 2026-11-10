@@ -11,6 +11,8 @@ mod discovery;
 #[path = "windows/scm/installed.rs"]
 mod installed;
 #[cfg(windows)]
+mod pipe_server_identity;
+#[cfg(windows)]
 mod scm_host;
 #[cfg(windows)]
 #[path = "windows/scm/identity.rs"]
@@ -21,6 +23,8 @@ mod service_frame;
 mod service_image;
 #[cfg(windows)]
 mod service_install_identity;
+#[cfg(windows)]
+mod service_status;
 #[cfg(windows)]
 #[allow(dead_code)] // Shared with the development writer, which is not linked here.
 mod windows_protected_path;

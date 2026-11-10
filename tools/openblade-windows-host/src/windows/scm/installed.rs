@@ -20,8 +20,7 @@ pub(crate) use native::entry;
 mod readiness;
 
 const NAME: &str = "OpenBlade";
-const PIPE_NAME: &str = "OpenBlade.Service.v2";
-const PROTOCOL_VERSION: i32 = 79;
+use crate::service_status::{PIPE_NAME, PROTOCOL_VERSION};
 
 struct ProcessEvidence {
     has_arguments: bool,

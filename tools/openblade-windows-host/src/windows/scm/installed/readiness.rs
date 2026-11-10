@@ -3,22 +3,24 @@
 use std::{future::Future, io, rc::Rc, time::Duration};
 
 #[cfg(test)]
+use crate::service_frame::write_frame;
+#[cfg(test)]
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::{sync::oneshot, time::timeout};
 
-use super::{PIPE_NAME, PROTOCOL_VERSION, Readiness, denied};
+use super::{Readiness, denied};
 use crate::{
     scm_host::startup_stopped,
-    service_frame::{FRAME_TIMEOUT, invalid, read_payload, write_frame},
+    service_frame::{FRAME_TIMEOUT, read_payload},
+    service_status::{
+        GetStatus, PIPE_NAME, PROTOCOL_VERSION, Snapshot, StatusResponse, exchange,
+        production_path, request_id as probe_id,
+    },
 };
 
 #[path = "readiness_windows.rs"]
 mod windows;
 use windows::{Caller, ControlSession, Logon, Pending, Stream};
-
-#[path = "status_wire.rs"]
-mod status_wire;
-use status_wire::{GetStatus, Snapshot, StatusResponse};
 
 #[path = "status_source.rs"]
 mod status_source;
@@ -99,10 +101,6 @@ impl Endpoint for windows::NativeEndpoint {
     }
 }
 
-fn production_path() -> String {
-    format!(r"\\.\pipe\{PIPE_NAME}")
-}
-
 // Owns an already admitted runtime source. Every request takes a fresh status
 // for the resolved caller, including the managed inactive-session projection.
 trait StatusSource {
@@ -179,11 +177,11 @@ impl Ports {
         let served = serve(&mut *self.source, endpoint.accept(), Some((pid, &request)));
         let probe = async {
             let mut client = endpoint.connect_probe().await?;
-            verify_peer(&*client, pid)?;
-            write_frame(&mut *client, &request).await?;
-            let reply = timeout(FRAME_TIMEOUT, read_payload(&mut *client)).await??;
-            StatusResponse::verify(&reply, &request)?;
-            verify_peer(&*client, pid)
+            exchange(&mut *client, &request, Some(0), |stream| {
+                verify_peer(stream, pid)
+            })
+            .await
+            .map(drop)
         };
         // Keep the accepted server handle open until the client validates the
         // response and rechecks the server PID on the original connection.
@@ -314,22 +312,6 @@ async fn serve(
         .await
         .map_err(Client)?;
     Ok(stream)
-}
-
-#[allow(unsafe_code)]
-fn probe_id() -> io::Result<String> {
-    use windows_sys::{Win32::System::Com::CoCreateGuid, core::GUID};
-
-    let mut id = GUID::from_u128(0);
-    // SAFETY: CoCreateGuid writes into an owned GUID-sized allocation.
-    if unsafe { CoCreateGuid(&mut id) } < 0 {
-        return Err(invalid("installed status probe ID generation failed"));
-    }
-    let [a, b, c, d, e, f, g, h] = id.data4;
-    Ok(format!(
-        "{:08x}-{:04x}-{:04x}-{a:02x}{b:02x}-{c:02x}{d:02x}{e:02x}{f:02x}{g:02x}{h:02x}",
-        id.data1, id.data2, id.data3
-    ))
 }
 
 #[cfg(test)]

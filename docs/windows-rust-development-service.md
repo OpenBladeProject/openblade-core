@@ -62,6 +62,65 @@ command when the candidate feature is enabled.
 The two installed-role candidates are compile-only. Their binary entry points
 have separate module trees from the fixture roles. Neither is a Setup payload.
 
+### Read-only Service status binding
+
+The candidate lease requires a fresh Service status observation after the other
+adapter checks pass. The one-shot client uses the shared Service v79
+`GetStatus` request and response on the local `OpenBlade.Service.v2` endpoint.
+The exchange is limited to a 64 KiB frame and a two-second deadline, including
+connection establishment. Only listener absence or a busy pipe is retried
+before submission. Cancellation or failure closes the attempt and a subsequent
+read starts with a new request ID. The lease rejects an observation retained
+for two seconds or more. Service revision is scoped to the producer, so it is
+not used as a freshness clock across Service restarts.
+
+The client requires independently admitted, still-live installed Service
+process evidence and checks its PID and session zero on the connected handle
+before sending and after validating the response. The proof provider and
+installed lease remain unwired. A correlated snapshot establishes Service
+status reachability. Its device, access, and write-blocked fields retain the
+producer's meaning, including inactive or unsupported states. Feature records
+are preserved for future consumers. A successful read grants no write authority
+and does not satisfy the lease's separate full Service-client readiness check.
+
+Managed Agent call sites use the following Service operations:
+
+- `GetStatus` supplies the cached status used by `Blade18FnActionExecutor` and
+  `SpecialKeyActionExecutor`.
+- `SubscribeStatus` supplies an initial correlated snapshot and subsequent
+  `statusEvent` frames. `SharedServiceStatusFeed` fans out the latest update
+  to display, power mode, lighting, mute and THX consumers. Input and LampArray
+  observation also consume status. The managed client immediately attempts to
+  reopen after a dropped stream, then publishes reconnecting on a retryable open
+  failure and backs off from 250 ms to five seconds. Consumers invalidate
+  actionable state during reconnect. Function-row interception requires fresh
+  confirmed Driver-mode metadata.
+- `ObserveState` refreshes confirmed performance after a failed shortcut in
+  `ServiceReactiveLightingLoop`. It requests no live-reading sensors and has
+  its own five-second cancellation window. It is distinct from cached status.
+- The remaining typed requests report application context and power transitions,
+  manage native brightness usage and keyboard brightness steps, apply one-shot
+  laptop controls and performance shortcuts/previews, and drive lighting
+  overrides, pulses, rendered frames, suppression, and the playback mute
+  indicator.
+
+The managed server's protocol-51 compatibility path is limited to cached
+`GetStatus` and `SubscribeStatus` with a read-only projection. The native
+Agent status binding requires v79, matching the ordinary managed Agent. The
+status subscription, state observation, and request dispatch for the remaining
+operations still need native bindings. The installed Service candidate
+currently serves only `GetStatus`.
+
+The replay in `tools/openblade-windows-host/tests/fixtures/get-status-v79.frames`
+contains two consecutive managed codec frames. The managed
+`IpcMessageCodec.WriteRequestAsync` writes `GetStatusRequest(79, id)`, then
+`WriteServerFrameAsync` writes a successful `ServiceResponse` with the same ID.
+The status comes from decoding the checked-in
+`tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service-status-event.json`
+through the managed codec. The ID is
+`11111111-2222-4333-8444-555555555555`. Tests replay the bytes in memory without
+opening a named pipe.
+
 ## Compile the installed service launch boundary
 
 The standalone Windows host workspace has a separate `openblade-windows-service-candidate`

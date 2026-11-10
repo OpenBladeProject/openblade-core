@@ -1,4 +1,4 @@
-//! The managed ServiceMessages v79 shape used by the installed GetStatus port.
+//! The managed ServiceMessages v79 shape shared by the installed Service and Agent candidates.
 //! Preserve rich feature records verbatim; readiness consumes the core snapshot
 //! and never interprets feature data as independent device or write evidence.
 
@@ -7,8 +7,19 @@ use std::io;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::PROTOCOL_VERSION;
-use crate::service_frame::{invalid, is_guid};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    time::timeout,
+};
+
+use crate::service_frame::{FRAME_TIMEOUT, invalid, is_guid, read_payload, write_frame};
+
+pub(crate) const PIPE_NAME: &str = "OpenBlade.Service.v2";
+pub(crate) const PROTOCOL_VERSION: i32 = 79;
+
+pub(crate) fn production_path() -> String {
+    format!(r"\\.\pipe\{PIPE_NAME}")
+}
 
 #[derive(Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -18,14 +29,14 @@ enum Operation {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct GetStatus {
+pub(crate) struct GetStatus {
     operation: Operation,
     version: i32,
     request_id: String,
 }
 
 impl GetStatus {
-    pub(super) fn new(request_id: String) -> io::Result<Self> {
+    pub(crate) fn new(request_id: String) -> io::Result<Self> {
         let request = Self {
             operation: Operation::GetStatus,
             version: PROTOCOL_VERSION,
@@ -35,7 +46,8 @@ impl GetStatus {
         Ok(request)
     }
 
-    pub(super) fn decode(payload: &[u8]) -> io::Result<Self> {
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn decode(payload: &[u8]) -> io::Result<Self> {
         let request: Self =
             serde_json::from_slice(payload).map_err(|_| invalid("invalid GetStatus request"))?;
         request.validate()?;
@@ -49,7 +61,8 @@ impl GetStatus {
         Ok(())
     }
 
-    pub(super) fn matches(&self, other: &Self) -> bool {
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn matches(&self, other: &Self) -> bool {
         self.request_id.eq_ignore_ascii_case(&other.request_id)
     }
 }
@@ -62,7 +75,7 @@ enum Frame {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct StatusResponse {
+pub(crate) struct StatusResponse {
     frame: Frame,
     version: i32,
     request_id: String,
@@ -75,7 +88,8 @@ pub(super) struct StatusResponse {
 }
 
 impl StatusResponse {
-    pub(super) fn success(request: &GetStatus, status: Snapshot) -> Self {
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn success(request: &GetStatus, status: Snapshot) -> Self {
         Self {
             frame: Frame::Response,
             version: PROTOCOL_VERSION,
@@ -89,7 +103,16 @@ impl StatusResponse {
         }
     }
 
-    pub(super) fn verify(payload: &[u8], request: &GetStatus) -> io::Result<()> {
+    #[cfg(all(test, feature = "installed-service-candidate"))]
+    pub(crate) fn verify(payload: &[u8], request: &GetStatus) -> io::Result<()> {
+        Self::decode(payload, request, Some(0)).map(drop)
+    }
+
+    fn decode(
+        payload: &[u8],
+        request: &GetStatus,
+        expected_access: Option<i32>,
+    ) -> io::Result<Snapshot> {
         let reply: Self =
             serde_json::from_slice(payload).map_err(|_| invalid("invalid GetStatus response"))?;
         if reply.version != PROTOCOL_VERSION
@@ -102,10 +125,11 @@ impl StatusResponse {
         {
             return Err(invalid("uncorrelated or unsuccessful GetStatus response"));
         }
-        reply
+        let status = reply
             .status
-            .ok_or_else(|| invalid("GetStatus response has no snapshot"))?
-            .verify(0)
+            .ok_or_else(|| invalid("GetStatus response has no snapshot"))?;
+        status.verify(expected_access.unwrap_or(status.control_access))?;
+        Ok(status)
     }
 }
 
@@ -113,7 +137,7 @@ type FeatureRecord = Map<String, Value>;
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct Snapshot {
+pub(crate) struct Snapshot {
     revision: i64,
     device_verified: bool,
     writes_blocked: bool,
@@ -141,7 +165,8 @@ impl Snapshot {
     // The managed status contract requires profiles and resolved intent even
     // before configuration or device admission. These are safe defaults,
     // never a firmware read or the active user's saved preferences.
-    pub(super) fn observed_read_only(
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn observed_read_only(
         revision: i64,
         control_access: i32,
         on_battery: bool,
@@ -263,7 +288,7 @@ impl Snapshot {
             )]),
         }
     }
-    pub(super) fn verify(&self, access: i32) -> io::Result<()> {
+    pub(crate) fn verify(&self, access: i32) -> io::Result<()> {
         if self.revision < 0
             || self.service_version.trim().is_empty()
             || self.service_version.trim() != self.service_version
@@ -343,4 +368,36 @@ struct LiveReadings {
     fan2_rpm: Option<i32>,
     cpu_temperature_celsius: Option<i32>,
     gpu_temperature_celsius: Option<i32>,
+}
+
+// Verify the same connection before submitting a request and before releasing
+// the snapshot. A valid response does not authenticate its sender.
+pub(crate) async fn exchange<S: AsyncRead + AsyncWrite + Unpin + ?Sized>(
+    stream: &mut S,
+    request: &GetStatus,
+    expected_access: Option<i32>,
+    mut verify_peer: impl FnMut(&S) -> io::Result<()>,
+) -> io::Result<Snapshot> {
+    verify_peer(stream)?;
+    write_frame(stream, request).await?;
+    let reply = timeout(FRAME_TIMEOUT, read_payload(stream)).await??;
+    let status = StatusResponse::decode(&reply, request, expected_access)?;
+    verify_peer(stream)?;
+    Ok(status)
+}
+
+#[allow(unsafe_code)]
+pub(crate) fn request_id() -> io::Result<String> {
+    use windows_sys::{Win32::System::Com::CoCreateGuid, core::GUID};
+
+    let mut id = GUID::from_u128(0);
+    // SAFETY: CoCreateGuid writes into an owned GUID-sized allocation.
+    if unsafe { CoCreateGuid(&mut id) } < 0 {
+        return Err(invalid("GetStatus request ID generation failed"));
+    }
+    let [a, b, c, d, e, f, g, h] = id.data4;
+    Ok(format!(
+        "{:08x}-{:04x}-{:04x}-{a:02x}{b:02x}-{c:02x}{d:02x}{e:02x}{f:02x}{g:02x}{h:02x}",
+        id.data1, id.data2, id.data3
+    ))
 }

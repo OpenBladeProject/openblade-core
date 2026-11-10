@@ -32,8 +32,7 @@ use windows_sys::Win32::{
         SECURITY_IDENTIFICATION, SECURITY_SQOS_PRESENT, WriteFile,
     },
     System::Pipes::{
-        ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeClientProcessId,
-        GetNamedPipeServerProcessId, GetNamedPipeServerSessionId, PIPE_NOWAIT,
+        ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeClientProcessId, PIPE_NOWAIT,
         PIPE_REJECT_REMOTE_CLIENTS, PeekNamedPipe, SetNamedPipeHandleState,
     },
 };
@@ -283,9 +282,7 @@ fn caller_pid(pipe: &OwnedHandle) -> io::Result<Option<u32>> {
 }
 
 fn server_pid(pipe: &OwnedHandle, expected_session: u32) -> io::Result<u32> {
-    let mut pid = 0;
-    let mut session = 0;
-    // SAFETY: query the same live client handle into two writable outputs.
+    // SAFETY: the pipe is borrowed and PeekNamedPipe receives no buffers.
     unsafe {
         // The PID metadata alone need not establish that the peer is still live.
         check(PeekNamedPipe(
@@ -296,13 +293,9 @@ fn server_pid(pipe: &OwnedHandle, expected_session: u32) -> io::Result<u32> {
             null_mut(),
             null_mut(),
         ))?;
-        check(GetNamedPipeServerProcessId(pipe.as_raw_handle(), &mut pid))?;
-        check(GetNamedPipeServerSessionId(
-            pipe.as_raw_handle(),
-            &mut session,
-        ))?;
     }
-    if pid == 0 || session != expected_session {
+    let (pid, session) = crate::pipe_server_identity::server_identity(pipe.as_raw_handle())?;
+    if session != expected_session {
         return Err(denied("unverified installed pipe server identity"));
     }
     Ok(pid)

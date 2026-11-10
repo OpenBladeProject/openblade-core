@@ -33,6 +33,7 @@ struct Bindings {
     held: Rc<Cell<bool>>,
     waited: Rc<Cell<bool>>,
     ready: Readiness,
+    probe_error: Option<io::ErrorKind>,
     stop_error: bool,
 }
 
@@ -48,6 +49,7 @@ impl Default for Bindings {
             held: Rc::default(),
             waited: Rc::default(),
             ready: complete(),
+            probe_error: None,
             stop_error: false,
         }
     }
@@ -69,6 +71,7 @@ impl SignInBindings for Bindings {
             held: Rc::clone(&self.held),
             waited: Rc::clone(&self.waited),
             ready: std::mem::take(&mut self.ready),
+            probe_error: self.probe_error,
             stop_error: self.stop_error,
         }))
     }
@@ -78,6 +81,7 @@ struct Lease {
     held: Rc<Cell<bool>>,
     waited: Rc<Cell<bool>>,
     ready: Readiness,
+    probe_error: Option<io::ErrorKind>,
     stop_error: bool,
 }
 
@@ -85,6 +89,14 @@ impl AgentLease for Lease {
     fn readiness(&self) -> Readiness {
         assert!(self.held.get());
         self.ready
+    }
+
+    fn probe_service_status(&self) -> io::Result<StatusObservation> {
+        assert!(self.held.get());
+        match self.probe_error {
+            Some(error) => Err(error.into()),
+            None => service_client::tests::fixture_observation(),
+        }
     }
 
     fn serve_until_stopped(&mut self) -> io::Result<()> {
@@ -230,11 +242,24 @@ fn any_missing_role_releases_the_claim_without_serving() {
     for change in cases {
         let mut bindings = Bindings::default();
         change(&mut bindings.ready);
+        bindings.probe_error = Some(io::ErrorKind::InvalidData);
         let result = start(token(), Some(&mut bindings));
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Unsupported);
         assert!(!bindings.held.get());
         assert!(!bindings.waited.get());
     }
+}
+
+#[test]
+fn status_probe_failure_releases_claim_without_serving() {
+    let mut bindings = Bindings {
+        probe_error: Some(io::ErrorKind::PermissionDenied),
+        ..Bindings::default()
+    };
+    let result = start(token(), Some(&mut bindings));
+    assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+    assert!(!bindings.held.get());
+    assert!(!bindings.waited.get());
 }
 
 #[test]

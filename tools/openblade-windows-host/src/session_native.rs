@@ -4,8 +4,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod service_client;
 mod token;
 
+use service_client::StatusObservation;
 use token::ProcessTokenEvidence;
 
 const SIGN_IN_IMAGE: &str = "OpenBlade.SessionAgent.exe";
@@ -17,8 +19,8 @@ pub(super) fn entry(mut args: impl Iterator<Item = OsString>) -> io::Result<()> 
 
     let image = std::env::current_exe()?;
     let working_directory = std::env::current_dir()?;
-    // This compile-only build has no trusted installed launch binding or
-    // production endpoint/stop adapter. Never use the private fixture here.
+    // The installed lease, independent Service authority and stop adapter
+    // are unwired. The private fixture cannot supply installed evidence.
     run(
         &image,
         &working_directory,
@@ -46,6 +48,9 @@ trait SignInBindings {
 
 trait AgentLease {
     fn readiness(&self) -> Readiness;
+    // The installed lease must use the status adapter with independent Service
+    // process authority and the Agent stop signal. Probe after the other gates.
+    fn probe_service_status(&self) -> io::Result<StatusObservation>;
     // Return Ok only after a confirmed stop and completion of owned work.
     // Drop must release the claim on all startup and stop exit paths.
     fn serve_until_stopped(&mut self) -> io::Result<()>;
@@ -58,7 +63,7 @@ struct Readiness {
     audio: bool,
     battery: bool,
     tray_events: bool,
-    service_client: bool,
+    service_client: bool, // All required Service operations, beyond GetStatus.
     stop: bool,
 }
 
@@ -130,6 +135,7 @@ fn run(
 
     let mut lease = bindings.claim(&context)?;
     lease.readiness().require_complete()?;
+    lease.probe_service_status()?.require_fresh()?;
     lease.serve_until_stopped()
 }
 

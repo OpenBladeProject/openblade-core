@@ -1,6 +1,13 @@
 //! Standalone installed sign-in entry. Fixture modules are outside this binary.
 
 #[cfg(windows)]
+mod pipe_server_identity;
+#[cfg(windows)]
+mod service_frame;
+#[cfg(windows)]
+#[allow(dead_code)] // Also contains producer helpers when both candidates are enabled.
+mod service_status;
+#[cfg(windows)]
 mod session_native;
 #[cfg(windows)]
 mod windows_token;
