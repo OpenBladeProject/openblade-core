@@ -278,6 +278,7 @@ impl TestStore {
         move_file(&self.path(source), &self.path(target), replace)
     }
 
+    #[cfg(test)]
     fn commit(&self, intent: [&[u8]; 3], at: impl FnMut(Boundary) -> io::Result<()>) -> Report {
         self.commit_from(intent, None, at)
     }

@@ -107,12 +107,12 @@ impl Fixture {
     }
 
     pub fn seed(&self) -> io::Result<u8> {
-        self.write(&self.documents.prior, false)
+        self.write(&self.documents.prior, [None; 3], false)
     }
 
     pub fn bootstrap(&self) -> io::Result<u8> {
         let intent = self.template.encode(ProfilePolicy::default())?;
-        self.materialize(&intent, [None; 3])
+        self.write(&intent, [None; 3], false)
     }
 
     pub fn migrate(&self) -> io::Result<u8> {
@@ -136,39 +136,32 @@ impl Fixture {
         }
         let policy = self.template.decode(legacy)?;
         let intent = self.template.encode(policy)?;
-        self.materialize(&intent, prior)
-    }
-
-    fn materialize(&self, intent: &[String; 3], expected: [Option<&[u8]>; 3]) -> io::Result<u8> {
-        let bytes = intent.each_ref().map(|doc| doc.as_bytes());
-        self.template.decode(bytes)?;
-        let report = self.store.commit_from(bytes, Some(expected), |_| Ok(()));
-        self.verify_write(intent, false, &report)
+        self.write(&intent, prior, false)
     }
 
     pub fn update(&self, interrupt: bool) -> io::Result<u8> {
-        self.write(&self.documents.committed, interrupt)
+        let prior = self
+            .documents
+            .prior
+            .each_ref()
+            .map(|doc| Some(doc.as_bytes()));
+        self.write(&self.documents.committed, prior, interrupt)
     }
 
-    fn write(&self, intent: &[String; 3], interrupt: bool) -> io::Result<u8> {
-        let report = self
-            .store
-            .commit(intent.each_ref().map(|doc| doc.as_bytes()), |at| {
-                if interrupt && matches!(at, Boundary::AfterReplace(0) | Boundary::BeforeRestore(0))
-                {
-                    return Err(io::Error::other("injected developer interruption"));
-                }
-                Ok(())
-            });
-        self.verify_write(intent, interrupt, &report)
-    }
-
-    fn verify_write(
+    fn write(
         &self,
         intent: &[String; 3],
+        expected: [Option<&[u8]>; 3],
         interrupt: bool,
-        report: &super::Report,
     ) -> io::Result<u8> {
+        let bytes = intent.each_ref().map(|doc| doc.as_bytes());
+        self.template.decode(bytes)?;
+        let report = self.store.commit_from(bytes, Some(expected), |at| {
+            if interrupt && matches!(at, Boundary::AfterReplace(0) | Boundary::BeforeRestore(0)) {
+                return Err(io::Error::other("injected developer interruption"));
+            }
+            Ok(())
+        });
         match &report.outcome {
             Outcome::Committed if !interrupt => {
                 // As in the managed writer, failure to remove a backup does
@@ -477,7 +470,11 @@ mod tests {
             .unwrap();
         let intent = fixture.template.encode(policy).unwrap();
         let error = fixture
-            .materialize(&intent, legacy.each_ref().map(|doc| Some(doc.as_bytes())))
+            .write(
+                &intent,
+                legacy.each_ref().map(|doc| Some(doc.as_bytes())),
+                false,
+            )
             .unwrap_err();
         assert!(error.to_string().contains("preimage changed"), "{error}");
         let (inspection, actual) = fixture.store.inspect_snapshot().unwrap();
@@ -488,6 +485,33 @@ mod tests {
             }
         );
         assert_eq!(actual, different.map(|doc| Some(doc.into_bytes())));
+        assert_eq!(std::fs::read_dir(&fixture.store.root).unwrap().count(), 4);
+    }
+
+    #[test]
+    fn durable_update_preserves_an_integrity_valid_but_damaged_profile() {
+        let fixture = Fixture::create().unwrap();
+        let damaged = fixture
+            .template
+            .documents(
+                CURRENT_SCHEMA,
+                80,
+                serde_json::json!({"cpuImmediateCutoffCelsius": null}),
+            )
+            .unwrap();
+        for (name, doc) in NAMES.into_iter().zip(&damaged) {
+            fixture.store.create_durable(name, doc.as_bytes()).unwrap();
+        }
+        let error = fixture.update(false).unwrap_err();
+        assert!(error.to_string().contains("preimage changed"), "{error}");
+        let (inspection, actual) = fixture.store.inspect_snapshot().unwrap();
+        assert_eq!(
+            inspection,
+            Inspection::CommittedEnvelope {
+                schema: CURRENT_SCHEMA
+            }
+        );
+        assert_eq!(actual, damaged.map(|doc| Some(doc.into_bytes())));
         assert_eq!(std::fs::read_dir(&fixture.store.root).unwrap().count(), 4);
     }
 
