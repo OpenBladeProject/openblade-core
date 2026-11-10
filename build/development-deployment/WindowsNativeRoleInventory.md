@@ -56,5 +56,31 @@ containers, then checks the expanded files and manifest against the published
 build. A product adapter still needs evidence that it reads the verified
 snapshot, preserves physical member multiplicity, and bounds extraction
 before materializing data. The pinned product authoring has no inventory entry.
-Phase 9l exercises the reader with an inert byte fixture and an injected
-adapter. The seam is compiled only by the offline deployment test project.
+Phase 9l exercises the reader in the offline deployment test project with an
+inert byte fixture and an injected adapter.
+
+## Phase 9p offline Burn fixture
+
+From a dedicated Windows checkout, use the cached Rust 1.99.1 toolchain,
+MSVC, .NET 10 SDK, and WiX SDK 7.0.0. Supply a full local commit ID and a
+new scratch directory.
+
+```powershell
+./tests/Build.Tests/WindowsNativeRoleBurnFixture/Test-Bundle.ps1 `
+    -SourceRevision af61a8c842429bc0564390dee39b466ee0da9023 `
+    -ScratchDirectory C:/tmp/openblade-native-role-burn-fixture
+```
+
+The test builds both AMD64 candidate targets offline from a Git archive of
+the selected commit. The encoder uses that commit ID, its four-part product
+file version, and the final executable bytes. WiX builds a scratch bundle
+using plain-text placeholders for its bootstrapper application and primary
+chain executable. The fixed `OpenBladeSetup` package owns the inventory and
+both role payloads under `WixAttachedContainer\payload`.
+
+The test holds a read-sharing guard on the bundle during WiX's path-based
+extraction and checks the manifest declarations, exact inventory bytes and
+both extracted role hashes. `proof.json` records the source, version, bundle
+hash, and extracted payload hashes. This build validation covers the authored
+fixture. A production adapter still needs same-handle access, physical member
+multiplicity checks, and bounded extraction.
