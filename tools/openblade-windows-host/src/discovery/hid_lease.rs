@@ -7,6 +7,7 @@ use std::{io, sync::atomic::AtomicBool};
 #[cfg(all(windows, feature = "hid-identity-compile-check", not(test)))]
 mod windows;
 
+mod owner;
 #[cfg(test)]
 mod tests;
 
@@ -34,6 +35,13 @@ struct Selection {
 }
 
 impl Selection {
+    fn open<S: LeaseSource>(source: &S, cancelled: &AtomicBool) -> io::Result<(Self, S::Handle)> {
+        let selection = Self::fresh(source, cancelled)?;
+        check_cancelled(cancelled)?;
+        let handle = source.open_metadata(&selection.hint.path)?;
+        Ok((selection, handle))
+    }
+
     fn fresh(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result<Self> {
         check_cancelled(cancelled)?;
         let inventory: Inventory<'static> = Inventory::load()?;
@@ -72,52 +80,46 @@ impl Selection {
     }
 }
 
-struct Lease<'a, S: LeaseSource> {
-    source: &'a S,
+struct LeaseIdentity {
     selection: Selection,
     descriptor: Descriptor,
-    handle: Option<S::Handle>,
 }
 
-impl<'a, S: LeaseSource> Lease<'a, S> {
-    fn open(source: &'a S, cancelled: &AtomicBool) -> io::Result<Self> {
-        let selection = Selection::fresh(source, cancelled)?;
+impl LeaseIdentity {
+    fn verify<S: LeaseSource>(
+        selection: Selection,
+        source: &S,
+        handle: &S::Handle,
+        cancelled: &AtomicBool,
+    ) -> io::Result<Self> {
         check_cancelled(cancelled)?;
-        let handle = source.open_metadata(&selection.hint.path)?;
-        check_cancelled(cancelled)?;
-        let descriptor = source.describe(&handle)?;
+        let descriptor = source.describe(handle)?;
         if !selection.matches(descriptor) {
             return Err(blocked("opened HID metadata contradicts the candidate"));
         }
-        let mut lease = Self {
-            source,
+        let identity = Self {
             selection,
             descriptor,
-            handle: Some(handle),
         };
-        // Scan again after opening, then recheck the same handle. An opening
-        // race must not return a lease based on the earlier enumeration.
-        lease.revalidate(cancelled)?;
-        Ok(lease)
+        // Recheck the same handle after a fresh scan to reject opening races.
+        identity.revalidate(source, handle, cancelled)?;
+        Ok(identity)
     }
 
-    fn revalidate(&mut self, cancelled: &AtomicBool) -> io::Result<()> {
-        // Keep the handle only on success. Any uncertainty retires it
-        // immediately, and this lease can never reopen a replacement.
-        let handle = self
-            .handle
-            .take()
-            .ok_or_else(|| blocked("HID metadata lease was revoked"))?;
-        let fresh = Selection::fresh(self.source, cancelled)?;
+    fn revalidate<S: LeaseSource>(
+        &self,
+        source: &S,
+        handle: &S::Handle,
+        cancelled: &AtomicBool,
+    ) -> io::Result<()> {
+        let fresh = Selection::fresh(source, cancelled)?;
         if !self.selection.same_candidate(&fresh) {
             return Err(blocked("HID candidate changed"));
         }
-        if self.source.describe(&handle)? != self.descriptor {
+        if source.describe(handle)? != self.descriptor {
             return Err(blocked("opened HID metadata changed"));
         }
-        check_cancelled(cancelled)?;
-        self.handle = Some(handle);
-        Ok(())
+        check_cancelled(cancelled)
     }
 }
 
