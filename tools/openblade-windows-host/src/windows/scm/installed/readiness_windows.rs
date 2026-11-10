@@ -5,7 +5,6 @@ use std::{
     mem::{offset_of, size_of, size_of_val},
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     ptr::{null, null_mut},
-    rc::Rc,
     task::{Context, Poll, ready},
 };
 
@@ -547,7 +546,9 @@ fn classify_logon(interactive: bool, remote: bool) -> Logon {
 }
 
 #[cfg(test)]
-pub(super) fn private_endpoint() -> (impl Fn() -> io::Result<NativeEndpoint>, u32) {
+pub(super) fn private_endpoint(
+    control_session: impl FnOnce(u32) -> ControlSession,
+) -> (impl Fn() -> io::Result<NativeEndpoint>, u32) {
     use windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 
     let path = format!(
@@ -557,12 +558,13 @@ pub(super) fn private_endpoint() -> (impl Fn() -> io::Result<NativeEndpoint>, u3
     let mut session = 0;
     // SAFETY: the PID is the current process and session is writable.
     check(unsafe { ProcessIdToSessionId(std::process::id(), &mut session) }).unwrap();
+    let control_session = control_session(session);
     let open = move || {
         NativeEndpoint::claim(
             &path,
             descriptor("D:P(A;;0x1f019f;;;OW)")?,
             session,
-            Rc::new(move || Ok(Some(session))),
+            Rc::clone(&control_session),
         )
     };
     (open, session)
@@ -658,7 +660,7 @@ mod tests {
     async fn private_pipe_checks_same_handle_and_retires_canceled_accept() {
         timeout(Duration::from_secs(5), async {
             let pid = std::process::id();
-            let (open, session) = private_endpoint();
+            let (open, session) = private_endpoint(|_| windows_control_session());
             let mut endpoint = open().unwrap();
             assert!(open().is_err(), "duplicate first instance was admitted");
             let (server, client) =
@@ -677,6 +679,13 @@ mod tests {
             let caller = server.caller_after_read().unwrap();
             assert_eq!(caller.pid, Some(pid));
             assert_eq!(caller.session, session);
+            let before = crate::console_session::observe();
+            let control = server.control_session().unwrap();
+            let after = crate::console_session::observe();
+            if before == after {
+                assert_eq!(control, before);
+            }
+            assert!(client.control_session().is_err());
 
             server.write_all(b"reply").await.unwrap();
             let mut reply = [0; 5];

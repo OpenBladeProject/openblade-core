@@ -30,6 +30,10 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 type Pending<'a, T> = Pin<Box<dyn Future<Output = io::Result<T>> + 'a>>;
 pub(super) type ControlSession = Rc<dyn Fn() -> io::Result<Option<u32>>>;
 
+fn windows_control_session() -> ControlSession {
+    Rc::new(|| Ok(crate::console_session::observe()))
+}
+
 // Each native connection retains its handle and supplies handle-bound
 // evidence; the listener never infers identity from the pipe name.
 trait Stream: AsyncRead + AsyncWrite + Unpin {
@@ -118,8 +122,9 @@ pub(super) async fn prepare_installed_endpoint(
     shutdown: oneshot::Receiver<()>,
     failed: oneshot::Sender<()>,
 ) -> io::Result<(Readiness, impl Future<Output = io::Result<()>> + use<>)> {
+    admission.verify_launch(launch)?;
     let source = status_source::native_status_source();
-    let endpoint = windows::NativeEndpoint::open(launch, admission.into_control_session())?;
+    let endpoint = windows::NativeEndpoint::open(launch, windows_control_session())?;
     prepare(
         launch.pid,
         shutdown,

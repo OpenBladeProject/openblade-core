@@ -6,7 +6,6 @@ use windows_sys::{
     Win32::{
         System::{
             Power::{GetSystemPowerStatus, POWERBROADCAST_SETTING, SYSTEM_POWER_STATUS},
-            RemoteDesktop::WTSGetActiveConsoleSessionId,
             Services::SERVICE_CONTROL_POWEREVENT,
             SystemServices::{GUID_ACDC_POWER_SOURCE, GUID_CONSOLE_DISPLAY_STATE},
         },
@@ -19,14 +18,12 @@ use super::{Callbacks, Observation, PowerSetting};
 
 pub(crate) fn observe() -> Observation {
     let mut status = SYSTEM_POWER_STATUS::default();
-    // SAFETY: status is writable. The console query takes no arguments.
-    let (success, console) = unsafe {
-        (
-            GetSystemPowerStatus(&mut status),
-            WTSGetActiveConsoleSessionId(),
-        )
-    };
-    Observation::from_windows((success != 0).then_some(status.ACLineStatus), console)
+    // SAFETY: status is writable for the duration of the call.
+    let success = unsafe { GetSystemPowerStatus(&mut status) };
+    Observation::from_windows(
+        (success != 0).then_some(status.ACLineStatus),
+        crate::console_session::observe(),
+    )
 }
 
 /// SAFETY: For PBT_POWERSETTINGCHANGE, a non-null event_data must be the live

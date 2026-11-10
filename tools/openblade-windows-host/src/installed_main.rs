@@ -1,5 +1,7 @@
 //! Standalone installed SCM entry. Fixture modules are outside this binary.
 
+#[cfg(windows)]
+mod console_session;
 #[cfg(all(windows, not(test)))]
 #[allow(dead_code)] // Only metadata observation is used by the installed candidate.
 mod discovery;

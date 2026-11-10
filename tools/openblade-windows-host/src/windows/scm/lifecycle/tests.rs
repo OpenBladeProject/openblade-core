@@ -18,8 +18,8 @@ async fn coalesces_storm_and_reads_fresh_console_and_power() {
     let mut stop = Some(stop);
     let now = Instant::now();
     let mut work = Vec::new();
-    let missing = Observation::from_windows(Some(255), u32::MAX);
-    let known = Observation::from_windows(Some(1), 19);
+    let missing = Observation::from_windows(Some(255), None);
+    let known = Observation::from_windows(Some(1), Some(19));
     let mut reads = [missing, known].into_iter();
 
     worker
@@ -97,7 +97,7 @@ async fn suspend_fences_observations_and_display_can_recover_a_missed_resume() {
             now,
         )
     };
-    let evidence = Observation::from_windows(None, u32::MAX);
+    let evidence = Observation::from_windows(None, None);
 
     worker
         .run(
@@ -193,7 +193,7 @@ async fn scm_stop_drops_pending_refresh_and_awaits_serial_retirement() {
 
     let service = worker.run(
         shutdown,
-        || Observation::from_windows(Some(0), 0),
+        || Observation::from_windows(Some(0), Some(0)),
         async |item| {
             work.borrow_mut().push(item);
             match item {
@@ -279,7 +279,7 @@ async fn refresh_failure_still_retires_and_preexisting_stop_skips_observation() 
                 shutdown,
                 || {
                     assert!(!stop_first);
-                    Observation::from_windows(None, u32::MAX)
+                    Observation::from_windows(None, None)
                 },
                 async |item| {
                     if item == Work::Stop {
@@ -300,8 +300,8 @@ async fn power_hint_replaces_known_evidence_with_unknown() {
     let (worker, callbacks) = Worker::new();
     let (stop, shutdown) = oneshot::channel();
     let mut stop = Some(stop);
-    let known = Observation::from_windows(Some(0), 23);
-    let missing = Observation::from_windows(None, u32::MAX);
+    let known = Observation::from_windows(Some(0), Some(23));
+    let missing = Observation::from_windows(None, None);
     let hint = || {
         callbacks.control(
             SERVICE_CONTROL_POWEREVENT,
@@ -310,7 +310,7 @@ async fn power_hint_replaces_known_evidence_with_unknown() {
             Instant::now(),
         )
     };
-    let stale = Observation::from_windows(Some(1), 23);
+    let stale = Observation::from_windows(Some(1), Some(23));
     let mut reads = [known, stale, missing].into_iter();
     let mut work = Vec::new();
 

@@ -12,11 +12,11 @@ async fn private_pipe_serves_and_retires_observed_v79_status() {
         DRAIN_TIMEOUT, Endpoint, GetStatus, StatusResponse, read_payload, serve, verify_peer,
         windows::private_endpoint, write_frame,
     };
-    use std::sync::atomic::AtomicUsize;
+    use std::{rc::Rc, sync::atomic::AtomicUsize};
     use tokio::time::timeout;
 
     timeout(Duration::from_secs(5), async {
-        let (open, _) = private_endpoint();
+        let (open, _) = private_endpoint(|session| Rc::new(move || Ok(Some(session))));
         let mut endpoint = open().unwrap();
         let scans = AtomicUsize::new(0);
         let mut source = ObservedStatus::new(move |cancel| {

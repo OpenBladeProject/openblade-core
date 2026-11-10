@@ -39,14 +39,14 @@ pub(super) struct Observation {
 }
 
 impl Observation {
-    fn from_windows(ac_line_status: Option<u8>, console_session: u32) -> Self {
+    fn from_windows(ac_line_status: Option<u8>, console_session: Option<u32>) -> Self {
         Self {
             power: match ac_line_status {
                 Some(0) => PowerSource::Battery,
                 Some(1) => PowerSource::ExternalUnknown,
                 _ => PowerSource::Unknown,
             },
-            console_session: (console_session != u32::MAX).then_some(console_session),
+            console_session,
         }
     }
 }

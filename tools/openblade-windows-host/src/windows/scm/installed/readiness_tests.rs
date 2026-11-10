@@ -70,6 +70,7 @@ struct TestStream {
     pid_reads: Cell<usize>,
     read: usize,
     caller: Caller,
+    control_session: ControlSession,
     fault: Fault,
 }
 
@@ -119,7 +120,11 @@ impl Stream for TestStream {
         if self.fault == Fault::SessionUnavailable {
             return Err(io::Error::other("session authority unavailable"));
         }
-        Ok(self.caller.control_session)
+        assert!(
+            self.read > 4,
+            "session authority was queried before reading"
+        );
+        (self.control_session)()
     }
 
     fn caller_after_read(&self) -> io::Result<Caller> {
@@ -132,11 +137,26 @@ impl Stream for TestStream {
 }
 
 fn test_stream(pipe: DuplexStream, caller: Caller, fault: Fault) -> Box<dyn Stream> {
+    test_stream_with_authority(
+        pipe,
+        caller,
+        fault,
+        Rc::new(move || Ok(caller.control_session)),
+    )
+}
+
+fn test_stream_with_authority(
+    pipe: DuplexStream,
+    caller: Caller,
+    fault: Fault,
+    control_session: ControlSession,
+) -> Box<dyn Stream> {
     Box::new(TestStream {
         pipe,
         pid_reads: Cell::new(0),
         read: 0,
         caller,
+        control_session,
         fault,
     })
 }
@@ -440,32 +460,62 @@ async fn readiness_serves_managed_setup_then_closes_partial_exchange_on_stop() {
         assert_eq!(input["operation"], "getStatus");
         assert_eq!(input["version"], 79);
 
-        for caller in [
-            Caller {
-                logon: Logon::Other,
-                ..SETUP
-            },
-            Caller {
-                logon: Logon::RemoteInteractive,
-                control_session: Some(SETUP.session),
-                ..SETUP
-            },
-            SETUP,
-            Caller {
-                control_session: Some(SETUP.session),
-                ..SETUP
-            },
+        let console = Rc::new(Cell::new(u32::MAX));
+        let reads = Rc::new(Cell::new(0));
+        let authority: ControlSession = {
+            let console = Rc::clone(&console);
+            let reads = Rc::clone(&reads);
+            Rc::new(move || {
+                reads.set(reads.get() + 1);
+                Ok(crate::console_session::from_windows(console.get()))
+            })
+        };
+        for (caller, console_id, expected_access) in [
+            (
+                Caller {
+                    logon: Logon::Other,
+                    ..SETUP
+                },
+                SETUP.session,
+                None,
+            ),
+            (
+                Caller {
+                    logon: Logon::RemoteInteractive,
+                    control_session: Some(SETUP.session),
+                    ..SETUP
+                },
+                SETUP.session,
+                Some(1),
+            ),
+            (SYSTEM, u32::MAX, Some(0)),
+            (SETUP, SETUP.session, Some(0)),
+            (SETUP, SETUP.session + 1, Some(1)),
+            (SETUP, u32::MAX, Some(1)),
+            (SETUP, SETUP.session, Some(0)),
         ] {
+            console.set(console_id);
+            let reads_before = reads.get();
             let (mut client, server) = duplex(128);
-            tx.send(test_stream(server, caller, Fault::None)).unwrap();
+            tx.send(test_stream_with_authority(
+                server,
+                caller,
+                Fault::None,
+                Rc::clone(&authority),
+            ))
+            .unwrap();
             write_frame(&mut client, input).await.unwrap();
             let response = read_payload(&mut client).await;
-            if caller.logon == Logon::Other {
+            assert_eq!(
+                reads.get() - reads_before,
+                usize::from(caller.logon == Logon::Interactive)
+            );
+            let Some(expected_access) = expected_access else {
                 assert_eq!(response.unwrap_err().kind(), io::ErrorKind::UnexpectedEof);
                 continue;
-            }
+            };
             let mut expected_status = managed_status();
-            expected_status["controlAccess"] = json!(caller.access().unwrap());
+            expected_status["controlAccess"] = json!(expected_access);
             assert_eq!(
                 serde_json::from_slice::<Value>(&response.unwrap()).unwrap(),
                 json!({
@@ -495,7 +545,7 @@ async fn readiness_serves_managed_setup_then_closes_partial_exchange_on_stop() {
         *events.borrow(),
         [
             "starting", "connect", "snapshot", "running", "snapshot", "snapshot", "snapshot",
-            "stopping", "close", "drain", "stopped"
+            "snapshot", "snapshot", "snapshot", "stopping", "close", "drain", "stopped"
         ]
     );
 }

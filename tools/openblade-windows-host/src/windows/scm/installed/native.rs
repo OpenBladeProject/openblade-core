@@ -5,7 +5,7 @@ use windows_sys::Win32::System::{
     Threading::GetCurrentProcessId,
 };
 
-use super::readiness::{ControlSession, prepare_installed_endpoint};
+use super::readiness::prepare_installed_endpoint;
 use super::{LaunchIdentity, NAME, ProcessEvidence, denied, dispatch_candidate, io, run_candidate};
 use crate::scm_host::{CONTROLS, dispatch_named, registered_service, report};
 use crate::scm_identity as identity;
@@ -60,13 +60,17 @@ fn process_evidence() -> io::Result<ProcessEvidence> {
 }
 
 pub(super) struct AdmittedRuntime {
-    // The admission provider must bind this authority to the admitted launch.
-    control_session: ControlSession,
+    launch_pid: u32,
 }
 
 impl AdmittedRuntime {
-    pub(super) fn into_control_session(self) -> ControlSession {
-        self.control_session
+    pub(super) fn verify_launch(self, launch: &LaunchIdentity) -> io::Result<()> {
+        if self.launch_pid != launch.pid {
+            return Err(denied(
+                "installed runtime admission belongs to another launch",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -74,8 +78,7 @@ fn admit_candidate(_: &LaunchIdentity) -> io::Result<AdmittedRuntime> {
     // service_image::ProtectedServiceImage needs an authenticated expected
     // build digest. This entry has no provider for one. Startup also needs
     // independent proof that the retained staged generation is executing.
-    // A trusted control-session provider is also required for caller access.
     Err(denied(
-        "installed build, loaded generation or control-session evidence is unavailable",
+        "installed build or loaded generation evidence is unavailable",
     ))
 }
