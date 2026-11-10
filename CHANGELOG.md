@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Suppress the plugged-in battery discharge warning at the active charge limit. ([#935](https://github.com/OpenBladeProject/openblade-core/pull/935))
+
 ## [0.58.2-nightly.110] - 2026-11-09
 
 ### Fixed
