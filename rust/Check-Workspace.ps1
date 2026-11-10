@@ -42,6 +42,7 @@ try {
         'openblade-domain' = @('openblade-types')
         'openblade-ffi' = @('openblade-domain', 'openblade-protocol', 'openblade-types')
         'openblade-status-cli' = @()
+        'openblade-platform-windows' = @()
     }
     # Fixture readers admit parsing only as dev dependencies. The separate CLI owns
     # its reviewed std/runtime roots; none may enter the four inner libraries.
@@ -64,11 +65,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Cargo metadata failed (run cargo fetch --locked first).' }
     $metadata = ($metadataJson -join "`n") | ConvertFrom-Json
     if (@($metadata.workspace_members).Count -ne $expectedDependencies.Count) {
-        throw 'Only the five reviewed workspace crates are admitted.'
+        throw 'Only the six reviewed workspace crates are admitted.'
     }
     $localPackages = @($metadata.packages | Where-Object { $null -eq $_.source })
     if ($localPackages.Count -ne $expectedDependencies.Count) {
-        throw 'Only the five reviewed local packages are admitted.'
+        throw 'Only the six reviewed local packages are admitted.'
     }
     foreach ($package in $metadata.packages) {
         if ($null -ne $package.source) {
@@ -87,10 +88,15 @@ try {
         }
         $isCli = $package.name -ceq 'openblade-status-cli'
         $isFfi = $package.name -ceq 'openblade-ffi'
-        if ($isFfi) {
-            # Raw pointer conversion is confined to this reviewed ABI adapter.
+        $isWindowsPlatform = $package.name -ceq 'openblade-platform-windows'
+        if ($isFfi -or $isWindowsPlatform) {
+            # Native interop is isolated in the reviewed boundary crates.
             Assert-ManifestSetting $package.manifest_path 'lints.rust' `
                 '(?m)^\s*unsafe_op_in_unsafe_fn\s*=\s*["'']deny["'']\s*(?:#[^\r\n]*)?$'
+            if ($isWindowsPlatform) {
+                Assert-ManifestSetting $package.manifest_path 'lints.rust' `
+                    '(?m)^\s*unsafe_code\s*=\s*["'']deny["'']\s*(?:#[^\r\n]*)?$'
+            }
         } else {
             Assert-ManifestSetting $package.manifest_path 'lints' `
                 '(?m)^\s*workspace\s*=\s*true\s*(?:#[^\r\n]*)?$'
@@ -115,7 +121,7 @@ try {
                 (@($libraries[0].kind | Sort-Object) -join ',') -cne $expectedOutputs) {
                 throw "Reviewed library outputs are required: $($package.name) ($expectedOutputs)"
             }
-            if (-not $isFfi) {
+            if (-not ($isFfi -or $isWindowsPlatform)) {
                 $source = Get-Content -LiteralPath $libraries[0].src_path -Raw
                 if ($source -notmatch '(?m)^\s*#!\[no_std\]\s*$') {
                     throw "The portable crate must retain no_std: $($package.name)"
@@ -125,7 +131,18 @@ try {
         $normal = @()
         $dev = @()
         $cli = @()
+        $windowsSdkCount = 0
         foreach ($dependency in $package.dependencies) {
+            if ($isWindowsPlatform -and $dependency.name -ceq 'windows-sys' -and
+                $dependency.target -ceq 'cfg(windows)' -and $null -eq $dependency.kind -and
+                $null -eq $dependency.rename -and -not $dependency.optional -and
+                $null -eq $dependency.PSObject.Properties['path'] -and
+                $dependency.source -ceq 'registry+https://github.com/rust-lang/crates.io-index' -and
+                $dependency.req -ceq '=0.61.2' -and -not $dependency.uses_default_features -and
+                (@($dependency.features | Sort-Object) -join ',') -ceq 'Win32_Devices_Display,Win32_Foundation,Win32_Graphics_Gdi') {
+                $windowsSdkCount++
+                continue
+            }
             if ($dependency.optional -or $null -ne $dependency.target -or $null -ne $dependency.rename) {
                 throw "Conditional, optional or renamed dependencies are not admitted: $($package.name)"
             }
@@ -160,6 +177,9 @@ try {
                 throw "Unreviewed dependency kind, source or version: $($package.name)/$($dependency.name)"
             }
         }
+        if ($isWindowsPlatform -and $windowsSdkCount -ne 1) {
+            throw 'The Windows adapter requires its reviewed Windows SDK dependency.'
+        }
         $expected = @($expectedDependencies[$package.name] | Sort-Object) -join ','
         if ((@($normal | Sort-Object) -join ',') -cne $expected) {
             throw "Production dependency boundary changed for $($package.name): $($normal -join ',')"
@@ -193,7 +213,7 @@ try {
             throw "Reviewed integration tests are missing: $($package.name)"
         }
     }
-    Write-Output 'Workspace boundaries passed: four local libraries with inward production edges, isolated status CLI, reviewed parsing/runtime roots, compiler policies and MSRV.'
+    Write-Output 'Workspace boundaries passed: four local libraries with inward production edges, isolated status CLI and Windows adapter, reviewed parsing/runtime roots, compiler policies and MSRV.'
 }
 finally {
     Pop-Location
