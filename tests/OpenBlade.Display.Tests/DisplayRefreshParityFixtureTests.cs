@@ -63,11 +63,12 @@ public sealed class DisplayRefreshParityFixtureTests
         int[] driverRates = ParseInts(fields[2]);
         int currentModeHertz = ParseInt(fields[3]);
         int virtualHertz = fields[4] == "-" ? currentModeHertz : ParseInt(fields[4]);
-        int activeHertz = ParseInt(fields[5]);
+        int[] activeTiming = ParseInts(fields[5]);
         int width = ParseInt(fields[6]);
         int height = ParseInt(fields[7]);
         IReadOnlyList<EdidDetailedTiming> timings = ParseTimings(fields[8]);
-        DisplayConfigTargetMode activeMode = TargetMode(activeHertz, width, height);
+        DisplayConfigTargetMode activeMode = TargetMode(
+            activeTiming[0], width, height, activeTiming.Length == 2 ? checked((uint)activeTiming[1]) : 1);
         bool supportsVirtualMode = fields[10] == "1";
         DisplayConfigTargetMode? preferred = supportsVirtualMode
             ? ParsePreferredMode(fields[9], width, height)
@@ -130,6 +131,12 @@ public sealed class DisplayRefreshParityFixtureTests
         uint totalHeight = checked((uint)ParseInt(fields[6]));
         byte[] edid = CreateEdidWithType7Timing(
             width, height, pixelRate, totalWidth, totalHeight, fields[7] == "1", fields[8] == "1");
+
+        if (fields[9] == "overflow")
+        {
+            Assert.Throws<OverflowException>(() => EdidDetailedTimingParser.Parse(edid));
+            return;
+        }
 
         IReadOnlyList<EdidDetailedTiming> timings = EdidDetailedTimingParser.Parse(edid);
         if (fields[9] == "-")
@@ -199,10 +206,11 @@ public sealed class DisplayRefreshParityFixtureTests
         }
 
         int[] values = ParseInts(field);
-        Assert.Equal(3, values.Length);
+        Assert.InRange(values.Length, 3, 4);
+        int scanline = values.Length == 4 ? values[3] : 1;
         // GetPreferredTargetMode admits only positive, progressive timings at the active size.
-        return values[0] == activeWidth && values[1] == activeHeight && values[2] > 0
-            ? TargetMode(values[2], values[0], values[1])
+        return values[0] == activeWidth && values[1] == activeHeight && values[2] > 0 && scanline is 0 or 1
+            ? TargetMode(values[2], values[0], values[1], checked((uint)scanline))
             : null;
     }
 
@@ -223,14 +231,14 @@ public sealed class DisplayRefreshParityFixtureTests
         return new EdidVerticalRange(bounds[0], bounds[1]);
     }
 
-    private static DisplayConfigTargetMode TargetMode(int hertz, int width, int height) => new()
+    private static DisplayConfigTargetMode TargetMode(int hertz, int width, int height, uint scanlineOrdering) => new()
     {
         TargetVideoSignalInfo = new DisplayConfigVideoSignalInfo
         {
             VSyncFreq = DisplayConfigRational.FromHertz(checked((uint)hertz)),
             ActiveSize = new DisplayConfig2DRegion { Width = checked((uint)width), Height = checked((uint)height) },
             TotalSize = new DisplayConfig2DRegion { Width = checked((uint)width), Height = checked((uint)height) },
-            ScanLineOrdering = 1,
+            ScanLineOrdering = scanlineOrdering,
         },
     };
 

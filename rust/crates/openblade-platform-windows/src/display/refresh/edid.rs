@@ -1,7 +1,7 @@
 //! The EDID formats used by the managed refresh read: DisplayID Type 7
 //! detailed timings and the base-block vertical range descriptor.
 
-use super::VerticalRange;
+use super::{DisplayReadError, VerticalRange};
 
 const BLOCK_LENGTH: usize = 128;
 const HEADER: [u8; 8] = [0, 255, 255, 255, 255, 255, 255, 0];
@@ -11,9 +11,9 @@ pub(super) struct DetailedTiming {
     pub(super) width: u32,
     pub(super) height: u32,
     pub(super) hertz: i32,
-    pixel_rate: u64,
-    total_width: u32,
-    total_height: u32,
+    pub(super) pixel_rate: u64,
+    pub(super) total_width: u32,
+    pub(super) total_height: u32,
 }
 
 impl DetailedTiming {
@@ -60,14 +60,14 @@ pub(super) fn vertical_range(edid: &[u8]) -> Option<VerticalRange> {
         })
 }
 
-pub(super) fn detailed_timings(edid: &[u8]) -> Vec<DetailedTiming> {
+pub(super) fn detailed_timings(edid: &[u8]) -> Result<Vec<DetailedTiming>, DisplayReadError> {
     let mut blocks = edid
         .as_chunks::<BLOCK_LENGTH>()
         .0
         .iter()
         .map(<[_; BLOCK_LENGTH]>::as_slice);
     let Some(base) = blocks.next().filter(|block| checksum(block)) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut timings = Vec::new();
     for extension in blocks.take(usize::from(base[126])) {
@@ -82,17 +82,19 @@ pub(super) fn detailed_timings(edid: &[u8]) -> Vec<DetailedTiming> {
             }
             let (data, next) = remaining.split_at(length);
             if *tag == 0x22 {
-                timings.extend(data.as_chunks::<20>().0.iter().filter_map(parse_timing));
+                for bytes in data.as_chunks::<20>().0 {
+                    timings.extend(parse_timing(bytes)?);
+                }
             }
             payload = next;
         }
     }
-    timings
+    Ok(timings)
 }
 
-fn parse_timing(bytes: &[u8; 20]) -> Option<DetailedTiming> {
+fn parse_timing(bytes: &[u8; 20]) -> Result<Option<DetailedTiming>, DisplayReadError> {
     if bytes[3] & 0x10 != 0 {
-        return None;
+        return Ok(None);
     }
     let word = |offset| u32::from(u16::from_le_bytes([bytes[offset], bytes[offset + 1]])) + 1;
     let pixel_rate = (u64::from(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0])) + 1) * 1000;
@@ -101,13 +103,17 @@ fn parse_timing(bytes: &[u8; 20]) -> Option<DetailedTiming> {
     let total_width = width + word(6);
     let total_height = height + word(14);
     let total_pixels = u64::from(total_width) * u64::from(total_height);
-    let hertz = (pixel_rate as f64 / total_pixels as f64).round() as i32;
-    (20..=1000).contains(&hertz).then_some(DetailedTiming {
+    let hertz = (pixel_rate as f64 / total_pixels as f64).round();
+    if hertz > f64::from(i32::MAX) {
+        return Err(DisplayReadError::RefreshRateOverflow);
+    }
+    let hertz = hertz as i32;
+    Ok((20..=1000).contains(&hertz).then_some(DetailedTiming {
         width,
         height,
         hertz,
         pixel_rate,
         total_width,
         total_height,
-    })
+    }))
 }

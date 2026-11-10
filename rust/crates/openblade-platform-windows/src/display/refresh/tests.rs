@@ -122,21 +122,22 @@ fn type7_edid(count: usize) -> Vec<u8> {
 }
 
 fn timings(spec: &str) -> Vec<edid::DetailedTiming> {
-    let rows: Vec<_> = entries(spec).collect();
-    let mut bytes = type7_edid(rows.len());
-    for (row, slot) in rows
-        .into_iter()
-        .zip(bytes[136..].as_chunks_mut::<20>().0.iter_mut())
-    {
-        let fields: Vec<u64> = numbers(row).collect();
-        let [width, height, _, pixel_rate, total_width, total_height] = fields[..] else {
-            panic!("malformed timing fixture: {row}");
-        };
-        write_timing(slot, width, height, pixel_rate, total_width, total_height);
-    }
-    set_checksum(&mut bytes[..128]);
-    set_checksum(&mut bytes[128..]);
-    edid::detailed_timings(&bytes)
+    entries(spec)
+        .map(|row| {
+            let fields: Vec<_> = row.split(',').collect();
+            let [width, height, hertz, pixel_rate, total_width, total_height] = fields[..] else {
+                panic!("malformed timing fixture: {row}");
+            };
+            edid::DetailedTiming {
+                width: width.parse().unwrap(),
+                height: height.parse().unwrap(),
+                hertz: hertz.parse().unwrap(),
+                pixel_rate: pixel_rate.parse().unwrap(),
+                total_width: total_width.parse().unwrap(),
+                total_height: total_height.parse().unwrap(),
+            }
+        })
+        .collect()
 }
 
 #[test]
@@ -172,21 +173,23 @@ fn managed_refresh_fixture_matches_rust() {
                     hertz: current.parse().unwrap(),
                     interlaced: false,
                 };
-                let display = display(
+                let (active_hertz, scanline) = active.split_once(',').unwrap_or((active, "1"));
+                let mut display = display(
                     *virtual_mode == "1",
                     *boost == "1",
                     if *desktop == "-" { current } else { desktop },
-                    active,
+                    active_hertz,
                     width,
                     height,
                 );
+                display.active_signal.scanline_ordering = scanline.parse().unwrap();
                 let preferred = entries(preferred).next().and_then(|timing| {
                     let mut fields = timing.split(',');
                     let timing = SignalTiming {
                         width: fields.next().unwrap().parse().unwrap(),
                         height: fields.next().unwrap().parse().unwrap(),
-                        scanline_ordering: 1,
                         rate: parse_rate(fields.next().unwrap()),
+                        scanline_ordering: fields.next().unwrap_or("1").parse().unwrap(),
                     };
                     display
                         .supports_virtual_mode
@@ -291,15 +294,25 @@ fn managed_refresh_fixture_matches_rust() {
                 if *valid_checksum == "0" {
                     bytes[255] ^= 1;
                 }
-                let actual: Vec<_> = edid::detailed_timings(&bytes)
-                    .into_iter()
-                    .map(|timing| timing.hertz)
-                    .collect();
-                assert_eq!(
-                    actual,
-                    numbers::<i32>(expected).collect::<Vec<_>>(),
-                    "{case}"
-                );
+                let actual = edid::detailed_timings(&bytes);
+                if *expected == "overflow" {
+                    assert_eq!(actual, Err(DisplayReadError::RefreshRateOverflow), "{case}");
+                } else if *expected == "-" {
+                    assert_eq!(actual.unwrap(), [], "{case}");
+                } else {
+                    assert_eq!(
+                        actual.unwrap(),
+                        [edid::DetailedTiming {
+                            width: width.parse().unwrap(),
+                            height: height.parse().unwrap(),
+                            hertz: expected.parse().unwrap(),
+                            pixel_rate: pixel_rate.parse().unwrap(),
+                            total_width: total_width.parse().unwrap(),
+                            total_height: total_height.parse().unwrap(),
+                        }],
+                        "{case}"
+                    );
+                }
             }
             _ => panic!("unknown fixture row: {row}"),
         }

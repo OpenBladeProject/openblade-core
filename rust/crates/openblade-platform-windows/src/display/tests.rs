@@ -56,6 +56,8 @@ struct Script {
     target_status: u32,
     reads: (usize, usize),
     current_mode: Option<DriverMode>,
+    current_recheck: Option<DriverMode>,
+    current_reads: usize,
     indexed_modes: VecDeque<DriverMode>,
     indexed_reads: u32,
     unbounded_modes: bool,
@@ -75,6 +77,8 @@ impl Script {
             target_status: ERROR_SUCCESS,
             reads: (0, 0),
             current_mode: None,
+            current_recheck: None,
+            current_reads: 0,
             indexed_modes: VecDeque::new(),
             indexed_reads: 0,
             unbounded_modes: false,
@@ -473,8 +477,15 @@ impl RefreshApi for Script {
     fn mode(&mut self, source: &[u16], index: u32) -> Option<DriverMode> {
         assert_eq!(source, &[b'S'.into(), 0]);
         if index == ENUM_CURRENT_SETTINGS {
-            assert_eq!(self.indexed_reads, 0);
-            return self.current_mode.take();
+            self.current_reads += 1;
+            return match self.current_reads {
+                1 => {
+                    assert_eq!(self.indexed_reads, 0);
+                    self.current_mode
+                }
+                2 => self.current_recheck.or(self.current_mode),
+                _ => panic!("unexpected current-mode read"),
+            };
         }
 
         assert_eq!(index, self.indexed_reads);
@@ -525,13 +536,16 @@ fn refresh_script(flags: u32) -> Script {
             ..Default::default()
         },
     };
-    let mut script = Script::new([Frame::success(vec![path], vec![mode])]);
+    let mut script = Script::new([
+        Frame::success(vec![path], vec![mode]),
+        Frame::success(vec![path], vec![mode]),
+    ]);
     script.current_mode = Some(mode_at(60));
     script
 }
 
 #[test]
-fn refresh_reads_one_topology_and_uses_the_selected_source_and_target() {
+fn refresh_rechecks_the_selected_source_and_target() {
     for boost in [0, PATH_BOOST_REFRESH_RATE] {
         let mut api = refresh_script(DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE | boost);
         api.preferred = Some(Ok(SignalTiming {
@@ -567,8 +581,9 @@ fn refresh_reads_one_topology_and_uses_the_selected_source_and_target() {
         else {
             panic!("expected refresh snapshot");
         };
-        assert_eq!(api.reads, (1, 1));
+        assert_eq!(api.reads, (2, 2));
         assert!(api.frames.is_empty());
+        assert_eq!(api.current_reads, 2);
         assert_eq!(api.indexed_reads, 9);
         assert_eq!(api.preferred_calls, 1);
         assert!(api.edid.is_none());
@@ -576,7 +591,10 @@ fn refresh_reads_one_topology_and_uses_the_selected_source_and_target() {
             (snapshot.width, snapshot.height, snapshot.current_mode_hertz),
             (2560, 1600, 60)
         );
-        assert_eq!(snapshot.edid_range, Err(ERROR_ACCESS_DENIED));
+        assert_eq!(
+            snapshot.edid_range,
+            TimingEvidence::NativeFailure(ERROR_ACCESS_DENIED)
+        );
         assert_eq!(snapshot.display.desktop_rate.unwrap().numerator, 60);
         assert_eq!(snapshot.display.physical_rate.unwrap().numerator, 240_000);
         assert_eq!(snapshot.display.boost_refresh_rate, boost != 0);
@@ -617,13 +635,21 @@ fn refresh_retains_native_failures_and_bounds_driver_mode_enumeration() {
         Err(DisplayReadError::InvalidCurrentMode)
     );
 
+    let mut exact = refresh_script(0);
+    exact.indexed_modes = vec![mode_at(60); 4096].into();
+    assert!(matches!(
+        refresh::read_refresh_with(&mut exact),
+        Ok(InternalDisplayRefresh::Single(_))
+    ));
+    assert_eq!(exact.indexed_reads, 4097);
+
     let mut unbounded = refresh_script(0);
     unbounded.unbounded_modes = true;
     assert_eq!(
         refresh::read_refresh_with(&mut unbounded),
         Err(DisplayReadError::DriverModeLimit)
     );
-    assert_eq!(unbounded.indexed_reads, 4096);
+    assert_eq!(unbounded.indexed_reads, 4097);
 
     let mut denied = Script::new([Frame::status(ERROR_ACCESS_DENIED)]);
     assert_eq!(
@@ -652,7 +678,10 @@ fn refresh_does_not_read_modes_for_ambiguous_topology_or_guess_options() {
     else {
         panic!("expected refresh snapshot");
     };
-    assert_eq!(snapshot.preferred_rate, Err(ERROR_NOT_SUPPORTED));
+    assert_eq!(
+        snapshot.preferred_rate,
+        TimingEvidence::NativeFailure(ERROR_NOT_SUPPORTED)
+    );
     assert!(snapshot.refresh_options.is_empty());
     assert!(snapshot.current_refresh_key.is_none());
 
@@ -663,6 +692,8 @@ fn refresh_does_not_read_modes_for_ambiguous_topology_or_guess_options() {
         panic!("expected refresh snapshot");
     };
     assert_eq!(legacy.preferred_calls, 0);
+    assert_eq!(snapshot.preferred_rate, TimingEvidence::NotQueried);
+    assert_eq!(snapshot.edid_range, TimingEvidence::NotQueried);
     assert!(
         snapshot
             .refresh_options
@@ -670,4 +701,49 @@ fn refresh_does_not_read_modes_for_ambiguous_topology_or_guess_options() {
             .all(|option| !option.is_dynamic)
     );
     assert!(snapshot.current_refresh_key.is_none());
+}
+
+#[test]
+fn refresh_discards_evidence_if_gdi_or_ccd_changes_during_reads() {
+    let mut gdi = refresh_script(0);
+    gdi.current_recheck = Some(DriverMode {
+        width: 1920,
+        ..mode_at(60)
+    });
+    assert_eq!(
+        refresh::read_refresh_with(&mut gdi),
+        Err(DisplayReadError::TopologyChanging)
+    );
+
+    let mut ccd = refresh_script(0);
+    ccd.frames.back_mut().unwrap().paths[0]
+        .targetInfo
+        .refreshRate
+        .Numerator = 120;
+    assert_eq!(
+        refresh::read_refresh_with(&mut ccd),
+        Err(DisplayReadError::TopologyChanging)
+    );
+}
+
+#[test]
+fn refresh_distinguishes_missing_lookup_from_an_empty_timing_read() {
+    let mut api = refresh_script(DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE);
+    api.monitor_path = Some(r"\\?\DISPLAY#PANEL#INSTANCE#{fixture}");
+    api.edid = Some(Ok(Vec::new()));
+    api.preferred = Some(Ok(SignalTiming {
+        width: 1920,
+        height: 1080,
+        scanline_ordering: 1,
+        rate: Some(RefreshRate {
+            numerator: 240,
+            denominator: 1,
+        }),
+    }));
+    let InternalDisplayRefresh::Single(snapshot) = refresh::read_refresh_with(&mut api).unwrap()
+    else {
+        panic!("expected refresh snapshot");
+    };
+    assert_eq!(snapshot.edid_range, TimingEvidence::Unavailable);
+    assert_eq!(snapshot.preferred_rate, TimingEvidence::Unavailable);
 }

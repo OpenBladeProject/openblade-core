@@ -17,7 +17,9 @@ use windows_sys::Win32::{
 
 mod native;
 mod refresh;
-pub use refresh::{InternalDisplayRefresh, RefreshOption, RefreshSnapshot, VerticalRange};
+pub use refresh::{
+    InternalDisplayRefresh, RefreshOption, RefreshSnapshot, TimingEvidence, VerticalRange,
+};
 #[cfg(test)]
 mod tests;
 
@@ -114,6 +116,7 @@ pub enum DisplayReadError {
     CurrentModeUnavailable,
     InvalidCurrentMode,
     DriverModeLimit,
+    RefreshRateOverflow,
 }
 
 /// Read the active topology and resolve the single internal path using the
@@ -125,7 +128,7 @@ pub fn read_internal_display() -> Result<InternalDisplayTopology, DisplayReadErr
 
 /// Read the refresh portion of v2 QueryDisplay on the current-user desktop.
 /// The topology and its target mode come from one CCD query. GDI and
-/// optional timing evidence are separate, subsequent Windows reads.
+/// optional timing evidence are separate Windows reads bracketed by CCD observations.
 pub fn read_internal_display_refresh() -> Result<InternalDisplayRefresh, DisplayReadError> {
     refresh::read_refresh_with(&mut native::WindowsDisplay)
 }

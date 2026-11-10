@@ -49,9 +49,28 @@ pub struct RefreshSnapshot {
     pub current_refresh_key: Option<String>,
     pub message: Option<&'static str>,
     pub refresh_options: Vec<RefreshOption>,
-    /// A failed optional read retains its Windows status.
-    pub preferred_rate: Result<Option<RefreshRate>, u32>,
-    pub edid_range: Result<Option<VerticalRange>, u32>,
+    pub preferred_rate: TimingEvidence<RefreshRate>,
+    pub edid_range: TimingEvidence<VerticalRange>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TimingEvidence<T> {
+    /// The path did not support this query or lacked an admitted lookup key.
+    NotQueried,
+    /// The read succeeded without usable evidence of this kind.
+    Unavailable,
+    Observed(T),
+    NativeFailure(u32),
+}
+
+impl<T> TimingEvidence<T> {
+    fn from_read<U>(read: Option<Result<U, u32>>, value: Option<T>) -> Self {
+        match read {
+            None => Self::NotQueried,
+            Some(Err(status)) => Self::NativeFailure(status),
+            Some(Ok(_)) => value.map_or(Self::Unavailable, Self::Observed),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -133,23 +152,41 @@ pub(super) fn read_refresh_with(
     }
     let driver_rates = driver_rates(api, &source, current)?;
     let active = display.active_signal;
-    let preferred = if display.supports_virtual_mode {
-        api.preferred_mode(display.target)
-            .map(|timing| accept_preferred(active, timing))
-    } else {
-        Ok(None)
-    };
+    let preferred = display
+        .supports_virtual_mode
+        .then(|| api.preferred_mode(display.target));
+    let preferred_timing = preferred
+        .and_then(Result::ok)
+        .and_then(|timing| accept_preferred(active, timing));
+    let preferred_rate = preferred_timing.and_then(|timing| timing.rate);
     let edid = display
         .monitor_name
         .as_ref()
         .ok()
         .and_then(|name| name.device_path.as_deref())
         .and_then(monitor_subkey)
-        .map_or_else(|| Ok(Vec::new()), |subkey| api.edid(&subkey));
-    let bytes = edid.as_deref().unwrap_or_default();
+        .map(|subkey| api.edid(&subkey));
+    // The Windows reads are separate. Reject evidence gathered across an
+    // observed topology change. This does not make the OS calls atomic.
+    if api.mode(&source, ENUM_CURRENT_SETTINGS) != Some(current)
+        || !matches!(read_with(api)?, InternalDisplayTopology::Single(next) if next == display)
+    {
+        return Err(DisplayReadError::TopologyChanging);
+    }
+    let bytes = edid
+        .as_ref()
+        .and_then(|read| read.as_deref().ok())
+        .unwrap_or_default();
     let range = edid::vertical_range(bytes);
-    let timings = edid::detailed_timings(bytes);
-    let preferred_timing = preferred.ok().flatten();
+    let timings = edid::detailed_timings(bytes)?;
+    for rate in [display.desktop_rate, display.physical_rate, preferred_rate]
+        .into_iter()
+        .flatten()
+    {
+        if normalize(Some(rate)).is_none() {
+            return Err(DisplayReadError::RefreshRateOverflow);
+        }
+    }
     let refresh_options = build_options(
         &display,
         current,
@@ -170,8 +207,8 @@ pub(super) fn read_refresh_with(
             .then_some("The current refresh-rate mode was not reported as available by Windows."),
         current_refresh_key,
         refresh_options,
-        preferred_rate: preferred.map(|timing| timing.and_then(|timing| timing.rate)),
-        edid_range: edid.map(|_| range),
+        preferred_rate: TimingEvidence::from_read(preferred, preferred_rate),
+        edid_range: TimingEvidence::from_read(edid, range),
     })))
 }
 
@@ -193,7 +230,11 @@ fn driver_rates(
             rates.insert(mode.hertz as i32);
         }
     }
-    Err(DisplayReadError::DriverModeLimit)
+    if api.mode(source, MAX_DRIVER_MODES).is_none() {
+        Ok(rates)
+    } else {
+        Err(DisplayReadError::DriverModeLimit)
+    }
 }
 
 fn build_options(
