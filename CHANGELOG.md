@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.58.5-nightly.111] - 2026-11-10
+
 ### Fixed
 
 - Fix internal display brightness errors when Windows omits the change status. ([#942](https://github.com/OSSBlade/openblade-core/pull/942))
@@ -2386,7 +2388,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.58.4...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.58.5-nightly.111...HEAD
+[0.58.5-nightly.111]: https://github.com/OSSBlade/openblade-core/compare/v0.58.4...v0.58.5-nightly.111
 [0.58.4]: https://github.com/OSSBlade/openblade-core/compare/v0.58.2-nightly.110...v0.58.4
 [0.58.2-nightly.110]: https://github.com/OSSBlade/openblade-core/compare/v0.58.1...v0.58.2-nightly.110
 [0.58.1]: https://github.com/OSSBlade/openblade-core/compare/v0.57.1-nightly.109...v0.58.1
