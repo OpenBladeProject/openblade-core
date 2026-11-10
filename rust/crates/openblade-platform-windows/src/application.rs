@@ -1,8 +1,10 @@
-//! Inert application reporter binding. A future watcher must supply ordered
-//! foreground notifications; this module installs no hook or exit subscription.
+//! Application reporter identity binding for a caller that supplies ordered
+//! foreground notifications. The opt-in watcher owns notification delivery.
 
 mod native;
 mod path;
+#[cfg(feature = "foreground-watcher")]
+pub mod watcher;
 
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
@@ -147,6 +149,10 @@ impl<A: Desktop> Binding<A> {
         if !self.running() {
             return;
         }
+        self.accept_sample(sample);
+    }
+
+    fn accept_sample(&mut self, sample: Option<Sample<A::Process>>) {
         self.foreground = sample.map(Arc::new);
         let foreground = self
             .foreground
@@ -166,15 +172,27 @@ impl<A: Desktop> Binding<A> {
         if !self.running() {
             return None;
         }
+        self.prune_foreground();
+        self.poll_policy(elapsed, request)
+    }
+
+    fn prune_foreground(&mut self) {
         if self
             .foreground
             .as_ref()
             .is_some_and(|sample| !sample.process.alive())
+            && let Some(retired) = self.foreground.take()
         {
-            let retired = self.foreground.take()?;
             self.policy.observe_exit(retired.identity);
             self.policy.observe_latest_foreground(Foreground::Unknown);
         }
+    }
+
+    fn poll_policy(
+        &mut self,
+        elapsed: Duration,
+        request: Guid,
+    ) -> Option<ReportApplicationContextRequest> {
         if !self.running() {
             return None;
         }

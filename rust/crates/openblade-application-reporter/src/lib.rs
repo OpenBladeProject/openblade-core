@@ -234,15 +234,7 @@ impl<H: ProcessHandle> ApplicationProfileReporter<H> {
         let lease_due = tick > self.lease_tick;
         if lease_due || self.reconnect_pending {
             self.lease_tick = self.lease_tick.max(tick);
-            self.tracked.retain(|_, tracked| {
-                if tracked.handle.is_alive() {
-                    return true;
-                }
-                if self.foreground.process() == Some(tracked.identity) {
-                    self.foreground = Foreground::Unknown;
-                }
-                false
-            });
+            self.prune_exited_processes();
         }
         if !self.connected {
             return None;
@@ -272,6 +264,27 @@ impl<H: ProcessHandle> ApplicationProfileReporter<H> {
             sequence: self.sequence,
             executable_path,
         })
+    }
+
+    /// Release dead process handles independently of transport progress.
+    pub fn prune_exited_processes(&mut self) {
+        self.tracked.retain(|_, tracked| {
+            if tracked.handle.is_alive() {
+                return true;
+            }
+            if self.foreground.process() == Some(tracked.identity) {
+                self.foreground = Foreground::Unknown;
+            }
+            false
+        });
+    }
+
+    /// Invalidate local evidence after loss of session authority. Retain the
+    /// submission watermark so the next authorized poll can clear old intent.
+    pub fn forget_process_context(&mut self) {
+        self.observations.clear();
+        self.foreground = Foreground::Unknown;
+        self.tracked.clear();
     }
 
     pub fn complete(&mut self, sequence: i64, outcome: ReportOutcome) {

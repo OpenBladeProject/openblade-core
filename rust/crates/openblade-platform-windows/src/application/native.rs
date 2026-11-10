@@ -28,7 +28,7 @@ unsafe extern "C" {
     fn u_toupper(code_point: i32) -> i32;
 }
 
-pub(super) struct Windows;
+pub struct Windows;
 pub(super) struct Process(OwnedHandle);
 
 impl Desktop for Windows {

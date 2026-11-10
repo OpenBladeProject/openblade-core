@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+foreground-watcher = ["windows-sys/Win32_UI_Accessibility"]
+foreground-watcher-replay = ["foreground-watcher"]
+
 [target.'cfg(windows)'.dependencies]
 openblade-application-reporter = { path = "../openblade-application-reporter" }
 windows-sys = { version = "=0.61.2", default-features = false, features = [

@@ -103,6 +103,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "openblade-platform-windows"
+version = "0.0.0"
+dependencies = [
+ "openblade-application-reporter",
+ "windows-sys",
+]
+
+[[package]]
 name = "openblade-protocol"
 version = "0.0.0"
 dependencies = [
@@ -119,6 +127,7 @@ version = "0.0.0"
 dependencies = [
  "openblade-application-reporter",
  "openblade-domain",
+ "openblade-platform-windows",
  "openblade-protocol",
  "openblade-types",
  "serde",

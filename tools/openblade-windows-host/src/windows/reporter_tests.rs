@@ -13,6 +13,7 @@ use openblade_application_reporter::{
     ActivationMode, ApplicationProfile, ApplicationProfileReporter, Foreground, Guid,
     LEASE_INTERVAL, ProcessHandle, ProcessIdentity, ReportApplicationContextRequest, ReportOutcome,
 };
+use openblade_platform_windows::application::watcher::replay::{Script, ScriptedWatcher};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::{
@@ -176,13 +177,24 @@ impl InFlight {
     }
 
     async fn complete(self, reporter: &mut Reporter) -> (ReportOutcome, String) {
+        let (sequence, outcome, message) = self.finish().await;
+        reporter.complete(sequence, outcome);
+        (outcome, message)
+    }
+
+    async fn complete_watcher(self, watcher: &mut ScriptedWatcher) -> ReportOutcome {
+        let (sequence, outcome, _) = self.finish().await;
+        watcher.complete(sequence, outcome);
+        outcome
+    }
+
+    async fn finish(self) -> (i64, ReportOutcome, String) {
         let (outcome, message) = receive(self.pipe, &guid_text(self.request.request_id))
             .await
             .unwrap()
             .report_outcome()
             .unwrap();
-        reporter.complete(self.request.sequence, outcome);
-        (outcome, message)
+        (self.request.sequence, outcome, message)
     }
 }
 
@@ -539,7 +551,12 @@ async fn exercise_session_and_write_fence(
         Guid([0xA2; 16]),
         crate::application_runtime::same_path,
     );
-    reporter.observe_profiles(vec![profile]);
+    reporter.observe_profiles(vec![ApplicationProfile {
+        id: profile.id,
+        executable_path: executable.clone(),
+        mode: profile.mode,
+        enabled: profile.enabled,
+    }]);
     reporter.observe_foreground(foreground());
     let request = poll(&mut reporter, Duration::ZERO, 10, |_| None).unwrap();
     let denied = InFlight::start(path, request)
@@ -554,39 +571,65 @@ async fn exercise_session_and_write_fence(
     );
     assert_eq!(status(path).await["revision"], inactive["revision"]);
 
-    step("controls Windows again").await;
-    let request = poll(&mut reporter, LEASE_INTERVAL, 11, |_| None).unwrap();
-    assert_eq!(request.sequence, 2);
+    let resumed = step("controls Windows again").await;
+    let mut script = Script::default();
+    let process = script.process(1, 42, 1, &executable);
+    script.focus(1);
+    let mut watcher = script
+        .start(VERSION, Guid([0xA3; 16]), Default::default())
+        .unwrap();
+    watcher.wait_ready(Duration::from_secs(2)).unwrap();
+    watcher.observe_profiles(vec![profile]);
+
+    // A callback delivered during identity resolution supersedes the first
+    // sample even with the same HWND. No request or sequence is published.
+    script.supersede_during_lookup(1);
+    assert!(watcher.poll(LEASE_INTERVAL, Guid([11; 16])).is_none());
+    assert_eq!(process.handles(), 0);
+    assert_eq!(status(path).await["revision"], resumed["revision"]);
+
+    let request = watcher.poll(LEASE_INTERVAL, Guid([12; 16])).unwrap();
+    assert_eq!(request.sequence, 1);
+    assert_eq!(
+        request.executable_path.as_deref(),
+        Some(executable.as_str())
+    );
     assert_eq!(
         InFlight::start(path, request)
             .await
-            .complete(&mut reporter)
-            .await
-            .0,
+            .complete_watcher(&mut watcher)
+            .await,
         ReportOutcome::Stored
     );
     step("Full-adapter profile planned.").await;
     let full = step("Performance is already confirmed.").await;
     selection(&full, true, &json!(PERFORMANCE), PERFORMANCE);
 
-    reporter.observe_foreground(Foreground::Unknown);
-    let clear = poll(&mut reporter, LEASE_INTERVAL, 12, |_| None).unwrap();
-    InFlight::start(path, clear)
-        .await
-        .complete(&mut reporter)
-        .await;
+    process.exit();
+    let clear = watcher.poll(LEASE_INTERVAL, Guid([13; 16])).unwrap();
+    assert_eq!(clear.sequence, 2);
+    assert_eq!(clear.executable_path, None);
+    assert_eq!(process.handles(), 0);
+    assert_eq!(
+        InFlight::start(path, clear)
+            .await
+            .complete_watcher(&mut watcher)
+            .await,
+        ReportOutcome::Stored
+    );
     let uncertain = step("write is unconfirmed").await;
     assert_eq!(uncertain["writesBlocked"], true);
     assert_eq!(uncertain["unconfirmedWrites"].as_array().unwrap().len(), 1);
 
-    reporter.observe_foreground(foreground());
-    let request = poll(&mut reporter, LEASE_INTERVAL, 13, |_| None).unwrap();
+    let replacement = script.process(1, 42, 2, &executable);
+    script.focus(1);
+    let request = watcher.poll(LEASE_INTERVAL, Guid([14; 16])).unwrap();
+    assert_eq!(request.sequence, 3);
     assert_eq!(
         InFlight::start(path, request)
             .await
-            .complete(&mut reporter)
-            .await
-            .0,
+            .complete_watcher(&mut watcher)
+            .await,
         ReportOutcome::Stored
     );
     let retained = status(path).await;
@@ -603,4 +646,7 @@ async fn exercise_session_and_write_fence(
     advance.send(()).await.unwrap();
     let settled = wait_status(path, |s| s["unconfirmedWrites"] == json!([])).await;
     selection(&settled, true, &json!(PERFORMANCE), BALANCED);
+    watcher.shutdown().unwrap();
+    assert!(!script.registered());
+    assert_eq!(replacement.handles(), 0);
 }
