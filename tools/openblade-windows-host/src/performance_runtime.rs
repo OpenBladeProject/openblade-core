@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 
-mod device;
+pub(crate) mod device;
 
 use device::{Device, Fault, Preset, RecipeResult};
 

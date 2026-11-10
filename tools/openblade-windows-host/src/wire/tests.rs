@@ -384,3 +384,52 @@ async fn bounds_partial_reads_and_stalled_subscription_writes() {
     );
     assert_eq!(slots.available_permits(), 1);
 }
+
+#[tokio::test]
+async fn fan_override_is_confined_to_the_active_current_fan_replay() {
+    let (_advance, input) = tokio::sync::mpsc::channel(1);
+    let (fan, _drive) = Status::fixture().unwrap().with_fan(input).unwrap();
+    let fan = Arc::new(fan);
+    let passive = Arc::new(Status::fixture().unwrap());
+    let slots = Arc::new(Semaphore::new(1));
+
+    for (status, version, session) in [
+        (passive, 79, Session::Active),
+        (fan.clone(), 51, Session::Active),
+        (fan.clone(), 79, Session::Background),
+    ] {
+        let (mut client, server) = connect(status, slots.clone(), session, 256);
+        let request = json!({
+            "operation": "setFanOverride", "version": version, "requestId": ID,
+            "value": {"value": 1, "lifetime": 1}
+        });
+        send(&mut client, &serde_json::to_vec(&request).unwrap()).await;
+        assert_eq!(receive(&mut client, "response").await["success"], false);
+        server.await.unwrap().unwrap();
+    }
+
+    let (mut client, server) = connect(fan.clone(), slots.clone(), Session::Active, 256);
+    let malformed = format!(
+        r#"{{"operation":"setFanOverride","version":79,"requestId":"{ID}","value":null,"settings":{{"mode":1,"mode":0}}}}"#
+    );
+    send(&mut client, malformed.as_bytes()).await;
+    assert_eq!(
+        server.await.unwrap().unwrap_err().kind(),
+        ErrorKind::InvalidData
+    );
+
+    let (mut client, server) = connect(fan.clone(), slots, Session::Active, 256);
+    let unsupported = json!({
+        "operation": "setFanOverride", "version": 79, "requestId": ID,
+        "value": {"value": 4, "lifetime": 1}
+    });
+    send(&mut client, &serde_json::to_vec(&unsupported).unwrap()).await;
+    assert_eq!(
+        receive(&mut client, "response").await["result"]["status"],
+        2
+    );
+    server.await.unwrap().unwrap();
+    let replay = fan.replay.as_ref().unwrap();
+    assert_eq!(replay.borrow()["confirmedState"]["fans"], 0);
+    assert_eq!(replay.borrow()["fanOverride"], Value::Null);
+}
