@@ -21,7 +21,7 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use crate::session_windows::valid_request_id;
+use crate::session_windows::{read_frame_body, valid_request_id};
 
 const VERSION: i32 = 2;
 const MAX_FRAME_BYTES: i32 = 65_536;
@@ -216,16 +216,7 @@ pub(super) async fn serve(
     identity: &Identity,
     scenario: Scenario,
 ) -> io::Result<()> {
-    let body = timeout(FRAME_TIMEOUT, async {
-        let length = pipe.read_i32_le().await?;
-        if !(1..=MAX_FRAME_BYTES).contains(&length) {
-            return Err(invalid_data("invalid Session GPU request length"));
-        }
-        let mut body = vec![0; length as usize];
-        pipe.read_exact(&mut body).await?;
-        Ok(body)
-    })
-    .await??;
+    let body = timeout(FRAME_TIMEOUT, read_frame_body(pipe, MAX_FRAME_BYTES)).await??;
 
     // The read supplies the token for this message. No dispatch before admission.
     identity.authorize(pipe)?;
