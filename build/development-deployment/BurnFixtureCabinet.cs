@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace OpenBlade.Deployment;
@@ -158,7 +159,24 @@ internal sealed class BurnFixtureCabinet
     internal byte[] Extract(string name, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var extraction = new Extraction(this, name, cancellationToken);
+        byte[] output = new byte[SizeOf(name)];
+        Expand(name, output, null, null, cancellationToken);
+        return output;
+    }
+
+    internal (byte[] Sha512, byte[] Sha256) HashMember(string name, CancellationToken cancellationToken)
+    {
+        using var sha512 = IncrementalHash.CreateHash(HashAlgorithmName.SHA512);
+        using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        Expand(name, null, sha512, sha256, cancellationToken);
+        return (sha512.GetHashAndReset(), sha256.GetHashAndReset());
+    }
+
+    private void Expand(string name, byte[]? output, IncrementalHash? sha512, IncrementalHash? sha256,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var extraction = new Extraction(this, name, output, sha512, sha256, cancellationToken);
         var error = new FdiError();
         var alloc = new Allocate(Alloc);
         var free = new Free(Marshal.FreeHGlobal);
@@ -202,11 +220,10 @@ internal sealed class BurnFixtureCabinet
         {
             throw Invalid($"Windows Cabinet FDI could not read the selected Burn member (error {error.Operation}).");
         }
-
-        return extraction.Output;
     }
 
-    private sealed class Extraction(BurnFixtureCabinet cabinet, string target, CancellationToken token)
+    private sealed class Extraction(BurnFixtureCabinet cabinet, string target, byte[]? output,
+        IncrementalHash? sha512, IncrementalHash? sha256, CancellationToken token)
     {
         private const int MaxInputHandles = 4;
         private const int Closed = -1;
@@ -220,7 +237,7 @@ internal sealed class BurnFixtureCabinet
         private readonly HashSet<string> seen = new(cabinet.Count, StringComparer.Ordinal);
 
         internal Exception? ReadError { get; private set; }
-        internal byte[] Output { get; } = new byte[cabinet.SizeOf(target)];
+        private readonly int outputLength = cabinet.SizeOf(target);
         internal bool Complete => finished && seen.Count == cabinet.Count;
 
         internal nint Open(nint name, int flags, int mode)
@@ -274,14 +291,36 @@ internal sealed class BurnFixtureCabinet
         internal uint Write(nint handle, nint buffer, uint count)
         {
             if (handle != OutputHandle || !selected || finished || token.IsCancellationRequested
-                || count > Output.Length - written)
+                || count > outputLength - written)
             {
                 return uint.MaxValue;
             }
 
-            Marshal.Copy(buffer, Output, written, (int)count);
-            written += (int)count;
-            return count;
+            try
+            {
+                if (output is not null)
+                {
+                    Marshal.Copy(buffer, output, written, (int)count);
+                }
+                else
+                {
+                    for (int offset = 0; offset < count;)
+                    {
+                        int chunk = Math.Min(input.Length, (int)count - offset);
+                        Marshal.Copy(buffer + offset, input, 0, chunk);
+                        sha512!.AppendData(input, 0, chunk);
+                        sha256!.AppendData(input, 0, chunk);
+                        offset += chunk;
+                    }
+                }
+                written += (int)count;
+                return count;
+            }
+            catch (CryptographicException exception)
+            {
+                ReadError = exception;
+                return uint.MaxValue;
+            }
         }
 
         internal int Close(nint handle)
@@ -352,7 +391,7 @@ internal sealed class BurnFixtureCabinet
                     selected = true;
                     return OutputHandle;
                 case 3: // fdintCLOSE_FILE_INFO
-                    if (notification.Handle != OutputHandle || !selected || finished || written != Output.Length)
+                    if (notification.Handle != OutputHandle || !selected || finished || written != outputLength)
                     {
                         return 0;
                     }

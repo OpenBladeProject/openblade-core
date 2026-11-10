@@ -43,6 +43,7 @@ internal sealed class WindowsNativeRoleInventory
 {
     internal const string ResourceName = "OpenBlade.WindowsNativeRoleInventory.bin";
     internal const string ResourcePath = @"payload\" + ResourceName;
+    internal const int MaximumRoleImageBytes = 64 * 1024 * 1024;
     private const int RevisionBytes = 20;
     private const int BuildBytes = RevisionBytes + (4 * sizeof(ushort));
     private const int DigestBytes = SHA256.HashSizeInBytes;
@@ -66,6 +67,8 @@ internal sealed class WindowsNativeRoleInventory
         _ => throw new ArgumentOutOfRangeException(nameof(role)),
     };
 
+    internal static string PayloadPath(WindowsNativeRole role) => @"payload\" + FileName(role);
+
     // Build output alone is not a trust decision. Take both roles from one controlled x64 build.
     internal static ImmutableArray<byte> CreateResource(
         WindowsNativeBuildIdentity build, Func<string, ImmutableArray<byte>> readBuildOutput)
@@ -85,12 +88,22 @@ internal sealed class WindowsNativeRoleInventory
     // The vetted adapter must reconcile declarations with physical members across containers.
     // It must account for aliases, reject ambiguous ownership or layout, and bound extraction
     // to ResourceSize. Each returned entry represents a uniquely resolved declaration and member.
-    internal static async Task<WindowsNativeInventorySnapshot> ReadVerifiedPackageAsync(
+    internal static Task<WindowsNativeInventorySnapshot> ReadVerifiedPackageAsync(
         string installerPath,
         OpenBladeVerifiedRelease release,
         WindowsNativePayloadIdentity selected,
         Func<Stream, CancellationToken, ImmutableArray<WindowsNativeInventoryEntry>> extract,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        WithVerifiedSnapshotAsync(installerPath, release, selected, (snapshot, token) =>
+        {
+            var entries = extract(snapshot, token);
+            token.ThrowIfCancellationRequested();
+            return ReadInventory(selected, entries);
+        }, cancellationToken);
+
+    internal static async Task<T> WithVerifiedSnapshotAsync<T>(
+        string installerPath, OpenBladeVerifiedRelease release, WindowsNativePayloadIdentity selected,
+        Func<Stream, CancellationToken, T> read, CancellationToken cancellationToken)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -116,9 +129,14 @@ internal sealed class WindowsNativeRoleInventory
         await OpenBladeSignedReleaseVerifier.VerifyInstallerAsync(snapshot, release, cancellationToken)
             .ConfigureAwait(false);
         snapshot.Position = 0;
-        var entries = extract(snapshot, cancellationToken);
+        T result = read(snapshot, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
+        return result;
+    }
 
+    private static WindowsNativeInventorySnapshot ReadInventory(
+        WindowsNativePayloadIdentity identity, ImmutableArray<WindowsNativeInventoryEntry> entries)
+    {
         if (entries.IsDefaultOrEmpty || entries.Length != 1
             || !string.Equals(entries[0].FilePath, ResourcePath, StringComparison.Ordinal)
             || !string.Equals(entries[0].OwnerPackageId, "OpenBladeSetup", StringComparison.Ordinal)
@@ -134,7 +152,7 @@ internal sealed class WindowsNativeRoleInventory
         }
 
         ImmutableArray<byte> bytes = [.. resource];
-        _ = Decode(EncodeBuild(identity.Build), bytes.AsSpan());
+        _ = DecodeForBuild(identity.Build, bytes.AsSpan());
         return new(identity, bytes);
     }
 
@@ -158,6 +176,9 @@ internal sealed class WindowsNativeRoleInventory
 
         return Decode(build, authenticated.Resource.AsSpan());
     }
+
+    internal static WindowsNativeRoleInventory DecodeForBuild(WindowsNativeBuildIdentity build, ReadOnlySpan<byte> resource)
+        => Decode(EncodeBuild(build), resource);
 
     private static WindowsNativeRoleInventory Decode(ReadOnlySpan<byte> build, ReadOnlySpan<byte> resource)
     {

@@ -33,7 +33,17 @@ internal static class WindowsNativeInventoryBurnExtractor
     private static readonly XNamespace Burn = "http://wixtoolset.org/schemas/v4/2008/Burn";
 
     internal static ImmutableArray<WindowsNativeInventoryEntry> Extract(
-        Stream snapshot, CancellationToken cancellationToken)
+        Stream snapshot, CancellationToken cancellationToken) =>
+        [ExtractCore(snapshot, requireRoles: false, cancellationToken).Inventory];
+
+    internal static RoleExtraction ExtractRoles(Stream snapshot, CancellationToken cancellationToken)
+    {
+        var result = ExtractCore(snapshot, requireRoles: true, cancellationToken);
+        return new(result.Inventory.Resource, result.Service!, result.SessionAgent!);
+    }
+
+    private static (WindowsNativeInventoryEntry Inventory, RoleMember? Service, RoleMember? SessionAgent) ExtractCore(
+        Stream snapshot, bool requireRoles, CancellationToken cancellationToken)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -74,12 +84,15 @@ internal static class WindowsNativeInventoryBurnExtractor
             }
 
             byte[] manifest = ux.Extract("0", cancellationToken);
-            Payload inventory = Select(manifest, layout, ux, attached, attachedHash);
+            var (inventory, service, agent) = Select(manifest, layout, ux, attached, attachedHash, requireRoles);
             byte[] resource = attached.Extract(inventory.Member, cancellationToken);
             if (!CryptographicOperations.FixedTimeEquals(SHA512.HashData(resource), inventory.Hash))
             {
                 throw Invalid("The inventory does not match its Burn payload digest.");
             }
+
+            RoleMember? serviceMember = service is null ? null : ReadRole(attached, service, cancellationToken);
+            RoleMember? agentMember = agent is null ? null : ReadRole(attached, agent, cancellationToken);
 
             if (snapshot.Length != length || ReadLayout(snapshot, length, cancellationToken) != layout
                 || !CryptographicOperations.FixedTimeEquals(uxHash,
@@ -92,7 +105,8 @@ internal static class WindowsNativeInventoryBurnExtractor
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            return [new(WindowsNativeRoleInventory.ResourcePath, Setup, Attached, [.. resource])];
+            return (new(WindowsNativeRoleInventory.ResourcePath, Setup, Attached, [.. resource]),
+                serviceMember, agentMember);
         }
         catch (Exception exception) when (exception is EndOfStreamException or BadImageFormatException
             or XmlException or FormatException or AsnContentException)
@@ -256,8 +270,9 @@ internal static class WindowsNativeInventoryBurnExtractor
     private static long AlignCertificate(long offset) =>
         (offset + CertificateAlignment - 1) & -CertificateAlignment;
 
-    private static Payload Select(byte[] manifest, Layout layout, BurnFixtureCabinet ux,
-        BurnFixtureCabinet attached, byte[] attachedHash)
+    private static (Payload Inventory, Payload? Service, Payload? SessionAgent) Select(
+        byte[] manifest, Layout layout, BurnFixtureCabinet ux, BurnFixtureCabinet attached,
+        byte[] attachedHash, bool requireRoles)
     {
         using var stream = new MemoryStream(manifest, writable: false);
         using var reader = XmlReader.Create(stream, new XmlReaderSettings
@@ -299,6 +314,10 @@ internal static class WindowsNativeInventoryBurnExtractor
         var attachedMembers = new HashSet<string>(StringComparer.Ordinal);
         var owned = new HashSet<string>(StringComparer.Ordinal);
         Payload? inventory = null;
+        Payload? service = null;
+        Payload? agent = null;
+        string serviceName = WindowsNativeRoleInventory.FileName(WindowsNativeRole.Service);
+        string agentName = WindowsNativeRoleInventory.FileName(WindowsNativeRole.SessionAgent);
         foreach (XElement element in root.Descendants())
         {
             switch (element.Name.LocalName)
@@ -333,9 +352,11 @@ internal static class WindowsNativeInventoryBurnExtractor
                     string leaf = path[(path.LastIndexOf('\\') + 1)..];
                     bool namesInventory = leaf.Equals(WindowsNativeRoleInventory.ResourceName,
                         StringComparison.OrdinalIgnoreCase);
+                    bool namesService = requireRoles && leaf.Equals(serviceName, StringComparison.OrdinalIgnoreCase);
+                    bool namesAgent = requireRoles && leaf.Equals(agentName, StringComparison.OrdinalIgnoreCase);
                     if (element.Parent == uxElement)
                     {
-                        if (namesInventory || !uxMembers.Add(member) || !ux.Contains(member))
+                        if (namesInventory || namesService || namesAgent || !uxMembers.Add(member) || !ux.Contains(member))
                         {
                             throw Invalid("The Burn UX payload mapping is invalid or ambiguous.");
                         }
@@ -359,7 +380,16 @@ internal static class WindowsNativeInventoryBurnExtractor
                             throw Invalid("The Burn inventory declaration is not canonical and unique.");
                         }
 
-                        inventory = new(member, hash);
+                        inventory = new(id, member, size, hash);
+                    }
+
+                    if (namesService)
+                    {
+                        service = SelectRole(service, WindowsNativeRole.Service, path, id, member, size, hash);
+                    }
+                    if (namesAgent)
+                    {
+                        agent = SelectRole(agent, WindowsNativeRole.SessionAgent, path, id, member, size, hash);
                     }
 
                     break;
@@ -373,7 +403,36 @@ internal static class WindowsNativeInventoryBurnExtractor
             throw Invalid("The Burn payload declarations, Setup ownership and cabinet entries do not reconcile.");
         }
 
-        return inventory;
+        if (requireRoles && (service is null || agent is null
+            || Attr(package.Elements(Burn + "PayloadRef").First(), "Id") != Setup))
+        {
+            throw Invalid("The Setup package must have its own primary executable and both native roles.");
+        }
+
+        return (inventory, service, agent);
+    }
+
+    private static Payload SelectRole(Payload? current, WindowsNativeRole role, string path, string id,
+        string member, int size, byte[] hash)
+    {
+        if (current is not null || path != WindowsNativeRoleInventory.PayloadPath(role) || id == Setup
+            || size > WindowsNativeRoleInventory.MaximumRoleImageBytes)
+        {
+            throw Invalid("A native role declaration is not canonical and unique or exceeds its size bound.");
+        }
+
+        return new(id, member, size, hash);
+    }
+
+    private static RoleMember ReadRole(BurnFixtureCabinet cabinet, Payload payload, CancellationToken cancellationToken)
+    {
+        var (sha512, sha256) = cabinet.HashMember(payload.Member, cancellationToken);
+        if (!CryptographicOperations.FixedTimeEquals(sha512, payload.Hash))
+        {
+            throw Invalid("A native role does not match its Burn payload digest.");
+        }
+
+        return new(payload.Id, payload.Member, payload.Length, Convert.ToHexStringLower(sha256));
     }
 
     private static bool IsCanonicalId(string value) =>
@@ -452,5 +511,8 @@ internal static class WindowsNativeInventoryBurnExtractor
     private sealed record Layout(int Stub, int UxSize, int AttachedOffset, int AttachedSize, Guid BundleId,
         SignedLayout? Signing);
     private sealed record SignedLayout(uint EngineChecksum, uint OuterChecksum, string EngineHash, string OuterHash);
-    private sealed record Payload(string Member, byte[] Hash);
+    private sealed record Payload(string Id, string Member, int Length, byte[] Hash);
+
+    internal sealed record RoleMember(string PayloadId, string CabinetMember, int Length, string Sha256);
+    internal sealed record RoleExtraction(ImmutableArray<byte> Resource, RoleMember Service, RoleMember SessionAgent);
 }

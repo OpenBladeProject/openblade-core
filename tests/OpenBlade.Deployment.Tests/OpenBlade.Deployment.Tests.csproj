@@ -17,5 +17,6 @@
     <Compile Include="..\..\build\development-deployment\WindowsNativeRoleInventory.cs" Link="WindowsNativeRoleInventory.cs" />
     <Compile Include="..\..\build\development-deployment\WindowsNativeInventoryBurnExtractor.cs" Link="WindowsNativeInventoryBurnExtractor.cs" />
     <Compile Include="..\..\build\development-deployment\BurnFixtureCabinet.cs" Link="BurnFixtureCabinet.cs" />
+    <Compile Include="..\..\build\development-deployment\WindowsNativePackageRoleProof.cs" Link="WindowsNativePackageRoleProof.cs" />
   </ItemGroup>
 </Project>

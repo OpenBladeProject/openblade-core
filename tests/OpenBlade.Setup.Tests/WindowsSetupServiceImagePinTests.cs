@@ -3,6 +3,9 @@ using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using OpenBlade.Setup;
+#if OPENBLADE_PACKAGE_PROOF_FIXTURE
+using OpenBlade.Deployment;
+#endif
 
 namespace OpenBlade.Setup.Tests;
 
@@ -86,7 +89,7 @@ public sealed class WindowsSetupServiceImagePinTests
             scratch.Expected, (_, _) => throw new InvalidOperationException("Unexpected launch."), default));
         Assert.Contains("digest differs", failure.Message);
         File.WriteAllBytes(scratch.Image, [1, 2, 3]);
-        using var pin = WindowsSetupServiceImagePin.OpenFixture(scratch.Expected, default);
+        using var pin = WindowsSetupServiceImagePin.OpenSyntheticFixture(scratch.Expected, default);
         Assert.Equal(scratch.Expected.Sha256, pin.Verify(default));
     }
 
@@ -97,11 +100,11 @@ public sealed class WindowsSetupServiceImagePinTests
         using (File.Open(scratch.Image, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
         {
             var failure = Assert.Throws<IOException>(
-                () => WindowsSetupServiceImagePin.OpenFixture(scratch.Expected, default));
+                () => WindowsSetupServiceImagePin.OpenSyntheticFixture(scratch.Expected, default));
             Assert.Equal(32, Assert.IsType<System.ComponentModel.Win32Exception>(failure.InnerException).NativeErrorCode);
         }
 
-        using (var pin = WindowsSetupServiceImagePin.OpenFixture(scratch.Expected, default))
+        using (var pin = WindowsSetupServiceImagePin.OpenSyntheticFixture(scratch.Expected, default))
         {
             DirectoryInfo parent = new(scratch.Parent);
             DirectorySecurity access = parent.GetAccessControl();
@@ -111,7 +114,7 @@ public sealed class WindowsSetupServiceImagePinTests
             Assert.Throws<UnauthorizedAccessException>(() => pin.Verify(default));
         }
         Assert.Throws<UnauthorizedAccessException>(
-            () => WindowsSetupServiceImagePin.OpenFixture(scratch.Expected, default));
+            () => WindowsSetupServiceImagePin.OpenSyntheticFixture(scratch.Expected, default));
     }
 
     [NonAdminSetupImagePinFact]
@@ -121,11 +124,11 @@ public sealed class WindowsSetupServiceImagePinTests
         Assert.Throws<OperationCanceledException>(() => WindowsSetupRetainedFixtureLaunch.Launch(
             scratch.Expected, (_, _) => throw new InvalidOperationException("Unexpected launch."), new(true)));
         Assert.Throws<ArgumentException>(
-            () => WindowsSetupServiceImagePin.OpenFixture(scratch.Expected with { Directory = scratch.Parent }, default));
+            () => WindowsSetupServiceImagePin.OpenSyntheticFixture(scratch.Expected with { Directory = scratch.Parent }, default));
         Assert.Throws<ArgumentException>(
-            () => WindowsSetupServiceImagePin.OpenFixture(scratch.Expected with { Length = 64 * 1024 * 1024 + 1 }, default));
+            () => WindowsSetupServiceImagePin.OpenSyntheticFixture(scratch.Expected with { Length = 64 * 1024 * 1024 + 1 }, default));
         var failure = Assert.Throws<IOException>(
-            () => WindowsSetupServiceImagePin.OpenFixture(scratch.Expected with { Length = 2 }, default));
+            () => WindowsSetupServiceImagePin.OpenSyntheticFixture(scratch.Expected with { Length = 2 }, default));
         Assert.Contains("length differs", failure.Message);
     }
 
@@ -139,6 +142,47 @@ public sealed class WindowsSetupServiceImagePinTests
         Assert.Contains("original live candidate launch", failure.Message);
         File.Move(scratch.Image, scratch.Image + "-released");
     }
+
+#if OPENBLADE_PACKAGE_PROOF_FIXTURE
+    [NonAdminSetupImagePinFact(requireSignedBurn: true)]
+    public async Task PinsTheServiceFromTheAuthenticatedSignedBurnRoleProofWithoutLaunching()
+    {
+        const string bundleSha256 = "cc01de2afa4b92cf4756d0565eb2baddd1a50344b900f483405badbfa8f5b5b6";
+        const string revision = "af61a8c842429bc0564390dee39b466ee0da9023";
+        const string version = "0.58.4.0";
+        string installer = Environment.GetEnvironmentVariable("OPENBLADE_PHASE_9U_SIGNED_BURN_FIXTURE")!;
+        var selected = new WindowsNativePayloadIdentity(bundleSha256, new(revision, Version.Parse(version)));
+        var proof = await WindowsNativePackageRoleProof.ReadPinnedSigned9pAsync(installer);
+        string roleDirectory = Environment.GetEnvironmentVariable("OPENBLADE_PHASE_9W_EXTRACTED_ROLES")!;
+        byte[] service = File.ReadAllBytes(Path.Combine(roleDirectory, WindowsNativeRoleInventory.FileName(WindowsNativeRole.Service)));
+        using var scratch = new ScratchImage(service);
+
+        Assert.Equal(selected, proof.Identity);
+        Assert.Equal(new WindowsNativePackageRoleProof.RoleImage(WindowsNativeRole.Service,
+            "pay4L3J9dL2pH_u0Is9Kw6K3K0.0D0", @"payload\openblade-windows-service-candidate.exe", "a1", "OpenBlade.Service.exe", 337920,
+            "6235dfd6b3aa304f3be525d51de05733d3678cf006547a1f94cfed367a00885c"), proof.Service);
+        Assert.Equal(new WindowsNativePackageRoleProof.RoleImage(WindowsNativeRole.SessionAgent,
+            "pay4XjLgXtEiNaNcGf1mmCkSd.dxfQ", @"payload\openblade-windows-agent-candidate.exe", "a2", "OpenBlade.SessionAgent.exe", 144896,
+            "ddd3112e117dd8ae4c8969aba0e91b7768a69e95bdb5bb0be54974a71efe38da"), proof.SessionAgent);
+
+        // The pin verifies staged bytes independently, with no process launch.
+        using (var pin = WindowsSetupServiceImagePin.OpenPackageFixture(scratch.Root, proof, default))
+        {
+            Assert.Equal(scratch.Image, pin.ExecutablePath);
+            Assert.Equal(proof.Service.Sha256.ToUpperInvariant(), pin.Verify(default));
+            AssertSharingViolation(() => File.OpenWrite(scratch.Image).Dispose());
+        }
+
+        string agent = Path.Combine(roleDirectory, WindowsNativeRoleInventory.FileName(WindowsNativeRole.SessionAgent));
+        File.Copy(agent, scratch.Image, overwrite: true);
+        Assert.Contains("length differs", Assert.Throws<IOException>(() =>
+            WindowsSetupServiceImagePin.OpenPackageFixture(scratch.Root, proof, default)).Message);
+        service[^1] ^= 1;
+        File.WriteAllBytes(scratch.Image, service);
+        Assert.Contains("digest differs", Assert.Throws<IOException>(() =>
+            WindowsSetupServiceImagePin.OpenPackageFixture(scratch.Root, proof, default)).Message);
+    }
+#endif
 
     private static void AssertSharingViolation(Action action) =>
         Assert.Equal(unchecked((int)0x80070020), Assert.Throws<IOException>(action).HResult);
@@ -180,12 +224,17 @@ public sealed class WindowsSetupServiceImagePinTests
 
 internal sealed class NonAdminSetupImagePinFactAttribute : FactAttribute
 {
-    public NonAdminSetupImagePinFactAttribute()
+    public NonAdminSetupImagePinFactAttribute(bool requireSignedBurn = false)
     {
         using WindowsIdentity caller = WindowsIdentity.GetCurrent();
         if (caller.IsSystem || new WindowsPrincipal(caller).IsInRole(WindowsBuiltInRole.Administrator))
         {
             Skip = "The Setup image-pin fixture requires a nonadministrator token.";
+        }
+        else if (requireSignedBurn && (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OPENBLADE_PHASE_9U_SIGNED_BURN_FIXTURE"))
+            || string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OPENBLADE_PHASE_9W_EXTRACTED_ROLES"))))
+        {
+            Skip = "The signed Burn fixture and its extracted role directory are required.";
         }
     }
 }

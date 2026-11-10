@@ -20,6 +20,9 @@
     <ProjectReference Include="..\..\src\OpenBlade.Service\OpenBlade.Service.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.Session\OpenBlade.Session.csproj" />
   </ItemGroup>
+  <PropertyGroup Condition="'$(OpenBladePackageProofFixture)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_PACKAGE_PROOF_FIXTURE</DefineConstants>
+  </PropertyGroup>
   <ItemGroup Condition="'$(OpenBladeLocalDevDeployment)' != 'true'">
     <Compile Remove="LocalDevRelatedBundleCompatibilityTests.cs" />
   </ItemGroup>

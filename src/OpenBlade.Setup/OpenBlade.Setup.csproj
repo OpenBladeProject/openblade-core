@@ -15,6 +15,18 @@
     <DefineConstants>$(DefineConstants);OPENBLADE_LOCAL_DEV_DEPLOYMENT</DefineConstants>
   </PropertyGroup>
 
+  <!-- Offline-only proof reader and scratch image-pin seam. -->
+  <PropertyGroup Condition="'$(OpenBladePackageProofFixture)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_PACKAGE_PROOF_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladePackageProofFixture)' == 'true'">
+    <ProjectReference Include="../OpenBlade.Deployment/OpenBlade.Deployment.csproj" />
+    <Compile Include="../../build/development-deployment/WindowsNativeRoleInventory.cs" Link="WindowsNativeRoleInventory.cs" />
+    <Compile Include="../../build/development-deployment/WindowsNativeInventoryBurnExtractor.cs" Link="WindowsNativeInventoryBurnExtractor.cs" />
+    <Compile Include="../../build/development-deployment/BurnFixtureCabinet.cs" Link="BurnFixtureCabinet.cs" />
+    <Compile Include="../../build/development-deployment/WindowsNativePackageRoleProof.cs" Link="WindowsNativePackageRoleProof.cs" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(OpenBladeLocalDevDeployment)' != 'true'">
     <Compile Remove="LocalDevEnrollmentUser.cs" />
     <Compile Remove="LocalDevRelatedBundleCompatibility.cs" />

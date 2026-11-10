@@ -30,7 +30,7 @@ internal sealed class WindowsSetupRetainedFixtureLaunch : ISetupRetainedCandidat
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(launch);
-        var image = WindowsSetupServiceImagePin.OpenFixture(expected, cancellationToken);
+        var image = WindowsSetupServiceImagePin.OpenSyntheticFixture(expected, cancellationToken);
         WindowsSetupRetainedCandidateProcess? process = null;
         try
         {

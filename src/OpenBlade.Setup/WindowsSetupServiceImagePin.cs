@@ -8,8 +8,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace OpenBlade.Setup;
 
-// The trusted producer supplies the Service-role length and SHA-256 independently
-// of the staged file. Only a scratch fixture supplies this input today.
+// Synthetic fixtures exercise pinning mechanics without package provenance.
 internal sealed record SetupFixtureServiceBuild(string Directory, long Length, string Sha256);
 
 internal sealed class WindowsSetupServiceImagePin : IDisposable
@@ -37,7 +36,26 @@ internal sealed class WindowsSetupServiceImagePin : IDisposable
 
     internal string ExecutablePath { get; }
 
-    internal static WindowsSetupServiceImagePin OpenFixture(
+#if OPENBLADE_PACKAGE_PROOF_FIXTURE
+    internal static WindowsSetupServiceImagePin OpenPackageFixture(
+        string directory, OpenBlade.Deployment.WindowsNativePackageRoleProof proof, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(proof);
+        var service = proof.Service;
+        if (service.InstalledName != ServiceFileName)
+        {
+            throw new InvalidDataException("The package proof does not map to the Setup Service image.");
+        }
+
+        return OpenPinnedImage(new(directory, service.Length, service.Sha256), cancellationToken);
+    }
+#endif
+
+    internal static WindowsSetupServiceImagePin OpenSyntheticFixture(
+        SetupFixtureServiceBuild expected, CancellationToken cancellationToken) =>
+        OpenPinnedImage(expected, cancellationToken);
+
+    private static WindowsSetupServiceImagePin OpenPinnedImage(
         SetupFixtureServiceBuild expected, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(expected);

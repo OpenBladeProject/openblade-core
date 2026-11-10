@@ -373,6 +373,84 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
         Assert.Contains(diagnostic, failure.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("missing", "both native roles")]
+    [InlineData("swapped", "authenticated role inventory")]
+    [InlineData("alias", "not canonical and unique")]
+    [InlineData("external", "attached payload mapping")]
+    [InlineData("length", "attached payload mapping")]
+    [InlineData("hash", "Burn payload digest")]
+    [InlineData("owner", "do not reconcile")]
+    [InlineData("primary", "own primary executable")]
+    [InlineData("inventory-build", "selected Windows x64 build")]
+    public async Task RefusesAnAuthenticatedBundleWithInconsistentNativeRoles(string mutation, string diagnostic)
+    {
+        byte[] resource = Resource();
+        if (mutation == "inventory-build")
+        {
+            resource[^65] ^= 1;
+        }
+        byte[] bundle = Bundle(resource, includeRoles: mutation != "missing", editManifest: root =>
+        {
+            if (mutation == "missing")
+            {
+                return;
+            }
+
+            XElement service = root.Elements(Burn + "Payload").Single(payload => (string?)payload.Attribute("Id") == "Service");
+            XElement agent = root.Elements(Burn + "Payload").Single(payload => (string?)payload.Attribute("Id") == "Agent");
+            XElement owner = root.Element(Burn + "Chain")!.Element(Burn + "ExePackage")!;
+            switch (mutation)
+            {
+                case "swapped":
+                    service.SetAttributeValue("FilePath", WindowsNativeRoleInventory.PayloadPath(WindowsNativeRole.SessionAgent));
+                    agent.SetAttributeValue("FilePath", WindowsNativeRoleInventory.PayloadPath(WindowsNativeRole.Service));
+                    break;
+                case "alias":
+                    service.SetAttributeValue("FilePath", WindowsNativeRoleInventory.PayloadPath(WindowsNativeRole.Service).ToUpperInvariant());
+                    break;
+                case "external": service.SetAttributeValue("Packaging", "external"); break;
+                case "length": service.SetAttributeValue("FileSize", 8); break;
+                case "hash": service.SetAttributeValue("Hash", new string('0', 128)); break;
+                case "owner":
+                    owner.Elements().Single(reference => (string?)reference.Attribute("Id") == "Service").Remove();
+                    break;
+                case "primary":
+                    XElement primary = owner.Elements().First();
+                    primary.Remove();
+                    owner.Add(primary);
+                    break;
+            }
+        });
+
+        using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bundle);
+        var selected = new WindowsNativePayloadIdentity(signed.InstallerSha256,
+            new(new string('a', 40), new(65535, 1, 2, 3)));
+        DirectoryInfo directory = Directory.CreateTempSubdirectory("openblade-burn-roles-");
+        string path = Path.Combine(directory.FullName, OpenBladeReleaseManifestCodec.InstallerFileName);
+        try
+        {
+            File.WriteAllBytes(path, bundle);
+            var failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                WindowsNativePackageRoleProof.ReadFixtureAsync(path, signed.ManifestBytes, signed.SignatureBytes, signed.Policy, selected));
+            Assert.Contains(diagnostic, failure.Message, StringComparison.Ordinal);
+
+            if (mutation == "missing")
+            {
+                var badSignature = (byte[])signed.SignatureBytes.Clone();
+                badSignature[0] ^= 1;
+                var authentication = await Assert.ThrowsAsync<OpenBladeReleaseVerificationException>(() =>
+                    WindowsNativePackageRoleProof.ReadFixtureAsync(path, signed.ManifestBytes, badSignature, signed.Policy, selected));
+                Assert.Equal(OpenBladeReleaseVerificationFailure.SignatureInvalid, authentication.Failure);
+            }
+        }
+        finally
+        {
+            File.Delete(path);
+            directory.Delete();
+        }
+    }
+
     private static byte[] Resource() =>
         [.. "OpenBlade.WindowsNativeRoles\0v1\0win-x64\0"u8,
          .. Convert.FromHexString(new string('a', 40)),
@@ -380,11 +458,13 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
          .. SHA256.HashData("service"u8), .. SHA256.HashData("agent"u8)];
 
     private static byte[] Bundle(byte[] resource, Action<XElement>? editManifest = null,
-        Action<byte[]>? editCabinet = null, bool extraMember = false)
+        Action<byte[]>? editCabinet = null, bool extraMember = false, bool includeRoles = false)
     {
         byte[] setup = "abc"u8.ToArray();
-        byte[] attached = extraMember
-            ? Cabinet(("a0", resource), ("a1", setup), ("a2", [1]))
+        byte[] service = "service"u8.ToArray();
+        byte[] agent = "agent"u8.ToArray();
+        byte[] attached = includeRoles ? Cabinet(("a0", resource), ("a1", setup), ("a2", service), ("a3", agent))
+            : extraMember ? Cabinet(("a0", resource), ("a1", setup), ("a2", [1]))
             : Cabinet(("a0", resource), ("a1", setup));
         editCabinet?.Invoke(attached);
 
@@ -401,6 +481,16 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
             new XElement(Burn + "Chain", new XElement(Burn + "ExePackage", new XAttribute("Id", "OpenBladeSetup"),
                 new XElement(Burn + "PayloadRef", new XAttribute("Id", "Inventory")),
                 new XElement(Burn + "PayloadRef", new XAttribute("Id", "OpenBladeSetup")))));
+        if (includeRoles)
+        {
+            root.Add(Payload("Service", WindowsNativeRoleInventory.PayloadPath(WindowsNativeRole.Service), "a2", service),
+                Payload("Agent", WindowsNativeRoleInventory.PayloadPath(WindowsNativeRole.SessionAgent), "a3", agent));
+            XElement owner = root.Element(Burn + "Chain")!.Element(Burn + "ExePackage")!;
+            owner.Elements().Last().Remove();
+            owner.AddFirst(new XElement(Burn + "PayloadRef", new XAttribute("Id", "OpenBladeSetup")));
+            owner.Add(new XElement(Burn + "PayloadRef", new XAttribute("Id", "Service")),
+                new XElement(Burn + "PayloadRef", new XAttribute("Id", "Agent")));
+        }
         editManifest?.Invoke(root);
         byte[] ux = Cabinet(("0", Encoding.UTF8.GetBytes(root.ToString(SaveOptions.DisableFormatting))), ("u0", [1]));
 
