@@ -188,11 +188,11 @@ impl Device {
         if check_adapter && self.exchange(Command::ReadPower)?.as_slice() != FULL_ADAPTER {
             return None;
         }
-        if !self.admits_writes() {
-            return None;
-        }
         #[cfg(test)]
         if *submitted && fault == Fault::CancelAfterFirstSubmission {
+            return None;
+        }
+        if !self.admission.recheck_writes() {
             return None;
         }
         *submitted = true;

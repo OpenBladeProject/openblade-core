@@ -181,7 +181,7 @@ impl Controller {
     }
 
     fn write_block(&mut self) -> Option<Outcome> {
-        if !self.device.admits_writes() {
+        if !self.device.admission.recheck_writes() {
             // The fake cannot prove continuous exclusive authority across
             // this boundary. Only another confirmed write can rearm ownership.
             self.owned = false;
@@ -213,6 +213,7 @@ impl Controller {
         }
         let outcome = match self.device.apply(baseline, target) {
             RecipeResult::Unsubmitted => {
+                self.owned &= self.device.admits_writes();
                 Outcome::failed("The fan recipe was blocked before submission.")
             }
             #[cfg(test)]

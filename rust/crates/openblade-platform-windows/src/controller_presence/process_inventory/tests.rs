@@ -1,5 +1,5 @@
 use super::*;
-use crate::controller_presence::{DetectionWarning, Observation, observe};
+use crate::controller_presence::{DetectionWarning, Observation, observe_inventory};
 
 fn entry(pid: u32, parent: u32, name: &str) -> PROCESSENTRY32W {
     let mut row = PROCESSENTRY32W {
@@ -33,18 +33,17 @@ fn image(pid: u32, created: u64, path: &str) -> ProcessImageEvidence {
 }
 
 fn classify(inventory: &ProcessInventory) -> Observation {
-    let rows = inventory.process_rows();
-    observe(
-        if inventory.is_complete() {
-            Scan::Complete(&rows)
-        } else {
-            Scan::Incomplete(&rows)
-        },
-        Scan::Complete(&[]),
-        Some(&inventory.parent_snapshot()),
-        Scan::Incomplete(&[]),
-        110,
-    )
+    observe_inventory(inventory, Scan::Complete(&[]), 110)
+}
+
+#[test]
+fn invalid_inventory_clock_does_not_confirm_absence() {
+    let inventory = inventory(&[], true, |_| panic!("empty snapshot queried"));
+    for observed_at in [0, 99] {
+        let result = observe_inventory(&inventory, Scan::Complete(&[]), observed_at);
+        assert_eq!(result.warning(), Some(&DetectionWarning::ProcessScan));
+        assert!(!result.confirms_absence());
+    }
 }
 
 #[test]

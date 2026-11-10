@@ -1,6 +1,8 @@
 //! Read-only competing-controller classification for the Windows Rust fixture.
 
 #[cfg(feature = "controller-process-compile-check")]
+pub mod admission;
+#[cfg(feature = "controller-process-compile-check")]
 pub mod process_inventory;
 #[cfg(feature = "controller-process-compile-check")]
 pub mod service_inventory;
@@ -11,18 +13,34 @@ pub mod service_inventory;
 pub fn read_native() -> Observation {
     let processes = process_inventory::read();
     let services = service_inventory::read();
-    let process_rows = processes.process_rows();
     let service_rows = services.service_rows();
+    observe_inventory(
+        &processes,
+        services.scan(&service_rows),
+        process_inventory::now(),
+    )
+}
+
+#[cfg(feature = "controller-process-compile-check")]
+fn observe_inventory(
+    processes: &process_inventory::ProcessInventory,
+    services: Scan<'_, Service<'_>>,
+    observed_at: u64,
+) -> Observation {
+    let process_rows = processes.process_rows();
+    let parents = processes.parent_snapshot();
     observe(
-        if processes.is_complete() {
+        if processes.is_complete() && parents.started != 0 && parents.started <= observed_at {
             Scan::Complete(&process_rows)
         } else {
             Scan::Incomplete(&process_rows)
         },
-        services.scan(&service_rows),
-        Some(&processes.parent_snapshot()),
+        services,
+        Some(&parents),
+        // The native process rows carry no verified image. Keep LampArray
+        // unknown as well so the peripheral-only exception stays unavailable.
         Scan::Incomplete(&[]),
-        process_inventory::now(),
+        observed_at,
     )
 }
 
