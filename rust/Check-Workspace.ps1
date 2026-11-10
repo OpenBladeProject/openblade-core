@@ -43,6 +43,7 @@ try {
         'openblade-ffi' = @('openblade-domain', 'openblade-protocol', 'openblade-types')
         'openblade-status-cli' = @()
         'openblade-platform-windows' = @()
+        'openblade-application-reporter' = @()
     }
     # Fixture readers admit parsing only as dev dependencies. The separate CLI owns
     # its reviewed std/runtime roots; none may enter the four inner libraries.
@@ -65,11 +66,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Cargo metadata failed (run cargo fetch --locked first).' }
     $metadata = ($metadataJson -join "`n") | ConvertFrom-Json
     if (@($metadata.workspace_members).Count -ne $expectedDependencies.Count) {
-        throw 'Only the six reviewed workspace crates are admitted.'
+        throw 'Only the seven reviewed workspace crates are admitted.'
     }
     $localPackages = @($metadata.packages | Where-Object { $null -eq $_.source })
     if ($localPackages.Count -ne $expectedDependencies.Count) {
-        throw 'Only the six reviewed local packages are admitted.'
+        throw 'Only the seven reviewed local packages are admitted.'
     }
     foreach ($package in $metadata.packages) {
         if ($null -ne $package.source) {
@@ -87,6 +88,7 @@ try {
             throw "MSRV must equal the tested toolchain $testedVersion`: $($package.name)"
         }
         $isCli = $package.name -ceq 'openblade-status-cli'
+        $isApplicationReporter = $package.name -ceq 'openblade-application-reporter'
         $isFfi = $package.name -ceq 'openblade-ffi'
         $isWindowsPlatform = $package.name -ceq 'openblade-platform-windows'
         if ($isFfi -or $isWindowsPlatform) {
@@ -121,7 +123,7 @@ try {
                 (@($libraries[0].kind | Sort-Object) -join ',') -cne $expectedOutputs) {
                 throw "Reviewed library outputs are required: $($package.name) ($expectedOutputs)"
             }
-            if (-not ($isFfi -or $isWindowsPlatform)) {
+            if (-not ($isFfi -or $isWindowsPlatform -or $isApplicationReporter)) {
                 $source = Get-Content -LiteralPath $libraries[0].src_path -Raw
                 if ($source -notmatch '(?m)^\s*#!\[no_std\]\s*$') {
                     throw "The portable crate must retain no_std: $($package.name)"
@@ -213,7 +215,7 @@ try {
             throw "Reviewed integration tests are missing: $($package.name)"
         }
     }
-    Write-Output 'Workspace boundaries passed: four local libraries with inward production edges, isolated status CLI and Windows adapter, reviewed parsing/runtime roots, compiler policies and MSRV.'
+    Write-Output 'Workspace boundaries passed: four local libraries with inward production edges, isolated status CLI, Windows adapter and application reporter, reviewed parsing/runtime roots, compiler policies and MSRV.'
 }
 finally {
     Pop-Location

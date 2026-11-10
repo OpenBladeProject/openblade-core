@@ -6,6 +6,7 @@ members = [
     "crates/openblade-ffi",
     "crates/openblade-status-cli",
     "crates/openblade-platform-windows",
+    "crates/openblade-application-reporter",
 ]
 resolver = "3"
 
