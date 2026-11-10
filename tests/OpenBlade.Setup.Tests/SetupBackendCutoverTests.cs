@@ -6,7 +6,7 @@ using static OpenBlade.Setup.Tests.SetupPayloadTransactionTests;
 
 namespace OpenBlade.Setup.Tests;
 
-public sealed class SetupBackendCutoverTests
+public sealed partial class SetupBackendCutoverTests
 {
     private const string ServiceFile = "OpenBlade.Service.exe";
     private const string AgentFile = "OpenBlade.SessionAgent.exe";
@@ -303,6 +303,7 @@ public sealed class SetupBackendCutoverTests
         public BundleOwnershipIdentity? Ownership { get; private set; } = PriorOwner;
         public SetupServiceState ServiceState { get; private set; } = SetupServiceState.Running;
         public Action<string>? InspectStagedPayload { get; set; }
+        public Func<Task>? BeforeStopAsync { get; set; }
         public SortedDictionary<string, string>? StartedPayload { get; private set; }
         public List<SortedDictionary<string, string>> StoppedPayloads { get; } = [];
 
@@ -310,13 +311,17 @@ public sealed class SetupBackendCutoverTests
         public Task<SetupServiceState?> GetStateAsync(string serviceName, CancellationToken cancellationToken) =>
             Task.FromResult<SetupServiceState?>(ServiceState);
 
-        public Task RunAsync(IReadOnlyList<string> arguments, IReadOnlyCollection<int> toleratedExitCodes,
+        public async Task RunAsync(IReadOnlyList<string> arguments, IReadOnlyCollection<int> toleratedExitCodes,
             CancellationToken cancellationToken)
         {
             switch (arguments[0])
             {
                 case "stop":
                     Assert.Equal(SetupServiceState.Running, ServiceState);
+                    if (BeforeStopAsync is not null)
+                    {
+                        await BeforeStopAsync();
+                    }
                     StoppedPayloads.Add(ReadManifest(paths.InstallDirectory));
                     ServiceState = SetupServiceState.Stopped;
                     break;
@@ -333,7 +338,6 @@ public sealed class SetupBackendCutoverTests
                 default:
                     throw new NotSupportedException(arguments[0]);
             }
-            return Task.CompletedTask;
         }
 
         public Task WaitForStateAsync(string serviceName, SetupServiceState state, TimeSpan timeout,
