@@ -35,15 +35,15 @@ impl Preset {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Channel {
+pub(crate) enum Channel {
     First,
     Second,
 }
 
 impl Channel {
-    const BOTH: [Self; 2] = [Self::First, Self::Second];
+    pub(crate) const BOTH: [Self; 2] = [Self::First, Self::Second];
 
-    fn number(self) -> u8 {
+    pub(crate) fn number(self) -> u8 {
         match self {
             Self::First => 1,
             Self::Second => 2,
@@ -95,13 +95,38 @@ pub(super) enum Fault {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct Admission {
-    pub(super) identity: (&'static str, u16, u16),
-    pub(super) full_adapter: bool,
-    pub(super) active_session: bool,
-    pub(super) no_competing_controller: bool,
-    pub(super) owns_transport: bool,
-    pub(super) awake: bool,
+pub(crate) struct Admission {
+    pub(crate) identity: (&'static str, u16, u16),
+    pub(crate) full_adapter: bool,
+    pub(crate) active_session: bool,
+    pub(crate) no_competing_controller: bool,
+    pub(crate) owns_transport: bool,
+    pub(crate) awake: bool,
+}
+
+impl Admission {
+    pub(crate) fn scripted() -> Self {
+        Self {
+            identity: IDENTITY,
+            full_adapter: true,
+            active_session: true,
+            no_competing_controller: true,
+            owns_transport: true,
+            awake: true,
+        }
+    }
+
+    pub(crate) fn admits_intent(&self) -> bool {
+        self.full_adapter && self.active_session
+    }
+
+    pub(crate) fn admits_writes(&self) -> bool {
+        self.admits_intent() && self.admits_readback() && self.no_competing_controller
+    }
+
+    pub(crate) fn admits_readback(&self) -> bool {
+        self.identity == IDENTITY && self.owns_transport && self.awake
+    }
 }
 
 pub(super) struct Device {
@@ -116,14 +141,7 @@ pub(super) struct Device {
 impl Device {
     pub(super) fn new() -> Self {
         Self {
-            admission: Admission {
-                identity: IDENTITY,
-                full_adapter: true,
-                active_session: true,
-                no_competing_controller: true,
-                owns_transport: true,
-                awake: true,
-            },
+            admission: Admission::scripted(),
             transport: FakeTransport {
                 channels: [Preset::Balanced; 2],
                 unreadable_queries: 0,
@@ -140,15 +158,15 @@ impl Device {
     }
 
     pub(super) fn admits_intent(&self) -> bool {
-        self.admission.full_adapter && self.admission.active_session
+        self.admission.admits_intent()
     }
 
     pub(super) fn admits_writes(&self) -> bool {
-        self.admits_intent() && self.admits_readback() && self.admission.no_competing_controller
+        self.admission.admits_writes()
     }
 
     fn admits_readback(&self) -> bool {
-        self.admission.identity == IDENTITY && self.admission.owns_transport && self.admission.awake
+        self.admission.admits_readback()
     }
 
     pub(super) fn apply(&mut self, preset: Preset) -> RecipeResult {

@@ -130,10 +130,47 @@ Custom, HyperBoost, manual fan ownership and handback, Guardian, and other
 thermal routes remain outside this scenario. The installed service remains
 the only live owner.
 
+## Exercise ordinary fan ownership
+
+Run `foreground-fan-parity <id>` on a fresh private development pipe. The
+same-logon v79 client admits a persistent Fixed 4,000 RPM fan override. The
+scripted RZ09-0581 (1532:02E0) starts in Performance with Automatic fans and
+full adapter power.
+
+The typed recipe follows the [managed port trace](../tests/Fixtures/Parity/rz09-0581-ordinary-fan-transitions.json).
+Entry changes both fan selectors to manual while retaining Performance. A
+paired getter confirms that state before either RPM target is submitted.
+Handback changes only the fan selector pair. Fresh adapter checks precede
+each write in both transitions. A repeated Fixed request on confirmed manual
+topology sends the two targets directly because the getter cannot report the
+requested RPM.
+
+The host stores the Fixed request in memory and publishes the firmware's
+Automatic or manual topology separately. Confirmed manual topology alone
+does not establish ownership. Handback requires an owned, confirmed manual
+state and current synthetic admission. A split or unavailable read preserves
+the last confirmed topology and gates further writes after possible submission.
+Read-only reconciliation never grants ownership or replays the saved request.
+
+After `READY`, send a lowercase `n` for each step and wait for its status event.
+
+| Step | Effect |
+| --- | --- |
+| 1 | Invoke synthetic lifecycle handback. Preserve the saved Fixed request and Performance. |
+| 2 | Arm a lost reply after the first selector changes. |
+| 3 | Read the split pair without issuing a write. |
+| 4 | The scripted device restores the Automatic pair externally. A read-only observation clears the block. |
+
+Native lifecycle integration still needs current owner-epoch continuity, fresh
+controller and prior-authority cleanup admission, and durable production
+recovery. This mode uses only the private foreground pipe, scripted device and
+process-local intent. Fan Stop, HyperBoost and other presets or models are
+outside its scope.
+
 ## Compatibility boundary
 
 - Each connection accepts one v79 `getStatus` or `subscribeStatus` request, or one v51 `getStatus` request. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.
-- Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Outside the two opt-in parity modes, mutations receive a correlated refusal before any dispatch. Each parity mode accepts only its own v79 mutation operations. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
+- Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Outside the opt-in parity modes, mutations receive a correlated refusal before any dispatch. Each parity mode accepts only its own v79 mutation operations. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
 - Windows claims the first instance exclusively and rejects remote connections. The explicit DACL restricts access to the host account. After reading the request bytes, the host resolves the pipe token and requires the same SID, logon authentication ID and Windows session. This is a same-logon development trust boundary. The ordinary duplex C# client asks for generic write, which also gives its SID permission to create pipe instances. It does not establish server trust against another process in that logon. Both projections exercise synthetic authorization inputs behind the native identity check. They do not replicate active-session selection or LocalSystem access policy.
 - Rust tests cover the wire fixtures and native endpoint checks, including first-instance contention, listener saturation and recovery, an anonymous client, and start/stop ordering through the shared lifecycle with an injected SCM reporter and stop signal. The .NET tests exercise the real tray client through the foreground endpoint, including initial status, event, cancellation and reconnect. They supplement that path with managed codec and v51 raw frames. The Windows job in the Rust workflow runs both sets on stacked PRs.
 

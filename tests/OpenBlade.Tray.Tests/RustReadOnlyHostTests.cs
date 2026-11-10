@@ -461,6 +461,83 @@ public sealed class RustReadOnlyHostTests
         await host.StopAsync(token);
     }
 
+    [RustReadOnlyHostFact]
+    public async Task TrayClient_FanParityPreservesFixedIntentAcrossOwnedHandbackAndReconciliation()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = timeout.Token;
+        string endpointId = Guid.NewGuid().ToString("N");
+        await using var host = DevHost.Start(endpointId, "foreground-fan-parity");
+        await host.WaitUntilReadyAsync(token);
+        await using var client = new ServiceClient(PipeName(endpointId));
+
+        var request = new ManualOverride<FanMode>(FanMode.Fixed, OverrideLifetime.Persistent);
+        var settings = new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default);
+        ServiceStatusSnapshot initial = await client.GetStatusAsync(token);
+        Assert.True(initial.DeviceVerified);
+        Assert.Equal(PowerSource.PluggedIn, initial.ActivePowerSource);
+        Assert.Equal(PerformancePreset.Performance, initial.ConfirmedState!.Performance);
+        Assert.Equal(FanMode.Automatic, initial.ConfirmedState.Fans);
+        Assert.Null(initial.FanOverride);
+        Assert.Null(initial.FanControlOverride);
+
+        async Task ExpectMutationAsync(ControlOperationStatus expected)
+        {
+            ControlOperationResult result = await client.SetFanControlOverrideAsync(request, settings, token);
+            Assert.Equal(expected, result.Status);
+        }
+
+        async Task<ServiceStatusSnapshot> AdvanceAsync()
+        {
+            await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+            ServiceStatusSnapshot before = await ReadStatusAsync(watch, subscriptionOpened: true);
+            await host.AdvanceAsync(token);
+            ServiceStatusSnapshot after = await ReadStatusAsync(watch, subscriptionOpened: false);
+            Assert.True(after.Revision > before.Revision);
+            return after;
+        }
+
+        void AssertState(ServiceStatusSnapshot status, FanMode confirmed, bool pending = false)
+        {
+            Assert.Equal(PerformancePreset.Performance, status.ConfirmedState!.Performance);
+            Assert.Equal(confirmed, status.ConfirmedState.Fans);
+            Assert.Equal(FanMode.Fixed, status.DesiredState.Fans.Value);
+            Assert.Equal(SettingValueSource.PersistentOverride, status.DesiredState.Fans.Source);
+            Assert.Equal(settings, status.DesiredState.FanControl);
+            Assert.Equal(request, status.FanOverride);
+            Assert.Equal(settings, status.FanControlOverride);
+            Assert.Equal(initial.Profiles, status.Profiles);
+            Assert.Equal(pending, status.WritesBlocked);
+            if (pending)
+            {
+                Assert.Equal(DeviceSubsystem.Fans, Assert.Single(status.UnconfirmedWrites));
+            }
+            else
+            {
+                Assert.Empty(status.UnconfirmedWrites);
+            }
+        }
+
+        await ExpectMutationAsync(ControlOperationStatus.Applied);
+        AssertState(await client.GetStatusAsync(token), FanMode.Maximum);
+
+        AssertState(await AdvanceAsync(), FanMode.Automatic); // Owned handback.
+        AssertState(await AdvanceAsync(), FanMode.Automatic); // Arm a lost response.
+
+        await ExpectMutationAsync(ControlOperationStatus.Failed);
+        AssertState(await client.GetStatusAsync(token), FanMode.Automatic, pending: true);
+        await ExpectMutationAsync(ControlOperationStatus.Blocked);
+        AssertState(await client.GetStatusAsync(token), FanMode.Automatic, pending: true);
+
+        AssertState(await AdvanceAsync(), FanMode.Automatic, pending: true); // Read a split pair.
+        AssertState(await AdvanceAsync(), FanMode.Automatic); // Observe the restored pair without replay.
+        await ExpectMutationAsync(ControlOperationStatus.Applied);
+        AssertState(await client.GetStatusAsync(token), FanMode.Maximum);
+
+        await host.StopAsync(token);
+    }
+
+
     private static string PipeName(string endpointId) => $"OpenBlade.Rust.ReadOnly.Dev.{endpointId}";
 
     private static async Task<ServiceStatusSnapshot> ReadStatusAsync(
