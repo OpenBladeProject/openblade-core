@@ -15,6 +15,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\OpenBlade.Display.Tests\Fixtures\display-advanced-color.csv"
+                      LogicalName="display-advanced-color.csv" />
     <Using Include="Xunit" />
     <Using Include="OpenBlade.Testing.AsyncTest" Static="true" />
   </ItemGroup>

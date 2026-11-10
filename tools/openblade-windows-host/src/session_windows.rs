@@ -15,7 +15,7 @@ use tokio::{net::windows::named_pipe::NamedPipeServer, runtime::Builder, sync::o
 
 use crate::{
     session_brightness::{ScriptedComPolicy, WmiScenario},
-    session_display::{self, Rejected, SessionDisplay},
+    session_display::{self, HdrFixture, Rejected, SessionDisplay},
     session_gpu,
 };
 
@@ -46,12 +46,21 @@ pub(super) fn entry() -> io::Result<()> {
     if mode != "foreground" {
         return Err(usage());
     }
-    let scenario = match scenario.to_str() {
-        Some("available") => Scenario::Available,
-        Some("unavailable") => Scenario::Unavailable,
-        Some("stale-target") => Scenario::StaleTarget,
-        Some("native-error") => Scenario::NativeError,
-        Some("hdr-error") => Scenario::HdrError,
+    let (scenario, hdr) = match scenario.to_str() {
+        Some("available") => (Scenario::Available, HdrFixture::Available),
+        Some("unavailable") => (Scenario::Unavailable, HdrFixture::Available),
+        Some("stale-target") => (Scenario::StaleTarget, HdrFixture::Available),
+        Some("native-error") => (Scenario::NativeError, HdrFixture::Available),
+        Some("hdr-error") => (Scenario::HdrError, HdrFixture::Available),
+        Some("hdr-unsupported") => (Scenario::HdrUnsupported, HdrFixture::Available),
+        Some("hdr-stale-target") => (Scenario::Available, HdrFixture::StaleTarget),
+        Some("hdr-stale-power") => (Scenario::Available, HdrFixture::StalePower),
+        Some("hdr-inactive") => (Scenario::Available, HdrFixture::Inactive),
+        Some("hdr-submission-error") => (Scenario::Available, HdrFixture::SubmissionError),
+        Some("hdr-readback-mismatch") => (Scenario::Available, HdrFixture::ReadbackMismatch),
+        Some("hdr-sibling-readback") => (Scenario::Available, HdrFixture::SiblingReadback),
+        Some("hdr-stalled-admission") => (Scenario::Available, HdrFixture::StalledAdmission),
+        Some("hdr-stalled-submission") => (Scenario::Available, HdrFixture::StalledSubmission),
         _ => return Err(usage()),
     };
     let brightness = match brightness {
@@ -66,7 +75,7 @@ pub(super) fn entry() -> io::Result<()> {
         },
         _ => return Err(usage()),
     };
-    run_fixture(run_display(id, scenario, brightness))
+    run_fixture(run_display(id, scenario, brightness, hdr))
 }
 
 fn run_fixture(fixture: impl Future<Output = io::Result<()>>) -> io::Result<()> {
@@ -81,7 +90,7 @@ fn run_fixture(fixture: impl Future<Output = io::Result<()>>) -> io::Result<()> 
 fn usage() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
-        "expected foreground <32 lowercase hex digits> <available|unavailable|stale-target|native-error|hdr-error> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <available|empty|no-data|large|stalled>",
+        "expected foreground <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <available|empty|no-data|large|stalled>",
     )
 }
 
@@ -92,14 +101,19 @@ fn valid_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-async fn run_display(id: &str, scenario: Scenario, brightness: WmiScenario) -> io::Result<()> {
+async fn run_display(
+    id: &str,
+    scenario: Scenario,
+    brightness: WmiScenario,
+    hdr: HdrFixture,
+) -> io::Result<()> {
     // One reserved claim and one data connection. This endpoint has no
     // subscribers or concurrent dispatch, so partial frames can occupy one slot.
     let endpoint = Endpoint::new(format!("{PREFIX}{id}"), 2)?;
     let _claim = endpoint.claim()?;
     let listener = endpoint.listen()?;
     let worker = ScriptedComPolicy::start(scenario, brightness)?;
-    let session = Arc::new(Mutex::new(SessionDisplay::scripted(scenario, worker)));
+    let session = Arc::new(Mutex::new(SessionDisplay::scripted(scenario, worker, hdr)));
 
     let stopping = Arc::new(AtomicBool::new(false));
     let stop = Arc::clone(&stopping);

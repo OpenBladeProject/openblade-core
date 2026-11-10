@@ -21,27 +21,58 @@ pub enum Scenario {
     StaleTarget,
     NativeError,
     HdrError,
+    HdrUnsupported,
 }
 
 impl Scenario {
     pub fn topology(self, replaced: bool) -> Result<InternalDisplayTopology, DisplayReadError> {
-        read_with(&mut Script {
-            scenario: self,
-            target: if replaced { 5 } else { 4 },
-        })
+        self.topology_with_hdr(true, replaced)
     }
 
     pub fn read(self) -> Result<InternalDisplayRefresh, DisplayReadError> {
-        refresh::read_refresh_with(&mut Script {
-            scenario: self,
-            target: 4,
-        })
+        self.read_with_hdr(true, false)
     }
+
+    pub fn topology_with_hdr(
+        self,
+        enabled: bool,
+        replaced: bool,
+    ) -> Result<InternalDisplayTopology, DisplayReadError> {
+        read_with(&mut self.script(enabled, replaced))
+    }
+
+    pub fn read_with_hdr(
+        self,
+        enabled: bool,
+        replaced: bool,
+    ) -> Result<InternalDisplayRefresh, DisplayReadError> {
+        refresh::read_refresh_with(&mut self.script(enabled, replaced))
+    }
+
+    fn script(self, hdr_enabled: bool, replaced: bool) -> Script {
+        Script {
+            scenario: self,
+            target: if replaced { 5 } else { 4 },
+            hdr_enabled,
+        }
+    }
+}
+
+/// The typed setter effect for the private fixture. This is deliberately
+/// separate from the read adapter and has no route to User32.
+pub fn submit_hdr(target: EndpointId, enabled: bool) -> bool {
+    let packet = native::SetHdrState::new(target, enabled);
+    assert_endpoint(&packet.header, 4);
+    assert_eq!(packet.header.r#type, 16);
+    assert_eq!(packet.header.size, 24);
+    assert!(packet.value <= 1);
+    packet.value != 0
 }
 
 struct Script {
     scenario: Scenario,
     target: u32,
+    hdr_enabled: bool,
 }
 
 const ADAPTER: LUID = LUID {
@@ -146,7 +177,18 @@ impl DisplayApi for Script {
         assert_eq!(request.header.size, 36);
         // HDR supported, user preference enabled, policy limited.
         // The managed oracle's hdr_user_enabled_with_policy_limit row.
-        request.value = 56;
+        // The SDK packet's active mode remains SDR, regardless of preference.
+        request.value = if self.hdr_enabled && self.scenario != Scenario::HdrUnsupported {
+            1 << 3 // Policy limited.
+        } else {
+            0
+        };
+        if self.scenario != Scenario::HdrUnsupported {
+            request.value |= native::HDR_SUPPORTED;
+        }
+        if self.hdr_enabled {
+            request.value |= native::HDR_USER_ENABLED;
+        }
         request.bits_per_color_channel = 10;
         if self.scenario == Scenario::HdrError {
             ERROR_NOT_SUPPORTED

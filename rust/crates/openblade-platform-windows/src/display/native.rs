@@ -57,6 +57,75 @@ impl GetAdvancedColorInfo2 {
     }
 }
 
+// WinSDK wingdi.h: SET_HDR_STATE (16), with only enableHdr in bit zero.
+#[cfg(any(test, feature = "scripted-display"))]
+#[repr(C)]
+pub(super) struct SetHdrState {
+    pub(super) header: DISPLAYCONFIG_DEVICE_INFO_HEADER,
+    pub(super) value: u32,
+}
+
+#[cfg(any(test, feature = "scripted-display"))]
+impl SetHdrState {
+    pub(super) fn new(target: EndpointId, enabled: bool) -> Self {
+        Self {
+            header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
+                r#type: 16,
+                size: size_of::<Self>() as u32,
+                adapterId: LUID {
+                    LowPart: target.adapter_low,
+                    HighPart: target.adapter_high,
+                },
+                id: target.id,
+            },
+            value: u32::from(enabled),
+        }
+    }
+}
+
+#[cfg(any(test, feature = "scripted-display"))]
+const _: () = {
+    assert!(size_of::<SetHdrState>() == 24);
+    assert!(align_of::<SetHdrState>() == 4);
+    assert!(std::mem::offset_of!(SetHdrState, header) == 0);
+    assert!(std::mem::offset_of!(SetHdrState, value) == 20);
+};
+
+// Compile and link the ABI in the platform unit-test binary only. Neither
+// the private fixture nor any shipping entry point can reference this setter.
+#[cfg(test)]
+fn set_hdr_state(target: EndpointId, enabled: bool) -> i32 {
+    let packet = SetHdrState::new(target, enabled);
+    // SAFETY: The packet starts with the initialized SDK header and is
+    // valid for the entire synchronous input-only call.
+    unsafe {
+        windows_sys::Win32::Devices::Display::DisplayConfigSetDeviceInfo(
+            std::ptr::from_ref(&packet).cast(),
+        )
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn hdr_setter_packet_and_linkage() {
+    let _ = std::hint::black_box(set_hdr_state as fn(EndpointId, bool) -> i32);
+    let target = EndpointId {
+        adapter_low: 0x1234,
+        adapter_high: -2,
+        id: 7,
+    };
+    for (enabled, expected) in [(false, 0), (true, 1)] {
+        let packet = SetHdrState::new(target, enabled);
+        assert_eq!(packet.header.r#type, 16);
+        assert_eq!(packet.header.size, 24);
+        assert_eq!(
+            EndpointId::new(packet.header.adapterId, packet.header.id),
+            target
+        );
+        assert_eq!(packet.value, expected);
+    }
+}
+
 pub(super) struct WindowsDisplay;
 
 impl DisplayApi for WindowsDisplay {

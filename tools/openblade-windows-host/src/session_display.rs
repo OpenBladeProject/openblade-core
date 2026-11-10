@@ -11,7 +11,7 @@ use openblade_platform_windows::{
         BrightnessError, BrightnessOutcome, BrightnessRequest, BrightnessSnapshot,
         BrightnessTarget, NativeFailure, WindowsBrightnessWorker,
     },
-    display::{InternalDisplayRefresh, scripted::Scenario},
+    display::{DisplayReadError, InternalDisplayRefresh, scripted::Scenario},
 };
 
 use crate::{session_brightness::ScriptedBrightness, session_windows::valid_request_id};
@@ -26,6 +26,10 @@ use tokio::{
     time::timeout,
 };
 
+mod hdr;
+pub(super) use hdr::HdrFixture;
+use hdr::{HdrObservation, ScriptedHdr};
+
 const VERSION: i32 = 2;
 const MAX_FRAME_BYTES: i32 = 65_536;
 const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
@@ -36,15 +40,19 @@ const FAILED: i32 = 2;
 const INDETERMINATE: i32 = 3;
 
 pub(super) struct SessionDisplay {
-    scenario: Scenario,
+    hdr: ScriptedHdr,
     brightness: WindowsBrightnessWorker,
     writes_paused: bool,
 }
 
 impl SessionDisplay {
-    pub(super) fn scripted(scenario: Scenario, brightness: WindowsBrightnessWorker) -> Self {
+    pub(super) fn scripted(
+        scenario: Scenario,
+        brightness: WindowsBrightnessWorker,
+        hdr: HdrFixture,
+    ) -> Self {
         Self {
-            scenario,
+            hdr: ScriptedHdr::new(scenario, hdr),
             brightness,
             writes_paused: false,
         }
@@ -55,7 +63,14 @@ impl SessionDisplay {
         query: Query,
         cancelled: impl Fn() -> bool,
     ) -> Result<(Vec<u8>, bool), Rejected> {
-        let (mut state, target, display_error) = display_state(self.scenario);
+        let hdr_context = if matches!(query.operation, Operation::SetHdr { .. }) {
+            self.hdr.context(false)
+        } else {
+            None
+        };
+        let reading = self.hdr.read(false);
+        let observed_hdr = HdrObservation::from_refresh(&reading);
+        let (mut state, target, display_error) = display_state(reading);
         let (status, error, possible_submission) = match query.operation {
             Operation::Query {} => {
                 if let Some(target) = target
@@ -69,6 +84,33 @@ impl SessionDisplay {
                     SUCCEEDED
                 };
                 (status, display_error, false)
+            }
+            Operation::SetHdr {
+                expected_power_source,
+                enabled,
+            } => {
+                if self.writes_paused {
+                    (
+                        BLOCKED,
+                        Some("HDR writes are paused after an indeterminate submission.".into()),
+                        false,
+                    )
+                } else {
+                    let result = self.hdr.apply(
+                        expected_power_source,
+                        enabled,
+                        hdr_context,
+                        observed_hdr.ok_or_else(|| {
+                            display_error.unwrap_or_else(|| {
+                                "The internal display is unavailable; HDR was not submitted.".into()
+                            })
+                        }),
+                        &mut state,
+                        &cancelled,
+                    );
+                    self.writes_paused = result.0 == INDETERMINATE;
+                    result
+                }
             }
             Operation::SetBrightness {
                 expected_power_source,
@@ -154,7 +196,7 @@ fn set_snapshot(state: &mut serde_json::Value, brightness: BrightnessSnapshot) {
 }
 
 fn display_state(
-    scenario: Scenario,
+    reading: Result<InternalDisplayRefresh, DisplayReadError>,
 ) -> (serde_json::Value, Option<BrightnessTarget>, Option<String>) {
     let mut state = json!({
         "isAvailable": false,
@@ -174,7 +216,7 @@ fn display_state(
         "supportedBrightnessLevels": [],
     });
     let mut target = None;
-    let error = match scenario.read() {
+    let error = match reading {
         Ok(InternalDisplayRefresh::Single(snapshot)) => {
             let brightness_target = BrightnessTarget::from_display(&snapshot.display).ok();
             match (
@@ -280,6 +322,10 @@ struct Query {
 )]
 enum Operation {
     Query {},
+    SetHdr {
+        expected_power_source: u8,
+        enabled: bool,
+    },
     SetBrightness {
         expected_power_source: u8,
         percent: u8,
@@ -289,12 +335,18 @@ enum Operation {
 impl Query {
     fn parse(body: &[u8]) -> Result<Self, Rejected> {
         let query: Self = serde_json::from_slice(body).map_err(|_| Rejected::InvalidRequest)?;
-        if let Operation::SetBrightness {
-            expected_power_source,
-            percent,
-        } = query.operation
-            && (expected_power_source > 2 || percent > 100)
-        {
+        let valid = match query.operation {
+            Operation::Query {} => true,
+            Operation::SetHdr {
+                expected_power_source,
+                ..
+            } => expected_power_source <= 2,
+            Operation::SetBrightness {
+                expected_power_source,
+                percent,
+            } => expected_power_source <= 2 && percent <= 100,
+        };
+        if !valid {
             return Err(Rejected::InvalidRequest);
         }
         if query.version != VERSION {
@@ -396,7 +448,7 @@ mod tests {
         include_str!("../../../tests/OpenBlade.Session.Tests/WindowsReplay/v1/session.json");
 
     #[test]
-    fn only_query_and_typed_brightness_are_admitted_from_the_display_replay() {
+    fn only_query_and_typed_hdr_and_brightness_are_admitted_from_the_display_replay() {
         let replay: Value = serde_json::from_str(REPLAY).unwrap();
         let display = &replay["families"]["display"];
         assert_eq!(display["version"], VERSION);
@@ -406,7 +458,7 @@ mod tests {
                 let body = serde_json::to_vec(input).unwrap();
                 let result = Query::parse(&body);
                 match vector["id"].as_str().unwrap() {
-                    "query" | "setBrightness" => {
+                    "query" | "setHdr" | "setBrightness" => {
                         assert_eq!(result.unwrap().request_id, input["requestId"]);
                     }
                     "old-version" => {
@@ -421,6 +473,10 @@ mod tests {
     #[test]
     fn rejects_malformed_envelopes_and_operation_fields() {
         for body in [
+            r#"{"operation":"setHdr","version":2,"requestId":"11111111-2222-4333-8444-555555555555","enabled":true,"expectedPowerSource":3}"#,
+            r#"{"operation":"setHdr","version":2,"requestId":"11111111-2222-4333-8444-555555555555","enabled":1,"expectedPowerSource":0}"#,
+            r#"{"operation":"setHdr","version":2,"requestId":"11111111-2222-4333-8444-555555555555","expectedPowerSource":0}"#,
+            r#"{"operation":"setHdr","version":2,"requestId":"11111111-2222-4333-8444-555555555555","enabled":false,"expectedPowerSource":0,"targetId":4}"#,
             r#"{"operation":"query","version":2,"version":2,"requestId":"11111111-2222-4333-8444-555555555555"}"#,
             r#"{"operation":"query","version":2,"requestId":"00000000-0000-0000-0000-000000000000"}"#,
             r#"{"operation":"query","version":2,"requestId":"11111111-2222-4333-8444-555555555555","percent":20}"#,

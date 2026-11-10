@@ -53,7 +53,7 @@ The development executable in the separate Windows host workspace enables
 the scripted acquisition feature. Its private current-user pipe runs the
 v2 query handler and projects replies from synthetic CCD, GDI and INFO_2
 packets through the same platform acquisition logic as the native adapters.
-Each request starts with a fresh script. The fixed 60 Hz desktop and 240 Hz
+Each request acquires a fresh synthetic snapshot from the fixture state. The fixed 60 Hz desktop and 240 Hz
 signal with boost off yields two fixed options and an unset current key.
 The HDR result represents an enabled user preference and 10 bits per channel.
 A changed target between observations fails the query, as do a CCD status
@@ -76,8 +76,8 @@ only when the synthetic WMI reading matches the CCD endpoints and monitor path.
 Unavailable brightness leaves the independently observed display fields intact.
 Color profiles remain unavailable.
 
-The private endpoint accepts only query and the existing typed brightness
-request. Each process starts one scripted brightness worker; no COM policy is
+The private display endpoint accepts query and the existing typed brightness
+and HDR requests. Each process starts one scripted brightness worker; no COM policy is
 applied to Windows and no native display or WMI transport is started. A confirmed
 write requires a separate read from the full submitted WMI instance. A lost or
 ambiguous write reply pauses writes for that process; read-only observations
@@ -85,6 +85,23 @@ remain available when the worker drains. Stopping the fixture is bounded and
 does not assert that an outstanding submission completed. A native host still
 needs process-wide COM security, a confirmed current-user session and power
 source, and recovery that survives host restart before live writes can be tried.
+
+Phase 6s reuses v2 SetHdr through the actual Tray client. The serialized fixture
+captures a scripted active session and power generation, checks the exact
+single internal source, target and monitor path again, and verifies HDR support
+and the current preference before deciding whether a write is needed. After
+one typed submission, a separate INFO_2 read must confirm the same panel and
+the requested preference. An uncertain result, readback or reply pauses both
+display mutation paths for that fixture process. A later query can observe
+recovery without clearing the pause or replaying the request. The fixture
+keeps the HDR preference independent of signal mode and does not acquire SDR
+profiles in either state.
+
+The packet layout and command type follow the
+[Microsoft SDK header](https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/um/wingdi.h)
+and [DisplayConfigSetDeviceInfo](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-displayconfigsetdeviceinfo).
+Only the platform unit test links the native setter; the test retains its
+function pointer and checks packet encoding without executing the call.
 
 Current HDR output mode, complete snapshot parity, and native display behavior
 need separate evidence before replacement. Product, Session IPC and persisted

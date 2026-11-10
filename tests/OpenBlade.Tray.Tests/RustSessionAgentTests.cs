@@ -54,11 +54,6 @@ public sealed partial class RustSessionAgentTests
                 Assert.Equal("No active display topology is available.", result.StatusMessage);
             }
 
-            DisplaySettingsSnapshot rejected = await client.SetHdrEnabledAsync(
-                PowerSource.PluggedIn, enabled: true, token);
-            Assert.False(rejected.OperationSucceeded);
-            Assert.Equal(DisplaySettingsFailureKind.ControlsUnavailable, rejected.FailureKind);
-            Assert.Equal(result.IsAvailable, (await client.GetStateAsync(token)).IsAvailable);
             await host.StopAsync(token);
         }
     }
