@@ -16,6 +16,8 @@ const PERFORMANCE: i32 = 2;
 const AUTOMATIC: i32 = 0;
 const FIXED: i32 = 1;
 const PERSISTENT: i32 = 1;
+#[cfg(windows)]
+const TEMPORARY: i32 = 0;
 const FANS: i32 = 1;
 
 #[derive(Deserialize)]
@@ -65,10 +67,11 @@ impl Curve {
     }
 }
 
-struct Controller {
+pub(crate) struct Controller {
     device: Device,
     // The private replay's store is process-local. Handback never changes it.
     saved: Option<Settings>,
+    lifetime: i32,
     confirmed: Option<Topology>,
     owned: bool,
     pending: bool,
@@ -76,15 +79,63 @@ struct Controller {
 }
 
 impl Controller {
+    pub(crate) fn standard() -> Self {
+        Self::new(Device::new())
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn temporary() -> Self {
+        Self {
+            lifetime: TEMPORARY,
+            ..Self::standard()
+        }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn automatic_confirmed(&self) -> bool {
+        self.confirmed == Some(Topology::Automatic) && !self.pending_write()
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn pending_write(&self) -> bool {
+        self.pending
+    }
+
     fn new(mut device: Device) -> Self {
         let confirmed = device.observe();
         Self {
             device,
             saved: None,
+            lifetime: PERSISTENT,
             confirmed,
             owned: false,
             pending: false,
             external: false,
+        }
+    }
+
+    pub(crate) fn request(
+        &mut self,
+        value: Option<Override>,
+        settings: Option<Settings>,
+    ) -> io::Result<Outcome> {
+        match (value, settings) {
+            (
+                Some(Override {
+                    value: FIXED,
+                    lifetime,
+                }),
+                Some(settings),
+            ) if lifetime == self.lifetime
+                && settings.mode == FIXED
+                && settings.fixed_speed_rpm == 4000
+                && settings.manual_curve.valid() =>
+            {
+                self.set_fixed(settings)
+            }
+            _ => Ok(Outcome::blocked(
+                "Only the scoped 4,000 RPM Fixed request is admitted in this replay.",
+            )),
         }
     }
 
@@ -242,7 +293,7 @@ impl Scenario {
             json!({"minimumRpm": 4000, "maximumRpm": 4000, "stepRpm": 100});
         status["capabilities"]["supportsDirectManualFanTransitions"] = true.into();
         let mut state = State {
-            controller: Controller::new(Device::new()),
+            controller: Controller::standard(),
             status,
         };
         state.project("Synthetic RZ09-0581 fan replay ready.");
@@ -262,23 +313,7 @@ impl Scenario {
         value: Option<Override>,
         settings: Option<Settings>,
     ) -> io::Result<Outcome> {
-        self.update(|controller| match (value, settings) {
-            (
-                Some(Override {
-                    value: FIXED,
-                    lifetime: PERSISTENT,
-                }),
-                Some(settings),
-            ) if settings.mode == FIXED
-                && settings.fixed_speed_rpm == 4000
-                && settings.manual_curve.valid() =>
-            {
-                controller.set_fixed(settings)
-            }
-            _ => Ok(Outcome::blocked(
-                "Only the persistent 4,000 RPM Fixed request is admitted in this replay.",
-            )),
-        })
+        self.update(|controller| controller.request(value, settings))
     }
 
     pub(crate) async fn drive(&self, mut advance: mpsc::Receiver<()>) -> io::Result<()> {
@@ -322,44 +357,68 @@ impl Scenario {
 
 impl State {
     fn project(&mut self, message: &'static str) {
-        let controller = &self.controller;
-        let saved = controller.saved.as_ref();
-        let (mode, source) = if saved.is_some() {
-            (FIXED, 4)
-        } else {
-            (AUTOMATIC, 1)
-        };
-        self.status["desiredState"]["fans"] = json!({"value": mode, "source": source});
-        self.status["desiredState"]["fanControl"] = json!(saved);
-        self.status["fanOverride"] =
-            json!(saved.map(|_| json!({"value": FIXED, "lifetime": PERSISTENT})));
-        self.status["fanControlOverride"] = json!(saved);
-        self.status["confirmedState"]["fans"] = json!(controller.confirmed.map(Topology::wire));
-        self.status["writesBlocked"] =
-            (controller.pending || !controller.device.admits_writes()).into();
-        self.status["unconfirmedWrites"] = if controller.pending {
-            json!([FANS])
-        } else {
-            json!([])
-        };
-        self.status["externalChanges"] = if controller.external {
-            json!([FANS])
-        } else {
-            json!([])
-        };
+        self.status["writesBlocked"] = false.into();
+        self.status["unconfirmedWrites"] = json!([]);
+        self.status["externalChanges"] = json!([]);
+        self.controller.project(&mut self.status);
         self.status["message"] = message.into();
     }
 }
 
-enum Step {
+impl Controller {
+    pub(crate) fn project(&self, status: &mut Value) {
+        let controller = self;
+        let saved = controller.saved.as_ref();
+        let (mode, source) = if saved.is_some() {
+            (
+                FIXED,
+                if controller.lifetime == PERSISTENT {
+                    4
+                } else {
+                    3
+                },
+            )
+        } else {
+            (AUTOMATIC, 1)
+        };
+        status["desiredState"]["fans"] = json!({"value": mode, "source": source});
+        status["desiredState"]["fanControl"] = json!(saved);
+        status["fanOverride"] =
+            json!(saved.map(|_| json!({"value": FIXED, "lifetime": controller.lifetime})));
+        status["fanControlOverride"] = json!(saved);
+        status["confirmedState"]["fans"] = json!(controller.confirmed.map(Topology::wire));
+        status["writesBlocked"] = (status["writesBlocked"] == true
+            || controller.pending
+            || !controller.device.admits_writes())
+        .into();
+        if controller.pending {
+            status["unconfirmedWrites"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!(FANS));
+        }
+        if controller.external {
+            status["externalChanges"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!(FANS));
+        }
+    }
+}
+
+pub(crate) enum Step {
     Handback,
     ArmSplit,
     ObserveSplit,
     ObserveRestoredPair,
+    #[cfg(windows)]
+    ArmFinalTargetLoss,
+    #[cfg(windows)]
+    ObserveManualPair,
 }
 
 impl Step {
-    fn run(self, controller: &mut Controller) -> io::Result<Outcome> {
+    pub(crate) fn run(self, controller: &mut Controller) -> io::Result<Outcome> {
         let message = match self {
             Self::Handback => return controller.handback(),
             Self::ArmSplit => {
@@ -370,6 +429,18 @@ impl Step {
                 controller.device.fault = Fault::None;
                 controller.observe();
                 "Synthetic split fan pair observed without writes."
+            }
+            #[cfg(windows)]
+            Self::ArmFinalTargetLoss => {
+                controller.device.fault = Fault::LoseFinalTargetResponse;
+                "Synthetic fan response loss armed."
+            }
+            #[cfg(windows)]
+            Self::ObserveManualPair => {
+                controller.device.fault = Fault::None;
+                controller.device.allow_readback();
+                controller.observe();
+                "Synthetic manual pair observed without writes."
             }
             Self::ObserveRestoredPair => {
                 controller.device.restore_scripted_pair(Topology::Automatic);

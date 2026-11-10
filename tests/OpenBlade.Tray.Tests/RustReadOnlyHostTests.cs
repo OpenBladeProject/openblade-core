@@ -1037,6 +1037,161 @@ public sealed class RustReadOnlyHostTests
     }
 
 
+    [RustReadOnlyHostFact]
+    public Task TrayClient_ComposesDurableProfilesWithThermalTransitions() =>
+        ExerciseComposedThermalAsync(interrupt: false);
+
+    [RustReadOnlyHostFact]
+    public Task TrayClient_QuarantinedProfilesAllowReadOnlyThermalReconciliation() =>
+        ExerciseComposedThermalAsync(interrupt: true);
+
+    private static async Task ExerciseComposedThermalAsync(bool interrupt)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = timeout.Token;
+        string endpoint = Guid.NewGuid().ToString("N");
+        await using var host = DevHost.Start(endpoint,
+            interrupt ? "foreground-thermal-profile-interrupt" : "foreground-thermal-profile");
+        (string rootId, string identity) = await host.ReadFixtureRootAsync(token);
+        string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Temp", $"openblade-durable-host-{rootId}");
+        using SafeFileHandle pin = OpenFixtureDirectory(root);
+        Assert.False(pin.IsInvalid, $"Could not pin fixture directory. Win32 {Marshal.GetLastWin32Error()}");
+        try
+        {
+            await host.WaitUntilReadyAsync(token);
+            await using var client = new ServiceClient(PipeName(endpoint));
+            var initial = await client.GetStatusAsync(token);
+            AssertComposedBattery(initial, saved: 77, temporary: null, confirmed: 80);
+            Assert.Equal(PerformancePreset.Balanced, initial.Profiles.PluggedIn.Performance);
+            Assert.Equal(PerformancePreset.Balanced, initial.ConfirmedState!.Performance);
+            Assert.Equal(FanMode.Automatic, initial.ConfirmedState.Fans);
+            byte[][] migrated = ReadPrimaryBytes();
+
+            var performance = new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance, OverrideLifetime.UntilPowerSourceChange);
+            var fan = new ManualOverride<FanMode>(FanMode.Fixed, OverrideLifetime.UntilPowerSourceChange);
+            var settings = new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default);
+
+            Assert.Equal(ControlOperationStatus.Blocked, await SetFansAsync());
+            Assert.Equal(ControlOperationStatus.Applied,
+                (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(70), token)).Status);
+            Assert.Contains("cancellation armed", (await AdvanceAsync()).Message);
+            await Assert.ThrowsAnyAsync<IOException>(() => client.SetPerformanceOverrideAsync(performance, token));
+            var canceled = await client.GetStatusAsync(token);
+            Assert.Equal(PerformancePreset.Balanced, canceled.ConfirmedState!.Performance);
+            Assert.Equal((PerformanceOverride?)performance, canceled.PerformanceOverride);
+            Assert.Equal(SettingValueSource.TemporaryOverride, canceled.DesiredState.Performance.Source);
+            Assert.Empty(canceled.UnconfirmedWrites);
+            Assert.Equal(ControlOperationStatus.Blocked, await SetFansAsync());
+
+            Assert.Equal(ControlOperationStatus.Applied,
+                (await client.SetPerformanceOverrideAsync(performance, token)).Status);
+            Assert.Equal(ControlOperationStatus.Applied, await SetFansAsync());
+            var manual = await client.GetStatusAsync(token);
+            Assert.Equal(PerformancePreset.Performance, manual.ConfirmedState!.Performance);
+            Assert.Equal((PerformanceOverride?)performance, manual.PerformanceOverride);
+            Assert.Equal(SettingValueSource.TemporaryOverride, manual.DesiredState.Performance.Source);
+            Assert.Equal(FanMode.Maximum, manual.ConfirmedState.Fans);
+            Assert.Equal(FanMode.Automatic, manual.Profiles.PluggedIn.Fans);
+            Assert.Equal(settings, manual.FanControlOverride);
+            Assert.Equal(SettingValueSource.TemporaryOverride, manual.DesiredState.Fans.Source);
+            AssertPrimaryBytes(root, migrated);
+
+            var released = await AdvanceAsync();
+            Assert.Equal(FanMode.Automatic, released.ConfirmedState!.Fans);
+            Assert.Equal(fan, released.FanOverride);
+            Assert.Equal(settings, released.DesiredState.FanControl);
+            Assert.Contains("response loss armed", (await AdvanceAsync()).Message);
+            Assert.Equal(ControlOperationStatus.Failed, await SetFansAsync());
+            var pending = await client.GetStatusAsync(token);
+            Assert.Equal(FanMode.Automatic, pending.ConfirmedState!.Fans);
+            Assert.Equal(DeviceSubsystem.Fans, Assert.Single(pending.UnconfirmedWrites));
+            Assert.True(pending.WritesBlocked);
+            Assert.Equal(ControlOperationStatus.Blocked, await SetFansAsync());
+            Assert.Equal(ControlOperationStatus.Blocked,
+                (await client.SetPerformanceOverrideAsync(null, token)).Status);
+            AssertPrimaryBytes(root, migrated);
+
+            var changed = initial.Profiles with { BatteryPolicy = BatteryPolicy.Create(75) };
+            var edit = await client.UpdateProfilesAsync(changed, token);
+            Assert.Equal(interrupt ? ControlOperationStatus.Failed : ControlOperationStatus.Stored, edit.Status);
+            var stored = await client.GetStatusAsync(token);
+            AssertComposedBattery(stored, saved: interrupt ? 77 : 75, temporary: 70, confirmed: 70);
+            Assert.Equal(DeviceSubsystem.Fans, Assert.Single(stored.UnconfirmedWrites));
+
+            var observed = await AdvanceAsync();
+            Assert.Contains("observed without writes", observed.Message);
+            Assert.Equal(FanMode.Maximum, observed.ConfirmedState!.Fans);
+            Assert.Equal(settings, observed.FanControlOverride);
+            Assert.Empty(observed.UnconfirmedWrites);
+            Assert.Equal(interrupt, observed.WritesBlocked);
+            if (interrupt)
+            {
+                Assert.Equal(ControlOperationStatus.Blocked, await SetFansAsync());
+                Assert.Equal(ControlOperationStatus.Blocked,
+                    (await client.SetPerformanceOverrideAsync(performance, token)).Status);
+                Assert.Equal(ControlOperationStatus.Blocked,
+                    (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(65), token)).Status);
+                Assert.Equal(ControlOperationStatus.Blocked,
+                    (await client.UpdateProfilesAsync(changed, token)).Status);
+                Assert.Equal(migrated[2], ReadPrimaryBytes()[2]);
+                await host.StopAsync(token);
+                return;
+            }
+
+            var unowned = await AdvanceAsync();
+            Assert.Contains("No confirmed OpenBlade-owned manual fans", unowned.Message);
+            Assert.Equal(FanMode.Maximum, unowned.ConfirmedState!.Fans);
+            Assert.Equal(settings, unowned.DesiredState.FanControl);
+            byte[][] committed = ReadPrimaryBytes();
+            JsonNode expected = JsonNode.Parse(migrated[0])!;
+            expected["profiles"]!["batteryPolicy"]!["chargeLimitPercent"] = 75;
+            Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(committed[0])));
+            Assert.Equal(migrated[1], committed[1]);
+            await host.StopAsync(token);
+
+            string restartEndpoint = Guid.NewGuid().ToString("N");
+            await using var restart = DevHost.Start(restartEndpoint,
+                "foreground-thermal-profile-restart", rootId, identity);
+            await restart.WaitUntilReadyAsync(token);
+            await using var restarted = new ServiceClient(PipeName(restartEndpoint));
+            var fresh = await restarted.GetStatusAsync(token);
+            AssertComposedBattery(fresh, saved: 75, temporary: null, confirmed: 80);
+            Assert.Equal(PerformancePreset.Balanced, fresh.ConfirmedState!.Performance);
+            Assert.Equal(FanMode.Automatic, fresh.ConfirmedState.Fans);
+            Assert.Null(fresh.PerformanceOverride);
+            Assert.Null(fresh.FanOverride);
+            Assert.Empty(fresh.UnconfirmedWrites);
+            await restart.StopAsync(token);
+            AssertPrimaryBytes(root, committed);
+
+            async Task<ControlOperationStatus> SetFansAsync() =>
+                (await client.SetFanControlOverrideAsync(fan, settings, token)).Status;
+
+            async Task<ServiceStatusSnapshot> AdvanceAsync()
+            {
+                await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+                await ReadStatusAsync(watch, subscriptionOpened: true);
+                await host.AdvanceAsync(token);
+                return await ReadStatusAsync(watch, subscriptionOpened: false);
+            }
+        }
+        finally
+        {
+            await host.DisposeAsync();
+            foreach (string file in Directory.EnumerateFiles(root))
+            {
+                File.Delete(file);
+            }
+            pin.Dispose();
+            Directory.Delete(root);
+        }
+
+        byte[][] ReadPrimaryBytes() =>
+            ConfigurationNames.Select(name => File.ReadAllBytes(Path.Combine(root, name))).ToArray();
+    }
+
     private static string PipeName(string endpointId) => $"OpenBlade.Rust.ReadOnly.Dev.{endpointId}";
 
     private static async Task<ServiceStatusSnapshot> ReadStatusAsync(

@@ -40,6 +40,8 @@ pub struct Status {
     performance: Option<Arc<performance_runtime::Scenario>>,
     fan: Option<Arc<fan_runtime::Scenario>>,
     background: Projection,
+    #[cfg(windows)]
+    composed_thermal: bool,
 }
 
 struct Projection {
@@ -99,6 +101,8 @@ impl Status {
             performance: None,
             fan: None,
             background: Projection::new(background, background_legacy)?,
+            #[cfg(windows)]
+            composed_thermal: false,
         })
     }
 
@@ -112,17 +116,29 @@ impl Status {
 
     #[cfg(windows)]
     pub fn with_battery_profiles(
-        self,
+        mut self,
         advance: tokio::sync::mpsc::Receiver<()>,
         profiles: Value,
         writer: Option<openblade_windows_host::configuration_writer::fixture::BatteryProfileStore>,
+        composed_thermal: bool,
     ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
         let scenario = Arc::new(Scenario::composed(
             self.active.current.clone(),
             profiles,
             writer,
+            composed_thermal,
         )?);
-        Ok(self.attach_battery(scenario, advance))
+        self.composed_thermal = composed_thermal;
+        self.replay = Some(scenario.subscribe());
+        self.battery = Some(Arc::clone(&scenario));
+        let drive = async move {
+            if composed_thermal {
+                scenario.drive_thermal(advance).await
+            } else {
+                scenario.drive(advance).await
+            }
+        };
+        Ok((self, drive))
     }
 
     fn attach_battery(
@@ -180,6 +196,22 @@ impl Status {
             crate::runtime::start_durable(self.active.current.clone(), percent, update, shutdown)?;
         self.replay = Some(status);
         Ok((self, drive))
+    }
+
+    fn admits_performance(&self) -> bool {
+        #[cfg(windows)]
+        if self.composed_thermal {
+            return true;
+        }
+        self.performance.is_some()
+    }
+
+    fn admits_fan(&self) -> bool {
+        #[cfg(windows)]
+        if self.composed_thermal {
+            return true;
+        }
+        self.fan.is_some()
     }
 
     fn for_session(&self, session: Session) -> &Projection {
@@ -522,11 +554,21 @@ where
             write_frame(&mut io, request.operation_response(result.into())).await
         }
         (CURRENT_VERSION, "setPerformanceOverride")
-            if matches!(session, Session::Active) && status.performance.is_some() =>
+            if matches!(session, Session::Active) && status.admits_performance() =>
         {
             let PerformanceRequest::SetPerformanceOverride { value, .. } =
                 serde_json::from_slice(&payload)
                     .map_err(|_| invalid("invalid performance request"))?;
+            #[cfg(windows)]
+            if status.composed_thermal {
+                let result = status
+                    .battery
+                    .as_ref()
+                    .ok_or_else(|| invalid("missing composed scenario"))?
+                    .apply_performance(value)
+                    .await?;
+                return write_frame(&mut io, request.operation_response(result.into())).await;
+            }
             let result = status
                 .performance
                 .as_ref()
@@ -536,11 +578,21 @@ where
             write_frame(&mut io, request.operation_response(result)).await
         }
         (CURRENT_VERSION, "setFanOverride")
-            if matches!(session, Session::Active) && status.fan.is_some() =>
+            if matches!(session, Session::Active) && status.admits_fan() =>
         {
             let FanRequest::SetFanOverride {
                 value, settings, ..
             } = serde_json::from_slice(&payload).map_err(|_| invalid("invalid fan request"))?;
+            #[cfg(windows)]
+            if status.composed_thermal {
+                let result = status
+                    .battery
+                    .as_ref()
+                    .ok_or_else(|| invalid("missing composed scenario"))?
+                    .apply_fans(value, settings)
+                    .await?;
+                return write_frame(&mut io, request.operation_response(result.into())).await;
+            }
             let result = status
                 .fan
                 .as_ref()

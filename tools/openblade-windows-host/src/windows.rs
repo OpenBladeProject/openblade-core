@@ -42,23 +42,43 @@ pub(super) fn entry() -> io::Result<()> {
         [mode] if mode == "--scm" => scm::dispatch(),
         [mode, id]
             if mode == "foreground-battery-profile"
-                || mode == "foreground-battery-profile-interrupt" =>
+                || mode == "foreground-battery-profile-interrupt"
+                || mode == "foreground-thermal-profile"
+                || mode == "foreground-thermal-profile-interrupt" =>
         {
             let id = foreground_id(id)?;
             let mut fixture = fixture::Fixture::create(true)?;
             announce_fixture(&mut fixture)?;
-            let (profiles, writer) =
-                fixture.compose_battery(mode == "foreground-battery-profile-interrupt")?;
-            foreground_battery_profiles(id, profiles, Some(writer))
+            let (profiles, writer) = fixture.compose_battery(matches!(
+                mode.to_str(),
+                Some(
+                    "foreground-battery-profile-interrupt" | "foreground-thermal-profile-interrupt"
+                )
+            ))?;
+            foreground_battery_profiles(
+                id,
+                profiles,
+                Some(writer),
+                mode == "foreground-thermal-profile"
+                    || mode == "foreground-thermal-profile-interrupt",
+            )
         }
-        [mode, id, root, identity] if mode == "foreground-battery-profile-restart" => {
+        [mode, id, root, identity]
+            if mode == "foreground-battery-profile-restart"
+                || mode == "foreground-thermal-profile-restart" =>
+        {
             let id = foreground_id(id)?;
             let root = foreground_id(root)?;
             let identity = identity
                 .to_str()
                 .ok_or_else(|| io::Error::other("invalid root identity"))?;
             let profiles = fixture::restart_battery_profile(root, identity)?;
-            foreground_battery_profiles(id, profiles, None)
+            foreground_battery_profiles(
+                id,
+                profiles,
+                None,
+                mode == "foreground-thermal-profile-restart",
+            )
         }
         [mode, id]
             if mode == "foreground-durable"
@@ -173,11 +193,12 @@ fn foreground_battery_profiles(
     id: &str,
     profiles: serde_json::Value,
     writer: Option<fixture::BatteryProfileStore>,
+    thermal: bool,
 ) -> io::Result<()> {
     foreground(id, Session::Active, true, |advance, shutdown| {
         let advance = advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
         let (status, drive) =
-            Status::fixture()?.with_battery_profiles(advance, profiles, writer)?;
+            Status::fixture()?.with_battery_profiles(advance, profiles, writer, thermal)?;
         let drive = async move {
             tokio::select! {
                 _ = shutdown => Ok(()),

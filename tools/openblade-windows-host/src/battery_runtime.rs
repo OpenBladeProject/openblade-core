@@ -479,7 +479,12 @@ pub(crate) struct Scenario {
     publish: watch::Sender<Arc<Value>>,
 }
 
+#[cfg(windows)]
+mod thermal;
+
 struct ScenarioState {
+    #[cfg(windows)]
+    thermal: Option<thermal::Thermal>,
     controller: Controller<FakeDevice>,
     current: Value,
     #[cfg(windows)]
@@ -493,6 +498,8 @@ impl Scenario {
             baseline,
             #[cfg(windows)]
             None,
+            #[cfg(windows)]
+            None,
         )
     }
 
@@ -501,17 +508,27 @@ impl Scenario {
         mut baseline: Value,
         profiles: Value,
         writer: Option<ProfileWriter>,
+        with_thermal: bool,
     ) -> io::Result<Self> {
         baseline["profiles"] = profiles;
-        Self::start(baseline, writer)
+        let thermal = with_thermal
+            .then(|| thermal::Thermal::new(&mut baseline))
+            .transpose()?;
+        Self::start(baseline, writer, thermal)
     }
 
-    fn start(baseline: Value, #[cfg(windows)] writer: Option<ProfileWriter>) -> io::Result<Self> {
+    fn start(
+        baseline: Value,
+        #[cfg(windows)] writer: Option<ProfileWriter>,
+        #[cfg(windows)] thermal: Option<thermal::Thermal>,
+    ) -> io::Result<Self> {
         #[cfg(windows)]
         let editable = writer.is_some();
         let mut controller = Controller::fixture(&baseline)?;
         controller.observe();
         let mut state = ScenarioState {
+            #[cfg(windows)]
+            thermal,
             controller,
             current: baseline,
             #[cfg(windows)]
@@ -567,6 +584,10 @@ impl Scenario {
         self.update(|state| {
             if state.configuration_blocked {
                 return Ok(blocked_configuration());
+            }
+            #[cfg(windows)]
+            if state.thermal.is_some() && state.has_pending_write() {
+                return Ok(thermal::await_readback());
             }
             state.controller.apply(intent)
         })
@@ -662,13 +683,21 @@ impl Scenario {
             .and_then(|value| value.checked_add(1))
             .ok_or_else(|| io::Error::other("invalid battery status revision"))?;
         let previous = state.current.clone();
-        let result = run(state)?;
-        state.project(result.message);
+        let result = run(state);
+        let message = match &result {
+            Ok(result) => result.message,
+            #[cfg(windows)]
+            Err(error) if state.thermal.is_some() && error.kind() == io::ErrorKind::Interrupted => {
+                "Synthetic request canceled before submission."
+            }
+            Err(_) => return result,
+        };
+        state.project(message);
         if state.current != previous {
             state.current["revision"] = revision.into();
             self.publish.send_replace(Arc::new(state.current.clone()));
         }
-        Ok(result)
+        result
     }
 }
 
@@ -713,6 +742,10 @@ impl ScenarioState {
         } else {
             json!([])
         };
+        #[cfg(windows)]
+        if let Some(thermal) = &self.thermal {
+            thermal.project(&mut self.current);
+        }
         self.current["message"] = message.into();
     }
 }

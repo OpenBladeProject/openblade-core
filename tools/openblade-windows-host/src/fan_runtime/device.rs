@@ -62,6 +62,8 @@ pub(super) enum Fault {
     #[default]
     None,
     LoseFirstModeResponse,
+    #[cfg(windows)]
+    LoseFinalTargetResponse,
     #[cfg(test)]
     CancelBeforeSubmission,
     #[cfg(test)]
@@ -113,6 +115,11 @@ impl Device {
 
     pub(super) fn restore_scripted_pair(&mut self, topology: Topology) {
         self.transport.topology = [topology; 2];
+    }
+
+    #[cfg(windows)]
+    pub(super) fn allow_readback(&mut self) {
+        self.transport.readable = true;
     }
 
     pub(super) fn apply(&mut self, baseline: Topology, target: Topology) -> RecipeResult {
@@ -193,6 +200,13 @@ impl Device {
         if fault == Fault::LoseFirstModeResponse
             && matches!(command, Command::SetTopology(Channel::First, _))
         {
+            return None;
+        }
+        #[cfg(windows)]
+        if fault == Fault::LoseFinalTargetResponse
+            && command == Command::SetFixedTarget(Channel::Second)
+        {
+            self.transport.readable = false;
             return None;
         }
         #[cfg(test)]

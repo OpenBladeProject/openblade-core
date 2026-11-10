@@ -39,6 +39,13 @@ enum Intent {
     Persistent(Preset),
 }
 
+#[cfg(windows)]
+impl Override {
+    pub(crate) fn is_temporary(&self) -> bool {
+        self.lifetime == 0
+    }
+}
+
 impl TryFrom<Option<Override>> for Intent {
     type Error = ();
 
@@ -96,7 +103,7 @@ impl Store {
     }
 }
 
-struct Controller {
+pub(crate) struct Controller {
     store: Store,
     device: Device,
     temporary: Option<Preset>,
@@ -106,6 +113,20 @@ struct Controller {
 }
 
 impl Controller {
+    pub(crate) fn standard() -> Self {
+        Self::new(Store::new(Preset::Balanced), Device::new())
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn performance_confirmed(&self) -> bool {
+        self.confirmed == Some(Preset::Performance) && !self.pending_write()
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn pending_write(&self) -> bool {
+        self.pending.is_some()
+    }
+
     fn new(store: Store, device: Device) -> Self {
         let mut controller = Self {
             store,
@@ -129,6 +150,15 @@ impl Controller {
             ValueOrigin::Temporary => (self.temporary.unwrap_or(self.store.profile), 3),
             ValueOrigin::Persistent => (self.store.persistent.unwrap_or(self.store.profile), 4),
             _ => (self.store.profile, 1),
+        }
+    }
+
+    pub(crate) fn request(&mut self, value: Option<Override>) -> io::Result<Outcome> {
+        match Intent::try_from(value) {
+            Ok(intent) => self.apply(intent),
+            Err(()) => Ok(Outcome::blocked(
+                "Only standard Balanced and Performance overrides are admitted in this replay.",
+            )),
         }
     }
 
@@ -288,7 +318,7 @@ impl Scenario {
         {
             return Err(io::Error::other("unexpected performance replay fixture"));
         }
-        let controller = Controller::new(Store::new(Preset::Balanced), Device::new());
+        let controller = Controller::standard();
         status["deviceVerified"] = true.into();
         status["potentialControllers"] = json!([]);
         status["capabilities"]["performancePresets"] =
@@ -310,12 +340,7 @@ impl Scenario {
     }
 
     pub(crate) fn apply(&self, value: Option<Override>) -> io::Result<Outcome> {
-        self.update(|controller| match Intent::try_from(value) {
-            Ok(intent) => controller.apply(intent),
-            Err(()) => Ok(Outcome::blocked(
-                "Only standard Balanced and Performance overrides are admitted in this replay.",
-            )),
-        })
+        self.update(|controller| controller.request(value))
     }
 
     pub(crate) async fn drive(&self, mut advance: mpsc::Receiver<()>) -> io::Result<()> {
@@ -354,13 +379,22 @@ impl Scenario {
 
 impl State {
     fn project(&mut self, message: &'static str) {
-        let controller = &self.controller;
+        self.status["writesBlocked"] = false.into();
+        self.status["unconfirmedWrites"] = json!([]);
+        self.status["externalChanges"] = json!([]);
+        self.controller.project(&mut self.status);
+        self.status["message"] = message.into();
+    }
+}
+
+impl Controller {
+    pub(crate) fn project(&self, status: &mut Value) {
+        let controller = self;
         let (desired, source) = controller.desired();
-        self.status["desiredState"]["performance"] =
-            json!({"value": desired as i32, "source": source});
-        self.status["confirmedState"]["performance"] =
+        status["desiredState"]["performance"] = json!({"value": desired as i32, "source": source});
+        status["confirmedState"]["performance"] =
             json!(controller.confirmed.map(|value| value as i32));
-        self.status["performanceOverride"] = json!(
+        status["performanceOverride"] = json!(
             controller
                 .store
                 .persistent
@@ -373,31 +407,34 @@ impl State {
                     "gpuClockTuning": null,
                 }))
         );
-        self.status["writesBlocked"] =
-            json!(controller.pending.is_some() || !controller.device.admits_writes());
-        self.status["unconfirmedWrites"] = if controller.pending.is_some() {
-            json!([PERFORMANCE])
-        } else {
-            json!([])
-        };
-        self.status["externalChanges"] = if controller.external {
-            json!([PERFORMANCE])
-        } else {
-            json!([])
-        };
-        self.status["message"] = message.into();
+        status["writesBlocked"] = (status["writesBlocked"] == true
+            || controller.pending.is_some()
+            || !controller.device.admits_writes())
+        .into();
+        if controller.pending.is_some() {
+            status["unconfirmedWrites"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!(PERFORMANCE));
+        }
+        if controller.external {
+            status["externalChanges"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!(PERFORMANCE));
+        }
     }
 }
 
 #[derive(Clone, Copy)]
-enum Step {
+pub(crate) enum Step {
     Cancel,
     LoseResponse,
     Recover,
 }
 
 impl Step {
-    fn run(self, controller: &mut Controller) -> Outcome {
+    pub(crate) fn run(self, controller: &mut Controller) -> Outcome {
         let message = match self {
             Self::Cancel => {
                 controller.device.arm(Fault::CancelBeforeFirst);
