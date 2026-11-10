@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Suppress the plugged-in battery discharge warning above, at, or up to five percentage points below the active charge limit. ([#935](https://github.com/OpenBladeProject/openblade-core/pull/935))
 - Fix false failure messages after changing internal display brightness. ([#939](https://github.com/OSSBlade/openblade-core/pull/939))
 
 ## [0.58.2-nightly.110] - 2026-11-09
