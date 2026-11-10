@@ -72,6 +72,7 @@ pub(crate) struct Controller {
     // The private replay's store is process-local. Handback never changes it.
     saved: Option<Settings>,
     lifetime: i32,
+    manual_entry_only: bool,
     confirmed: Option<Topology>,
     owned: bool,
     pending: bool,
@@ -87,6 +88,7 @@ impl Controller {
     pub(crate) fn temporary() -> Self {
         Self {
             lifetime: TEMPORARY,
+            manual_entry_only: true,
             ..Self::standard()
         }
     }
@@ -107,6 +109,7 @@ impl Controller {
             device,
             saved: None,
             lifetime: PERSISTENT,
+            manual_entry_only: false,
             confirmed,
             owned: false,
             pending: false,
@@ -178,6 +181,13 @@ impl Controller {
             ));
         };
         self.record(baseline);
+        // The composed full-adapter fixture admits entry only. A manual
+        // observation cannot authorize a target-only rewrite or establish ownership.
+        if self.manual_entry_only && target == Topology::Manual && baseline != Topology::Automatic {
+            return Ok(Outcome::blocked(
+                "Fixed entry requires a fresh Automatic fan pair.",
+            ));
+        }
         if target == Topology::Automatic && baseline == Topology::Automatic {
             return Ok(Outcome::new(
                 ScopedStatus::Unchanged,

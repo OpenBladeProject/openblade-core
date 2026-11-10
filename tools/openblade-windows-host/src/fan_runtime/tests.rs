@@ -262,6 +262,38 @@ fn observing_the_split_step_retires_an_unconsumed_fault() {
     assert!(!controller.pending);
 }
 
+#[cfg(windows)]
+#[test]
+fn composed_fan_entry_never_rewrites_an_observed_unowned_manual_pair() {
+    let mut controller = Controller::temporary();
+    Step::ArmFinalTargetLoss.run(&mut controller).unwrap();
+    assert_eq!(
+        controller.set_fixed(settings()).unwrap().status,
+        ScopedStatus::Failed
+    );
+    assert!(controller.pending);
+    assert!(!controller.owned);
+
+    controller.device.trace.clear();
+    Step::ObserveManualPair.run(&mut controller).unwrap();
+    assert_eq!(controller.confirmed, Some(Topology::Manual));
+    assert!(!controller.pending);
+    assert!(!controller.owned);
+    assert_eq!(controller.device.trace, ["0D82:01010000", "0D82:01020000"]);
+
+    controller.device.trace.clear();
+    assert_eq!(
+        controller.set_fixed(settings()).unwrap().status,
+        ScopedStatus::Blocked
+    );
+    assert_eq!(
+        controller.handback().unwrap().status,
+        ScopedStatus::Unchanged
+    );
+    assert!(!controller.owned);
+    assert_eq!(controller.device.trace, ["0D82:01010000", "0D82:01020000"]);
+}
+
 #[test]
 fn unchanged_status_keeps_the_current_revision_and_does_not_publish() {
     let event: Value = serde_json::from_str(crate::wire::CURRENT_FIXTURE).unwrap();

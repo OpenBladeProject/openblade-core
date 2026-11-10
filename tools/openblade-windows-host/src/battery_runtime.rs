@@ -586,7 +586,11 @@ impl Scenario {
                 return Ok(blocked_configuration());
             }
             #[cfg(windows)]
-            if state.thermal.is_some() && state.has_pending_write() {
+            if state
+                .thermal
+                .as_ref()
+                .is_some_and(thermal::Thermal::pending_write)
+            {
                 return Ok(thermal::await_readback());
             }
             state.controller.apply(intent)
@@ -683,21 +687,13 @@ impl Scenario {
             .and_then(|value| value.checked_add(1))
             .ok_or_else(|| io::Error::other("invalid battery status revision"))?;
         let previous = state.current.clone();
-        let result = run(state);
-        let message = match &result {
-            Ok(result) => result.message,
-            #[cfg(windows)]
-            Err(error) if state.thermal.is_some() && error.kind() == io::ErrorKind::Interrupted => {
-                "Synthetic request canceled before submission."
-            }
-            Err(_) => return result,
-        };
-        state.project(message);
+        let result = run(state)?;
+        state.project(result.message);
         if state.current != previous {
             state.current["revision"] = revision.into();
             self.publish.send_replace(Arc::new(state.current.clone()));
         }
-        result
+        Ok(result)
     }
 }
 

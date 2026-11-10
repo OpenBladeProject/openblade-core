@@ -87,10 +87,6 @@ These modes own no hardware, and the restart mode has read-only configuration
 access. Other profile edits, production recovery, and ownership transfer remain
 outside the scenario.
 
-## Compatibility boundary
-
-- Each connection accepts one v79 `getStatus` or `subscribeStatus` request, or one v51 `getStatus` request. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every pipe read uses a cached snapshot and has no activation or state changes.
-- Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Other operations receive a correlated refusal before any dispatch. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
 
 ## Exercise standard battery policy
 
@@ -226,7 +222,8 @@ performance and ordinary Fixed fan operations. The scenario guard serializes
 these effects and publishes one status revision. The thermal recipes use the
 existing exact-device scripted transports. The bounded composition runs at
 full-adapter power with an Automatic baseline. Fan entry and handback require
-confirmed Performance.
+confirmed Performance. Fixed entry also requires a fresh Automatic fan pair.
+A manual pair observed during reconciliation stays outside the entry recipe.
 
 The C# client exercises preset cancellation, explicit preset selection, Fixed
 entry and owned Automatic handback. A lost final fan response leaves the last
@@ -243,7 +240,7 @@ while a read-only fan observation can still resolve the device state.
 
 ## Compatibility boundary
 
-- Each connection accepts one v79 `getStatus` or `subscribeStatus` request, or one v51 `getStatus` request. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.
+- Each connection accepts one request. Every mode serves v79 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v79 in the explicitly scoped foreground modes. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.
 - Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Each mode returns a correlated refusal for operations outside its allowlist. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
 - Windows claims the first instance exclusively and rejects remote connections. The explicit DACL restricts access to the host account. After reading the request bytes, the host resolves the pipe token and requires the same SID, logon authentication ID and Windows session. This is a same-logon development trust boundary. The ordinary duplex C# client asks for generic write, which also gives its SID permission to create pipe instances. It does not establish server trust against another process in that logon. Both projections exercise synthetic authorization inputs behind the native identity check. They do not replicate active-session selection or LocalSystem access policy.
 - Rust tests cover the wire fixtures and native endpoint checks, including first-instance contention, listener saturation and recovery, an anonymous client, and start/stop ordering through the shared lifecycle with an injected SCM reporter and stop signal. The .NET tests exercise the real tray client through the foreground endpoint, including initial status, event, cancellation and reconnect. They supplement that path with managed codec and v51 raw frames. The Windows job in the Rust workflow runs both sets on stacked PRs.

@@ -502,7 +502,7 @@ public sealed class RustReadOnlyHostTests
             else
             {
                 byte[] stage = File.ReadAllBytes(artifact + ".stage");
-                if (i == 2 && restartMode == "foreground-battery-profile-restart")
+                if (i == 2 && restartMode is "foreground-battery-profile-restart" or "foreground-thermal-profile-restart")
                 {
                     Assert.True(JsonNode.DeepEquals(JsonNode.Parse(committed[i]), JsonNode.Parse(stage)));
                 }
@@ -1080,9 +1080,14 @@ public sealed class RustReadOnlyHostTests
             await Assert.ThrowsAnyAsync<IOException>(() => client.SetPerformanceOverrideAsync(performance, token));
             var canceled = await client.GetStatusAsync(token);
             Assert.Equal(PerformancePreset.Balanced, canceled.ConfirmedState!.Performance);
-            Assert.Equal((PerformanceOverride?)performance, canceled.PerformanceOverride);
-            Assert.Equal(SettingValueSource.TemporaryOverride, canceled.DesiredState.Performance.Source);
+            Assert.Null(canceled.PerformanceOverride);
             Assert.Empty(canceled.UnconfirmedWrites);
+
+            var canceledObserved = await AdvanceAsync();
+            Assert.Equal(PerformancePreset.Balanced, canceledObserved.ConfirmedState!.Performance);
+            Assert.Equal((PerformanceOverride?)performance, canceledObserved.PerformanceOverride);
+            Assert.Equal(SettingValueSource.TemporaryOverride, canceledObserved.DesiredState.Performance.Source);
+            Assert.Empty(canceledObserved.UnconfirmedWrites);
             Assert.Equal(ControlOperationStatus.Blocked, await SetFansAsync());
 
             Assert.Equal(ControlOperationStatus.Applied,
@@ -1135,11 +1140,18 @@ public sealed class RustReadOnlyHostTests
                     (await client.SetBatteryPolicyAsync(BatteryPolicy.Create(65), token)).Status);
                 Assert.Equal(ControlOperationStatus.Blocked,
                     (await client.UpdateProfilesAsync(changed, token)).Status);
-                Assert.Equal(migrated[2], ReadPrimaryBytes()[2]);
+                byte[][] interrupted = ReadPrimaryBytes();
+                Assert.Equal(migrated[2], interrupted[2]);
+                JsonNode proposedMarker = JsonNode.Parse(migrated[2])!;
+                proposedMarker["profileSha256"] = Convert.ToHexString(SHA256.HashData(interrupted[0]));
+                interrupted[2] = JsonSerializer.SerializeToUtf8Bytes(proposedMarker);
                 await host.StopAsync(token);
+                await AssertQuarantinedRestartAsync(root, rootId, identity, migrated, interrupted, token,
+                    "foreground-thermal-profile-restart");
                 return;
             }
 
+            Assert.Equal(ControlOperationStatus.Blocked, await SetFansAsync());
             var unowned = await AdvanceAsync();
             Assert.Contains("No confirmed OpenBlade-owned manual fans", unowned.Message);
             Assert.Equal(FanMode.Maximum, unowned.ConfirmedState!.Fans);

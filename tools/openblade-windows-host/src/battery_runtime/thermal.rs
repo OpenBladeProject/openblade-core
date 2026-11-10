@@ -36,6 +36,10 @@ impl Thermal {
         })
     }
 
+    pub(super) fn pending_write(&self) -> bool {
+        self.performance.pending_write() || self.fans.pending_write()
+    }
+
     pub(super) fn project(&self, status: &mut Value) {
         self.performance.project(status);
         self.fans.project(status);
@@ -54,13 +58,6 @@ pub(super) fn await_readback() -> Result {
 }
 
 impl ScenarioState {
-    pub(super) fn has_pending_write(&self) -> bool {
-        self.controller.pending.is_some()
-            || self.thermal.as_ref().is_some_and(|thermal| {
-                thermal.performance.pending_write() || thermal.fans.pending_write()
-            })
-    }
-
     fn thermal(&mut self) -> io::Result<&mut Thermal> {
         self.thermal
             .as_mut()
@@ -71,7 +68,9 @@ impl ScenarioState {
         if self.configuration_blocked {
             return Some(blocked_configuration());
         }
-        self.has_pending_write().then(await_readback)
+        (self.controller.pending.is_some()
+            || self.thermal.as_ref().is_some_and(Thermal::pending_write))
+        .then(await_readback)
     }
 }
 
@@ -132,6 +131,7 @@ impl Scenario {
     pub(crate) async fn drive_thermal(&self, mut advance: mpsc::Receiver<()>) -> io::Result<()> {
         for step in [
             ThermalStep::CancelPreset,
+            ThermalStep::ObservePreset,
             ThermalStep::Fan(fan::Step::Handback),
             ThermalStep::Fan(fan::Step::ArmFinalTargetLoss),
             ThermalStep::Fan(fan::Step::ObserveManualPair),
@@ -142,13 +142,25 @@ impl Scenario {
             }
             self.update(|state| step.run(state)).await?;
         }
-        while advance.recv().await.is_some() {}
+        // Keep readback available after the scripted trajectory has finished.
+        while advance.recv().await.is_some() {
+            self.update(|state| {
+                state.controller.observe();
+                let thermal = state.thermal()?;
+                if thermal.performance.pending_write() {
+                    return ThermalStep::ObservePreset.run(state);
+                }
+                ThermalStep::Fan(fan::Step::ObserveManualPair).run(state)
+            })
+            .await?;
+        }
         Ok(())
     }
 }
 
 enum ThermalStep {
     CancelPreset,
+    ObservePreset,
     Fan(fan::Step),
 }
 
@@ -156,15 +168,22 @@ impl ThermalStep {
     fn run(self, state: &mut ScenarioState) -> io::Result<Result> {
         // The observation path stays available even while both kinds of
         // uncertainty block setters and owned handback.
-        if !matches!(self, Self::Fan(fan::Step::ObserveManualPair))
-            && let Some(blocked) = state.thermal_block()
+        if !matches!(
+            self,
+            Self::ObservePreset | Self::Fan(fan::Step::ObserveManualPair)
+        ) && let Some(blocked) = state.thermal_block()
         {
             return Ok(blocked);
         }
         let thermal = state.thermal()?;
         match self {
-            Self::CancelPreset => {
-                let outcome = performance::Step::Cancel.run(&mut thermal.performance);
+            Self::CancelPreset | Self::ObservePreset => {
+                let step = if matches!(self, Self::CancelPreset) {
+                    performance::Step::Cancel
+                } else {
+                    performance::Step::Recover
+                };
+                let outcome = step.run(&mut thermal.performance);
                 Ok(Result {
                     status: outcome.status,
                     message: outcome.message,
