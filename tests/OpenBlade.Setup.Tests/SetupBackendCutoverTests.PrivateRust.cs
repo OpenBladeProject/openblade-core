@@ -18,13 +18,13 @@ public sealed partial class SetupBackendCutoverTests
 {
     internal const string LiveFixtureDirectoryVariable = "OPENBLADE_PHASE_7E_FIXTURES";
 
-    // Frozen builds of the two Phase 6y entry points, with independent role pins.
+    // Both fixtures were built from the same integrated Rust source revision.
     // Neither the caller's environment nor the signed archive selects the pins.
-    private const string LiveFixtureRevision = "3a7befde461e50f9cc54ee5903a703f48b19681a";
+    private const string LiveFixtureRevision = "324f34d4db794ba6f9b6d2db4982801b335da662";
     private const string LiveServiceFixture = "openblade-windows-host.exe";
-    private const string LiveServiceHash = "3C4339A45850D214FA84E31A98D990CE3BE8B4A62FEDD8EF356FC8959228D285";
+    private const string LiveServiceHash = "B806488EB9E8653B5D4825669A182B226F1CAEBC0B2AA78A425F1688B67E90E9";
     private const string LiveAgentFixture = "openblade-rust-session-agent.exe";
-    private const string LiveAgentHash = "0CBC4CFBDAC071EE5C8738082C3265007C53A69C20661A1CE5ACEADEC0CF4130";
+    private const string LiveAgentHash = "77C708A0564939012472D0465D61F06F9DC1E9AABDC0A8770B0FA83C29009A02";
 
     private const string AgentRefusal = "The GPU inventory scan timed out.";
 
@@ -585,7 +585,7 @@ internal sealed class LocalLiveRustFixtureTheoryAttribute : TheoryAttribute
         if (!OperatingSystem.IsWindows()
             || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(SetupBackendCutoverTests.LiveFixtureDirectoryVariable)))
         {
-            Skip = "Requires Windows and OPENBLADE_PHASE_7E_FIXTURES containing the two pinned Phase 6y Rust fixtures.";
+            Skip = "Requires Windows and OPENBLADE_PHASE_7E_FIXTURES containing the two pinned integrated Rust fixtures.";
         }
     }
 }
