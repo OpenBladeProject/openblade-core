@@ -159,18 +159,105 @@ public sealed partial class RustSessionAgentTests
         await AssertClosedAsync(stopped, token);
     }
 
-    private static async Task<SessionAudioResponse> ReadFixtureAudioAsync(
-        string id, ThxAudioEndpoint endpoint, CancellationToken token)
+    [RustSessionAgentFact]
+    public async Task AudioFixture_SpatialRequiresAnOutputReadAndReturnsConfirmedState()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        CancellationToken token = timeout.Token;
+        const int version = SessionAudioIpc.ProtocolVersion;
+        foreach (string scenario in new[] { "modern", "legacy" })
+        {
+            string id = Guid.NewGuid().ToString("N");
+            await using var host = Host.Start(id, scenario, mode: "audio-foreground");
+            await host.WaitForReadyAsync(token);
+
+            var speakerWrite = new SetThxSpatialRequest(version, Guid.NewGuid(), ThxAudioEndpoint.Speakers, false);
+            SessionAudioResponse beforeRead = await SendFixtureAudioAsync(id, speakerWrite, token);
+            Assert.Equal(ThxAudioOperationStatus.Unavailable, beforeRead.Status);
+            Assert.Null(beforeRead.State);
+            SessionAudioResponse baseline = await ReadFixtureAudioAsync(id, ThxAudioEndpoint.Speakers, token);
+            Assert.Equal(ThxAudioOperationStatus.Succeeded, baseline.Status);
+            Assert.True(Assert.IsType<ThxAudioState>(baseline.State).SpatialEnabled);
+
+            var headphoneWrite = new SetThxSpatialRequest(version, Guid.NewGuid(), ThxAudioEndpoint.Headphones, true);
+            Assert.Equal(ThxAudioOperationStatus.Unavailable,
+                (await SendFixtureAudioAsync(id, headphoneWrite, token)).Status);
+            SessionAudioResponse applied = await SendFixtureAudioAsync(
+                id, speakerWrite with { RequestId = Guid.NewGuid() }, token);
+            Assert.Equal(ThxAudioOperationStatus.Succeeded, applied.Status);
+            Assert.Equal(ThxAudioAvailability.Available, applied.Availability);
+            Assert.Null(applied.BaseAudio);
+            ThxAudioState state = Assert.IsType<ThxAudioState>(applied.State);
+            Assert.Equal(ThxAudioEndpoint.Speakers, state.Endpoint);
+            Assert.False(state.SpatialEnabled);
+            Assert.Equal(scenario == "legacy" ? ThxAudioFeatureAccess.ObservedOnly : ThxAudioFeatureAccess.Unavailable,
+                state.Equalizer);
+            Assert.Equal(ThxAudioFeatureAccess.Unavailable, state.ApplicationProfiles);
+            Assert.False(Assert.IsType<ThxAudioState>(
+                (await ReadFixtureAudioAsync(id, ThxAudioEndpoint.Speakers, token)).State).SpatialEnabled);
+            await host.StopAsync(token);
+        }
+    }
+
+    [RustSessionAgentFact]
+    public async Task AudioFixture_AmbiguousSpatialBlocksAcrossConnectionsUntilExplicitRead()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        CancellationToken token = timeout.Token;
+        const int version = SessionAudioIpc.ProtocolVersion;
+        const ThxAudioEndpoint endpoint = ThxAudioEndpoint.Speakers;
+        string id = Guid.NewGuid().ToString("N");
+        await using var host = Host.Start(id, "ambiguous", mode: "audio-foreground");
+        await host.WaitForReadyAsync(token);
+        Assert.True(Assert.IsType<ThxAudioState>((await ReadFixtureAudioAsync(id, endpoint, token)).State).SpatialEnabled);
+        Assert.Equal(ThxAudioOperationStatus.Succeeded,
+            (await ReadFixtureAudioAsync(id, ThxAudioEndpoint.Headphones, token)).Status);
+
+        SessionAudioResponse unknown = await SendFixtureAudioAsync(id,
+            new SetThxSpatialRequest(version, Guid.NewGuid(), endpoint, false), token);
+        Assert.Equal(ThxAudioOperationStatus.Indeterminate, unknown.Status);
+        Assert.Null(unknown.State);
+
+        SessionAudioRequest[] blocked =
+        [
+            new ConnectThxAudioRequest(version, Guid.NewGuid(), endpoint),
+            new SetThxSpatialRequest(version, Guid.NewGuid(), endpoint, true),
+            new SetThxSpatialRequest(version, Guid.NewGuid(), ThxAudioEndpoint.Headphones, true),
+        ];
+        foreach (SessionAudioRequest request in blocked)
+        {
+            SessionAudioResponse refusal = await SendFixtureAudioAsync(id, request, token);
+            Assert.Equal(ThxAudioOperationStatus.Unavailable, refusal.Status);
+            Assert.Null(refusal.State);
+        }
+
+        SessionAudioResponse recovered = await ReadFixtureAudioAsync(id, endpoint, token);
+        Assert.False(Assert.IsType<ThxAudioState>(recovered.State).SpatialEnabled);
+        Assert.Equal(ThxAudioOperationStatus.Unavailable, (await SendFixtureAudioAsync(id,
+            new SetThxSpatialRequest(version, Guid.NewGuid(), ThxAudioEndpoint.Headphones, true), token)).Status);
+        SessionAudioResponse next = await SendFixtureAudioAsync(id,
+            new SetThxSpatialRequest(version, Guid.NewGuid(), endpoint, true), token);
+        Assert.Equal(ThxAudioOperationStatus.Succeeded, next.Status);
+        Assert.True(Assert.IsType<ThxAudioState>(next.State).SpatialEnabled);
+        await host.StopAsync(token);
+    }
+
+    private static Task<SessionAudioResponse> ReadFixtureAudioAsync(
+        string id, ThxAudioEndpoint endpoint, CancellationToken token) =>
+        SendFixtureAudioAsync(id, new ReadThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), endpoint), token);
+
+    private static async Task<SessionAudioResponse> SendFixtureAudioAsync(
+        string id, SessionAudioRequest request, CancellationToken token)
     {
         using var pipe = AudioFixturePipe(id);
         await pipe.ConnectAsync(token);
-        var request = new ReadThxAudioRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(), endpoint);
         await SessionAudioIpcCodec.WriteRequestAsync(pipe, request, token);
         SessionAudioResponse response = await SessionAudioIpcCodec.ReadResponseAsync(pipe, token);
         Assert.Equal(request.RequestId, response.RequestId);
         Assert.Equal(request.Version, response.Version);
         return response;
     }
+
 
     private static NamedPipeClientStream AudioFixturePipe(
         string id, TokenImpersonationLevel impersonation = TokenImpersonationLevel.Identification) =>

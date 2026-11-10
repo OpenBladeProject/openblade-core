@@ -152,7 +152,7 @@ fn usage() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
         format!(
-            "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <{gpu_scenarios}> or audio-foreground <32 lowercase hex digits> <available|unavailable|stalled> or integrated <id> <new|resume|reconcile> <gpu scenario> <service id> <service pid> <reporter id>"
+            "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <{gpu_scenarios}> or audio-foreground <32 lowercase hex digits> <available|unavailable|stalled|modern|legacy|ambiguous> or integrated <id> <new|resume|reconcile> <gpu scenario> <service id> <service pid> <reporter id>"
         ),
     )
 }
@@ -212,6 +212,7 @@ async fn run_gpu(id: &str, scenario: GpuScenario) -> io::Result<()> {
 }
 
 async fn run_audio(id: &str, scenario: session_audio::Scenario) -> io::Result<()> {
+    let mut fixture = session_audio::Fixture::new(scenario);
     let endpoint = Endpoint::new(format!("{AUDIO_PREFIX}{id}"), 2)?;
     let _claim = endpoint.claim()?;
     let listener = endpoint.listen()?;
@@ -219,7 +220,7 @@ async fn run_audio(id: &str, scenario: session_audio::Scenario) -> io::Result<()
         &endpoint,
         listener,
         Arc::new(AtomicBool::new(false)),
-        async |pipe, identity| session_audio::serve(pipe, identity, scenario).await,
+        async |pipe, identity| fixture.serve(pipe, identity).await,
     )
     .await
 }

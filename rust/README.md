@@ -230,9 +230,9 @@ Ordinary long paths still depend on the eventual host's Win32 long-path
 configuration. Managed NLS, invariant mode and app-local ICU overrides are
 outside the checked comparison contract.
 
-#### Private Windows Session Audio read
+#### Private Windows Session Audio fixture
 
-Run `audio-foreground <32 lowercase hex digits> <available|unavailable|stalled>`
+Run `audio-foreground <32 lowercase hex digits> <available|unavailable|stalled|modern|legacy|ambiguous>`
 on the development Session Agent. It claims `OpenBlade.Rust.Session.Audio.Dev.<id>`
 with the existing local-only, current-user pipe owner and checks the peer's
 session and logon before dispatch. Close standard input to stop.
@@ -250,8 +250,9 @@ cover wire validation and diagnostic proof. The pinned
 cover diagnostic provenance, fresh helper admission and the distinction between
 explicit Read and Connect after an uncertain mutation.
 
-The fixture implements only `read` for Speakers and Headphones using canonical
-managed request member names, a nonempty GUID and the numeric endpoint enum.
+The original three scenarios accept only `read` for Speakers and Headphones.
+Requests use canonical managed member names, a nonempty GUID and the numeric
+endpoint enum.
 It uses a signed little-endian length and a 64 KiB UTF-8 JSON limit. One
 connection serves one request. A successful response is `AvailableReadOnly`
 with fixed synthetic state for the requested endpoint. The unavailable fixture
@@ -265,16 +266,39 @@ response. Host shutdown cancels the synthetic future and closes the listener.
 A caller can cancel its own wait without producing a typed server result.
 The synthetic future has no external work to drain.
 
-Discover, Connect, spatial and EQ setters, preset selection and custom
-curves, enhancement changes and
-application-profile changes all close the private connection before dispatch.
-Provisioning is a separate production setup workflow. Future parity requires
-reviewed exact-model and endpoint admission, installed-component and controller
-trust, a supervised native worker with bounded lifetime and cancellation,
-base-audio diagnostic proof independent of THX admission, and identity-bound
-confirmed reads and recovery after uncertain mutations. Automation also needs
-its own lease and manual-operation ordering. Production audio IPC, setup and
-native acquisition have no entry point through this fixture.
+The opt-in `modern`, `legacy`, and `ambiguous` scenarios also accept the managed
+`connect` and `setSpatial` requests. All scenarios use the same private pipe and framing. The runtime
+slice follows the same managed pin for
+[compatibility](../src/OpenBlade.SessionAgent/ThxAudioCompatibility.cs),
+[runtime admission](../src/OpenBlade.SessionAgent/ThxAudioAdmission.cs),
+[modern helper](../src/OpenBlade.SessionAgent/ThxAudioHelperCommand.cs),
+[legacy helper](../src/OpenBlade.SessionAgent/LegacyThxAudioCommand.cs), and
+[worker results](../src/OpenBlade.SessionAgent/ThxAudioHelperProtocol.cs).
+The [helper tests](../tests/OpenBlade.SessionAgent.Tests/ThxAudioHelperCommandTests.cs)
+pin the modern two-output probe, pre-write admission, and post-write readback.
+
+The stateful fixtures inject interactive host, exact model/USB/codec, controller,
+trusted stack, and typed output evidence. The first modern read probes both
+outputs and confirms only the requested one for dispatch. Legacy reads require
+the exact active output and report EQ as observed only. Modern EQ and application
+profiles are outside this slice. A spatial change requires a prior confirmation
+for that output, fresh matching admission, a typed pre-read, and independent
+same-runtime readback of the requested value. Stack and output changes invalidate
+both endpoints' confirmations.
+
+`ambiguous` applies the first change only to the inert worker's memory and then
+reports `Indeterminate` with no state. Possible submission clears both
+confirmations and blocks further mutations and Connect across connections.
+A successful explicit Read restores confirmation only for its requested
+output. Cancellation during possible submission and a failed response send
+after confirmed submission also require reconciliation. The fixture retains
+no state across process restarts.
+
+Discover, EQ, presets, enhancement changes, application profiles, and
+provisioning remain outside the private command set. Native parity still needs
+actual Windows evidence collection, a supervised native worker, end-to-end
+component and output verification, independent base-audio diagnostics, and
+automation ordering. Production audio IPC and backend selection are unchanged.
 
 Run the managed wire test with the private executable selected by
 `OPENBLADE_RUST_SESSION_AGENT_EXE` and the filter
