@@ -35,6 +35,8 @@ pub enum Session {
 
 pub struct Status {
     active: Projection,
+    #[cfg(windows)]
+    application: Option<Arc<crate::application_runtime::Scenario>>,
     replay: Option<watch::Receiver<Arc<Value>>>,
     battery: Option<Arc<Scenario>>,
     performance: Option<Arc<performance_runtime::Scenario>>,
@@ -96,6 +98,8 @@ impl Status {
 
         Ok(Self {
             active: Projection::new(current, legacy)?,
+            #[cfg(windows)]
+            application: None,
             replay: None,
             battery: None,
             performance: None,
@@ -104,6 +108,19 @@ impl Status {
             #[cfg(windows)]
             composed_thermal: false,
         })
+    }
+
+    #[cfg(windows)]
+    pub fn with_application_context(
+        mut self,
+        advance: tokio::sync::mpsc::Receiver<()>,
+    ) -> (Self, impl Future<Output = io::Result<()>>) {
+        let scenario = Arc::new(crate::application_runtime::Scenario::new(
+            self.active.current.clone(),
+        ));
+        self.replay = Some(scenario.subscribe());
+        self.application = Some(Arc::clone(&scenario));
+        (self, async move { scenario.drive(advance).await })
     }
 
     pub fn with_battery(
@@ -505,7 +522,7 @@ impl Request {
     }
 }
 
-fn is_guid(id: &str) -> bool {
+pub(crate) fn is_guid(id: &str) -> bool {
     id.len() == 36
         && id.bytes().enumerate().all(|(index, byte)| match index {
             8 | 13 | 18 | 23 => byte == b'-',
@@ -585,6 +602,24 @@ where
                     pending::<io::Result<()>>().await
                 } => streamed,
             }
+        }
+        #[cfg(windows)]
+        (CURRENT_VERSION, "reportApplicationContext") if status.application.is_some() => {
+            use crate::application_runtime::{INACTIVE, Report};
+            let report = Report::decode(&payload)?;
+            let scenario = status
+                .application
+                .as_ref()
+                .expect("guarded application scenario");
+            if !matches!(session, Session::Active) || !scenario.active() {
+                return write_frame(&mut io, request.response(None, Some(INACTIVE), None)).await;
+            }
+            let (status, message) = scenario.report(&report);
+            write_frame(
+                &mut io,
+                request.operation_response(OperationResult { status, message }),
+            )
+            .await
         }
         #[cfg(windows)]
         (CURRENT_VERSION, "updateProfiles")

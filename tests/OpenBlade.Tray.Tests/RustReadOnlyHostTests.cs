@@ -1813,6 +1813,139 @@ public sealed partial class RustReadOnlyHostTests
             ConfigurationNames.Select(name => File.ReadAllBytes(Path.Combine(root, name))).ToArray();
     }
 
+    [RustReadOnlyHostFact]
+    public async Task TrayClient_ApplicationContextUsesSessionEvidenceAndExpiresWithoutHardware()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        CancellationToken token = timeout.Token;
+        string endpoint = Guid.NewGuid().ToString("N");
+        const string mode = "foreground-application-context";
+        await using var host = DevHost.Start(endpoint, mode);
+        await host.WaitUntilReadyAsync(token);
+        await using var client = new ServiceClient(PipeName(endpoint));
+        await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+        ServiceStatusSnapshot initial = await ReadStatusAsync(watch, subscriptionOpened: true);
+        ApplicationProfileDefinition rule = Assert.Single(initial.Profiles.ApplicationProfiles);
+        Assert.Equal(ApplicationActivationMode.WhileRunningAfterActivation, rule.ActivationMode);
+        AssertBase(initial, initial.Profiles.PluggedIn.Performance);
+
+        Guid first = Guid.NewGuid();
+        Guid replacement = Guid.NewGuid();
+        const string matching = @"c:\games\GAME.EXE";
+        Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(first, 1, matching)).Status);
+        var selected = await NextAsync();
+        AssertSelected(selected, PerformancePreset.Performance, SettingValueSource.ApplicationProfile);
+        Assert.True(selected.EffectiveLaptopBehavior.GamingModeEnabled);
+        Assert.Equal(new GamingModeKeyPolicy(true, true), selected.EffectiveLaptopBehavior.GamingModeKeyPolicy);
+        Assert.Equal(rule, Assert.Single(selected.Profiles.ApplicationProfiles));
+
+        // The same v79 report must not cross the private pipe without peer identity.
+        await using (var anonymous = new NamedPipeClientStream(
+            ".", PipeName(endpoint), PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Anonymous))
+        {
+            await anonymous.ConnectAsync(token);
+            await IpcMessageCodec.WriteRequestAsync(anonymous,
+                new ReportApplicationContextRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), first, 999, null),
+                token);
+            Assert.Equal(0, await anonymous.ReadAsync(new byte[1], token));
+        }
+
+        var stale = await ReportAsync(first, 1, null);
+        Assert.Equal(ControlOperationStatus.Stored, stale.Status);
+        Assert.Contains("stale", stale.Message);
+        Assert.Equal(selected.Revision, (await client.GetStatusAsync(token)).Revision);
+
+        var inactive = await AdvanceAsync();
+        Assert.Equal(SessionControlAccess.InactiveSession, inactive.ControlAccess);
+        Assert.Equal(rule.Id, inactive.ActiveApplicationProfileId);
+        var rejected = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            ReportAsync(first, 999, null));
+        Assert.Contains("active local interactive Windows session", rejected.Message);
+        Assert.Equal(inactive.Revision, (await client.GetStatusAsync(token)).Revision);
+        Assert.Equal(SessionControlAccess.Active, (await AdvanceAsync()).ControlAccess);
+
+        // The accepted sequence still follows 1. A filename or directory alias
+        // does not establish identity, even for a WhileRunningAfterActivation rule.
+        Assert.Equal(ControlOperationStatus.Stored,
+            (await ReportAsync(first, 2, @"C:\Other\Game.exe")).Status);
+        AssertBase(await NextAsync(), initial.Profiles.PluggedIn.Performance);
+        Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(replacement, 1, matching)).Status);
+        AssertSelected(await NextAsync(), PerformancePreset.Performance, SettingValueSource.ApplicationProfile);
+        Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(replacement, 2, null)).Status);
+        AssertBase(await NextAsync(), initial.Profiles.PluggedIn.Performance);
+        Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(replacement, 3, matching)).Status);
+        AssertSelected(await NextAsync(), PerformancePreset.Performance, SettingValueSource.ApplicationProfile);
+
+        AssertSelected(await AdvanceAsync(), PerformancePreset.Balanced, SettingValueSource.PersistentOverride);
+        var onBattery = await AdvanceAsync();
+        Assert.Equal(PowerSource.Battery, onBattery.ActivePowerSource);
+        Assert.Equal(OverrideLifetime.Persistent, onBattery.PerformanceOverride?.Lifetime);
+        AssertSelected(onBattery, PerformancePreset.BatteryBalanced, SettingValueSource.ApplicationProfile);
+        Assert.Null(onBattery.EffectiveLaptopBehavior.GamingModeEnabled);
+
+        var disabled = await AdvanceAsync();
+        Assert.False(Assert.Single(disabled.Profiles.ApplicationProfiles).Enabled);
+        AssertBase(disabled, initial.Profiles.Battery.Performance);
+        var enabled = await AdvanceAsync();
+        Assert.Equal(rule, Assert.Single(enabled.Profiles.ApplicationProfiles));
+        AssertBase(enabled, initial.Profiles.Battery.Performance);
+        Assert.Contains("stale", (await ReportAsync(replacement, 3, matching)).Message);
+        Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(replacement, 4, matching)).Status);
+        AssertSelected(await NextAsync(), PerformancePreset.BatteryBalanced, SettingValueSource.ApplicationProfile);
+
+        var expired = await NextAsync();
+        Assert.Contains("lease expired", expired.Message);
+        AssertBase(expired, initial.Profiles.Battery.Performance);
+        Assert.Contains("stale", (await ReportAsync(replacement, 4, matching)).Message);
+        Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(replacement, 5, matching)).Status);
+        AssertSelected(await NextAsync(), PerformancePreset.BatteryBalanced, SettingValueSource.ApplicationProfile);
+        await host.StopAsync(token);
+
+        await using var restarted = DevHost.Start(endpoint, mode);
+        await restarted.WaitUntilReadyAsync(token);
+        AssertBase(await client.GetStatusAsync(token), initial.Profiles.PluggedIn.Performance);
+        Assert.Equal(ControlOperationStatus.Stored, (await ReportAsync(replacement, 1, matching)).Status);
+        AssertSelected(await client.GetStatusAsync(token),
+            PerformancePreset.Performance, SettingValueSource.ApplicationProfile);
+        await restarted.StopAsync(token);
+
+        Task<ControlOperationResult> ReportAsync(Guid instance, long sequence, string? path) =>
+            client.ReportApplicationContextAsync(
+                new ReportApplicationContextRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), instance, sequence, path),
+                token);
+
+        Task<ServiceStatusSnapshot> NextAsync() => ReadStatusAsync(watch, subscriptionOpened: false);
+
+        async Task<ServiceStatusSnapshot> AdvanceAsync()
+        {
+            await host.AdvanceAsync(token);
+            return await NextAsync();
+        }
+
+        void AssertSelected(ServiceStatusSnapshot status, PerformancePreset value, SettingValueSource source)
+        {
+            Assert.Equal(rule.Id, status.ActiveApplicationProfileId);
+            Assert.Equal(new ResolvedSetting<PerformancePreset>(value, source), status.DesiredState.Performance);
+            AssertNoEffects(status);
+        }
+
+        void AssertBase(ServiceStatusSnapshot status, PerformancePreset value)
+        {
+            Assert.Null(status.ActiveApplicationProfileId);
+            Assert.Equal(new ResolvedSetting<PerformancePreset>(value, SettingValueSource.PowerProfile),
+                status.DesiredState.Performance);
+            AssertNoEffects(status);
+        }
+
+        void AssertNoEffects(ServiceStatusSnapshot status)
+        {
+            Assert.False(status.DeviceVerified);
+            Assert.Equal(initial.ConfirmedState, status.ConfirmedState);
+            Assert.Empty(status.UnconfirmedWrites);
+            Assert.Equal(initial.Profiles.BatteryPolicy, status.Profiles.BatteryPolicy);
+        }
+    }
+
     private static string PipeName(string endpointId) => $"OpenBlade.Rust.ReadOnly.Dev.{endpointId}";
 
     private static async Task<ServiceStatusSnapshot> ReadStatusAsync(
