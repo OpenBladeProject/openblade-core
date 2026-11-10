@@ -1,11 +1,13 @@
 //! Fixed managed-byte fixture for the foreground process harness.
 
+use super::profile::{LEGACY_SCHEMA, ProfilePolicy, ProfileTemplate};
 use super::{
-    Boundary, CURRENT_SCHEMA, FILE_SHARE_READ, Inspection, Outcome, TestStore, file_identity,
-    handle_information, pin_directory_with_share, transaction_id,
+    Boundary, CURRENT_SCHEMA, FILE_SHARE_READ, Inspection, NAMES, Outcome, TestStore,
+    file_identity, handle_information, pin_directory_with_share, transaction_id,
 };
 use crate::valid_dev_id;
 use serde::Deserialize;
+use serde_json::Value;
 use std::{
     ffi::OsStr,
     fs::File,
@@ -43,6 +45,17 @@ const FIXTURE: &str = include_str!(
     "../../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-aggregate.json"
 );
 
+const PROFILE_FIXTURE: &str = include_str!(
+    "../../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-profile.json"
+);
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrationFixture {
+    charge_limit_percent: u8,
+    legacy_fan_stop: Value,
+}
+
 #[derive(Deserialize)]
 struct Documents {
     prior: [String; 3],
@@ -53,13 +66,15 @@ pub struct Fixture {
     id: String,
     store: TestStore,
     documents: Documents,
+    template: ProfileTemplate,
 }
 
 impl Fixture {
     /// This is the only constructor with write authority. An existing root
     /// (including a reparse point) makes the exclusive create fail.
     pub fn create() -> io::Result<Self> {
-        let documents = serde_json::from_str(FIXTURE)?;
+        let documents: Documents = serde_json::from_str(FIXTURE)?;
+        let template = ProfileTemplate::from_managed(&documents.prior)?;
         let (temp, pins) = TestStore::pin_temp(&local_temp()?)?;
         let id = transaction_id()?;
         let root = root(temp, &id)?;
@@ -78,6 +93,7 @@ impl Fixture {
             id,
             store,
             documents,
+            template,
         })
     }
 
@@ -94,6 +110,42 @@ impl Fixture {
         self.write(&self.documents.prior, false)
     }
 
+    pub fn bootstrap(&self) -> io::Result<u8> {
+        let intent = self.template.encode(ProfilePolicy::default())?;
+        self.materialize(&intent, [None; 3])
+    }
+
+    pub fn migrate(&self) -> io::Result<u8> {
+        let legacy = legacy_documents(&self.template)?;
+        let legacy = legacy.each_ref().map(|doc| doc.as_bytes());
+        for (name, bytes) in NAMES.into_iter().zip(legacy) {
+            self.store.create_durable(name, bytes)?;
+        }
+
+        let (inspection, prior) = self.store.inspect_snapshot()?;
+        let prior = prior.each_ref().map(Option::as_deref);
+        if prior != legacy.map(Some)
+            || inspection
+                != (Inspection::CommittedEnvelope {
+                    schema: LEGACY_SCHEMA,
+                })
+        {
+            return Err(io::Error::other(format!(
+                "fixture migration refused: {inspection:?}"
+            )));
+        }
+        let policy = self.template.decode(legacy)?;
+        let intent = self.template.encode(policy)?;
+        self.materialize(&intent, prior)
+    }
+
+    fn materialize(&self, intent: &[String; 3], expected: [Option<&[u8]>; 3]) -> io::Result<u8> {
+        let bytes = intent.each_ref().map(|doc| doc.as_bytes());
+        self.template.decode(bytes)?;
+        let report = self.store.commit_from(bytes, Some(expected), |_| Ok(()));
+        self.verify_write(intent, false, &report)
+    }
+
     pub fn update(&self, interrupt: bool) -> io::Result<u8> {
         self.write(&self.documents.committed, interrupt)
     }
@@ -108,6 +160,15 @@ impl Fixture {
                 }
                 Ok(())
             });
+        self.verify_write(intent, interrupt, &report)
+    }
+
+    fn verify_write(
+        &self,
+        intent: &[String; 3],
+        interrupt: bool,
+        report: &super::Report,
+    ) -> io::Result<u8> {
         match &report.outcome {
             Outcome::Committed if !interrupt => {
                 // As in the managed writer, failure to remove a backup does
@@ -115,7 +176,7 @@ impl Fixture {
                 for error in &report.artifact_errors {
                     let _ = writeln!(io::stderr().lock(), "fixture artifact cleanup: {error}");
                 }
-                load(&self.store, &[intent])
+                load(&self.store, &self.template, &[intent])
             }
             Outcome::RecoveryRequired {
                 cause,
@@ -152,10 +213,33 @@ pub fn restart(id: &str, expected: &str) -> io::Result<u8> {
         return Err(io::Error::other("fixture root identity changed"));
     }
     let documents: Documents = serde_json::from_str(FIXTURE)?;
-    load(&store, &[&documents.prior, &documents.committed])
+    let template = ProfileTemplate::from_managed(&documents.prior)?;
+    let bootstrap = template.encode(ProfilePolicy::default())?;
+    let legacy = legacy_documents(&template)?;
+    let migrated =
+        template.encode(template.decode(legacy.each_ref().map(|doc| doc.as_bytes()))?)?;
+    load(
+        &store,
+        &template,
+        &[
+            &documents.prior,
+            &documents.committed,
+            &bootstrap,
+            &migrated,
+        ],
+    )
 }
 
-fn load(store: &TestStore, allowed: &[&[String; 3]]) -> io::Result<u8> {
+fn legacy_documents(template: &ProfileTemplate) -> io::Result<[String; 3]> {
+    let fixture: MigrationFixture = serde_json::from_str(PROFILE_FIXTURE)?;
+    template.documents(
+        LEGACY_SCHEMA,
+        fixture.charge_limit_percent,
+        fixture.legacy_fan_stop,
+    )
+}
+
+fn load(store: &TestStore, template: &ProfileTemplate, allowed: &[&[String; 3]]) -> io::Result<u8> {
     let (inspection, bytes) = store.inspect_snapshot()?;
     if inspection
         != (Inspection::CommittedEnvelope {
@@ -166,24 +250,21 @@ fn load(store: &TestStore, allowed: &[&[String; 3]]) -> io::Result<u8> {
             "fixture startup refused: {inspection:?}"
         )));
     }
-    if !allowed.iter().any(|docs| {
-        docs.iter()
-            .zip(&bytes)
-            .all(|(doc, bytes)| Some(doc.as_bytes()) == bytes.as_deref())
-    }) {
+    let [Some(profile), Some(preferences), Some(marker)] = bytes.each_ref().map(Option::as_deref)
+    else {
+        return Err(io::Error::other("fixture documents missing"));
+    };
+    let docs = [profile, preferences, marker];
+    let policy = template.decode(docs)?;
+    if !allowed
+        .iter()
+        .any(|allowed| allowed.each_ref().map(|doc| doc.as_bytes()) == docs)
+    {
         return Err(io::Error::other(
             "configuration outside the managed fixture",
         ));
     }
-    let profile: serde_json::Value = serde_json::from_slice(
-        bytes[0]
-            .as_deref()
-            .ok_or_else(|| io::Error::other("fixture profile missing"))?,
-    )?;
-    profile["profiles"]["batteryPolicy"]["chargeLimitPercent"]
-        .as_u64()
-        .and_then(|percent| u8::try_from(percent).ok())
-        .ok_or_else(|| io::Error::other("fixture charge limit missing or invalid"))
+    Ok(policy.charge_limit)
 }
 
 fn root(temp: PathBuf, id: &str) -> io::Result<PathBuf> {
@@ -298,6 +379,117 @@ fn local_temp() -> io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_profile_settings_distinguish_missing_null_and_unknown_values() {
+        use serde_json::json;
+
+        let documents: Documents = serde_json::from_str(FIXTURE).unwrap();
+        let template = ProfileTemplate::from_managed(&documents.prior).unwrap();
+        let decode = |schema, limit, settings| {
+            let docs = template.documents(schema, limit, settings).unwrap();
+            template.decode(docs.each_ref().map(|doc| doc.as_bytes()))
+        };
+
+        let legacy = legacy_documents(&template).unwrap();
+        let effective = template
+            .decode(legacy.each_ref().map(|doc| doc.as_bytes()))
+            .unwrap();
+        let spec: Value = serde_json::from_str(PROFILE_FIXTURE).unwrap();
+        assert_eq!(
+            serde_json::to_value(effective.fan_stop).unwrap(),
+            spec["currentFanStop"]
+        );
+        assert_eq!(effective.charge_limit, 77);
+        assert_eq!(
+            decode(LEGACY_SCHEMA, 80, json!({})).unwrap(),
+            ProfilePolicy::default()
+        );
+        assert_eq!(
+            decode(
+                CURRENT_SCHEMA,
+                80,
+                json!({
+                    "cpuImmediateCutoffCelsius": "65",
+                    "gpuImmediateCutoffCelsius": 65
+                })
+            )
+            .unwrap(),
+            ProfilePolicy::default()
+        );
+
+        for (schema, limit, settings) in [
+            (23, 80, json!({})),
+            (26, 80, json!({})),
+            (LEGACY_SCHEMA, 49, json!({})),
+            (LEGACY_SCHEMA, 100, json!({})),
+            (LEGACY_SCHEMA, 80, Value::Null),
+            (LEGACY_SCHEMA, 80, json!({"endMode": "1"})),
+            (LEGACY_SCHEMA, 80, json!({"endMode": 2})),
+            (
+                LEGACY_SCHEMA,
+                80,
+                json!({"automaticEnabled": true, "automaticCpuBelowCelsius": 55}),
+            ),
+            (LEGACY_SCHEMA, 80, json!({"secondsAboveLimit": null})),
+            (LEGACY_SCHEMA, 80, json!({"secondsBelowLimits": 3601})),
+            (LEGACY_SCHEMA, 80, json!({"gpuLimitCelsius": 2147483647})),
+            (LEGACY_SCHEMA, 80, json!({"unknown": false})),
+            (CURRENT_SCHEMA, 80, json!({"cpuImmediateCutoffCelsius": 65})),
+            (
+                CURRENT_SCHEMA,
+                80,
+                json!({"cpuImmediateCutoffCelsius": null, "gpuImmediateCutoffCelsius": 65}),
+            ),
+            (
+                CURRENT_SCHEMA,
+                80,
+                json!({"cpuImmediateCutoffCelsius": 54, "gpuImmediateCutoffCelsius": 65}),
+            ),
+        ] {
+            assert!(
+                decode(schema, limit, settings.clone()).is_err(),
+                "{schema} {limit} {settings}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_different_valid_legacy_preimage_never_reaches_the_writer() {
+        let fixture = Fixture::create().unwrap();
+        let legacy = legacy_documents(&fixture.template).unwrap();
+        let mut spec: MigrationFixture = serde_json::from_str(PROFILE_FIXTURE).unwrap();
+        spec.charge_limit_percent += 1;
+        let different = fixture
+            .template
+            .documents(
+                LEGACY_SCHEMA,
+                spec.charge_limit_percent,
+                spec.legacy_fan_stop,
+            )
+            .unwrap();
+        for (name, doc) in NAMES.into_iter().zip(&different) {
+            fixture.store.create_durable(name, doc.as_bytes()).unwrap();
+        }
+        let policy = fixture
+            .template
+            .decode(legacy.each_ref().map(|doc| doc.as_bytes()))
+            .unwrap();
+        let intent = fixture.template.encode(policy).unwrap();
+        let error = fixture
+            .materialize(&intent, legacy.each_ref().map(|doc| Some(doc.as_bytes())))
+            .unwrap_err();
+        assert!(error.to_string().contains("preimage changed"), "{error}");
+        let (inspection, actual) = fixture.store.inspect_snapshot().unwrap();
+        assert_eq!(
+            inspection,
+            Inspection::CommittedEnvelope {
+                schema: LEGACY_SCHEMA
+            }
+        );
+        assert_eq!(actual, different.map(|doc| Some(doc.into_bytes())));
+        assert_eq!(std::fs::read_dir(&fixture.store.root).unwrap().count(), 4);
+    }
 
     #[test]
     fn an_unannounced_fixture_is_removed_when_the_owner_exits() {

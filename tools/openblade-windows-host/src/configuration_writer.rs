@@ -23,6 +23,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 use windows_sys::Win32::System::Com::CoCreateGuid;
 
 pub mod fixture;
+mod profile;
 
 const NAMES: [&str; 3] = [PROFILE, PREFERENCES, COMMIT];
 const LOCK: &str = "configuration.test-lock";
@@ -277,7 +278,16 @@ impl TestStore {
         move_file(&self.path(source), &self.path(target), replace)
     }
 
-    fn commit(&self, intent: [&[u8]; 3], mut at: impl FnMut(Boundary) -> io::Result<()>) -> Report {
+    fn commit(&self, intent: [&[u8]; 3], at: impl FnMut(Boundary) -> io::Result<()>) -> Report {
+        self.commit_from(intent, None, at)
+    }
+
+    fn commit_from(
+        &self,
+        intent: [&[u8]; 3],
+        expected: Option<[Option<&[u8]>; 3]>,
+        mut at: impl FnMut(Boundary) -> io::Result<()>,
+    ) -> Report {
         let _lock = match self.lock() {
             Ok(lock) => lock,
             Err(error) => return Report::new(Outcome::Unchanged(error)),
@@ -310,11 +320,22 @@ impl TestStore {
             Err(error) => return Report::new(Outcome::Unchanged(error)),
         };
         let prior = prior.each_ref().map(Option::as_deref);
-        match inspect_bytes(prior) {
+        let inspection = inspect_bytes(prior);
+        if expected.is_some_and(|expected| expected != prior) {
+            return Report::new(Outcome::Unchanged(io::Error::other(
+                "fixture transaction preimage changed",
+            )));
+        }
+        match inspection {
             Inspection::Empty
             | Inspection::CommittedEnvelope {
                 schema: CURRENT_SCHEMA,
             } => {}
+            // Only the typed fixture migration can supply a verified, exact
+            // schema 24 preimage. The ordinary writer still refuses old state.
+            Inspection::CommittedEnvelope {
+                schema: profile::LEGACY_SCHEMA,
+            } if expected.is_some() => {}
             other => return Report::new(Outcome::Refused(other)),
         }
         let id = match transaction_id() {

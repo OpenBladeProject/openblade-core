@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using OpenBlade.Contracts;
 using OpenBlade.Service;
 
@@ -155,6 +156,67 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
         static string Hash(string document) => Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(document)));
+    }
+
+    [Fact]
+    public async Task WindowsReplay_ProfileFixtureMatchesManagedMigration()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfigurationStore store = CreateStore(paths);
+        BatteryConfiguration defaults = await store.LoadAsync(CancellationToken.None);
+        string[] original = await Task.WhenAll(paths.All.Select(path => File.ReadAllTextAsync(path)));
+        string fixtures = Path.Combine(AppContext.BaseDirectory, "WindowsReplay", "v1");
+        JsonNode vector = JsonNode.Parse(await File.ReadAllTextAsync(
+            Path.Combine(fixtures, "configuration-profile.json")))!;
+        JsonNode profile = JsonNode.Parse(original[0])!;
+        JsonNode preferences = JsonNode.Parse(original[1])!;
+        profile["schemaVersion"] = 24;
+        profile["profiles"]!["batteryPolicy"]!["chargeLimitPercent"] = vector["chargeLimitPercent"]!.GetValue<int>();
+        preferences["schemaVersion"] = 24;
+        preferences["preferences"]!["fanStopSettings"] = vector["legacyFanStop"]!.DeepClone();
+
+        string[] prior = await WriteLegacyAsync();
+        BatteryConfigurationInspection inspected = await store.InspectAsync(CancellationToken.None);
+        Assert.True(inspected.Configuration.IsAuthoritative);
+        Assert.Equal(prior, await Task.WhenAll(paths.All.Select(path => File.ReadAllTextAsync(path))));
+        BatteryConfiguration migrated = await store.LoadAsync(CancellationToken.None);
+        Assert.Equal(inspected.Configuration.Profiles.BatteryPolicy, migrated.Profiles.BatteryPolicy);
+        Assert.Equal(inspected.Configuration.Preferences, migrated.Preferences);
+        Assert.Equal(vector["chargeLimitPercent"]!.GetValue<int>(), migrated.Profiles.BatteryPolicy.ChargeLimitPercent);
+        Assert.Equal(defaults.Preferences with { FanStopSettings = migrated.Preferences.FanStopSettings },
+            migrated.Preferences);
+        Assert.True(JsonNode.DeepEquals(vector["currentFanStop"],
+            JsonSerializer.SerializeToNode(migrated.Preferences.FanStopSettings, ProfileStore.SerializerOptions)));
+        foreach (string path in paths.All)
+        {
+            using JsonDocument document = JsonDocument.Parse(await File.ReadAllBytesAsync(path));
+            Assert.Equal(25, document.RootElement.GetProperty("schemaVersion").GetInt32());
+        }
+
+        // Enum names and numeric strings are unsupported for the enum, even
+        // though the managed web options permit quoted ordinary integers.
+        preferences["preferences"]!["fanStopSettings"]!["endMode"] = "1";
+        string[] damaged = await WriteLegacyAsync();
+        BatteryConfiguration invalid = await store.LoadAsync(CancellationToken.None);
+        Assert.Equal(ConfigurationQuarantineReason.InvalidDocument, invalid.QuarantineReason);
+        Assert.Equal(damaged, await Task.WhenAll(paths.All.Select(path => File.ReadAllTextAsync(path))));
+
+        async Task<string[]> WriteLegacyAsync()
+        {
+            string profileJson = profile.ToJsonString();
+            string preferenceJson = preferences.ToJsonString();
+            string marker = JsonSerializer.Serialize(new BatteryConfigurationCommit(
+                24,
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(profileJson))),
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(preferenceJson)))),
+                ProfileStore.SerializerOptions);
+            string[] documents = [profileJson, preferenceJson, marker];
+            foreach ((string path, string json) in paths.All.Zip(documents))
+            {
+                await File.WriteAllTextAsync(path, json);
+            }
+            return documents;
+        }
     }
 
     [RustConfigurationExchangeFact]
