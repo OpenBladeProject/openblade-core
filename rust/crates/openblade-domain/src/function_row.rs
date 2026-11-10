@@ -28,8 +28,8 @@ pub enum Status {
     FirmwareDriverMode {
         active: bool,
     },
+    /// This represents the stroke check. Informational Fn status stays with the host.
     HostManagedFn {
-        informational_ready: bool,
         stroke_admitted: bool,
     },
 }
@@ -74,9 +74,7 @@ impl Observation {
 
         match self.status {
             Status::FirmwareDriverMode { active } => active && self.firmware_path(),
-            Status::HostManagedFn {
-                stroke_admitted, ..
-            } => {
+            Status::HostManagedFn { stroke_admitted } => {
                 backend == Backend::RazerDriver
                     && self.exact_device == Some(Device::Rz09_0484)
                     && stroke_admitted
@@ -269,7 +267,9 @@ impl WindowsHook {
         let (event, suppress) = press.handle(
             index,
             stroke.down,
-            observation.admits_media(Backend::WindowsHook),
+            // If the hook starts mid-press, the original down may already be
+            // visible to Windows. Keep the first observed repeat and up paired.
+            !was_down && observation.admits_media(Backend::WindowsHook),
             observation.lifecycle == Lifecycle::Active,
         );
         HookDecision {
@@ -286,7 +286,11 @@ impl WindowsHook {
         observed_by_hook: bool,
         observation: Observation,
     ) -> HookRecovery {
-        if observed_by_hook || !observation.firmware_path() {
+        if observed_by_hook
+            || !observation.firmware_path()
+            || (observation.selected_backend != Some(Backend::WindowsHook)
+                && !self.has_active_keys())
+        {
             return HookRecovery::default();
         }
         let Some(index) = key_index(stroke) else {
@@ -368,11 +372,12 @@ impl RazerDriver {
     pub fn retired_cleanly(&self) -> bool {
         // This is the processor's result. The host must still independently
         // establish that the retired subscription restored its owned hooks.
-        self.cleaned_up && !self.has_tracked_keys() && !self.output_uncertain
+        self.cleaned_up && !self.faulted && !self.has_tracked_keys() && !self.output_uncertain
     }
 
     /// Processes an already intercepted stroke. The host can retire an idle
     /// driver before reading again, or call cleanup when the drain expires.
+    /// After `Retire`, stop reading that subscription, including queued edges.
     pub fn handle<O: DriverOutput>(
         &mut self,
         stroke: Stroke,
@@ -384,7 +389,7 @@ impl RazerDriver {
         }
 
         self.draining |= observation.lifecycle == Lifecycle::Stopping
-            || observation.selected_backend != Some(Backend::RazerDriver);
+            || observation.selected_backend == Some(Backend::WindowsHook);
         if self.retired || observation.exact_device != Some(self.device) {
             self.retired = true;
             return Ok(DriverProgress::Retire);
@@ -433,13 +438,15 @@ impl RazerDriver {
             return Ok(());
         }
         self.cleaned_up = true;
-        let result = self.keys.iter().enumerate().try_for_each(|(index, press)| {
-            if matches!(press, Press::Suppressed { .. }) {
-                output.publish(event(index, Phase::Up))?;
+        let mut first_failure = None;
+        for (index, press) in self.keys.iter().enumerate() {
+            if matches!(press, Press::Suppressed { .. })
+                && let Err(error) = output.publish(event(index, Phase::Up))
+            {
+                first_failure.get_or_insert(error);
             }
-            Ok(())
-        });
+        }
         output.reset_actions();
-        result
+        first_failure.map_or(Ok(()), Err)
     }
 }

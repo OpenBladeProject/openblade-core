@@ -14,12 +14,9 @@ fn firmware(device: Device, backend: Backend) -> Observation {
     }
 }
 
-fn host_fn(informational_ready: bool, stroke_admitted: bool) -> Observation {
+fn host_fn(stroke_admitted: bool) -> Observation {
     Observation {
-        status: Status::HostManagedFn {
-            informational_ready,
-            stroke_admitted,
-        },
+        status: Status::HostManagedFn { stroke_admitted },
         ..firmware(Device::Rz09_0484, Backend::RazerDriver)
     }
 }
@@ -175,7 +172,7 @@ fn windows_hook_admission_requires_exact_blade16_selected_hook_and_known_layer()
         },
         Observation {
             selected_backend: Some(Backend::WindowsHook),
-            ..host_fn(true, true)
+            ..host_fn(true)
         },
     ];
     for observation in denied {
@@ -240,7 +237,7 @@ fn hook_recovery_never_starts_an_action_and_can_let_the_paired_up_through() {
     assert!(!hook.recover_missed_edge(down, true, observation).reinstall);
     assert!(
         !hook
-            .recover_missed_edge(down, false, host_fn(true, true))
+            .recover_missed_edge(down, false, host_fn(true))
             .reinstall
     );
     assert!(hook.recover_missed_edge(down, false, observation).reinstall);
@@ -275,8 +272,8 @@ fn hook_recovery_never_starts_an_action_and_can_let_the_paired_up_through() {
 fn driver_routes_both_fn_layers_on_all_three_exact_devices() {
     for device in [Device::Rz09_0581, Device::Rz09_0528, Device::Rz09_0484] {
         let base = if device == Device::Rz09_0484 {
-            // Diagnostic availability does not substitute for per-stroke admission.
-            host_fn(false, true)
+            // The host supplies fresh stroke admission on the exact 02A0 path.
+            host_fn(true)
         } else {
             firmware(device, Backend::RazerDriver)
         };
@@ -316,14 +313,14 @@ fn driver_routes_both_fn_layers_on_all_three_exact_devices() {
 }
 
 #[test]
-fn informational_fn_status_and_wrong_path_cannot_admit_a_driver_press() {
+fn a_fresh_fn_stroke_check_and_the_exact_path_are_required() {
     for (device, obs) in [
-        (Device::Rz09_0484, host_fn(true, false)),
+        (Device::Rz09_0484, host_fn(false)),
         (
             Device::Rz09_0484,
             Observation {
                 fn_pressed: None,
-                ..host_fn(true, true)
+                ..host_fn(true)
             },
         ),
         (
@@ -334,12 +331,12 @@ fn informational_fn_status_and_wrong_path_cannot_admit_a_driver_press() {
             Device::Rz09_0581,
             Observation {
                 exact_device: Some(Device::Rz09_0581),
-                ..host_fn(true, true)
+                ..host_fn(true)
             },
         ),
     ] {
         let ready = if device == Device::Rz09_0484 {
-            host_fn(true, true)
+            host_fn(true)
         } else {
             firmware(device, Backend::RazerDriver)
         };
@@ -365,13 +362,11 @@ fn informational_fn_status_and_wrong_path_cannot_admit_a_driver_press() {
 fn driver_held_action_remains_paired_after_fn_or_admission_changes() {
     let mut driver = RazerDriver::new(Device::Rz09_0484);
     let mut script = Script::default();
-    let ready = host_fn(true, true);
+    let ready = host_fn(true);
     let down = stroke(0x43, true);
     let up = stroke(0x43, false);
     driver.handle(down, ready, &mut script).unwrap();
-    driver
-        .handle(down, host_fn(true, false), &mut script)
-        .unwrap();
+    driver.handle(down, host_fn(false), &mut script).unwrap();
     // Changing the Fn layer keeps the latched action once stroke admission returns.
     driver
         .handle(
@@ -383,9 +378,7 @@ fn driver_held_action_remains_paired_after_fn_or_admission_changes() {
             &mut script,
         )
         .unwrap();
-    driver
-        .handle(up, host_fn(false, false), &mut script)
-        .unwrap();
+    driver.handle(up, host_fn(false), &mut script).unwrap();
     driver.handle(up, ready, &mut script).unwrap();
     assert_eq!(
         script.observed,
@@ -531,12 +524,12 @@ fn unexpected_driver_scan_faults_without_submitting_output() {
     );
     assert!(!driver.output_uncertain());
     driver.cleanup(&mut script).unwrap();
-    assert!(driver.retired_cleanly());
+    assert!(!driver.retired_cleanly());
     assert_eq!(script.observed, [Operation::Reset]);
 }
 
 #[test]
-fn cleanup_resets_actions_after_a_failed_media_release() {
+fn cleanup_attempts_each_release_once_then_resets_even_on_failure() {
     let mut driver = RazerDriver::new(Device::Rz09_0581);
     let down_event = Operation::Publish(event(0x43, Action::DisplayBrightnessUp, Phase::Down));
     let up_event = Operation::Publish(event(0x43, Action::DisplayBrightnessUp, Phase::Up));
@@ -546,11 +539,21 @@ fn cleanup_resets_actions_after_a_failed_media_release() {
     };
     let obs = firmware(Device::Rz09_0581, Backend::RazerDriver);
     driver.handle(stroke(0x43, true), obs, &mut script).unwrap();
-    // A host drain deadline can retire with an outstanding physical key.
+    driver.handle(stroke(0x57, true), obs, &mut script).unwrap();
+    // A host drain deadline can retire with outstanding physical keys.
     assert_eq!(driver.cleanup(&mut script), Err(up_event));
     assert!(!driver.retired_cleanly());
     driver.cleanup(&mut script).unwrap();
-    assert_eq!(script.observed, [down_event, up_event, Operation::Reset]);
+    assert_eq!(
+        script.observed,
+        [
+            down_event,
+            Operation::Publish(event(0x57, Action::KeyboardBrightnessUp, Phase::Down)),
+            up_event,
+            Operation::Publish(event(0x57, Action::KeyboardBrightnessUp, Phase::Up)),
+            Operation::Reset,
+        ]
+    );
 }
 
 #[test]
@@ -562,7 +565,7 @@ fn failed_action_publication_faults_but_still_releases_and_resets() {
         fail: Some(down_event),
         ..Script::default()
     };
-    let obs = host_fn(true, true);
+    let obs = host_fn(true);
     let down = stroke(0x43, true);
     assert_eq!(
         driver.handle(down, obs, &mut script),
@@ -578,12 +581,12 @@ fn failed_action_publication_faults_but_still_releases_and_resets() {
 }
 
 #[test]
-fn an_already_intercepted_edge_is_forwarded_if_ownership_changed_during_read() {
+fn an_already_intercepted_edge_is_forwarded_if_selection_changes_during_read() {
     let mut driver = RazerDriver::new(Device::Rz09_0528);
     let mut script = Script::default();
     let active = firmware(Device::Rz09_0528, Backend::RazerDriver);
     let changed = Observation {
-        selected_backend: None,
+        selected_backend: Some(Backend::WindowsHook),
         ..active
     };
     let down = stroke(0x43, true);
@@ -606,4 +609,118 @@ fn an_already_intercepted_edge_is_forwarded_if_ownership_changed_during_read() {
             Operation::Reset
         ]
     );
+}
+
+#[test]
+fn hook_recovery_requires_selection_or_a_key_left_to_reconcile() {
+    let mut hook = WindowsHook::default();
+    let active = firmware(Device::Rz09_0581, Backend::WindowsHook);
+    let switched = firmware(Device::Rz09_0581, Backend::RazerDriver);
+    let down = stroke(0x43, true);
+    let up = stroke(0x43, false);
+
+    assert!(!hook.recover_missed_edge(down, false, switched).reinstall);
+    assert!(!hook.has_active_keys());
+    assert!(hook.handle(down, false, active).suppress);
+    let recovered = hook.recover_missed_edge(up, false, switched);
+    assert!(recovered.reinstall);
+    assert_eq!(
+        recovered.release,
+        Some(event(0x43, Action::DisplayBrightnessUp, Phase::Up))
+    );
+    assert!(!hook.recover_missed_edge(down, false, switched).reinstall);
+}
+
+#[test]
+fn hook_first_seen_repeat_passes_through_until_the_matching_up() {
+    let mut hook = WindowsHook::default();
+    let active = firmware(Device::Rz09_0581, Backend::WindowsHook);
+    let down = stroke(0x3d, true);
+    let up = stroke(0x3d, false);
+    assert_eq!(hook.handle(down, true, active), HookDecision::default());
+    assert_eq!(hook.handle(down, true, active), HookDecision::default());
+    assert_eq!(hook.handle(up, false, active), HookDecision::default());
+    assert!(!hook.has_active_keys());
+    assert_eq!(
+        hook.handle(down, false, active).event,
+        Some(event(0x3d, Action::VolumeUp, Phase::Down))
+    );
+}
+
+#[test]
+fn stopping_hook_closes_held_actions_without_emitting_more_repeats() {
+    let mut hook = WindowsHook::default();
+    let active = firmware(Device::Rz09_0581, Backend::WindowsHook);
+    let stopping = Observation {
+        lifecycle: Lifecycle::Stopping,
+        ..active
+    };
+    let down = stroke(0x43, true);
+    assert!(hook.handle(down, false, active).suppress);
+    assert_eq!(
+        hook.handle(down, true, stopping),
+        HookDecision {
+            suppress: true,
+            ..HookDecision::default()
+        }
+    );
+    let release = hook.handle(stroke(0x43, false), false, stopping);
+    assert!(release.suppress);
+    assert_eq!(
+        release.event,
+        Some(event(0x43, Action::DisplayBrightnessUp, Phase::Up))
+    );
+    assert!(!hook.has_active_keys());
+}
+
+#[test]
+fn transient_unknown_selection_passes_the_press_without_retiring_the_driver() {
+    let mut driver = RazerDriver::new(Device::Rz09_0528);
+    let mut script = Script::default();
+    let active = firmware(Device::Rz09_0528, Backend::RazerDriver);
+    let unknown = Observation {
+        selected_backend: None,
+        ..active
+    };
+    let down = stroke(0x43, true);
+    let up = stroke(0x43, false);
+
+    driver.handle(down, unknown, &mut script).unwrap();
+    assert_eq!(
+        driver.handle(up, active, &mut script),
+        Ok(DriverProgress::Continue)
+    );
+    driver.handle(down, active, &mut script).unwrap();
+    assert_eq!(
+        script.observed,
+        [
+            Operation::Forward(down),
+            Operation::Forward(up),
+            Operation::Publish(event(0x43, Action::DisplayBrightnessUp, Phase::Down)),
+        ]
+    );
+}
+
+#[test]
+fn failed_up_publication_remains_a_retirement_fault_after_reset() {
+    let mut driver = RazerDriver::new(Device::Rz09_0581);
+    let down = stroke(0x43, true);
+    let up = stroke(0x43, false);
+    let down_event = Operation::Publish(event(0x43, Action::DisplayBrightnessUp, Phase::Down));
+    let up_event = Operation::Publish(event(0x43, Action::DisplayBrightnessUp, Phase::Up));
+    let mut script = Script {
+        fail: Some(up_event),
+        ..Script::default()
+    };
+    let active = firmware(Device::Rz09_0581, Backend::RazerDriver);
+    driver.handle(down, active, &mut script).unwrap();
+    assert_eq!(
+        driver.handle(up, active, &mut script),
+        Err(DriverFailure::Publish(up_event))
+    );
+    assert!(!driver.has_tracked_keys());
+    assert!(!driver.output_uncertain());
+    driver.cleanup(&mut script).unwrap();
+    assert!(!driver.retired_cleanly());
+    assert_eq!(script.observed, [down_event, up_event, Operation::Reset]);
 }
