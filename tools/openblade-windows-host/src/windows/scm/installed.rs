@@ -2,9 +2,6 @@
 
 use std::{ffi::OsString, future::Future, io, path::PathBuf};
 
-use openblade_windows_host::configuration_writer::protected::service_image::{
-    self, IMAGE_NAME, INSTALL_DIRECTORY,
-};
 use tokio::sync::oneshot;
 use windows_sys::Win32::System::Services::{
     SERVICE_START_PENDING, SERVICE_STATUS, SERVICE_WIN32_OWN_PROCESS,
@@ -12,6 +9,7 @@ use windows_sys::Win32::System::Services::{
 
 use crate::scm_host::{Controls, Phase, check_starting, normalize_startup_stop, run_lifecycle};
 use crate::scm_identity::ScmEvidence;
+use crate::service_install_identity::{IMAGE_NAME, INSTALL_DIRECTORY};
 
 #[path = "installed/native.rs"]
 mod native;

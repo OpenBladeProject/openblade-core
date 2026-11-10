@@ -10,6 +10,8 @@ mod scm_host;
 mod scm_identity;
 #[cfg(windows)]
 mod service_frame;
+#[cfg(windows)]
+mod service_install_identity;
 
 fn main() -> std::process::ExitCode {
     #[cfg(windows)]

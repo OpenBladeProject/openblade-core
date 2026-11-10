@@ -1,27 +1,17 @@
 //! Read-only evidence for the fixed installed service image on disk.
 
 use std::{
-    ffi::OsString,
     fs::File,
     io::{self, Read},
-    os::windows::ffi::OsStringExt,
-    path::PathBuf,
-    ptr::null_mut,
-    slice,
 };
 
 use sha2::{Digest, Sha256};
-use windows_sys::Win32::{
-    Storage::FileSystem::FILE_GENERIC_READ,
-    System::Com::CoTaskMemFree,
-    UI::Shell::{FOLDERID_ProgramFiles, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath},
-};
+use windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_READ;
 
 use super::{Policy, ProtectedStorage, denied, require_ntfs};
 use crate::configuration_writer::{FileIdentity, file_identity, handle_information};
 
-pub const INSTALL_DIRECTORY: &str = "OpenBlade";
-pub const IMAGE_NAME: &str = "OpenBlade.Service.exe";
+pub use crate::service_install_identity::{IMAGE_NAME, INSTALL_DIRECTORY, program_files};
 const MAX_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Supplies a digest already authenticated for the exact native candidate.
@@ -119,36 +109,6 @@ fn verify_digest(file: impl Read, size: u64, expected: [u8; 32]) -> io::Result<(
         ));
     }
     Ok(())
-}
-
-/// Resolves the fixed known folder without consulting environment overrides.
-pub fn program_files() -> io::Result<PathBuf> {
-    let mut path = null_mut();
-    // SAFETY: Windows supplies a task-allocated NUL-terminated path on success.
-    let result = unsafe {
-        SHGetKnownFolderPath(
-            &FOLDERID_ProgramFiles,
-            KF_FLAG_DONT_VERIFY as u32,
-            null_mut(),
-            &mut path,
-        )
-    };
-    let folder = if result >= 0 && !path.is_null() {
-        let mut len = 0;
-        // SAFETY: The successful query returned a live NUL-terminated string.
-        while unsafe { *path.add(len) } != 0 {
-            len += 1;
-        }
-        // SAFETY: len excludes the terminator and the allocation remains live.
-        Ok(PathBuf::from(OsString::from_wide(unsafe {
-            slice::from_raw_parts(path, len)
-        })))
-    } else {
-        Err(denied("Program Files known folder is unavailable"))
-    };
-    // SAFETY: The returned allocation, if present, belongs to this caller.
-    unsafe { CoTaskMemFree(path.cast()) };
-    folder
 }
 
 #[cfg(test)]

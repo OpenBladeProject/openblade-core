@@ -6,12 +6,10 @@ use windows_sys::Win32::System::{
 };
 
 use super::readiness::prepare_installed_endpoint;
-use super::{
-    LaunchIdentity, NAME, ProcessEvidence, denied, dispatch_candidate, io, run_candidate,
-    service_image,
-};
+use super::{LaunchIdentity, NAME, ProcessEvidence, denied, dispatch_candidate, io, run_candidate};
 use crate::scm_host::{CONTROLS, dispatch_named, registered_service, report};
 use crate::scm_identity as identity;
+use crate::service_install_identity::program_files;
 
 pub(crate) fn entry() -> io::Result<()> {
     dispatch_candidate(process_evidence, || dispatch_named(NAME, service_main))
@@ -53,7 +51,7 @@ fn process_evidence() -> io::Result<ProcessEvidence> {
     }
     Ok(ProcessEvidence {
         has_arguments: std::env::args_os().nth(1).is_some(),
-        program_files: service_image::program_files()?,
+        program_files: program_files()?,
         image: std::env::current_exe()?,
         pid,
         local_system: identity::is_local_system()?,
