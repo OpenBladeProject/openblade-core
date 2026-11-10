@@ -12,6 +12,9 @@ use std::{
 
 mod sampling;
 
+#[cfg(any(test, feature = "scripted-gpu"))]
+mod action;
+
 pub use sampling::sample_windows_gpu_apps;
 
 #[cfg(feature = "scripted-gpu")]
@@ -146,6 +149,14 @@ pub fn query_gpu_apps(
     source: &mut impl GpuAppSource,
     current_user: &CurrentUser<'_>,
 ) -> Result<GpuAppInventory, QueryUnavailable> {
+    query_gpu_apps_with_limit(source, current_user, MAXIMUM_APPS)
+}
+
+fn query_gpu_apps_with_limit(
+    source: &mut impl GpuAppSource,
+    current_user: &CurrentUser<'_>,
+    app_limit: usize,
+) -> Result<GpuAppInventory, QueryUnavailable> {
     if current_user.sid.is_empty() {
         return Err(QueryUnavailable::CurrentUser);
     }
@@ -160,9 +171,13 @@ pub fn query_gpu_apps(
             Ok(sample) => {
                 let current = Snapshot::from_sample(sample, &token);
                 if let Some(previous) = previous {
-                    return Ok(project(previous, current, current_user, |left, right| {
-                        source.compare_names(left, right)
-                    }));
+                    return Ok(project(
+                        previous,
+                        current,
+                        current_user,
+                        app_limit,
+                        |left, right| source.compare_names(left, right),
+                    ));
                 }
                 previous = Some(current);
             }
@@ -284,6 +299,7 @@ fn project(
     previous: Snapshot,
     current: Snapshot,
     user: &CurrentUser<'_>,
+    app_limit: usize,
     compare: impl Fn(&str, &str) -> Ordering,
 ) -> GpuAppInventory {
     let mut activity: Vec<_> = current
@@ -346,8 +362,8 @@ fn project(
             .then_with(|| compare(&left.name, &right.name))
             .then_with(|| left.process_id.cmp(&right.process_id))
     });
-    let truncated = apps.len() > MAXIMUM_APPS;
-    apps.truncate(MAXIMUM_APPS);
+    let truncated = apps.len() > app_limit;
+    apps.truncate(app_limit);
     GpuAppInventory {
         apps,
         truncated,

@@ -12,13 +12,20 @@ use std::{
 
 use windows_sys::{
     Win32::{
-        Foundation::{ERROR_INVALID_PARAMETER, FILETIME, GetLastError, HANDLE, LUID, STILL_ACTIVE},
+        Foundation::{
+            ERROR_INVALID_PARAMETER, FILETIME, GetLastError, HANDLE, INVALID_HANDLE_VALUE, LUID,
+            STILL_ACTIVE,
+        },
         Globalization::CompareStringOrdinal,
         Security::{
             GetTokenInformation, SECURITY_MAX_SID_SIZE, TOKEN_QUERY, TOKEN_USER, TokenSessionId,
             TokenUser,
         },
         System::{
+            Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+                TH32CS_SNAPPROCESS,
+            },
             Performance::*,
             Threading::{
                 GetCurrentProcess, GetExitCodeProcess, GetProcessTimes, OpenProcess,
@@ -35,6 +42,7 @@ const PDH_FMT_NOCAP100: u32 = 0x8000;
 const MAX_ENGINE_COUNTERS: usize = 65_536;
 const MAX_INSTANCE_UNITS: usize = 1024;
 const MAX_PATH_UNITS: usize = 32_768;
+const MAX_PROCESS_ENTRIES: usize = 65_536;
 
 #[derive(Default)]
 pub(super) struct WindowsSampling {
@@ -126,6 +134,10 @@ impl SamplingApi for WindowsSampling {
 
     fn inspect(&mut self, pid: i32) -> Inspection {
         inspect_process(pid)
+    }
+
+    fn read_parents(&mut self, cancelled: &AtomicBool) -> BTreeMap<i32, i32> {
+        read_process_parents(cancelled)
     }
 
     fn pause(&mut self, interval: Duration, cancelled: &AtomicBool) {
@@ -251,8 +263,41 @@ fn decode_counters(
     Ok(counters)
 }
 
+fn read_process_parents(cancelled: &AtomicBool) -> BTreeMap<i32, i32> {
+    let mut parents = BTreeMap::new();
+    // SAFETY: TH32CS_SNAPPROCESS takes a read-only system process snapshot.
+    let raw = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if raw == INVALID_HANDLE_VALUE {
+        return parents;
+    }
+    // SAFETY: A successful snapshot is a uniquely owned handle.
+    let snapshot = unsafe { OwnedHandle::from_raw_handle(raw) };
+    let mut entry = PROCESSENTRY32W {
+        dwSize: size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: The snapshot is held and the entry has the required size.
+    let mut found = unsafe { Process32FirstW(snapshot.as_raw_handle(), &mut entry) };
+    for _ in 0..MAX_PROCESS_ENTRIES {
+        if found == 0 || cancelled.load(AtomicOrdering::Relaxed) {
+            break;
+        }
+        if let (Ok(pid), Ok(parent)) = (
+            i32::try_from(entry.th32ProcessID),
+            i32::try_from(entry.th32ParentProcessID),
+        ) && pid > 0
+            && parent > 0
+        {
+            parents.insert(pid, parent);
+        }
+        // SAFETY: The snapshot and correctly sized entry remain live.
+        found = unsafe { Process32NextW(snapshot.as_raw_handle(), &mut entry) };
+    }
+    parents
+}
+
 fn inspect_process(pid: i32) -> Inspection {
-    // SAFETY: Open only the positive PID admitted by the counter parser with
+    // SAFETY: Open a positive PID from counters or the parent snapshot with
     // non-inheritable query-limited access.
     let raw = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid as u32) };
     if raw.is_null() {

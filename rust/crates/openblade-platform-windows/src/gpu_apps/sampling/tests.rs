@@ -22,6 +22,7 @@ struct Script {
     collect: VecDeque<Result<i64, Unavailable>>,
     arrays: VecDeque<Result<CounterArray, Unavailable>>,
     inspections: VecDeque<Inspection>,
+    parents: VecDeque<BTreeMap<i32, i32>>,
     operations: Vec<String>,
     dropped: Rc<Cell<usize>>,
     cancel_on_pause: bool,
@@ -64,6 +65,10 @@ impl SamplingApi for Script {
         self.inspections
             .pop_front()
             .unwrap_or(Inspection::Unavailable)
+    }
+
+    fn read_parents(&mut self, _: &AtomicBool) -> BTreeMap<i32, i32> {
+        self.parents.pop_front().unwrap_or_default()
     }
 
     fn pause(&mut self, interval: Duration, cancelled: &AtomicBool) {
@@ -155,6 +160,149 @@ fn primes_then_uses_two_stable_samples_and_only_inspects_matching_pids() {
         ]
     );
     assert_eq!(script.dropped.get(), 1);
+}
+
+#[test]
+fn samples_the_shared_parent_chain_and_sums_gpu_helpers() {
+    let luid = ADAPTER.counter_token();
+    let frame = || {
+        [
+            Ok(CounterArray::Size(128)),
+            Ok(CounterArray::Items(vec![
+                counter("30", &luid, 4.5),
+                counter("31", &luid, 2.0),
+            ])),
+        ]
+    };
+    let parents = || BTreeMap::from([(30, 20), (31, 20), (20, 10)]);
+    let identities = || {
+        [
+            record(20, "browser"),
+            record(20, "Browser"),
+            record(10, "explorer"),
+            record(31, "browser"),
+        ]
+    };
+    let mut script = Script {
+        arrays: [Ok(CounterArray::Size(0))]
+            .into_iter()
+            .chain(frame())
+            .chain(frame())
+            .collect(),
+        parents: [parents(), parents()].into(),
+        inspections: identities().into_iter().chain(identities()).collect(),
+        ..Script::default()
+    };
+    let inventory = scan(&mut script, &AtomicBool::new(false)).unwrap();
+    assert_eq!(
+        inventory.apps,
+        [GpuApp {
+            process_id: 20,
+            start_time_utc_ticks: DOTNET_FILETIME_OFFSET + 20,
+            name: "Browser".into(),
+            utilization_percent: 6.5,
+            block_reason: None,
+        }]
+    );
+    assert!(inventory.omissions.is_empty());
+    assert_eq!(
+        script
+            .operations
+            .iter()
+            .filter(|op| op.starts_with("pid:"))
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [
+            "pid:30", "pid:20", "pid:10", "pid:31", "pid:30", "pid:20", "pid:10", "pid:31"
+        ]
+    );
+}
+
+#[test]
+fn incomplete_or_ineligible_parent_leaves_the_gpu_helper_visible() {
+    let luid = ADAPTER.counter_token();
+    let parents = || BTreeMap::from([(30, 20)]);
+    let parent_with_identity = |sid: &[u8], session_id| {
+        Inspection::Identified(Identity {
+            created_filetime: 20,
+            user_sid: sid.to_vec(),
+            session_id,
+            name: "browser".into(),
+        })
+    };
+    for (child, prior, latest) in [
+        ("browser", None, Some(record(20, "browser"))),
+        (
+            "browser",
+            Some(Inspection::Unavailable),
+            Some(record(20, "browser")),
+        ),
+        (
+            "browser",
+            Some(record(20, "browser")),
+            Some(Inspection::Stale),
+        ),
+        (
+            "browser",
+            Some(record(20, "browser")),
+            Some(record(21, "browser")),
+        ),
+        (
+            "browser",
+            Some(record(31, "browser")),
+            Some(record(31, "browser")),
+        ),
+        (
+            "browser",
+            Some(record(20, "terminal")),
+            Some(record(20, "terminal")),
+        ),
+        ("dwm", Some(record(20, "DWM")), Some(record(20, "DWM"))),
+        (
+            "browser",
+            Some(parent_with_identity(b"other-user", 5)),
+            Some(parent_with_identity(b"other-user", 5)),
+        ),
+        (
+            "browser",
+            Some(parent_with_identity(SID, 6)),
+            Some(parent_with_identity(SID, 6)),
+        ),
+    ] {
+        let frame = || {
+            [
+                Ok(CounterArray::Size(64)),
+                Ok(CounterArray::Items(vec![counter("30", &luid, 4.5)])),
+            ]
+        };
+        let mut script = Script {
+            arrays: [Ok(CounterArray::Size(0))]
+                .into_iter()
+                .chain(frame())
+                .chain(frame())
+                .collect(),
+            parents: [
+                prior.as_ref().map_or_else(BTreeMap::new, |_| parents()),
+                latest.as_ref().map_or_else(BTreeMap::new, |_| parents()),
+            ]
+            .into(),
+            inspections: [
+                Some(record(30, child)),
+                prior,
+                Some(record(30, child)),
+                latest,
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+            ..Script::default()
+        };
+        let inventory = scan(&mut script, &AtomicBool::new(false)).unwrap();
+        assert_eq!(inventory.apps.len(), 1);
+        assert_eq!(inventory.apps[0].process_id, 30);
+        assert_eq!(inventory.apps[0].utilization_percent, 4.5);
+        assert!(inventory.omissions.is_empty());
+    }
 }
 
 #[test]

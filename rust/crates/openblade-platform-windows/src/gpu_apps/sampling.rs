@@ -33,6 +33,14 @@ fn scan(
     api: &mut impl SamplingApi,
     cancelled: &AtomicBool,
 ) -> Result<GpuAppInventory, Unavailable> {
+    scan_with_limit(api, cancelled, MAXIMUM_APPS)
+}
+
+fn scan_with_limit(
+    api: &mut impl SamplingApi,
+    cancelled: &AtomicBool,
+    app_limit: usize,
+) -> Result<GpuAppInventory, Unavailable> {
     check_cancelled(cancelled)?;
     let user = api.current_user();
     check_cancelled(cancelled)?;
@@ -45,12 +53,13 @@ fn scan(
         counters: Vec::new(),
         identities: BTreeMap::new(),
     };
-    let inventory = query_gpu_apps(
+    let inventory = query_gpu_apps_with_limit(
         &mut source,
         &CurrentUser {
             sid: &sid,
             session_id,
         },
+        app_limit,
     );
     check_cancelled(cancelled)?;
     inventory
@@ -76,6 +85,7 @@ trait SamplingApi {
         bytes: u32,
     ) -> Result<CounterArray, Unavailable>;
     fn inspect(&mut self, pid: i32) -> Inspection;
+    fn read_parents(&mut self, cancelled: &AtomicBool) -> BTreeMap<i32, i32>;
     fn pause(&mut self, interval: Duration, cancelled: &AtomicBool);
     fn compare_names(&self, left: &str, right: &str) -> Ordering;
 }
@@ -135,9 +145,31 @@ impl<A: SamplingApi> GpuAppSource for SamplingSource<'_, A> {
             .iter()
             .filter_map(|counter| counter_pid(counter, token))
             .collect();
-        for pid in pids {
-            check_cancelled(self.cancelled)?;
-            self.identities.insert(pid, self.api.inspect(pid));
+        let parents = if pids.is_empty() {
+            BTreeMap::new()
+        } else {
+            self.api.read_parents(self.cancelled)
+        };
+        for mut pid in pids {
+            // Inspect each PID at most once per frame. This also stops cycles
+            // and retains an inaccessible parent as a boundary for all helpers.
+            while let std::collections::btree_map::Entry::Vacant(entry) = self.identities.entry(pid)
+            {
+                check_cancelled(self.cancelled)?;
+                let inspection = self.api.inspect(pid);
+                let observed = matches!(
+                    &inspection,
+                    Inspection::Identified(identity) if identity.created_filetime <= sample_time
+                );
+                entry.insert(inspection);
+                if !observed {
+                    break;
+                }
+                let Some(&parent) = parents.get(&pid) else {
+                    break;
+                };
+                pid = parent;
+            }
         }
 
         check_cancelled(self.cancelled)?;
@@ -156,7 +188,9 @@ impl<A: SamplingApi> GpuAppSource for SamplingSource<'_, A> {
             .identities
             .iter()
             .filter_map(|(&pid, identity)| {
-                project_identity(identity, sample_time).map(|observation| (pid, observation))
+                let parent_pid = parents.get(&pid).copied();
+                project_identity(identity, sample_time, parent_pid)
+                    .map(|observation| (pid, observation))
             })
             .collect();
         Ok(Sample {
@@ -205,7 +239,11 @@ fn read_counter_array<A: SamplingApi>(
     unreachable!("the second fill returns")
 }
 
-fn project_identity(inspection: &Inspection, sample_time: i64) -> Option<ProcessObservation<'_>> {
+fn project_identity(
+    inspection: &Inspection,
+    sample_time: i64,
+    parent_pid: Option<i32>,
+) -> Option<ProcessObservation<'_>> {
     match inspection {
         Inspection::Stale => Some(ProcessObservation::Stale),
         Inspection::Unavailable => None,
@@ -222,9 +260,7 @@ fn project_identity(inspection: &Inspection, sample_time: i64) -> Option<Process
                     session_id: record.session_id,
                     name: &record.name,
                 },
-                // The managed parent table uses a process snapshot. This
-                // adapter observes only PIDs named by the engine counters.
-                parent_pid: None,
+                parent_pid,
             })
         }
     }

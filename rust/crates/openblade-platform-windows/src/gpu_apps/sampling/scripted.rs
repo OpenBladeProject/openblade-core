@@ -3,16 +3,20 @@
 use super::*;
 use std::{thread, time::Instant};
 
+use crate::gpu_apps::action::fixture;
+pub use crate::gpu_apps::action::{Kind, Report, Target};
+
 const ADAPTER: NvidiaAdapterLuid = NvidiaAdapterLuid {
     high: -1,
     low: 0x1234,
 };
-const USER: &[u8] = b"fixture-user";
-const SESSION: u32 = 5;
+pub(in crate::gpu_apps) const USER: &[u8] = b"fixture-user";
+pub(in crate::gpu_apps) const SESSION: u32 = 5;
 
 #[derive(Clone, Copy)]
 pub enum Scenario {
     Available,
+    SimulatedClose,
     Empty,
     NoData,
     Large,
@@ -25,11 +29,33 @@ pub fn sample(
 ) -> Result<GpuAppInventory, QueryUnavailable> {
     scan(
         &mut Script {
-            scenario,
+            scenario: match scenario {
+                Scenario::SimulatedClose => Scenario::Available,
+                other => other,
+            },
             sample: 0,
         },
         cancelled,
     )
+}
+
+pub fn simulate_close(
+    targets: &[Target],
+    kind: Kind,
+    cancelled: &AtomicBool,
+) -> Result<(GpuAppInventory, Report), QueryUnavailable> {
+    // Match against the complete fresh projection, even if the wire would
+    // omit a lower-ranked app. Only the response is subject to the list cap.
+    let inventory = scan_with_limit(
+        &mut Script {
+            scenario: Scenario::Available,
+            sample: 0,
+        },
+        cancelled,
+        usize::MAX,
+    )?;
+    let report = fixture::simulate(&inventory, targets, kind, cancelled);
+    Ok((inventory, report))
 }
 
 struct Script {
@@ -62,7 +88,7 @@ impl SamplingApi for Script {
 
     fn counter_array(&mut self, _: &mut (), bytes: u32) -> Result<CounterArray, Unavailable> {
         let pids = match self.scenario {
-            Scenario::Available if self.sample > 1 => 41..=45,
+            Scenario::Available if self.sample > 1 => 41..=46,
             Scenario::Large if self.sample > 1 => 1..=129,
             _ => return Ok(CounterArray::Size(0)),
         };
@@ -88,7 +114,7 @@ impl SamplingApi for Script {
         let name = match self.scenario {
             Scenario::Large => "界".repeat(260),
             _ => match pid {
-                41 => "active-game".into(),
+                41 | 46 => "active-game".into(),
                 42 => "idle-holder".into(),
                 43 => "other-session".into(),
                 44 => "reused-pid".into(),
@@ -114,6 +140,13 @@ impl SamplingApi for Script {
         })
     }
 
+    fn read_parents(&mut self, _: &AtomicBool) -> BTreeMap<i32, i32> {
+        match self.scenario {
+            Scenario::Available => BTreeMap::from([(46, 41)]),
+            _ => BTreeMap::new(),
+        }
+    }
+
     fn pause(&mut self, _: Duration, cancelled: &AtomicBool) {
         if matches!(self.scenario, Scenario::Stalled) {
             let until = Instant::now() + Duration::from_secs(10);
@@ -124,7 +157,11 @@ impl SamplingApi for Script {
     }
 
     fn compare_names(&self, left: &str, right: &str) -> Ordering {
-        // Fixture names use ASCII case or the same uncased Unicode character.
-        left.to_ascii_uppercase().cmp(&right.to_ascii_uppercase())
+        compare_names(left, right)
     }
+}
+
+pub(in crate::gpu_apps) fn compare_names(left: &str, right: &str) -> Ordering {
+    // Fixture names use ASCII case or the same uncased Unicode character.
+    left.to_ascii_uppercase().cmp(&right.to_ascii_uppercase())
 }
