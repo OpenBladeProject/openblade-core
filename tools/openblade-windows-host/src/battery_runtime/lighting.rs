@@ -519,15 +519,53 @@ impl Scenario {
         self: &Arc<Self>,
         mut advance: mpsc::Receiver<()>,
         mut shutdown: tokio::sync::oneshot::Receiver<()>,
+        release: tokio::sync::oneshot::Receiver<()>,
     ) -> io::Result<()> {
-        // Renderer creation is after RUNNING. Failed durable or endpoint
-        // admission therefore never starts an owner that would need draining.
+        // Failed durable or endpoint admission never starts an owner.
         if !matches!(
             shutdown.try_recv(),
             Err(tokio::sync::oneshot::error::TryRecvError::Empty)
         ) {
             return Ok(());
         }
+        let (stopping, mut power_stop) = watch::channel(false);
+        let renderer_stop = power_stop.clone();
+        let power = async {
+            let result = tokio::select! {
+                biased;
+                _ = power_stop.wait_for(|stop| *stop) => Ok(()),
+                result = self.drive_power_steps(&mut advance, false) => result,
+            };
+            if result.is_err() {
+                stopping.send_replace(true);
+            }
+            result
+        };
+        let renderer = async {
+            let result = self.drive_integrated_renderer(renderer_stop, release).await;
+            if result.is_err() {
+                stopping.send_replace(true);
+            }
+            result
+        };
+        let drive = async { tokio::join!(renderer, power) };
+        tokio::pin!(drive);
+        let (renderer, power) = tokio::select! {
+            biased;
+            _ = &mut shutdown => {
+                stopping.send_replace(true);
+                drive.await
+            }
+            result = &mut drive => result,
+        };
+        renderer.and(power)
+    }
+
+    async fn drive_integrated_renderer(
+        self: &Arc<Self>,
+        mut stopping: watch::Receiver<bool>,
+        release: tokio::sync::oneshot::Receiver<()>,
+    ) -> io::Result<()> {
         let script = {
             let mut state = self.state.lock().await;
             let lighting = state.lighting()?;
@@ -544,78 +582,88 @@ impl Scenario {
             release_port,
         } = script;
         started.await.map_err(io::Error::other)?;
-        self.update(|_| Ok(result(ScopedStatus::Unchanged, "Renderer frame in flight.")))
-            .await?;
+        let mut status = self.subscribe();
+        self.update(|state| {
+            let message = if state
+                .lighting()?
+                .renderer
+                .as_ref()
+                .is_some_and(Renderer::closed)
+            {
+                "Renderer frame admission closed."
+            } else {
+                "Renderer frame in flight."
+            };
+            Ok(result(ScopedStatus::Unchanged, message))
+        })
+        .await?;
 
-        let power = tokio::select! {
-            biased;
-            _ = &mut shutdown => None,
-            result = self.drive_power_steps(&mut advance, false) => Some(result),
-        };
-        let mut stopping = power.as_ref().is_none_or(|result| result.is_err());
         let mut retired = loop {
-            if !stopping {
-                stopping = tokio::select! {
-                    biased;
-                    _ = &mut shutdown => true,
-                    step = advance.recv() => step.is_none(),
-                };
+            {
+                let mut state = self.state.lock().await;
+                let lighting = state.lighting()?;
+                match &lighting.renderer {
+                    Some(Renderer::Retiring(done)) => break done.clone(),
+                    Some(Renderer::Owned(_)) if *stopping.borrow() => {
+                        break self.begin_retirement(lighting)?;
+                    }
+                    Some(Renderer::Owned(_)) => {}
+                    _ => {
+                        return Err(io::Error::other(
+                            "Renderer ownership could not be verified.",
+                        ));
+                    }
+                }
             }
-            let mut state = self.state.lock().await;
-            let lighting = state.lighting()?;
-            match &lighting.renderer {
-                Some(Renderer::Retiring(done)) => break done.clone(),
-                Some(Renderer::Owned(_)) if stopping => {
-                    let done = self.begin_retirement(lighting)?;
-                    self.update_locked(&mut state, |_| {
-                        Ok(result(
-                            ScopedStatus::Unchanged,
-                            "Renderer frame admission closed.",
-                        ))
-                    })?;
-                    break done;
-                }
-                Some(Renderer::Owned(_)) => {}
-                _ => {
-                    return Err(io::Error::other(
-                        "Renderer ownership could not be verified.",
-                    ));
-                }
+            tokio::select! {
+                biased;
+                changed = stopping.changed() => changed.map_err(io::Error::other)?,
+                changed = status.changed() => changed.map_err(io::Error::other)?,
             }
         };
-        let release = async move {
-            complete_frame
-                .send(())
-                .map_err(|_| io::Error::other("Frame already ended."))?;
-            frame_done.await.map_err(io::Error::other)?;
-            self.update(|state| {
-                if state.lighting()?.native_lane.try_acquire().is_ok() {
-                    return Err(io::Error::other("Renderer lost the port before release."));
-                }
-                Ok(result(
-                    ScopedStatus::Unchanged,
-                    "Frame drained. Renderer port still owned.",
-                ))
-            })
-            .await?;
-            // One fixture step acknowledges port release. EOF also finishes the
-            // synthetic port. A missing acknowledgement leaves it faulted.
-            let known = tokio::time::timeout(RETIRE_LIMIT / 2, advance.recv())
-                .await
-                .is_ok();
+        let released = async {
+            self.drain_frame(complete_frame, frame_done).await?;
+            let known = matches!(
+                tokio::time::timeout(RETIRE_LIMIT / 2, release).await,
+                Ok(Ok(()))
+            );
             release_port
                 .send(known)
                 .map_err(|_| io::Error::other("Port already released."))
         }
         .await;
         wait_for_retirement(&mut retired).await?;
-        release?;
+        released?;
         if self.state.lock().await.lighting()?.renderer.is_some() {
             return Err(io::Error::other(
                 "Renderer retirement could not be verified.",
             ));
         }
-        power.unwrap_or(Ok(()))
+        Ok(())
+    }
+
+    async fn drain_frame(
+        &self,
+        complete_frame: tokio::sync::oneshot::Sender<()>,
+        frame_done: tokio::sync::oneshot::Receiver<()>,
+    ) -> io::Result<()> {
+        complete_frame
+            .send(())
+            .map_err(|_| io::Error::other("Frame already ended."))?;
+        frame_done.await.map_err(io::Error::other)?;
+        self.update(|state| {
+            if state.lighting()?.native_lane.try_acquire().is_ok() {
+                return Err(io::Error::other(
+                    "Renderer released its port before native retirement.",
+                ));
+            }
+            Ok(result(
+                ScopedStatus::Unchanged,
+                "Frame drained. Renderer port still owned.",
+            ))
+        })
+        .await?;
+        Ok(())
     }
 
     pub(crate) async fn lighting_wait_disconnected(&self) -> io::Result<()> {
@@ -739,23 +787,8 @@ impl Scenario {
             }
             break retired;
         };
-        script
-            .complete_frame
-            .send(())
-            .map_err(|_| io::Error::other("Frame already ended."))?;
-        script.frame_done.await.map_err(io::Error::other)?;
-        self.update(|state| {
-            if state.lighting()?.native_lane.try_acquire().is_ok() {
-                return Err(io::Error::other(
-                    "Renderer released its port before native retirement.",
-                ));
-            }
-            Ok(result(
-                ScopedStatus::Unchanged,
-                "Frame drained. Renderer port still owned.",
-            ))
-        })
-        .await?;
+        self.drain_frame(script.complete_frame, script.frame_done)
+            .await?;
 
         if advance.recv().await.is_none() {
             return Ok(false);
@@ -945,6 +978,57 @@ mod tests {
             );
             assert!(state.lighting().unwrap().device.trace.is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn integrated_stop_without_port_acknowledgement_retains_lighting_fence() {
+        use openblade_windows_host::configuration_writer::fixture::Fixture;
+
+        let status: Value = serde_json::from_str(crate::wire::CURRENT_FIXTURE).unwrap();
+        let (profiles, writer) = Fixture::create(true)
+            .unwrap()
+            .compose_battery(false)
+            .unwrap();
+        let scenario = Arc::new(
+            Scenario::composed(
+                status["status"].clone(),
+                profiles,
+                Some(writer),
+                super::super::ProfileReplay::Integrated,
+            )
+            .unwrap(),
+        );
+        let (_steps, advance) = mpsc::channel(1);
+        let (shutdown, wait_shutdown) = tokio::sync::oneshot::channel();
+        let (release, wait_release) = tokio::sync::oneshot::channel();
+        let mut watch = scenario.subscribe();
+        let client = async {
+            watch
+                .wait_for(|state| state["message"] == "Renderer frame in flight.")
+                .await
+                .unwrap();
+            shutdown.send(()).unwrap();
+            watch
+                .wait_for(|state| state["message"] == "Frame drained. Renderer port still owned.")
+                .await
+                .unwrap();
+            drop(release);
+        };
+        let (outcome, ()) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::join!(
+                scenario.drive_integrated(advance, wait_shutdown, wait_release),
+                client
+            )
+        })
+        .await
+        .unwrap();
+        assert!(outcome.is_err());
+        let mut state = scenario.state.lock().await;
+        assert!(!state.configuration_blocked);
+        assert_eq!(state.current["lightingRendererOwnership"], 9);
+        assert_eq!(state.current["unconfirmedWrites"], json!([LIGHTING]));
+        assert!(state.current["confirmedState"]["lighting"].is_null());
+        assert!(state.lighting().unwrap().device.trace.is_empty());
     }
 
     #[test]

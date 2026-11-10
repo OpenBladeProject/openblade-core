@@ -1337,6 +1337,19 @@ public sealed partial class RustReadOnlyHostTests
             var alreadySelected = await client.SetPerformanceOverrideAsync(preset, token);
             Assert.Equal(ControlOperationStatus.Applied, alreadySelected.Status);
             Assert.Contains("already confirmed", alreadySelected.Message);
+            var fan = new ManualOverride<FanMode>(FanMode.Fixed, OverrideLifetime.UntilPowerSourceChange);
+            var settings = new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default);
+            Assert.Equal(ControlOperationStatus.Applied, (await client.SetFanControlOverrideAsync(fan, settings, token)).Status);
+
+            var off = new ManualOverride<LightingSettings>(LightingSettingsFactory.Off(), OverrideLifetime.Persistent);
+            Task<ControlOperationResult> applying = client.SetLightingOverrideAsync(off, token);
+            // The owned frame drains without consuming or waiting for a power step.
+            var drained = await WaitForMessageAsync("Frame drained. Renderer port still owned.");
+            Assert.Equal(LightingRendererOwnershipState.Spectrum, drained.LightingRendererOwnership);
+            Assert.Null(drained.ConfirmedState?.Lighting);
+            Assert.True(drained.WritesBlocked);
+            Assert.False(applying.IsCompleted);
+
             var power = await AdvanceAsync();
             Assert.Contains("classification unresolved", power.Message);
             Assert.Equal((PerformanceOverride?)preset, power.PerformanceOverride);
@@ -1346,6 +1359,9 @@ public sealed partial class RustReadOnlyHostTests
             power = await AdvanceAsync();
             Assert.Equal(PowerSource.Battery, power.ActivePowerSource);
             Assert.Null(power.PerformanceOverride);
+            Assert.Equal(SettingValueSource.PowerProfile, power.DesiredState.Performance.Source);
+            Assert.Null(power.FanOverride);
+            Assert.Equal(FanMode.Maximum, power.ConfirmedState?.Fans);
             Assert.Equal(PowerSource.ExternalUnknown, (await AdvanceAsync()).ActivePowerSource);
             Assert.Equal(PowerSource.UsbC, (await AdvanceAsync()).ActivePowerSource);
             Assert.Equal(ControlOperationStatus.Blocked, (await client.SetPerformanceOverrideAsync(preset, token)).Status);
@@ -1354,11 +1370,10 @@ public sealed partial class RustReadOnlyHostTests
             power = await AdvanceAsync();
             Assert.Equal(PowerSource.PluggedIn, power.ActivePowerSource);
             Assert.Equal(PerformancePreset.Balanced, power.ConfirmedState?.Performance);
+            Assert.Equal(FanMode.Automatic, power.ConfirmedState?.Fans);
             Assert.Empty(power.UnconfirmedWrites);
 
             Assert.Equal(ControlOperationStatus.Applied, (await client.SetPerformanceOverrideAsync(preset, token)).Status);
-            var fan = new ManualOverride<FanMode>(FanMode.Fixed, OverrideLifetime.UntilPowerSourceChange);
-            var settings = new FanControlSettings(FanMode.Fixed, 4000, ManualFanCurve.Default);
             Assert.Equal(ControlOperationStatus.Applied, (await client.SetFanControlOverrideAsync(fan, settings, token)).Status);
             var thermal = await client.GetStatusAsync(token);
             Assert.Equal(PerformancePreset.Performance, thermal.ConfirmedState?.Performance);
@@ -1369,20 +1384,12 @@ public sealed partial class RustReadOnlyHostTests
             Assert.Equal(SettingValueSource.TemporaryOverride, thermal.DesiredState.Performance.Source);
             AssertPrimaryBytes(root, saved);
 
-            var off = new ManualOverride<LightingSettings>(LightingSettingsFactory.Off(), OverrideLifetime.Persistent);
-            Task<ControlOperationResult> applying = client.SetLightingOverrideAsync(off, token);
-            var closed = await WaitForMessageAsync("Renderer frame admission closed.");
-            Assert.Null(closed.ConfirmedState?.Lighting);
-            await host.AdvanceAsync(token);
-            var drained = await WaitForMessageAsync("Frame drained. Renderer port still owned.");
-            Assert.Equal(LightingRendererOwnershipState.Spectrum, drained.LightingRendererOwnership);
-            Assert.True(drained.WritesBlocked);
             Assert.False(applying.IsCompleted);
 
             await host.RequestStopAsync(token);
             await host.ExpectLineAsync("STOP_PENDING", token);
             await Assert.ThrowsAnyAsync<IOException>(async () => await applying);
-            await host.AdvanceAsync(token); // Only the scripted port acknowledgement completes retirement.
+            await host.ReleaseRendererAsync(token);
             await host.ExpectLineAsync("STOPPED", token);
             await host.StopAsync(token);
             AssertPrimaryBytes(root, saved);
@@ -1920,6 +1927,8 @@ public sealed partial class RustReadOnlyHostTests
         internal Task AdvanceAsync(CancellationToken token) => SendCommandAsync((byte)'n', token);
 
         internal Task RequestStopAsync(CancellationToken token) => SendCommandAsync((byte)'s', token);
+
+        internal Task ReleaseRendererAsync(CancellationToken token) => SendCommandAsync((byte)'r', token);
 
         internal async Task ExpectLineAsync(string expected, CancellationToken token) =>
             Assert.Equal(expected, await process.StandardOutput.ReadLineAsync(token));

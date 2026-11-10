@@ -44,32 +44,32 @@ pub(super) fn entry() -> io::Result<()> {
         [mode] if mode == "--scm" => scm::dispatch(),
         [mode, id] if mode == "foreground-integrated" => {
             let id = foreground_id(id)?;
-            foreground_with_stop(id, Session::Active, true, true, |advance, shutdown| {
-                let mut fixture = fixture::Fixture::create(true)?;
-                announce_fixture(&mut fixture)?;
-                let (profiles, writer) = fixture.compose_battery(false)?;
-                prepare_battery_profiles(
-                    advance,
-                    shutdown,
-                    profiles,
-                    Some(writer),
-                    ProfileReplay::Integrated,
-                )
-            })
+            foreground_with_stop(
+                id,
+                Session::Active,
+                true,
+                true,
+                |advance, release, shutdown| {
+                    let mut fixture = fixture::Fixture::create(true)?;
+                    announce_fixture(&mut fixture)?;
+                    let (profiles, writer) = fixture.compose_battery(false)?;
+                    prepare_integrated(advance, release, shutdown, profiles, writer)
+                },
+            )
         }
         [mode, id, root] if mode == "foreground-protected-integrated" => {
             let id = foreground_id(id)?;
-            foreground_with_stop(id, Session::Active, true, true, |advance, shutdown| {
-                let (profiles, writer) =
-                    fixture::BatteryProfileStore::open_protected(std::path::Path::new(root))?;
-                prepare_battery_profiles(
-                    advance,
-                    shutdown,
-                    profiles,
-                    Some(writer),
-                    ProfileReplay::Integrated,
-                )
-            })
+            foreground_with_stop(
+                id,
+                Session::Active,
+                true,
+                true,
+                |advance, release, shutdown| {
+                    let (profiles, writer) =
+                        fixture::BatteryProfileStore::open_protected(std::path::Path::new(root))?;
+                    prepare_integrated(advance, release, shutdown, profiles, writer)
+                },
+            )
         }
         [mode, id, root] if mode == "foreground-protected-runtime" => {
             let id = foreground_id(id)?;
@@ -293,8 +293,27 @@ fn prepare_battery_profiles(
     replay: ProfileReplay,
 ) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
     let advance = advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
-    let (status, drive) =
-        Status::fixture()?.with_battery_profiles(advance, profiles, writer, replay, shutdown)?;
+    let (status, drive) = Status::fixture()?
+        .with_battery_profiles(advance, profiles, writer, replay, shutdown, None)?;
+    Ok((status, Some(drive)))
+}
+
+fn prepare_integrated(
+    advance: Option<mpsc::Receiver<()>>,
+    release: Option<oneshot::Receiver<()>>,
+    shutdown: oneshot::Receiver<()>,
+    profiles: serde_json::Value,
+    writer: fixture::BatteryProfileStore,
+) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
+    let advance = advance.ok_or_else(|| io::Error::other("missing power steps"))?;
+    let (status, drive) = Status::fixture()?.with_battery_profiles(
+        advance,
+        profiles,
+        Some(writer),
+        ProfileReplay::Integrated,
+        shutdown,
+        release,
+    )?;
     Ok((status, Some(drive)))
 }
 
@@ -316,7 +335,9 @@ fn foreground<F: Future<Output = io::Result<()>>>(
         oneshot::Receiver<()>,
     ) -> io::Result<(Status, Option<F>)>,
 ) -> io::Result<()> {
-    foreground_with_stop(id, session, accept_steps, false, prepare)
+    foreground_with_stop(id, session, accept_steps, false, |advance, _, shutdown| {
+        prepare(advance, shutdown)
+    })
 }
 
 fn foreground_with_stop<F: Future<Output = io::Result<()>>>(
@@ -326,12 +347,21 @@ fn foreground_with_stop<F: Future<Output = io::Result<()>>>(
     controlled_stop: bool,
     prepare: impl FnOnce(
         Option<mpsc::Receiver<()>>,
+        Option<oneshot::Receiver<()>>,
         oneshot::Receiver<()>,
     ) -> io::Result<(Status, Option<F>)>,
 ) -> io::Result<()> {
     let (mut advance, replay) = if accept_steps {
-        let (sender, receiver) = mpsc::channel(1);
+        // All seven ordered power steps fit without delaying STOP or the
+        // separate renderer port acknowledgement.
+        let (sender, receiver) = mpsc::channel(if controlled_stop { 7 } else { 1 });
         (Some(sender), Some(receiver))
+    } else {
+        (None, None)
+    };
+    let (mut release, wait_release) = if controlled_stop {
+        let (release, wait_release) = oneshot::channel();
+        (Some(release), Some(wait_release))
     } else {
         (None, None)
     };
@@ -343,7 +373,7 @@ fn foreground_with_stop<F: Future<Output = io::Result<()>>>(
         stop,
         id,
         session,
-        |shutdown| prepare(replay, shutdown),
+        |shutdown| prepare(replay, wait_release, shutdown),
         |status| {
             if status.dwCurrentState == SERVICE_RUNNING {
                 // This thread owns stdin. EOF stops replay; one byte stops fixed modes.
@@ -352,6 +382,7 @@ fn foreground_with_stop<F: Future<Output = io::Result<()>>>(
                     .spawn({
                         let controls = Arc::clone(&controls);
                         let advance = advance.take();
+                        let mut release = release.take();
                         move || {
                             let mut input = io::stdin().lock();
                             if let Some(advance) = advance.as_ref() {
@@ -359,7 +390,17 @@ fn foreground_with_stop<F: Future<Output = io::Result<()>>>(
                                 while input.read_exact(&mut byte).is_ok() {
                                     match byte[0] {
                                         b'n' if controlled_stop => {
-                                            let _ = advance.try_send(());
+                                            if advance.try_send(()).is_err() {
+                                                eprintln!(
+                                                    "Invalid power step for the integrated fixture."
+                                                );
+                                                break;
+                                            }
+                                        }
+                                        b'r' if controlled_stop => {
+                                            if let Some(release) = release.take() {
+                                                let _ = release.send(());
+                                            }
                                         }
                                         b'n' if advance.blocking_send(()).is_err() => break,
                                         b's' if controlled_stop => controls.request_stop(),

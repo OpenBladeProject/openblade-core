@@ -162,22 +162,36 @@ impl Lifecycle {
                 "Fresh adapter evidence does not confirm full power.",
             ));
         }
-        state.thermal()?.power_unresolved = false;
         if state.controller.power == Power::PluggedIn {
+            state.thermal()?.power_unresolved = false;
             return Ok(result(
                 ScopedStatus::Unchanged,
                 "Full-adapter profile is already selected.",
             ));
         }
-        select_power(state, Power::PluggedIn)?;
-        let value = state.controller.profile().performance;
         let thermal = state.thermal()?;
+        if !thermal.fans.automatic_confirmed() {
+            // The fresh full-adapter evidence above admits cleanup of a pair
+            // the scripted port already owns. A blocked or uncertain cleanup
+            // cannot spend the planned preset write.
+            let handback = thermal.fans.handback()?;
+            if matches!(
+                handback.status,
+                ScopedStatus::Blocked | ScopedStatus::Failed
+            ) {
+                return Ok(result(handback.status, handback.message));
+            }
+        }
         if !thermal.fans.fresh_automatic() {
             return Ok(result(
                 ScopedStatus::Blocked,
                 "The scoped preset recipe requires a confirmed Automatic fan pair.",
             ));
         }
+        select_power(state, Power::PluggedIn)?;
+        let value = state.controller.profile().performance;
+        let thermal = state.thermal()?;
+        thermal.power_unresolved = false;
         if lose_response {
             PerformanceStep::LoseResponse.run(&mut thermal.performance);
         }

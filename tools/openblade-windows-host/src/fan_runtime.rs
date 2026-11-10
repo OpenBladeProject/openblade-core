@@ -101,8 +101,8 @@ impl Controller {
     #[cfg(windows)]
     pub(crate) fn expire_power_override(&mut self) {
         self.saved = None;
-        // Source changes cannot prove continuous ownership of the manual pair.
-        self.owned = false;
+        // Expiring intent does not retire the scripted port's ownership.
+        // The next handback still requires fresh admission and readback.
     }
 
     #[cfg(windows)]
@@ -167,7 +167,7 @@ impl Controller {
         self.transition(Topology::Manual)
     }
 
-    fn handback(&mut self) -> io::Result<Outcome> {
+    pub(crate) fn handback(&mut self) -> io::Result<Outcome> {
         if let Some(outcome) = self.write_block() {
             return Ok(outcome);
         }

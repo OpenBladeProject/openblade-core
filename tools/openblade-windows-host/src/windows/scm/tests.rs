@@ -13,7 +13,7 @@ use crate::battery_runtime::{ProfileReplay, ProfileSaveBarrier};
 use crate::windows::{
     PREFIX,
     pipe::Endpoint,
-    prepare_battery_profiles, prepare_protected,
+    prepare_battery_profiles, prepare_integrated, prepare_protected,
     tests::{assert_closed, open_pipe, read_status, runtime, test_id},
 };
 
@@ -38,7 +38,8 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
         let (resume, wait_resume) = oneshot::channel();
         let (saved, wait_saved) = oneshot::channel();
         let stopped = Cell::new(false);
-        let (steps, advance) = mpsc::channel(1);
+        let (_steps, advance) = mpsc::channel(1);
+        let (release_port, wait_release) = oneshot::channel();
         let (watch, wait_watch) = oneshot::channel();
         let mut phases = Vec::new();
         let host = run_service(
@@ -59,12 +60,12 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
                         "profiles": changed
                     }))?)
                     .unwrap();
-                let prepared = prepare_battery_profiles(
+                let prepared = prepare_integrated(
                     Some(advance),
+                    Some(wait_release),
                     shutdown,
                     profiles,
-                    Some(writer),
-                    ProfileReplay::Integrated,
+                    writer,
                 )?;
                 let status = prepared.0.set_profile_save_barrier(ProfileSaveBarrier {
                     entered,
@@ -133,7 +134,7 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
                 endpoint.claim().unwrap_err().kind(),
                 io::ErrorKind::PermissionDenied
             );
-            steps.send(()).await.unwrap();
+            release_port.send(()).unwrap();
             status
                 .wait_for(|value| value["message"] == "Renderer port retired.")
                 .await

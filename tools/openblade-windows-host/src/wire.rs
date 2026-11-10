@@ -122,9 +122,15 @@ impl Status {
         writer: Option<openblade_windows_host::configuration_writer::fixture::BatteryProfileStore>,
         replay: crate::battery_runtime::ProfileReplay,
         shutdown: tokio::sync::oneshot::Receiver<()>,
+        release: Option<tokio::sync::oneshot::Receiver<()>>,
     ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
         use crate::battery_runtime::ProfileReplay;
 
+        if matches!(replay, ProfileReplay::Integrated) != release.is_some() {
+            return Err(io::Error::other(
+                "Unexpected integrated port acknowledgement channel.",
+            ));
+        }
         let scenario = Arc::new(Scenario::composed(
             self.active.current.clone(),
             profiles,
@@ -139,8 +145,8 @@ impl Status {
             self.battery = Some(Arc::clone(&scenario));
         }
         let drive = async move {
-            if matches!(replay, ProfileReplay::Integrated) {
-                return scenario.drive_integrated(advance, shutdown).await;
+            if let Some(release) = release {
+                return scenario.drive_integrated(advance, shutdown, release).await;
             }
             let replay = async {
                 match replay {

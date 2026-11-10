@@ -85,12 +85,25 @@ public sealed partial class RustReadOnlyHostTests
         }
 
         string restartEndpoint = Guid.NewGuid().ToString("N");
-        await using (var restart = DevHost.Start(restartEndpoint, "foreground-protected-runtime", root))
+        await using (var restart = DevHost.Start(restartEndpoint, "foreground-protected-integrated", root))
         {
+            await restart.ExpectLineAsync("START_PENDING", token);
             await restart.WaitUntilReadyAsync(token);
             await using var client = new ServiceClient(PipeName(restartEndpoint));
-            AssertComposedBattery(await client.GetStatusAsync(token), saved: 75, temporary: null, confirmed: 80);
+            await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+            var status = await ReadStatusAsync(watch, subscriptionOpened: true);
+            while (status.Message != "Renderer frame in flight.")
+            {
+                status = await ReadStatusAsync(watch, subscriptionOpened: false);
+            }
+            AssertComposedBattery(status, saved: 75, temporary: null, confirmed: 80);
             AssertPrimaryBytes(root, committed);
+            await restart.RequestStopAsync(token);
+            await restart.ExpectLineAsync("STOP_PENDING", token);
+            var refused = Assert.Throws<IOException>(() => fixture.OpenManagedLease().Dispose());
+            Assert.Equal(unchecked((int)0x80070020), refused.HResult); // ERROR_SHARING_VIOLATION
+            await restart.ReleaseRendererAsync(token);
+            await restart.ExpectLineAsync("STOPPED", token);
             await restart.StopAsync(token);
         }
 

@@ -640,6 +640,8 @@ pub(crate) struct Scenario {
     #[cfg(windows)]
     lighting_off: bool,
     #[cfg(windows)]
+    lighting_only: bool,
+    #[cfg(windows)]
     lighting_operation: Mutex<()>,
     state: Arc<Mutex<ScenarioState>>,
     publish: watch::Sender<Arc<Value>>,
@@ -690,6 +692,8 @@ impl Scenario {
             baseline,
             false,
             #[cfg(windows)]
+            false,
+            #[cfg(windows)]
             None,
             #[cfg(windows)]
             None,
@@ -737,6 +741,7 @@ impl Scenario {
                 replay,
                 ProfileReplay::FullCharge | ProfileReplay::Integrated
             ),
+            matches!(replay, ProfileReplay::LightingOff { .. }),
             lighting,
             writer,
             thermal,
@@ -746,6 +751,7 @@ impl Scenario {
     fn start(
         baseline: Value,
         full_charge: bool,
+        #[cfg(windows)] lighting_only: bool,
         #[cfg(windows)] lighting: Option<lighting::Lighting>,
         #[cfg(windows)] writer: Option<ProfileWriter>,
         #[cfg(windows)] thermal: Option<thermal::Thermal>,
@@ -774,6 +780,11 @@ impl Scenario {
         state.current["capabilities"]["chargeLimits"] = json!(LIMITS);
         state.current["capabilities"]["supportsBatteryProtectionOff"] =
             CAPABILITIES.protection_off.into();
+        #[cfg(windows)]
+        if lighting_only {
+            state.current["capabilities"]["chargeLimits"] = json!([]);
+            state.current["capabilities"]["supportsBatteryProtectionOff"] = false.into();
+        }
         state.current["capabilities"]["supportsTemporaryFullCharge"] =
             (full_charge && CAPABILITIES.temporary).into();
         state.project("Synthetic battery scenario ready.");
@@ -785,6 +796,8 @@ impl Scenario {
             #[cfg(windows)]
             lighting_off,
             #[cfg(windows)]
+            lighting_only,
+            #[cfg(windows)]
             lighting_operation: Mutex::new(()),
             state: Arc::new(Mutex::new(state)),
             publish,
@@ -793,7 +806,7 @@ impl Scenario {
 
     pub(crate) fn accepts_battery(&self, full_charge: bool) -> bool {
         #[cfg(windows)]
-        if self.lighting_off && !self.full_charge {
+        if self.lighting_only {
             return false;
         }
         !full_charge || self.full_charge
@@ -1061,8 +1074,8 @@ impl ScenarioState {
         let desired = controller.desired();
         self.current["activePowerSource"] = json!(controller.power.index());
         self.current["potentialControllers"] = json!([]);
-        self.current["desiredState"]["performance"]["value"] =
-            json!(controller.profile().performance);
+        self.current["desiredState"]["performance"] =
+            json!({"value": controller.profile().performance, "source": 1});
         self.current["desiredState"]["battery"] = json!({
             "configuredPolicy": {"chargeLimitPercent": desired.limit.percent()},
             "protectionEnabled": desired.protection,
@@ -1079,6 +1092,9 @@ impl ScenarioState {
             })));
         self.current["batteryProtectionOverride"] = json!(controller.protection_override);
         self.current["fullChargeOverride"] = json!(controller.full_charge);
+        // This summary includes scoped fences. The typed handlers still check
+        // their own admission, so renderer retirement cannot grant or revoke
+        // an unrelated charge-policy operation.
         self.current["writesBlocked"] =
             json!(self.configuration_blocked || controller.pending.is_some());
         self.current["unconfirmedWrites"] = if controller.pending.is_some() {
@@ -1097,10 +1113,6 @@ impl ScenarioState {
         }
         #[cfg(windows)]
         if let Some(lighting) = &self.lighting {
-            if !self.controller.device.report_reads {
-                self.current["capabilities"]["chargeLimits"] = json!([]);
-                self.current["capabilities"]["supportsBatteryProtectionOff"] = false.into();
-            }
             lighting.project(&mut self.current);
         }
         self.current["message"] = message.into();
