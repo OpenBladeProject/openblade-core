@@ -1038,6 +1038,117 @@ public sealed class RustReadOnlyHostTests
 
 
     [RustReadOnlyHostFact]
+    public Task TrayClient_AppliesFullAdapterProfileFromScriptedPowerEvidence() =>
+        ExercisePowerProfileAsync(uncertain: false);
+
+    [RustReadOnlyHostFact]
+    public Task TrayClient_ReconcilesUncertainAutomaticPresetWithoutReplay() =>
+        ExercisePowerProfileAsync(uncertain: true);
+
+    private static async Task ExercisePowerProfileAsync(bool uncertain)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = timeout.Token;
+        string endpoint = Guid.NewGuid().ToString("N");
+        await using var host = DevHost.Start(endpoint,
+            uncertain ? "foreground-power-profile-uncertain" : "foreground-power-profile");
+        (string rootId, _) = await host.ReadFixtureRootAsync(token);
+        string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Temp", $"openblade-durable-host-{rootId}");
+        using SafeFileHandle pin = OpenFixtureDirectory(root);
+        Assert.False(pin.IsInvalid, $"Could not pin fixture directory. Win32 {Marshal.GetLastWin32Error()}");
+        try
+        {
+            await host.WaitUntilReadyAsync(token);
+            await using var client = new ServiceClient(PipeName(endpoint));
+            var initial = await client.GetStatusAsync(token);
+            byte[][] migrated = ConfigurationNames
+                .Select(name => File.ReadAllBytes(Path.Combine(root, name))).ToArray();
+
+            AssertState(initial, PowerSource.PluggedIn, initial.Profiles.PluggedIn.Performance,
+                PerformancePreset.Performance, blocked: false);
+            Assert.Equal(PerformancePreset.Balanced, initial.Profiles.PluggedIn.Performance);
+            var conflict = await AdvanceAsync();
+            Assert.Contains("classification unresolved", conflict.Message);
+            AssertState(conflict, PowerSource.PluggedIn, initial.Profiles.PluggedIn.Performance,
+                PerformancePreset.Performance, blocked: true);
+            AssertState(await AdvanceAsync(), PowerSource.Battery, initial.Profiles.Battery.Performance,
+                PerformancePreset.Performance, blocked: true);
+            AssertState(await AdvanceAsync(), PowerSource.ExternalUnknown, initial.Profiles.Battery.Performance,
+                PerformancePreset.Performance, blocked: true);
+            AssertState(await AdvanceAsync(), PowerSource.UsbC, initial.Profiles.UsbC.Performance,
+                PerformancePreset.Performance, blocked: true);
+
+            var stale = await AdvanceAsync();
+            Assert.Contains("superseded", stale.Message);
+            AssertState(stale, PowerSource.UsbC, initial.Profiles.UsbC.Performance,
+                PerformancePreset.Performance, blocked: true);
+            AssertState(await AdvanceAsync(), PowerSource.UsbC, initial.Profiles.UsbC.Performance,
+                PerformancePreset.Performance, blocked: true);
+
+            var applied = await AdvanceAsync();
+            AssertState(applied, PowerSource.PluggedIn, PerformancePreset.Balanced,
+                uncertain ? PerformancePreset.Performance : PerformancePreset.Balanced, blocked: uncertain);
+            if (uncertain)
+            {
+                Assert.Equal(DeviceSubsystem.Performance, Assert.Single(applied.UnconfirmedWrites));
+                var pending = await AdvanceAsync();
+                Assert.Contains("awaits read-only reconciliation", pending.Message);
+                AssertState(pending, PowerSource.PluggedIn, PerformancePreset.Balanced,
+                    PerformancePreset.Performance, blocked: true);
+                Assert.Equal(DeviceSubsystem.Performance, Assert.Single(pending.UnconfirmedWrites));
+                var recovered = await AdvanceAsync();
+                Assert.Contains("read-only performance observation", recovered.Message);
+                AssertState(recovered, PowerSource.PluggedIn, PerformancePreset.Balanced,
+                    PerformancePreset.Balanced, blocked: true);
+                Assert.Empty(recovered.UnconfirmedWrites);
+            }
+            else
+            {
+                Assert.Empty(applied.UnconfirmedWrites);
+            }
+
+            await host.StopAsync(token);
+            AssertPrimaryBytes(root, migrated);
+
+            async Task<ServiceStatusSnapshot> AdvanceAsync()
+            {
+                await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+                var previous = await ReadStatusAsync(watch, subscriptionOpened: true);
+                await host.AdvanceAsync(token);
+                var status = await ReadStatusAsync(watch, subscriptionOpened: false);
+                Assert.True(status.Revision > previous.Revision);
+                return status;
+            }
+
+            void AssertState(ServiceStatusSnapshot status, PowerSource source, PerformancePreset desired,
+                PerformancePreset confirmed, bool blocked)
+            {
+                Assert.Equal(source, status.ActivePowerSource);
+                Assert.Equal(desired, status.DesiredState.Performance.Value);
+                Assert.Equal(SettingValueSource.PowerProfile, status.DesiredState.Performance.Source);
+                Assert.Equal(confirmed, status.ConfirmedState!.Performance);
+                Assert.Equal(FanMode.Automatic, status.ConfirmedState.Fans);
+                Assert.Equal(blocked, status.WritesBlocked);
+                Assert.Null(status.PerformanceOverride);
+                Assert.Null(status.FanOverride);
+                Assert.Equal(initial.Profiles, status.Profiles);
+                AssertComposedBattery(status, saved: 77, temporary: null, confirmed: 80);
+            }
+        }
+        finally
+        {
+            await host.DisposeAsync();
+            foreach (string file in Directory.EnumerateFiles(root))
+            {
+                File.Delete(file);
+            }
+            pin.Dispose();
+            Directory.Delete(root);
+        }
+    }
+
+    [RustReadOnlyHostFact]
     public Task TrayClient_ComposesDurableProfilesWithThermalTransitions() =>
         ExerciseComposedThermalAsync(interrupt: false);
 

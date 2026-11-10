@@ -120,22 +120,29 @@ impl Status {
         advance: tokio::sync::mpsc::Receiver<()>,
         profiles: Value,
         writer: Option<openblade_windows_host::configuration_writer::fixture::BatteryProfileStore>,
-        composed_thermal: bool,
+        replay: crate::battery_runtime::ProfileReplay,
     ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
+        use crate::battery_runtime::ProfileReplay;
+
         let scenario = Arc::new(Scenario::composed(
             self.active.current.clone(),
             profiles,
             writer,
-            composed_thermal,
+            replay,
         )?);
-        self.composed_thermal = composed_thermal;
+        self.composed_thermal = matches!(replay, ProfileReplay::Thermal);
         self.replay = Some(scenario.subscribe());
-        self.battery = Some(Arc::clone(&scenario));
+        // The power script is the only mutation entry point in this mode.
+        if !matches!(replay, ProfileReplay::Power { .. }) {
+            self.battery = Some(Arc::clone(&scenario));
+        }
         let drive = async move {
-            if composed_thermal {
-                scenario.drive_thermal(advance).await
-            } else {
-                scenario.drive(advance).await
+            match replay {
+                ProfileReplay::Battery => scenario.drive(advance).await,
+                ProfileReplay::Thermal => scenario.drive_thermal(advance).await,
+                ProfileReplay::Power { lose_response } => {
+                    scenario.drive_power_profile(advance, lose_response).await
+                }
             }
         };
         Ok((self, drive))

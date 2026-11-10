@@ -99,6 +99,11 @@ impl Controller {
     }
 
     #[cfg(windows)]
+    pub(crate) fn read_scripted_adapter(&mut self, reply: Option<[u8; 2]>) -> Option<[u8; 2]> {
+        self.device.read_scripted_adapter(reply)
+    }
+
+    #[cfg(windows)]
     pub(crate) fn pending_write(&self) -> bool {
         self.pending
     }

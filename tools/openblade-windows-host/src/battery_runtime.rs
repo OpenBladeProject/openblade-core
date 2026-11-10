@@ -480,7 +480,17 @@ pub(crate) struct Scenario {
 }
 
 #[cfg(windows)]
+mod power_profile;
+#[cfg(windows)]
 mod thermal;
+
+#[cfg(windows)]
+#[derive(Clone, Copy)]
+pub(crate) enum ProfileReplay {
+    Battery,
+    Thermal,
+    Power { lose_response: bool },
+}
 
 struct ScenarioState {
     #[cfg(windows)]
@@ -508,12 +518,16 @@ impl Scenario {
         mut baseline: Value,
         profiles: Value,
         writer: Option<ProfileWriter>,
-        with_thermal: bool,
+        replay: ProfileReplay,
     ) -> io::Result<Self> {
         baseline["profiles"] = profiles;
-        let thermal = with_thermal
-            .then(|| thermal::Thermal::new(&mut baseline))
-            .transpose()?;
+        let thermal = match replay {
+            ProfileReplay::Battery => None,
+            ProfileReplay::Thermal => Some(thermal::Thermal::new(&mut baseline)?),
+            ProfileReplay::Power { .. } => {
+                Some(thermal::Thermal::for_power_profile(&mut baseline)?)
+            }
+        };
         Self::start(baseline, writer, thermal)
     }
 

@@ -1,3 +1,4 @@
+use crate::battery_runtime::ProfileReplay;
 use std::{
     future::Future,
     io::{self, BufRead, Read, Write},
@@ -44,7 +45,9 @@ pub(super) fn entry() -> io::Result<()> {
             if mode == "foreground-battery-profile"
                 || mode == "foreground-battery-profile-interrupt"
                 || mode == "foreground-thermal-profile"
-                || mode == "foreground-thermal-profile-interrupt" =>
+                || mode == "foreground-thermal-profile-interrupt"
+                || mode == "foreground-power-profile"
+                || mode == "foreground-power-profile-uncertain" =>
         {
             let id = foreground_id(id)?;
             let mut fixture = fixture::Fixture::create(true)?;
@@ -59,8 +62,17 @@ pub(super) fn entry() -> io::Result<()> {
                 id,
                 profiles,
                 Some(writer),
-                mode == "foreground-thermal-profile"
-                    || mode == "foreground-thermal-profile-interrupt",
+                match mode.to_str() {
+                    Some("foreground-thermal-profile" | "foreground-thermal-profile-interrupt") => {
+                        ProfileReplay::Thermal
+                    }
+                    Some("foreground-power-profile" | "foreground-power-profile-uncertain") => {
+                        ProfileReplay::Power {
+                            lose_response: mode == "foreground-power-profile-uncertain",
+                        }
+                    }
+                    _ => ProfileReplay::Battery,
+                },
             )
         }
         [mode, id, root, identity]
@@ -77,7 +89,11 @@ pub(super) fn entry() -> io::Result<()> {
                 id,
                 profiles,
                 None,
-                mode == "foreground-thermal-profile-restart",
+                if mode == "foreground-thermal-profile-restart" {
+                    ProfileReplay::Thermal
+                } else {
+                    ProfileReplay::Battery
+                },
             )
         }
         [mode, id]
@@ -193,12 +209,12 @@ fn foreground_battery_profiles(
     id: &str,
     profiles: serde_json::Value,
     writer: Option<fixture::BatteryProfileStore>,
-    thermal: bool,
+    replay: ProfileReplay,
 ) -> io::Result<()> {
     foreground(id, Session::Active, true, |advance, shutdown| {
         let advance = advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
         let (status, drive) =
-            Status::fixture()?.with_battery_profiles(advance, profiles, writer, thermal)?;
+            Status::fixture()?.with_battery_profiles(advance, profiles, writer, replay)?;
         let drive = async move {
             tokio::select! {
                 _ = shutdown => Ok(()),

@@ -238,6 +238,37 @@ Production override persistence and device recovery are separate work.
 transaction while the fan write is unresolved. Quarantine blocks further mutations
 while a read-only fan observation can still resolve the device state.
 
+## Replay a power-source profile transition
+
+Run `foreground-power-profile <pipe-id>` with a fresh ID. The private host loads
+the same migrated profile documents as the thermal replay. Each stdin `n`
+advances one scripted lifecycle or effect step. The C# ServiceClient reads and
+subscribes on the private pipe. Only the script can apply effects in this mode.
+
+Windows external power starts as ExternalUnknown. The existing scripted adapter
+query confirms a source after two matching known adapter states within five
+attempts. Conflicting known states stop classification, even when both supply
+enough power. The last external profile can stay visible with writes blocked.
+Battery and limited adapter notifications select their saved profiles for
+display. Their preset command and thermal admission are outside this replay.
+
+A limited-power notification supersedes a pending full-adapter effect. On a
+later full-adapter notification, the host applies the saved Balanced preset
+directly from confirmed Performance with Automatic fans. Fresh scripted
+adapter reads guard the two typed channel setters. Independent readback
+confirms Balanced and the stored profile documents remain byte-for-byte intact.
+
+Run `foreground-power-profile-uncertain <pipe-id>` to lose the final setter
+response and immediate readback. The previous confirmed preset stays visible.
+A newer limited-power notification cannot consume its transition while the
+write remains unresolved. A later getter settles the preset without replaying
+a setter. The source stays blocked pending fresh classification.
+
+Live Windows notification delivery, protected recovery, and exact-device
+preflight and submission through the production lifecycle are separate gates.
+The broader lifecycle also needs owned HyperBoost and fan handback, the
+appropriate battery and limited-power preset recipes, and session admission.
+
 ## Compatibility boundary
 
 - Each connection accepts one request. Every mode serves v79 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v79 in the explicitly scoped foreground modes. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.
