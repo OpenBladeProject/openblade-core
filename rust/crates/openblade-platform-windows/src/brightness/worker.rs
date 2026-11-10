@@ -10,6 +10,11 @@ const OPEN: u8 = 0;
 const CANCELLED: u8 = 1;
 const STARTED: u8 = 2;
 const CANCELLATION_POLL: Duration = Duration::from_millis(20);
+// Allow delivery overhead between native phase budgets. This does not extend
+// the worker's admission, completion, or readback budget.
+const WRITE_REPLY_LIMIT: Duration = CALL_LIMIT
+    .saturating_mul(3)
+    .saturating_add(Duration::from_millis(100));
 
 #[derive(Default)]
 pub(super) struct RequestGate(AtomicU8);
@@ -61,13 +66,22 @@ impl Drop for Completion {
 struct ReplyGuard<'a> {
     gate: &'a RequestGate,
     unresolved: &'a mut bool,
-    delivered: bool,
+    settled: bool,
+}
+
+impl ReplyGuard<'_> {
+    fn abandon(&mut self) -> bool {
+        let started = self.gate.cancel();
+        *self.unresolved |= started;
+        self.settled = true;
+        started
+    }
 }
 
 impl Drop for ReplyGuard<'_> {
     fn drop(&mut self) {
-        if !self.delivered {
-            *self.unresolved |= self.gate.cancel();
+        if !self.settled {
+            self.abandon();
         }
     }
 }
@@ -86,6 +100,7 @@ pub struct WindowsBrightnessWorker {
 
 impl WindowsBrightnessWorker {
     /// Spawn a worker. COM initialization and connection are lazy on its thread.
+    /// The host must establish its process-wide COM policy before COM use.
     pub fn start() -> io::Result<Self> {
         Self::spawn(super::windows::WindowsWmi::default)
     }
@@ -144,7 +159,7 @@ impl WindowsBrightnessWorker {
                 state: None,
             });
         }
-        self.execute(CALL_LIMIT * 3, &cancelled, |reply| {
+        self.execute(WRITE_REPLY_LIMIT, &cancelled, |reply| {
             Operation::Apply(intent, reply)
         })
         .map_err(|(failure, started)| BrightnessFailure {
@@ -188,7 +203,7 @@ impl WindowsBrightnessWorker {
         let mut reply_guard = ReplyGuard {
             gate: &gate,
             unresolved: &mut self.submission_unresolved,
-            delivered: false,
+            settled: false,
         };
         match wait_for_reply(
             receiver,
@@ -198,10 +213,10 @@ impl WindowsBrightnessWorker {
             cancelled,
         ) {
             Ok(result) => {
-                reply_guard.delivered = true;
+                reply_guard.settled = true;
                 Ok(result)
             }
-            Err(failure) => Err((failure, gate.cancel())),
+            Err(failure) => Err((failure, reply_guard.abandon())),
         }
     }
 }
@@ -214,13 +229,18 @@ fn wait_for_reply<T>(
     cancelled: &dyn Fn() -> bool,
 ) -> Result<T, NativeFailure> {
     loop {
-        if cancelled() && !gate.cancel() {
-            return Err(NativeFailure::Cancelled);
-        }
-        if Instant::now() >= admission_deadline && !gate.cancel() {
-            return Err(NativeFailure::DeadlineExceeded);
-        }
-        let wait = time_left(deadline)?.min(CANCELLATION_POLL);
+        let remaining = if cancelled() && !gate.cancel() {
+            Err(NativeFailure::Cancelled)
+        } else if Instant::now() >= admission_deadline && !gate.cancel() {
+            Err(NativeFailure::DeadlineExceeded)
+        } else {
+            time_left(deadline)
+        };
+        let wait = match remaining {
+            Ok(time) => time.min(CANCELLATION_POLL),
+            // Prefer a definitive reply already in the channel at the cutoff.
+            Err(failure) => return receiver.try_recv().map_err(|_| failure),
+        };
         match receiver.recv_timeout(wait) {
             Ok(reply) => return Ok(reply),
             Err(RecvTimeoutError::Timeout) => {}

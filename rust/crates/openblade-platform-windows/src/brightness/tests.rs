@@ -138,6 +138,7 @@ fn row(instance: &str, percent: u8, levels: &[u8]) -> ReadingRow {
         instance: Some(instance.into()),
         percent: Some(percent),
         levels: Some(levels.into()),
+        data_failure: None,
     }
 }
 
@@ -178,6 +179,30 @@ fn snapshot(percent: u8, supported_levels: &[u8]) -> BrightnessSnapshot {
         percent,
         supported_levels: supported_levels.into(),
     }
+}
+
+#[test]
+fn malformed_reading_values_matter_only_after_identity_selection() {
+    let invalid = |instance: &str, failure| ReadingRow {
+        instance: Some(instance.into()),
+        percent: None,
+        levels: None,
+        data_failure: Some(failure),
+    };
+    let mut adapter = WmiBrightness::new(Script::new([
+        topology(PATH, 2),
+        Call::Read(Ok(vec![
+            invalid(EXTERNAL, NativeFailure::InvalidData),
+            row(INSTANCE, 30, &[30]),
+        ])),
+        topology(PATH, 2),
+        Call::Read(Ok(vec![invalid(INSTANCE, NativeFailure::MissingData)])),
+    ]));
+    assert_eq!(adapter.read(|| false), Ok(snapshot(30, &[30])));
+    assert_eq!(
+        adapter.read(|| false),
+        Err(BrightnessError::Native(NativeFailure::MissingData))
+    );
 }
 
 #[test]
@@ -264,6 +289,7 @@ fn rejects_absent_or_ambiguous_topology_and_malformed_rows() {
                         instance: Some(SIBLING.into()),
                         percent: None,
                         levels: None,
+                        data_failure: None,
                     },
                 ])),
             ],
@@ -276,6 +302,7 @@ fn rejects_absent_or_ambiguous_topology_and_malformed_rows() {
                     instance: None,
                     percent: Some(30),
                     levels: Some(vec![30]),
+                    data_failure: None,
                 }])),
             ],
             BrightnessError::Native(NativeFailure::InvalidData),

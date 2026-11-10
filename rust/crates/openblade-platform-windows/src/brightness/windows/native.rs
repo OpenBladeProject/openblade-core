@@ -17,14 +17,13 @@ use std::{
 use windows_sys::{
     Win32::{
         Foundation::{
-            E_OUTOFMEMORY, RPC_E_TOO_LATE, S_FALSE, S_OK, SysAllocStringLen, SysFreeString,
-            SysStringLen,
+            E_OUTOFMEMORY, S_FALSE, S_OK, SysAllocStringLen, SysFreeString, SysStringLen,
         },
         System::{
             Com::{
                 CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
-                CoInitializeSecurity, CoSetProxyBlanket, CoUninitialize, EOAC_NONE,
-                RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE,
+                CoSetProxyBlanket, CoUninitialize, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL,
+                RPC_C_IMP_LEVEL_IMPERSONATE,
             },
             Ole::{
                 SafeArrayGetDim, SafeArrayGetElement, SafeArrayGetElemsize, SafeArrayGetLBound,
@@ -116,27 +115,9 @@ impl Apartment {
         if status != S_OK && status != S_FALSE {
             return Err(NativeFailure::Status(status));
         }
-        let apartment = Rc::new(Self { initialized: true });
-        // SAFETY: default current-process security, no custom descriptor/credentials.
-        let status = unsafe {
-            CoInitializeSecurity(
-                null_mut(),
-                -1,
-                null(),
-                null(),
-                RPC_C_AUTHN_LEVEL_CALL,
-                RPC_C_IMP_LEVEL_IMPERSONATE,
-                null(),
-                EOAC_NONE as u32,
-                null(),
-            )
-        };
-        // Existing process security is not replaced. Every remote proxy below
-        // receives its own explicit current-user impersonation blanket.
-        if status != RPC_E_TOO_LATE {
-            ok(status)?;
-        }
-        Ok(apartment)
+        // The host owns process-wide COM security. This adapter sets explicit
+        // current-user security only on its own WMI proxies.
+        Ok(Rc::new(Self { initialized: true }))
     }
 }
 impl Drop for Apartment {

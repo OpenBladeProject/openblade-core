@@ -8,6 +8,23 @@ fn links_native_worker_without_starting_it() {
 }
 
 #[test]
+fn queued_definitive_reply_wins_at_deadline() {
+    for started in [false, true] {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        sender.send(7).unwrap();
+        let gate = RequestGate::default();
+        if started {
+            gate.begin().unwrap();
+        }
+        let expired = Instant::now() - Duration::from_secs(1);
+        assert_eq!(
+            wait_for_reply(receiver, &gate, expired, expired, &|| false),
+            Ok(7)
+        );
+    }
+}
+
+#[test]
 fn cancellation_wins_before_begin_and_cannot_clear_started_state() {
     let gate = RequestGate::default();
     assert!(!gate.cancel());

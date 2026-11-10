@@ -2,6 +2,10 @@
 
 use super::*;
 use crate::display::read_internal_display;
+use windows_sys::Win32::{
+    Foundation::{RPC_E_DISCONNECTED, RPC_E_SERVER_DIED, RPC_E_SERVER_DIED_DNE},
+    System::{Rpc::RPC_S_SERVER_UNAVAILABLE, Wmi::WBEM_E_TRANSPORT_FAILURE},
+};
 use windows_sys::w;
 
 mod native;
@@ -34,16 +38,20 @@ pub(super) struct MethodIdentity {
 }
 
 impl WindowsWmi {
-    fn connection(
+    fn with_connection<T>(
         &mut self,
-        remaining: &impl Fn() -> Result<Duration, NativeFailure>,
-    ) -> Result<&Connection, NativeFailure> {
-        remaining()?;
+        operation: impl FnOnce(&Connection) -> Result<T, NativeFailure>,
+    ) -> Result<T, NativeFailure> {
         if self.connection.is_none() {
             self.connection = Some(Connection::connect()?);
         }
-        remaining()?;
-        Ok(self.connection.as_ref().expect("connection established"))
+        let result = operation(self.connection.as_ref().expect("connection established"));
+        if matches!(&result, Err(NativeFailure::Status(status)) if disconnected(*status)) {
+            // Retire the dead proxy. A subsequent operation can connect afresh
+            // while the Phase 6g owner retains any existing write pause.
+            self.connection = None;
+        }
+        result
     }
 }
 
@@ -64,33 +72,17 @@ impl WmiBrightnessNative for WindowsWmi {
         row_limit: usize,
     ) -> Result<Vec<ReadingRow>, NativeFailure> {
         let remaining = || budget.remaining();
-        let connection = self.connection(&remaining)?;
-        let mut enumeration = connection.query(READINGS)?;
-        collect(
-            &remaining,
-            row_limit,
-            |ms| enumeration.next(ms),
-            |row| {
-                let instance = row_instance(&row, READING_CLASS)?;
-                let percent = row
-                    .byte(w!("CurrentBrightness"))?
-                    .ok_or(NativeFailure::MissingData)?;
-                let count = row
-                    .uint32(w!("Levels"))?
-                    .ok_or(NativeFailure::MissingData)?;
-                let levels = row
-                    .bytes(w!("Level"), MAX_LEVEL_ENTRIES)?
-                    .ok_or(NativeFailure::MissingData)?;
-                if count as usize != levels.len() {
-                    return Err(NativeFailure::InvalidData);
-                }
-                Ok(ReadingRow {
-                    instance: Some(instance),
-                    percent: Some(percent),
-                    levels: Some(levels),
-                })
-            },
-        )
+        remaining()?;
+        self.with_connection(|connection| {
+            remaining()?;
+            let mut enumeration = connection.query(READINGS)?;
+            collect(
+                &remaining,
+                row_limit,
+                |ms| enumeration.next(ms),
+                reading_row,
+            )
+        })
     }
 
     fn active_methods(
@@ -98,8 +90,9 @@ impl WmiBrightnessNative for WindowsWmi {
         budget: &CallBudget<'_>,
         row_limit: usize,
     ) -> Result<Vec<MethodRow<Self::Method>>, NativeFailure> {
-        method_rows(self.connection(&|| budget.remaining())?, row_limit, &|| {
-            budget.remaining()
+        budget.remaining()?;
+        self.with_connection(|connection| {
+            method_rows(connection, row_limit, &|| budget.remaining())
         })
         .map(|methods| {
             methods
@@ -118,23 +111,76 @@ impl WmiBrightnessNative for WindowsWmi {
         level: u8,
         submission: &mut Submission<'_>,
     ) -> Result<Acknowledgement, NativeFailure> {
-        if level > 100 {
-            return Err(NativeFailure::InvalidData);
-        }
-        let connection = self.connection(&|| submission.remaining())?;
-        let methods = method_rows(connection, MAX_ROWS, &|| submission.remaining())?;
-        let fresh = rebind(&method, &methods)?;
-        let prepared = connection.prepare(&fresh.path, level, submission)?;
-        // Preparation, including all method identity and input checks, is complete.
-        submission.begin()?;
-        let pending = connection.submit(prepared)?;
-        complete(
-            &|| submission.remaining(),
-            |ms| pending.status(ms),
-            |ms| pending.result(ms),
-            |object| object.ack(),
-        )
+        submission.remaining()?;
+        self.with_connection(|connection| {
+            // Recheck active method identity after Phase 6g's independent
+            // fresh reading and topology checks.
+            let methods = method_rows(connection, MAX_ROWS, &|| submission.remaining())?;
+            let fresh = rebind(&method, &methods)?;
+            let prepared = connection.prepare(&fresh.path, level, submission)?;
+            submission.begin()?;
+            let pending = connection.submit(prepared)?;
+            complete(
+                &|| submission.remaining(),
+                |ms| pending.status(ms),
+                |ms| pending.result(ms),
+                |object| object.ack(),
+            )
+        })
     }
+}
+
+fn disconnected(status: i32) -> bool {
+    const SERVER_UNAVAILABLE: i32 = (0x8007_0000 | RPC_S_SERVER_UNAVAILABLE as u32) as i32;
+    matches!(
+        status,
+        RPC_E_DISCONNECTED
+            | RPC_E_SERVER_DIED
+            | RPC_E_SERVER_DIED_DNE
+            | SERVER_UNAVAILABLE
+            | WBEM_E_TRANSPORT_FAILURE
+    )
+}
+
+fn reading_row(row: Object) -> Result<ReadingRow, NativeFailure> {
+    let instance = Some(row_instance(&row, READING_CLASS)?);
+    let values = reading_values(&row);
+    match values {
+        Ok((percent, levels)) => Ok(ReadingRow {
+            instance,
+            percent: Some(percent),
+            levels: Some(levels),
+            data_failure: None,
+        }),
+        Err(failure @ (NativeFailure::MissingData | NativeFailure::InvalidData)) => {
+            Ok(ReadingRow {
+                instance,
+                percent: None,
+                levels: None,
+                data_failure: Some(failure),
+            })
+        }
+        Err(failure) => Err(failure),
+    }
+}
+
+fn reading_values(row: &Object) -> Result<(u8, Vec<u8>), NativeFailure> {
+    let percent = row
+        .byte(w!("CurrentBrightness"))?
+        .ok_or(NativeFailure::MissingData)?;
+    let count = row
+        .uint32(w!("Levels"))?
+        .ok_or(NativeFailure::MissingData)? as usize;
+    if count > MAX_LEVEL_ENTRIES {
+        return Err(NativeFailure::InvalidData);
+    }
+    let levels = row
+        .bytes(w!("Level"), MAX_LEVEL_ENTRIES)?
+        .ok_or(NativeFailure::MissingData)?;
+    if count != levels.len() {
+        return Err(NativeFailure::InvalidData);
+    }
+    Ok((percent, levels))
 }
 
 fn row_instance(row: &Object, expected_class: &str) -> Result<String, NativeFailure> {
@@ -143,7 +189,9 @@ fn row_instance(row: &Object, expected_class: &str) -> Result<String, NativeFail
     let instance = row.text(w!("InstanceName"), MAX_INSTANCE)?;
     match (class, active, instance) {
         (Some(class), Some(true), Some(instance))
-            if class.eq_ignore_ascii_case(expected_class) && valid_identity(&instance) =>
+            if class.eq_ignore_ascii_case(expected_class)
+                && !instance.trim().is_empty()
+                && !instance.chars().any(char::is_control) =>
         {
             Ok(instance)
         }

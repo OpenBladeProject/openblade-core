@@ -7,6 +7,16 @@ fn remaining() -> Result<Duration, NativeFailure> {
 }
 
 #[test]
+fn only_transport_statuses_retire_the_cached_proxy() {
+    assert!(disconnected(RPC_E_DISCONNECTED));
+    assert!(disconnected(0x8007_06ba_u32 as i32));
+    assert!(disconnected(WBEM_E_TRANSPORT_FAILURE));
+    assert!(!disconnected(
+        windows_sys::Win32::System::Wmi::WBEM_E_NOT_FOUND
+    ));
+}
+
+#[test]
 fn enumeration_requires_end_after_delays_and_allows_no_overflow() {
     let mut steps = VecDeque::from([Next::Pending, Next::Item(1), Next::Pending, Next::End]);
     assert_eq!(

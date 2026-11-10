@@ -88,6 +88,8 @@ pub struct ReadingRow {
     pub instance: Option<String>,
     pub percent: Option<u8>,
     pub levels: Option<Vec<u8>>,
+    /// A row with a known identity may have missing or malformed values.
+    pub data_failure: Option<NativeFailure>,
 }
 
 /// A decoded active WmiMonitorBrightnessMethods row. The handle denotes this
@@ -507,6 +509,9 @@ struct Reading {
 
 impl Reading {
     fn decode(row: ReadingRow) -> Result<Self, BrightnessError> {
+        if let Some(failure) = row.data_failure {
+            return Err(BrightnessError::Native(failure));
+        }
         let (Some(instance), Some(percent @ 0..=100), Some(mut levels)) =
             (row.instance, row.percent, row.levels)
         else {
