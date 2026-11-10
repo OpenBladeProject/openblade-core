@@ -8,22 +8,34 @@ namespace OpenBlade.Deployment.Tests;
 public sealed class WindowsNativeInventoryBurnExtractorTests
 {
     private const string FixtureVariable = "OPENBLADE_PHASE_9P_BURN_FIXTURE";
+    private const string SignedFixtureVariable = "OPENBLADE_PHASE_9U_SIGNED_BURN_FIXTURE";
     private const string FixtureSha256 = "eec934f595a1f35831c3051ea0f45d2c3829547720764e7b38e98690805c4e10";
+    private const string SignedFixtureSha256 = "cc01de2afa4b92cf4756d0565eb2baddd1a50344b900f483405badbfa8f5b5b6";
     private const string InventorySha256 = "c11e8bd73c0f9926e76f69b9df9af1bb510d4c0fe4413fbe22e3e7964ecdba09";
     private const string CanonicalPath = WindowsNativeRoleInventory.ResourcePath;
     private const int PeOffset = 128;
     private const int Optional = PeOffset + 24;
     private const int BurnOffset = 512;
     private const int StubSize = 1024;
+    private const int CertificateDirectory = Optional + 144;
+    private const int CertificateSize = 32;
     private static readonly XNamespace Burn = "http://wixtoolset.org/schemas/v4/2008/Burn";
     private static readonly Guid BundleId = new("4cd501f3-23d0-4c58-9a83-ed511e3d2ec5");
 
-    [PinnedBurnFixture]
+    [PinnedBurnFixture(FixtureVariable)]
     public void ReadsTheExactInertWiX7Fixture()
+        => ReadPinnedFixture(FixtureVariable, FixtureSha256);
+
+    [PinnedBurnFixture(SignedFixtureVariable)]
+    public void ReadsTheExactDetachedAndReattachedSignedWiX7Fixture()
+        => ReadPinnedFixture(SignedFixtureVariable, SignedFixtureSha256);
+
+    private static void ReadPinnedFixture(string variable, string sha256)
     {
-        using FileStream snapshot = File.Open(Environment.GetEnvironmentVariable(FixtureVariable)!,
+        using FileStream snapshot = File.Open(Environment.GetEnvironmentVariable(variable)!,
             FileMode.Open, FileAccess.Read, FileShare.Read);
-        Assert.Equal(FixtureSha256, Convert.ToHexStringLower(SHA256.HashData(snapshot)));
+        Assert.Equal(sha256, Convert.ToHexStringLower(SHA256.HashData(snapshot)));
+        snapshot.Position = 0;
 
         var entry = Assert.Single(WindowsNativeInventoryBurnExtractor.Extract(snapshot, default));
         Assert.Equal(CanonicalPath, entry.FilePath);
@@ -33,11 +45,18 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
         Assert.True(snapshot.CanRead);
     }
 
-    [Fact]
-    public async Task ReadsOnlyTheInventoryFromTheAuthenticatedLease()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadsOnlyTheInventoryFromTheAuthenticatedLease(bool signedLayout)
     {
         byte[] resource = Resource();
         byte[] bundle = Bundle(resource);
+        if (signedLayout)
+        {
+            bundle = WithCertificateTables(bundle);
+        }
+
         using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bundle);
         var verified = OpenBladeSignedReleaseVerifier.Verify(signed.ManifestBytes, signed.SignatureBytes, signed.Policy);
         var selected = new WindowsNativePayloadIdentity(signed.InstallerSha256,
@@ -57,6 +76,21 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
 
             Assert.Equal(selected, result.Identity);
             Assert.Equal(resource, result.Resource.AsSpan().ToArray());
+
+            if (signedLayout)
+            {
+                // Change an opaque byte in each table without changing any extent or envelope.
+                foreach (int offset in new[] { ReadU32(bundle, BurnOffset + 32), ReadU32(bundle, CertificateDirectory) })
+                {
+                    byte[] changed = (byte[])bundle.Clone();
+                    changed[offset + 27] ^= 1;
+                    File.WriteAllBytes(path, changed);
+                    var failure = await Assert.ThrowsAsync<OpenBladeReleaseVerificationException>(() =>
+                        WindowsNativeRoleInventory.ReadVerifiedPackageAsync(path, verified, selected,
+                            (_, _) => throw new InvalidOperationException("Extraction preceded authentication.")));
+                    Assert.Equal(OpenBladeReleaseVerificationFailure.InstallerHashMismatch, failure.Failure);
+                }
+            }
         }
         finally
         {
@@ -125,8 +159,8 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
     [InlineData("cabinet-span", "cabinet header")]
     [InlineData("cabinet-continuation", "cabinet header")]
     [InlineData("block-length", "blocks do not cover")]
-    [InlineData("signed-pe", "Signed Burn layouts")]
-    [InlineData("signed-burn", "Signed Burn layouts")]
+    [InlineData("signed-pe", "certificate ranges")]
+    [InlineData("signed-burn", "certificate ranges")]
     [InlineData("extra-container", "one UX and one attached")]
     [InlineData("appended", "exactly cover")]
     [InlineData("truncated", "exactly cover")]
@@ -171,12 +205,81 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void RefusesAChangedSnapshotAndHonorsCancellation(bool truncate)
+    [InlineData("engine-checksum-missing", "certificate ranges")]
+    [InlineData("engine-overlaps-ux", "certificate ranges")]
+    [InlineData("engine-size-outside-bound", "certificate ranges")]
+    [InlineData("outer-overlaps-attached", "certificate ranges")]
+    [InlineData("outer-missing", "certificate ranges")]
+    [InlineData("outer-trailing-overlay", "certificate ranges")]
+    [InlineData("outer-truncated", "certificate ranges")]
+    [InlineData("outer-unaligned-size", "table size is not aligned")]
+    [InlineData("engine-padding", "zero alignment padding")]
+    [InlineData("outer-padding", "zero alignment padding")]
+    [InlineData("engine-record-length", "one WIN_CERTIFICATE")]
+    [InlineData("outer-revision", "one WIN_CERTIFICATE")]
+    [InlineData("engine-record-type", "one WIN_CERTIFICATE")]
+    [InlineData("outer-record-padding", "SignedData envelope or padding")]
+    [InlineData("outer-second-record", "one WIN_CERTIFICATE")]
+    [InlineData("engine-wrong-content-type", "SignedData envelope or padding")]
+    [InlineData("outer-der-length", "malformed or incomplete")]
+    public void RefusesInconsistentSignedBoundaries(string mutation, string diagnostic)
+    {
+        // Make the synthetic UX cabinet end unaligned so both gaps can be exercised.
+        byte[] bundle = WithCertificateTables(Bundle(Resource(), editManifest: root => root.Add(new XComment("pad"))));
+        int engine = ReadU32(bundle, BurnOffset + 32);
+        int outer = ReadU32(bundle, CertificateDirectory);
+        switch (mutation)
+        {
+            case "engine-checksum-missing": U32(bundle, BurnOffset + 28, 0); break;
+            case "engine-overlaps-ux": U32(bundle, BurnOffset + 32, (uint)engine - 8); break;
+            case "engine-size-outside-bound": U32(bundle, BurnOffset + 36, uint.MaxValue); break;
+            case "outer-overlaps-attached": U32(bundle, CertificateDirectory, (uint)outer - 8); break;
+            case "outer-missing": bundle.AsSpan(CertificateDirectory, 8).Clear(); break;
+            case "outer-trailing-overlay": bundle = [.. bundle, 0]; break;
+            case "outer-truncated": bundle = bundle[..^1]; break;
+            case "outer-unaligned-size":
+                bundle = [.. bundle, 0];
+                U32(bundle, CertificateDirectory + 4, CertificateSize + 1);
+                break;
+            case "engine-padding":
+                Assert.True(engine > StubSize + ReadU32(bundle, BurnOffset + 48));
+                bundle[engine - 1] = 1;
+                break;
+            case "outer-padding":
+                Assert.True(outer > engine + CertificateSize + ReadU32(bundle, BurnOffset + 52));
+                bundle[outer - 1] = 1;
+                break;
+            case "engine-record-length": U32(bundle, engine, CertificateSize - 8); break;
+            case "outer-revision": U16(bundle, outer + 4, 0x0100); break;
+            case "engine-record-type": U16(bundle, engine + 6, 1); break;
+            case "outer-record-padding": bundle[^1] = 1; break;
+            case "outer-second-record":
+                bundle = [.. bundle, .. bundle.AsSpan(outer, CertificateSize)];
+                U32(bundle, CertificateDirectory + 4, 2 * CertificateSize);
+                break;
+            case "engine-wrong-content-type": bundle[engine + 20] = 1; break;
+            case "outer-der-length": bundle[outer + 9] = 127; break;
+            default: throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        Reject(bundle, diagnostic);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void RefusesAChangedSnapshotAndHonorsCancellation(bool signedLayout, bool truncate)
     {
         byte[] bundle = Bundle(Resource());
-        using var changing = new ChangingSnapshotStream(bundle, truncate);
+        if (signedLayout)
+        {
+            bundle = WithCertificateTables(bundle);
+        }
+
+        int changedOffset = signedLayout ? ReadU32(bundle, CertificateDirectory) + 27 : bundle.Length - 1;
+        using var changing = new ChangingSnapshotStream(bundle, truncate, changedOffset);
         var failure = Assert.Throws<InvalidDataException>(() =>
             WindowsNativeInventoryBurnExtractor.Extract(changing, default));
         Assert.Contains("changed during extraction", failure.Message, StringComparison.Ordinal);
@@ -258,6 +361,33 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
             new XAttribute("SourcePath", source), new XAttribute("Container", "WixAttachedContainer"),
             new XAttribute("Packaging", "embedded"), Size(bytes), Hash(bytes));
 
+    private static byte[] WithCertificateTables(byte[] unsigned)
+    {
+        int uxEnd = StubSize + ReadU32(unsigned, BurnOffset + 48);
+        int engine = (uxEnd + 7) & ~7;
+        int attached = engine + CertificateSize;
+        int outer = (attached + (unsigned.Length - uxEnd) + 7) & ~7;
+        byte[] bundle = new byte[outer + CertificateSize];
+        unsigned.AsSpan(0, uxEnd).CopyTo(bundle);
+        unsigned.AsSpan(uxEnd).CopyTo(bundle.AsSpan(attached));
+        U32(bundle, Optional + 64, 2);
+        U32(bundle, BurnOffset + 28, 1);
+        U32(bundle, BurnOffset + 32, (uint)engine);
+        U32(bundle, BurnOffset + 36, CertificateSize);
+        U32(bundle, CertificateDirectory, (uint)outer);
+        U32(bundle, CertificateDirectory + 4, CertificateSize);
+        foreach (int offset in new[] { engine, outer })
+        {
+            U32(bundle, offset, CertificateSize);
+            U16(bundle, offset + 4, 0x0200);
+            U16(bundle, offset + 6, 0x0002);
+            // Only the SignedData framing is needed. These bytes carry no signature.
+            Convert.FromHexString("301206092A864886F70D010702A0053003020101").CopyTo(bundle, offset + 8);
+        }
+
+        return bundle;
+    }
+
     private static XAttribute Size(byte[] bytes) => new("FileSize", bytes.Length);
     private static XAttribute Hash(byte[] bytes) => new("Hash", Convert.ToHexString(SHA512.HashData(bytes)));
 
@@ -298,8 +428,11 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(offset), value);
     private static void U32(byte[] bytes, int offset, uint value) =>
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset), value);
+    private static int ReadU32(byte[] bytes, int offset) =>
+        checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset)));
 
-    private sealed class ChangingSnapshotStream(byte[] bytes, bool truncate) : MemoryStream(bytes, 0, bytes.Length, writable: false, publiclyVisible: true)
+    private sealed class ChangingSnapshotStream(byte[] bytes, bool truncate, int changedOffset)
+        : MemoryStream(bytes, 0, bytes.Length, writable: false, publiclyVisible: true)
     {
         private bool changed;
         public override long Length => changed && truncate ? base.Length - 1 : base.Length;
@@ -312,7 +445,7 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
                 changed = true;
                 if (!truncate)
                 {
-                    GetBuffer()[^1] ^= 1;
+                    GetBuffer()[changedOffset] ^= 1;
                 }
             }
 
@@ -322,11 +455,11 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
 
     private sealed class PinnedBurnFixtureAttribute : FactAttribute
     {
-        public PinnedBurnFixtureAttribute()
+        public PinnedBurnFixtureAttribute(string variable)
         {
-            if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(FixtureVariable)))
+            if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(variable)))
             {
-                Skip = $"Set {FixtureVariable} to the pinned Phase 9p fixture path.";
+                Skip = $"Set {variable} to its pinned fixture path.";
             }
         }
     }

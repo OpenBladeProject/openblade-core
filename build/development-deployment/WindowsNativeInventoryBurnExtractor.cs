@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
+using System.Formats.Asn1;
 using System.Globalization;
 using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
@@ -8,7 +9,7 @@ using System.Xml.Linq;
 
 namespace OpenBlade.Deployment;
 
-// Offline WiX 7.0.0 fixture layout only. The caller owns the authenticated,
+// Bounded WiX 7.0.0 unsigned and detach/sign/reattach/sign layouts. The caller owns the authenticated,
 // write-excluding snapshot lease throughout this call. This adapter grants no trust.
 internal static class WindowsNativeInventoryBurnExtractor
 {
@@ -19,6 +20,9 @@ internal static class WindowsNativeInventoryBurnExtractor
     private const int MaxUxCabinet = 2 * MiB;
     private const int MaxAttachedCabinet = 16 * MiB;
     private const int MaxManifest = MiB;
+    private const int MaxCertificateTable = MiB;
+    private const int CertificateAlignment = 8;
+    private const int CertificateHeaderSize = 8;
     private static readonly XNamespace Burn = "http://wixtoolset.org/schemas/v4/2008/Burn";
 
     internal static ImmutableArray<WindowsNativeInventoryEntry> Extract(
@@ -38,14 +42,15 @@ internal static class WindowsNativeInventoryBurnExtractor
         try
         {
             long length = snapshot.Length;
-            if (length < 64 || length > MaxStub + MaxUxCabinet + MaxAttachedCabinet)
+            if (length < 64 || length > MaxStub + MaxUxCabinet + MaxAttachedCabinet
+                + 2 * (MaxCertificateTable + CertificateAlignment - 1))
             {
                 throw Invalid("The Burn snapshot length is outside the fixture bounds.");
             }
 
-            Layout layout = ReadLayout(snapshot, length);
+            Layout layout = ReadLayout(snapshot, length, cancellationToken);
             byte[] uxBytes = ReadAt(snapshot, layout.Stub, layout.UxSize, cancellationToken);
-            byte[] attachedBytes = ReadAt(snapshot, layout.Stub + layout.UxSize,
+            byte[] attachedBytes = ReadAt(snapshot, layout.AttachedOffset,
                 layout.AttachedSize, cancellationToken);
 
             // Enumerate both physical tables before asking FDI to expand even the manifest.
@@ -65,9 +70,9 @@ internal static class WindowsNativeInventoryBurnExtractor
                 throw Invalid("The inventory does not match its Burn payload digest.");
             }
 
-            if (snapshot.Length != length || ReadLayout(snapshot, length) != layout
+            if (snapshot.Length != length || ReadLayout(snapshot, length, cancellationToken) != layout
                 || !MatchesAt(snapshot, layout.Stub, uxBytes, cancellationToken)
-                || !MatchesAt(snapshot, layout.Stub + layout.UxSize, attachedBytes, cancellationToken)
+                || !MatchesAt(snapshot, layout.AttachedOffset, attachedBytes, cancellationToken)
                 || snapshot.Length != length)
             {
                 throw Invalid("The Burn snapshot changed during extraction.");
@@ -77,13 +82,13 @@ internal static class WindowsNativeInventoryBurnExtractor
             return [new(WindowsNativeRoleInventory.ResourcePath, Setup, Attached, [.. resource])];
         }
         catch (Exception exception) when (exception is EndOfStreamException or BadImageFormatException
-            or XmlException or FormatException)
+            or XmlException or FormatException or AsnContentException)
         {
             throw new InvalidDataException("The Burn fixture metadata is malformed or incomplete.", exception);
         }
     }
 
-    private static Layout ReadLayout(Stream snapshot, long length)
+    private static Layout ReadLayout(Stream snapshot, long length, CancellationToken cancellationToken)
     {
         Span<byte> dos = stackalloc byte[64];
         snapshot.Position = 0;
@@ -107,11 +112,6 @@ internal static class WindowsNativeInventoryBurnExtractor
             || pe.SizeOfHeaders > MaxStub || headers.SectionHeaders.Length is < 1 or > 96)
         {
             throw Invalid("The Burn fixture requires a bounded Windows x64 native PE.");
-        }
-
-        if (pe.CertificateTableDirectory is not { RelativeVirtualAddress: 0, Size: 0 })
-        {
-            throw Invalid("Signed Burn layouts are outside the verified fixture scope.");
         }
 
         long stubEnd = pe.SizeOfHeaders;
@@ -153,21 +153,95 @@ internal static class WindowsNativeInventoryBurnExtractor
             throw Invalid("The Burn fixture requires one UX and one attached cabinet.");
         }
 
-        if (U32(metadata, 28) != 0 || U32(metadata, 32) != 0 || U32(metadata, 36) != 0)
-        {
-            throw Invalid("Signed Burn layouts are outside the verified fixture scope.");
-        }
-
         uint ux = U32(metadata, 48);
         uint attached = U32(metadata, 52);
-        if (ux is < 36 or > MaxUxCabinet || attached is < 36 or > MaxAttachedCabinet
-            || stubEnd + ux + attached != length)
+        if (ux is < 36 or > MaxUxCabinet || attached is < 36 or > MaxAttachedCabinet)
         {
-            throw Invalid("The Burn cabinet ranges do not exactly cover the fixture overlay.");
+            throw Invalid("The Burn cabinet sizes are outside the fixture bounds.");
         }
 
-        return new((int)stubEnd, (int)ux, (int)attached, new Guid(metadata.Slice(8, 16)));
+        long uxEnd = stubEnd + ux;
+        uint engineChecksum = U32(metadata, 28);
+        uint engineOffset = U32(metadata, 32);
+        uint engineSize = U32(metadata, 36);
+        DirectoryEntry outer = pe.CertificateTableDirectory;
+        var bundleId = new Guid(metadata.Slice(8, 16));
+        if (engineChecksum == 0 && engineOffset == 0 && engineSize == 0
+            && outer is { RelativeVirtualAddress: 0, Size: 0 })
+        {
+            if (uxEnd + attached != length)
+            {
+                throw Invalid("The Burn cabinet ranges do not exactly cover the fixture overlay.");
+            }
+
+            return new((int)stubEnd, (int)ux, (int)uxEnd, (int)attached, bundleId, null);
+        }
+
+        // WiX reattach saves the detached engine's checksum and security directory
+        // in .wixburn. SignTool then places the outer security directory at EOF.
+        // Despite the PE API's property name, its security directory uses a file offset.
+        long attachedOffset = AlignCertificate(uxEnd) + engineSize;
+        long attachedEnd = attachedOffset + attached;
+        if (headers.CoffHeader.SizeOfOptionalHeader != 240 || pe.NumberOfRvaAndSizes != 16
+            || engineChecksum == 0 || pe.CheckSum == 0
+            || engineSize is <= CertificateHeaderSize or > MaxCertificateTable
+            || outer.Size is <= CertificateHeaderSize or > MaxCertificateTable
+            || engineOffset != AlignCertificate(uxEnd)
+            || outer.RelativeVirtualAddress != AlignCertificate(attachedEnd)
+            || (long)outer.RelativeVirtualAddress + outer.Size != length)
+        {
+            throw Invalid("The signed Burn certificate ranges do not exactly cover the fixture overlay.");
+        }
+
+        string engineHash = ReadCertificateTable(snapshot, uxEnd, (int)engineOffset, (int)engineSize, cancellationToken);
+        string outerHash = ReadCertificateTable(snapshot, attachedEnd, outer.RelativeVirtualAddress, outer.Size,
+            cancellationToken);
+        return new((int)stubEnd, (int)ux, (int)attachedOffset, (int)attached, bundleId,
+            new(engineChecksum, pe.CheckSum, engineHash, outerHash));
     }
+
+    private static string ReadCertificateTable(Stream snapshot, long cabinetEnd, int offset, int size,
+        CancellationToken cancellationToken)
+    {
+        if (size % CertificateAlignment != 0)
+        {
+            throw Invalid("The Burn certificate table size is not aligned.");
+        }
+
+        byte[] bytes = ReadAt(snapshot, (int)cabinetEnd, size + (offset - (int)cabinetEnd), cancellationToken);
+        int padding = offset - (int)cabinetEnd;
+        ReadOnlySpan<byte> record = bytes.AsSpan(padding);
+        if (bytes.AsSpan(0, padding).ContainsAnyExcept((byte)0)
+            || U32(record, 0) != size || U16(record, 4) != 0x0200 || U16(record, 6) != 0x0002)
+        {
+            throw Invalid("The Burn certificate table requires zero alignment padding and one WIN_CERTIFICATE 2.0 PKCS#7 record.");
+        }
+
+        // Frame the SignedData envelope so surplus bytes cannot masquerade as
+        // alignment padding. The CMS contents remain opaque to this layout reader.
+        ReadOnlySpan<byte> body = record[CertificateHeaderSize..];
+        AsnDecoder.ReadSequence(body, AsnEncodingRules.DER, out int contentOffset, out int contentLength,
+            out int consumed);
+        ReadOnlySpan<byte> content = body.Slice(contentOffset, contentLength);
+        string oid = AsnDecoder.ReadObjectIdentifier(content, AsnEncodingRules.DER, out int oidLength);
+        content = content[oidLength..];
+        AsnDecoder.ReadSequence(content, AsnEncodingRules.DER, out int dataOffset, out int dataLength,
+            out int wrapperLength, new Asn1Tag(TagClass.ContextSpecific, 0, isConstructed: true));
+        AsnDecoder.ReadSequence(content.Slice(dataOffset, dataLength), AsnEncodingRules.DER,
+            out _, out int signedDataLength, out int sequenceLength);
+        if (oid != "1.2.840.113549.1.7.2" || wrapperLength != content.Length
+            || sequenceLength != dataLength || signedDataLength == 0
+            || AlignCertificate(CertificateHeaderSize + consumed) != size
+            || body[consumed..].ContainsAnyExcept((byte)0))
+        {
+            throw Invalid("The Burn WIN_CERTIFICATE has an unsupported SignedData envelope or padding.");
+        }
+
+        return Convert.ToHexString(SHA256.HashData(record));
+    }
+
+    private static long AlignCertificate(long offset) =>
+        (offset + CertificateAlignment - 1) & -CertificateAlignment;
 
     private static Payload Select(byte[] manifest, Guid bundleId, BurnFixtureCabinet ux,
         BurnFixtureCabinet attached, byte[] attachedBytes)
@@ -366,6 +440,8 @@ internal static class WindowsNativeInventoryBurnExtractor
     private static uint U32(ReadOnlySpan<byte> bytes, int offset) =>
         BinaryPrimitives.ReadUInt32LittleEndian(bytes[offset..]);
 
-    private sealed record Layout(int Stub, int UxSize, int AttachedSize, Guid BundleId);
+    private sealed record Layout(int Stub, int UxSize, int AttachedOffset, int AttachedSize, Guid BundleId,
+        SignedLayout? Signing);
+    private sealed record SignedLayout(uint EngineChecksum, uint OuterChecksum, string EngineHash, string OuterHash);
     private sealed record Payload(string Member, byte[] Hash);
 }
