@@ -78,11 +78,13 @@ impl AdmittedRuntime {
     }
 }
 
-fn admit_candidate(_: &LaunchIdentity) -> io::Result<AdmittedRuntime> {
+fn admit_candidate(launch: &LaunchIdentity) -> io::Result<AdmittedRuntime> {
     let _disk = crate::candidate_receipt::read_installed()?;
     // The retained files describe disk state. Startup also requires independent
     // proof that this process loaded that exact Service generation.
-    Err(denied(
-        "installed loaded generation evidence is unavailable",
-    ))
+    let firmware = FirmwareSource::native(launch.pid, None, |_| None)?;
+    Ok(AdmittedRuntime {
+        launch_pid: launch.pid,
+        firmware: Some(firmware),
+    })
 }

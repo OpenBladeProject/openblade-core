@@ -57,7 +57,7 @@ pub(crate) struct Admission {
     pub(crate) awake: bool,
 }
 impl Admission {
-    fn is_clear(self) -> bool {
+    pub(crate) fn is_clear(self) -> bool {
         self.session != 0 && self.full_adapter && self.controller_clear && self.awake
     }
 }

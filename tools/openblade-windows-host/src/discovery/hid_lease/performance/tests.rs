@@ -17,6 +17,19 @@ const EXACT: Descriptor = Descriptor {
     version: 1,
 };
 
+#[test]
+fn in_memory_transaction_allocator_stops_after_exactly_127_pairs() {
+    let transactions = Transactions::new();
+    for pair in 0u8..127 {
+        assert_eq!(
+            transactions.reserve_pair(),
+            Some([pair * 2 + 1, pair * 2 + 2])
+        );
+    }
+    assert_eq!(transactions.reserve_pair(), None);
+    assert_eq!(transactions.reserve_pair(), None);
+}
+
 fn fixture() -> Value {
     serde_json::from_str(include_str!(
         "../../../../../../evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-thermal-write-validation-fixture.json"

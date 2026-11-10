@@ -82,6 +82,14 @@ impl Port for BlockingPort {
 }
 
 pub(crate) fn blocking_worker(at: BlockAt, fence: Option<&'static AtomicBool>) -> (Worker, Held) {
+    blocking_worker_with_authority(at, fence, || Some(ADMITTED))
+}
+
+pub(crate) fn blocking_worker_with_authority(
+    at: BlockAt,
+    fence: Option<&'static AtomicBool>,
+    authorize: impl Fn() -> Option<Admission> + Send + Sync + 'static,
+) -> (Worker, Held) {
     let (entered, seen) = oneshot::channel();
     let (release, released) = mpsc::channel();
     let block = Mutex::new(Some(Block {
@@ -99,9 +107,12 @@ pub(crate) fn blocking_worker(at: BlockAt, fence: Option<&'static AtomicBool>) -
     };
     let worker = Worker::new(
         move |job| {
+            let Some(admission) = authorize().filter(|admission| admission.is_clear()) else {
+                return Ok(None);
+            };
             if job
                 .session
-                .is_some_and(|session| session != ADMITTED.session)
+                .is_some_and(|session| session != admission.session)
             {
                 return Ok(None);
             }
@@ -111,15 +122,15 @@ pub(crate) fn blocking_worker(at: BlockAt, fence: Option<&'static AtomicBool>) -
                 submitted: submitted.clone(),
                 cancelled: cancelled.clone(),
             };
-            let mut reader = Reader::new(port, ADMITTED);
+            let mut reader = Reader::new(port, admission);
             tokio::runtime::Builder::new_current_thread()
                 .enable_time()
                 .build()?
                 .block_on(async {
-                    let performance = reader.observe(&mut || Some(ADMITTED), job.limit()).await;
+                    let performance = reader.observe(&mut || authorize(), job.limit()).await;
                     reader.retire(None).await?;
                     Ok(performance.map(|performance| Reading {
-                        admission: ADMITTED,
+                        admission,
                         performance,
                     }))
                 })
@@ -130,6 +141,10 @@ pub(crate) fn blocking_worker(at: BlockAt, fence: Option<&'static AtomicBool>) -
 }
 
 const TEST_LIMIT: Duration = Duration::from_secs(2);
+
+pub(crate) fn in_memory_worker(run: impl Fn() -> io::Result<()> + Send + Sync + 'static) -> Worker {
+    Worker::new(move |_| run().map(|()| None), None)
+}
 
 #[tokio::test]
 async fn firmware_worker_drop_revokes_before_or_during_submission() {

@@ -1,7 +1,8 @@
-use std::{io, rc::Rc};
+use std::{io, rc::Rc, sync::Arc};
 
 use tokio::time::Instant;
 
+use super::ownership::{Authority, Binding};
 use super::{Caller, Logon, Observation, Snapshot};
 use crate::discovery::performance::{Admission, ObservedPerformance, Worker, native_worker};
 
@@ -14,17 +15,38 @@ type Project = dyn Fn(Admission) -> Option<Snapshot>;
 pub(in crate::installed) struct FirmwareSource {
     worker: Worker,
     project: Rc<Project>,
+    ownership: Option<Arc<Binding>>,
 }
 
 impl FirmwareSource {
-    #[allow(dead_code)] // No installed owner can prove this authority yet.
     pub(in crate::installed) fn native(
-        authorize: impl Fn() -> Option<Admission> + Send + Sync + 'static,
+        launch_pid: u32,
+        authority: Option<&dyn Authority>,
         project: impl Fn(Admission) -> Option<Snapshot> + 'static,
-    ) -> Self {
-        Self::new(native_worker(authorize), project)
+    ) -> io::Result<Self> {
+        Self::bind(
+            launch_pid,
+            authority,
+            |binding| native_worker(move || binding.authorize()),
+            project,
+        )
     }
 
+    pub(in crate::installed) fn bind(
+        launch_pid: u32,
+        authority: Option<&dyn Authority>,
+        worker: impl FnOnce(Arc<Binding>) -> Worker,
+        project: impl Fn(Admission) -> Option<Snapshot> + 'static,
+    ) -> io::Result<Self> {
+        let binding = Binding::acquire(launch_pid, authority)?;
+        Ok(Self {
+            worker: worker(binding.clone()),
+            project: Rc::new(project),
+            ownership: Some(binding),
+        })
+    }
+
+    #[cfg(test)]
     pub(super) fn new(
         worker: Worker,
         project: impl Fn(Admission) -> Option<Snapshot> + 'static,
@@ -32,12 +54,20 @@ impl FirmwareSource {
         Self {
             worker,
             project: Rc::new(project),
+            ownership: None,
         }
     }
 
     pub(super) fn observe(&self, caller: Caller, deadline: Instant) -> Observation {
         let source = self.clone();
         Box::pin(async move {
+            if source
+                .ownership
+                .as_ref()
+                .is_some_and(|owner| owner.authorize().is_none())
+            {
+                return Ok(None);
+            }
             let session = (caller.logon == Logon::Interactive).then_some(caller.session);
             let Some(reading) = source.worker.observe(deadline, session).await? else {
                 return Ok(None);
@@ -46,12 +76,32 @@ impl FirmwareSource {
                 ObservedPerformance::BalancedAutomatic => 1,
                 ObservedPerformance::PerformanceAutomatic => 2,
             };
-            Ok((source.project)(reading.admission)
-                .and_then(|status| status.with_standard_performance(preset)))
+            if source
+                .ownership
+                .as_ref()
+                .is_some_and(|owner| owner.authorize() != Some(reading.admission))
+            {
+                return Ok(None);
+            }
+            let status = (source.project)(reading.admission)
+                .and_then(|status| status.with_standard_performance(preset));
+            Ok(status.filter(|_| {
+                source
+                    .ownership
+                    .as_ref()
+                    .is_none_or(|owner| owner.authorize() == Some(reading.admission))
+            }))
         })
     }
 
     pub(super) async fn stop(&self) -> io::Result<()> {
-        self.worker.stop().await
+        if let Some(owner) = &self.ownership {
+            owner.revoke();
+        }
+        self.worker.stop().await?;
+        if let Some(owner) = &self.ownership {
+            owner.retire()?;
+        }
+        Ok(())
     }
 }

@@ -30,6 +30,8 @@ use windows::{Caller, ControlSession, Logon, MAX_CONNECTIONS, Pending, Stream};
 #[path = "firmware_source.rs"]
 mod firmware_source;
 pub(super) use firmware_source::FirmwareSource;
+#[path = "ownership.rs"]
+mod ownership;
 
 #[path = "status_source.rs"]
 mod status_source;

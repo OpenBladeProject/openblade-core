@@ -183,6 +183,64 @@ The metadata observer therefore continues to refuse firmware observation.
 Offline fixtures block native-call substitutes and feed the pinned report
 shape through the real reader and in-memory candidate dispatcher.
 
+### Phase 10n ownership binding
+
+The installed candidate's conditional firmware factory now requires a private
+`Authority` port. It first obtains an opaque loaded-generation epoch, checks
+its launch binding, and acquires one independent `OwnerLease`. The lease
+must attest `Acquired` with that same epoch and the existing live firmware
+admission. Only then can the factory construct the genuine Phase 10m worker.
+`Lost`, `Releasing`, and exact-epoch `Retired` have distinct meanings.
+Missing or mismatched evidence refuses the factory before hardware opening.
+The installed composition supplies no authority while its independent source
+is unavailable, so installed startup remains fail-closed.
+
+The epoch token has no installed constructor. A production authority source
+must retain the original process and pre-launch image binding, independently
+confirm predecessor retirement, serialize ownership across replacement and
+rollback, and preserve unresolved native and recovery fences. These facts
+cannot be reconstructed from a PID, executable path, disk receipt, metadata
+open, controller absence, local mutex, or request flag. The existing numeric
+firmware epoch continues to bind session, controller, power and awake evidence.
+A changed epoch or evidence loss seals this binding, even if earlier values
+return. The exact RZ09-0581 selection and same-handle verification remain in
+the reader before every transfer.
+
+Shutdown revokes admission before awaiting worker retirement. The owner lease
+can release only after terminal I/O, callback drain, handle closure and worker
+join succeed. A pending shutdown retains the original independent lease. A native error,
+failed release, or mismatched retirement quarantines it until process exit. Dropping the source retains
+that fence for the process lifetime. Replacement and rollback require the
+same independent authority to confirm retirement before successor acquisition.
+No new source instance or process-local worker slot establishes that proof.
+
+The managed reference paths explain the separate gates. The Service's
+`WindowsVerifiedBladeDeviceProvider` owns a serialized hardware gate, while
+`Rz090581FeatureCommandGate` coordinates its control and matrix sessions
+within the managed process. `RazerCommandSessionGate` releases only after
+successful native retirement. Provider disposal can return after its shutdown
+budget while retaining a pending command and handle. Managed Setup stops the
+service and checks guardian quiescence before payload activation. Its rollback
+collects failures while restoring earlier lifecycle state. Those boundaries
+require independent owner retirement before a successor can obtain authority.
+The Rust role payloads use the same managed Setup transaction runner. The
+conditional scratch receiver separately rehearses activation, fixture readiness
+and commit, with payload rollback on failure.
+The retained candidate verification contract binds the original process handle,
+creation time, path and pre-launch build pin. Its concrete launch source and
+the stronger writer-retirement gate currently belong to offline/scratch fixtures.
+Native disk commitment and installed loaded-generation evidence remain separate
+outstanding production gates.
+
+Explicit in-memory fixtures exercise acquisition, loss during the real getter
+reader, stale and mismatched epochs, refusal before the worker factory,
+replacement/rollback refusal during unresolved retirement, and native drain
+before owner release. Real Windows adapters are compiled and linked only.
+The transaction allocator retains its process-wide limit of 127 pairs. The
+managed command/session ordering provides no reviewed mailbox-flush or delayed
+reply reuse contract for this worker. Exhaustion remains terminal for further
+observations in that process, with no wrap or automatic restart.
+
 The replay in `tools/openblade-windows-host/tests/fixtures/get-status-v79.frames`
 contains two consecutive managed codec frames. The managed
 `IpcMessageCodec.WriteRequestAsync` writes `GetStatusRequest(79, id)`, then
