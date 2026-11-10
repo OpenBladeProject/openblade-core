@@ -141,7 +141,9 @@ impl Status {
                 ProfileReplay::Battery => scenario.drive(advance).await,
                 ProfileReplay::Thermal => scenario.drive_thermal(advance).await,
                 ProfileReplay::FullCharge => scenario.drive_full_charge(advance).await,
-                ProfileReplay::LightingOff => scenario.drive_lighting(advance).await,
+                ProfileReplay::LightingOff { owned, uncertain } => {
+                    scenario.drive_lighting(advance, owned, uncertain).await
+                }
                 ProfileReplay::Power { lose_response } => {
                     scenario.drive_power_profile(advance, lose_response).await
                 }
@@ -602,12 +604,19 @@ where
         {
             let lighting: LightingRequest = serde_json::from_slice(&payload)
                 .map_err(|_| invalid("invalid lighting request"))?;
-            let result = status
+            let scenario = status
                 .battery
                 .as_ref()
-                .ok_or_else(|| invalid("missing lighting scenario"))?
-                .apply_lighting(lighting.value)
-                .await?;
+                .ok_or_else(|| invalid("missing lighting scenario"))?;
+            let mut probe = [0];
+            let result = tokio::select! {
+                biased;
+                disconnected = io.read(&mut probe) => match disconnected? {
+                    0 => return Ok(()),
+                    _ => return Err(invalid("unexpected data while awaiting lighting response")),
+                },
+                applied = scenario.apply_lighting(lighting.value) => applied?,
+            };
             write_frame(&mut io, request.operation_response(result.into())).await
         }
         (CURRENT_VERSION, "setPerformanceOverride")

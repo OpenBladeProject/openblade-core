@@ -1135,6 +1135,161 @@ public sealed class RustReadOnlyHostTests
     }
 
     [RustReadOnlyHostFact]
+    public Task TrayClient_OwnedKeyboardOffWaitsForFrameAndPort() =>
+        ExerciseOwnedKeyboardOffAsync(cancel: false, uncertain: false);
+
+    [RustReadOnlyHostFact]
+    public Task TrayClient_CanceledKeyboardOffWaitLeavesRetirementRunning() =>
+        ExerciseOwnedKeyboardOffAsync(cancel: true, uncertain: false);
+
+    [RustReadOnlyHostFact]
+    public Task TrayClient_UncertainRendererRetirementKeepsKeyboardOffFenced() =>
+        ExerciseOwnedKeyboardOffAsync(cancel: false, uncertain: true);
+
+    private static async Task ExerciseOwnedKeyboardOffAsync(bool cancel, bool uncertain)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = timeout.Token;
+        string endpoint = Guid.NewGuid().ToString("N");
+        await using var host = DevHost.Start(endpoint, uncertain
+            ? "foreground-lighting-off-uncertain-owner"
+            : "foreground-lighting-off-owned");
+        (string rootId, _) = await host.ReadFixtureRootAsync(token);
+        string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Temp", $"openblade-durable-host-{rootId}");
+        using SafeFileHandle pin = OpenFixtureDirectory(root);
+        Assert.False(pin.IsInvalid, $"Could not pin fixture directory. Win32 {Marshal.GetLastWin32Error()}");
+        try
+        {
+            await host.WaitUntilReadyAsync(token);
+            await using var client = new ServiceClient(PipeName(endpoint));
+            await using var watch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+            var initial = await ReadStatusAsync(watch, subscriptionOpened: true);
+            if (initial.Message != "Renderer frame in flight.")
+            {
+                initial = await WaitForStatusAsync("Renderer frame in flight.");
+            }
+            Assert.Equal(LightingRendererOwnershipState.Spectrum, initial.LightingRendererOwnership);
+            Assert.Null(initial.ConfirmedState?.Lighting);
+            Assert.Null(initial.LightingOverride);
+            byte[][] saved = ConfigurationNames
+                .Select(name => File.ReadAllBytes(Path.Combine(root, name))).ToArray();
+
+            var off = LightingSettingsFactory.Off();
+            var intent = new ManualOverride<LightingSettings>(off, OverrideLifetime.Persistent);
+            using var request = CancellationTokenSource.CreateLinkedTokenSource(token);
+            Task<ControlOperationResult> applying = client.SetLightingOverrideAsync(intent, request.Token);
+            var closed = await WaitForStatusAsync("Renderer frame admission closed.");
+            AssertState(closed, LightingRendererOwnershipState.Spectrum, blocked: true);
+            Assert.False(applying.IsCompleted);
+
+            if (cancel)
+            {
+                request.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await applying);
+            }
+
+            Assert.Equal(ControlOperationStatus.Blocked,
+                (await client.SetLightingOverrideAsync(null, token)).Status);
+            await host.AdvanceAsync(token);
+            var drained = await WaitForStatusAsync("Frame drained. Renderer port still owned.");
+            AssertState(drained, LightingRendererOwnershipState.Spectrum, blocked: true);
+            Assert.Equal(ControlOperationStatus.Blocked,
+                (await client.SetLightingOverrideAsync(null, token)).Status);
+            AssertState(await client.GetStatusAsync(token), LightingRendererOwnershipState.Spectrum, blocked: true);
+            if (!cancel)
+            {
+                Assert.False(applying.IsCompleted);
+            }
+
+            await host.AdvanceAsync(token);
+            if (uncertain)
+            {
+                Assert.Equal(ControlOperationStatus.Failed, (await applying.WaitAsync(token)).Status);
+                AssertState(await client.GetStatusAsync(token), LightingRendererOwnershipState.Faulted,
+                    blocked: true, unconfirmed: true);
+                await host.AdvanceAsync(token);
+                AssertState(await WaitForStatusAsync("Unverified retirement retains the lighting fence."),
+                    LightingRendererOwnershipState.Faulted, blocked: true, unconfirmed: true);
+                Assert.Equal(ControlOperationStatus.Blocked,
+                    (await client.SetLightingOverrideAsync(null, token)).Status);
+            }
+            else
+            {
+                if (cancel)
+                {
+                    AssertState(await WaitForStatusAsync("Renderer port retired."),
+                        LightingRendererOwnershipState.None);
+                    Assert.Equal(ControlOperationStatus.Applied,
+                        (await client.SetLightingOverrideAsync(intent, token)).Status);
+                }
+                else
+                {
+                    Assert.Equal(ControlOperationStatus.Applied, (await applying.WaitAsync(token)).Status);
+                }
+                AssertState(await client.GetStatusAsync(token), LightingRendererOwnershipState.None, confirmed: true);
+
+                await host.AdvanceAsync(token);
+                await WaitForStatusAsync("A competing lighting controller was observed.");
+                await host.AdvanceAsync(token);
+                await WaitForStatusAsync("Controller left. Final brightness getter failure armed.");
+                Assert.Equal(ControlOperationStatus.Failed,
+                    (await client.SetLightingOverrideAsync(intent, token)).Status);
+                AssertState(await client.GetStatusAsync(token), LightingRendererOwnershipState.None,
+                    blocked: true, unconfirmed: true);
+                Assert.Equal(ControlOperationStatus.Blocked,
+                    (await client.SetLightingOverrideAsync(null, token)).Status);
+                await host.AdvanceAsync(token);
+                AssertState(await WaitForStatusAsync("Read-only observation still sees nonzero brightness."),
+                    LightingRendererOwnershipState.None, blocked: true, unconfirmed: true);
+                await host.AdvanceAsync(token);
+                AssertState(await WaitForStatusAsync("Read-only observation confirms external keyboard Off."),
+                    LightingRendererOwnershipState.None, confirmed: true);
+            }
+
+            await host.StopAsync(token);
+            AssertPrimaryBytes(root, saved);
+
+            async Task<ServiceStatusSnapshot> WaitForStatusAsync(string message)
+            {
+                while (true)
+                {
+                    var status = await ReadStatusAsync(watch, subscriptionOpened: false);
+                    if (status.Message == message)
+                    {
+                        return status;
+                    }
+                }
+            }
+
+            void AssertState(ServiceStatusSnapshot status, LightingRendererOwnershipState ownership,
+                bool blocked = false, bool unconfirmed = false, bool confirmed = false)
+            {
+                Assert.Equal(initial.Profiles, status.Profiles);
+                Assert.Equal(intent, status.LightingOverride);
+                Assert.Equal(off, status.DesiredState.Lighting.Value);
+                Assert.Equal(SettingValueSource.PersistentOverride, status.DesiredState.Lighting.Source);
+                Assert.Equal(confirmed ? off : null, status.ConfirmedState?.Lighting);
+                Assert.Equal(LogoLightingMode.Breathing, status.ConfirmedState?.LogoLighting);
+                Assert.Equal(ownership, status.LightingRendererOwnership);
+                Assert.Equal(blocked, status.WritesBlocked);
+                Assert.Equal(unconfirmed ? [DeviceSubsystem.Lighting] : Array.Empty<DeviceSubsystem>(),
+                    status.UnconfirmedWrites);
+            }
+        }
+        finally
+        {
+            await host.DisposeAsync();
+            foreach (string file in Directory.EnumerateFiles(root))
+            {
+                File.Delete(file);
+            }
+            pin.Dispose();
+            Directory.Delete(root);
+        }
+    }
+
+    [RustReadOnlyHostFact]
     public async Task TrayClient_FullChargeIsAnIndependentlyConfirmedOneShot()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));

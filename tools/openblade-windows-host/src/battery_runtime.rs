@@ -639,6 +639,8 @@ pub(crate) struct Scenario {
     full_charge: bool,
     #[cfg(windows)]
     lighting_off: bool,
+    #[cfg(windows)]
+    lighting_operation: Mutex<()>,
     state: Arc<Mutex<ScenarioState>>,
     publish: watch::Sender<Arc<Value>>,
 }
@@ -657,7 +659,7 @@ pub(crate) enum ProfileReplay {
     Thermal,
     Power { lose_response: bool },
     FullCharge,
-    LightingOff,
+    LightingOff { owned: bool, uncertain: bool },
 }
 
 struct ScenarioState {
@@ -695,15 +697,24 @@ impl Scenario {
     ) -> io::Result<Self> {
         baseline["profiles"] = profiles;
         let thermal = match replay {
-            ProfileReplay::Battery | ProfileReplay::FullCharge | ProfileReplay::LightingOff => None,
+            ProfileReplay::Battery
+            | ProfileReplay::FullCharge
+            | ProfileReplay::LightingOff { .. } => None,
             ProfileReplay::Thermal => Some(thermal::Thermal::new(&mut baseline)?),
             ProfileReplay::Power { .. } => {
                 Some(thermal::Thermal::for_power_profile(&mut baseline)?)
             }
         };
-        let lighting = matches!(replay, ProfileReplay::LightingOff)
-            .then(|| lighting::Lighting::new(&mut baseline))
-            .transpose()?;
+        let lighting = match replay {
+            ProfileReplay::LightingOff { owned, .. } => {
+                let mut lighting = lighting::Lighting::new(&mut baseline)?;
+                if owned {
+                    lighting.start_renderer()?;
+                }
+                Some(lighting)
+            }
+            _ => None,
+        };
         Self::start(
             baseline,
             matches!(replay, ProfileReplay::FullCharge),
@@ -753,6 +764,8 @@ impl Scenario {
             full_charge,
             #[cfg(windows)]
             lighting_off,
+            #[cfg(windows)]
+            lighting_operation: Mutex::new(()),
             state: Arc::new(Mutex::new(state)),
             publish,
         })

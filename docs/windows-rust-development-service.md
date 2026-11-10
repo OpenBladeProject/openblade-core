@@ -315,11 +315,30 @@ After `READY`, send one lowercase `n` per step and wait for the status event.
 The getter fault expires at the next script step if unused.
 A matching setter echo or intermediate read cannot settle an unavailable
 final read. The replay keeps the accepted override while the final state is
-unknown and never repeats the setter during reconciliation. An owned
-renderer still needs producer cancellation, frame drain, native port
-retirement and fresh hardware admission. Protected override persistence,
-restart and power/session lifecycle, logo changes, visible effects, and
-other devices remain separate work.
+unknown and never repeats the setter during reconciliation.
+
+Use `foreground-lighting-off-owned <pipe-id>` to start with one
+synthetic Spectrum frame in flight. Submit keyboard Off after the
+"Renderer frame in flight" event. Admission closes while the renderer
+still owns its simulated port. The first `n` completes the frame. The
+second `n` releases the port and lets a connected caller continue to
+the brightness checks. Disconnecting the caller leaves retirement
+running and the stored intent intact. After verified release, a fresh
+request can apply Off. The four brightness steps above then run on
+the same endpoint.
+
+`foreground-lighting-off-uncertain-owner <pipe-id>` follows the same
+first two steps but returns an unverified port release. The third `n`
+probes replacement ownership and supplies an external brightness zero.
+The fixture retains its fence without confirming Off. The managed
+ordinary Off path joins the frame on the same port. The managed
+invalidation path separately retains the closing port until cleanup
+completes, even when a caller cancels its wait.
+
+Production native renderer transport and lifecycle, fresh hardware
+admission, protected override persistence, restart and power/session
+transitions, logo changes, visible effects, and other devices remain
+separate work.
 
 ## Compatibility boundary
 

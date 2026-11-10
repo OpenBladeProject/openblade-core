@@ -3,8 +3,18 @@ use openblade_domain::recovery::ScopedStatus;
 use openblade_protocol::{REPORT_LENGTH, RazerReport};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, io};
-use tokio::sync::mpsc;
+use std::{
+    collections::BTreeMap,
+    io,
+    sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
+    },
+};
+use tokio::sync::{Semaphore, mpsc, watch};
+
+mod renderer;
+use renderer::{RETIRE_LIMIT, Renderer, Script};
 
 const LIGHTING: i32 = 3;
 const CLASS: u8 = 0x03;
@@ -77,9 +87,10 @@ impl LightingOverride {
 
 pub(super) struct Lighting {
     off: Value,
-    // The fixture has no producer or renderer port to retire. Its private lane
-    // never admits an effect that can create one.
     device: Keyboard,
+    native_lane: Arc<Semaphore>,
+    renderer: Option<Renderer>,
+    script: Option<Script>,
     temporary: bool,
     saved: SavedIntent,
     confirmed_off: bool,
@@ -92,7 +103,7 @@ struct SavedIntent {
 }
 
 struct Keyboard {
-    raw: u8,
+    raw: Arc<AtomicU8>,
     transaction: u8,
     controller_present: bool,
     lose_final_read: bool,
@@ -126,7 +137,7 @@ impl Keyboard {
                     if reads == 0 {
                         // The port already observed zero. The independent
                         // scoped getter fails after an external change.
-                        self.raw = LIT;
+                        self.raw.store(LIT, Ordering::Relaxed);
                         self.after_set_reads = None;
                         return None;
                     } else {
@@ -135,14 +146,14 @@ impl Keyboard {
                 }
             }
             (SET_BRIGHTNESS, 0) => {
-                self.raw = 0;
+                self.raw.store(0, Ordering::Relaxed);
                 if std::mem::take(&mut self.lose_final_read) {
                     self.after_set_reads = Some(1);
                 }
             }
             _ => return None,
         }
-        let mut reply = report(bytes[1], operation, self.raw)?.encode();
+        let mut reply = report(bytes[1], operation, self.raw.load(Ordering::Relaxed))?.encode();
         reply[0] = 2;
         Some(reply)
     }
@@ -178,7 +189,7 @@ impl Lighting {
         Ok(Self {
             off,
             device: Keyboard {
-                raw: LIT,
+                raw: Arc::new(AtomicU8::new(LIT)),
                 transaction: 0,
                 controller_present: false,
                 lose_final_read: false,
@@ -186,6 +197,9 @@ impl Lighting {
                 #[cfg(test)]
                 trace: Vec::new(),
             },
+            native_lane: Arc::new(Semaphore::new(1)),
+            renderer: None,
+            script: None,
             temporary: false,
             saved: SavedIntent::default(),
             confirmed_off: false,
@@ -193,31 +207,73 @@ impl Lighting {
         })
     }
 
-    fn apply(&mut self, value: Option<LightingOverride>, exact: bool) -> Result {
+    pub(super) fn start_renderer(&mut self) -> io::Result<()> {
+        if self.renderer.is_some() || self.pending {
+            return Err(io::Error::other(
+                "Previous renderer or keyboard write remains fenced.",
+            ));
+        }
+        let permit = Arc::clone(&self.native_lane)
+            .try_acquire_owned()
+            .map_err(io::Error::other)?;
+        let (renderer, script) = Renderer::start(permit, Arc::clone(&self.device.raw))?;
+        self.renderer = Some(renderer);
+        self.script = Some(script);
+        Ok(())
+    }
+
+    fn stage(
+        &mut self,
+        value: Option<LightingOverride>,
+        exact: bool,
+    ) -> std::result::Result<(), Result> {
         if self.pending {
-            return result(
+            return Err(result(
                 ScopedStatus::Blocked,
                 "Keyboard Off awaits independent readback.",
-            );
+            ));
         }
-        let lifetime = match value {
-            Some(value) => match value.off_lifetime() {
-                Some(lifetime) => Some(lifetime),
-                None => return result(ScopedStatus::Blocked, "Only keyboard Off is admitted."),
-            },
-            None => None,
-        };
+        if self.renderer.as_ref().is_some_and(Renderer::closed) {
+            return Err(result(
+                ScopedStatus::Blocked,
+                "Renderer retirement is fenced.",
+            ));
+        }
+        let lifetime =
+            match value {
+                Some(value) => Some(value.off_lifetime().ok_or_else(|| {
+                    result(ScopedStatus::Blocked, "Only keyboard Off is admitted.")
+                })?),
+                None => None,
+            };
         self.saved.off = lifetime == Some(Lifetime::Persistent);
         self.temporary = lifetime == Some(Lifetime::Temporary);
+        self.admit(exact)
+    }
 
-        // The admitted active pipe session and this scenario's mutex bound
-        // the entire baseline / submission / confirmation transaction.
+    fn admit(&self, exact: bool) -> std::result::Result<(), Result> {
         if !exact || self.device.controller_present {
-            return result(
+            return Err(result(
                 ScopedStatus::Blocked,
                 "Lighting intent stored. Device write admission is unavailable.",
-            );
+            ));
         }
+        Ok(())
+    }
+
+    fn apply_off(&mut self, exact: bool) -> Result {
+        if let Err(refused) = self.admit(exact) {
+            return refused;
+        }
+        if self.renderer.is_some() {
+            return result(ScopedStatus::Blocked, "Renderer retirement is fenced.");
+        }
+        let Ok(_native) = Arc::clone(&self.native_lane).try_acquire_owned() else {
+            return result(
+                ScopedStatus::Blocked,
+                "A native lighting owner is still active.",
+            );
+        };
         match self.device.query() {
             Some(0) => {
                 self.confirmed_off = true;
@@ -277,6 +333,9 @@ impl Lighting {
     }
 
     fn observe(&mut self) {
+        if self.renderer.is_some() {
+            return;
+        }
         if let Some(raw) = self.device.query() {
             self.confirmed_off = raw == 0;
             if self.confirmed_off {
@@ -304,8 +363,17 @@ impl Lighting {
         } else {
             json!([])
         };
-        if self.pending {
+        status["lightingRendererOwnership"] = match &self.renderer {
+            None => 0,                      // None
+            Some(Renderer::Uncertain) => 9, // Faulted
+            Some(_) => 2,                   // Spectrum, retained until retirement completes
+        }
+        .into();
+        let uncertain = self.pending || matches!(self.renderer, Some(Renderer::Uncertain));
+        if uncertain || self.renderer.as_ref().is_some_and(Renderer::closed) {
             status["writesBlocked"] = true.into();
+        }
+        if uncertain {
             if let Some(unconfirmed) = status["unconfirmedWrites"].as_array_mut() {
                 unconfirmed.push(LIGHTING.into());
             }
@@ -327,23 +395,93 @@ impl ScenarioState {
 
 impl Scenario {
     pub(crate) async fn apply_lighting(
-        &self,
+        self: &Arc<Self>,
         value: Option<LightingOverride>,
     ) -> io::Result<Result> {
+        // Serialize Off requests without holding the status/device-state lock
+        // while waiting for the producer and its port.
+        let Ok(_operation) = self.lighting_operation.try_lock() else {
+            return Ok(result(
+                ScopedStatus::Blocked,
+                "Keyboard Off is already waiting for retirement.",
+            ));
+        };
+        let mut retired = None;
+        let initial = self
+            .update(|state| {
+                let exact = state.current["deviceVerified"] == true;
+                let lighting = state.lighting()?;
+                if let Err(refused) = lighting.stage(value, exact) {
+                    return Ok(refused);
+                }
+                let Some(renderer) = &mut lighting.renderer else {
+                    return Ok(lighting.apply_off(exact));
+                };
+
+                let (publish, done) = watch::channel(false);
+                let worker = renderer.close(done.clone())?;
+                retired = Some(done);
+                let scenario = Arc::clone(self);
+                tokio::spawn(async move {
+                    // This task belongs to the renderer retirement, not the pipe
+                    // request. A disconnected client drops only its waiter.
+                    let known = worker.retire(RETIRE_LIMIT).await;
+                    let updated = scenario
+                        .update(|state| {
+                            let lighting = state.lighting()?;
+                            let message = if known {
+                                lighting.renderer = None;
+                                "Renderer port retired."
+                            } else {
+                                lighting.renderer = Some(Renderer::Uncertain);
+                                "Renderer retirement could not be verified."
+                            };
+                            Ok(result(ScopedStatus::Unchanged, message))
+                        })
+                        .await;
+                    publish.send_replace(updated.is_ok());
+                });
+                Ok(result(
+                    ScopedStatus::Unchanged,
+                    "Renderer frame admission closed.",
+                ))
+            })
+            .await?;
+        let Some(mut retired) = retired else {
+            return Ok(initial);
+        };
+        wait_for_retirement(&mut retired).await?;
         self.update(|state| {
             let exact = state.current["deviceVerified"] == true;
-            Ok(state.lighting()?.apply(value, exact))
+            let lighting = state.lighting()?;
+            if lighting.renderer.is_some() {
+                return Ok(result(
+                    ScopedStatus::Failed,
+                    "Renderer retirement could not be verified.",
+                ));
+            }
+            Ok(lighting.apply_off(exact))
         })
         .await
     }
 
-    pub(crate) async fn drive_lighting(&self, mut advance: mpsc::Receiver<()>) -> io::Result<()> {
+    pub(crate) async fn drive_lighting(
+        &self,
+        mut advance: mpsc::Receiver<()>,
+        owned: bool,
+        uncertain: bool,
+    ) -> io::Result<()> {
+        if owned && !self.drive_owned_renderer(&mut advance, uncertain).await? {
+            while advance.recv().await.is_some() {}
+            return Ok(());
+        }
+
         type Step = (&'static str, fn(&mut Lighting));
         let steps: [Step; 4] = [
             (
                 "A competing lighting controller was observed.",
                 |lighting| {
-                    lighting.device.raw = LIT;
+                    lighting.device.raw.store(LIT, Ordering::Relaxed);
                     lighting.device.controller_present = true;
                     lighting.observe();
                 },
@@ -363,7 +501,7 @@ impl Scenario {
             (
                 "Read-only observation confirms external keyboard Off.",
                 |lighting| {
-                    lighting.device.raw = 0;
+                    lighting.device.raw.store(0, Ordering::Relaxed);
                     lighting.observe();
                 },
             ),
@@ -384,6 +522,106 @@ impl Scenario {
         while advance.recv().await.is_some() {}
         Ok(())
     }
+
+    async fn drive_owned_renderer(
+        &self,
+        advance: &mut mpsc::Receiver<()>,
+        uncertain: bool,
+    ) -> io::Result<bool> {
+        let script = self
+            .state
+            .lock()
+            .await
+            .lighting()?
+            .script
+            .take()
+            .ok_or_else(|| io::Error::other("Missing renderer script."))?;
+        script.started.await.map_err(io::Error::other)?;
+        self.update(|_| Ok(result(ScopedStatus::Unchanged, "Renderer frame in flight.")))
+            .await?;
+
+        if advance.recv().await.is_none() {
+            return Ok(false);
+        }
+        let retired = {
+            let mut state = self.state.lock().await;
+            let lighting = state.lighting()?;
+            let renderer = lighting
+                .renderer
+                .as_ref()
+                .ok_or_else(|| io::Error::other("Missing owned renderer."))?;
+            if renderer.submit().is_ok() {
+                return Err(io::Error::other(
+                    "Renderer admitted a second frame during retirement.",
+                ));
+            }
+            let retired = match renderer {
+                Renderer::Retiring(retired) => Some(retired.clone()),
+                Renderer::Uncertain => None,
+                Renderer::Owned(_) => {
+                    return Err(io::Error::other("Renderer retirement has not started."));
+                }
+            };
+            if lighting.start_renderer().is_ok() {
+                return Err(io::Error::other(
+                    "Renderer admitted a replacement before retirement.",
+                ));
+            }
+            retired
+        };
+        script
+            .complete_frame
+            .send(())
+            .map_err(|_| io::Error::other("Frame already ended."))?;
+        script.frame_done.await.map_err(io::Error::other)?;
+        self.update(|_| {
+            Ok(result(
+                ScopedStatus::Unchanged,
+                "Frame drained. Renderer port still owned.",
+            ))
+        })
+        .await?;
+
+        if advance.recv().await.is_none() {
+            return Ok(false);
+        }
+        script
+            .release_port
+            .send(!uncertain)
+            .map_err(|_| io::Error::other("Port already released."))?;
+        if let Some(mut retired) = retired {
+            wait_for_retirement(&mut retired).await?;
+        }
+        if self.state.lock().await.lighting()?.renderer.is_none() {
+            return Ok(true);
+        }
+        if advance.recv().await.is_some() {
+            self.update(|state| {
+                let lighting = state.lighting()?;
+                if lighting.start_renderer().is_ok() {
+                    return Err(io::Error::other(
+                        "Renderer admitted a replacement after uncertain retirement.",
+                    ));
+                }
+                lighting.device.raw.store(0, Ordering::Relaxed);
+                lighting.observe();
+                Ok(result(
+                    ScopedStatus::Unchanged,
+                    "Unverified retirement retains the lighting fence.",
+                ))
+            })
+            .await?;
+        }
+        Ok(false)
+    }
+}
+
+async fn wait_for_retirement(retired: &mut watch::Receiver<bool>) -> io::Result<()> {
+    retired
+        .wait_for(|done| *done)
+        .await
+        .map_err(io::Error::other)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -393,6 +631,15 @@ mod tests {
     fn fixture() -> Lighting {
         let mut status: Value = serde_json::from_str(crate::wire::CURRENT_FIXTURE).unwrap();
         Lighting::new(&mut status["status"]).unwrap()
+    }
+
+    impl Lighting {
+        fn apply(&mut self, value: Option<LightingOverride>, exact: bool) -> Result {
+            match self.stage(value, exact) {
+                Err(refused) => refused,
+                Ok(()) => self.apply_off(exact),
+            }
+        }
     }
 
     fn request(lifetime: u8) -> Option<LightingOverride> {
@@ -470,7 +717,7 @@ mod tests {
             ScopedStatus::Blocked
         );
         assert_eq!(lighting.device.trace, [(GET_BRIGHTNESS, [1, 5, 0]); 2]);
-        assert_eq!(lighting.device.raw, LIT);
+        assert_eq!(lighting.device.raw.load(Ordering::Relaxed), LIT);
         assert!(!lighting.pending);
     }
 
@@ -490,10 +737,11 @@ mod tests {
             ScopedStatus::Failed
         );
         assert!(lighting.pending && lighting.temporary && !lighting.confirmed_off);
+        assert!(lighting.start_renderer().is_err());
         assert_eq!(lighting.apply(None, true).status, ScopedStatus::Blocked);
         lighting.observe();
         assert!(lighting.pending && lighting.temporary && !lighting.confirmed_off);
-        lighting.device.raw = 0;
+        lighting.device.raw.store(0, Ordering::Relaxed);
         lighting.observe();
         assert!(!lighting.pending && lighting.temporary && lighting.confirmed_off);
         assert_eq!(
