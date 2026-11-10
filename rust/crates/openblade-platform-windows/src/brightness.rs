@@ -6,6 +6,11 @@ use crate::display::{DisplayReadError, EndpointId, InternalDisplayTopology};
 
 #[cfg(test)]
 mod tests;
+mod windows;
+mod worker;
+
+use worker::RequestGate;
+pub use worker::WindowsBrightnessWorker;
 
 const CALL_LIMIT: Duration = Duration::from_secs(2);
 const MAX_ROWS: usize = 64;
@@ -63,6 +68,10 @@ pub enum NativeFailure {
     DeadlineExceeded,
     Status(i32),
     InvalidData,
+    MissingData,
+    AmbiguousData,
+    WorkerBusy,
+    WorkerDisconnected,
     SubmissionAlreadyStarted,
 }
 
@@ -91,6 +100,7 @@ pub struct MethodRow<T> {
 pub struct CallBudget<'a> {
     deadline: Instant,
     cancelled: &'a dyn Fn() -> bool,
+    submission_gate: Option<&'a RequestGate>,
 }
 
 impl CallBudget<'_> {
@@ -124,6 +134,9 @@ impl Submission<'_> {
             return Err(NativeFailure::SubmissionAlreadyStarted);
         }
         self.budget.remaining()?;
+        if let Some(gate) = self.budget.submission_gate {
+            gate.begin()?;
+        }
         self.completion_deadline = Some(Instant::now() + CALL_LIMIT);
         Ok(())
     }
@@ -219,8 +232,14 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         &mut self,
         cancelled: impl Fn() -> bool,
     ) -> Result<BrightnessSnapshot, BrightnessError> {
-        let admission = budget(&cancelled);
-        let (panel, reading) = self.observe(&admission)?;
+        self.read_with_budget(&budget(&cancelled))
+    }
+
+    fn read_with_budget(
+        &mut self,
+        admission: &CallBudget<'_>,
+    ) -> Result<BrightnessSnapshot, BrightnessError> {
+        let (panel, reading) = self.observe(admission)?;
         if let Some(WritePause::AwaitingReadback(submitted)) = &self.pause
             && submitted.matches_panel(&panel, &reading)
             && submitted.percent == reading.snapshot.percent
@@ -237,9 +256,17 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         request: BrightnessRequest,
         cancelled: impl Fn() -> bool,
     ) -> Result<BrightnessOutcome, BrightnessFailure> {
+        self.apply_with_budget(request, &budget(&cancelled))
+    }
+
+    fn apply_with_budget(
+        &mut self,
+        request: BrightnessRequest,
+        admission: &CallBudget<'_>,
+    ) -> Result<BrightnessOutcome, BrightnessFailure> {
         let mut submitted = false;
         let mut state = None;
-        let result = self.apply_core(request, &cancelled, &mut submitted, &mut state);
+        let result = self.apply_core(request, admission, &mut submitted, &mut state);
         result.map_err(|reason| BrightnessFailure {
             reason,
             submission_may_have_occurred: submitted,
@@ -250,7 +277,7 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
     fn apply_core(
         &mut self,
         request: BrightnessRequest,
-        cancelled: &dyn Fn() -> bool,
+        admission: &CallBudget<'_>,
         submitted: &mut bool,
         state: &mut Option<BrightnessSnapshot>,
     ) -> Result<BrightnessOutcome, BrightnessError> {
@@ -261,15 +288,14 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
             return Err(BrightnessError::SubmissionUnresolved);
         }
 
-        let admission = budget(cancelled);
-        let (panel, baseline) = self.observe(&admission)?;
+        let (panel, baseline) = self.observe(admission)?;
         let target = select_level(request, &baseline.snapshot);
         let Some(target) = target.filter(|target| *target != baseline.snapshot.percent) else {
             return Ok(BrightnessOutcome::Unchanged(baseline.snapshot));
         };
         *state = Some(baseline.snapshot);
 
-        let methods = checked(&admission, |budget| {
+        let methods = checked(admission, |budget| {
             self.native
                 .active_methods(budget, MAX_ROWS)
                 .map_err(BrightnessError::Native)
@@ -284,7 +310,7 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         .handle;
 
         *state = None;
-        let (fresh_panel, fresh) = self.observe(&admission)?;
+        let (fresh_panel, fresh) = self.observe(admission)?;
         if !panel.same_as(&fresh_panel) || !fresh.instance.eq_ignore_ascii_case(&baseline.instance)
         {
             return Err(BrightnessError::PanelChanged);
@@ -302,13 +328,13 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         };
         // WMI enumeration may outlive the CCD observation used to select its
         // row. Recheck topology before allowing native submission.
-        if !panel.same_as(&self.panel(&admission)?) {
+        if !panel.same_as(&self.panel(admission)?) {
             return Err(BrightnessError::PanelChanged);
         }
         *state = Some(fresh.snapshot);
 
         let mut submission = Submission {
-            budget: &admission,
+            budget: admission,
             completion_deadline: None,
         };
         let response = self.native.set_brightness(method, target, &mut submission);
@@ -397,6 +423,7 @@ fn budget(cancelled: &dyn Fn() -> bool) -> CallBudget<'_> {
     CallBudget {
         deadline: Instant::now() + CALL_LIMIT,
         cancelled,
+        submission_gate: None,
     }
 }
 

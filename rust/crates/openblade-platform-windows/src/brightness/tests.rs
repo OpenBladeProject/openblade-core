@@ -556,6 +556,7 @@ fn expired_budget_prevents_native_work_and_submission() {
     let budget = CallBudget {
         deadline: Instant::now(),
         cancelled: &|| false,
+        submission_gate: None,
     };
     let mut controller = WmiBrightness::new(Script::new([]));
     assert!(matches!(
@@ -655,6 +656,7 @@ fn submission_gets_its_own_completion_budget() {
     let admission = CallBudget {
         deadline: Instant::now() + Duration::from_millis(500),
         cancelled: &|| false,
+        submission_gate: None,
     };
     let mut submission = Submission {
         budget: &admission,
