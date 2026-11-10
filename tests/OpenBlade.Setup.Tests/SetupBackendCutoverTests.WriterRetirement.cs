@@ -219,7 +219,8 @@ public sealed partial class SetupBackendCutoverTests
         private SortedDictionary<string, string>? recoveryAfterStop;
 
         public ScratchWriters(string root, SetupPaths paths, OfflineWindows scm,
-            ISetupGuardianQuiescenceGuard guardian, string priorBuildSha256, Backend initial = Backend.Managed)
+            ISetupGuardianQuiescenceGuard guardian, string priorBuildSha256, Backend initial = Backend.Managed,
+            Action<string, Func<string, CancellationToken, IDisposable>>? prepareMarker = null)
         {
             this.root = root;
             this.paths = paths;
@@ -239,7 +240,13 @@ public sealed partial class SetupBackendCutoverTests
                 lockId = FenceNative.Inspect(file, directory: false).Identity;
             }
 
-            (process, Observer initialObserver, image) = Launch(initial, priorBuildSha256);
+            if (prepareMarker is not null)
+            {
+                Assert.Equal(Backend.Candidate, initial);
+                prepareMarker(leaseRoot, AcquireSuccessorLease);
+            }
+            (process, Observer initialObserver, image) = Launch(initial, priorBuildSha256,
+                beginRunMarker: prepareMarker is not null);
             observer = initialObserver;
             generation = initialObserver.Generation;
         }
@@ -247,6 +254,7 @@ public sealed partial class SetupBackendCutoverTests
         public Backend Current => generation.Backend;
         public int StopRequests { get; private set; }
         public string LeaseRoot => leaseRoot;
+        public string? RunMarkerFrame { get; private set; }
 
         public IDisposable AcquireSuccessorLease(string path, CancellationToken token)
         {
@@ -453,7 +461,8 @@ public sealed partial class SetupBackendCutoverTests
             Assert.Equal("saved profiles", File.ReadAllText(Path.Combine(paths.MachineDataDirectory, "profiles.json")));
         }
 
-        private (Process, Observer, SealedFixture) Launch(Backend backend, string buildSha256)
+        private (Process, Observer, SealedFixture) Launch(Backend backend, string buildSha256,
+            bool beginRunMarker = false)
         {
             RequireInstalledBuild(buildSha256);
             long boot = ReadWindowsBoot();
@@ -478,6 +487,10 @@ public sealed partial class SetupBackendCutoverTests
                 {
                     start.ArgumentList.Add("hold");
                 }
+                if (beginRunMarker)
+                {
+                    start.ArgumentList.Add("--phase-8o-run-marker");
+                }
                 start.ArgumentList.Add(leaseRoot);
                 start.ArgumentList.Add(rootId);
                 start.ArgumentList.Add(lockId);
@@ -489,6 +502,11 @@ public sealed partial class SetupBackendCutoverTests
                 if (ready is not ("held\n" or "held\r\n"))
                 {
                     throw new InvalidOperationException("Scratch child did not acquire the writer lease.");
+                }
+                if (beginRunMarker)
+                {
+                    RunMarkerFrame = ReadFrameAsync(child.StandardOutput, startup.Token)
+                        .GetAwaiter().GetResult();
                 }
                 var held = Assert.Throws<Win32Exception>(() =>
                 {

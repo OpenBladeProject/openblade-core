@@ -13,6 +13,88 @@ namespace OpenBlade.Setup.Tests;
 public sealed partial class SetupBackendCutoverTests
 {
     [LocalWriterRetirementTheory]
+    [InlineData(null, ServiceStartupKind.Normal)]
+    [InlineData(false, ServiceStartupKind.UnexpectedExitRecovery)]
+    [InlineData(true, ServiceStartupKind.Normal)]
+    public async Task ScratchRunMarkerRoundTripsBetweenManagedAndRust(
+        bool? priorBoot, ServiceStartupKind expected)
+    {
+        using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        Assert.False(identity.IsSystem);
+        Assert.False(new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator));
+        using var tree = new TestTree();
+        tree.WriteInstall(ServiceFile, "synthetic Rust service build"u8.ToArray());
+        SetupPaths paths = tree.Paths;
+        WriteFile(Path.Combine(paths.MachineDataDirectory, "profiles.json"), "saved profiles"u8.ToArray());
+        var windows = new OfflineWindows(paths);
+        var guardian = new SetupGuardianQuiescenceGuard(paths, windows, File.GetAttributes);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = deadline.Token;
+        byte[]? managedEvidence = null;
+
+        using var writers = new ScratchWriters(tree.Root, paths, windows, guardian,
+            ReadManifest(tree.Install)[ServiceFile], Backend.Candidate, (root, acquire) =>
+            {
+                if (priorBoot is null)
+                {
+                    return;
+                }
+
+                TimeSpan uptime = ReadUptime();
+                DateTimeOffset now = DateTimeOffset.UtcNow;
+                string path = Path.Combine(root, "service-running.json");
+                // Script an earlier boot without changing the host clock or rebooting.
+                var managed = CreateTransitionStore(path,
+                    () => priorBoot.Value ? now - uptime - TimeSpan.FromDays(1) : now,
+                    () => priorBoot.Value ? uptime + TimeSpan.FromDays(1) : uptime, acquire, null);
+                Assert.Equal(ServiceStartupKind.Normal, managed.BeginRunAsync(token).GetAwaiter().GetResult());
+                managedEvidence = File.ReadAllBytes(path);
+            });
+
+        Assert.Equal($"marker:{expected}\n", writers.RunMarkerFrame?.Replace("\r\n", "\n", StringComparison.Ordinal));
+        string marker = Path.Combine(writers.LeaseRoot, "service-running.json");
+        byte[] rustEvidence = File.ReadAllBytes(marker);
+        if (managedEvidence is not null)
+        {
+            Assert.False(managedEvidence.AsSpan().SequenceEqual(rustEvidence));
+        }
+        Assert.False(File.Exists(marker + ".tmp"));
+
+        windows.BeforeStopAsync = () => writers.StopAsync(RetirementFault.None, token);
+        windows.BeforeWaitForStop = writers.ObserveStop;
+        await windows.RunAsync(["stop", "OpenBlade"], [], token);
+        await windows.WaitForStateAsync("OpenBlade", SetupServiceState.Stopped, TimeSpan.FromSeconds(10), token);
+
+        int retirementChecks = 0;
+        var handoff = CreateTransitionStore(marker, () => DateTimeOffset.UtcNow, ReadUptime,
+            writers.AcquireSuccessorLease, () =>
+            {
+                writers.EnsureClear();
+                retirementChecks++;
+            });
+        var denied = await Assert.ThrowsAsync<InvalidOperationException>(() => handoff.BeginRunAsync(token));
+        Assert.Equal("Uncleared service run-marker evidence must be preserved.", denied.Message);
+        Assert.Equal(1, retirementChecks);
+        Assert.Equal(rustEvidence, File.ReadAllBytes(marker));
+        Assert.False(File.Exists(marker + ".tmp"));
+
+        // An ordinary startup can classify the preserved marker after the test
+        // has independently verified that the original child retired.
+        var managedReader = CreateTransitionStore(marker,
+            () => priorBoot == true ? DateTimeOffset.UtcNow.AddDays(1) : DateTimeOffset.UtcNow,
+            () => priorBoot == true ? TimeSpan.Zero : ReadUptime(), writers.AcquireSuccessorLease, null);
+        Assert.Equal(priorBoot == true ? ServiceStartupKind.Normal : ServiceStartupKind.UnexpectedExitRecovery,
+            await managedReader.BeginRunAsync(token));
+        Assert.False(rustEvidence.AsSpan().SequenceEqual(File.ReadAllBytes(marker)));
+        await managedReader.CompleteRunAsync(token);
+        Assert.False(File.Exists(marker));
+        Assert.False(File.Exists(marker + ".tmp"));
+        writers.AssertRecoveryPreserved();
+
+        static TimeSpan ReadUptime() => TimeSpan.FromMilliseconds(Environment.TickCount64);
+    }
+
+    [LocalWriterRetirementTheory]
     [InlineData(RetirementFault.None, null, null)]
     [InlineData(RetirementFault.None, "", "Uncleared service run-marker evidence must be preserved.")]
     [InlineData(RetirementFault.None, ".tmp", "Uncleared service run-marker evidence must be preserved.")]
@@ -116,5 +198,5 @@ public sealed partial class SetupBackendCutoverTests
     [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
     private static extern ServiceRunMarkerStore CreateTransitionStore(
         string path, Func<DateTimeOffset> now, Func<TimeSpan> uptime,
-        Func<string, CancellationToken, IDisposable> acquireVerifiedWriterLease, Action requireRetiredBackend);
+        Func<string, CancellationToken, IDisposable> acquireVerifiedWriterLease, Action? requireRetiredBackend);
 }
