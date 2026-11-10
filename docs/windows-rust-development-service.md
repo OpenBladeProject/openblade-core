@@ -85,6 +85,19 @@ the admitted PID. The candidate publishes `SERVICE_RUNNING` only after that
 evidence. Setup's external probe still runs afterward. The fixture endpoints
 and their scripted status have separate roles.
 
+Managed Setup has a separate process observation seam for an explicit fixture
+handoff. It duplicates the original Windows launch handle once. Each read uses
+that same process object to confirm its PID, creation FILETIME, exact image path
+and that it has not exited. Closing the caller's handle does not affect the
+retained duplicate. A live observation is a snapshot and does not attest to the
+loaded image bytes.
+
+Setup still needs an independently verified build pin held from before launch
+and tied to that process through readiness. The current stage types do not
+provide that evidence, so process observation alone cannot supply
+`ISetupRetainedCandidateLaunch`. The production install and rollback routes
+remain unchanged.
+
 A separately authorized disposable VM must confirm the actual SCM callback
 arguments, LocalSystem session, image command and PID availability in
 `START_PENDING`. If SCM omits the PID, the candidate rejects the launch until
