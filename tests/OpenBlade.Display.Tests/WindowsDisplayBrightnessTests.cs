@@ -16,8 +16,38 @@ public sealed class WindowsDisplayBrightnessTests
             () => WindowsDisplayBrightness.ValidateSetResult(5));
         Assert.Contains("System.Int32", type.Message, StringComparison.Ordinal);
 
+        Assert.Throws<ManagementException>(() => WindowsDisplayBrightness.ValidateSetResult(null));
         WindowsDisplayBrightness.ValidateSetResult(0u);
     }
+
+    [Theory]
+    [InlineData(false, InternalInstance, (byte)40, true)]
+    [InlineData(true, InternalInstance, (byte)40, true)]
+    [InlineData(false, InternalInstance, (byte)30, false)]
+    [InlineData(true, null, null, false)]
+    [InlineData(true, @"DISPLAY\SDC4226\4&abc&0&UID8388688_1", (byte)40, false)]
+    public void BooleanAcknowledgement_RequiresTargetReadbackFromSameInstance(
+        bool acknowledgement, string? instanceName, byte? percent, bool succeeds)
+    {
+        WindowsDisplayBrightness.ValidateSetResult(acknowledgement);
+        DisplayBrightnessReading? observed = instanceName is not null && percent is byte value
+            ? new(instanceName, value, [30, 40])
+            : null;
+        var snapshot = new DisplaySettingsSnapshot(true, null, 0, 0, null, [], false, false,
+            false, null, [], null)
+        {
+            BrightnessPercent = percent,
+        };
+
+        DisplayOperationResult result = WindowsDisplaySettingsController.ConfirmBrightnessReadback(
+            InternalInstance, 40, observed, snapshot);
+
+        Assert.Equal(succeeds, result.Succeeded);
+        Assert.Equal(!succeeds, result.SubmissionMayHaveOccurred);
+        Assert.Same(snapshot, result.State);
+    }
+
+    private const string InternalInstance = @"display\sdc4226\4&ABC&0&uid8388688_0";
 
     private const string InternalPath = @"\\?\DISPLAY#SDC4226#4&abc&0&UID8388688#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
 

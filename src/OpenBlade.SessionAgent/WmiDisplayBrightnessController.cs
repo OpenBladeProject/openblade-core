@@ -1,4 +1,5 @@
 using System.Management;
+using OpenBlade.Display;
 
 namespace OpenBlade.SessionAgent;
 
@@ -110,13 +111,14 @@ public sealed class WmiDisplayBrightnessController : IDisplayBrightnessControlle
                 input["Brightness"] = target;
                 using ManagementBaseObject? output =
                     methods.InvokeMethod("WmiSetBrightness", input, null);
-                uint returnValue = output?["ReturnValue"] is uint value ? value : 0u;
-                if (returnValue != 0)
+                WindowsDisplayBrightness.ValidateSetResult(output?["ReturnValue"]);
+                DisplayBrightnessReading? observed = WindowsDisplayBrightness.QueryInstance(
+                    instanceName, CancellationToken.None);
+                if (observed?.Confirms(instanceName, target) != true)
                 {
-                    throw new ManagementException(
-                        $"Windows rejected display brightness {target}% with status {returnValue}.");
+                    throw new ManagementException("Windows did not confirm the requested brightness.");
                 }
-                return target;
+                return observed.Percent;
             }
         }
 

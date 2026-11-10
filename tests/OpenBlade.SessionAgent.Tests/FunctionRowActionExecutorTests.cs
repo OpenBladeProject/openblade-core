@@ -79,6 +79,25 @@ public sealed class FunctionRowActionExecutorTests
     }
 
     [Fact]
+    public async Task DisplayBrightnessFallbackFailure_StopsHeldRepeatsWithoutShowingOsd()
+    {
+        var display = new RecordingDisplayBrightnessController
+        {
+            Failure = new InvalidOperationException("Brightness could not be confirmed."),
+        };
+        var osd = new RecordingDisplayBrightnessOsd();
+        var executor = CreateExecutor(display: display, osd: osd);
+        FunctionRowInputEvent press = Input(FunctionRowAction.DisplayBrightnessUp, scanCode: 0x43);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => executor.ExecuteAsync(press, CancellationToken.None));
+        await executor.ExecuteAsync(press with { Phase = FunctionRowInputPhase.Repeat }, CancellationToken.None);
+
+        Assert.Equal([1], display.Directions);
+        Assert.Empty(osd.Values);
+    }
+
+    [Fact]
     public async Task DisplayBrightnessDisplayedAvailability_DoesNotSkipLiveFallbackDecision()
     {
         var client = new RecordingServiceClient(
@@ -482,13 +501,14 @@ public sealed class FunctionRowActionExecutorTests
     {
         public List<int> Directions { get; } = [];
         public byte? NextBrightness { get; set; } = 60;
+        public Exception? Failure { get; set; }
 
         public Task<byte?> AdjustAsync(
             int direction,
             CancellationToken cancellationToken)
         {
             Directions.Add(direction);
-            return Task.FromResult(NextBrightness);
+            return Failure is null ? Task.FromResult(NextBrightness) : Task.FromException<byte?>(Failure);
         }
     }
 

@@ -203,7 +203,7 @@ public sealed class FunctionRowActionExecutor
                 displayBrightnessRoutes.Remove(inputEvent.ScanCode);
                 displayBrightnessRoutes[inputEvent.ScanCode] =
                     DisplayBrightnessRoute.Fallback;
-                await AdjustDisplayBrightnessAsync(direction, cancellationToken)
+                await AdjustDisplayBrightnessAsync(inputEvent.ScanCode, direction, cancellationToken)
                     .ConfigureAwait(false);
                 return;
             }
@@ -226,7 +226,7 @@ public sealed class FunctionRowActionExecutor
         {
             if (route == DisplayBrightnessRoute.Fallback)
             {
-                await AdjustDisplayBrightnessAsync(direction, cancellationToken)
+                await AdjustDisplayBrightnessAsync(inputEvent.ScanCode, direction, cancellationToken)
                     .ConfigureAwait(false);
             }
             else
@@ -289,12 +289,22 @@ public sealed class FunctionRowActionExecutor
     }
 
     private async Task AdjustDisplayBrightnessAsync(
+        uint scanCode,
         int direction,
         CancellationToken cancellationToken)
     {
-        byte? brightness = await displayBrightness.AdjustAsync(
-            direction,
-            cancellationToken).ConfigureAwait(false);
+        byte? brightness;
+        try
+        {
+            brightness = await displayBrightness.AdjustAsync(direction, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // The WMI setter may have submitted a change. Stop repeats for this press.
+            displayBrightnessRoutes.Remove(scanCode);
+            throw;
+        }
         if (brightness is { } value)
         {
             displayBrightnessOsd.Show(value);
