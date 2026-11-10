@@ -49,6 +49,11 @@ name = "openblade-windows-service-candidate"
 path = "src/installed_main.rs"
 required-features = ["installed-service-candidate"]
 
+[[bin]]
+name = "openblade-windows-agent-candidate"
+path = "src/installed_agent_main.rs"
+required-features = ["native-agent-entry-compile-check"]
+
 [dependencies]
 openblade-domain = { path = '../../rust/crates/openblade-domain' }
 openblade-protocol = { path = '../../rust/crates/openblade-protocol' }

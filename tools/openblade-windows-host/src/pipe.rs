@@ -1,10 +1,9 @@
 #![allow(unsafe_code)]
 
 use std::{
-    ffi::c_void,
     fs::{File, OpenOptions},
     io,
-    mem::{size_of, size_of_val},
+    mem::size_of,
     os::windows::fs::OpenOptionsExt,
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     ptr::null_mut,
@@ -18,16 +17,11 @@ use tokio::{
 use windows_sys::Win32::{
     Foundation::{
         ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_NOT_CONNECTED, HANDLE,
-        INVALID_HANDLE_VALUE, LUID, LocalFree,
+        INVALID_HANDLE_VALUE,
     },
     Security::{
-        Authorization::{
-            ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-            SDDL_REVISION_1,
-        },
-        GetTokenInformation, PSECURITY_DESCRIPTOR, RevertToSelf, SECURITY_ATTRIBUTES,
-        SECURITY_MAX_SID_SIZE, TOKEN_QUERY, TOKEN_STATISTICS, TOKEN_USER, TokenSessionId,
-        TokenStatistics, TokenUser,
+        Authorization::{ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1},
+        PSECURITY_DESCRIPTOR, RevertToSelf, SECURITY_ATTRIBUTES, TOKEN_QUERY,
     },
     Storage::FileSystem::{
         FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX, SECURITY_IDENTIFICATION,
@@ -38,9 +32,12 @@ use windows_sys::Win32::{
             GetNamedPipeServerProcessId, GetNamedPipeServerSessionId, ImpersonateNamedPipeClient,
             PIPE_REJECT_REMOTE_CLIENTS,
         },
-        Threading::{GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken},
+        Threading::{GetCurrentThread, OpenThreadToken},
     },
 };
+
+pub use crate::windows_token::Identity;
+use crate::windows_token::{LocalAllocation, check, process_token};
 
 const PIPE_BUFFER_BYTES: u32 = 8192;
 
@@ -161,81 +158,7 @@ impl Endpoint {
     }
 }
 
-struct LocalAllocation(*mut c_void);
-
-impl Drop for LocalAllocation {
-    fn drop(&mut self) {
-        // SAFETY: owned allocation returned by one of the SDDL conversion APIs.
-        unsafe { LocalFree(self.0) };
-    }
-}
-
-#[cfg(feature = "native-agent-entry-compile-check")]
-pub struct ProcessTokenEvidence {
-    pub sid: String,
-    pub token_session: u32,
-    pub process_session: u32,
-    pub logon: (i32, u32),
-    pub primary: bool,
-    pub elevated: bool,
-}
-
-pub struct Identity {
-    sid: String,
-    authentication: LUID,
-    session: u32,
-}
-
 impl Identity {
-    #[cfg(feature = "native-agent-entry-compile-check")]
-    pub fn process_token_evidence() -> io::Result<ProcessTokenEvidence> {
-        use windows_sys::Win32::{
-            Security::{TOKEN_ELEVATION, TOKEN_TYPE, TokenElevation, TokenPrimary, TokenType},
-            System::RemoteDesktop::ProcessIdToSessionId,
-        };
-
-        let token = process_token()?;
-        let identity = Self::read(&token)?;
-        let mut process_session = 0;
-        let mut token_type: TOKEN_TYPE = 0;
-        let mut elevation = TOKEN_ELEVATION::default();
-        let mut returned = 0;
-        // SAFETY: the token and PID refer to this process. The output slots
-        // are writable and have the layout and size for the requested class.
-        unsafe {
-            check(ProcessIdToSessionId(
-                std::process::id(),
-                &mut process_session,
-            ))?;
-            check(GetTokenInformation(
-                token.as_raw_handle(),
-                TokenType,
-                (&mut token_type as *mut TOKEN_TYPE).cast(),
-                size_of_val(&token_type) as u32,
-                &mut returned,
-            ))?;
-            check(GetTokenInformation(
-                token.as_raw_handle(),
-                TokenElevation,
-                (&mut elevation as *mut TOKEN_ELEVATION).cast(),
-                size_of_val(&elevation) as u32,
-                &mut returned,
-            ))?;
-        }
-
-        Ok(ProcessTokenEvidence {
-            sid: identity.sid,
-            token_session: identity.session,
-            process_session,
-            logon: (
-                identity.authentication.HighPart,
-                identity.authentication.LowPart,
-            ),
-            primary: token_type == TokenPrimary,
-            elevated: elevation.TokenIsElevated != 0,
-        })
-    }
-
     /// Session of the same process token used to create a private endpoint.
     pub fn fixture_session() -> io::Result<u32> {
         Ok(Self::read(&process_token()?)?.session)
@@ -283,76 +206,6 @@ impl Identity {
         }
         Ok(())
     }
-
-    fn read(token: &OwnedHandle) -> io::Result<Self> {
-        let mut statistics = TOKEN_STATISTICS::default();
-        let mut session = 0u32;
-        let mut returned = 0;
-        // SAFETY: each query writes the structure appropriate for its information
-        // class into its writable, aligned output and cannot outlive the call.
-        unsafe {
-            check(GetTokenInformation(
-                token.as_raw_handle(),
-                TokenStatistics,
-                (&mut statistics as *mut TOKEN_STATISTICS).cast(),
-                size_of_val(&statistics) as u32,
-                &mut returned,
-            ))?;
-            check(GetTokenInformation(
-                token.as_raw_handle(),
-                TokenSessionId,
-                (&mut session as *mut u32).cast(),
-                size_of_val(&session) as u32,
-                &mut returned,
-            ))?;
-        }
-        Ok(Self {
-            sid: user_sid(token)?,
-            authentication: statistics.AuthenticationId,
-            session,
-        })
-    }
-}
-
-fn user_sid(token: &OwnedHandle) -> io::Result<String> {
-    // A TOKEN_USER header plus the largest Win32 SID (SECURITY_MAX_SID_SIZE).
-    // Using usize storage ensures alignment for TOKEN_USER on both architectures.
-    let mut buffer = [0usize;
-        (size_of::<TOKEN_USER>() + SECURITY_MAX_SID_SIZE as usize).div_ceil(size_of::<usize>())];
-    let mut returned = 0;
-    let mut text = null_mut();
-    // SAFETY: TokenUser writes a TOKEN_USER and points its SID into the aligned
-    // buffer. Windows guarantees the converted SID string is NUL-terminated.
-    let sid = unsafe {
-        check(GetTokenInformation(
-            token.as_raw_handle(),
-            TokenUser,
-            buffer.as_mut_ptr().cast(),
-            size_of_val(&buffer) as u32,
-            &mut returned,
-        ))?;
-        let user = &*buffer.as_ptr().cast::<TOKEN_USER>();
-        check(ConvertSidToStringSidW(user.User.Sid, &mut text))?;
-        let allocation = LocalAllocation(text.cast());
-        let length = (0..).find(|&offset| *text.add(offset) == 0).unwrap();
-        let sid = String::from_utf16(std::slice::from_raw_parts(text, length));
-        drop(allocation);
-        sid
-    };
-    sid.map_err(io::Error::other)
-}
-
-fn process_token() -> io::Result<OwnedHandle> {
-    let mut token: HANDLE = null_mut();
-    // SAFETY: the pseudohandle is valid and the writable out pointer is scoped to the call.
-    unsafe {
-        check(OpenProcessToken(
-            GetCurrentProcess(),
-            TOKEN_QUERY,
-            &mut token,
-        ))?;
-        Ok(OwnedHandle::from_raw_handle(token))
-    }
 }
 
 fn peer_token(pipe: &NamedPipeServer) -> io::Result<OwnedHandle> {
@@ -381,14 +234,6 @@ fn denied() -> io::Error {
         io::ErrorKind::PermissionDenied,
         "development client is outside the host logon",
     )
-}
-
-fn check(success: i32) -> io::Result<()> {
-    if success == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
 }
 
 pub fn stale_connection(error: &io::Error) -> bool {

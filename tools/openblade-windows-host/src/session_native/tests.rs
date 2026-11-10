@@ -254,3 +254,12 @@ fn confirmed_stop_and_stop_failure_both_release_the_claim() {
         assert!(!bindings.held.get());
     }
 }
+
+#[test]
+fn sign_in_entry_rejects_arguments_before_reading_launch_evidence() {
+    for argument in ["", "integrated", "--help"] {
+        let error = entry(std::iter::once(argument.into())).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(error.to_string(), "unexpected Session Agent arguments");
+    }
+}

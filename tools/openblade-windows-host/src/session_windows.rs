@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsString,
     io::{self, BufRead, Write},
     sync::{
         Arc, Mutex,
@@ -40,11 +41,11 @@ const AUDIO_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Audio.Dev.";
 
 pub(super) fn entry() -> io::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    #[cfg(feature = "native-agent-entry-compile-check")]
-    if args.is_empty() {
-        return crate::session_native::entry();
-    }
-    let [mode, id, scenario, brightness @ ..] = args.as_slice() else {
+    run(&args)
+}
+
+fn run(args: &[OsString]) -> io::Result<()> {
+    let [mode, id, scenario, brightness @ ..] = args else {
         return Err(usage());
     };
     let id = id.to_str().filter(|id| valid_id(id)).ok_or_else(usage)?;
@@ -403,5 +404,14 @@ mod tests {
         ] {
             assert!(!valid_id(invalid));
         }
+    }
+}
+
+#[cfg(test)]
+mod launch_tests {
+    #[test]
+    fn no_arguments_require_an_explicit_fixture() {
+        let error = super::run(&[]).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
     }
 }

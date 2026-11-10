@@ -48,6 +48,20 @@ and rollback to the previous bytes and registrations before admitting an
 installed cutover. Production Publish and Setup continue to use the managed
 roles and their dependency and runtime files.
 
+## Compile the installed Session Agent launch boundary
+
+The Windows host workspace also exposes the standalone
+`openblade-windows-agent-candidate` binary behind
+`native-agent-entry-compile-check`. It accepts the managed sign-in action
+with no arguments and requires independent evidence for the installed image,
+authorized interactive logon, and managed endpoint ownership. Those bindings
+are absent, so startup fails closed. The development
+`openblade-rust-session-agent` binary still requires an explicit fixture
+command when the candidate feature is enabled.
+
+The two installed-role candidates are compile-only. Their binary entry points
+have separate module trees from the fixture roles. Neither is a Setup payload.
+
 ## Compile the installed service launch boundary
 
 The standalone Windows host workspace has a separate `openblade-windows-service-candidate`
