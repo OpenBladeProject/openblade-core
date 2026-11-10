@@ -19,6 +19,14 @@ public sealed class WindowsDisplayBrightnessTests
         WindowsDisplayBrightness.ValidateSetResult(0u);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SetResult_BooleanAcknowledgementAllowsIndependentReadback(bool acknowledgement)
+    {
+        WindowsDisplayBrightness.ValidateSetResult(acknowledgement);
+    }
+
     private const string InternalPath = @"\\?\DISPLAY#SDC4226#4&abc&0&UID8388688#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}";
 
     [Theory]

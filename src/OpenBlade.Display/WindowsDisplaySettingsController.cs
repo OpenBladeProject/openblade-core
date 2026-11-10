@@ -124,7 +124,16 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
                 // through independent readback. An uncertain result is never replayed.
                 WindowsDisplayBrightness.Set(monitorPath, brightness, level, CancellationToken.None,
                     () => submitted = true);
-                DisplaySettingsSnapshot after = QueryCore(CancellationToken.None);
+                DisplayTopology readbackTopology = QueryTopology();
+                DisplayTarget readbackTarget = GetSingleInternalTarget(readbackTopology);
+                DisplaySettingsSnapshot after = BuildSnapshot(
+                    readbackTopology, readbackTarget, CancellationToken.None);
+                if (!string.Equals(readbackTarget.MonitorDevicePath, monitorPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return DisplayOperationResult.Failure(
+                        "The internal display changed before brightness could be confirmed.", after);
+                }
+
                 return after.BrightnessPercent == level
                     ? DisplayOperationResult.Success(after)
                     : DisplayOperationResult.Failure("Windows did not confirm the requested brightness.", after);
