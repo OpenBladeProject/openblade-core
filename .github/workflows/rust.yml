@@ -11,6 +11,7 @@ on:
       - 'evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-adapter-power-readback-fixture.json'
       - 'src/OpenBlade.Tray.Core/ServiceClient.cs'
       - 'tests/OpenBlade.Tray.Tests/RustReadOnlyHostTests.cs'
+      - 'tests/OpenBlade.Service.Tests/ServiceControlRuntimeTests*.cs'
       - 'tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service*.json'
       - 'tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json'
       - 'tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-*.json'
@@ -21,6 +22,12 @@ on:
       - 'src/OpenBlade.Contracts/**'
       - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
       - 'src/OpenBlade.Service/ProfileAutomationState.cs'
+      - 'src/OpenBlade.Service/BatteryOperationExecutor.cs'
+      - 'src/OpenBlade.Service/BatteryOperationPlanner.cs'
+      - 'src/OpenBlade.Service/ControlCoordinator.cs'
+      - 'src/OpenBlade.Service/ConfirmedStateDriftTracker.cs'
+      - 'src/OpenBlade.Service/ServiceControlRuntime.cs'
+      - 'src/OpenBlade.Service/WriteConfirmationPolicy.cs'
       - 'src/OpenBlade.Service/OverrideResolver.cs'
       - 'src/OpenBlade.Protocol/**'
       - 'tests/OpenBlade.Protocol.Tests/**'
@@ -51,6 +58,7 @@ on:
       - 'evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-adapter-power-readback-fixture.json'
       - 'src/OpenBlade.Tray.Core/ServiceClient.cs'
       - 'tests/OpenBlade.Tray.Tests/RustReadOnlyHostTests.cs'
+      - 'tests/OpenBlade.Service.Tests/ServiceControlRuntimeTests*.cs'
       - 'tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service*.json'
       - 'tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json'
       - 'tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-*.json'
@@ -61,6 +69,12 @@ on:
       - 'src/OpenBlade.Contracts/**'
       - 'src/OpenBlade.Service/ApplicationProfileResolution.cs'
       - 'src/OpenBlade.Service/ProfileAutomationState.cs'
+      - 'src/OpenBlade.Service/BatteryOperationExecutor.cs'
+      - 'src/OpenBlade.Service/BatteryOperationPlanner.cs'
+      - 'src/OpenBlade.Service/ControlCoordinator.cs'
+      - 'src/OpenBlade.Service/ConfirmedStateDriftTracker.cs'
+      - 'src/OpenBlade.Service/ServiceControlRuntime.cs'
+      - 'src/OpenBlade.Service/WriteConfirmationPolicy.cs'
       - 'src/OpenBlade.Service/OverrideResolver.cs'
       - 'src/OpenBlade.Protocol/**'
       - 'tests/OpenBlade.Protocol.Tests/**'
@@ -212,6 +226,7 @@ jobs:
           $env:OPENBLADE_RUST_DEV_HOST_EXE = (Resolve-Path '../tools/openblade-windows-host/target/${{ matrix.target }}/debug/openblade-windows-host.exe').Path
           dotnet restore ../src/OpenBlade.Tray/OpenBlade.Tray.csproj
           dotnet test ../tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter FullyQualifiedName~RustReadOnlyHostTests
+          dotnet test ../tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter FullyQualifiedName~RustBatteryParity
 
       - name: Verify the Windows configuration writer against the managed store
         if: runner.os == 'Windows'

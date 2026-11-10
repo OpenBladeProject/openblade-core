@@ -88,7 +88,8 @@ pub(super) fn entry() -> io::Result<()> {
         [mode, id]
             if mode == "foreground"
                 || mode == "foreground-background"
-                || mode == "foreground-replay" =>
+                || mode == "foreground-replay"
+                || mode == "foreground-battery-parity" =>
         {
             let id = foreground_id(id)?;
             let session = if mode != "foreground-background" {
@@ -96,7 +97,21 @@ pub(super) fn entry() -> io::Result<()> {
             } else {
                 Session::Background
             };
-            foreground(id, session, mode == "foreground-replay", replay_status)
+            if mode == "foreground-battery-parity" {
+                foreground(id, session, true, |advance, shutdown| {
+                    let advance = advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
+                    let (status, drive) = Status::fixture()?.with_battery(advance)?;
+                    let drive = async move {
+                        tokio::select! {
+                            _ = shutdown => Ok(()),
+                            result = drive => result,
+                        }
+                    };
+                    Ok((status, Some(drive)))
+                })
+            } else {
+                foreground(id, session, mode == "foreground-replay", replay_status)
+            }
         }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
