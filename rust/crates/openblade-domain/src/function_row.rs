@@ -237,12 +237,18 @@ pub struct HookRecovery {
     pub release: Option<Event>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct WindowsHook {
     keys: [Press; ROW.len()],
 }
 
 impl WindowsHook {
+    pub fn has_suppressed_keys(&self) -> bool {
+        self.keys
+            .iter()
+            .any(|press| matches!(press, Press::Suppressed { .. }))
+    }
+
     pub fn has_active_keys(&self) -> bool {
         self.keys.iter().any(|press| *press != Press::Idle)
     }
