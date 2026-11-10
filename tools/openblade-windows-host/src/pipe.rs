@@ -1,7 +1,6 @@
 #![allow(unsafe_code)]
 
 use std::{
-    ffi::c_void,
     fs::{File, OpenOptions},
     io,
     mem::{size_of, size_of_val},
@@ -18,14 +17,10 @@ use tokio::{
 use windows_sys::Win32::{
     Foundation::{
         ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_NOT_CONNECTED, HANDLE,
-        INVALID_HANDLE_VALUE, LUID, LocalFree,
+        INVALID_HANDLE_VALUE, LUID,
     },
     Security::{
-        Authorization::{
-            ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-            SDDL_REVISION_1,
-        },
-        GetTokenInformation, PSECURITY_DESCRIPTOR, RevertToSelf, SECURITY_ATTRIBUTES,
+        Authorization::ConvertSidToStringSidW, GetTokenInformation, SECURITY_ATTRIBUTES,
         SECURITY_MAX_SID_SIZE, TOKEN_QUERY, TOKEN_STATISTICS, TOKEN_USER, TokenSessionId,
         TokenStatistics, TokenUser,
     },
@@ -35,12 +30,15 @@ use windows_sys::Win32::{
     System::{
         Pipes::{
             CreateNamedPipeW, GetNamedPipeClientProcessId, GetNamedPipeClientSessionId,
-            GetNamedPipeServerProcessId, GetNamedPipeServerSessionId, ImpersonateNamedPipeClient,
-            PIPE_REJECT_REMOTE_CLIENTS,
+            GetNamedPipeServerProcessId, GetNamedPipeServerSessionId, PIPE_REJECT_REMOTE_CLIENTS,
         },
-        Threading::{GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken},
+        Threading::{GetCurrentProcess, OpenProcessToken},
     },
 };
+
+#[path = "pipe_primitives.rs"]
+mod primitives;
+use primitives::{LocalAllocation, check, descriptor, peer_token};
 
 const PIPE_BUFFER_BYTES: u32 = 8192;
 
@@ -57,24 +55,11 @@ impl Endpoint {
         // Explicit dev DACL. The managed duplex client uses generic write access,
         // which grants the same SID the ability to create additional instances.
         // Keep this endpoint inside the trusted same-user development boundary.
-        let sddl: Vec<u16> = format!("D:P(A;;GA;;;{})", identity.sid)
-            .encode_utf16()
-            .chain([0])
-            .collect();
-        let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
-        // SAFETY: SDDL is NUL-terminated and the out pointer remains valid for the call.
-        check(unsafe {
-            ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                sddl.as_ptr(),
-                SDDL_REVISION_1,
-                &mut descriptor,
-                null_mut(),
-            )
-        })?;
+        let descriptor = descriptor(&format!("D:P(A;;GA;;;{})", identity.sid))?;
         Ok(Self {
             path,
             instances,
-            descriptor: LocalAllocation(descriptor),
+            descriptor,
             identity: Arc::new(identity),
         })
     }
@@ -153,20 +138,7 @@ impl Endpoint {
     }
 
     fn security_attributes(&self) -> SECURITY_ATTRIBUTES {
-        SECURITY_ATTRIBUTES {
-            nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
-            lpSecurityDescriptor: self.descriptor.0,
-            bInheritHandle: 0,
-        }
-    }
-}
-
-struct LocalAllocation(*mut c_void);
-
-impl Drop for LocalAllocation {
-    fn drop(&mut self) {
-        // SAFETY: owned allocation returned by one of the SDDL conversion APIs.
-        unsafe { LocalFree(self.0) };
+        self.descriptor.security_attributes()
     }
 }
 
@@ -214,7 +186,7 @@ impl Identity {
         if session != self.session {
             return Err(denied());
         }
-        let peer = Self::read(&peer_token(pipe)?)?;
+        let peer = Self::read(&peer_token(pipe.as_raw_handle())?)?;
         if peer.sid != self.sid
             || peer.session != self.session
             || peer.authentication.LowPart != self.authentication.LowPart
@@ -296,40 +268,11 @@ fn process_token() -> io::Result<OwnedHandle> {
     }
 }
 
-fn peer_token(pipe: &NamedPipeServer) -> io::Result<OwnedHandle> {
-    let mut token: HANDLE = null_mut();
-    // SAFETY: the borrowed connected pipe has just supplied bytes. Only the
-    // synchronous thread-token query runs impersonated. Revert before returning,
-    // including on query failure, and terminate if reverting itself fails.
-    unsafe {
-        check(ImpersonateNamedPipeClient(pipe.as_raw_handle()))?;
-        let opened = check(OpenThreadToken(
-            GetCurrentThread(),
-            TOKEN_QUERY,
-            1,
-            &mut token,
-        ));
-        if RevertToSelf() == 0 {
-            std::process::abort();
-        }
-        opened?;
-        Ok(OwnedHandle::from_raw_handle(token))
-    }
-}
-
 fn denied() -> io::Error {
     io::Error::new(
         io::ErrorKind::PermissionDenied,
         "development client is outside the host logon",
     )
-}
-
-fn check(success: i32) -> io::Result<()> {
-    if success == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
 }
 
 pub fn stale_connection(error: &io::Error) -> bool {

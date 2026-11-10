@@ -1,6 +1,6 @@
 //! Installed v79 GetStatus only. Ports must own their resources and acknowledge retirement.
 
-use std::{future::Future, io, pin::Pin, time::Duration};
+use std::{future::Future, io, pin::Pin, rc::Rc, time::Duration};
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -13,6 +13,9 @@ use crate::{
     scm_host::startup_stopped,
     service_frame::{FRAME_TIMEOUT, invalid, read_payload, write_frame},
 };
+
+#[path = "readiness_windows.rs"]
+mod windows;
 
 #[path = "status_wire.rs"]
 mod status_wire;
@@ -28,6 +31,7 @@ type Pending<'a, T> = Pin<Box<dyn Future<Output = io::Result<T>> + 'a>>;
 trait Stream: AsyncRead + AsyncWrite + Unpin {
     fn server_pid(&self) -> io::Result<u32>;
     fn caller_after_read(&self) -> io::Result<Caller>;
+    fn control_session(&self) -> io::Result<Option<u32>>;
 }
 
 struct Listener {
@@ -52,7 +56,6 @@ impl Listener {
     }
 }
 
-#[allow(dead_code)] // Native token resolution is a separate prerequisite.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Logon {
     System,
@@ -109,16 +112,32 @@ pub(super) async fn prepare_installed_endpoint(
     shutdown: oneshot::Receiver<()>,
     failed: oneshot::Sender<()>,
 ) -> io::Result<(Readiness, impl Future<Output = io::Result<()>> + use<>)> {
-    // No installed provider currently proves both the managed endpoint
-    // security contract and the runtime status contract. Never substitute a
-    // fixture or create a pipe with default security.
-    prepare(launch.pid, shutdown, failed, installed_ports()).await
+    // The outer SCM path separately requires installed launch admission. Do
+    // not create even the first instance until the installed status source
+    // and its control-session authority have also been admitted.
+    prepare(launch.pid, shutdown, failed, installed_ports(launch)).await
 }
 
-fn installed_ports() -> io::Result<Ports> {
+struct AdmittedStatus {
+    source: Box<dyn StatusSource>,
+    control_session: Rc<dyn Fn() -> io::Result<Option<u32>>>,
+}
+
+fn installed_ports(launch: &LaunchIdentity) -> io::Result<Ports> {
+    let status = installed_status(launch)?;
+    Ok(Ports {
+        endpoint: Box::new(windows::NativeEndpoint::open(
+            launch,
+            status.control_session,
+        )?),
+        source: status.source,
+    })
+}
+
+fn installed_status(_: &LaunchIdentity) -> io::Result<AdmittedStatus> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
-        "secure installed endpoint and admitted status source are unavailable",
+        "admitted installed runtime status and session authority are unavailable",
     ))
 }
 
@@ -264,8 +283,7 @@ async fn serve(
         .map_err(|e| Client(e.into()))?
         .map_err(Client)?;
     // Windows impersonation uses the token from the last read on this handle.
-    let caller = stream.caller_after_read().map_err(Client)?;
-    let access = caller.access().map_err(Client)?;
+    let mut caller = stream.caller_after_read().map_err(Client)?;
     let request = GetStatus::decode(&payload).map_err(Client)?;
     if let Some((pid, expected)) = probe
         && (caller.pid != Some(pid)
@@ -277,6 +295,12 @@ async fn serve(
             "unverified installed self-probe caller or request",
         )));
     }
+    if caller.logon == Logon::Interactive {
+        // Failure of the admitted session authority is a runtime failure,
+        // not an inactive session or a bad client.
+        caller.control_session = stream.control_session().map_err(Runtime)?;
+    }
+    let access = caller.access().map_err(Client)?;
     let status = timeout(FRAME_TIMEOUT, source.snapshot(caller))
         .await
         .map_err(|e| Runtime(e.into()))?
