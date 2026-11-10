@@ -6,14 +6,14 @@
 use std::{
     sync::{
         Arc, Mutex, OnceLock,
-        atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::SeqCst},
         mpsc::{Receiver, SyncSender, sync_channel},
     },
     time::{Duration, Instant},
 };
 
 use openblade_domain::function_row::{
-    Backend, Device, Event, Lifecycle, Observation, Phase, Status, Stroke, WindowsHook,
+    Backend, Device, Event, Lifecycle, Observation, Phase, PrimaryMode, Status, Stroke, WindowsHook,
 };
 
 mod native;
@@ -40,10 +40,19 @@ pub enum HookError {
     StartupRefused,
     Cancelled,
     AlreadyOwned,
+    WakeEvent(u32),
     Install(u32),
-    MessageLoop(u32),
+    MessageLoop(MessageLoopError),
+    Unhook {
+        code: u32,
+        message_loop: Option<MessageLoopError>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MessageLoopError {
+    Native(u32),
     UnexpectedQuit,
-    Unhook(u32),
 }
 
 /// Sticky evidence from this run. A stopped thread alone cannot prove handoff.
@@ -63,45 +72,156 @@ pub enum ActionFailure {
     PossiblySubmitted,
 }
 
+/// Pack the Windows-only projection and its expiry into one atomic word.
+/// Relative microseconds retain a coherent deadline without a reader lock.
+struct AdmissionSnapshot {
+    origin: Instant,
+    word: AtomicU64,
+}
+
+const OBSERVATION_BITS: u32 = 8;
+const BACKEND_BIT: u64 = 1 << 2;
+const DRIVER_MODE_BIT: u64 = 1 << 3;
+const FN_SHIFT: u32 = 4;
+const PRIMARY_SHIFT: u32 = 6;
+const TWO_BITS: u64 = 0b11;
+
+impl Default for AdmissionSnapshot {
+    fn default() -> Self {
+        Self {
+            origin: Instant::now(),
+            word: AtomicU64::new(0),
+        }
+    }
+}
+
+impl AdmissionSnapshot {
+    fn ticks(&self, instant: Instant) -> u64 {
+        let ticks = instant.saturating_duration_since(self.origin).as_micros();
+        ticks.min(u128::from(u64::MAX >> OBSERVATION_BITS)) as u64
+    }
+
+    fn publish(&self, observation: Observation, valid_until: Instant) {
+        let device = match observation.exact_device {
+            Some(Device::Rz09_0581) => 1,
+            Some(Device::Rz09_0528) => 2,
+            _ => 0,
+        };
+        let backend = if observation.selected_backend == Some(Backend::WindowsHook) {
+            BACKEND_BIT
+        } else {
+            0
+        };
+        let driver_mode = if observation.status == (Status::FirmwareDriverMode { active: true }) {
+            DRIVER_MODE_BIT
+        } else {
+            0
+        };
+        let function = observation
+            .fn_pressed
+            .map_or(0, |pressed| 1 + u64::from(pressed));
+        let primary = match observation.primary_mode {
+            Some(PrimaryMode::FunctionKeys) => 1,
+            Some(PrimaryMode::MultimediaKeys) => 2,
+            None => 0,
+        };
+        let word = (self.ticks(valid_until) << OBSERVATION_BITS)
+            | device
+            | backend
+            | driver_mode
+            | (function << FN_SHIFT)
+            | (primary << PRIMARY_SHIFT);
+        self.word.store(word, SeqCst);
+    }
+
+    fn read(&self, now: Instant) -> Observation {
+        let word = self.word.load(SeqCst);
+        if self.ticks(now) >= word >> OBSERVATION_BITS {
+            return UNKNOWN;
+        }
+        Observation {
+            exact_device: match word & TWO_BITS {
+                1 => Some(Device::Rz09_0581),
+                2 => Some(Device::Rz09_0528),
+                _ => None,
+            },
+            selected_backend: (word & BACKEND_BIT != 0).then_some(Backend::WindowsHook),
+            status: if word & DRIVER_MODE_BIT != 0 {
+                Status::FirmwareDriverMode { active: true }
+            } else {
+                Status::Unknown
+            },
+            fn_pressed: match (word >> FN_SHIFT) & TWO_BITS {
+                1 => Some(false),
+                2 => Some(true),
+                _ => None,
+            },
+            primary_mode: match (word >> PRIMARY_SHIFT) & TWO_BITS {
+                1 => Some(PrimaryMode::FunctionKeys),
+                2 => Some(PrimaryMode::MultimediaKeys),
+                _ => None,
+            },
+            lifecycle: Lifecycle::Active,
+        }
+    }
+}
+
 #[derive(Default)]
 struct Shared {
-    admission: Mutex<Option<(Observation, Instant)>>,
+    admission: AdmissionSnapshot,
+    wake: Mutex<Option<Arc<native::Wake>>>,
     stop: AtomicBool,
     recovery: AtomicUsize,
     pending: AtomicUsize,
     retired: AtomicBool,
     owns_slot: AtomicBool,
+    handoff_ready: AtomicBool,
     slot: OnceLock<&'static AtomicBool>,
     consumer_ready: AtomicBool,
 }
 
 impl Shared {
-    fn observation(&self, now: Instant) -> Observation {
-        self.admission
-            .try_lock()
-            .ok()
-            .and_then(|snapshot| *snapshot)
-            .filter(|(_, valid_until)| now < *valid_until)
-            .map_or(UNKNOWN, |(observation, _)| observation)
+    fn notify(&self) {
+        // The callback may record a delivery failure. If another sender
+        // holds the lock, its wake covers this caller's sticky change too.
+        if let Ok(wake) = self.wake.try_lock()
+            && let Some(wake) = wake.as_ref()
+        {
+            wake.signal();
+        }
     }
 
     fn flag(&self, reason: Recovery) {
-        self.recovery.fetch_or(reason as usize, SeqCst);
+        if self.recovery.fetch_or(reason as usize, SeqCst) == 0 {
+            self.notify();
+        }
     }
 
-    fn clean(&self) -> bool {
-        self.retired.load(SeqCst)
-            && self.pending.load(SeqCst) == 0
-            && self.recovery.load(SeqCst) == 0
+    fn finish(&self) {
+        self.retired.store(true, SeqCst);
+        self.release_slot_if_safe();
     }
 
-    fn release_slot_if_clean(&self) {
-        if self.clean()
-            && self.owns_slot.swap(false, SeqCst)
-            && let Some(slot) = self.slot.get()
+    fn release_slot_if_safe(&self) {
+        const BLOCKERS: usize = Recovery::ReleaseLost as usize
+            | Recovery::OutputUncertain as usize
+            | Recovery::KeysHeld as usize
+            | Recovery::UnhookUnconfirmed as usize;
+        if !self.retired.load(SeqCst)
+            || self.pending.load(SeqCst) != 0
+            || self.recovery.load(SeqCst) & BLOCKERS != 0
         {
+            return;
+        }
+        if let Some(slot) = self.slot.get() {
+            if !self.owns_slot.swap(false, SeqCst) {
+                return;
+            }
             slot.store(false, SeqCst);
         }
+        // Publish after releasing the slot so a replacement can start as
+        // soon as it observes clean retirement.
+        self.handoff_ready.store(true, SeqCst);
     }
 }
 
@@ -121,27 +241,30 @@ impl HookControl {
     /// Replace all callback inputs together. The host controls expiry and may
     /// invalidate the snapshot immediately on status, session or ownership loss.
     pub fn publish(&self, observation: Observation, valid_until: Instant) {
-        if let Ok(mut current) = self.0.admission.lock() {
-            *current = Some((observation, valid_until));
+        if observation.lifecycle == Lifecycle::Stopping {
+            self.stop();
         }
+        self.0.admission.publish(observation, valid_until);
     }
 
     pub fn invalidate(&self) {
-        if let Ok(mut current) = self.0.admission.lock() {
-            *current = None;
-        }
+        self.0.admission.word.store(0, SeqCst);
     }
 
     pub fn stop(&self) {
-        self.0.stop.store(true, SeqCst);
+        if !self.0.stop.swap(true, SeqCst) {
+            self.0.notify();
+        }
     }
 
     pub fn needs_recovery(&self, reason: Recovery) -> bool {
         self.0.recovery.load(SeqCst) & reason as usize != 0
     }
 
+    /// This run has no remaining native or output ownership. A refused start
+    /// gives no information about the independent owner that caused refusal.
     pub fn retired_cleanly(&self) -> bool {
-        self.0.clean()
+        self.0.handoff_ready.load(SeqCst)
     }
 }
 
@@ -168,7 +291,7 @@ impl Drop for Delivery {
             self.shared.flag(Recovery::OutputUncertain);
         }
         self.shared.pending.fetch_sub(1, SeqCst);
-        self.shared.release_slot_if_clean();
+        self.shared.release_slot_if_safe();
     }
 }
 
@@ -178,6 +301,7 @@ pub struct HookActions(Receiver<Delivery>, Arc<Shared>);
 impl Drop for HookActions {
     fn drop(&mut self) {
         self.1.consumer_ready.store(false, SeqCst);
+        self.1.notify();
     }
 }
 
@@ -239,7 +363,7 @@ impl FunctionRowHook {
     }
 
     pub fn run(self, admission: StartupAdmission) -> Result<(), HookError> {
-        self.run_with(admission, &mut native::WindowsMessages, &OWNED)
+        self.run_with(admission, &mut native::WindowsMessages::default(), &OWNED)
     }
 
     fn run_with<M: Messages>(
@@ -248,7 +372,19 @@ impl FunctionRowHook {
         messages: &mut M,
         ownership: &'static AtomicBool,
     ) -> Result<(), HookError> {
-        let startup = self.shared.observation(messages.now());
+        let shared = Arc::clone(&self.shared);
+        let result = self.run_registered(admission, messages, ownership);
+        shared.finish();
+        result
+    }
+
+    fn run_registered<M: Messages>(
+        self,
+        admission: StartupAdmission,
+        messages: &mut M,
+        ownership: &'static AtomicBool,
+    ) -> Result<(), HookError> {
+        let startup = self.shared.admission.read(messages.now());
         let Some(device @ (Device::Rz09_0581 | Device::Rz09_0528)) = startup.exact_device else {
             return Err(HookError::StartupRefused);
         };
@@ -258,7 +394,6 @@ impl FunctionRowHook {
             || !admission.driver_can_transfer
             || !admission.previous_windows_hook_retired
             || startup.selected_backend != Some(Backend::WindowsHook)
-            || startup.lifecycle != Lifecycle::Active
         {
             return Err(HookError::StartupRefused);
         }
@@ -275,17 +410,10 @@ impl FunctionRowHook {
             hook: self,
             device,
             policy: WindowsHook::default(),
+            released_keys: 0,
             draining: false,
         };
-        let handle = match messages.install() {
-            Ok(handle) => handle,
-            Err(code) => {
-                shared.retired.store(true, SeqCst);
-                shared.release_slot_if_clean();
-                return Err(HookError::Install(code));
-            }
-        };
-
+        let handle = messages.install(&shared)?;
         let mut drain_deadline = None;
         let result = loop {
             let now = messages.now();
@@ -296,33 +424,32 @@ impl FunctionRowHook {
             {
                 callback.draining = true;
                 let deadline = *drain_deadline.get_or_insert(now + DRAIN_LIMIT);
-                if !callback.policy.has_active_keys() || now >= deadline {
+                if !callback.policy.has_suppressed_keys() || now >= deadline {
                     break Ok(());
                 }
             }
-            match messages.pump(&mut callback) {
+            let wait = drain_deadline.map(|deadline| deadline.saturating_duration_since(now));
+            match messages.pump(&mut callback, wait) {
                 Ok(true) => {}
-                Ok(false) => break Err(HookError::UnexpectedQuit),
-                Err(code) => break Err(HookError::MessageLoop(code)),
+                Ok(false) => break Err(MessageLoopError::UnexpectedQuit),
+                Err(code) => break Err(MessageLoopError::Native(code)),
             }
         };
         if result.is_err() {
             shared.flag(Recovery::MessageLoopFailed);
         }
-        if callback.policy.has_active_keys() {
-            shared.flag(Recovery::KeysHeld);
-        }
         if callback.policy.has_suppressed_keys() {
+            shared.flag(Recovery::KeysHeld);
             shared.flag(Recovery::ReleaseLost);
         }
-        let unhook = messages.uninstall(handle).map_err(HookError::Unhook);
-        if unhook.is_err() {
+        if let Err(code) = messages.uninstall(handle, &shared) {
             shared.flag(Recovery::UnhookUnconfirmed);
+            return Err(HookError::Unhook {
+                code,
+                message_loop: result.err(),
+            });
         }
-        drop(callback);
-        shared.retired.store(true, SeqCst);
-        shared.release_slot_if_clean();
-        unhook.and(result)
+        result.map_err(HookError::MessageLoop)
     }
 }
 
@@ -330,24 +457,24 @@ trait Messages {
     type Handle;
 
     fn now(&self) -> Instant;
-    fn install(&mut self) -> Result<Self::Handle, u32>;
-    fn pump(&mut self, callback: &mut Callback) -> Result<bool, u32>;
-    fn uninstall(&mut self, handle: Self::Handle) -> Result<(), u32>;
+    fn install(&mut self, shared: &Arc<Shared>) -> Result<Self::Handle, HookError>;
+    fn pump(&mut self, callback: &mut Callback, wait: Option<Duration>) -> Result<bool, u32>;
+    fn uninstall(&mut self, handle: Self::Handle, shared: &Shared) -> Result<(), u32>;
 }
 
 struct Callback {
     hook: FunctionRowHook,
     device: Device,
     policy: WindowsHook,
+    released_keys: u16,
     draining: bool,
 }
 
 impl Callback {
     fn route(&mut self, stroke: Stroke, was_down: bool, now: Instant) -> bool {
         let shared = &self.hook.shared;
-        let mut observation = shared.observation(now);
-        self.draining |= observation.lifecycle == Lifecycle::Stopping
-            || shared.stop.load(SeqCst)
+        let mut observation = shared.admission.read(now);
+        self.draining |= shared.stop.load(SeqCst)
             || !shared.consumer_ready.load(SeqCst)
             || shared.recovery.load(SeqCst) != 0;
         if observation.exact_device != Some(self.device) {

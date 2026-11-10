@@ -60,6 +60,8 @@ try {
     $cases += @(
         @{ Path = $windowsManifest; Before = "target.'cfg(windows)'.dependencies"; After = 'dependencies'; Error = 'Unreviewed dependency kind*' },
         @{ Path = $windowsManifest; Before = 'Win32_Graphics_Gdi'; After = 'Win32_Graphics_Gdi", "Win32_System_Registry'; Error = 'Conditional, optional or renamed dependencies*' },
+        @{ Path = $windowsManifest; Before = 'openblade-domain.workspace = true'; After = ''; Error = 'The Windows adapter requires its reviewed Windows-only domain policy dependency*' },
+        @{ Path = $windowsManifest; Before = 'Win32_System_Threading'; After = 'Win32_System_Registry'; Error = 'Conditional, optional or renamed dependencies*' },
         @{ Path = $windowsManifest; Before = 'unsafe_code = "deny"'; After = 'unsafe_code = "allow"'; Error = 'Required lints.rust policy*' }
     )
 

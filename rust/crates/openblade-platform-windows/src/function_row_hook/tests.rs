@@ -45,18 +45,19 @@ impl<F: FnMut(&mut Callback, Instant) -> Result<bool, u32>> Messages for Fake<F>
         self.now
     }
 
-    fn install(&mut self) -> Result<u32, u32> {
+    fn install(&mut self, _: &Arc<Shared>) -> Result<u32, HookError> {
         self.calls.push("install");
-        self.install_error.map_or(Ok(42), Err)
+        self.install_error
+            .map_or(Ok(42), |code| Err(HookError::Install(code)))
     }
 
-    fn pump(&mut self, callback: &mut Callback) -> Result<bool, u32> {
+    fn pump(&mut self, callback: &mut Callback, _: Option<Duration>) -> Result<bool, u32> {
         self.calls.push("pump");
         self.now += Duration::from_millis(50);
         (self.on_pump)(callback, self.now)
     }
 
-    fn uninstall(&mut self, handle: u32) -> Result<(), u32> {
+    fn uninstall(&mut self, handle: u32, _: &Shared) -> Result<(), u32> {
         self.calls.push("uninstall");
         assert_eq!(handle, 42);
         self.uninstall_error.map_or(Ok(()), Err)
@@ -113,6 +114,7 @@ fn startup_refuses_unproved_ownership_non_windows_stale_and_cancelled() {
             Err(HookError::StartupRefused)
         );
         assert!(messages.calls.is_empty());
+        assert!(control.retired_cleanly());
     }
 
     let mut messages = Fake::new(no_pump);
@@ -186,6 +188,8 @@ fn a_held_key_keeps_pairing_when_admission_expires_and_on_stop() {
         second.run_with(ADMITTED, &mut other, &SLOT),
         Err(HookError::AlreadyOwned)
     );
+    assert!(control2.retired_cleanly());
+    assert!(SLOT.load(SeqCst));
     expect_actions(
         actions,
         &[
@@ -287,7 +291,10 @@ fn drain_deadline_and_failed_unhook_prevent_handoff() {
     messages.uninstall_error = Some(5);
     assert_eq!(
         hook.run_with(ADMITTED, &mut messages, &SLOT),
-        Err(HookError::Unhook(5))
+        Err(HookError::Unhook {
+            code: 5,
+            message_loop: None
+        })
     );
     assert_eq!(
         messages
@@ -323,12 +330,99 @@ fn install_failure_retires_without_unhook_and_pump_failure_still_unhooks() {
 
     let (hook, control, _actions) = FunctionRowHook::new();
     let mut messages = Fake::new(|_: &mut Callback, _| Err(8));
+    messages.uninstall_error = Some(9);
     control.publish(ACTIVE, messages.now + Duration::from_secs(1));
     assert_eq!(
         hook.run_with(ADMITTED, &mut messages, &SLOT),
-        Err(HookError::MessageLoop(8))
+        Err(HookError::Unhook {
+            code: 9,
+            message_loop: Some(MessageLoopError::Native(8))
+        })
     );
     assert_eq!(messages.calls, ["install", "pump", "uninstall"]);
     assert!(control.needs_recovery(Recovery::MessageLoopFailed));
     assert!(!control.retired_cleanly());
+}
+
+#[test]
+fn stopping_snapshot_retires_without_another_edge_or_waiting_for_passed_keys() {
+    static SLOT: AtomicBool = AtomicBool::new(false);
+    let (hook, control, actions) = FunctionRowHook::new();
+    let mut once = true;
+    let mut messages = Fake::new(|callback: &mut Callback, now| {
+        assert!(std::mem::take(&mut once), "unexpected second pump");
+        assert!(!callback.route(key(0x3e, true), true, now));
+        control.publish(
+            Observation {
+                lifecycle: Lifecycle::Stopping,
+                ..ACTIVE
+            },
+            now,
+        );
+        Ok(true)
+    });
+    control.publish(ACTIVE, messages.now + Duration::from_secs(1));
+    assert_eq!(hook.run_with(ADMITTED, &mut messages, &SLOT), Ok(()));
+    assert_eq!(messages.calls, ["install", "pump", "uninstall"]);
+    expect_actions(actions, &[]);
+    assert!(control.retired_cleanly());
+    assert!(!control.needs_recovery(Recovery::KeysHeld));
+    assert!(!SLOT.load(SeqCst));
+}
+
+#[test]
+fn definite_delivery_loss_can_retire_when_no_release_or_output_is_uncertain() {
+    static SLOT: AtomicBool = AtomicBool::new(false);
+    let (hook, control, actions) = FunctionRowHook::new();
+    let mut messages = Fake::new(|callback: &mut Callback, _| {
+        callback.hook.shared.flag(Recovery::DeliveryLost);
+        Ok(true)
+    });
+    control.publish(ACTIVE, messages.now + Duration::from_secs(1));
+    assert_eq!(hook.run_with(ADMITTED, &mut messages, &SLOT), Ok(()));
+    expect_actions(actions, &[]);
+    assert!(control.needs_recovery(Recovery::DeliveryLost));
+    assert!(control.retired_cleanly());
+    assert!(!SLOT.load(SeqCst));
+}
+
+#[test]
+fn atomic_admission_retains_exact_layer_and_expiry_together() {
+    let snapshot = AdmissionSnapshot::default();
+    let before = snapshot.origin + Duration::from_micros(1);
+    let expiry = before + Duration::from_micros(1);
+    for exact_device in [Some(Device::Rz09_0581), Some(Device::Rz09_0528)] {
+        for fn_pressed in [None, Some(false), Some(true)] {
+            for primary_mode in [
+                None,
+                Some(PrimaryMode::FunctionKeys),
+                Some(PrimaryMode::MultimediaKeys),
+            ] {
+                let observation = Observation {
+                    exact_device,
+                    fn_pressed,
+                    primary_mode,
+                    ..ACTIVE
+                };
+                snapshot.publish(observation, expiry);
+                assert_eq!(snapshot.read(before), observation);
+                assert_eq!(snapshot.read(expiry), UNKNOWN);
+            }
+        }
+    }
+    snapshot.publish(
+        Observation {
+            exact_device: Some(Device::Rz09_0484),
+            selected_backend: Some(Backend::RazerDriver),
+            status: Status::HostManagedFn {
+                stroke_admitted: true,
+            },
+            ..ACTIVE
+        },
+        expiry,
+    );
+    let observation = snapshot.read(before);
+    assert_eq!(observation.exact_device, None);
+    assert_eq!(observation.selected_backend, None);
+    assert_eq!(observation.status, Status::Unknown);
 }

@@ -44,6 +44,14 @@ topology, identity and the distinct desktop and physical refresh rates from
 the current Windows desktop. It uses the locked `windows-sys` SDK bindings
 and has no production caller. Its tests script native responses.
 
+The same crate contains the current-user WindowsHook function-row adapter for
+RZ09-0581 and RZ09-0528. It accepts canonical F1–F12 callback packets, uses a
+single expiring host observation, and queues typed actions for a worker. The
+first down for each key passes through until the hook observes that key's up.
+The hook has desktop scope, so its packet cannot identify the originating
+keyboard. Tests use inert packets and a scripted message loop. Agent wiring,
+independent hook health evidence, and live Windows validation remain separate.
+
 The standalone `openblade-domain::function_row` module consumes a single typed
 observation per edge. It keeps Windows hook pairing and recovery separate from
 Razer driver forwarding and retirement. RZ09-0484 driver strokes require fresh

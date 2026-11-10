@@ -55,6 +55,11 @@ try {
         'mio', 'pin-project-lite', 'signal-hook-registry', 'socket2', 'tokio',
         'tokio-macros', 'wasi', 'windows-link', 'windows-sys'
     )
+    $expectedWindowsSdkFeatures = @(
+        'Win32_Devices_Display', 'Win32_Foundation', 'Win32_Graphics_Gdi', 'Win32_Security',
+        'Win32_System_LibraryLoader', 'Win32_System_Threading',
+        'Win32_UI_Input_KeyboardAndMouse', 'Win32_UI_WindowsAndMessaging'
+    ) -join ','
     $fixtureReaderPackages = @('openblade-protocol', 'openblade-domain')
     $expectedTests = @{
         'openblade-protocol' = @('report_parity', 'report_properties')
@@ -132,6 +137,7 @@ try {
         $dev = @()
         $cli = @()
         $windowsSdkCount = 0
+        $windowsPolicyCount = 0
         foreach ($dependency in $package.dependencies) {
             if ($isWindowsPlatform -and $dependency.name -ceq 'windows-sys' -and
                 $dependency.target -ceq 'cfg(windows)' -and $null -eq $dependency.kind -and
@@ -139,8 +145,17 @@ try {
                 $null -eq $dependency.PSObject.Properties['path'] -and
                 $dependency.source -ceq 'registry+https://github.com/rust-lang/crates.io-index' -and
                 $dependency.req -ceq '=0.61.2' -and -not $dependency.uses_default_features -and
-                (@($dependency.features | Sort-Object) -join ',') -ceq 'Win32_Devices_Display,Win32_Foundation,Win32_Graphics_Gdi') {
+                (@($dependency.features | Sort-Object) -join ',') -ceq $expectedWindowsSdkFeatures) {
                 $windowsSdkCount++
+                continue
+            }
+            if ($isWindowsPlatform -and $dependency.name -ceq 'openblade-domain' -and
+                $dependency.target -ceq 'cfg(windows)' -and $null -eq $dependency.kind -and
+                $null -eq $dependency.rename -and -not $dependency.optional -and
+                $null -ne $dependency.PSObject.Properties['path'] -and $null -eq $dependency.source -and
+                $dependency.req -ceq '*' -and $dependency.uses_default_features -and
+                @($dependency.features).Count -eq 0) {
+                $windowsPolicyCount++
                 continue
             }
             if ($dependency.optional -or $null -ne $dependency.target -or $null -ne $dependency.rename) {
@@ -179,6 +194,9 @@ try {
         }
         if ($isWindowsPlatform -and $windowsSdkCount -ne 1) {
             throw 'The Windows adapter requires its reviewed Windows SDK dependency.'
+        }
+        if ($isWindowsPlatform -and $windowsPolicyCount -ne 1) {
+            throw 'The Windows adapter requires its reviewed Windows-only domain policy dependency.'
         }
         $expected = @($expectedDependencies[$package.name] | Sort-Object) -join ','
         if ((@($normal | Sort-Object) -join ',') -cne $expected) {

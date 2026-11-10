@@ -1,15 +1,24 @@
 //! Win32 hook ABI, thread-local callback lease and message pump.
 #![allow(unsafe_code)]
 
-use std::{cell::Cell, ptr};
+use std::{
+    cell::Cell,
+    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    ptr,
+    sync::{Arc, PoisonError},
+    time::Duration,
+};
 use windows_sys::Win32::{
     Foundation::{GetLastError, LPARAM, LRESULT, WAIT_FAILED, WPARAM},
-    System::LibraryLoader::{
-        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-        GetModuleHandleExW,
+    System::{
+        LibraryLoader::{
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            GetModuleHandleExW,
+        },
+        Threading::{CreateEventW, SetEvent},
     },
     UI::{
-        Input::KeyboardAndMouse::{GetAsyncKeyState, VK_F1},
+        Input::KeyboardAndMouse::VK_F1,
         WindowsAndMessaging::{
             CallNextHookEx, DispatchMessageW, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED,
             LLKHF_INJECTED, LLKHF_LOWER_IL_INJECTED, MSG, MWMO_INPUTAVAILABLE,
@@ -20,7 +29,7 @@ use windows_sys::Win32::{
     },
 };
 
-use super::{Callback, Instant, Messages, Stroke};
+use super::{Callback, HookError, Instant, Messages, Shared, Stroke};
 
 const ROW_SCANS: [u32; 12] = [
     0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x57, 0x58,
@@ -34,15 +43,37 @@ fn edge(message: WPARAM) -> Option<bool> {
     }
 }
 
-fn decode(down: bool, packet: &KBDLLHOOKSTRUCT) -> Option<Stroke> {
+struct RowStroke {
+    bit: u16,
+    stroke: Stroke,
+}
+
+impl RowStroke {
+    fn dispatch(self, callback: &mut Callback, now: Instant) -> bool {
+        // A suppressed down does not update Windows async key state. Until
+        // this hook observes an up, a down may belong to a pre-existing press.
+        let was_down = callback.released_keys & self.bit == 0;
+        if self.stroke.down {
+            callback.released_keys &= !self.bit;
+        } else {
+            callback.released_keys |= self.bit;
+        }
+        callback.route(self.stroke, was_down, now)
+    }
+}
+
+fn decode(down: bool, packet: &KBDLLHOOKSTRUCT) -> Option<RowStroke> {
     if packet.flags & (LLKHF_INJECTED | LLKHF_LOWER_IL_INJECTED | LLKHF_EXTENDED) != 0 {
         return None;
     }
     let index = packet.vkCode.checked_sub(u32::from(VK_F1))? as usize;
     let &scan = ROW_SCANS.get(index)?;
-    (packet.scanCode == scan).then_some(Stroke {
-        scan_code: scan as u16,
-        down,
+    (packet.scanCode == scan).then_some(RowStroke {
+        bit: 1 << index,
+        stroke: Stroke {
+            scan_code: scan as u16,
+            down,
+        },
     })
 }
 
@@ -74,15 +105,10 @@ unsafe extern "system" fn callback(code: i32, message: WPARAM, data: LPARAM) -> 
                 let _restore = Restore(active, state);
                 // SAFETY: At HC_ACTION Windows supplies a live KBDLLHOOKSTRUCT.
                 let packet = unsafe { &*(data as *const KBDLLHOOKSTRUCT) };
-                route_packet(down, packet, |stroke, key| {
-                    // The callback precedes the update for this edge. As in the
-                    // managed hook, consult the high bit only as a prior-held hint.
-                    // The current transition is supplied exclusively by wParam.
-                    // SAFETY: key is one of VK_F1 through VK_F12.
-                    let was_down = stroke.down && unsafe { GetAsyncKeyState(key as i32) } < 0;
+                route_packet(down, packet, |edge| {
                     // SAFETY: pump lends this state to the current thread, and
                     // ACTIVE is cleared until this mutable borrow ends.
-                    unsafe { &mut *state }.route(stroke, was_down, Instant::now())
+                    edge.dispatch(unsafe { &mut *state }, Instant::now())
                 })
             })
         },
@@ -115,12 +141,43 @@ fn hook_result(
 fn route_packet(
     down: bool,
     packet: &KBDLLHOOKSTRUCT,
-    route: impl FnOnce(Stroke, u32) -> bool,
+    route: impl FnOnce(RowStroke) -> bool,
 ) -> bool {
-    decode(down, packet).is_some_and(|stroke| route(stroke, packet.vkCode))
+    decode(down, packet).is_some_and(route)
 }
 
-pub(super) struct WindowsMessages;
+pub(super) struct Wake(OwnedHandle);
+
+impl Wake {
+    fn create() -> Result<Self, HookError> {
+        // SAFETY: Null creates an unnamed event with default security. The
+        // owning wrapper closes the successful handle exactly once.
+        let raw = unsafe { CreateEventW(ptr::null(), 0, 0, ptr::null()) };
+        if raw.is_null() {
+            // SAFETY: This is the error from the failed event creation.
+            return Err(HookError::WakeEvent(unsafe { GetLastError() }));
+        }
+        // SAFETY: This non-null event handle is newly created and uniquely owned.
+        Ok(Self(unsafe { OwnedHandle::from_raw_handle(raw) }))
+    }
+
+    pub(super) fn signal(&self) {
+        // SAFETY: The event stays alive for the call. A timed watchdog in
+        // the message wait handles an unexpected failure to signal.
+        unsafe { SetEvent(self.0.as_raw_handle()) };
+    }
+}
+
+#[derive(Default)]
+pub(super) struct WindowsMessages {
+    wake: Option<Arc<Wake>>,
+}
+
+fn wait_ms(drain: Option<Duration>) -> u32 {
+    // Cancellation and worker failure normally wake the auto-reset event.
+    // The watchdog bounds shutdown even if Windows fails to signal it.
+    drain.map_or(1_000, |remaining| remaining.as_millis() as u32 + 1)
+}
 
 impl Messages for WindowsMessages {
     type Handle = HHOOK;
@@ -129,7 +186,8 @@ impl Messages for WindowsMessages {
         Instant::now()
     }
 
-    fn install(&mut self) -> Result<HHOOK, u32> {
+    fn install(&mut self, shared: &Arc<Shared>) -> Result<HHOOK, HookError> {
+        let wake = Arc::new(Wake::create()?);
         let mut module = ptr::null_mut();
         // SAFETY: FROM_ADDRESS treats the pointer as a code address, and the
         // out-pointer is writable. The module stays loaded while this code runs.
@@ -143,26 +201,39 @@ impl Messages for WindowsMessages {
         };
         if found == 0 {
             // SAFETY: Read the failed operation's error from this thread.
-            return Err(unsafe { GetLastError() });
+            return Err(HookError::Install(unsafe { GetLastError() }));
         }
         // SAFETY: The callback matches HOOKPROC. WH_KEYBOARD_LL with thread
         // zero is serviced on this thread and does not inject a DLL.
         let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(callback), module, 0) };
         if hook.is_null() {
             // SAFETY: Read the failed operation's error from this thread.
-            Err(unsafe { GetLastError() })
-        } else {
-            Ok(hook)
+            return Err(HookError::Install(unsafe { GetLastError() }));
         }
+        *shared.wake.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&wake));
+        self.wake = Some(wake);
+        Ok(hook)
     }
 
-    fn pump(&mut self, callback: &mut Callback) -> Result<bool, u32> {
+    fn pump(&mut self, callback: &mut Callback, drain: Option<Duration>) -> Result<bool, u32> {
+        let event = self
+            .wake
+            .as_ref()
+            .expect("successful install owns the event")
+            .0
+            .as_raw_handle();
         ACTIVE.with(|active| {
             let _restore = Restore(active, active.replace(ptr::from_mut(callback)));
-            // SAFETY: No kernel handles are supplied. Waiting at most 10 ms
-            // lets this thread check cancellation without posting to a stale ID.
+            // SAFETY: The borrowed event handle remains valid throughout the
+            // wait. This thread keeps servicing sent hook messages.
             let wait = unsafe {
-                MsgWaitForMultipleObjectsEx(0, ptr::null(), 10, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
+                MsgWaitForMultipleObjectsEx(
+                    1,
+                    &event,
+                    wait_ms(drain),
+                    QS_ALLINPUT,
+                    MWMO_INPUTAVAILABLE,
+                )
             };
             if wait == WAIT_FAILED {
                 // SAFETY: Read the failed wait's error from this thread.
@@ -185,15 +256,22 @@ impl Messages for WindowsMessages {
         })
     }
 
-    fn uninstall(&mut self, hook: HHOOK) -> Result<(), u32> {
+    fn uninstall(&mut self, hook: HHOOK, shared: &Shared) -> Result<(), u32> {
         // SAFETY: This is the single handle installed by this run. The pump's
         // loan has ended, so any late callback passes through.
-        if unsafe { UnhookWindowsHookEx(hook) } == 0 {
+        let result = if unsafe { UnhookWindowsHookEx(hook) } == 0 {
             // SAFETY: Read the failed operation's error from this thread.
             Err(unsafe { GetLastError() })
         } else {
             Ok(())
-        }
+        };
+        shared
+            .wake
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        self.wake.take();
+        result
     }
 }
 
@@ -218,9 +296,9 @@ mod tests {
                 assert!(route_packet(
                     edge(message as WPARAM).unwrap(),
                     &packet,
-                    |stroke, _| {
+                    |edge| {
                         assert_eq!(
-                            stroke,
+                            edge.stroke,
                             Stroke {
                                 scan_code: scan as u16,
                                 down
@@ -232,18 +310,82 @@ mod tests {
             }
             for flags in [LLKHF_INJECTED, LLKHF_LOWER_IL_INJECTED, LLKHF_EXTENDED] {
                 packet.flags = flags;
-                assert!(!route_packet(true, &packet, |_, _| panic!(
-                    "ineligible flags"
-                )));
+                assert!(!route_packet(true, &packet, |_| panic!("ineligible flags")));
             }
             packet.flags = 0;
             packet.vkCode = 0x41;
-            assert!(!route_packet(true, &packet, |_, _| panic!("unrelated VK")));
+            assert!(!route_packet(true, &packet, |_| panic!("unrelated VK")));
             packet.vkCode = u32::from(VK_F1) + index as u32;
             packet.scanCode += 1;
-            assert!(!route_packet(true, &packet, |_, _| panic!("wrong scan")));
+            assert!(!route_packet(true, &packet, |_| panic!("wrong scan")));
         }
         assert_eq!(edge(WM_QUIT as WPARAM), None);
+    }
+
+    #[test]
+    fn native_repeats_pair_without_reading_windows_key_state() {
+        use crate::function_row_hook::{
+            Backend, Device, FunctionRowHook, Lifecycle, Observation, Status, WindowsHook,
+        };
+        use openblade_domain::function_row::{Action, Phase, PrimaryMode};
+        use std::time::Duration;
+
+        let (hook, control, mut actions) = FunctionRowHook::new();
+        let now = Instant::now();
+        control.publish(
+            Observation {
+                exact_device: Some(Device::Rz09_0581),
+                selected_backend: Some(Backend::WindowsHook),
+                status: Status::FirmwareDriverMode { active: true },
+                fn_pressed: Some(false),
+                primary_mode: Some(PrimaryMode::MultimediaKeys),
+                lifecycle: Lifecycle::Active,
+            },
+            now + Duration::from_secs(1),
+        );
+        let mut callback = Callback {
+            hook,
+            device: Device::Rz09_0581,
+            policy: WindowsHook::default(),
+            released_keys: 0,
+            draining: false,
+        };
+
+        for index in [1, 3] {
+            let packet = KBDLLHOOKSTRUCT {
+                vkCode: u32::from(VK_F1) + index as u32,
+                scanCode: ROW_SCANS[index],
+                ..KBDLLHOOKSTRUCT::default()
+            };
+            let mut dispatch =
+                |down| route_packet(down, &packet, |edge| edge.dispatch(&mut callback, now));
+            // A press already underway at install passes until its up.
+            assert!(!dispatch(true));
+            assert!(!dispatch(true));
+            assert!(!dispatch(false));
+            // An observed up admits the next press. A suppressed repeat stays
+            // latched instead of looking like a stale release and fresh down.
+            assert!(dispatch(true));
+            assert!(dispatch(true));
+            assert!(dispatch(false));
+        }
+        drop(callback);
+
+        let mut seen = Vec::new();
+        while actions.dispatch_next(|event| {
+            seen.push((event.action, event.phase));
+            Ok(())
+        }) {}
+        assert_eq!(
+            seen,
+            [
+                (Action::VolumeDown, Phase::Down),
+                (Action::VolumeDown, Phase::Repeat),
+                (Action::VolumeDown, Phase::Up),
+                (Action::Project, Phase::Down),
+                (Action::Project, Phase::Up),
+            ]
+        );
     }
 
     #[test]
@@ -297,5 +439,6 @@ mod tests {
         std::hint::black_box(WindowsMessages::install);
         std::hint::black_box(WindowsMessages::pump);
         std::hint::black_box(WindowsMessages::uninstall);
+        std::hint::black_box(Wake::signal);
     }
 }
