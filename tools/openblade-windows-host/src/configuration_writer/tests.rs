@@ -415,6 +415,7 @@ fn stale_stage_is_preserved_and_known_artifacts_are_cleaned() {
         transaction_id().unwrap(),
         [None; 3],
         bytes(&fixture.prior),
+        [None; 3],
     );
     let stage = transaction.targets[1].stage.clone();
     fs::write(store.path(&stage), b"external stage").unwrap();

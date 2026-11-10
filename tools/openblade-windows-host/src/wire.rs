@@ -35,6 +35,8 @@ pub enum Session {
 
 pub struct Status {
     active: Projection,
+    #[cfg(windows)]
+    application: Option<Arc<crate::application_runtime::Scenario>>,
     replay: Option<watch::Receiver<Arc<Value>>>,
     battery: Option<Arc<Scenario>>,
     performance: Option<Arc<performance_runtime::Scenario>>,
@@ -96,6 +98,8 @@ impl Status {
 
         Ok(Self {
             active: Projection::new(current, legacy)?,
+            #[cfg(windows)]
+            application: None,
             replay: None,
             battery: None,
             performance: None,
@@ -104,6 +108,19 @@ impl Status {
             #[cfg(windows)]
             composed_thermal: false,
         })
+    }
+
+    #[cfg(windows)]
+    pub fn with_application_context(
+        mut self,
+        advance: tokio::sync::mpsc::Receiver<()>,
+    ) -> (Self, impl Future<Output = io::Result<()>>) {
+        let scenario = Arc::new(crate::application_runtime::Scenario::new(
+            self.active.current.clone(),
+        ));
+        self.replay = Some(scenario.subscribe());
+        self.application = Some(Arc::clone(&scenario));
+        (self, async move { scenario.drive(advance).await })
     }
 
     pub fn with_battery(
@@ -120,25 +137,77 @@ impl Status {
         advance: tokio::sync::mpsc::Receiver<()>,
         profiles: Value,
         writer: Option<openblade_windows_host::configuration_writer::fixture::BatteryProfileStore>,
-        composed_thermal: bool,
+        replay: crate::battery_runtime::ProfileReplay,
+        shutdown: tokio::sync::oneshot::Receiver<()>,
+        release: Option<tokio::sync::oneshot::Receiver<()>>,
     ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
+        use crate::battery_runtime::ProfileReplay;
+
+        if matches!(replay, ProfileReplay::Integrated { .. }) != release.is_some() {
+            return Err(io::Error::other(
+                "Unexpected integrated port acknowledgement channel.",
+            ));
+        }
         let scenario = Arc::new(Scenario::composed(
             self.active.current.clone(),
             profiles,
             writer,
-            composed_thermal,
+            replay,
         )?);
-        self.composed_thermal = composed_thermal;
+        self.composed_thermal = matches!(
+            replay,
+            ProfileReplay::Thermal | ProfileReplay::Integrated { .. }
+        );
         self.replay = Some(scenario.subscribe());
-        self.battery = Some(Arc::clone(&scenario));
+        // The power script is the only mutation entry point in this mode.
+        if !matches!(replay, ProfileReplay::Power { .. }) {
+            self.battery = Some(Arc::clone(&scenario));
+        }
         let drive = async move {
-            if composed_thermal {
-                scenario.drive_thermal(advance).await
-            } else {
-                scenario.drive(advance).await
+            if let Some(release) = release {
+                return scenario.drive_integrated(advance, shutdown, release).await;
+            }
+            let replay = async {
+                match replay {
+                    ProfileReplay::Battery => scenario.drive(advance).await,
+                    ProfileReplay::Thermal => scenario.drive_thermal(advance).await,
+                    ProfileReplay::FullCharge => scenario.drive_full_charge(advance).await,
+                    ProfileReplay::LightingOff { owned, uncertain } => {
+                        scenario.drive_lighting(advance, owned, uncertain).await
+                    }
+                    ProfileReplay::Power { lose_response } => {
+                        scenario.drive_power_profile(advance, lose_response).await
+                    }
+                    ProfileReplay::Integrated { .. } => unreachable!(),
+                }
+            };
+            tokio::select! {
+                biased;
+                _ = shutdown => Ok(()),
+                result = replay => result,
             }
         };
         Ok((self, drive))
+    }
+
+    #[cfg(windows)]
+    pub async fn take_profile_writer(
+        &self,
+    ) -> Option<openblade_windows_host::configuration_writer::fixture::BatteryProfileStore> {
+        match &self.battery {
+            Some(scenario) => scenario.take_profile_writer().await,
+            None => None,
+        }
+    }
+
+    #[cfg(all(windows, test))]
+    pub fn set_profile_save_barrier(
+        &self,
+        barrier: crate::battery_runtime::ProfileSaveBarrier,
+    ) -> watch::Receiver<Arc<Value>> {
+        let scenario = self.battery.as_ref().unwrap();
+        scenario.set_profile_save_barrier(barrier);
+        scenario.subscribe()
     }
 
     fn attach_battery(
@@ -278,16 +347,26 @@ impl OperationResult {
 // Decode the original bytes to retain duplicate-field rejection, including
 // nested policy fields. A map projection would silently discard duplicates.
 #[derive(Deserialize)]
-#[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
+#[serde(tag = "operation", deny_unknown_fields)]
 enum BatteryRequest {
-    SetBatteryPolicy {
+    #[serde(rename = "setBatteryPolicy")]
+    Policy {
         #[serde(rename = "version")]
         _version: i32,
         #[serde(rename = "requestId")]
         _request_id: String,
         value: LimitValue,
     },
-    SetBatteryProtection {
+    #[serde(rename = "setFullChargeOverride")]
+    FullCharge {
+        #[serde(rename = "version")]
+        _version: i32,
+        #[serde(rename = "requestId")]
+        _request_id: String,
+        enabled: bool,
+    },
+    #[serde(rename = "setBatteryProtection")]
+    Protection {
         #[serde(rename = "version")]
         _version: i32,
         #[serde(rename = "requestId")]
@@ -299,12 +378,27 @@ enum BatteryRequest {
 impl BatteryRequest {
     fn decode(payload: &[u8]) -> io::Result<Intent> {
         match serde_json::from_slice(payload).map_err(|_| invalid("invalid battery request"))? {
-            Self::SetBatteryPolicy { value, .. } => Limit::new(value.charge_limit_percent)
+            Self::Policy { value, .. } => Limit::new(value.charge_limit_percent)
                 .map(Intent::Limit)
                 .ok_or_else(|| invalid("invalid battery limit")),
-            Self::SetBatteryProtection { enabled, .. } => Ok(Intent::Protection(enabled)),
+            Self::Protection { enabled, .. } => Ok(Intent::Protection(enabled)),
+            Self::FullCharge { enabled, .. } => Ok(Intent::FullCharge(enabled)),
         }
     }
+}
+
+#[cfg(windows)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LightingRequest {
+    #[serde(rename = "operation")]
+    _operation: String,
+    #[serde(rename = "version")]
+    _version: i32,
+    #[serde(rename = "requestId")]
+    _request_id: String,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    value: Option<battery_runtime::lighting::LightingOverride>,
 }
 
 #[cfg(windows)]
@@ -430,7 +524,7 @@ impl Request {
     }
 }
 
-fn is_guid(id: &str) -> bool {
+pub(crate) fn is_guid(id: &str) -> bool {
     id.len() == 36
         && id.bytes().enumerate().all(|(index, byte)| match index {
             8 | 13 | 18 | 23 => byte == b'-',
@@ -512,6 +606,54 @@ where
             }
         }
         #[cfg(windows)]
+        (CURRENT_VERSION, "reportApplicationContext")
+            if status
+                .battery
+                .as_ref()
+                .is_some_and(|scenario| scenario.accepts_application()) =>
+        {
+            use crate::application_runtime::{INACTIVE, Report};
+            let report = Report::decode(&payload)?;
+            if !matches!(session, Session::Active) {
+                return write_frame(&mut io, request.response(None, Some(INACTIVE), None)).await;
+            }
+            let scenario = status
+                .battery
+                .as_ref()
+                .expect("guarded application runtime");
+            let result = scenario.report_application(&report).await?;
+            if result.status == openblade_domain::recovery::ScopedStatus::Blocked {
+                return write_frame(&mut io, request.response(None, Some(result.message), None))
+                    .await;
+            }
+            write_frame(
+                &mut io,
+                request.operation_response(OperationResult {
+                    status: 0,
+                    message: result.message,
+                }),
+            )
+            .await
+        }
+        #[cfg(windows)]
+        (CURRENT_VERSION, "reportApplicationContext") if status.application.is_some() => {
+            use crate::application_runtime::{INACTIVE, Report};
+            let report = Report::decode(&payload)?;
+            let scenario = status
+                .application
+                .as_ref()
+                .expect("guarded application scenario");
+            if !matches!(session, Session::Active) || !scenario.active() {
+                return write_frame(&mut io, request.response(None, Some(INACTIVE), None)).await;
+            }
+            let (status, message) = scenario.report(&report);
+            write_frame(
+                &mut io,
+                request.operation_response(OperationResult { status, message }),
+            )
+            .await
+        }
+        #[cfg(windows)]
         (CURRENT_VERSION, "updateProfiles")
             if matches!(session, Session::Active)
                 && status
@@ -541,8 +683,13 @@ where
             )
             .await
         }
-        (CURRENT_VERSION, "setBatteryPolicy" | "setBatteryProtection")
-            if matches!(session, Session::Active) && status.battery.is_some() =>
+        (
+            CURRENT_VERSION,
+            operation @ ("setBatteryPolicy" | "setBatteryProtection" | "setFullChargeOverride"),
+        ) if matches!(session, Session::Active)
+            && status.battery.as_ref().is_some_and(|scenario| {
+                scenario.accepts_battery(operation == "setFullChargeOverride")
+            }) =>
         {
             let intent = BatteryRequest::decode(&payload)?;
             let result = status
@@ -551,6 +698,42 @@ where
                 .ok_or_else(|| invalid("missing battery scenario"))?
                 .apply(intent)
                 .await?;
+            write_frame(&mut io, request.operation_response(result.into())).await
+        }
+        #[cfg(windows)]
+        (CURRENT_VERSION, "setLightingOverride")
+            if matches!(session, Session::Active)
+                && status
+                    .battery
+                    .as_ref()
+                    .is_some_and(|scenario| scenario.accepts_lighting()) =>
+        {
+            let lighting: LightingRequest = serde_json::from_slice(&payload)
+                .map_err(|_| invalid("invalid lighting request"))?;
+            let scenario = status
+                .battery
+                .as_ref()
+                .ok_or_else(|| invalid("missing lighting scenario"))?;
+            let mut probe = [0];
+            let mut started_retirement = false;
+            let result = tokio::select! {
+                biased;
+                disconnected = io.read(&mut probe) => {
+                    match disconnected {
+                        Ok(0) => {}
+                        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => {}
+                        Err(error) => return Err(error),
+                        Ok(_) => return Err(invalid("unexpected data while awaiting lighting response")),
+                    }
+                    // The losing request future and its reservation have
+                    // been dropped. The separate retirement task is still live.
+                    if started_retirement {
+                        scenario.lighting_wait_disconnected().await?;
+                    }
+                    return Ok(());
+                }
+                applied = scenario.apply_lighting(lighting.value, &mut started_retirement) => applied?,
+            };
             write_frame(&mut io, request.operation_response(result.into())).await
         }
         (CURRENT_VERSION, "setPerformanceOverride")

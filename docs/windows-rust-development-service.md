@@ -88,6 +88,23 @@ access. Other profile edits, production recovery, and ownership transfer remain
 outside the scenario.
 
 
+## Exercise temporary full charge
+
+`foreground-full-charge <pipe-id>` starts the unified foreground host with a
+private migrated fixture and no profile writer. The existing v79
+`setFullChargeOverride` request exercises the exact RZ09-0581 recipe through
+encoded scripted Power Mode Control reports. Enable and cancel confirm the
+override and unchanged charge cap and protection independently of the setter
+reply. The fake also exercises an unavailable flag, firmware completion, a
+battery-power enable refusal, an unrelated Power Mode Control bit, and a
+lost SET response. Reconciliation requires both readings and performs no
+setter. A completed one-shot is retired in memory. The managed client test
+checks that every saved configuration file keeps its original bytes.
+
+This mode uses a private pipe and an inert device. Production integration
+still requires Windows owner, lifecycle and fresh exact-device write admission
+and physical verification of the native host.
+
 ## Exercise standard battery policy
 
 Run `foreground-battery-parity <id>` on a fresh private development pipe. The
@@ -283,6 +300,147 @@ Installed thermal admission still requires a protected and verified worker
 image, the approved PawnIO and CPU sensor admission path, and fresh sample
 evidence wired into the installed thermal policy. The fixture returns a
 constant synthetic value and the development host has no CLI mode that launches it.
+
+## Replay a power-source profile transition
+
+Run `foreground-power-profile <pipe-id>` with a fresh ID. The private host loads
+the same migrated profile documents as the thermal replay. Each stdin `n`
+advances one scripted lifecycle or effect step. The C# ServiceClient reads and
+subscribes on the private pipe. Only the script can apply effects in this mode.
+
+Windows external power starts as ExternalUnknown. The existing scripted adapter
+query confirms a source after two matching known adapter states within five
+attempts. Conflicting known states stop classification, even when both supply
+enough power. The last external profile can stay visible with writes blocked.
+Battery and limited adapter notifications select their saved profiles for
+display. Their preset command and thermal admission are outside this replay.
+
+A limited-power notification supersedes a pending full-adapter effect. The old
+callback remains stale even after another full-adapter notification. The current
+effect applies the saved Balanced preset directly from confirmed Performance
+with a freshly observed Automatic pair. Scripted adapter reads guard the two
+typed channel setters. Independent readback confirms Balanced and the stored
+profile documents remain byte-for-byte intact.
+
+Run `foreground-power-profile-uncertain <pipe-id>` to lose the final setter
+response and immediate readback. The previous confirmed preset stays visible.
+A newer limited-power notification cannot consume its transition while the
+write remains unresolved. A later getter settles the preset without replaying
+a setter. A fresh notification can then select the limited-power profile.
+
+Live Windows notification delivery, protected recovery, and exact-device
+preflight and submission through the production lifecycle are separate gates.
+The broader lifecycle also needs owned HyperBoost and fan handback, the
+appropriate battery and limited-power preset recipes, and session admission.
+
+
+## Replay keyboard Off
+
+`foreground-lighting-off <pipe-id>` admits the existing v79 keyboard Off
+override on a scripted RZ09-0581 (1532:02E0) with no owned renderer. The
+saved profile selects Off, so clearing the override selects that same
+profile setting. The fixture records persistent and temporary intent in
+separate process-local slots. A temporary override clears the persistent
+slot. The profile documents remain byte-for-byte intact.
+
+The managed port and Rust replay use the scoped brightness getter, the
+port's preflight getter, the zero-brightness setter, its verification
+getter, and the final scoped getter. A scoped zero skips the setter.
+The independent logo observation remains separate. Nonzero keyboard
+brightness leaves the active effect unknown. No renderer is acquired.
+
+After `READY`, send one lowercase `n` per step and wait for the status event.
+
+| Step | Effect |
+| --- | --- |
+| 1 | An external controller restores nonzero brightness. New Off intent can be stored while writes are blocked. |
+| 2 | The controller leaves. The next setter's port verification sees zero, then the final scoped getter loses its response. |
+| 3 | A read-only getter still observes nonzero brightness and the write fence stays set. |
+| 4 | A read-only getter observes zero after an external change and clears the fence. |
+
+The getter fault expires at the next script step if unused.
+A matching setter echo or intermediate read cannot settle an unavailable
+final read. The replay keeps the accepted override while the final state is
+unknown and never repeats the setter during reconciliation.
+
+Use `foreground-lighting-off-owned <pipe-id>` to start with one
+synthetic Spectrum frame in flight. Submit keyboard Off after the
+"Renderer frame in flight" event. Admission closes while the renderer
+still owns its simulated port. Send two `n` steps within 60 seconds
+of closure. The first completes the frame and the second releases
+the port so a connected caller can continue to the brightness checks.
+An early `n` leaves the fixture waiting for Off. If the caller
+disconnects, wait for the host's disconnect status before advancing.
+Retirement and stored intent survive that disconnect. A fresh request
+can apply Off after verified release. If the deadline expires, late
+steps can drain the worker while the fence stays in place. The four
+brightness steps above follow successful retirement.
+
+`foreground-lighting-off-uncertain-owner <pipe-id>` follows the same
+first two steps but returns an unverified port release. The third `n`
+probes replacement ownership and supplies an external brightness zero.
+The fixture retains its fence without confirming Off. The managed
+ordinary Off path joins the frame on the same port. The managed
+invalidation path separately retains the closing port until cleanup
+completes, even when a caller cancels its wait.
+
+Production native renderer transport and lifecycle, fresh hardware
+admission, protected override persistence, restart and power/session
+transitions, logo changes, visible effects, and other devices remain
+separate work.
+
+## Application context replay
+
+Run the existing managed client against `foreground-application-context <id>`
+with a fresh development pipe ID. This foreground mode accepts v79
+`ReportApplicationContext` only after the same native pipe peer check used by
+the other modes. A scripted authority stands in for the active local interactive
+session. It is checked again where the report changes state.
+
+The in-memory fixture has one enabled executable rule with different AC and
+battery intent. A matching report leases it for 15 seconds. Only increasing
+sequences from the current agent instance can renew it; a new agent instance
+can start a fresh sequence. A null or unmatched executable clears the selection.
+Expiry clears the selection while retaining the sequence watermark, and process
+restart clears both. The executable is only evidence supplied by the Session
+Agent. The development host does not inspect process lifetime or treat a path
+as proof that an application is running.
+
+Successive `n` steps change the scripted session to inactive and back to active, then
+records a persistent performance override, selects battery power, disables the
+application rule, and enables it again. The managed test checks typed results
+and status updates, including precedence, expiry and recovery. This mode only
+projects desired performance and gaming behavior for its fixture. It has no
+configuration writer or device adapter, and leaves the durable profile format
+and the other modes' effect admission unchanged.
+
+## Replay application selection in the composed runtime
+
+Use `foreground-integrated-application <id>` for a disposable private writer.
+The companion mode `foreground-protected-integrated-application <id> <root>`
+uses the existing protected-writer admission for a precreated test root.
+Both modes use the same private v79 pipe, composed runtime, and renderer
+shutdown sequence as the integrated fixture. The executable rule is a
+fixture input in memory. Lease reports, expiry, and selected presets leave
+the saved profile aggregate untouched.
+
+An accepted report selects the current source's application override. A
+temporary manual preset takes precedence until cleared or until power
+changes. Reports and lease expiry publish desired intent. They leave
+confirmed state to the scripted preset and independent readback path.
+Battery and limited power select their desired profiles while the scoped
+preset recipe stays closed. Each full-adapter effect still checks the
+session, exact-device admission, fresh adapter, and Automatic fan pair.
+
+After `READY`, report the fixture executable with the managed client.
+The first `n` reconciles that preset. The next steps select battery,
+revoke and restore session control, then classify and apply full-adapter
+power using the currently selected profile. Let the lease expire on full
+power before continuing. The next step loses the setter response and
+immediate readback while returning to the saved full-power profile. The
+following step is fenced. The final step performs a read-only observation
+to settle the result. The renderer keeps its independent release signal
+and drains on STOP even if an application lease is active.
 
 ## Compatibility boundary
 

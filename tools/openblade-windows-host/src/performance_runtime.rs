@@ -162,7 +162,48 @@ impl Controller {
         }
     }
 
+    #[cfg(windows)]
+    pub(crate) fn request_selected(
+        &mut self,
+        value: Option<Override>,
+        selected: i32,
+        fresh_power: impl FnMut() -> bool,
+    ) -> io::Result<Outcome> {
+        let Ok(intent) = Intent::try_from(value) else {
+            return Ok(Outcome::blocked(
+                "Only standard Balanced and Performance overrides are admitted in this replay.",
+            ));
+        };
+        let selected = Preset::try_from(selected)
+            .map_err(|()| io::Error::other("unsupported scripted full-adapter preset"))?;
+        self.apply_override(intent, selected, fresh_power)
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn manual_selection(&self, power: i32) -> Option<(i32, i32)> {
+        let eligible =
+            |value: &Preset| automation::performance_source_eligible(*value as i32, power);
+        self.store
+            .persistent
+            .filter(eligible)
+            .map(|value| (value as i32, 4))
+            .or_else(|| {
+                self.temporary
+                    .filter(eligible)
+                    .map(|value| (value as i32, 3))
+            })
+    }
+
     fn apply(&mut self, intent: Intent) -> io::Result<Outcome> {
+        self.apply_override(intent, self.store.profile, || true)
+    }
+
+    fn apply_override(
+        &mut self,
+        intent: Intent,
+        profile: Preset,
+        fresh_power: impl FnMut() -> bool,
+    ) -> io::Result<Outcome> {
         if self.pending.is_some() {
             return Ok(Outcome::blocked(PENDING));
         }
@@ -176,7 +217,7 @@ impl Controller {
             Intent::Persistent(value) => (None, Some(value)),
             Intent::Clear => (None, None),
         };
-        let value = temporary.or(persistent).unwrap_or(self.store.profile);
+        let value = temporary.or(persistent).unwrap_or(profile);
         if !automation::performance_source_eligible(value as i32, FULL_ADAPTER) {
             return Ok(Outcome::blocked(
                 "The preset is unavailable on this power source.",
@@ -189,7 +230,45 @@ impl Controller {
         }
         self.temporary = temporary;
 
-        let outcome = match self.device.apply(value) {
+        self.apply_preset(value, fresh_power)
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn expire_power_override(&mut self) {
+        self.temporary = None;
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn profile_replay_baseline(&mut self) {
+        self.device.replace_observed(Preset::Performance);
+        self.confirmed = self.device.observe();
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn apply_power_profile(
+        &mut self,
+        value: i32,
+        fresh_power: impl FnMut() -> bool,
+    ) -> io::Result<Outcome> {
+        if self.pending.is_some() {
+            return Ok(Outcome::blocked(PENDING));
+        }
+        if self.temporary.is_some() || self.store.persistent.is_some() {
+            return Ok(Outcome::blocked(
+                "The scoped power-profile recipe requires profile-only intent.",
+            ));
+        }
+        let preset = Preset::try_from(value)
+            .map_err(|()| io::Error::other("unsupported scripted full-adapter preset"))?;
+        self.apply_preset(preset, fresh_power)
+    }
+
+    fn apply_preset(
+        &mut self,
+        value: Preset,
+        fresh_power: impl FnMut() -> bool,
+    ) -> io::Result<Outcome> {
+        let outcome = match self.device.apply(value, fresh_power) {
             RecipeResult::Unchanged => {
                 self.confirm(value);
                 Outcome::new(ScopedStatus::Unchanged, "Performance is already confirmed.")
@@ -389,9 +468,17 @@ impl State {
 
 impl Controller {
     pub(crate) fn project(&self, status: &mut Value) {
-        let controller = self;
-        let (desired, source) = controller.desired();
+        self.project_desired(status);
+        self.project_readback(status);
+    }
+
+    pub(crate) fn project_desired(&self, status: &mut Value) {
+        let (desired, source) = self.desired();
         status["desiredState"]["performance"] = json!({"value": desired as i32, "source": source});
+    }
+
+    pub(crate) fn project_readback(&self, status: &mut Value) {
+        let controller = self;
         status["confirmedState"]["performance"] =
             json!(controller.confirmed.map(|value| value as i32));
         status["performanceOverride"] = json!(

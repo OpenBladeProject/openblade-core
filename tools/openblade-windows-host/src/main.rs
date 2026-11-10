@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod application_runtime;
 #[cfg(any(windows, test))]
 mod battery_policy;
 #[cfg(any(windows, test))]

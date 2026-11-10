@@ -6,6 +6,7 @@ use openblade_domain::{
     automation,
     recovery::{ScopedStatus, SubmissionCertainty},
 };
+use openblade_protocol::{REPORT_LENGTH, RazerReport};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, mpsc, watch};
@@ -90,9 +91,25 @@ trait Device {
 }
 
 #[derive(Clone, Copy)]
-struct Pending {
-    target: Desired,
-    explicit: bool,
+enum Pending {
+    Policy { target: Desired, explicit: bool },
+    FullCharge(Command),
+}
+
+impl Pending {
+    fn confirm(self, read: Confirmed) -> Confirmation {
+        match self {
+            Self::Policy { target, .. } => {
+                // A limiter-only confirmation can settle from policy fields.
+                if policy_matches(read, target) {
+                    Confirmation::Match
+                } else {
+                    Confirmation::Mismatch
+                }
+            }
+            Self::FullCharge(command) => policy::confirm(command, Some(read), CAPABILITIES),
+        }
+    }
 }
 
 struct Controller<D> {
@@ -102,6 +119,7 @@ struct Controller<D> {
     power: Power,
     policy_override: Option<Limit>,
     protection_override: Option<bool>,
+    full_charge: bool,
     confirmed: Option<Confirmed>,
     drift_baseline: Option<Confirmed>,
     pending: Option<Pending>,
@@ -142,6 +160,7 @@ impl<D: Device> Controller<D> {
             power: Power::PluggedIn,
             policy_override: None,
             protection_override: None,
+            full_charge: false,
             confirmed: None,
             drift_baseline: None,
             pending: None,
@@ -179,6 +198,23 @@ impl<D: Device> Controller<D> {
                 message: "Battery was not written because OpenBlade must confirm the current laptop state first.",
             });
         }
+        if intent == Intent::FullCharge(true) {
+            let rejection = match (self.power, self.desired().protection) {
+                (Power::Battery, _) => {
+                    Some("Temporary full charge can only be enabled while plugged in.")
+                }
+                (_, false) => {
+                    Some("Temporary full charge requires battery protection to be enabled.")
+                }
+                _ => None,
+            };
+            if let Some(message) = rejection {
+                return Ok(Result {
+                    status: Failed,
+                    message,
+                });
+            }
+        }
         if !self.device.admit(self.power) {
             return Ok(Result {
                 status: Blocked,
@@ -194,10 +230,10 @@ impl<D: Device> Controller<D> {
                 self.record_readback(baseline);
                 block_message = match baseline.and_then(|read| read.temporary) {
                     None => "Battery policy or temporary full charge could not be confirmed.",
-                    Some(true) => {
+                    Some(true) if !matches!(intent, Intent::FullCharge(_)) => {
                         "Battery changes are blocked while temporary full charge is active."
                     }
-                    Some(false) => block_message,
+                    Some(_) => block_message,
                 };
                 Blocked
             }
@@ -228,9 +264,12 @@ impl<D: Device> Controller<D> {
                 };
                 let outcome = policy::complete(submission, readback);
                 if outcome.needs_confirmation {
-                    self.pending = Some(Pending {
-                        target,
-                        explicit: intent != Intent::Profile,
+                    self.pending = Some(match command {
+                        Command::FullCharge { .. } => Pending::FullCharge(command),
+                        _ => Pending::Policy {
+                            target,
+                            explicit: intent != Intent::Profile,
+                        },
                     });
                 } else if readback == Confirmation::Mismatch {
                     self.external = true;
@@ -239,8 +278,10 @@ impl<D: Device> Controller<D> {
             }
         };
         if matches!(status, Applied | Unchanged) {
-            if intent != Intent::Profile {
-                self.commit(target);
+            match intent {
+                Intent::FullCharge(enabled) => self.full_charge = enabled,
+                Intent::Profile => {}
+                _ => self.commit(target),
             }
             self.external = false;
         }
@@ -262,18 +303,30 @@ impl<D: Device> Controller<D> {
             return;
         };
         self.record_readback(Some(read));
-        if let Some(pending) = self.pending.take() {
-            // A pending PolicyOnly confirmation can settle even if the
-            // temporary flag is unavailable. Preserve that unknown in status.
-            let matches = policy_matches(read, pending.target);
+        if let Some(pending) = self.pending {
+            let confirmation = pending.confirm(read);
+            if confirmation == Confirmation::Unavailable {
+                return;
+            }
+            self.pending = None;
+            let matches = confirmation == Confirmation::Match;
             if let Some(destination) = self.observed_power_while_pending.take() {
-                // The observation belongs to a new source. Publish it without
-                // committing the previous source's intent or issuing a setter.
+                // Read-only reconciliation cannot commit a superseded intent.
                 self.select_power(destination);
-                self.external = !policy_matches(read, self.desired());
+                self.external =
+                    !policy_matches(read, self.desired()) || read.temporary == Some(true);
             } else {
-                if matches && pending.explicit {
-                    self.commit(pending.target);
+                if matches {
+                    match pending {
+                        Pending::Policy {
+                            target,
+                            explicit: true,
+                        } => self.commit(target),
+                        Pending::FullCharge(Command::FullCharge { enabled, .. }) => {
+                            self.full_charge = enabled;
+                        }
+                        _ => {}
+                    }
                 }
                 self.external = !matches;
             }
@@ -285,7 +338,11 @@ impl<D: Device> Controller<D> {
         let Some(read) = read else {
             return;
         };
-        let previous_temporary = self.drift_baseline.and_then(|old| old.temporary);
+        let mut previous_temporary = self.drift_baseline.and_then(|old| old.temporary);
+        if self.full_charge && previous_temporary == Some(true) && read.temporary == Some(false) {
+            self.full_charge = false;
+            previous_temporary = Some(false);
+        }
         if self
             .drift_baseline
             .is_some_and(|old| old.limit != read.limit)
@@ -401,6 +458,8 @@ struct FakeDevice {
     observed: Confirmed,
     admitted: bool,
     next_submission: Option<Submission>,
+    power_mode: PowerMode,
+    report_reads: bool,
     #[cfg(test)]
     effects: Vec<Effect>,
     #[cfg(test)]
@@ -416,11 +475,63 @@ enum Effect {
 }
 
 impl FakeDevice {
+    fn query_power_mode(&mut self) -> Option<u8> {
+        self.exchange_battery(POWER_MODE_GET, 0, false)
+            .filter(|flags| flags & !POWER_MODE_DEFINED_BITS == 0)
+    }
+
+    fn query_charge_policy(&mut self) -> Option<Option<Limit>> {
+        let value = self.exchange_battery(CHARGE_POLICY_GET, 0, false)?;
+        if value == PROTECTION_OFF {
+            return Some(None);
+        }
+        let limit = Limit::new(i32::from(value & 0x7f))?;
+        (value & 0x80 != 0 && LIMITS.contains(&limit.percent())).then_some(Some(limit))
+    }
+
+    fn exchange_battery(&mut self, id: u8, value: u8, lose_response: bool) -> Option<u8> {
+        let transaction = self.power_mode.transaction.checked_add(1)?;
+        let request = battery_request(transaction, id, value)?;
+        self.power_mode.transaction = transaction;
+        let reply = self.reply_to_battery(&request.encode(), lose_response)?;
+        Some(request.validate_response(&reply, Some(1)).ok()?.as_slice()[0])
+    }
+
+    fn reply_to_battery(
+        &mut self,
+        bytes: &[u8; REPORT_LENGTH],
+        lose_response: bool,
+    ) -> Option<[u8; REPORT_LENGTH]> {
+        let reply_value = match (bytes[6], bytes[7], bytes[8]) {
+            (BATTERY_CLASS, CHARGE_POLICY_GET, 0) => match self.observed.limit {
+                Some(limit) => u8::try_from(limit.percent()).ok()? | 0x80,
+                None => PROTECTION_OFF,
+            },
+            (BATTERY_CLASS, POWER_MODE_GET, 0) if !self.power_mode.unreadable => {
+                let active = self.observed.temporary?;
+                self.power_mode.other_settings | if active { FULL_CHARGE_BIT } else { 0 }
+            }
+            (BATTERY_CLASS, POWER_MODE_SET, flags @ (0 | FULL_CHARGE_BIT)) => {
+                self.observed.temporary = Some(flags == FULL_CHARGE_BIT);
+                flags
+            }
+            _ => return None,
+        };
+        if lose_response {
+            return None;
+        }
+        let mut reply = battery_request(bytes[1], bytes[7], reply_value)?.encode();
+        reply[0] = 2;
+        Some(reply)
+    }
+
     fn new(observed: Confirmed) -> Self {
         Self {
             observed,
             admitted: true,
             next_submission: None,
+            power_mode: PowerMode::default(),
+            report_reads: false,
             #[cfg(test)]
             effects: Vec::new(),
             #[cfg(test)]
@@ -443,11 +554,30 @@ impl Device for FakeDevice {
         if let Some(read) = self.read_override.take() {
             return read;
         }
-        Some(self.observed)
+        if !self.report_reads {
+            return Some(self.observed);
+        }
+        let limit = self.query_charge_policy()?;
+        Some(Confirmed {
+            temporary: self
+                .query_power_mode()
+                .map(|flags| flags & FULL_CHARGE_BIT != 0),
+            limit,
+        })
     }
 
     fn submit(&mut self, power: Power, command: Command) -> Submission {
         if !self.admit(power) {
+            return Submission::Refused;
+        }
+        if let Command::FullCharge { enabled, limit } = command
+            && (!self
+                .query_power_mode()
+                .is_some_and(|flags| flags & !FULL_CHARGE_BIT == 0)
+                || self.query_charge_policy() != Some(Some(limit))
+                || enabled && power == Power::Battery
+                || self.power_mode.transaction == u8::MAX)
+        {
             return Submission::Refused;
         }
         let submission = self
@@ -460,13 +590,44 @@ impl Device for FakeDevice {
         ) {
             #[cfg(test)]
             self.effects.push(Effect::Set(command));
-            self.observed.limit = match command {
-                Command::SetLimit(limit) => Some(limit),
-                Command::ProtectionOff => None,
-            };
+            match command {
+                Command::SetLimit(limit) => self.observed.limit = Some(limit),
+                Command::ProtectionOff => self.observed.limit = None,
+                Command::FullCharge { enabled, .. } => {
+                    let requested = if enabled { FULL_CHARGE_BIT } else { 0 };
+                    let lose_response = std::mem::take(&mut self.power_mode.lose_set_reply)
+                        || submission != Submission::Acknowledged;
+                    let reply = self.exchange_battery(POWER_MODE_SET, requested, lose_response);
+                    if reply != Some(requested) {
+                        return Submission::Failed(SubmissionCertainty::Indeterminate);
+                    }
+                }
+            }
         }
         submission
     }
+}
+
+// The exact RZ09-0581 managed oracle admits these three commands.
+// The exchange above models the firmware in memory.
+const BATTERY_CLASS: u8 = 0x07;
+const CHARGE_POLICY_GET: u8 = 0x92;
+const PROTECTION_OFF: u8 = 0x50;
+const POWER_MODE_GET: u8 = 0x8f;
+const POWER_MODE_SET: u8 = 0x0f;
+const FULL_CHARGE_BIT: u8 = 0x04;
+const POWER_MODE_DEFINED_BITS: u8 = 0x0f;
+
+#[derive(Default)]
+struct PowerMode {
+    transaction: u8,
+    other_settings: u8,
+    unreadable: bool,
+    lose_set_reply: bool,
+}
+
+fn battery_request(transaction: u8, id: u8, value: u8) -> Option<RazerReport> {
+    RazerReport::create(transaction, BATTERY_CLASS, id, &[value]).ok()
 }
 
 #[cfg(windows)]
@@ -475,20 +636,59 @@ type ProfileWriter = openblade_windows_host::configuration_writer::fixture::Batt
 pub(crate) struct Scenario {
     #[cfg(windows)]
     editable: bool,
+    full_charge: bool,
+    #[cfg(windows)]
+    lighting_off: bool,
+    #[cfg(windows)]
+    lighting_only: bool,
+    #[cfg(windows)]
+    lighting_operation: Mutex<()>,
+    #[cfg(windows)]
+    application_changed: Option<tokio::sync::Notify>,
     state: Arc<Mutex<ScenarioState>>,
     publish: watch::Sender<Arc<Value>>,
 }
 
 #[cfg(windows)]
+mod application;
+#[cfg(windows)]
+pub(crate) mod lighting;
+#[cfg(windows)]
+mod power_profile;
+#[cfg(windows)]
 mod thermal;
 
+#[cfg(all(windows, test))]
+pub(crate) struct ProfileSaveBarrier {
+    pub entered: tokio::sync::oneshot::Sender<()>,
+    pub resume: tokio::sync::oneshot::Receiver<()>,
+    pub saved: tokio::sync::oneshot::Sender<bool>,
+}
+
+#[cfg(windows)]
+#[derive(Clone, Copy)]
+pub(crate) enum ProfileReplay {
+    Battery,
+    Thermal,
+    Power { lose_response: bool },
+    FullCharge,
+    Integrated { application: bool },
+    LightingOff { owned: bool, uncertain: bool },
+}
+
 struct ScenarioState {
+    #[cfg(windows)]
+    application: Option<application::Context>,
+    #[cfg(windows)]
+    lighting: Option<lighting::Lighting>,
     #[cfg(windows)]
     thermal: Option<thermal::Thermal>,
     controller: Controller<FakeDevice>,
     current: Value,
     #[cfg(windows)]
     writer: Option<ProfileWriter>,
+    #[cfg(all(windows, test))]
+    profile_save_barrier: Option<ProfileSaveBarrier>,
     configuration_blocked: bool,
 }
 
@@ -496,10 +696,17 @@ impl Scenario {
     pub(crate) fn new(baseline: Value) -> io::Result<Self> {
         Self::start(
             baseline,
+            false,
+            #[cfg(windows)]
+            false,
             #[cfg(windows)]
             None,
             #[cfg(windows)]
             None,
+            #[cfg(windows)]
+            None,
+            #[cfg(windows)]
+            false,
         )
     }
 
@@ -508,48 +715,126 @@ impl Scenario {
         mut baseline: Value,
         profiles: Value,
         writer: Option<ProfileWriter>,
-        with_thermal: bool,
+        replay: ProfileReplay,
     ) -> io::Result<Self> {
+        let application = matches!(replay, ProfileReplay::Integrated { application: true });
+        if matches!(replay, ProfileReplay::Integrated { .. }) && writer.is_none() {
+            return Err(io::Error::other(
+                "The integrated fixture requires an admitted writer.",
+            ));
+        }
         baseline["profiles"] = profiles;
-        let thermal = with_thermal
-            .then(|| thermal::Thermal::new(&mut baseline))
-            .transpose()?;
-        Self::start(baseline, writer, thermal)
+        let thermal = match replay {
+            ProfileReplay::Battery
+            | ProfileReplay::FullCharge
+            | ProfileReplay::LightingOff { .. } => None,
+            ProfileReplay::Thermal => Some(thermal::Thermal::new(&mut baseline)?),
+            ProfileReplay::Power { .. } | ProfileReplay::Integrated { .. } => Some(
+                thermal::Thermal::for_power_profile(&mut baseline, !application)?,
+            ),
+        };
+        let lighting = match replay {
+            ProfileReplay::LightingOff { owned, .. } => {
+                let mut lighting = lighting::Lighting::new(&mut baseline)?;
+                if owned {
+                    lighting.start_renderer()?;
+                }
+                Some(lighting)
+            }
+            ProfileReplay::Integrated { .. } => {
+                Some(lighting::Lighting::integrated(&mut baseline)?)
+            }
+            _ => None,
+        };
+        if application {
+            crate::application_runtime::install_fixture_rule(&mut baseline["profiles"]);
+        }
+        Self::start(
+            baseline,
+            matches!(
+                replay,
+                ProfileReplay::FullCharge | ProfileReplay::Integrated { .. }
+            ),
+            matches!(replay, ProfileReplay::LightingOff { .. }),
+            lighting,
+            writer,
+            thermal,
+            application,
+        )
     }
 
     fn start(
         baseline: Value,
+        full_charge: bool,
+        #[cfg(windows)] lighting_only: bool,
+        #[cfg(windows)] lighting: Option<lighting::Lighting>,
         #[cfg(windows)] writer: Option<ProfileWriter>,
         #[cfg(windows)] thermal: Option<thermal::Thermal>,
+        #[cfg(windows)] application: bool,
     ) -> io::Result<Self> {
         #[cfg(windows)]
         let editable = writer.is_some();
         let mut controller = Controller::fixture(&baseline)?;
+        controller.device.report_reads = full_charge;
         controller.observe();
+        #[cfg(windows)]
+        let lighting_off = lighting.is_some();
         let mut state = ScenarioState {
+            #[cfg(windows)]
+            application: application.then(application::Context::new),
+            #[cfg(windows)]
+            lighting,
             #[cfg(windows)]
             thermal,
             controller,
             current: baseline,
             #[cfg(windows)]
             writer,
+            #[cfg(all(windows, test))]
+            profile_save_barrier: None,
             configuration_blocked: false,
         };
         state.current["deviceVerified"] = true.into();
-        state.current["potentialControllers"] = json!([]);
         state.current["capabilities"]["chargeLimits"] = json!(LIMITS);
         state.current["capabilities"]["supportsBatteryProtectionOff"] =
             CAPABILITIES.protection_off.into();
+        #[cfg(windows)]
+        if lighting_only {
+            state.current["capabilities"]["chargeLimits"] = json!([]);
+            state.current["capabilities"]["supportsBatteryProtectionOff"] = false.into();
+        }
         state.current["capabilities"]["supportsTemporaryFullCharge"] =
-            CAPABILITIES.temporary.into();
+            (full_charge && CAPABILITIES.temporary).into();
         state.project("Synthetic battery scenario ready.");
         let (publish, _) = watch::channel(Arc::new(state.current.clone()));
         Ok(Self {
             #[cfg(windows)]
             editable,
+            full_charge,
+            #[cfg(windows)]
+            lighting_off,
+            #[cfg(windows)]
+            lighting_only,
+            #[cfg(windows)]
+            lighting_operation: Mutex::new(()),
+            #[cfg(windows)]
+            application_changed: application.then(tokio::sync::Notify::new),
             state: Arc::new(Mutex::new(state)),
             publish,
         })
+    }
+
+    pub(crate) fn accepts_battery(&self, full_charge: bool) -> bool {
+        #[cfg(windows)]
+        if self.lighting_only {
+            return false;
+        }
+        !full_charge || self.full_charge
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn accepts_lighting(&self) -> bool {
+        self.lighting_off
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<Arc<Value>> {
@@ -580,6 +865,77 @@ impl Scenario {
         Ok(())
     }
 
+    #[cfg(windows)]
+    pub(crate) async fn drive_full_charge(
+        &self,
+        mut advance: mpsc::Receiver<()>,
+    ) -> io::Result<()> {
+        type Step = (&'static str, fn(&mut Controller<FakeDevice>));
+        let arm_loss: Step = ("Temporary full charge response loss armed.", |controller| {
+            controller.device.power_mode.other_settings = 0;
+            controller.device.power_mode.lose_set_reply = true;
+        });
+        let steps: [Step; 11] = [
+            ("Temporary full charge read unavailable.", |controller| {
+                controller.device.power_mode.unreadable = true;
+            }),
+            ("Firmware completed temporary full charge.", |controller| {
+                controller.device.power_mode.unreadable = false;
+                controller.device.observed.temporary = Some(false);
+            }),
+            ("Battery power observed.", |controller| {
+                controller.record_power(Power::Battery);
+            }),
+            ("External power observed.", |controller| {
+                controller.record_power(Power::PluggedIn);
+            }),
+            (
+                "Another Power Mode Control setting is active.",
+                |controller| {
+                    controller.device.power_mode.other_settings = 0x08;
+                },
+            ),
+            arm_loss,
+            (
+                "Read-only reconciliation has only the charge policy.",
+                |controller| {
+                    controller.device.power_mode.unreadable = true;
+                },
+            ),
+            (
+                "Read-only reconciliation has both battery readings.",
+                |controller| {
+                    controller.device.power_mode.unreadable = false;
+                },
+            ),
+            (
+                "Reconciled temporary full charge completed.",
+                |controller| {
+                    controller.device.observed.temporary = Some(false);
+                },
+            ),
+            arm_loss,
+            ("Unused full charge response loss expired.", |_| {}),
+        ];
+        for (message, inject) in steps {
+            if advance.recv().await.is_none() {
+                return Ok(());
+            }
+            self.update(|state| {
+                state.controller.device.power_mode.lose_set_reply = false;
+                inject(&mut state.controller);
+                state.controller.observe();
+                Ok(Result {
+                    status: ScopedStatus::Unchanged,
+                    message,
+                })
+            })
+            .await?;
+        }
+        while advance.recv().await.is_some() {}
+        Ok(())
+    }
+
     pub(crate) async fn apply(&self, intent: Intent) -> io::Result<Result> {
         self.update(|state| {
             if state.configuration_blocked {
@@ -593,6 +949,10 @@ impl Scenario {
             {
                 return Ok(thermal::await_readback());
             }
+            #[cfg(windows)]
+            if let Some(blocked) = state.session_block().or_else(|| state.unresolved_power()) {
+                return Ok(blocked);
+            }
             state.controller.apply(intent)
         })
         .await
@@ -603,8 +963,21 @@ impl Scenario {
         self.editable
     }
 
-    /// Mirrors UpdateProfiles for a battery-policy-only edit with no active
-    /// app profile or lighting suppression. Disk admission precedes publication.
+    #[cfg(windows)]
+    pub(crate) async fn take_profile_writer(&self) -> Option<ProfileWriter> {
+        // A canceled pipe task can leave a submitted blocking transaction holding
+        // this guard. Take the writer after the outcome, even if that worker's
+        // last reference to the scenario has yet to be dropped.
+        self.state.lock().await.writer.take()
+    }
+
+    #[cfg(all(windows, test))]
+    pub(crate) fn set_profile_save_barrier(&self, barrier: ProfileSaveBarrier) {
+        self.state.try_lock().unwrap().profile_save_barrier = Some(barrier);
+    }
+
+    /// Only the saved battery policy can change. The application fixture rule
+    /// remains in memory. Disk admission precedes publication.
     #[cfg(windows)]
     pub(crate) async fn save_profiles(
         self: Arc<Self>,
@@ -620,6 +993,9 @@ impl Scenario {
                 if state.configuration_blocked {
                     return Ok(blocked_configuration());
                 }
+                if let Some(blocked) = state.session_block() {
+                    return Ok(blocked);
+                }
                 let mut expected = state.current["profiles"].clone();
                 expected["batteryPolicy"]["chargeLimitPercent"] = limit.percent().into();
                 if profiles != expected {
@@ -628,11 +1004,22 @@ impl Scenario {
                         message: "Only the saved battery policy can be edited in this fixture.",
                     });
                 }
+                #[cfg(test)]
+                let saved = state.profile_save_barrier.take().map(|barrier| {
+                    let _ = barrier.entered.send(());
+                    let _ = barrier.resume.blocking_recv();
+                    barrier.saved
+                });
                 let writer = state
                     .writer
                     .as_mut()
                     .ok_or_else(|| io::Error::other("missing battery profile writer"))?;
-                if let Err(error) = writer.save(limit.percent() as u8) {
+                let outcome = writer.save(limit.percent() as u8);
+                #[cfg(test)]
+                if let Some(saved) = saved {
+                    let _ = saved.send(outcome.is_ok());
+                }
+                if let Err(error) = outcome {
                     let _ = std::io::Write::write_fmt(
                         &mut io::stderr().lock(),
                         format_args!("battery configuration save: {error}\n"),
@@ -687,6 +1074,8 @@ impl Scenario {
             .and_then(|value| value.checked_add(1))
             .ok_or_else(|| io::Error::other("invalid battery status revision"))?;
         let previous = state.current.clone();
+        #[cfg(windows)]
+        state.expire_application();
         let result = run(state)?;
         state.project(result.message);
         if state.current != previous {
@@ -709,12 +1098,13 @@ impl ScenarioState {
         let controller = &self.controller;
         let desired = controller.desired();
         self.current["activePowerSource"] = json!(controller.power.index());
-        self.current["desiredState"]["performance"]["value"] =
-            json!(controller.profile().performance);
+        self.current["potentialControllers"] = json!([]);
+        self.current["desiredState"]["performance"] =
+            json!({"value": controller.profile().performance, "source": 1});
         self.current["desiredState"]["battery"] = json!({
             "configuredPolicy": {"chargeLimitPercent": desired.limit.percent()},
             "protectionEnabled": desired.protection,
-            "temporaryFullCharge": false,
+            "temporaryFullCharge": controller.full_charge,
         });
         self.current["confirmedState"]["battery"] = json!(controller.confirmed.map(|read| json!({
             "protectionEnabled": read.limit.is_some(),
@@ -726,6 +1116,10 @@ impl ScenarioState {
                 "chargeLimitPercent": limit.percent(),
             })));
         self.current["batteryProtectionOverride"] = json!(controller.protection_override);
+        self.current["fullChargeOverride"] = json!(controller.full_charge);
+        // This summary includes scoped fences. The typed handlers still check
+        // their own admission, so renderer retirement cannot grant or revoke
+        // an unrelated charge-policy operation.
         self.current["writesBlocked"] =
             json!(self.configuration_blocked || controller.pending.is_some());
         self.current["unconfirmedWrites"] = if controller.pending.is_some() {
@@ -742,6 +1136,12 @@ impl ScenarioState {
         if let Some(thermal) = &self.thermal {
             thermal.project(&mut self.current);
         }
+        #[cfg(windows)]
+        if let Some(lighting) = &self.lighting {
+            lighting.project(&mut self.current);
+        }
+        #[cfg(windows)]
+        self.project_application();
         self.current["message"] = message.into();
     }
 }
@@ -853,6 +1253,189 @@ mod tests {
         assert_eq!(limits, CAPABILITIES.limits);
         assert_eq!(protection_off, CAPABILITIES.protection_off);
         assert_eq!(temporary_enable && temporary_cancel, CAPABILITIES.temporary);
+    }
+
+    #[test]
+    fn full_charge_reports_match_the_managed_exact_model_capture() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-temporary-full-charge-validation-fixture.json"
+        )).unwrap();
+        assert_eq!(fixture["device"]["productId"], "02E0");
+        assert_eq!(fixture["productionWired"], true);
+        let exchanges = fixture["exchanges"].as_array().unwrap();
+        let specs = [
+            (CHARGE_POLICY_GET, 0, 0xd0),
+            (POWER_MODE_GET, 0, 0),
+            (POWER_MODE_SET, FULL_CHARGE_BIT, FULL_CHARGE_BIT),
+            (CHARGE_POLICY_GET, 0, 0xd0),
+            (POWER_MODE_GET, 0, FULL_CHARGE_BIT),
+            (POWER_MODE_SET, 0, 0),
+            (CHARGE_POLICY_GET, 0, 0xd0),
+            (POWER_MODE_GET, 0, 0),
+        ];
+        assert_eq!(exchanges.len(), specs.len());
+        let decode = |hex: &Value| {
+            let hex = hex.as_str().unwrap();
+            (0..hex.len())
+                .step_by(2)
+                .map(|index| u8::from_str_radix(&hex[index..index + 2], 16).unwrap())
+                .collect::<Vec<_>>()
+        };
+        let mut device = setup().device;
+        for (index, ((id, value, expected), row)) in specs.into_iter().zip(exchanges).enumerate() {
+            let request = battery_request((index + 1) as u8, id, value).unwrap();
+            assert_eq!(
+                request.encode().as_slice(),
+                decode(&row["requestEnvelopeHex"])
+            );
+            let mut reply = decode(&row["responseEnvelopeHex"]);
+            assert_eq!(
+                request
+                    .validate_response(&reply, Some(1))
+                    .unwrap()
+                    .as_slice(),
+                &[expected]
+            );
+            // The managed envelope validator permits the captured header padding.
+            reply[3] = 0;
+            reply[88] = openblade_protocol::calculate_checksum(&reply).unwrap();
+            assert_eq!(
+                device
+                    .reply_to_battery(&request.encode(), false)
+                    .unwrap()
+                    .as_slice(),
+                reply
+            );
+        }
+    }
+
+    #[test]
+    fn full_charge_rejects_battery_power_before_scoped_admission_and_does_not_wrap_ids() {
+        let mut controller = setup();
+        controller.device.report_reads = true;
+        controller.device.admitted = false;
+        controller.power = Power::Battery;
+        let enable = Intent::FullCharge(true);
+        assert_eq!(
+            controller.apply(enable).unwrap().status,
+            ScopedStatus::Failed
+        );
+        assert!(controller.device.effects.is_empty());
+
+        controller.power = Power::PluggedIn;
+        controller.device.admitted = true;
+        controller.device.power_mode.transaction = u8::MAX - 4;
+        assert_eq!(
+            controller.apply(enable).unwrap().status,
+            ScopedStatus::Blocked
+        );
+        assert_eq!(controller.device.power_mode.transaction, u8::MAX);
+        assert_eq!(controller.device.observed.temporary, Some(false));
+        assert!(controller.pending.is_none());
+        assert!(
+            !controller
+                .device
+                .effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Set(_)))
+        );
+    }
+
+    #[test]
+    fn full_charge_reconciliation_requires_both_reads_and_never_replays() {
+        let mut controller = setup();
+        controller.device.report_reads = true;
+        let enable = Intent::FullCharge(true);
+        let cancel = Intent::FullCharge(false);
+        let confirmed = |limit, temporary| Some(Confirmed { limit, temporary });
+        let current = Some(limit(80));
+        let command = Command::FullCharge {
+            enabled: true,
+            limit: limit(80),
+        };
+
+        for baseline in [
+            None,
+            confirmed(current, None),
+            confirmed(None, Some(false)),
+            confirmed(Some(limit(77)), Some(false)),
+        ] {
+            controller.device.read_override = Some(baseline);
+            assert_eq!(
+                controller.apply(enable).unwrap().status,
+                ScopedStatus::Blocked
+            );
+        }
+        assert!(
+            !controller
+                .device
+                .effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Set(_)))
+        );
+        assert_eq!(
+            policy::confirm(
+                command,
+                confirmed(Some(limit(75)), Some(true)),
+                CAPABILITIES
+            ),
+            Confirmation::Mismatch
+        );
+        assert_eq!(
+            policy::confirm(command, confirmed(None, Some(true)), CAPABILITIES),
+            Confirmation::Mismatch
+        );
+        assert_eq!(
+            policy::confirm(command, confirmed(current, None), CAPABILITIES),
+            Confirmation::Unavailable
+        );
+
+        controller.device.power_mode.other_settings = 0x08;
+        assert_eq!(
+            controller.apply(enable).unwrap().status,
+            ScopedStatus::Blocked
+        );
+        controller.device.power_mode.other_settings = 0;
+        controller.device.next_submission =
+            Some(Submission::Failed(SubmissionCertainty::Indeterminate));
+        assert_eq!(
+            controller.apply(enable).unwrap().status,
+            ScopedStatus::Failed
+        );
+        controller.device.power_mode.unreadable = true;
+        controller.observe();
+        assert_eq!(controller.confirmed, confirmed(current, None));
+        assert!(!controller.full_charge);
+        assert!(controller.pending.is_some());
+        assert_eq!(
+            controller.apply(cancel).unwrap().status,
+            ScopedStatus::Blocked
+        );
+
+        controller.device.power_mode.unreadable = false;
+        controller.observe();
+        assert!(controller.pending.is_none());
+        assert!(controller.full_charge);
+        controller.device.observed.temporary = Some(false);
+        controller.observe();
+        assert!(!controller.full_charge);
+        assert!(!controller.external);
+        assert_eq!(
+            controller.apply(Intent::Profile).unwrap().status,
+            ScopedStatus::Unchanged
+        );
+        assert_eq!(
+            controller
+                .device
+                .effects
+                .iter()
+                .filter_map(|effect| match effect {
+                    Effect::Set(command) => Some(*command),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            [command]
+        );
     }
 
     #[test]

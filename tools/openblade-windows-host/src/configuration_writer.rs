@@ -1,4 +1,4 @@
-//! Windows fixture-only execution of the managed aggregate transaction.
+//! Windows developer-only execution of the managed aggregate transaction.
 #![allow(unsafe_code)]
 
 use crate::configuration::{
@@ -13,6 +13,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::os::windows::io::AsRawHandle;
 use std::path::{Component, Path, PathBuf, Prefix};
+use std::sync::Arc;
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
     FILE_DISPOSITION_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
@@ -24,6 +25,7 @@ use windows_sys::Win32::System::Com::CoCreateGuid;
 
 pub mod fixture;
 mod profile;
+pub mod protected;
 
 const NAMES: [&str; 3] = [PROFILE, PREFERENCES, COMMIT];
 const LOCK: &str = "configuration.test-lock";
@@ -58,6 +60,7 @@ enum Outcome {
 struct Report {
     outcome: Outcome,
     artifact_errors: Vec<io::Error>,
+    identities: RecordIdentities,
 }
 
 impl Report {
@@ -65,23 +68,34 @@ impl Report {
         Self {
             outcome,
             artifact_errors: Vec::new(),
+            identities: [None; 3],
         }
     }
 }
 
 enum ExpectedPreimage<'a> {
     Fixture([Option<&'a [u8]>; 3]),
+    Protected([&'a [u8]; 3], RecordIdentities),
     Migration(profile::LegacyPreimage<'a>),
     #[cfg(test)]
     Unspecified,
 }
 
-// Construction is private to the native tests and the fixed developer fixture.
+type RecordIdentities = [Option<FileIdentity>; 3];
+type RecordBytes = [Option<Vec<u8>>; 3];
+
+struct ProtectedWriter {
+    storage: protected::ProtectedStorage,
+    _lease: File,
+}
+
+// Both developer storage modes use the same transaction protocol.
 struct TestStore {
     root: PathBuf,
     pins: Vec<File>,
     cleanup_on_drop: bool,
     held_lock: Option<File>,
+    protected: Option<Arc<ProtectedWriter>>,
 }
 
 impl TestStore {
@@ -124,6 +138,7 @@ impl TestStore {
             pins,
             cleanup_on_drop: true,
             held_lock: None,
+            protected: None,
         };
         let lock = OpenOptions::new()
             .write(true)
@@ -148,7 +163,7 @@ impl TestStore {
     }
 
     fn lock(&self) -> io::Result<Option<File>> {
-        if self.held_lock.is_some() {
+        if self.held_lock.is_some() || self.protected.is_some() {
             return Ok(None);
         }
         let lock = OpenOptions::new()
@@ -165,7 +180,12 @@ impl TestStore {
         self.inspect_snapshot().map(|(inspection, _)| inspection)
     }
 
-    fn inspect_snapshot(&self) -> io::Result<(Inspection, [Option<Vec<u8>>; 3])> {
+    fn inspect_snapshot(&self) -> io::Result<(Inspection, RecordBytes)> {
+        self.inspect_with_identities()
+            .map(|(inspection, bytes, _)| (inspection, bytes))
+    }
+
+    fn inspect_with_identities(&self) -> io::Result<(Inspection, RecordBytes, RecordIdentities)> {
         let _lock = self.lock()?;
         if self.record_present()? {
             let inspection = inspect(Snapshot {
@@ -174,18 +194,24 @@ impl TestStore {
                 preferences: ObservedFile::Unavailable,
                 commit: ObservedFile::Unavailable,
             });
-            return Ok((inspection, [None, None, None]));
+            return Ok((inspection, [None, None, None], [None; 3]));
         }
-        let prior = self.capture()?;
-        if self.record_present()? {
-            return Err(io::Error::other(
-                "recovery record appeared during inspection",
-            ));
-        }
-        Ok((inspect_bytes(prior.each_ref().map(Option::as_deref)), prior))
+        let (prior, identities) = self.capture_records(true)?;
+        Ok((
+            inspect_bytes(prior.each_ref().map(Option::as_deref)),
+            prior,
+            identities,
+        ))
     }
 
     fn record_present(&self) -> io::Result<bool> {
+        if let Some(writer) = &self.protected {
+            writer.storage.check_root()?;
+            return writer
+                .storage
+                .open_record(RECOVERY_REQUIRED)
+                .map(|record| record.is_some());
+        }
         match fs::symlink_metadata(self.path(RECOVERY_REQUIRED)) {
             Ok(_) => Ok(true),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
@@ -193,7 +219,11 @@ impl TestStore {
         }
     }
 
-    fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+    fn open_record(&self, name: &str) -> io::Result<Option<File>> {
+        if let Some(writer) = &self.protected {
+            writer.storage.check_root()?;
+            return writer.storage.open_record(name);
+        }
         let file = match OpenOptions::new()
             .read(true)
             .share_mode(FILE_SHARE_READ)
@@ -204,27 +234,70 @@ impl TestStore {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error),
         };
-        read_file(&file).map(|(_, bytes)| Some(bytes))
+        Ok(Some(file))
     }
 
-    fn capture(&self) -> io::Result<[Option<Vec<u8>>; 3]> {
-        Ok([
-            self.read(PROFILE)?,
-            self.read(PREFERENCES)?,
-            self.read(COMMIT)?,
-        ])
+    #[cfg(test)]
+    fn capture(&self) -> io::Result<RecordBytes> {
+        self.capture_records(false).map(|(bytes, _)| bytes)
     }
 
+    fn capture_records(&self, check_recovery: bool) -> io::Result<(RecordBytes, RecordIdentities)> {
+        let files = [
+            self.open_record(PROFILE)?,
+            self.open_record(PREFERENCES)?,
+            self.open_record(COMMIT)?,
+        ];
+        let mut bytes = [None, None, None];
+        let mut identities = [None; 3];
+        for (index, file) in files.iter().enumerate() {
+            if let Some(file) = file {
+                let (identity, data) = read_file(file)?;
+                bytes[index] = Some(data);
+                if self.protected.is_some() {
+                    identities[index] = Some(identity);
+                }
+            }
+        }
+        if check_recovery && self.record_present()? {
+            return Err(io::Error::other(
+                "recovery record appeared while capturing primaries",
+            ));
+        }
+        Ok((bytes, identities))
+    }
+
+    #[cfg(test)]
     fn expect(&self, name: &str, expected: Option<&[u8]>) -> io::Result<()> {
-        if self.read(name)?.as_deref() != expected {
+        self.expect_record(name, expected, None)
+    }
+
+    fn expect_record(
+        &self,
+        name: &str,
+        expected: Option<&[u8]>,
+        expected_id: Option<FileIdentity>,
+    ) -> io::Result<()> {
+        let observed = self
+            .open_record(name)?
+            .as_ref()
+            .map(read_file)
+            .transpose()?;
+        if observed.as_ref().map(|(_, data)| data.as_slice()) != expected
+            || expected_id
+                .is_some_and(|id| observed.as_ref().map(|(actual, _)| *actual) != Some(id))
+        {
             return Err(io::Error::other(format!(
-                "unexpected bytes or presence at {name}"
+                "unexpected bytes, presence or identity at {name}"
             )));
         }
         Ok(())
     }
 
     fn create_durable(&self, name: &str, bytes: &[u8]) -> io::Result<File> {
+        if let Some(writer) = &self.protected {
+            return writer.storage.create_durable(name, bytes);
+        }
         let is_record = name == RECOVERY_REQUIRED;
         let access = FILE_GENERIC_WRITE | if is_record { DELETE } else { 0 };
         let mut file = OpenOptions::new()
@@ -258,8 +331,32 @@ impl TestStore {
         &self,
         name: &str,
         expected: &[u8],
-        owned_artifact: Option<FileIdentity>,
+        expected_id: Option<FileIdentity>,
+        allow_missing: bool,
     ) -> io::Result<()> {
+        if let Some(writer) = &self.protected {
+            writer.storage.check_root()?;
+            let Some(file) = writer
+                .storage
+                .open_existing(name, FILE_GENERIC_READ | DELETE)?
+            else {
+                return if allow_missing {
+                    Ok(())
+                } else {
+                    Err(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "transaction entry missing",
+                    ))
+                };
+            };
+            let (identity, bytes) = read_file(&file)?;
+            if bytes != expected || expected_id != Some(identity) {
+                return Err(io::Error::other(format!(
+                    "unexpected file or bytes at {name}"
+                )));
+            }
+            return mark_for_deletion(&file);
+        }
         let file = match OpenOptions::new()
             .access_mode(FILE_GENERIC_READ | DELETE)
             .share_mode(FILE_SHARE_READ)
@@ -267,13 +364,13 @@ impl TestStore {
             .open(self.path(name))
         {
             Ok(file) => file,
-            Err(error) if owned_artifact.is_some() && error.kind() == io::ErrorKind::NotFound => {
+            Err(error) if allow_missing && error.kind() == io::ErrorKind::NotFound => {
                 return Ok(());
             }
             Err(error) => return Err(error),
         };
         let (identity, bytes) = read_file(&file)?;
-        if bytes != expected || owned_artifact.is_some_and(|owned| identity != owned) {
+        if bytes != expected || expected_id.is_some_and(|expected| identity != expected) {
             return Err(io::Error::other(format!(
                 "unexpected file or bytes at {name}"
             )));
@@ -281,8 +378,22 @@ impl TestStore {
         mark_for_deletion(&file)
     }
 
-    fn move_into_place(&self, source: &str, target: &str, replace: bool) -> io::Result<()> {
-        move_file(&self.path(source), &self.path(target), replace)
+    fn move_into_place(
+        &self,
+        source: &Artifact<'_>,
+        target: &str,
+        replace: bool,
+    ) -> io::Result<()> {
+        if let Some(writer) = &self.protected {
+            return writer.storage.rename(
+                &source.name,
+                target,
+                replace,
+                source.identity,
+                source.bytes,
+            );
+        }
+        move_file(&self.path(&source.name), &self.path(target), replace)
     }
 
     #[cfg(test)]
@@ -323,13 +434,21 @@ impl TestStore {
             return Report::new(Outcome::InvalidIntent(inspection));
         }
 
-        let prior = match self.capture() {
-            Ok(prior) => prior,
+        let (prior, identities) = match self.capture_records(true) {
+            Ok(observed) => observed,
             Err(error) => return Report::new(Outcome::Unchanged(error)),
         };
         let prior = prior.each_ref().map(Option::as_deref);
         let expected_bytes = match &expected {
             ExpectedPreimage::Fixture(bytes) => *bytes,
+            ExpectedPreimage::Protected(bytes, expected_ids) => {
+                if *expected_ids != identities || identities.iter().any(Option::is_none) {
+                    return Report::new(Outcome::Unchanged(io::Error::other(
+                        "protected configuration record identity changed",
+                    )));
+                }
+                bytes.map(Some)
+            }
             ExpectedPreimage::Migration(legacy) => legacy.bytes().map(Some),
             #[cfg(test)]
             ExpectedPreimage::Unspecified => prior,
@@ -353,7 +472,7 @@ impl TestStore {
             Ok(id) => id,
             Err(error) => return Report::new(Outcome::Unchanged(error)),
         };
-        Transaction::new(self, id, prior, intent).run(&mut at)
+        Transaction::new(self, id, prior, intent, identities).run(&mut at)
     }
 }
 
@@ -387,7 +506,7 @@ impl Drop for TestStore {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FileIdentity {
     volume: u32,
     index: u64,
@@ -431,6 +550,7 @@ struct Transaction<'a> {
     targets: [Target<'a>; 3],
     artifacts: Vec<Artifact<'a>>,
     replaced: [bool; 3],
+    identities: RecordIdentities,
 }
 
 impl<'a> Transaction<'a> {
@@ -439,6 +559,7 @@ impl<'a> Transaction<'a> {
         id: String,
         prior: [Option<&'a [u8]>; 3],
         intent: [&'a [u8]; 3],
+        identities: RecordIdentities,
     ) -> Self {
         let targets = std::array::from_fn(|index| {
             let name = NAMES[index];
@@ -458,6 +579,7 @@ impl<'a> Transaction<'a> {
             targets,
             artifacts: Vec::new(),
             replaced: [false; 3],
+            identities,
         }
     }
 
@@ -561,7 +683,8 @@ impl<'a> Transaction<'a> {
             } else {
                 target.prior
             };
-            self.store.expect(target.name, expected)?;
+            self.store
+                .expect_record(target.name, expected, self.identities[index])?;
         }
         Ok(())
     }
@@ -571,12 +694,20 @@ impl<'a> Transaction<'a> {
         for (index, target) in self.targets.iter().enumerate() {
             at(Boundary::BeforeReplace(index))?;
             self.verify_primaries()?;
-            self.store.expect(&target.stage, Some(target.intended))?;
-            self.store.expect(&target.backup, target.prior)?;
+            if self.store.protected.is_some() && target.prior == Some(target.intended) {
+                continue;
+            }
+            let stage = self.artifact(&target.stage)?;
+            let identity = self.store.protected.as_ref().map(|_| stage.identity);
             self.store
-                .move_into_place(&target.stage, target.name, target.prior.is_some())?;
+                .expect_record(&target.stage, Some(target.intended), identity)?;
+            self.verify_backup(target)?;
+            self.store
+                .move_into_place(stage, target.name, target.prior.is_some())?;
             self.replaced[index] = true;
-            self.store.expect(target.name, Some(target.intended))?;
+            self.identities[index] = identity;
+            self.store
+                .expect_record(target.name, Some(target.intended), identity)?;
             at(Boundary::AfterReplace(index))?;
         }
         self.verify_primaries()
@@ -588,8 +719,8 @@ impl<'a> Transaction<'a> {
         // backups before restoring any primary.
         self.verify_primaries()?;
         for (target, replaced) in self.targets.iter().zip(self.replaced) {
-            if replaced && let Some(prior) = target.prior {
-                self.store.expect(&target.backup, Some(prior))?;
+            if replaced && target.prior.is_some() {
+                self.verify_backup(target)?;
             }
         }
         for (index, target) in self.targets.iter().enumerate() {
@@ -599,32 +730,62 @@ impl<'a> Transaction<'a> {
             at(Boundary::BeforeRestore(index))?;
             self.verify_primaries()?;
             if let Some(prior) = target.prior {
-                self.store.expect(&target.backup, Some(prior))?;
-                self.artifacts
-                    .push(self.store.create_artifact(&target.restore, prior)?);
-                self.store.expect(&target.restore, Some(prior))?;
+                self.verify_backup(target)?;
+                let restore = self.store.create_artifact(&target.restore, prior)?;
+                let identity = self.store.protected.as_ref().map(|_| restore.identity);
+                self.artifacts.push(restore);
+                let restore = self.artifact(&target.restore)?;
                 self.store
-                    .move_into_place(&target.restore, target.name, true)?;
+                    .expect_record(&target.restore, Some(prior), identity)?;
+                self.store.move_into_place(restore, target.name, true)?;
+                self.identities[index] = identity;
             } else {
-                self.store
-                    .delete_exact(target.name, target.intended, None)?;
+                self.store.delete_exact(
+                    target.name,
+                    target.intended,
+                    self.identities[index],
+                    false,
+                )?;
+                self.identities[index] = None;
             }
             self.replaced[index] = false;
-            self.store.expect(target.name, target.prior)?;
+            self.store
+                .expect_record(target.name, target.prior, self.identities[index])?;
         }
         self.verify_primaries()
     }
 
+    fn artifact(&self, name: &str) -> io::Result<&Artifact<'a>> {
+        self.artifacts
+            .iter()
+            .find(|artifact| artifact.name == name)
+            .ok_or_else(|| io::Error::other("transaction artifact was not recorded"))
+    }
+
+    fn verify_backup(&self, target: &Target<'_>) -> io::Result<()> {
+        let identity = if self.store.protected.is_some() && target.prior.is_some() {
+            Some(self.artifact(&target.backup)?.identity)
+        } else {
+            None
+        };
+        self.store
+            .expect_record(&target.backup, target.prior, identity)
+    }
+
     fn cleanup(self, outcome: Outcome, at: &mut impl FnMut(Boundary) -> io::Result<()>) -> Report {
         let mut report = Report::new(outcome);
+        report.identities = self.identities;
         if let Err(error) = at(Boundary::BeforeArtifactCleanup) {
             report.artifact_errors.push(error);
             return report;
         }
         for artifact in self.artifacts {
-            let cleanup =
-                self.store
-                    .delete_exact(&artifact.name, artifact.bytes, Some(artifact.identity));
+            let cleanup = self.store.delete_exact(
+                &artifact.name,
+                artifact.bytes,
+                Some(artifact.identity),
+                true,
+            );
             if let Err(error) = cleanup {
                 report.artifact_errors.push(error);
             }
@@ -642,6 +803,96 @@ fn inspect_bytes(bytes: [Option<&[u8]>; 3]) -> Inspection {
         preferences,
         commit,
     })
+}
+
+// Open a single known child relative to a retained directory. The fixture
+// creates its private child; protected admission only opens existing entries.
+fn open_relative(
+    parent: &File,
+    name: &OsStr,
+    access: u32,
+    share: u32,
+    disposition: u32,
+    options: u32,
+) -> io::Result<File> {
+    open_relative_with_security(parent, name, access, share, disposition, options, None)
+}
+
+fn open_relative_with_security(
+    parent: &File,
+    name: &OsStr,
+    access: u32,
+    share: u32,
+    disposition: u32,
+    options: u32,
+    security: Option<&protected::LocalDescriptor>,
+) -> io::Result<File> {
+    use std::{os::windows::io::FromRawHandle, ptr};
+    use windows_sys::{
+        Wdk::{
+            Foundation::OBJECT_ATTRIBUTES,
+            Storage::FileSystem::{
+                FILE_DIRECTORY_FILE, FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
+            },
+        },
+        Win32::{
+            Foundation::{
+                OBJ_CASE_INSENSITIVE, OBJ_DONT_REPARSE, RtlNtStatusToDosError, UNICODE_STRING,
+            },
+            System::IO::IO_STATUS_BLOCK,
+        },
+    };
+
+    let mut wide: Vec<u16> = name.encode_wide().collect();
+    let length = u16::try_from(wide.len() * size_of::<u16>()).map_err(io::Error::other)?;
+    let mut name = UNICODE_STRING {
+        Length: length,
+        MaximumLength: length,
+        Buffer: wide.as_mut_ptr(),
+    };
+    let attributes = OBJECT_ATTRIBUTES {
+        Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
+        RootDirectory: parent.as_raw_handle(),
+        ObjectName: &mut name,
+        Attributes: OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE,
+        SecurityDescriptor: security.map_or(ptr::null(), |descriptor| descriptor.0.cast()),
+        ..Default::default()
+    };
+    let mut handle = ptr::null_mut();
+    let mut io_status = IO_STATUS_BLOCK::default();
+    let file_attributes = if options & FILE_DIRECTORY_FILE != 0 {
+        FILE_ATTRIBUTE_DIRECTORY
+    } else {
+        0
+    };
+    // SAFETY: The retained parent owns its handle, and all buffers stay live
+    // for this synchronous call. The only callers supply a single child name.
+    let status = unsafe {
+        NtCreateFile(
+            &mut handle,
+            access,
+            &attributes,
+            &mut io_status,
+            ptr::null(),
+            file_attributes,
+            share,
+            disposition,
+            options | FILE_SYNCHRONOUS_IO_NONALERT,
+            ptr::null(),
+            0,
+        )
+    };
+    if status < 0 {
+        // SAFETY: The returned NTSTATUS is the sole input.
+        return Err(io::Error::from_raw_os_error(
+            unsafe { RtlNtStatusToDosError(status) } as i32,
+        ));
+    }
+    if handle.is_null() || handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+        return Err(io::Error::other("relative open returned no handle"));
+    }
+    // SAFETY: A successful synchronous open transferred ownership of the handle.
+    Ok(unsafe { File::from_raw_handle(handle) })
 }
 
 fn pin_directory(path: &Path) -> io::Result<File> {

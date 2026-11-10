@@ -8,8 +8,10 @@ use tokio::sync::mpsc;
 // Both thermal recipes and battery policy share the scenario guard and one
 // status publication. The scripted transport behind each recipe is fixture-only.
 pub(super) struct Thermal {
-    performance: performance::Controller,
-    fans: fan::Controller,
+    pub(super) performance: performance::Controller,
+    pub(super) fans: fan::Controller,
+    power_profile: bool,
+    pub(super) power_unresolved: bool,
 }
 
 impl Thermal {
@@ -33,7 +35,23 @@ impl Thermal {
         Ok(Self {
             performance: performance::Controller::standard(),
             fans: fan::Controller::temporary(),
+            power_profile: false,
+            power_unresolved: false,
         })
+    }
+
+    pub(super) fn for_power_profile(
+        status: &mut Value,
+        prior_performance: bool,
+    ) -> io::Result<Self> {
+        let mut thermal = Self::new(status)?;
+        thermal.power_profile = true;
+        // A prior confirmed standard preset provides a differing getter
+        // baseline. The durable plugged-in destination remains Balanced.
+        if prior_performance {
+            thermal.performance.profile_replay_baseline();
+        }
+        Ok(thermal)
     }
 
     pub(super) fn pending_write(&self) -> bool {
@@ -41,7 +59,20 @@ impl Thermal {
     }
 
     pub(super) fn project(&self, status: &mut Value) {
-        self.performance.project(status);
+        if self.power_profile {
+            self.performance.project_readback(status);
+            if !status["performanceOverride"].is_null() {
+                self.performance.project_desired(status);
+            }
+            if self.power_unresolved && status["activePowerSource"] == 1 {
+                status["activePowerSource"] = 3.into();
+            }
+            if self.power_unresolved || status["activePowerSource"] != 0 {
+                status["writesBlocked"] = true.into();
+            }
+        } else {
+            self.performance.project(status);
+        }
         self.fans.project(status);
     }
 }
@@ -58,13 +89,36 @@ pub(super) fn await_readback() -> Result {
 }
 
 impl ScenarioState {
-    fn thermal(&mut self) -> io::Result<&mut Thermal> {
+    pub(super) fn thermal(&mut self) -> io::Result<&mut Thermal> {
         self.thermal
             .as_mut()
             .ok_or_else(|| io::Error::other("missing composed thermal fixture"))
     }
 
-    fn thermal_block(&self) -> Option<Result> {
+    pub(super) fn unresolved_power(&self) -> Option<Result> {
+        self.thermal
+            .as_ref()
+            .is_some_and(|thermal| thermal.power_unresolved)
+            .then(|| blocked("Fresh external adapter classification is required."))
+    }
+
+    pub(super) fn direct_thermal_block(&self) -> Option<Result> {
+        self.thermal_block()
+            .or_else(|| self.unresolved_power())
+            .or_else(|| {
+                (self
+                    .thermal
+                    .as_ref()
+                    .is_some_and(|thermal| thermal.power_profile)
+                    && self.controller.power != super::Power::PluggedIn)
+                    .then(|| blocked("The scoped thermal recipe requires full adapter power."))
+            })
+    }
+
+    pub(super) fn thermal_block(&self) -> Option<Result> {
+        if let Some(blocked) = self.session_block() {
+            return Some(blocked);
+        }
         if self.configuration_blocked {
             return Some(blocked_configuration());
         }
@@ -80,7 +134,7 @@ impl Scenario {
         value: Option<performance::Override>,
     ) -> io::Result<Result> {
         self.update(|state| {
-            if let Some(blocked) = state.thermal_block() {
+            if let Some(blocked) = state.direct_thermal_block() {
                 return Ok(blocked);
             }
             if value.as_ref().is_some_and(|value| !value.is_temporary()) {
@@ -88,13 +142,30 @@ impl Scenario {
                     "Only temporary preset overrides are admitted in this fixture.",
                 ));
             }
+            let selected = state
+                .application
+                .as_ref()
+                .map(|_| state.profile_performance().0);
             let thermal = state.thermal()?;
             if !thermal.fans.automatic_confirmed() {
                 return Ok(blocked(
                     "The scoped preset recipe requires a confirmed Automatic fan pair.",
                 ));
             }
-            let outcome = thermal.performance.request(value)?;
+            let outcome = if let Some(selected) = selected {
+                if !super::power_profile::fresh_full_adapter(&mut thermal.fans)
+                    || !thermal.fans.fresh_automatic()
+                {
+                    return Ok(blocked(
+                        "The scoped preset recipe requires fresh full power and an Automatic fan pair.",
+                    ));
+                }
+                thermal.performance.request_selected(value, selected, || {
+                    super::power_profile::fresh_full_adapter(&mut thermal.fans)
+                })?
+            } else {
+                thermal.performance.request(value)?
+            };
             Ok(Result {
                 status: outcome.status,
                 message: outcome.message,
@@ -109,7 +180,7 @@ impl Scenario {
         settings: Option<fan::Settings>,
     ) -> io::Result<Result> {
         self.update(|state| {
-            if let Some(blocked) = state.thermal_block() {
+            if let Some(blocked) = state.direct_thermal_block() {
                 return Ok(blocked);
             }
             let thermal = state.thermal()?;

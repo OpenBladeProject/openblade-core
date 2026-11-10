@@ -99,6 +99,23 @@ impl Controller {
     }
 
     #[cfg(windows)]
+    pub(crate) fn expire_power_override(&mut self) {
+        self.saved = None;
+        // Expiring intent does not retire the scripted port's ownership.
+        // The next handback still requires fresh admission and readback.
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn fresh_automatic(&mut self) -> bool {
+        self.automatic_confirmed() && self.device.observe() == Some(Topology::Automatic)
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn read_scripted_adapter(&mut self, reply: Option<[u8; 2]>) -> Option<[u8; 2]> {
+        self.device.read_scripted_adapter(reply)
+    }
+
+    #[cfg(windows)]
     pub(crate) fn pending_write(&self) -> bool {
         self.pending
     }
@@ -150,7 +167,7 @@ impl Controller {
         self.transition(Topology::Manual)
     }
 
-    fn handback(&mut self) -> io::Result<Outcome> {
+    pub(crate) fn handback(&mut self) -> io::Result<Outcome> {
         if let Some(outcome) = self.write_block() {
             return Ok(outcome);
         }
