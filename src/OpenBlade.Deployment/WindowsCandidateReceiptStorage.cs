@@ -115,7 +115,7 @@ internal sealed class WindowsCandidateReceiptStorage
         return new FileStream(OpenChecked(path, directory: false, this), FileAccess.Read);
     }
 
-    internal void Publish(string path, byte[] bytes)
+    internal void Publish(string path, byte[] bytes, Action? beforePublish = null)
     {
         if (bytes.Length is < 1 or > MaximumRecordBytes)
         {
@@ -141,6 +141,7 @@ internal sealed class WindowsCandidateReceiptStorage
             RequireExact(retained, bytes);
             // Publish the verified object itself while its handle and the
             // containing directory are retained. The rename never replaces.
+            beforePublish?.Invoke();
             PublishByHandle(retained.SafeFileHandle, path);
             created = false;
         }

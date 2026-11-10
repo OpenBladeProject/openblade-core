@@ -20,11 +20,11 @@ try
     {
         await output.WriteAsync(commitment, token);
         await output.FlushAsync(token);
-        byte[] readiness = new byte[1];
-        await input.ReadExactlyAsync(readiness, token);
-        if (readiness[0] != 1)
+        // EOF lets the observation finish. Only Setup's private pipe exchange
+        // with the retained Rust fixture can supply readiness.
+        if (await input.ReadAsync(new byte[1], token) != 0)
         {
-            throw new InvalidDataException("The scratch startup fixture refused readiness.");
+            throw new InvalidDataException("Unexpected data on the scratch observation channel.");
         }
     }, deadline.Token);
     return 0;

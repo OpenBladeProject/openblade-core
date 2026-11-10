@@ -1,11 +1,16 @@
 #![allow(unsafe_code)]
 
+#[cfg(any(test, feature = "scratch-candidate-receipt"))]
+use std::rc::Rc;
 use std::{
     future::Future,
+    io,
     mem::{offset_of, size_of, size_of_val},
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    pin::Pin,
     ptr::{null, null_mut},
     task::{Context, Poll, ready},
+    time::Duration,
 };
 
 use tokio::{
@@ -14,8 +19,8 @@ use tokio::{
 };
 use windows_sys::Win32::{
     Foundation::{
-        ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED,
-        ERROR_PIPE_LISTENING, ERROR_PIPE_NOT_CONNECTED, HANDLE, INVALID_HANDLE_VALUE,
+        ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_CONNECTED, ERROR_PIPE_LISTENING,
+        ERROR_PIPE_NOT_CONNECTED, HANDLE, INVALID_HANDLE_VALUE,
     },
     Security::{
         GetTokenInformation, IsWellKnownSid, SID_AND_ATTRIBUTES, TOKEN_GROUPS, TOKEN_USER,
@@ -33,7 +38,17 @@ use windows_sys::Win32::{
     },
 };
 
-use super::*;
+#[path = "readiness_peer.rs"]
+mod peer;
+pub(crate) use peer::{Caller, ControlSession, Logon, Pending, Stream};
+
+#[cfg(all(test, feature = "installed-service-candidate"))]
+use super::{Endpoint, probe_id, windows_control_session};
+use crate::windows_protected_path::denied;
+#[cfg(all(test, feature = "installed-service-candidate"))]
+use tokio::time::timeout;
+#[cfg(feature = "installed-service-candidate")]
+use windows_sys::Win32::Foundation::ERROR_PIPE_BUSY;
 
 #[path = "../../../pipe_primitives.rs"]
 mod primitives;
@@ -59,20 +74,35 @@ pub(super) struct NativeEndpoint {
 }
 
 impl NativeEndpoint {
-    #[cfg(not(test))]
-    pub(super) fn open(
-        launch: &super::super::LaunchIdentity,
+    #[cfg(feature = "scratch-candidate-receipt")]
+    pub(crate) fn open_scratch(id: &str) -> io::Result<(Self, u32)> {
+        use windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId;
+
+        if !crate::service_frame::is_guid(id) {
+            return Err(denied("invalid scratch readiness endpoint ID"));
+        }
+        let mut session = 0;
+        // SAFETY: The PID is ours and the output is writable.
+        check(unsafe { ProcessIdToSessionId(std::process::id(), &mut session) })?;
+        let endpoint = Self::claim(
+            &format!(r"\\.\pipe\OpenBlade.Rust.CandidateReceipt.Test.{id}"),
+            descriptor("D:P(D;;0x1f019f;;;NU)(A;;0x1f019f;;;OW)")?,
+            session,
+            Rc::new(|| Ok(None)),
+        )?;
+        Ok((endpoint, session))
+    }
+
+    #[cfg(all(not(test), feature = "installed-service-candidate"))]
+    pub(super) fn open_managed(
+        path: &str,
+        admitted_pid: u32,
         control_session: ControlSession,
     ) -> io::Result<Self> {
-        if launch.pid != std::process::id() {
+        if admitted_pid != std::process::id() {
             return Err(denied("installed listener requires the admitted process"));
         }
-        Self::claim(
-            &production_path(),
-            managed_descriptor()?,
-            0,
-            control_session,
-        )
+        Self::claim(path, managed_descriptor()?, 0, control_session)
     }
 
     fn claim(
@@ -142,14 +172,11 @@ impl NativeEndpoint {
     }
 }
 
+#[cfg(feature = "installed-service-candidate")]
 fn managed_descriptor() -> io::Result<LocalAllocation> {
     descriptor(&format!(
         "D:P(D;;0x{FULL_CONTROL:x};;;NU)(A;;0x{FULL_CONTROL:x};;;SY)(A;;0x{FULL_CONTROL:x};;;BA)(A;;0x{READ_WRITE_SYNC:x};;;BU)"
     ))
-}
-
-fn production_path() -> String {
-    format!(r"\\.\pipe\{PIPE_NAME}")
 }
 
 impl NativeEndpoint {
@@ -164,28 +191,22 @@ impl NativeEndpoint {
         }
         Ok(())
     }
-}
 
-impl Endpoint for NativeEndpoint {
-    fn listener(&self) -> io::Result<Listener> {
+    #[cfg(feature = "installed-service-candidate")]
+    pub(super) fn verify_managed_listener(&self, expected_path: &str) -> io::Result<()> {
         self.verify_claim()?;
         if !self
             .path
             .iter()
             .copied()
-            .eq(production_path().encode_utf16().chain([0]))
+            .eq(expected_path.encode_utf16().chain([0]))
         {
             return Err(denied("unexpected installed pipe path"));
         }
-        Ok(Listener {
-            pipe_name: PIPE_NAME,
-            first_instance: true,
-            managed_acl: true,
-            local_only: true,
-        })
+        Ok(())
     }
 
-    fn accept(&self) -> Pending<'_, Box<dyn Stream>> {
+    pub(crate) fn accept(&self) -> Pending<'_, Box<dyn Stream>> {
         Box::pin(async {
             self.verify_claim()?;
             loop {
@@ -213,7 +234,8 @@ impl Endpoint for NativeEndpoint {
         })
     }
 
-    fn connect_probe(&self) -> Pending<'_, Box<dyn Stream>> {
+    #[cfg(feature = "installed-service-candidate")]
+    pub(super) fn connect_probe(&self) -> Pending<'_, Box<dyn Stream>> {
         Box::pin(async {
             self.verify_claim()?;
             loop {
@@ -231,7 +253,7 @@ impl Endpoint for NativeEndpoint {
         })
     }
 
-    fn retire(&mut self) -> Pending<'_, ()> {
+    pub(crate) fn retire(&mut self) -> Pending<'_, ()> {
         Box::pin(async {
             // Accept and exchange futures are already dropped by the driver.
             // No overlapped operations or background workers own these handles.
@@ -326,7 +348,7 @@ impl NativeStream {
     }
 }
 
-impl AsyncRead for NativeStream {
+impl tokio::io::AsyncRead for NativeStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -360,7 +382,7 @@ impl AsyncRead for NativeStream {
     }
 }
 
-impl AsyncWrite for NativeStream {
+impl tokio::io::AsyncWrite for NativeStream {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -545,7 +567,7 @@ fn classify_logon(interactive: bool, remote: bool) -> Logon {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "installed-service-candidate"))]
 pub(super) fn private_endpoint(
     control_session: impl FnOnce(u32) -> ControlSession,
 ) -> (impl Fn() -> io::Result<NativeEndpoint>, u32) {
@@ -570,7 +592,7 @@ pub(super) fn private_endpoint(
     (open, session)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "installed-service-candidate"))]
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

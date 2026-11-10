@@ -4,6 +4,7 @@ using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text.Json;
+using OpenBlade.Contracts;
 using OpenBlade.Deployment;
 using OpenBlade.DeploymentBroker;
 
@@ -24,7 +25,7 @@ public sealed class WindowsCandidatePackageReceiptTests
         var original = await fixture.PrepareAsync(first);
         byte[] startup = [];
         byte[] startupInput = [];
-        await fixture.RunReceiverAsync(first, expectedExit: 0, startupProbe: async commitment =>
+        await fixture.RunReceiverAsync(first, expectedExit: 0, observeStartup: async commitment =>
         {
             startup = File.ReadAllBytes(fixture.Startup);
             startupInput = commitment;
@@ -66,7 +67,6 @@ public sealed class WindowsCandidatePackageReceiptTests
             await fixture.RunRustReaderAsync(startupInput, "Session Agent verification failed");
             File.WriteAllBytes(agent, originalAgent);
             await fixture.RunRustReaderAsync(startupInput);
-            return true;
         });
         original.VerifyCommitted(fixture.Tree.Install, default);
         byte[] committed = File.ReadAllBytes(fixture.Committed);
@@ -125,6 +125,7 @@ public sealed class WindowsCandidatePackageReceiptTests
     }
 #endif
 
+#if OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE
     [Fact]
     public async Task ReceiverReopensAfterBrokerBindsItsProcessAndConsumesReceiptOnce()
     {
@@ -158,15 +159,60 @@ public sealed class WindowsCandidatePackageReceiptTests
         refused.WriteSignedInbox(sequence: 2);
         Guid update = Guid.NewGuid();
         await refused.PrepareAsync(update);
-        await refused.RunReceiverAsync(update, expectedExit: 3, "fixture refused readiness", startupProbe: _ =>
+        await refused.RunReceiverAsync(update, expectedExit: 3, "fixture build pin", observeStartup: _ =>
         {
             Assert.True(File.Exists(refused.Startup));
             Assert.False(File.Exists(refused.Committed));
-            return Task.FromResult(false);
+            File.AppendAllText(refused.ReadinessImage, "changed");
+            return Task.CompletedTask;
         });
         Assert.False(File.Exists(refused.Startup));
         Assert.Equal(priorCommit, File.ReadAllBytes(refused.Committed));
         old.VerifyCommitted(refused.Tree.Install, default);
+    }
+#endif
+
+    [Theory]
+    [InlineData("generic")]
+    [InlineData("request")]
+    [InlineData("commitment")]
+    [InlineData("step")]
+    [InlineData("duplicate")]
+    [InlineData("truncated")]
+    public async Task ScratchReadinessRejectsGenericStaleAndMalformedFrames(string fault)
+    {
+        var request = new WindowsScratchCandidateReadiness.StartupFrame("verifyProvisional",
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), 2, new string('a', 152));
+        var response = request with { Frame = "provisionalReady" };
+        using var frame = new MemoryStream();
+        await IpcMessageCodec.WriteFramedAsync(frame, response, default);
+        frame.Position = 0;
+        await WindowsScratchCandidateReadiness.ReadResponseAsync(frame, request, default);
+        frame.SetLength(0);
+        frame.Position = 0;
+        object stale = fault switch
+        {
+            "generic" => new { Frame = "response", response.Version, response.RequestId, Success = true },
+            "request" => response with { RequestId = Guid.NewGuid() },
+            "commitment" => response with { Commitment = new string('b', 152) },
+            "step" => response with { Step = 1 },
+            "duplicate" => JsonDocument.Parse($$"""{"frame":"provisionalReady","version":79,"version":79,"requestId":"{{request.RequestId}}","step":2,"commitment":"{{request.Commitment}}"}""").RootElement,
+            _ => response,
+        };
+        await IpcMessageCodec.WriteFramedAsync(frame, stale, default);
+        if (fault == "truncated")
+        {
+            frame.SetLength(frame.Length - 1);
+        }
+        frame.Position = 0;
+        if (fault == "truncated")
+        {
+            await Assert.ThrowsAsync<EndOfStreamException>(() => WindowsScratchCandidateReadiness.ReadResponseAsync(frame, request, default));
+        }
+        else
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(() => WindowsScratchCandidateReadiness.ReadResponseAsync(frame, request, default));
+        }
     }
 
     [Theory]
@@ -426,6 +472,37 @@ public sealed class WindowsCandidatePackageReceiptTests
     }
 
     [Fact]
+    public async Task LostReadinessAtPublicationRollsBackToPriorReceipt()
+    {
+        using var fixture = await Fixture.CreateAsync();
+        Guid first = Guid.NewGuid();
+        var prior = await fixture.PrepareAsync(first);
+        await using (var transaction = await fixture.StageAsync(prior, first))
+        {
+            await transaction.ActivateAsync(default);
+            await transaction.CommitAsync(default);
+        }
+        byte[] committed = File.ReadAllBytes(fixture.Committed);
+        await fixture.ReconcileAsync(prior, first);
+        fixture.WriteSignedInbox(sequence: 2);
+        Guid second = Guid.NewGuid();
+        var incoming = await fixture.PrepareAsync(second);
+        await using var update = await fixture.StageAsync(incoming, second, verifyReadinessAtPublication: () =>
+        {
+            Assert.False(File.Exists(fixture.Startup));
+            Assert.False(File.Exists(fixture.Committed));
+            throw new InvalidDataException("The fixture generation ended before publication.");
+        });
+        await update.ActivateAsync(default);
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() => update.CommitAsync(default));
+        Assert.Contains("generation ended", error.Message, StringComparison.Ordinal);
+        Assert.False(File.Exists(fixture.Committed));
+        await update.RollbackAsync(default);
+        Assert.Equal(committed, File.ReadAllBytes(fixture.Committed));
+        prior.VerifyCommitted(fixture.Tree.Install, default);
+    }
+
+    [Fact]
     public async Task RetainsCommitAndInFlightStateIfBrokerCleanupFails()
     {
         using var fixture = await Fixture.CreateAsync();
@@ -565,6 +642,7 @@ public sealed class WindowsCandidatePackageReceiptTests
         internal SetupPayloadTransactionTests.TestTree Tree { get; }
         internal string Startup => Path.Combine(Tree.Install, WindowsCandidatePackageReceipt.StartupName);
         internal string Committed => Path.Combine(Tree.Install, WindowsCandidatePackageReceipt.CommittedName);
+        internal string ReadinessImage => Path.Combine(storage.Root, "receiver", WindowsScratchCandidateReadiness.ImageName);
         internal string StageDirectory(Guid request) => Path.Combine(Paths.StagingDirectory, request.ToString("N"));
         internal string Pending(Guid request) => Path.Combine(StageDirectory(request), WindowsCandidatePackageReceipt.PendingName);
         internal string Claimed(Guid request) => Path.Combine(StageDirectory(request), WindowsCandidatePackageReceipt.ClaimedName);
@@ -573,9 +651,10 @@ public sealed class WindowsCandidatePackageReceiptTests
             broker.PrepareAsync(request, BrokerInstalledState.NotInstalled, default);
 
         internal Task<ISetupPayloadTransaction> StageAsync(WindowsCandidatePackageReceipt receipt, Guid request,
-            Guid? installation = null, Action? beforeMove = null) =>
+            Guid? installation = null, Action? beforeMove = null, Action? verifyReadinessAtPublication = null) =>
             SetupPayloadTransaction.StageCandidateAsync(Tree.Paths, Tree.Payload, new WindowsSetupPayloadFileSystem(),
-                receipt, installation ?? Installation, request, beforeMove ?? (() => { }), default);
+                receipt, installation ?? Installation, request, beforeMove ?? (() => { }), default,
+                verifyReadinessAtPublication: verifyReadinessAtPublication);
 
         internal Task ReconcileAsync(WindowsCandidatePackageReceipt receipt, Guid request) =>
             broker.ReconcileCommittedAsync(receipt, Installation, request, default);
@@ -583,7 +662,7 @@ public sealed class WindowsCandidatePackageReceiptTests
         internal async Task RunReceiverAsync(Guid request, int expectedExit, string? expectedDiagnostic = null,
             Action<Process>? afterStart = null, bool publishBinding = true, bool wrongSecret = false,
             bool wrongImage = false, bool closeWithoutRelease = false,
-            Func<byte[], Task<bool>>? startupProbe = null)
+            Func<byte[], Task>? observeStartup = null)
         {
             string source = AppContext.BaseDirectory;
             string image = ScratchCandidateLaunch.ReceiverPath(storage);
@@ -594,7 +673,8 @@ public sealed class WindowsCandidatePackageReceiptTests
                 foreach (string path in Directory.EnumerateFiles(source))
                 {
                     string name = Path.GetFileName(path);
-                    if (name == ScratchCandidateLaunch.ReceiverName || name.EndsWith(".dll", StringComparison.Ordinal)
+                    if (name == ScratchCandidateLaunch.ReceiverName || name == WindowsScratchCandidateReadiness.ImageName
+                        || name.EndsWith(".dll", StringComparison.Ordinal)
                         || name is "OpenBlade.CandidateReceipt.Scratch.deps.json" or "OpenBlade.CandidateReceipt.Scratch.runtimeconfig.json")
                     {
                         File.Copy(path, Path.Combine(directory, name));
@@ -616,7 +696,7 @@ public sealed class WindowsCandidatePackageReceiptTests
                     afterStart?.Invoke(process);
                 }, afterExit: closeWithoutRelease ? child => Assert.Throws<InvalidDataException>(
                     () => ScratchCandidateLaunch.Bind(storage, request, child, heldImage, secret)) : null,
-                startupProbe: startupProbe ?? (expectedExit == 0 ? _ => Task.FromResult(true) : null));
+                observeStartup: observeStartup ?? (expectedExit == 0 ? _ => Task.CompletedTask : null));
         }
 
 #if OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE
@@ -628,7 +708,7 @@ public sealed class WindowsCandidatePackageReceiptTests
 
         private static async Task RunScratchChildAsync(string name, byte[] input, int expectedExit,
             string? expectedDiagnostic, Action<Process>? bind = null, int timeoutSeconds = 75,
-            Action<Process>? afterExit = null, Func<byte[], Task<bool>>? startupProbe = null)
+            Action<Process>? afterExit = null, Func<byte[], Task>? observeStartup = null)
         {
             using WindowsIdentity identity = WindowsIdentity.GetCurrent();
             if (identity.IsSystem || new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
@@ -643,7 +723,7 @@ public sealed class WindowsCandidatePackageReceiptTests
                 CreateNoWindow = true,
                 RedirectStandardInput = true,
                 RedirectStandardError = true,
-                RedirectStandardOutput = startupProbe is not null,
+                RedirectStandardOutput = observeStartup is not null,
             }) ?? throw new InvalidOperationException($"Unable to start scratch child {name}.");
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             try
@@ -651,12 +731,11 @@ public sealed class WindowsCandidatePackageReceiptTests
                 bind?.Invoke(child);
                 await child.StandardInput.BaseStream.WriteAsync(input, deadline.Token);
                 var error = child.StandardError.ReadToEndAsync(deadline.Token);
-                if (startupProbe is not null)
+                if (observeStartup is not null)
                 {
                     byte[] commitment = new byte[76];
                     await child.StandardOutput.BaseStream.ReadExactlyAsync(commitment, deadline.Token);
-                    byte readiness = await startupProbe(commitment) ? (byte)1 : (byte)0;
-                    await child.StandardInput.BaseStream.WriteAsync(new[] { readiness }, deadline.Token);
+                    await observeStartup(commitment);
                 }
                 child.StandardInput.Close();
                 await child.WaitForExitAsync(deadline.Token);

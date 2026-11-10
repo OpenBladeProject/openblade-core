@@ -9,7 +9,7 @@ use crate::installed::readiness::Logon;
 #[tokio::test]
 async fn private_pipe_serves_and_retires_observed_v79_status() {
     use crate::installed::readiness::{
-        DRAIN_TIMEOUT, Endpoint, GetStatus, StatusResponse, read_payload, serve, verify_peer,
+        DRAIN_TIMEOUT, GetStatus, StatusResponse, read_payload, serve, verify_peer,
         windows::private_endpoint, write_frame,
     };
     use std::{rc::Rc, sync::atomic::AtomicUsize};

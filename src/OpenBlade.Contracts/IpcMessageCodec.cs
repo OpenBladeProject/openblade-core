@@ -151,7 +151,7 @@ public static class IpcMessageCodec
             Protocol51SerializerOptions);
     }
 
-    private static async Task WriteFramedAsync<T>(
+    internal static async Task WriteFramedAsync<T>(
         Stream stream,
         T message,
         CancellationToken cancellationToken,
@@ -206,7 +206,7 @@ public static class IpcMessageCodec
         }
     }
 
-    private static async Task<T> ReadFramedAsync<T>(
+    internal static async Task<T> ReadFramedAsync<T>(
         Stream stream,
         CancellationToken cancellationToken,
         bool allowProtocol51 = false,

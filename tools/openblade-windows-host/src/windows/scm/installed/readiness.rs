@@ -1,12 +1,10 @@
 //! Installed v79 GetStatus only. Ports must own their resources and acknowledge retirement.
 
-use std::{future::Future, io, pin::Pin, rc::Rc, time::Duration};
+use std::{future::Future, io, rc::Rc, time::Duration};
 
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    sync::oneshot,
-    time::timeout,
-};
+#[cfg(test)]
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::{sync::oneshot, time::timeout};
 
 use super::{PIPE_NAME, PROTOCOL_VERSION, Readiness, denied};
 use crate::{
@@ -16,6 +14,7 @@ use crate::{
 
 #[path = "readiness_windows.rs"]
 mod windows;
+use windows::{Caller, ControlSession, Logon, Pending, Stream};
 
 #[path = "status_wire.rs"]
 mod status_wire;
@@ -27,19 +26,8 @@ mod status_source;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
-type Pending<'a, T> = Pin<Box<dyn Future<Output = io::Result<T>> + 'a>>;
-pub(super) type ControlSession = Rc<dyn Fn() -> io::Result<Option<u32>>>;
-
 fn windows_control_session() -> ControlSession {
     Rc::new(|| Ok(crate::console_session::observe()))
-}
-
-// Each native connection retains its handle and supplies handle-bound
-// evidence; the listener never infers identity from the pipe name.
-trait Stream: AsyncRead + AsyncWrite + Unpin {
-    fn server_pid(&self) -> io::Result<u32>;
-    fn caller_after_read(&self) -> io::Result<Caller>;
-    fn control_session(&self) -> io::Result<Option<u32>>;
 }
 
 struct Listener {
@@ -62,22 +50,6 @@ impl Listener {
         }
         Ok(())
     }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Logon {
-    System,
-    Interactive,
-    RemoteInteractive,
-    Other,
-}
-
-#[derive(Clone, Copy)]
-struct Caller {
-    pid: Option<u32>,
-    logon: Logon,
-    session: u32,
-    control_session: Option<u32>,
 }
 
 impl Caller {
@@ -103,6 +75,34 @@ trait Endpoint {
     fn retire(&mut self) -> Pending<'_, ()>;
 }
 
+impl Endpoint for windows::NativeEndpoint {
+    fn listener(&self) -> io::Result<Listener> {
+        self.verify_managed_listener(&production_path())?;
+        Ok(Listener {
+            pipe_name: PIPE_NAME,
+            first_instance: true,
+            managed_acl: true,
+            local_only: true,
+        })
+    }
+
+    fn accept(&self) -> Pending<'_, Box<dyn Stream>> {
+        windows::NativeEndpoint::accept(self)
+    }
+
+    fn connect_probe(&self) -> Pending<'_, Box<dyn Stream>> {
+        windows::NativeEndpoint::connect_probe(self)
+    }
+
+    fn retire(&mut self) -> Pending<'_, ()> {
+        windows::NativeEndpoint::retire(self)
+    }
+}
+
+fn production_path() -> String {
+    format!(r"\\.\pipe\{PIPE_NAME}")
+}
+
 // Owns an already admitted runtime source. Every request takes a fresh status
 // for the resolved caller, including the managed inactive-session projection.
 trait StatusSource {
@@ -124,7 +124,11 @@ pub(super) async fn prepare_installed_endpoint(
 ) -> io::Result<(Readiness, impl Future<Output = io::Result<()>> + use<>)> {
     admission.verify_launch(launch)?;
     let source = status_source::native_status_source();
-    let endpoint = windows::NativeEndpoint::open(launch, windows_control_session())?;
+    let endpoint = windows::NativeEndpoint::open_managed(
+        &production_path(),
+        launch.pid,
+        windows_control_session(),
+    )?;
     prepare(
         launch.pid,
         shutdown,

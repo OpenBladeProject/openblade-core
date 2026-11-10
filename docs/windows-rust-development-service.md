@@ -94,23 +94,36 @@ Activation verifies the live Service and Session Agent files against the
 authenticated package claim and publishes `candidate-package.startup.json`
 while those files and the active deployment binding are retained.
 
-The Rust probe requires the startup record, a commitment from the live scratch
-Setup receiver, and the matching active binding and Setup process generation.
-It verifies both role images through retained handles and exits before Setup
-receives the readiness acknowledgment. Commit retires the startup record and
-publishes `candidate-package.committed.json` as its last fallible step. Refused
-readiness and pre-publication failures roll back the activated tree, restoring
-the prior tree and receipt when present. An interrupted receiver can leave
-provisional bytes on disk. A dead receiver or changed generation invalidates
-the startup exchange, and the committed reader requires its own exact phase
+The explicit fixture build pins the Rust receipt verifier by SHA-256. Setup
+opens that image in the protected scratch tree, retains it across direct launch
+and commit, and verifies the returned process handle, creation time, and image
+path. The verifier checks the provisional record, active deployment binding,
+live Setup generation, and both role images. It serves two framed challenges
+on a unique local pipe using the existing protected first-instance transport.
+Each reply binds a fresh request ID and step to the verified startup
+commitment. Each side checks the peer on the same connection. Setup retains
+the verifier generation through readback and rechecks it just before publishing
+the committed record. The observation channel exposes provisional bytes to the
+test harness and carries no readiness response.
+
+The verifier releases its record and role handles after accepting readback.
+Setup independently rechecks both roles and the claim, retires the exact startup
+record, and publishes `candidate-package.committed.json` by retained-handle
+rename. A pre-publication failure rolls back the activated tree and restores the
+prior receipt when present. A dead receiver or changed generation invalidates
+the startup exchange. The committed reader still requires its separate phase
 and commitment.
 
-Installed integration still needs authenticated Burn-to-Setup authority, a
-private readiness route that works before commit, independent evidence of the
-generation SCM actually loaded, and post-commit authorization for the
-production control endpoint. Reboot admission needs its own authenticated
-commitment and recovery policy. The rehearsal verifies scratch files and
-processes only.
+A Windows install rehearsal needs evidence that Burn authenticated the package
+and the live Setup launch, and that SCM started the intended signed service
+generation. Capture a trusted binding from SCM's process object to the actual
+loaded image and its authenticated role identity, plus the private pipe peer
+and same generation through Setup readback and publication. Verify production
+endpoint admission only after commit, and observe registered lifecycle and
+prior-install restoration when pre-commit readiness fails. Reboot and
+interrupted publication need an authenticated recovery rehearsal. In the
+scratch rehearsal the verifier is the launched process and the Service and
+Session Agent role images are checked as files.
 
 Managed Setup has a separate process observation seam for an explicit fixture
 handoff. It duplicates the original Windows launch handle once. Each read uses

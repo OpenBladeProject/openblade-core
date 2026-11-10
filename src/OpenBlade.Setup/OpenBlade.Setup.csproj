@@ -23,6 +23,15 @@
     <ProjectReference Include="../OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj" />
     <InternalsVisibleTo Include="OpenBlade.CandidateReceipt.Scratch" />
   </ItemGroup>
+  <Target Name="PinScratchCandidateReadinessImage" BeforeTargets="GetAssemblyAttributes"
+          Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(OpenBladeCandidateReceiptRustProbe)' != ''">
+    <GetFileHash Files="$(OpenBladeCandidateReceiptRustProbe)" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="_ScratchCandidateReadinessSha256" />
+    </GetFileHash>
+    <ItemGroup>
+      <AssemblyMetadata Include="OpenBladeScratchCandidateReadinessSha256" Value="$(_ScratchCandidateReadinessSha256)" />
+    </ItemGroup>
+  </Target>
   <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' Or '$(OpenBladePackageProofFixture)' == 'true'">
     <ProjectReference Include="../OpenBlade.Deployment/OpenBlade.Deployment.csproj" />
   </ItemGroup>

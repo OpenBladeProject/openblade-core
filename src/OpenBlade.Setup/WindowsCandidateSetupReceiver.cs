@@ -13,7 +13,7 @@ internal static class WindowsCandidateSetupReceiver
     // The locator selects a scratch tree. Authority comes from its protected
     // enrollment, current Broker launch binding, and independently verified package.
     internal static Task CommitScratchPayloadAsync(Guid scratchId, byte[] secret,
-        Func<byte[], CancellationToken, Task> verifyStartup, CancellationToken cancellationToken)
+        Func<byte[], CancellationToken, Task> observeStartup, CancellationToken cancellationToken)
     {
         var storage = WindowsCandidateReceiptStorage.OpenScratch(scratchId);
         string root = storage.Root;
@@ -21,9 +21,16 @@ internal static class WindowsCandidateSetupReceiver
             Path.Combine(root, "LocalData"), Path.Combine(root, "Startup"));
         return new BrokerCandidateReceiptStage(storage).WithCurrentProcessReceiptAsync(secret, async (receipt, requireLiveLaunch) =>
         {
+            WindowsScratchCandidateReadiness? verified = null;
             await using var transaction = await SetupPayloadTransaction.StageCandidateAsync(paths,
                 Path.Combine(root, "payload"), new WindowsSetupPayloadFileSystem(), receipt,
-                receipt.InstallationId, receipt.RequestId, () => { }, cancellationToken, requireLiveLaunch);
+                receipt.InstallationId, receipt.RequestId, () => { }, cancellationToken, requireLiveLaunch,
+                verifyReadinessAtPublication: () =>
+                {
+                    requireLiveLaunch();
+                    (verified ?? throw new InvalidDataException("Scratch readiness has not completed readback."))
+                        .RequireLive(cancellationToken);
+                });
             try
             {
                 requireLiveLaunch();
@@ -34,8 +41,12 @@ internal static class WindowsCandidateSetupReceiver
                 byte[] identity = new byte[12];
                 BinaryPrimitives.WriteInt32LittleEndian(identity, setup.Id);
                 BinaryPrimitives.WriteInt64LittleEndian(identity.AsSpan(4), setup.StartTime.ToFileTimeUtc());
-                await verifyStartup([.. receipt.StartupCommitment(identity), .. identity], cancellationToken);
-                requireLiveLaunch();
+                byte[] commitment = [.. receipt.StartupCommitment(identity), .. identity];
+                await observeStartup(commitment, cancellationToken);
+                using var candidate = await WindowsScratchCandidateReadiness.ConnectAsync(storage, scratchId, commitment, cancellationToken);
+                await candidate.VerifyAsync(1, cancellationToken);
+                await candidate.VerifyAsync(2, cancellationToken);
+                verified = candidate;
                 await transaction.CommitAsync(cancellationToken);
             }
             catch (Exception failure)

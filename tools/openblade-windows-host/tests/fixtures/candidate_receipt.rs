@@ -4,6 +4,13 @@
 #[path = "../../src/candidate_receipt.rs"]
 mod candidate_receipt;
 #[cfg(windows)]
+#[allow(dead_code)] // The shared adapter also carries the installed status methods.
+#[path = "../../src/windows/scm/installed/readiness_windows.rs"]
+mod readiness_pipe;
+#[cfg(windows)]
+#[path = "../../src/service_frame.rs"]
+mod service_frame;
+#[cfg(windows)]
 #[path = "../../src/service_image.rs"]
 mod service_image;
 #[cfg(windows)]
@@ -46,10 +53,25 @@ mod scratch {
 
     use crate::{
         candidate_receipt,
+        readiness_pipe::{Logon, NativeEndpoint, Stream},
+        service_frame::{FRAME_TIMEOUT, is_guid, read_payload, write_frame},
         service_install_identity::{INSTALL_DIRECTORY, known_folder},
         windows_protected_path::{denied, dword, section, sid, verify_descriptor, word},
         windows_token::{check, process_token},
     };
+    use serde::{Deserialize, Serialize};
+    use std::time::Duration;
+    use tokio::{io::AsyncReadExt, time::timeout};
+
+    #[derive(Deserialize, Serialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct StartupFrame {
+        frame: String,
+        version: u32,
+        request_id: String,
+        step: u8,
+        commitment: String,
+    }
 
     pub(super) fn run() -> io::Result<()> {
         let owner = scratch_owner()?;
@@ -58,11 +80,12 @@ mod scratch {
         // identity from the authenticated scratch rendezvous.
         const COMMITTED_INPUT: usize = 68;
         const STARTUP_INPUT: usize = 112;
+        const PIPE_INPUT: usize = STARTUP_INPUT + 36;
         let mut input = Vec::new();
         io::stdin()
-            .take((STARTUP_INPUT + 1) as u64)
+            .take((PIPE_INPUT + 1) as u64)
             .read_to_end(&mut input)?;
-        if !matches!(input.len(), COMMITTED_INPUT | STARTUP_INPUT) {
+        if !matches!(input.len(), COMMITTED_INPUT | STARTUP_INPUT | PIPE_INPUT) {
             return Err(denied("invalid scratch receipt commitment"));
         }
         let scope = std::str::from_utf8(&input[..36]).map_err(io::Error::other)?;
@@ -93,7 +116,7 @@ mod scratch {
         let check_file = |file: &std::fs::File| {
             verify_descriptor(file, |bytes| accepts(bytes, &owner, false, false))
         };
-        if input.len() == STARTUP_INPUT {
+        if input.len() >= STARTUP_INPUT {
             let active = input[68..100]
                 .try_into()
                 .expect("checked fixture input length");
@@ -108,7 +131,7 @@ mod scratch {
                     .expect("checked fixture input length"),
             );
             let setup = pin_setup(pid, started)?;
-            let _startup = candidate_receipt::read_provisional(
+            let startup = candidate_receipt::read_provisional(
                 &install,
                 scope,
                 check_directory,
@@ -122,6 +145,24 @@ mod scratch {
                 },
             )?;
             require_running(&setup)?;
+            if input.len() == PIPE_INPUT {
+                let endpoint_id =
+                    std::str::from_utf8(&input[STARTUP_INPUT..]).map_err(io::Error::other)?;
+                let commitment = input[36..112]
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>();
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_time()
+                    .build()?
+                    .block_on(serve_startup(
+                        endpoint_id,
+                        &commitment,
+                        pid,
+                        &setup,
+                        startup,
+                    ))?;
+            }
         } else {
             let _disk =
                 candidate_receipt::read(&install, scope, check_directory, check_file, || {
@@ -129,6 +170,70 @@ mod scratch {
                 })?;
         }
         Ok(())
+    }
+
+    async fn serve_startup(
+        endpoint_id: &str,
+        commitment: &str,
+        setup_pid: u32,
+        setup: &OwnedHandle,
+        startup: candidate_receipt::ProvisionalStartup,
+    ) -> io::Result<()> {
+        let (mut endpoint, session) = NativeEndpoint::open_scratch(endpoint_id)?;
+        let mut stream = timeout(Duration::from_secs(10), endpoint.accept()).await??;
+        let mut first =
+            read_request(&mut *stream, commitment, 1, setup_pid, setup, session).await?;
+        first.frame = "provisionalReady".into();
+        write_frame(&mut *stream, &first).await?;
+        let mut readback =
+            read_request(&mut *stream, commitment, 2, setup_pid, setup, session).await?;
+        if readback.request_id == first.request_id {
+            return Err(denied(
+                "scratch readiness readback reused the initial request ID",
+            ));
+        }
+        // Release the receipt and both roles for Setup's independent commit
+        // verification. Keep this connection and process alive for that decision.
+        drop(startup);
+        readback.frame = "provisionalReady".into();
+        write_frame(&mut *stream, &readback).await?;
+        let mut extra = [0];
+        if timeout(Duration::from_secs(20), stream.read(&mut extra)).await?? != 0 {
+            return Err(denied("unexpected data after scratch readiness readback"));
+        }
+        drop(stream);
+        endpoint.retire().await
+    }
+
+    async fn read_request(
+        stream: &mut dyn Stream,
+        commitment: &str,
+        step: u8,
+        setup_pid: u32,
+        setup: &OwnedHandle,
+        session: u32,
+    ) -> io::Result<StartupFrame> {
+        let bytes = timeout(FRAME_TIMEOUT, read_payload(stream)).await??;
+        let caller = stream.caller_after_read()?;
+        require_running(setup)?;
+        if caller.pid != Some(setup_pid)
+            || caller.session != session
+            || !matches!(caller.logon, Logon::Interactive | Logon::RemoteInteractive)
+        {
+            return Err(denied("scratch readiness reached a different Setup peer"));
+        }
+        let frame: StartupFrame = serde_json::from_slice(&bytes)?;
+        if frame.frame != "verifyProvisional"
+            || frame.version != 79
+            || !is_guid(&frame.request_id)
+            || frame.step != step
+            || frame.commitment != commitment
+        {
+            return Err(denied(
+                "scratch readiness request differs from the verified startup",
+            ));
+        }
+        Ok(frame)
     }
 
     fn pin_setup(pid: u32, started: u64) -> io::Result<OwnedHandle> {

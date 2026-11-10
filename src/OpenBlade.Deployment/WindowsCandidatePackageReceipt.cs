@@ -194,8 +194,7 @@ internal sealed class WindowsCandidatePackageReceipt
                 storage.Publish(Path.Combine(installedPayload, StartupName), startup);
             });
 
-    // Send these together over the scratch launch rendezvous. The second
-    // digest binds the current launch, which can differ from issuance.
+    // The second digest binds the current launch, which can differ from issuance.
     internal byte[] StartupCommitment(ReadOnlySpan<byte> setupIdentity)
     {
         byte[] startupDigest = SHA256.HashData(startup);
@@ -206,7 +205,8 @@ internal sealed class WindowsCandidatePackageReceipt
         return [.. startupDigest, .. binding.GetHashAndReset()];
     }
 
-    internal void PublishCommitted(string installedPayload, CancellationToken cancellationToken) =>
+    internal void PublishCommitted(string installedPayload, CancellationToken cancellationToken,
+        Action? verifyReadinessAtPublication = null) =>
         VerifyClaimedPayload(installedPayload, cancellationToken,
             () =>
             {
@@ -216,7 +216,7 @@ internal sealed class WindowsCandidatePackageReceipt
                 cancellationToken.ThrowIfCancellationRequested();
                 // The verified rename is the point of no return. A failed
                 // publish remains rollbackable and cannot be retried as startup.
-                storage.Publish(destination, committed);
+                storage.Publish(destination, committed, verifyReadinessAtPublication);
             });
 
     internal void VerifyCommitted(string installedPayload, CancellationToken cancellationToken, Action? onVerified = null)

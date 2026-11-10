@@ -107,13 +107,15 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
     private TransactionState state = TransactionState.Staged;
 #if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
     private OpenBlade.Deployment.WindowsCandidatePackageReceipt? candidateReceipt;
+    private Action? verifyCandidateReadinessAtPublication;
 
     // Typed rehearsal entry only. The normal Setup command and Burn owner ID do
     // not authorize this path. Staging and rollback retain their normal semantics.
     internal static async Task<ISetupPayloadTransaction> StageCandidateAsync(
         SetupPaths paths, string payloadDirectory, ISetupPayloadFileSystem files,
         OpenBlade.Deployment.WindowsCandidatePackageReceipt receipt, Guid installationId, Guid requestId,
-        Action ensureGuardianQuiescent, CancellationToken cancellationToken, Action? requireLiveLaunch = null)
+        Action ensureGuardianQuiescent, CancellationToken cancellationToken, Action? requireLiveLaunch = null,
+        Action? verifyReadinessAtPublication = null)
     {
         receipt.RequireBinding(installationId, requestId, paths.ProgramFilesRoot);
         using var source = receipt.PinSourcePayload(payloadDirectory);
@@ -125,6 +127,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             requireLiveLaunch?.Invoke();
             receipt.Claim(transaction.stagingDirectory, cancellationToken);
             transaction.candidateReceipt = receipt;
+            transaction.verifyCandidateReadinessAtPublication = verifyReadinessAtPublication;
             return transaction;
         }
         catch (Exception failure)
@@ -381,7 +384,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         if (candidateReceipt is not null)
         {
             ensureGuardianQuiescent();
-            candidateReceipt.PublishCommitted(paths.InstallDirectory, cancellationToken);
+            candidateReceipt.PublishCommitted(paths.InstallDirectory, cancellationToken, verifyCandidateReadinessAtPublication);
         }
 #endif
         state = TransactionState.Committed;
