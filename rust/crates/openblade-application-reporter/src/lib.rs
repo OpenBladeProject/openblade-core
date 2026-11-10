@@ -163,6 +163,14 @@ impl<H: ProcessHandle> ApplicationProfileReporter<H> {
         self.enqueue(Observation::Foreground(foreground));
     }
 
+    /// A sampled source can retain just the newest observation and its handle
+    /// while a report is in flight. Exit notifications still keep their order.
+    pub fn observe_latest_foreground(&mut self, foreground: Foreground) {
+        self.observations
+            .retain(|event| !matches!(event, Observation::Foreground(_)));
+        self.observe_foreground(foreground);
+    }
+
     pub fn observe_exit(&mut self, identity: ProcessIdentity) {
         self.enqueue(Observation::Exited(identity));
     }
@@ -352,6 +360,7 @@ impl<H: ProcessHandle> ApplicationProfileReporter<H> {
             && current.identity == identity
             && current.profile_id == profile_id
             && (self.paths_equal)(&current.path, &profile.executable_path)
+            && current.handle.is_alive()
         {
             if refresh_activation {
                 current.activation = next_activation(&mut self.activation);

@@ -44,6 +44,26 @@ topology, identity and the distinct desktop and physical refresh rates from
 the current Windows desktop. It uses the locked `windows-sys` SDK bindings
 and has no production caller. Its tests script native responses.
 
+Its application reporter binding accepts an already observed foreground HWND.
+It confirms that the window and its owner still belong to the active local
+console and Default input desktop around image lookup. It retains the same
+query/synchronize-only process handle for lifetime checks and treats unavailable
+evidence and `ApplicationFrameHost.exe` as unknown. Pending foreground samples
+coalesce to the newest one. No watcher, timer, exit callback or IPC is started;
+the owner supplies observations, elapsed time and transport outcomes.
+
+Executable identity uses bounded Win32 paths and .NET 10 ordinal casing:
+system ICU for BMP characters and the managed uppercase ranges for
+supplementary characters. Recheck parity if the managed runtime or Windows
+ICU changes. Ordinary drive and UNC paths use
+`GetFullPathNameW`; extended drive and UNC paths retain their literal spelling.
+This binding declines nonstandard device namespaces, alternate data streams,
+malformed UTF-16, paths beyond the fixed buffer, and ordinary names containing
+`~` rather than attempt .NET's filesystem-dependent short-name expansion.
+Ordinary long paths still depend on the eventual host's Win32 long-path
+configuration. Managed NLS, invariant mode and app-local ICU overrides are
+outside the checked comparison contract.
+
 The workspace guard checks crate boundaries, reviewed targets and dependencies,
 MSRV and compiler policies. Its regression tests use disposable workspace copies.
 Inner crates retain `no_std` and inherit `unsafe_code = "forbid"`. FFI and Windows

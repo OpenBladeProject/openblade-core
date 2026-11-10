@@ -42,7 +42,7 @@ try {
         'openblade-domain' = @('openblade-types')
         'openblade-ffi' = @('openblade-domain', 'openblade-protocol', 'openblade-types')
         'openblade-status-cli' = @()
-        'openblade-platform-windows' = @()
+        'openblade-platform-windows' = @('openblade-application-reporter')
         'openblade-application-reporter' = @()
     }
     # Fixture readers admit parsing only as dev dependencies. The separate CLI owns
@@ -50,6 +50,12 @@ try {
     $expectedDevDependencies = @{ serde = '=1.0.228'; serde_json = '=1.0.149' }
     $expectedCliDependencies = @{ serde = '=1.0.228'; serde_json = '=1.0.149'; tokio = '=1.54.1' }
     $expectedCliFeatures = @{ serde = 'derive'; serde_json = ''; tokio = 'io-util,macros,net,rt,signal,time' }
+    $expectedWindowsFeatures = @(
+        'Win32_Devices_Display', 'Win32_Foundation', 'Win32_Graphics_Gdi',
+        'Win32_Storage_FileSystem', 'Win32_System_RemoteDesktop',
+        'Win32_System_StationsAndDesktops', 'Win32_System_Threading',
+        'Win32_UI_WindowsAndMessaging'
+    ) -join ','
     $allowedExternal = @(
         'serde', 'serde_core', 'serde_derive', 'serde_json', 'itoa', 'memchr', 'zmij',
         'proc-macro2', 'quote', 'syn', 'unicode-ident', 'bytes', 'errno', 'libc',
@@ -141,11 +147,14 @@ try {
                 $null -eq $dependency.PSObject.Properties['path'] -and
                 $dependency.source -ceq 'registry+https://github.com/rust-lang/crates.io-index' -and
                 $dependency.req -ceq '=0.61.2' -and -not $dependency.uses_default_features -and
-                (@($dependency.features | Sort-Object) -join ',') -ceq 'Win32_Devices_Display,Win32_Foundation,Win32_Graphics_Gdi') {
+                (@($dependency.features | Sort-Object) -join ',') -ceq $expectedWindowsFeatures) {
                 $windowsSdkCount++
                 continue
             }
-            if ($dependency.optional -or $null -ne $dependency.target -or $null -ne $dependency.rename) {
+            $expectedTarget = if ($isWindowsPlatform -and $dependency.name -ceq 'openblade-application-reporter') {
+                'cfg(windows)'
+            } else { $null }
+            if ($dependency.optional -or $dependency.target -cne $expectedTarget -or $null -ne $dependency.rename) {
                 throw "Conditional, optional or renamed dependencies are not admitted: $($package.name)"
             }
             if ($null -eq $dependency.kind -and $null -ne $dependency.PSObject.Properties['path'] -and $null -eq $dependency.source) {
@@ -215,7 +224,7 @@ try {
             throw "Reviewed integration tests are missing: $($package.name)"
         }
     }
-    Write-Output 'Workspace boundaries passed: four local libraries with inward production edges, isolated status CLI, Windows adapter and application reporter, reviewed parsing/runtime roots, compiler policies and MSRV.'
+    Write-Output 'Workspace boundaries passed: four local libraries with inward production edges, isolated status CLI, Windows adapter with one inward reporter edge, reviewed parsing/runtime roots, compiler policies and MSRV.'
 }
 finally {
     Pop-Location

@@ -73,6 +73,7 @@ dependencies = [
 name = "openblade-platform-windows"
 version = "0.0.0"
 dependencies = [
+ "openblade-application-reporter",
  "windows-sys",
 ]
 

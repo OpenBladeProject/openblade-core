@@ -58,7 +58,7 @@ try {
     )
     $windowsManifest = 'crates/openblade-platform-windows/Cargo.toml'
     $cases += @(
-        @{ Path = $windowsManifest; Before = "target.'cfg(windows)'.dependencies"; After = 'dependencies'; Error = 'Unreviewed dependency kind*' },
+        @{ Path = $windowsManifest; Before = "target.'cfg(windows)'.dependencies"; After = 'dependencies'; Error = 'Conditional, optional or renamed dependencies*' },
         @{ Path = $windowsManifest; Before = 'Win32_Graphics_Gdi'; After = 'Win32_Graphics_Gdi", "Win32_System_Registry'; Error = 'Conditional, optional or renamed dependencies*' },
         @{ Path = $windowsManifest; Before = 'unsafe_code = "deny"'; After = 'unsafe_code = "allow"'; Error = 'Required lints.rust policy*' }
     )
