@@ -314,6 +314,9 @@ jobs:
           $env:OPENBLADE_HOSTED_NTFS_ADMIN = '1'
           rustup toolchain install --no-self-update
           $manifest = '../tools/openblade-windows-host/Cargo.toml'
+          cargo fmt --all --check --manifest-path $manifest
+          cargo test --locked --lib --manifest-path $manifest configuration_writer
+          cargo clippy --locked --manifest-path $manifest --lib --tests -- -D warnings
           $test = 'configuration_writer::protected::tests::hosted::hosted_ntfs_admits_managed_configuration'
           cargo test --locked --lib --manifest-path $manifest $test -- --exact --ignored --nocapture |
             Tee-Object -Variable testOutput

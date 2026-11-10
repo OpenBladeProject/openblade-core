@@ -5,7 +5,7 @@ use windows_sys::Win32::Security::Authorization::ConvertStringSecurityDescriptor
 
 const ROOT: &str = "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)";
 
-fn descriptor(sddl: &str) -> Vec<u8> {
+fn local_descriptor(sddl: &str) -> (LocalDescriptor, usize) {
     let wide: Vec<u16> = sddl.encode_utf16().chain([0]).collect();
     let mut descriptor = ptr::null_mut();
     let mut size = 0;
@@ -22,9 +22,13 @@ fn descriptor(sddl: &str) -> Vec<u8> {
         0
     );
     assert!(!descriptor.is_null());
-    let descriptor = LocalDescriptor(descriptor);
+    (LocalDescriptor(descriptor), size as usize)
+}
+
+fn descriptor(sddl: &str) -> Vec<u8> {
+    let (descriptor, size) = local_descriptor(sddl);
     // SAFETY: The Windows allocation remains owned until after the copy.
-    unsafe { slice::from_raw_parts(descriptor.0.cast(), size as usize) }.to_vec()
+    unsafe { slice::from_raw_parts(descriptor.0.cast(), size) }.to_vec()
 }
 
 #[test]

@@ -1,10 +1,11 @@
 use super::*;
 use crate::configuration_writer::{
-    LOCK, Outcome, TestStore, check_regular_file, pin_directory, transaction_id,
+    FileIdentity, LOCK, Outcome, TestStore, check_regular_file, file_identity,
+    fixture::managed_documents, open_relative_with_security, pin_directory, transaction_id,
 };
-use windows_sys::Win32::{
-    Security::SECURITY_ATTRIBUTES,
-    Storage::FileSystem::{CreateDirectoryW, FILE_SHARE_DELETE, GetVolumeInformationByHandleW},
+use windows_sys::{
+    Wdk::Storage::FileSystem::FILE_CREATE,
+    Win32::Storage::FileSystem::{FILE_SHARE_DELETE, GetVolumeInformationByHandleW},
 };
 
 #[test]
@@ -18,20 +19,13 @@ fn hosted_ntfs_admits_managed_configuration() -> io::Result<()> {
         std::env::var("SystemDrive").map_err(io::Error::other)?
     ));
     let root = drive.join(format!("openblade-ntfs-{}", transaction_id()?));
-    let (exact_drive, _) = split_path(&root)?;
-    if exact_drive != drive {
+    let (drive, names) = split_path(&root)?;
+    let [leaf] = names.as_slice() else {
         return Err(denied("fixture must be a direct child of the system drive"));
-    }
+    };
 
-    // The only ancestor is opened and checked before any fixture is created.
-    let wide_drive: Vec<u16> = drive.as_os_str().encode_wide().chain([0]).collect();
-    // SAFETY: wide_drive is a NUL-terminated drive root.
-    if unsafe { GetDriveTypeW(wide_drive.as_ptr()) } != DRIVE_FIXED {
-        return Err(denied("fixture drive must be fixed"));
-    }
-    let drive_pin = pin_directory(&drive)?;
-    check_drive(&drive_pin, &drive)?;
-    directory_info(&drive_pin)?;
+    // Check and retain the only ancestor before creating anything.
+    let (drive_pin, _) = pin_drive(&drive)?;
     verify_security(&drive_pin, Policy::Ancestor)?;
     let mut filesystem = [0u16; 16];
     // SAFETY: the handle is live and filesystem is a writable UTF-16 buffer.
@@ -54,26 +48,29 @@ fn hosted_ntfs_admits_managed_configuration() -> io::Result<()> {
         return Err(io::Error::other("fixture drive must be NTFS"));
     }
 
-    let setup =
-        descriptor(&std::env::var("OPENBLADE_HOSTED_SETUP_SDDL").map_err(io::Error::other)?);
-    if accepts_descriptor(&setup, Policy::Root) != Some(true) {
+    let setup_sddl = std::env::var("OPENBLADE_HOSTED_SETUP_SDDL").map_err(io::Error::other)?;
+    let (setup, size) = local_descriptor(&setup_sddl);
+    // SAFETY: the aligned Windows allocation is still live and size is
+    // returned by the conversion routine.
+    let setup_bytes = unsafe { slice::from_raw_parts(setup.0.cast(), size) };
+    if accepts_descriptor(setup_bytes, Policy::Root) != Some(true) {
         return Err(denied("Setup descriptor does not match Rust admission"));
     }
-    let mut setup = setup;
-    let security = SECURITY_ATTRIBUTES {
-        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
-        lpSecurityDescriptor: setup.as_mut_ptr().cast(),
-        bInheritHandle: 0,
-    };
-    let path: Vec<u16> = root.as_os_str().encode_wide().chain([0]).collect();
-    // SAFETY: path is NUL-terminated and security points to the live Setup
-    // descriptor. CreateDirectoryW fails if the generated leaf already exists.
-    if unsafe { CreateDirectoryW(path.as_ptr(), &security) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
+    let created = open_relative_with_security(
+        &drive_pin,
+        leaf,
+        FILE_GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        FILE_CREATE,
+        FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+        Some(&setup),
+    )?;
 
-    let result = std::panic::catch_unwind(|| exercise_admission(&root));
-    let cleanup = cleanup_fixture(&root);
+    let result = std::panic::catch_unwind(|| {
+        let identity = file_identity(&directory_info(&created)?);
+        exercise_admission(&root, identity)
+    });
+    let cleanup = cleanup_fixture(&root, created);
     drop(drive_pin);
     match result {
         Ok(Ok(())) => cleanup,
@@ -92,8 +89,9 @@ fn hosted_ntfs_admits_managed_configuration() -> io::Result<()> {
     }
 }
 
-fn exercise_admission(root: &Path) -> io::Result<()> {
+fn exercise_admission(root: &Path, created: FileIdentity) -> io::Result<()> {
     let storage = ProtectedStorage::open(root)?;
+    assert!(storage.identity == created);
     assert_eq!(storage.inspect()?, Inspection::Empty);
     let store = TestStore {
         root: root.to_owned(),
@@ -102,14 +100,15 @@ fn exercise_admission(root: &Path) -> io::Result<()> {
         held_lock: None,
     };
     drop(store.create_durable(LOCK, b"")?);
-    let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-aggregate.json"
-    ))?;
-    let documents = |key| -> [&[u8]; 3] {
-        std::array::from_fn(|index| fixture[key][index].as_str().unwrap().as_bytes())
-    };
-    let prior = documents("prior");
-    let next = documents("committed");
+    let documents = managed_documents()?;
+    let prior = documents
+        .prior
+        .each_ref()
+        .map(|document| document.as_bytes());
+    let next = documents
+        .committed
+        .each_ref()
+        .map(|document| document.as_bytes());
     assert_ne!(prior[0], next[0]);
     assert_eq!(prior[1], next[1]);
     assert_ne!(prior[2], next[2]); // Companion hash envelope.
@@ -153,7 +152,7 @@ fn exercise_admission(root: &Path) -> io::Result<()> {
         let file = File::open(path)?;
         let info = handle_information(&file)?;
         assert_eq!(info.nNumberOfLinks, 2);
-        assert!(super::super::super::file_identity(&info) == identity);
+        assert!(file_identity(&info) == identity);
         verify_security(&file, Policy::Record)?;
         assert_eq!(fs::read(path)?, next[0]);
     }
@@ -184,10 +183,13 @@ fn assert_snapshot(storage: &ProtectedStorage, expected: [&[u8]; 3]) -> io::Resu
     Ok(())
 }
 
-fn cleanup_fixture(root: &Path) -> io::Result<()> {
+fn cleanup_fixture(root: &Path, created: File) -> io::Result<()> {
     // No recursion, no retries, and no traversal into unexpected entries.
     use std::os::windows::fs::MetadataExt;
     let pin = pin_directory(root)?;
+    if file_identity(&directory_info(&created)?) != file_identity(&directory_info(&pin)?) {
+        return Err(denied("fixture identity changed before cleanup"));
+    }
     for (index, entry) in fs::read_dir(root)?.enumerate() {
         let entry = entry?;
         let kind = entry.file_type()?;
@@ -201,6 +203,7 @@ fn cleanup_fixture(root: &Path) -> io::Result<()> {
         fs::remove_file(entry.path())?;
     }
     drop(pin);
+    drop(created);
     fs::remove_dir(root)?;
     match fs::symlink_metadata(root) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {

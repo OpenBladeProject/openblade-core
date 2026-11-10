@@ -54,18 +54,7 @@ impl ProtectedStorage {
     /// from trusted setup configuration. No installed path is resolved here.
     pub fn open(root: &Path) -> io::Result<Self> {
         let (drive, names) = split_path(root)?;
-        let wide: Vec<u16> = drive.as_os_str().encode_wide().chain([0]).collect();
-        // SAFETY: wide is a NUL-terminated local drive root.
-        if unsafe { GetDriveTypeW(wide.as_ptr()) } != DRIVE_FIXED {
-            return Err(denied("configuration drive is not fixed"));
-        }
-        let drive_handle = OpenOptions::new()
-            .read(true)
-            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
-            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
-            .open(&drive)?;
-        check_drive(&drive_handle, &drive)?;
-        let volume = directory_info(&drive_handle)?.dwVolumeSerialNumber;
+        let (drive_handle, volume) = pin_drive(&drive)?;
         let mut ancestors = vec![drive_handle];
         let mut names = names.into_iter().peekable();
         while let Some(name) = names.next() {
@@ -242,6 +231,22 @@ fn reserved_device(name: &str) -> bool {
         })
 }
 
+fn pin_drive(drive: &Path) -> io::Result<(File, u32)> {
+    let wide: Vec<u16> = drive.as_os_str().encode_wide().chain([0]).collect();
+    // SAFETY: wide is a NUL-terminated local drive root.
+    if unsafe { GetDriveTypeW(wide.as_ptr()) } != DRIVE_FIXED {
+        return Err(denied("configuration drive is not fixed"));
+    }
+    let handle = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(drive)?;
+    check_drive(&handle, drive)?;
+    let volume = directory_info(&handle)?.dwVolumeSerialNumber;
+    Ok((handle, volume))
+}
+
 fn check_drive(file: &File, drive: &Path) -> io::Result<()> {
     let mut actual = [0u16; 16];
     // SAFETY: The file owns a live handle and actual is writable UTF-16 storage.
@@ -313,7 +318,7 @@ fn denied(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, message)
 }
 
-struct LocalDescriptor(HLOCAL);
+pub(super) struct LocalDescriptor(pub(super) HLOCAL);
 
 impl Drop for LocalDescriptor {
     fn drop(&mut self) {

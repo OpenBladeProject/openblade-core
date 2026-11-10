@@ -28,9 +28,13 @@ const FIXTURE: &str = include_str!(
 );
 
 #[derive(Deserialize)]
-struct Documents {
-    prior: [String; 3],
-    committed: [String; 3],
+pub(super) struct Documents {
+    pub(super) prior: [String; 3],
+    pub(super) committed: [String; 3],
+}
+
+pub(super) fn managed_documents() -> io::Result<Documents> {
+    Ok(serde_json::from_str(FIXTURE)?)
 }
 
 pub struct Fixture {
@@ -43,7 +47,7 @@ impl Fixture {
     /// This is the only constructor with write authority. An existing root
     /// (including a reparse point) makes the exclusive create fail.
     pub fn create() -> io::Result<Self> {
-        let documents = serde_json::from_str(FIXTURE)?;
+        let documents = managed_documents()?;
         let (temp, pins) = TestStore::pin_temp(&local_temp()?)?;
         let id = transaction_id()?;
         let root = root(temp, &id)?;
@@ -135,7 +139,7 @@ pub fn restart(id: &str, expected: &str) -> io::Result<u8> {
     if identity(&store)? != expected {
         return Err(io::Error::other("fixture root identity changed"));
     }
-    let documents: Documents = serde_json::from_str(FIXTURE)?;
+    let documents = managed_documents()?;
     load(&store, &[&documents.prior, &documents.committed])
 }
 
