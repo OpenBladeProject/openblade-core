@@ -77,6 +77,12 @@ try {
     Assert-Rejected 'mixed source roles' {
         & $candidate -Package $absentOutput -FixtureDirectory $mixedInput.FullName
     } 'Unexpected SHA-256 for SessionAgent'
+    $oversizedSource = [IO.File]::OpenWrite((Join-Path $mixedInput.FullName $agent))
+    try { $oversizedSource.SetLength(32MB + 1) }
+    finally { $oversizedSource.Dispose() }
+    Assert-Rejected 'oversized source role' {
+        & $candidate -Package $absentOutput -FixtureDirectory $mixedInput.FullName
+    } 'Expected a bounded fixture executable'
     if (Test-Path -LiteralPath $absentOutput) { throw 'Rejected sources created a package.' }
 
     $tampered = Join-Path $root 'appended.zip'
