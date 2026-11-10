@@ -18,6 +18,8 @@ use openblade_platform_windows::{
     },
 };
 
+use crate::session_display::journal::SharedJournal;
+
 #[derive(Clone, Copy)]
 pub(super) enum WmiScenario {
     Available,
@@ -26,6 +28,8 @@ pub(super) enum WmiScenario {
     SiblingReadback,
     StalledWrite,
     StalledAdmission,
+    StartsAt70,
+    StartsAt10,
 }
 
 /// The host chooses COM policy before starting its one worker. This executable
@@ -38,13 +42,19 @@ impl ScriptedComPolicy {
     pub(super) fn start(
         display: Scenario,
         scenario: WmiScenario,
+        journal: SharedJournal,
     ) -> io::Result<WindowsBrightnessWorker> {
         WindowsBrightnessWorker::start_scripted(move || ScriptedBrightness {
             display,
             scenario,
             replaced: false,
             submitted: false,
-            percent: 40,
+            percent: match scenario {
+                WmiScenario::StartsAt70 => 70,
+                WmiScenario::StartsAt10 => 10,
+                _ => 40,
+            },
+            journal,
         })
     }
 }
@@ -55,6 +65,7 @@ pub(super) struct ScriptedBrightness {
     replaced: bool,
     submitted: bool,
     percent: u8,
+    journal: SharedJournal,
 }
 
 impl ScriptedBrightness {
@@ -138,7 +149,24 @@ impl WmiBrightnessNative for ScriptedBrightness {
     ) -> Result<Acknowledgement, NativeFailure> {
         assert_eq!(method, format!("{MONITOR_INSTANCE}_0"));
         assert!(!self.replaced);
+        let InternalDisplayTopology::Single(display) = self
+            .display
+            .topology(false)
+            .map_err(|_| NativeFailure::InvalidData)?
+        else {
+            return Err(NativeFailure::InvalidData);
+        };
+        // Claim the worker attempt before accessing the shared request slot.
+        // This gate does no fixture I/O. The effect still requires durable intent.
         submission.begin()?;
+        if !self
+            .journal
+            .lock()
+            .is_ok_and(|mut journal| journal.begin_brightness(&display, self.percent, level))
+        {
+            return Err(NativeFailure::InvalidData);
+        }
+        submission.remaining()?;
         self.submitted = true;
         self.percent = level;
         if matches!(self.scenario, WmiScenario::StalledWrite) {

@@ -27,6 +27,8 @@ use tokio::{
 mod hdr;
 pub(super) use hdr::HdrFixture;
 use hdr::HdrObservation;
+pub(crate) mod journal;
+use journal::{Change, Panel, SharedJournal};
 mod panel;
 use panel::ScriptedDisplay;
 mod refresh;
@@ -40,11 +42,19 @@ const SUCCEEDED: i32 = 0;
 const BLOCKED: i32 = 1;
 const FAILED: i32 = 2;
 const INDETERMINATE: i32 = 3;
+const JOURNAL_BLOCKED: &str =
+    "Display writes are paused because the private fixture has no clean recovery record.";
+
+struct Attempt<'a> {
+    cancelled: &'a dyn Fn() -> bool,
+    record: &'a dyn Fn(Panel, Change) -> bool,
+}
 
 pub(super) struct SessionDisplay {
     panel: ScriptedDisplay,
     brightness: WindowsBrightnessWorker,
     writes_paused: bool,
+    journal: SharedJournal,
 }
 
 impl SessionDisplay {
@@ -53,11 +63,13 @@ impl SessionDisplay {
         brightness: WindowsBrightnessWorker,
         hdr: HdrFixture,
         refresh: RefreshFixture,
+        journal: SharedJournal,
     ) -> Self {
         Self {
             panel: ScriptedDisplay::new(scenario, hdr, refresh),
             brightness,
             writes_paused: false,
+            journal,
         }
     }
 
@@ -65,7 +77,16 @@ impl SessionDisplay {
         &mut self,
         query: Query,
         cancelled: impl Fn() -> bool,
-    ) -> Result<(Vec<u8>, bool), Rejected> {
+    ) -> Result<(Vec<u8>, Option<String>), Rejected> {
+        let record = |panel, change| {
+            self.journal
+                .lock()
+                .is_ok_and(|mut journal| journal.begin(&query.request_id, panel, change))
+        };
+        let attempt = Attempt {
+            cancelled: &cancelled,
+            record: &record,
+        };
         let context = if matches!(
             query.operation,
             Operation::SetHdr { .. } | Operation::SetRefreshRate { .. }
@@ -77,11 +98,45 @@ impl SessionDisplay {
         let reading = self.panel.read(false);
         let observed_hdr = HdrObservation::from_refresh(&reading);
         let (mut state, target, display_error) = display_state(&reading);
+        let mut retirement = None;
+        let is_query = matches!(query.operation, Operation::Query {});
         let (status, error, possible_submission) = match query.operation {
             Operation::Query {} => {
-                if let Some(target) = target
-                    && let Ok(brightness) = self.brightness.read_target(target, &cancelled)
+                let brightness =
+                    target.and_then(|target| self.brightness.read_target(target, &cancelled).ok());
+                if display_error.is_none()
+                    && !cancelled()
+                    && let Ok(InternalDisplayRefresh::Single(snapshot)) = &reading
+                    && let Some(panel) = Panel::observe(&snapshot.display)
+                    && let Some(context) = self.panel.context(false)
+                    && self.panel.context(true) == Some(context)
+                    && let Ok(mut journal) = self.journal.lock()
+                    && let Some(pending) = journal.reconciliation()
+                    && pending.panel == panel
                 {
+                    let classifies = match &pending.change {
+                        Change::Refresh { before, requested } => {
+                            before.classifies(snapshot, requested)
+                        }
+                        Change::Hdr { before, requested } => {
+                            observed_hdr.as_ref().is_some_and(|hdr| {
+                                hdr.supported
+                                    && (hdr.enabled == *before || hdr.enabled == *requested)
+                            })
+                        }
+                        Change::Brightness { before, requested } => {
+                            // Before any submission, the scripted transport can
+                            // only return this panel's fixed _0 instance.
+                            brightness.as_ref().is_some_and(|value| {
+                                value.percent == *before || value.percent == *requested
+                            })
+                        }
+                    };
+                    if classifies {
+                        retirement = Some(pending.id.clone());
+                    }
+                }
+                if let Some(brightness) = brightness {
                     set_snapshot(&mut state, brightness);
                 }
                 let status = if display_error.is_some() {
@@ -91,76 +146,56 @@ impl SessionDisplay {
                 };
                 (status, display_error, false)
             }
+            _ if self.writes_paused
+                || !self
+                    .journal
+                    .lock()
+                    .is_ok_and(|mut journal| journal.can_write()) =>
+            {
+                (BLOCKED, Some(JOURNAL_BLOCKED.into()), false)
+            }
             Operation::SetRefreshRate {
                 expected_power_source,
                 refresh_rate_key,
             } => {
-                if self.writes_paused {
-                    (
-                        BLOCKED,
-                        Some(
-                            "Refresh-rate writes are paused after an indeterminate submission."
-                                .into(),
-                        ),
-                        false,
-                    )
-                } else if let Some(error) = display_error {
+                if let Some(error) = display_error {
                     (FAILED, Some(error), false)
                 } else {
-                    let result = self.panel.apply_refresh(
+                    self.panel.apply_refresh(
                         (expected_power_source, &refresh_rate_key),
                         context,
                         &reading,
                         &mut state,
-                        &cancelled,
-                    );
-                    self.writes_paused = result.0 == INDETERMINATE;
-                    result
+                        attempt,
+                    )
                 }
             }
             Operation::SetHdr {
                 expected_power_source,
                 enabled,
-            } => {
-                if self.writes_paused {
-                    (
-                        BLOCKED,
-                        Some("HDR writes are paused after an indeterminate submission.".into()),
-                        false,
-                    )
-                } else {
-                    let result = self.panel.apply_hdr(
-                        expected_power_source,
-                        enabled,
-                        context,
-                        observed_hdr.ok_or_else(|| {
-                            display_error.unwrap_or_else(|| {
-                                "The internal display is unavailable; HDR was not submitted.".into()
-                            })
-                        }),
-                        &mut state,
-                        &cancelled,
-                    );
-                    self.writes_paused = result.0 == INDETERMINATE;
-                    result
-                }
-            }
+            } => self.panel.apply_hdr(
+                expected_power_source,
+                enabled,
+                context,
+                observed_hdr.ok_or_else(|| {
+                    display_error.unwrap_or_else(|| {
+                        "The internal display is unavailable; HDR was not submitted.".into()
+                    })
+                }),
+                &mut state,
+                attempt,
+            ),
             Operation::SetBrightness {
                 expected_power_source,
                 percent,
             } => {
-                if self.writes_paused {
-                    (
-                        BLOCKED,
-                        Some(
-                            "Brightness writes are paused after an indeterminate submission."
-                                .into(),
-                        ),
-                        false,
-                    )
-                } else if expected_power_source != ScriptedBrightness::POWER_SOURCE {
+                if expected_power_source != ScriptedBrightness::POWER_SOURCE {
                     (BLOCKED, Some("The expected power source does not match the scripted session; brightness was not submitted.".into()), false)
                 } else if let Some(target) = target {
+                    self.journal
+                        .lock()
+                        .map_err(|_| Rejected::WorkerFailed)?
+                        .arm_brightness(&query.request_id);
                     match self.brightness.apply_target(
                         BrightnessRequest::SetPercent(percent),
                         target,
@@ -177,9 +212,6 @@ impl SessionDisplay {
                             (SUCCEEDED, None, true)
                         }
                         Err(failure) if failure.submission_may_have_occurred => {
-                            // A later query may observe brightness, but cannot
-                            // authorize another write in this private agent.
-                            self.writes_paused = true;
                             if let Some(snapshot) = failure.state {
                                 set_snapshot(&mut state, snapshot);
                             }
@@ -215,11 +247,26 @@ impl SessionDisplay {
                 }
             }
         };
-        let frame = encode(&query.request_id, status, error, state);
-        if frame.is_err() && possible_submission {
+        if status == INDETERMINATE {
             self.writes_paused = true;
         }
-        Ok((frame?, possible_submission))
+        if status == SUCCEEDED && possible_submission {
+            retirement = Some(query.request_id.clone());
+        } else if !possible_submission && !is_query {
+            // Cancellation after publishing intent but before the call can
+            // retire that exact intent. An existing fence is never cleared
+            // by a rejected retry, including one with the same request ID.
+            if status == FAILED && cancelled() && !self.writes_paused {
+                self.finish(&query.request_id);
+            }
+        }
+        Ok((encode(&query.request_id, status, error, state)?, retirement))
+    }
+
+    fn finish(&mut self, id: &str) {
+        if let Ok(mut journal) = self.journal.lock() {
+            journal.finish(id);
+        }
     }
 }
 
@@ -470,7 +517,7 @@ pub(super) async fn serve(
         }
         result = &mut task => (result, false),
     };
-    let (frame, possible_submission) = result.map_err(|_| Rejected::WorkerFailed)??;
+    let (frame, retirement) = result.map_err(|_| Rejected::WorkerFailed)??;
     let delivery = if disconnected {
         Err(Rejected::WriteFailed)
     } else {
@@ -479,11 +526,13 @@ pub(super) async fn serve(
             Err(_) => Err(Rejected::WriteDeadline),
         }
     };
-    if delivery.is_err() && possible_submission {
+    if delivery.is_ok()
+        && let Some(id) = retirement
+    {
         session
             .lock()
             .map_err(|_| Rejected::WorkerFailed)?
-            .writes_paused = true;
+            .finish(&id);
     }
     delivery
 }

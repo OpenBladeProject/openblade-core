@@ -1,32 +1,14 @@
 use std::{
-    ffi::OsString,
     thread,
     time::{Duration, Instant},
 };
 
 use openblade_platform_windows::display::{
-    ActiveInternalDisplay, DisplayReadError, EndpointId, InternalDisplayRefresh,
+    DisplayReadError, InternalDisplayRefresh,
     scripted::{RefreshTiming, Scenario},
 };
 
 use super::{HdrFixture, RefreshFixture};
-
-#[derive(PartialEq, Eq)]
-pub(super) struct DisplayIdentity {
-    source: EndpointId,
-    pub(super) target: EndpointId,
-    monitor_path: OsString,
-}
-
-impl DisplayIdentity {
-    pub(super) fn of(display: &ActiveInternalDisplay) -> Option<Self> {
-        Some(Self {
-            source: display.source,
-            target: display.target,
-            monitor_path: display.monitor_name.as_ref().ok()?.device_path.clone()?,
-        })
-    }
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct Context {
@@ -80,7 +62,7 @@ impl ScriptedDisplay {
     }
 }
 
-pub(super) fn wait_for_disconnect(signal: &str, cancelled: &impl Fn() -> bool) {
+pub(super) fn wait_for_disconnect(signal: &str, cancelled: &dyn Fn() -> bool) {
     println!("{signal}");
     let deadline = Instant::now() + Duration::from_secs(2);
     while !cancelled() && Instant::now() < deadline {

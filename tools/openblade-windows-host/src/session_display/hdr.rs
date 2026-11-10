@@ -5,8 +5,9 @@ use openblade_platform_windows::display::{
 use serde_json::{Value, json};
 
 use super::{
-    BLOCKED, FAILED, INDETERMINATE, SUCCEEDED, display_state,
-    panel::{Context, DisplayIdentity, Outcome, ScriptedDisplay, wait_for_disconnect},
+    Attempt, BLOCKED, FAILED, INDETERMINATE, SUCCEEDED, display_state,
+    journal::{Change, Panel},
+    panel::{Context, Outcome, ScriptedDisplay, wait_for_disconnect},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -23,16 +24,16 @@ pub(crate) enum HdrFixture {
 }
 
 pub(super) struct HdrObservation {
-    target: DisplayIdentity,
-    supported: bool,
-    enabled: bool,
+    panel: Panel,
+    pub(super) supported: bool,
+    pub(super) enabled: bool,
 }
 
 impl HdrObservation {
     fn from_display(display: &ActiveInternalDisplay) -> Option<Self> {
         let hdr = display.advanced_color.as_ref().ok()?;
         Some(Self {
-            target: DisplayIdentity::of(display)?,
+            panel: Panel::observe(display)?,
             supported: hdr.hdr_supported,
             enabled: hdr.hdr_user_enabled,
         })
@@ -57,8 +58,9 @@ impl ScriptedDisplay {
         context: Option<Context>,
         before: Result<HdrObservation, String>,
         state: &mut Value,
-        cancelled: &impl Fn() -> bool,
+        attempt: Attempt<'_>,
     ) -> Outcome {
+        let cancelled = attempt.cancelled;
         let Some(context) = context else {
             return (
                 BLOCKED,
@@ -114,7 +116,7 @@ impl ScriptedDisplay {
                 false,
             );
         }
-        let Some(fresh) = fresh.filter(|fresh| fresh.target == before.target && fresh.supported)
+        let Some(fresh) = fresh.filter(|fresh| fresh.panel == before.panel && fresh.supported)
         else {
             return (
                 BLOCKED,
@@ -132,7 +134,23 @@ impl ScriptedDisplay {
 
         // A native error can occur after Windows accepts the request. Treat
         // every such result as uncertain, even if a later query sees the value.
-        let applied = submit_hdr(fresh.target.target, enabled);
+        if !(attempt.record)(
+            fresh.panel.clone(),
+            Change::Hdr {
+                before: fresh.enabled,
+                requested: enabled,
+            },
+        ) {
+            return (BLOCKED, Some(super::JOURNAL_BLOCKED.into()), false);
+        }
+        if cancelled() {
+            return (
+                FAILED,
+                Some("HDR was cancelled before submission.".into()),
+                false,
+            );
+        }
+        let applied = submit_hdr(fresh.panel.target(), enabled);
         if self.hdr_fixture != HdrFixture::ReadbackMismatch {
             self.enabled = applied;
         }
@@ -147,7 +165,7 @@ impl ScriptedDisplay {
         // matching preference or the physical signal mode as confirmation.
         let readback = self.read(self.hdr_fixture == HdrFixture::SiblingReadback);
         let Some(after) = HdrObservation::from_refresh(&readback)
-            .filter(|after| after.target == fresh.target && after.supported)
+            .filter(|after| after.panel == fresh.panel && after.supported)
         else {
             return pending("the exact target could not be read back");
         };

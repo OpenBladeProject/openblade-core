@@ -277,7 +277,7 @@ public sealed partial class RustSessionAgentTests
         await using var host = Host.Start(id);
         await host.WaitForReadyAsync(token);
 
-        await using (var duplicate = Host.Start(id))
+        await using (var duplicate = Host.Start(id, mode: "resume-display"))
         {
             await duplicate.AssertRejectedAsync(token);
         }
@@ -320,7 +320,7 @@ public sealed partial class RustSessionAgentTests
             await AssertClosedAsync(pending, token);
         }
 
-        await using var restarted = Host.Start(id);
+        await using var restarted = Host.Start(id, mode: "resume-display");
         await restarted.WaitForReadyAsync(token);
         Assert.True((await client.GetStateAsync(token)).IsAvailable);
         await restarted.StopAsync(token);
@@ -350,16 +350,21 @@ public sealed partial class RustSessionAgentTests
         private readonly Process process;
         private readonly Task<string> standardError;
         private readonly bool gpu;
+        private readonly bool ownsScratch;
+        private readonly string? scratch;
 
-        private Host(Process process, bool gpu)
+        private Host(Process process, bool gpu, string? scratch, bool ownsScratch)
         {
             this.process = process;
             this.gpu = gpu;
+            this.scratch = scratch;
+            this.ownsScratch = ownsScratch;
             standardError = process.StandardError.ReadToEndAsync();
         }
 
         internal static Host Start(
-            string id, string scenario = "available", string? brightness = null, bool gpu = false)
+            string id, string scenario = "available", string? brightness = null, bool gpu = false,
+            string mode = "foreground")
         {
             string path = Environment.GetEnvironmentVariable(RustSessionAgentFactAttribute.PathVariable)!;
             Assert.True(Path.IsPathFullyQualified(path)
@@ -374,14 +379,27 @@ public sealed partial class RustSessionAgentTests
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
-            start.ArgumentList.Add(gpu ? "gpu-foreground" : "foreground");
+            string? scratch = gpu ? null : DisplayFixtureDirectory(id);
+            bool ownsScratch = mode == "foreground" && scratch is not null && !Directory.Exists(scratch);
+            start.ArgumentList.Add(gpu ? "gpu-foreground" : mode);
             start.ArgumentList.Add(id);
             start.ArgumentList.Add(scenario);
             if (brightness is not null)
             {
                 start.ArgumentList.Add(brightness);
             }
-            return new Host(Process.Start(start)!, gpu);
+            try
+            {
+                return new Host(Process.Start(start)!, gpu, scratch, ownsScratch);
+            }
+            catch
+            {
+                if (ownsScratch && Directory.Exists(scratch))
+                {
+                    Directory.Delete(scratch!, recursive: true);
+                }
+                throw;
+            }
         }
 
         internal Task WaitForReadyAsync(CancellationToken token) => WaitForSignalAsync("READY", token);
@@ -406,6 +424,12 @@ public sealed partial class RustSessionAgentTests
             Assert.True(process.ExitCode == 0, await standardError.WaitAsync(token));
         }
 
+        internal async Task KillAsync(CancellationToken token)
+        {
+            process.Kill();
+            await process.WaitForExitAsync(token);
+        }
+
         public async ValueTask DisposeAsync()
         {
             using (process)
@@ -423,6 +447,10 @@ public sealed partial class RustSessionAgentTests
                     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                     await process.WaitForExitAsync(timeout.Token);
                 }
+            }
+            if (ownsScratch && Directory.Exists(scratch))
+            {
+                Directory.Delete(scratch!, recursive: true);
             }
         }
     }
