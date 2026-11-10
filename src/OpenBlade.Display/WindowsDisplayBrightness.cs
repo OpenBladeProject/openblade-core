@@ -137,16 +137,16 @@ internal static class WindowsDisplayBrightness
 
     internal static void ValidateSetResult(object? returnValue)
     {
-        // Windows can expose this method as Boolean despite the documented UInt32
-        // status. Only independent panel readback can confirm that form of response.
-        if (returnValue is bool)
+        // Some Windows providers return a Boolean or omit the documented UInt32
+        // status. Both callers require independent readback from the written panel.
+        if (returnValue is null or bool)
         {
             return;
         }
 
         if (returnValue is not uint status)
         {
-            string type = returnValue?.GetType().FullName ?? "null";
+            string? type = returnValue.GetType().FullName;
             throw new ManagementException(
                 $"Windows returned an invalid brightness acknowledgement type ({type}).");
         }

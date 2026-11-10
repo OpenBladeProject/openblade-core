@@ -46,7 +46,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private const string ServiceName = OpenBladeWindowsService.Name;
     private const int ServiceDoesNotExist = 1060;
     private const int ServiceNotActive = 1062;
-    private static readonly TimeSpan ServiceHealthTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ServiceHealthTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan CandidateServiceHealthTimeout = TimeSpan.FromSeconds(10);
     private readonly SetupPaths paths;
     private readonly string payloadDirectory;
     private readonly ISetupPayloadFileSystem payloadFileSystem;
@@ -367,32 +368,52 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private async Task VerifyServiceHealthAsync(
         string purpose,
         CancellationToken cancellationToken,
-        Func<CancellationToken, SetupServiceHealthTiming, Task>? verify = null)
+        Func<CancellationToken, SetupServiceHealthTiming, Task>? verifyCandidate = null)
     {
-        var timing = new SetupServiceHealthTiming(purpose, ServiceHealthTimeout);
+        TimeSpan budget = verifyCandidate is null ? ServiceHealthTimeout : CandidateServiceHealthTimeout;
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timing.DeadlineArmedQpc = Stopwatch.GetTimestamp();
-        timeout.CancelAfter(ServiceHealthTimeout);
-        string outcome = "success";
-        string? cause = null;
-        try
+        long deadlineArmedQpc = Stopwatch.GetTimestamp();
+        timeout.CancelAfter(budget);
+        for (int attempt = 1; ; attempt++)
         {
-            await (verify ?? healthProbe.VerifyWithTimingAsync)(timeout.Token, timing);
-        }
-        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
-        {
-            outcome = nameof(TimeoutException);
-            cause = exception.GetType().Name;
-            throw new TimeoutException("The OpenBlade service did not respond to its health check within 10 seconds.", exception);
-        }
-        catch (Exception exception)
-        {
-            outcome = exception.GetType().Name;
-            throw;
-        }
-        finally
-        {
-            timing.Report(outcome, cause, cancellationToken.IsCancellationRequested, timeout.IsCancellationRequested);
+            var timing = new SetupServiceHealthTiming(purpose, budget)
+            {
+                DeadlineArmedQpc = deadlineArmedQpc,
+            };
+            string outcome = "success";
+            string? cause = null;
+            try
+            {
+                await (verifyCandidate ?? healthProbe.VerifyWithTimingAsync)(timeout.Token, timing);
+                return;
+            }
+            catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                outcome = nameof(TimeoutException);
+                cause = exception.GetType().Name;
+                throw new TimeoutException(
+                    $"The OpenBlade service did not respond to its health check within {budget.TotalSeconds:0} seconds.",
+                    exception);
+            }
+            // Candidate identity and retained-generation failures can also be IOExceptions.
+            catch (IOException exception) when (verifyCandidate is null && attempt == 1
+                && timing.Connect.Succeeded && !timeout.IsCancellationRequested
+                && exception is not IpcProtocolVersionMismatchException)
+            {
+                // A cold start can outlast the server's first-frame window after connection.
+                // GetStatus is read-only, so reconnect once within the original deadline.
+                outcome = "reconnect";
+                cause = exception.GetType().Name;
+            }
+            catch (Exception exception)
+            {
+                outcome = exception.GetType().Name;
+                throw;
+            }
+            finally
+            {
+                timing.Report(outcome, cause, cancellationToken.IsCancellationRequested, timeout.IsCancellationRequested);
+            }
         }
     }
 

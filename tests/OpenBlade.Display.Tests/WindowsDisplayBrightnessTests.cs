@@ -16,18 +16,21 @@ public sealed class WindowsDisplayBrightnessTests
             () => WindowsDisplayBrightness.ValidateSetResult(5));
         Assert.Contains("System.Int32", type.Message, StringComparison.Ordinal);
 
-        Assert.Throws<ManagementException>(() => WindowsDisplayBrightness.ValidateSetResult(null));
         WindowsDisplayBrightness.ValidateSetResult(0u);
     }
 
     [Theory]
+    [InlineData(null, InternalInstance, (byte)40, true)]
+    [InlineData(null, InternalInstance, (byte)30, false)]
+    [InlineData(null, null, null, false)]
+    [InlineData(null, @"DISPLAY\SDC4226\4&abc&0&UID8388688_1", (byte)40, false)]
     [InlineData(false, InternalInstance, (byte)40, true)]
     [InlineData(true, InternalInstance, (byte)40, true)]
     [InlineData(false, InternalInstance, (byte)30, false)]
     [InlineData(true, null, null, false)]
     [InlineData(true, @"DISPLAY\SDC4226\4&abc&0&UID8388688_1", (byte)40, false)]
-    public void BooleanAcknowledgement_RequiresTargetReadbackFromSameInstance(
-        bool acknowledgement, string? instanceName, byte? percent, bool succeeds)
+    public void MissingOrBooleanAcknowledgement_RequiresTargetReadbackFromSameInstance(
+        bool? acknowledgement, string? instanceName, byte? percent, bool succeeds)
     {
         WindowsDisplayBrightness.ValidateSetResult(acknowledgement);
         DisplayBrightnessReading? observed = instanceName is not null && percent is byte value
