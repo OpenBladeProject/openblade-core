@@ -1,5 +1,8 @@
 //! Standalone installed SCM entry. Fixture modules are outside this binary.
 
+#[cfg(all(windows, not(test)))]
+#[allow(dead_code)] // Only metadata observation is used by the installed candidate.
+mod discovery;
 #[cfg(windows)]
 #[path = "windows/scm/installed.rs"]
 mod installed;

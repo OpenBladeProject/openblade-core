@@ -18,6 +18,10 @@ use crate::{
 mod status_wire;
 use status_wire::{GetStatus, Snapshot, StatusResponse};
 
+#[path = "status_source.rs"]
+#[allow(dead_code)] // Installed port composition is separate from the source.
+mod status_source;
+
 const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
