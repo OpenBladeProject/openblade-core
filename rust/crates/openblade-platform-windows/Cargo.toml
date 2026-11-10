@@ -7,6 +7,7 @@ license.workspace = true
 publish.workspace = true
 
 [features]
+controller-process-compile-check = []
 scripted-display = []
 scripted-gpu = []
 scripted-gpu-close = ["scripted-gpu"]

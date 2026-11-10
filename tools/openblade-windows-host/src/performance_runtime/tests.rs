@@ -19,6 +19,49 @@ fn controller() -> Controller {
     controller
 }
 
+#[cfg(windows)]
+#[test]
+fn controller_observation_can_only_invalidate_fixture_admission() {
+    use openblade_platform_windows::controller_presence::{Process, Scan, observe};
+
+    let present = [Process {
+        name: "RazerAppEngine",
+        pid: None,
+        identity: None,
+        verified_image: None,
+    }];
+    for (initial, processes, allowed) in [
+        (true, Scan::Complete(&[]), true),
+        (true, Scan::Complete(&present), false),
+        (true, Scan::Incomplete(&[]), false),
+        (false, Scan::Complete(&[]), false),
+    ] {
+        let observation = observe(
+            processes,
+            Scan::Complete(&[]),
+            None,
+            Scan::Incomplete(&[]),
+            1,
+        );
+        let mut device = Device::new();
+        device.admission.no_competing_controller = initial;
+        // Project only into the existing fake admission. A clear observation
+        // cannot restore authority that another part of the fixture revoked.
+        device.admission.no_competing_controller &= observation.confirms_absence();
+        assert_eq!(device.admits_writes(), allowed);
+        assert!(device.admission.admits_readback());
+        if !allowed {
+            assert_eq!(
+                device.apply(Preset::Performance, || panic!(
+                    "blocked before port admission"
+                )),
+                RecipeResult::Blocked
+            );
+            assert!(device.commands.is_empty());
+        }
+    }
+}
+
 #[test]
 fn typed_commands_match_the_exact_device_capture() {
     let capture: Value = serde_json::from_str(include_str!(
