@@ -42,8 +42,6 @@ pub struct Status {
     background: Projection,
     #[cfg(windows)]
     composed_thermal: bool,
-    #[cfg(windows)]
-    full_charge: bool,
 }
 
 struct Projection {
@@ -105,8 +103,6 @@ impl Status {
             background: Projection::new(background, background_legacy)?,
             #[cfg(windows)]
             composed_thermal: false,
-            #[cfg(windows)]
-            full_charge: false,
         })
     }
 
@@ -135,7 +131,6 @@ impl Status {
             replay,
         )?);
         self.composed_thermal = matches!(replay, ProfileReplay::Thermal);
-        self.full_charge = matches!(replay, ProfileReplay::FullCharge);
         self.replay = Some(scenario.subscribe());
         // The power script is the only mutation entry point in this mode.
         if !matches!(replay, ProfileReplay::Power { .. }) {
@@ -152,17 +147,6 @@ impl Status {
             }
         };
         Ok((self, drive))
-    }
-
-    fn admits_full_charge(&self) -> bool {
-        #[cfg(windows)]
-        {
-            self.full_charge
-        }
-        #[cfg(not(windows))]
-        {
-            false
-        }
     }
 
     fn attach_battery(
@@ -580,8 +564,9 @@ where
             CURRENT_VERSION,
             operation @ ("setBatteryPolicy" | "setBatteryProtection" | "setFullChargeOverride"),
         ) if matches!(session, Session::Active)
-            && status.battery.is_some()
-            && (operation != "setFullChargeOverride" || status.admits_full_charge()) =>
+            && status.battery.as_ref().is_some_and(|scenario| {
+                operation != "setFullChargeOverride" || scenario.accepts_full_charge()
+            }) =>
         {
             let intent = BatteryRequest::decode(&payload)?;
             let result = status

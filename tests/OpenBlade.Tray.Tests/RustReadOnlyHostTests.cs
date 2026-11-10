@@ -571,7 +571,7 @@ public sealed class RustReadOnlyHostTests
         Assert.Equal(80, initial.ConfirmedState!.Battery!.ChargeLimitPercent);
         Assert.Equal(80, initial.Profiles.BatteryPolicy.ChargeLimitPercent);
         Assert.True(initial.Capabilities!.SupportsBatteryProtectionOff);
-        Assert.True(initial.Capabilities!.SupportsTemporaryFullCharge);
+        Assert.False(initial.Capabilities!.SupportsTemporaryFullCharge);
 
         const string id = "11111111-2222-4333-8444-555555555555";
         foreach (string malformed in new[]
@@ -1087,6 +1087,12 @@ public sealed class RustReadOnlyHostTests
             completed = await AdvanceAsync();
             AssertState(completed, desired: false, confirmed: false);
             Assert.Empty(completed.ExternalChanges);
+
+            Assert.Contains("response loss armed", (await AdvanceAsync()).Message);
+            Assert.Contains("response loss expired", (await AdvanceAsync()).Message);
+            await SetAsync(true, ControlOperationStatus.Applied);
+            await SetAsync(false, ControlOperationStatus.Applied);
+            AssertState(await client.GetStatusAsync(token), desired: false, confirmed: false);
 
             await host.StopAsync(token);
             AssertPrimaryBytes(root, saved);

@@ -6,7 +6,7 @@ use openblade_domain::{
     automation,
     recovery::{ScopedStatus, SubmissionCertainty},
 };
-use openblade_protocol::RazerReport;
+use openblade_protocol::{REPORT_LENGTH, RazerReport};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, mpsc, watch};
@@ -198,12 +198,6 @@ impl<D: Device> Controller<D> {
                 message: "Battery was not written because OpenBlade must confirm the current laptop state first.",
             });
         }
-        if !self.device.admit(self.power) {
-            return Ok(Result {
-                status: Blocked,
-                message: "The laptop could not be admitted for this control operation.",
-            });
-        }
         if intent == Intent::FullCharge(true) {
             let rejection = match (self.power, self.desired().protection) {
                 (Power::Battery, _) => {
@@ -220,6 +214,12 @@ impl<D: Device> Controller<D> {
                     message,
                 });
             }
+        }
+        if !self.device.admit(self.power) {
+            return Ok(Result {
+                status: Blocked,
+                message: "The laptop could not be admitted for this control operation.",
+            });
         }
         let baseline = self.device.read_policy();
         let target = intent.stage(self.desired());
@@ -459,6 +459,7 @@ struct FakeDevice {
     admitted: bool,
     next_submission: Option<Submission>,
     power_mode: PowerMode,
+    report_reads: bool,
     #[cfg(test)]
     effects: Vec<Effect>,
     #[cfg(test)]
@@ -489,9 +490,18 @@ impl FakeDevice {
     }
 
     fn exchange_battery(&mut self, id: u8, value: u8, lose_response: bool) -> Option<u8> {
-        self.power_mode.transaction = self.power_mode.transaction.wrapping_add(1);
-        let request = battery_request(self.power_mode.transaction, id, value)?;
-        let bytes = request.encode();
+        let transaction = self.power_mode.transaction.checked_add(1)?;
+        let request = battery_request(transaction, id, value)?;
+        self.power_mode.transaction = transaction;
+        let reply = self.reply_to_battery(&request.encode(), lose_response)?;
+        Some(request.validate_response(&reply, Some(1)).ok()?.as_slice()[0])
+    }
+
+    fn reply_to_battery(
+        &mut self,
+        bytes: &[u8; REPORT_LENGTH],
+        lose_response: bool,
+    ) -> Option<[u8; REPORT_LENGTH]> {
         let reply_value = match (bytes[6], bytes[7], bytes[8]) {
             (BATTERY_CLASS, CHARGE_POLICY_GET, 0) => match self.observed.limit {
                 Some(limit) => u8::try_from(limit.percent()).ok()? | 0x80,
@@ -512,7 +522,7 @@ impl FakeDevice {
         }
         let mut reply = battery_request(bytes[1], bytes[7], reply_value)?.encode();
         reply[0] = 2;
-        Some(request.validate_response(&reply, Some(1)).ok()?.as_slice()[0])
+        Some(reply)
     }
 
     fn new(observed: Confirmed) -> Self {
@@ -521,6 +531,7 @@ impl FakeDevice {
             admitted: true,
             next_submission: None,
             power_mode: PowerMode::default(),
+            report_reads: false,
             #[cfg(test)]
             effects: Vec::new(),
             #[cfg(test)]
@@ -543,6 +554,9 @@ impl Device for FakeDevice {
         if let Some(read) = self.read_override.take() {
             return read;
         }
+        if !self.report_reads {
+            return Some(self.observed);
+        }
         let limit = self.query_charge_policy()?;
         Some(Confirmed {
             temporary: self
@@ -561,7 +575,8 @@ impl Device for FakeDevice {
                 .query_power_mode()
                 .is_some_and(|flags| flags & !FULL_CHARGE_BIT == 0)
                 || self.query_charge_policy() != Some(Some(limit))
-                || enabled && power == Power::Battery)
+                || enabled && power == Power::Battery
+                || self.power_mode.transaction == u8::MAX)
         {
             return Submission::Refused;
         }
@@ -580,7 +595,8 @@ impl Device for FakeDevice {
                 Command::ProtectionOff => self.observed.limit = None,
                 Command::FullCharge { enabled, .. } => {
                     let requested = if enabled { FULL_CHARGE_BIT } else { 0 };
-                    let lose_response = submission != Submission::Acknowledged;
+                    let lose_response = std::mem::take(&mut self.power_mode.lose_set_reply)
+                        || submission != Submission::Acknowledged;
                     let reply = self.exchange_battery(POWER_MODE_SET, requested, lose_response);
                     if reply != Some(requested) {
                         return Submission::Failed(SubmissionCertainty::Indeterminate);
@@ -607,6 +623,7 @@ struct PowerMode {
     transaction: u8,
     other_settings: u8,
     unreadable: bool,
+    lose_set_reply: bool,
 }
 
 fn battery_request(transaction: u8, id: u8, value: u8) -> Option<RazerReport> {
@@ -619,6 +636,7 @@ type ProfileWriter = openblade_windows_host::configuration_writer::fixture::Batt
 pub(crate) struct Scenario {
     #[cfg(windows)]
     editable: bool,
+    full_charge: bool,
     state: Arc<Mutex<ScenarioState>>,
     publish: watch::Sender<Arc<Value>>,
 }
@@ -651,6 +669,7 @@ impl Scenario {
     pub(crate) fn new(baseline: Value) -> io::Result<Self> {
         Self::start(
             baseline,
+            false,
             #[cfg(windows)]
             None,
             #[cfg(windows)]
@@ -673,17 +692,24 @@ impl Scenario {
                 Some(thermal::Thermal::for_power_profile(&mut baseline)?)
             }
         };
-        Self::start(baseline, writer, thermal)
+        Self::start(
+            baseline,
+            matches!(replay, ProfileReplay::FullCharge),
+            writer,
+            thermal,
+        )
     }
 
     fn start(
         baseline: Value,
+        full_charge: bool,
         #[cfg(windows)] writer: Option<ProfileWriter>,
         #[cfg(windows)] thermal: Option<thermal::Thermal>,
     ) -> io::Result<Self> {
         #[cfg(windows)]
         let editable = writer.is_some();
         let mut controller = Controller::fixture(&baseline)?;
+        controller.device.report_reads = full_charge;
         controller.observe();
         let mut state = ScenarioState {
             #[cfg(windows)]
@@ -700,15 +726,20 @@ impl Scenario {
         state.current["capabilities"]["supportsBatteryProtectionOff"] =
             CAPABILITIES.protection_off.into();
         state.current["capabilities"]["supportsTemporaryFullCharge"] =
-            CAPABILITIES.temporary.into();
+            (full_charge && CAPABILITIES.temporary).into();
         state.project("Synthetic battery scenario ready.");
         let (publish, _) = watch::channel(Arc::new(state.current.clone()));
         Ok(Self {
             #[cfg(windows)]
             editable,
+            full_charge,
             state: Arc::new(Mutex::new(state)),
             publish,
         })
+    }
+
+    pub(crate) fn accepts_full_charge(&self) -> bool {
+        self.full_charge
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<Arc<Value>> {
@@ -745,7 +776,11 @@ impl Scenario {
         mut advance: mpsc::Receiver<()>,
     ) -> io::Result<()> {
         type Step = (&'static str, fn(&mut Controller<FakeDevice>));
-        let steps: [Step; 9] = [
+        let arm_loss: Step = ("Temporary full charge response loss armed.", |controller| {
+            controller.device.power_mode.other_settings = 0;
+            controller.device.power_mode.lose_set_reply = true;
+        });
+        let steps: [Step; 11] = [
             ("Temporary full charge read unavailable.", |controller| {
                 controller.device.power_mode.unreadable = true;
             }),
@@ -765,11 +800,7 @@ impl Scenario {
                     controller.device.power_mode.other_settings = 0x08;
                 },
             ),
-            ("Temporary full charge response loss armed.", |controller| {
-                controller.device.power_mode.other_settings = 0;
-                controller.device.next_submission =
-                    Some(Submission::Failed(SubmissionCertainty::Indeterminate));
-            }),
+            arm_loss,
             (
                 "Read-only reconciliation has only the charge policy.",
                 |controller| {
@@ -788,12 +819,15 @@ impl Scenario {
                     controller.device.observed.temporary = Some(false);
                 },
             ),
+            arm_loss,
+            ("Unused full charge response loss expired.", |_| {}),
         ];
         for (message, inject) in steps {
             if advance.recv().await.is_none() {
                 return Ok(());
             }
             self.update(|state| {
+                state.controller.device.power_mode.lose_set_reply = false;
                 inject(&mut state.controller);
                 state.controller.observe();
                 Ok(Result {
@@ -1116,7 +1150,7 @@ mod tests {
                 request.encode().as_slice(),
                 decode(&row["requestEnvelopeHex"])
             );
-            let reply = decode(&row["responseEnvelopeHex"]);
+            let mut reply = decode(&row["responseEnvelopeHex"]);
             assert_eq!(
                 request
                     .validate_response(&reply, Some(1))
@@ -1124,13 +1158,55 @@ mod tests {
                     .as_slice(),
                 &[expected]
             );
-            assert_eq!(device.exchange_battery(id, value, false), Some(expected));
+            // The managed envelope validator permits the captured header padding.
+            reply[3] = 0;
+            reply[88] = openblade_protocol::calculate_checksum(&reply).unwrap();
+            assert_eq!(
+                device
+                    .reply_to_battery(&request.encode(), false)
+                    .unwrap()
+                    .as_slice(),
+                reply
+            );
         }
+    }
+
+    #[test]
+    fn full_charge_rejects_battery_power_before_scoped_admission_and_does_not_wrap_ids() {
+        let mut controller = setup();
+        controller.device.report_reads = true;
+        controller.device.admitted = false;
+        controller.power = Power::Battery;
+        let enable = Intent::FullCharge(true);
+        assert_eq!(
+            controller.apply(enable).unwrap().status,
+            ScopedStatus::Failed
+        );
+        assert!(controller.device.effects.is_empty());
+
+        controller.power = Power::PluggedIn;
+        controller.device.admitted = true;
+        controller.device.power_mode.transaction = u8::MAX - 4;
+        assert_eq!(
+            controller.apply(enable).unwrap().status,
+            ScopedStatus::Blocked
+        );
+        assert_eq!(controller.device.power_mode.transaction, u8::MAX);
+        assert_eq!(controller.device.observed.temporary, Some(false));
+        assert!(controller.pending.is_none());
+        assert!(
+            !controller
+                .device
+                .effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Set(_)))
+        );
     }
 
     #[test]
     fn full_charge_reconciliation_requires_both_reads_and_never_replays() {
         let mut controller = setup();
+        controller.device.report_reads = true;
         let enable = Intent::FullCharge(true);
         let cancel = Intent::FullCharge(false);
         let confirmed = |limit, temporary| Some(Confirmed { limit, temporary });
