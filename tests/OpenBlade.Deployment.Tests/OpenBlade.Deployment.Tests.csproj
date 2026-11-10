@@ -14,5 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenBlade.Deployment\OpenBlade.Deployment.csproj" />
+    <Compile Include="..\..\build\development-deployment\WindowsNativeRoleInventory.cs" Link="WindowsNativeRoleInventory.cs" />
   </ItemGroup>
 </Project>
