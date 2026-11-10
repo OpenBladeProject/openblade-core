@@ -603,6 +603,19 @@ impl Scenario {
         self.editable
     }
 
+    #[cfg(windows)]
+    pub(crate) async fn take_profile_writer(&self) -> Option<ProfileWriter> {
+        // A canceled pipe task can leave a submitted blocking transaction holding
+        // this guard. Take the writer after the outcome, even if that worker's
+        // last reference to the scenario has yet to be dropped.
+        self.state.lock().await.writer.take()
+    }
+
+    #[cfg(all(windows, test))]
+    pub(crate) fn hold_profile_writer(&self) -> impl Send + use<> {
+        Arc::clone(&self.state).try_lock_owned().unwrap()
+    }
+
     /// Mirrors UpdateProfiles for a battery-policy-only edit with no active
     /// app profile or lighting suppression. Disk admission precedes publication.
     #[cfg(windows)]

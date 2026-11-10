@@ -12,8 +12,9 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use windows_sys::Win32::Foundation::{
-    ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_NOT_CONNECTED,
+use windows_sys::Win32::{
+    Foundation::{ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_NOT_CONNECTED},
+    System::Services::SERVICE_RUNNING,
 };
 
 use crate::runtime::DurableUpdate;
@@ -42,10 +43,9 @@ pub(super) fn entry() -> io::Result<()> {
         [mode] if mode == "--scm" => scm::dispatch(),
         [mode, id, root] if mode == "foreground-protected-runtime" => {
             let id = foreground_id(id)?;
-            fixture::BatteryProfileStore::run_protected(
-                std::path::Path::new(root),
-                |profiles, writer| foreground_battery_profiles(id, profiles, Some(writer), true),
-            )
+            foreground(id, Session::Active, true, |advance, shutdown| {
+                prepare_protected(std::path::Path::new(root), advance, shutdown)
+            })
         }
         [mode, id]
             if mode == "foreground-battery-profile"
@@ -203,17 +203,37 @@ fn foreground_battery_profiles(
     thermal: bool,
 ) -> io::Result<()> {
     foreground(id, Session::Active, true, |advance, shutdown| {
-        let advance = advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
-        let (status, drive) =
-            Status::fixture()?.with_battery_profiles(advance, profiles, writer, thermal)?;
-        let drive = async move {
-            tokio::select! {
-                _ = shutdown => Ok(()),
-                result = drive => result,
-            }
-        };
-        Ok((status, Some(drive)))
+        prepare_battery_profiles(advance, shutdown, profiles, writer, thermal)
     })
+}
+
+fn prepare_protected(
+    root: &std::path::Path,
+    advance: Option<mpsc::Receiver<()>>,
+    shutdown: oneshot::Receiver<()>,
+) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
+    let (profiles, writer) = fixture::BatteryProfileStore::open_protected(root)?;
+    prepare_battery_profiles(advance, shutdown, profiles, Some(writer), true)
+}
+
+fn prepare_battery_profiles(
+    advance: Option<mpsc::Receiver<()>>,
+    shutdown: oneshot::Receiver<()>,
+    profiles: serde_json::Value,
+    writer: Option<fixture::BatteryProfileStore>,
+    thermal: bool,
+) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
+    let advance = advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
+    let (status, drive) =
+        Status::fixture()?.with_battery_profiles(advance, profiles, writer, thermal)?;
+    let drive = async move {
+        tokio::select! {
+            biased;
+            _ = shutdown => Ok(()),
+            result = drive => result,
+        }
+    };
+    Ok((status, Some(drive)))
 }
 
 fn foreground_id(id: &std::ffi::OsStr) -> io::Result<&str> {
@@ -240,22 +260,22 @@ fn foreground<F: Future<Output = io::Result<()>>>(
     } else {
         (None, None)
     };
-    let (stop_tx, stop_rx) = oneshot::channel();
-    let mut stop_tx = Some(stop_tx);
+    let controls = Arc::new(scm::Controls::new());
+    let stop = controls.arm();
     let runtime = Builder::new_current_thread().enable_all().build()?;
-    runtime.block_on(run_prepared(
+    runtime.block_on(scm::run_service(
+        &controls,
+        stop,
         id,
         session,
         |shutdown| prepare(replay, shutdown),
-        |phase| {
-            if phase == Phase::Running {
+        |status| {
+            if status.dwCurrentState == SERVICE_RUNNING {
                 // This thread owns stdin. EOF stops replay; one byte stops fixed modes.
                 std::thread::Builder::new()
                     .name("development-stop".into())
                     .spawn({
-                        let stop = stop_tx.take().ok_or_else(|| {
-                            io::Error::other("foreground stop signal already started")
-                        })?;
+                        let controls = Arc::clone(&controls);
                         let advance = advance.take();
                         move || {
                             let mut input = io::stdin().lock();
@@ -269,7 +289,7 @@ fn foreground<F: Future<Output = io::Result<()>>>(
                             } else {
                                 let _ = input.fill_buf();
                             }
-                            let _ = stop.send(());
+                            controls.request_stop();
                         }
                     })?;
                 let mut output = io::stdout().lock();
@@ -278,12 +298,10 @@ fn foreground<F: Future<Output = io::Result<()>>>(
             }
             Ok(())
         },
-        async {
-            let _ = stop_rx.await;
-        },
     ))
 }
 
+#[cfg(test)]
 async fn run(
     id: &str,
     session: Session,
@@ -329,55 +347,74 @@ async fn run_prepared<F: Future<Output = io::Result<()>>>(
 ) -> io::Result<()> {
     let result = async {
         report(Phase::Starting)?;
+        tokio::pin!(stop);
+        check_starting(stop.as_mut()).await?;
         let (shutdown, retiring) = oneshot::channel();
         let (status, drive) = prepare(retiring)?;
+        let status = Arc::new(status);
+        check_starting(stop.as_mut()).await?;
         let endpoint = pipe::Endpoint::new(format!("{PREFIX}{id}"))?;
         let claim = endpoint.claim()?;
         let listener = endpoint.listen()?;
         report(Phase::Running)?;
 
         let mut clients = JoinSet::new();
-        let result = {
+        let drive = async {
+            match drive {
+                Some(drive) => drive.await,
+                None => Ok(()),
+            }
+        };
+        tokio::pin!(drive);
+        let (result, drive_pending) = {
             let serve = accept(
                 listener,
                 &endpoint,
                 session,
-                Arc::new(status),
+                Arc::clone(&status),
                 &mut clients,
                 stop,
             );
-            let drive = async {
-                match drive {
-                    Some(drive) => drive.await,
-                    None => Ok(()),
-                }
-            };
-            tokio::pin!(serve, drive);
+            tokio::pin!(serve);
             tokio::select! {
                 biased;
-                result = &mut serve => {
-                    let _ = shutdown.send(());
-                    result.and(drive.await)
-                }
-                result = &mut drive => {
-                    match result {
-                        Ok(()) => serve.await,
-                        Err(error) => Err(error),
-                    }
-                }
+                result = &mut serve => (result, true),
+                result = &mut drive => (match result {
+                    Ok(()) => serve.await,
+                    Err(error) => Err(error),
+                }, false),
             }
         };
         let stopping = report(Phase::Stopping);
+        let _ = shutdown.send(());
         clients.abort_all();
         while clients.join_next().await.is_some() {}
+        let driven = if drive_pending { drive.await } else { Ok(()) };
+        let writer = status.take_profile_writer().await;
         drop(claim);
-        result.and(stopping)
+        drop(writer);
+        result.and(stopping).and(driven)
     }
     .await;
     let stopped = report(Phase::Stopped {
         failed: result.is_err(),
     });
     result.and(stopped)
+}
+
+async fn check_starting(stop: std::pin::Pin<&mut impl Future<Output = ()>>) -> io::Result<()> {
+    tokio::select! {
+        biased;
+        () = stop => Err(startup_stopped()),
+        () = std::future::ready(()) => Ok(()),
+    }
+}
+
+fn startup_stopped() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::Interrupted,
+        "development host startup stopped",
+    )
 }
 
 async fn accept(
@@ -471,7 +508,7 @@ mod tests {
 
     use super::*;
 
-    fn test_id() -> String {
+    pub(super) fn test_id() -> String {
         let time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -485,7 +522,7 @@ mod tests {
         )
     }
 
-    fn runtime() -> tokio::runtime::Runtime {
+    pub(super) fn runtime() -> tokio::runtime::Runtime {
         Builder::new_current_thread().enable_all().build().unwrap()
     }
 
@@ -708,7 +745,7 @@ mod tests {
         });
     }
 
-    async fn open_pipe(path: &str) -> tokio::net::windows::named_pipe::NamedPipeClient {
+    pub(super) async fn open_pipe(path: &str) -> tokio::net::windows::named_pipe::NamedPipeClient {
         loop {
             match ClientOptions::new().open(path) {
                 Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
@@ -719,7 +756,7 @@ mod tests {
         }
     }
 
-    async fn read_status(path: &str) {
+    pub(super) async fn read_status(path: &str) {
         let mut pipe = open_pipe(path).await;
         let request = br#"{"operation":"getStatus","version":79,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
         pipe.write_all(&(request.len() as i32).to_le_bytes())
@@ -729,7 +766,7 @@ mod tests {
         assert!((1..=65_536).contains(&pipe.read_i32_le().await.unwrap()));
     }
 
-    fn assert_closed(result: io::Result<usize>) {
+    pub(super) fn assert_closed(result: io::Result<usize>) {
         match result {
             Ok(0) => {}
             Err(error) if stale_connection(&error) => {}

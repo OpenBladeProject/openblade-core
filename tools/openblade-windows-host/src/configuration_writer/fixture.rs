@@ -251,10 +251,7 @@ pub struct BatteryProfileStore {
 
 impl BatteryProfileStore {
     /// Developer-only root, deliberately separate from the installed data path.
-    pub fn run_protected(
-        root: &Path,
-        run: impl FnOnce(Value, Self) -> io::Result<()>,
-    ) -> io::Result<()> {
+    pub fn open_protected(root: &Path) -> io::Result<(Value, Self)> {
         let name = root
             .file_name()
             .and_then(OsStr::to_str)
@@ -268,18 +265,15 @@ impl BatteryProfileStore {
 
         let storage = super::protected::ProtectedStorage::open(root)?;
         let lease = storage.acquire_writer()?;
-        // Keep an independent owner through pipe teardown and any blocking
-        // transaction drained when the foreground runtime exits.
-        let writer = Arc::new(ProtectedWriter {
-            storage,
-            _lease: lease,
-        });
         let store = TestStore {
             root: root.to_owned(),
             pins: Vec::new(),
             cleanup_on_drop: false,
             held_lock: None,
-            protected: Some(Arc::clone(&writer)),
+            protected: Some(Arc::new(ProtectedWriter {
+                storage,
+                _lease: lease,
+            })),
         };
         let documents: Documents = serde_json::from_str(FIXTURE)?;
         let template = ProfileTemplate::from_managed(&documents.prior)?;
@@ -287,7 +281,7 @@ impl BatteryProfileStore {
         let docs = current_documents(inspection, &prior)?;
         let policy = template.decode_verified(docs, inspection)?;
         let profiles = profiles_from_document(docs[0])?;
-        let result = run(
+        Ok((
             profiles,
             Self {
                 store,
@@ -297,9 +291,7 @@ impl BatteryProfileStore {
                 policy,
                 interrupt: false,
             },
-        );
-        drop(writer);
-        result
+        ))
     }
 
     pub fn save(&mut self, charge_limit: u8) -> io::Result<()> {

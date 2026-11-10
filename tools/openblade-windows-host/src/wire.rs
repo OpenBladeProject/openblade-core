@@ -141,6 +141,21 @@ impl Status {
         Ok((self, drive))
     }
 
+    #[cfg(windows)]
+    pub async fn take_profile_writer(
+        &self,
+    ) -> Option<openblade_windows_host::configuration_writer::fixture::BatteryProfileStore> {
+        match &self.battery {
+            Some(scenario) => scenario.take_profile_writer().await,
+            None => None,
+        }
+    }
+
+    #[cfg(all(windows, test))]
+    pub fn hold_profile_writer(&self) -> impl Send + use<> {
+        self.battery.as_ref().unwrap().hold_profile_writer()
+    }
+
     fn attach_battery(
         mut self,
         scenario: Arc<Scenario>,
