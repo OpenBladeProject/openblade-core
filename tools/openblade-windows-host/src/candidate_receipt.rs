@@ -1,4 +1,4 @@
-//! Startup-side binding of a committed package receipt to the retained Service file.
+//! Bind package records to retained candidate files, with separate startup and commit admission.
 
 use std::{
     ffi::OsStr,
@@ -31,13 +31,39 @@ const MAX_RECEIPT_BYTES: u64 = 4096;
 const EMPTY_GUID: &str = "00000000-0000-0000-0000-000000000000";
 const AGENT_NAME: &str = "OpenBlade.SessionAgent.exe";
 
+#[derive(Clone, Copy)]
+enum Phase {
+    Committed,
+    #[cfg(feature = "scratch-candidate-receipt")]
+    Startup,
+}
+
+impl Phase {
+    fn record(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Committed => (COMMITTED_NAME, "SetupPayloadCommitted"),
+            #[cfg(feature = "scratch-candidate-receipt")]
+            Self::Startup => ("candidate-package.startup.json", "SetupPayloadStarting"),
+        }
+    }
+}
+
 /// Evidence about files on disk. The process must separately prove that it
 /// loaded this generation before it can open the production endpoint.
 pub(crate) struct CommittedServiceImage {
+    _files: RetainedRecord,
+}
+
+struct RetainedRecord {
     _image: File,
     _receipt: File,
     _install_directory: File,
     _ancestors: Vec<File>,
+}
+
+pub(super) struct ActiveBinding {
+    pub(super) digest: [u8; 32],
+    pub(super) setup_identity: [u8; 12],
 }
 
 #[cfg(feature = "installed-service-candidate")]
@@ -74,6 +100,60 @@ pub(super) fn read(
     check_file: impl Fn(&File) -> io::Result<()>,
     expected_receipt: impl FnOnce() -> Option<[u8; 32]>,
 ) -> io::Result<CommittedServiceImage> {
+    let (files, _) = read_record(
+        install,
+        scope,
+        Phase::Committed,
+        check_directory,
+        check_file,
+        expected_receipt,
+        None,
+    )?;
+    Ok(CommittedServiceImage { _files: files })
+}
+
+#[cfg(feature = "scratch-candidate-receipt")]
+pub(super) struct ProvisionalStartup {
+    _files: RetainedRecord,
+    _binding: File,
+    _agent: File,
+}
+
+#[cfg(feature = "scratch-candidate-receipt")]
+pub(super) fn read_provisional(
+    install: &Path,
+    scope: &str,
+    check_directory: impl Fn(&File, usize, bool, usize) -> io::Result<()>,
+    check_file: impl Fn(&File) -> io::Result<()>,
+    expected: [u8; 32],
+    active_binding: ActiveBinding,
+) -> io::Result<ProvisionalStartup> {
+    let (files, startup) = read_record(
+        install,
+        scope,
+        Phase::Startup,
+        check_directory,
+        check_file,
+        || Some(expected),
+        Some(active_binding),
+    )?;
+    let (binding, agent) = startup.expect("startup evidence retains both files");
+    Ok(ProvisionalStartup {
+        _files: files,
+        _binding: binding,
+        _agent: agent,
+    })
+}
+
+fn read_record(
+    install: &Path,
+    scope: &str,
+    phase: Phase,
+    check_directory: impl Fn(&File, usize, bool, usize) -> io::Result<()>,
+    check_file: impl Fn(&File) -> io::Result<()>,
+    expected_receipt: impl FnOnce() -> Option<[u8; 32]>,
+    active_binding: Option<ActiveBinding>,
+) -> io::Result<(RetainedRecord, Option<(File, File)>)> {
     let (root, ancestors, info) = pin_root(install)?;
     require_ntfs(&ancestors[0])?;
     let check_directories = || {
@@ -89,9 +169,9 @@ pub(super) fn read(
         check_directory(&root, ancestors.len(), true, ancestors.len())
     };
     check_directories()?;
-    let open = |name| {
+    let open = |directory: &File, name| {
         open_relative(
-            &root,
+            directory,
             OsStr::new(name),
             FILE_GENERIC_READ,
             FILE_SHARE_READ,
@@ -113,7 +193,8 @@ pub(super) fn read(
         check_file(file)
     };
 
-    let mut receipt = open(COMMITTED_NAME)?;
+    let (name, expected_phase) = phase.record();
+    let mut receipt = open(&root, name)?;
     verify_file(&receipt)?;
     let before = snapshot(&receipt)?;
     if !(1..=MAX_RECEIPT_BYTES).contains(&before.size) {
@@ -124,20 +205,67 @@ pub(super) fn read(
         .take(before.size + 1)
         .read_to_end(&mut bytes)?;
     if bytes.len() as u64 != before.size || snapshot(&receipt)? != before {
-        return Err(denied(
-            "committed candidate receipt changed during verification",
-        ));
+        return Err(denied("candidate receipt changed during verification"));
     }
-    let record = parse(&bytes, scope)?;
+    let record = parse(&bytes, scope, expected_phase)?;
     let expected = expected_receipt()
         .ok_or_else(|| denied("authenticated committed release identity is unavailable"))?;
     if <[u8; 32]>::from(Sha256::digest(&bytes)) != expected {
         return Err(denied(
-            "committed candidate receipt differs from the authenticated release binding",
+            "candidate receipt differs from the authenticated release binding",
         ));
     }
 
-    let mut image = open(IMAGE_NAME)?;
+    let startup = if let Some(expected_binding) = active_binding {
+        // Scratch layout is <scratch>/program-files/OpenBlade. The retained
+        // scratch ancestor already passed the same owner and DACL checks.
+        let scratch = ancestors
+            .iter()
+            .rev()
+            .nth(1)
+            .ok_or_else(|| denied("missing candidate scratch ancestor"))?;
+        let mut binding = open(scratch, "unresolved-deployment.json")?;
+        verify_file(&binding)?;
+        let before = snapshot(&binding)?;
+        // BrokerInFlightDeploymentCodec.MaximumBytes.
+        if !(1..=2048).contains(&before.size) {
+            return Err(denied("invalid active candidate binding size"));
+        }
+        let mut active = Vec::with_capacity(before.size as usize);
+        (&mut binding)
+            .take(before.size + 1)
+            .read_to_end(&mut active)?;
+        let mut hash = Sha256::new();
+        hash.update(&active);
+        hash.update(expected_binding.setup_identity);
+        hash.update(expected);
+        if active.len() as u64 != before.size
+            || snapshot(&binding)? != before
+            || <[u8; 32]>::from(hash.finalize()) != expected_binding.digest
+        {
+            return Err(denied(
+                "provisional receipt has a different active generation",
+            ));
+        }
+        let mut agent = open(&root, AGENT_NAME)?;
+        verify_file(&agent)?;
+        service_image::verify(
+            &mut agent,
+            record.session_agent.length,
+            digest(&record.session_agent.sha256)?,
+        )
+        .map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("Session Agent verification failed: {error}"),
+            )
+        })?;
+        Some((binding, agent))
+    } else {
+        None
+    };
+
+    let mut image = open(&root, IMAGE_NAME)?;
     verify_file(&image)?;
     service_image::verify(
         &mut image,
@@ -146,18 +274,23 @@ pub(super) fn read(
     )?;
     verify_file(&image)?;
     verify_file(&receipt)?;
+    if let Some((binding, agent)) = &startup {
+        verify_file(binding)?;
+        verify_file(agent)?;
+    }
     check_directories()?;
     if snapshot(&receipt)? != before {
-        return Err(denied(
-            "committed candidate receipt changed during verification",
-        ));
+        return Err(denied("candidate receipt changed during verification"));
     }
-    Ok(CommittedServiceImage {
-        _image: image,
-        _receipt: receipt,
-        _install_directory: root,
-        _ancestors: ancestors,
-    })
+    Ok((
+        RetainedRecord {
+            _image: image,
+            _receipt: receipt,
+            _install_directory: root,
+            _ancestors: ancestors,
+        },
+        startup,
+    ))
 }
 
 #[allow(unsafe_code)]
@@ -212,12 +345,12 @@ impl RoleImage {
     }
 }
 
-fn parse(bytes: &[u8], scope: &str) -> io::Result<Receipt> {
+fn parse(bytes: &[u8], scope: &str, expected_phase: &str) -> io::Result<Receipt> {
     let record: Receipt = serde_json::from_slice(bytes).map_err(|_| invalid_receipt())?;
     // Compare the canonical serializer order and spellings, including integer
     // syntax, escaping and whitespace. Serde also rejects duplicate fields.
     if record.schema != 2
-        || record.phase != "SetupPayloadCommitted"
+        || record.phase != expected_phase
         || record.scratch_id != scope
         || !guid(scope)
         || !nonempty_guid(&record.installation_id)
@@ -249,7 +382,7 @@ fn parse(bytes: &[u8], scope: &str) -> io::Result<Receipt> {
 fn invalid_receipt() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidData,
-        "invalid canonical committed candidate receipt",
+        "invalid canonical candidate receipt",
     )
 }
 

@@ -11,12 +11,14 @@ internal sealed class WindowsCandidatePackageReceipt
 {
     internal const string PendingName = "candidate-package.pending.json";
     internal const string ClaimedName = "candidate-package.claimed.json";
+    internal const string StartupName = "candidate-package.startup.json";
     internal const string CommittedName = "candidate-package.committed.json";
 
     private readonly WindowsCandidateReceiptStorage storage;
     private readonly string staging;
     private readonly WindowsNativePackageRoleProof proof;
     private readonly byte[] pending;
+    private readonly byte[] startup;
     private readonly byte[] committed;
     private readonly byte[] activeState;
     private readonly Guid installationId;
@@ -39,6 +41,7 @@ internal sealed class WindowsCandidatePackageReceipt
         staging = Path.Combine(storage.Root, "staging", requestId.ToString("N"));
         string brokerBindingSha256 = Convert.ToHexStringLower(SHA256.HashData(issuedState));
         pending = Encode("BrokerVerified");
+        startup = Encode("SetupPayloadStarting");
         committed = Encode("SetupPayloadCommitted");
 
         byte[] Encode(string phase) => JsonSerializer.SerializeToUtf8Bytes(new
@@ -152,6 +155,7 @@ internal sealed class WindowsCandidatePackageReceipt
         using var requestDirectory = storage.PinDirectory(staging);
         using FileStream binding = OpenActiveBinding();
         using var payloadDirectory = storage.PinDirectory(stagedPayload);
+        WindowsCandidateReceiptStorage.RequireAbsent(Path.Combine(stagedPayload, StartupName));
         WindowsCandidateReceiptStorage.RequireAbsent(Path.Combine(stagedPayload, CommittedName));
         string pendingPath = Path.Combine(staging, PendingName);
         string claimedPath = Path.Combine(staging, ClaimedName);
@@ -182,9 +186,38 @@ internal sealed class WindowsCandidatePackageReceipt
         onVerified?.Invoke();
     }
 
+    internal void PublishStartup(string installedPayload, CancellationToken cancellationToken) =>
+        VerifyClaimedPayload(installedPayload, cancellationToken,
+            () =>
+            {
+                WindowsCandidateReceiptStorage.RequireAbsent(Path.Combine(installedPayload, CommittedName));
+                storage.Publish(Path.Combine(installedPayload, StartupName), startup);
+            });
+
+    // Send these together over the scratch launch rendezvous. The second
+    // digest binds the current launch, which can differ from issuance.
+    internal byte[] StartupCommitment(ReadOnlySpan<byte> setupIdentity)
+    {
+        byte[] startupDigest = SHA256.HashData(startup);
+        using var binding = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        binding.AppendData(activeState);
+        binding.AppendData(setupIdentity);
+        binding.AppendData(startupDigest);
+        return [.. startupDigest, .. binding.GetHashAndReset()];
+    }
+
     internal void PublishCommitted(string installedPayload, CancellationToken cancellationToken) =>
         VerifyClaimedPayload(installedPayload, cancellationToken,
-            () => storage.Publish(Path.Combine(installedPayload, CommittedName), committed));
+            () =>
+            {
+                string destination = Path.Combine(installedPayload, CommittedName);
+                WindowsCandidateReceiptStorage.RequireAbsent(destination);
+                storage.Retire(Path.Combine(installedPayload, StartupName), startup);
+                cancellationToken.ThrowIfCancellationRequested();
+                // The verified rename is the point of no return. A failed
+                // publish remains rollbackable and cannot be retried as startup.
+                storage.Publish(destination, committed);
+            });
 
     internal void VerifyCommitted(string installedPayload, CancellationToken cancellationToken, Action? onVerified = null)
     {

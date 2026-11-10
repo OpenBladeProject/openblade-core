@@ -136,15 +136,13 @@ internal sealed class WindowsCandidateReceiptStorage
                 stream.Write(bytes);
                 stream.Flush(flushToDisk: true);
             }
-            using (FileStream retained = OpenFile(temporary))
-            {
-                RequireExact(retained, bytes);
-            }
-            // Rename is the publication point. Never replace preexisting evidence.
-            File.Move(temporary, path, overwrite: false);
+            using var retained = new FileStream(OpenChecked(temporary, directory: false, this, delete: true),
+                FileAccess.Read);
+            RequireExact(retained, bytes);
+            // Publish the verified object itself while its handle and the
+            // containing directory are retained. The rename never replaces.
+            PublishByHandle(retained.SafeFileHandle, path);
             created = false;
-            using FileStream published = OpenFile(path);
-            RequireExact(published, bytes);
         }
         catch (Exception failure)
         {
@@ -154,6 +152,49 @@ internal sealed class WindowsCandidateReceiptStorage
                 catch (Exception cleanupFailure) { throw new AggregateException(failure, cleanupFailure); }
             }
             throw;
+        }
+    }
+
+    private static void PublishByHandle(SafeFileHandle handle, string destination)
+    {
+        const int fileRenameInfo = 3;
+        int nameOffset = (int)Marshal.OffsetOf<RenameInformation>(nameof(RenameInformation.FileName));
+        int lengthOffset = (int)Marshal.OffsetOf<RenameInformation>(nameof(RenameInformation.FileNameLength));
+        byte[] name = Encoding.Unicode.GetBytes(destination + '\0');
+        int size = nameOffset + name.Length;
+        nint information = Marshal.AllocHGlobal(size);
+        try
+        {
+            // Zero ReplaceIfExists and RootDirectory. The exact absolute
+            // destination is below the directory lease held by Publish.
+            Marshal.Copy(new byte[nameOffset], 0, information, nameOffset);
+            Marshal.WriteInt32(information, lengthOffset, name.Length - sizeof(char));
+            Marshal.Copy(name, 0, information + nameOffset, name.Length);
+            if (!SetFileInformationByHandle(handle, fileRenameInfo, information, (uint)size))
+            {
+                throw new IOException("The verified candidate record could not be published.",
+                    new Win32Exception(Marshal.GetLastPInvokeError()));
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(information);
+        }
+    }
+
+    // Caller retains the checked containing directory. Verify and remove the
+    // same object, with sharing that excludes concurrent receipt readers.
+    internal void Retire(string path, byte[] expected)
+    {
+        RequireInRoot(path);
+        using var stream = new FileStream(OpenChecked(path, directory: false, this, delete: true), FileAccess.Read);
+        RequireExact(stream, expected);
+        const int fileDispositionInfo = 4;
+        byte disposition = 1;
+        if (!SetFileInformationByHandle(stream.SafeFileHandle, fileDispositionInfo, ref disposition, sizeof(byte)))
+        {
+            throw new IOException("The provisional candidate record could not be retired.",
+                new Win32Exception(Marshal.GetLastPInvokeError()));
         }
     }
 
@@ -201,14 +242,17 @@ internal sealed class WindowsCandidateReceiptStorage
         }
     }
 
-    private static SafeFileHandle OpenChecked(string path, bool directory, WindowsCandidateReceiptStorage? scope)
+    private static SafeFileHandle OpenChecked(string path, bool directory, WindowsCandidateReceiptStorage? scope,
+        bool delete = false)
     {
         const uint listDirectoryAndReadControl = 0x00020001;
         const uint genericRead = 0x80000000;
+        const uint deleteAccess = 0x00010000;
         const uint openExisting = 3;
         const uint openReparsePoint = 0x00200000;
         const uint backupSemantics = 0x02000000;
-        SafeFileHandle handle = CreateFileW(path, directory ? listDirectoryAndReadControl : genericRead,
+        uint access = directory ? listDirectoryAndReadControl : genericRead;
+        SafeFileHandle handle = CreateFileW(path, delete ? access | deleteAccess : access,
             directory ? FileShare.ReadWrite : FileShare.Read, 0, openExisting,
             openReparsePoint | (directory ? backupSemantics : 0), 0);
         try
@@ -291,6 +335,15 @@ internal sealed class WindowsCandidateReceiptStorage
         internal uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct RenameInformation
+    {
+        internal byte ReplaceIfExists;
+        internal nint RootDirectory;
+        internal uint FileNameLength;
+        internal char FileName;
+    }
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
     private static extern SafeFileHandle CreateFileW(
         string path, uint access, FileShare share, nint security, uint creation, uint flags, nint template);
@@ -298,6 +351,16 @@ internal sealed class WindowsCandidateReceiptStorage
     [DllImport("kernel32.dll", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetFileInformationByHandle(SafeFileHandle handle, out FileInformation info);
+
+    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileInformationByHandle(SafeFileHandle handle, int informationClass,
+        ref byte information, uint size);
+
+    [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileInformationByHandle(SafeFileHandle handle, int informationClass,
+        nint information, uint size);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern uint GetFinalPathNameByHandleW(SafeFileHandle handle, StringBuilder path, uint capacity, uint flags);

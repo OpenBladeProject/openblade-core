@@ -15,7 +15,18 @@ try
     byte[] secret = new byte[WindowsCandidateSetupReceiver.LaunchSecretLength];
     await input.ReadExactlyAsync(locator, deadline.Token);
     await input.ReadExactlyAsync(secret, deadline.Token);
-    await WindowsCandidateSetupReceiver.CommitScratchPayloadAsync(new Guid(locator), secret, deadline.Token);
+    using var output = Console.OpenStandardOutput();
+    await WindowsCandidateSetupReceiver.CommitScratchPayloadAsync(new Guid(locator), secret, async (commitment, token) =>
+    {
+        await output.WriteAsync(commitment, token);
+        await output.FlushAsync(token);
+        byte[] readiness = new byte[1];
+        await input.ReadExactlyAsync(readiness, token);
+        if (readiness[0] != 1)
+        {
+            throw new InvalidDataException("The scratch startup fixture refused readiness.");
+        }
+    }, deadline.Token);
     return 0;
 }
 catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException

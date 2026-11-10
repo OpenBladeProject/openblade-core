@@ -1,4 +1,6 @@
 #if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
+using System.Buffers.Binary;
+using System.Diagnostics;
 using OpenBlade.Deployment;
 using OpenBlade.DeploymentBroker;
 
@@ -10,7 +12,8 @@ internal static class WindowsCandidateSetupReceiver
 
     // The locator selects a scratch tree. Authority comes from its protected
     // enrollment, current Broker launch binding, and independently verified package.
-    internal static Task CommitScratchPayloadAsync(Guid scratchId, byte[] secret, CancellationToken cancellationToken)
+    internal static Task CommitScratchPayloadAsync(Guid scratchId, byte[] secret,
+        Func<byte[], CancellationToken, Task> verifyStartup, CancellationToken cancellationToken)
     {
         var storage = WindowsCandidateReceiptStorage.OpenScratch(scratchId);
         string root = storage.Root;
@@ -25,6 +28,13 @@ internal static class WindowsCandidateSetupReceiver
             {
                 requireLiveLaunch();
                 await transaction.ActivateAsync(cancellationToken);
+                // Mirrors the command runner's activate -> start/health -> commit
+                // order. This rendezvous is offline fixture readiness only.
+                using var setup = Process.GetCurrentProcess();
+                byte[] identity = new byte[12];
+                BinaryPrimitives.WriteInt32LittleEndian(identity, setup.Id);
+                BinaryPrimitives.WriteInt64LittleEndian(identity.AsSpan(4), setup.StartTime.ToFileTimeUtc());
+                await verifyStartup([.. receipt.StartupCommitment(identity), .. identity], cancellationToken);
                 requireLiveLaunch();
                 await transaction.CommitAsync(cancellationToken);
             }

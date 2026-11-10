@@ -85,6 +85,33 @@ the admitted PID. The candidate publishes `SERVICE_RUNNING` only after that
 evidence. Setup's external probe still runs afterward. The fixture endpoints
 and their scripted status have separate roles.
 
+### Rehearse startup before payload commit
+
+`SetupCommandRunner.RunAsync` activates the payload, starts the Service and
+checks its health before calling `SetupPayloadTransaction.CommitAsync`. The
+scratch Setup receiver rehearses that order with a private readiness exchange.
+Activation verifies the live Service and Session Agent files against the
+authenticated package claim and publishes `candidate-package.startup.json`
+while those files and the active deployment binding are retained.
+
+The Rust probe requires the startup record, a commitment from the live scratch
+Setup receiver, and the matching active binding and Setup process generation.
+It verifies both role images through retained handles and exits before Setup
+receives the readiness acknowledgment. Commit retires the startup record and
+publishes `candidate-package.committed.json` as its last fallible step. Refused
+readiness and pre-publication failures roll back the activated tree, restoring
+the prior tree and receipt when present. An interrupted receiver can leave
+provisional bytes on disk. A dead receiver or changed generation invalidates
+the startup exchange, and the committed reader requires its own exact phase
+and commitment.
+
+Installed integration still needs authenticated Burn-to-Setup authority, a
+private readiness route that works before commit, independent evidence of the
+generation SCM actually loaded, and post-commit authorization for the
+production control endpoint. Reboot admission needs its own authenticated
+commitment and recovery policy. The rehearsal verifies scratch files and
+processes only.
+
 Managed Setup has a separate process observation seam for an explicit fixture
 handoff. It duplicates the original Windows launch handle once. Each read uses
 that same process object to confirm its PID, creation FILETIME, exact image path

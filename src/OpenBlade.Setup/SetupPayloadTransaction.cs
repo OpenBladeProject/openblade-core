@@ -321,7 +321,11 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 #if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
         // The rename cannot run while the source directory is retained. Verify
         // the live name before returning, with Active state available to rollback.
-        candidateReceipt?.VerifyClaimedPayload(paths.InstallDirectory, cancellationToken);
+        if (candidateReceipt is not null)
+        {
+            ensureGuardianQuiescent();
+            candidateReceipt.PublishStartup(paths.InstallDirectory, cancellationToken);
+        }
 #endif
     }
 
@@ -374,7 +378,11 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         progressReporter.Report(SetupProgressCode.CommitFiles);
 #if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
         using var programFiles = candidateReceipt?.PinProgramFiles();
-        candidateReceipt?.PublishCommitted(paths.InstallDirectory, cancellationToken);
+        if (candidateReceipt is not null)
+        {
+            ensureGuardianQuiescent();
+            candidateReceipt.PublishCommitted(paths.InstallDirectory, cancellationToken);
+        }
 #endif
         state = TransactionState.Committed;
         if (HadExistingInstall && files.DirectoryExists(backupDirectory))
