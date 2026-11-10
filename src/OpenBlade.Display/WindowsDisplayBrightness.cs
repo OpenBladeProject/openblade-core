@@ -7,7 +7,12 @@ namespace OpenBlade.Display;
 internal sealed record DisplayBrightnessReading(
     string InstanceName,
     byte Percent,
-    IReadOnlyList<byte> Levels);
+    IReadOnlyList<byte> Levels)
+{
+    internal bool Confirms(string instanceName, byte target) =>
+        string.Equals(InstanceName, instanceName, StringComparison.OrdinalIgnoreCase)
+        && Percent == target;
+}
 
 internal static class WindowsDisplayBrightness
 {
@@ -15,6 +20,17 @@ internal static class WindowsDisplayBrightness
 
     internal static DisplayBrightnessReading? Query(
         string? monitorDevicePath,
+        CancellationToken cancellationToken) =>
+        Query(instance => MatchesMonitor(monitorDevicePath, instance), cancellationToken);
+
+    internal static DisplayBrightnessReading? QueryInstance(
+        string instanceName,
+        CancellationToken cancellationToken) =>
+        Query(instance => string.Equals(instanceName, instance, StringComparison.OrdinalIgnoreCase),
+            cancellationToken);
+
+    private static DisplayBrightnessReading? Query(
+        Predicate<string> matchesInstance,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -32,7 +48,7 @@ internal static class WindowsDisplayBrightness
                     if (result["InstanceName"] is string instance
                         && result["CurrentBrightness"] is byte percent && percent <= 100
                         && result["Level"] is byte[] levels
-                        && MatchesMonitor(monitorDevicePath, instance))
+                        && matchesInstance(instance))
                     {
                         byte[] supported = levels.Where(level => level <= 100).Distinct().Order().ToArray();
                         if (supported.Length > 0)

@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix false failure messages after changing internal display brightness. ([#939](https://github.com/OSSBlade/openblade-core/pull/939))
+
 ## [0.58.2-nightly.110] - 2026-11-09
 
 ### Fixed
