@@ -62,7 +62,7 @@ impl SamplingApi for Script {
 
     fn counter_array(&mut self, _: &mut (), bytes: u32) -> Result<CounterArray, Unavailable> {
         let pids = match self.scenario {
-            Scenario::Available if self.sample > 1 => 41..=45,
+            Scenario::Available if self.sample > 1 => 41..=46,
             Scenario::Large if self.sample > 1 => 1..=129,
             _ => return Ok(CounterArray::Size(0)),
         };
@@ -88,7 +88,7 @@ impl SamplingApi for Script {
         let name = match self.scenario {
             Scenario::Large => "界".repeat(260),
             _ => match pid {
-                41 => "active-game".into(),
+                41 | 46 => "active-game".into(),
                 42 => "idle-holder".into(),
                 43 => "other-session".into(),
                 44 => "reused-pid".into(),
@@ -112,6 +112,13 @@ impl SamplingApi for Script {
             },
             name,
         })
+    }
+
+    fn read_parents(&mut self, _: &AtomicBool) -> BTreeMap<i32, i32> {
+        match self.scenario {
+            Scenario::Available => BTreeMap::from([(46, 41)]),
+            _ => BTreeMap::new(),
+        }
     }
 
     fn pause(&mut self, _: Duration, cancelled: &AtomicBool) {

@@ -338,30 +338,34 @@ public sealed class WindowsGpuActivityTests
     [Fact]
     public void AppProjection_UsesPopulatedParentChainForGpuHelper()
     {
-        WindowsGpuAppManager.ProcessEntry browser = Entry(
-            20,
-            10,
-            5,
-            "browser");
-        WindowsGpuAppManager.ProcessEntry helper = Entry(
-            30,
-            20,
-            5,
-            "browser");
+        const long fileTimeEpochTicks = 504911232000000000;
+        WindowsGpuAppManager.ProcessEntry explorer = new(
+            10, 0, 5, fileTimeEpochTicks + 10, "explorer", SameUser: true);
+        WindowsGpuAppManager.ProcessEntry browser = new(
+            20, 10, 5, fileTimeEpochTicks + 20, "Browser", SameUser: true);
+        WindowsGpuAppManager.ProcessEntry helper = new(
+            30, 20, 5, browser.StartTimeUtcTicks, "browser", SameUser: true);
+        WindowsGpuAppManager.ProcessEntry secondHelper = new(
+            31, 20, 5, fileTimeEpochTicks + 31, "browser", SameUser: true);
         Dictionary<int, WindowsGpuAppManager.ProcessEntry> table = new()
         {
+            [10] = explorer,
             [20] = browser,
             [30] = helper,
+            [31] = secondHelper,
         };
 
         WindowsGpuApp app = Assert.Single(WindowsGpuAppManager.CreateApps(
-            [new WindowsGpuProcessActivity(30, 4.5)],
+            [new WindowsGpuProcessActivity(30, 4.5), new WindowsGpuProcessActivity(31, 2.0)],
             table,
             currentSessionId: 5));
 
         Assert.Equal(browser.ProcessId, app.ProcessId);
+        Assert.Equal(browser.StartTimeUtcTicks, app.StartTimeUtcTicks);
         Assert.Equal(browser.Name, app.Name);
-        Assert.Equal(4.5, app.UtilizationPercent);
+        Assert.Equal(6.5, app.UtilizationPercent);
+        Assert.True(app.CanClose);
+        Assert.Null(app.BlockReason);
     }
 
     [Theory]

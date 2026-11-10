@@ -22,7 +22,7 @@ public sealed partial class RustSessionAgentTests
         Assert.Null(snapshot.Error);
         Assert.Empty(snapshot.Results);
         Assert.Collection(snapshot.Apps,
-            row => Assert.Equal(new SessionGpuApp(41, 504911232000000041, "active-game", 7.5,
+            row => Assert.Equal(new SessionGpuApp(41, 504911232000000041, "active-game", 15.0,
                 false, GpuCloseUnsupported), row),
             row => Assert.Equal(new SessionGpuApp(42, 504911232000000042, "idle-holder", 0,
                 false, GpuCloseUnsupported), row),
