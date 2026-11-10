@@ -19,7 +19,7 @@ use tokio::{
 };
 
 use crate::{
-    session_battery,
+    session_audio, session_battery,
     session_brightness::{ScriptedComPolicy, WmiScenario},
     session_display::{
         self, ColorFixture, HdrFixture, RefreshFixture, Rejected, SessionDisplay,
@@ -35,6 +35,8 @@ const PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Display.Dev.";
 const BATTERY_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Battery.Dev.";
 
 const GPU_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Gpu.Dev.";
+
+const AUDIO_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Audio.Dev.";
 
 pub(super) fn entry() -> io::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
@@ -54,6 +56,16 @@ pub(super) fn entry() -> io::Result<()> {
             .and_then(session_battery::Scenario::parse)
             .ok_or_else(usage)?;
         return run_fixture(run_battery(id, scenario));
+    }
+    if mode == "audio-foreground" {
+        if !brightness.is_empty() {
+            return Err(usage());
+        }
+        let scenario = scenario
+            .to_str()
+            .and_then(session_audio::Scenario::parse)
+            .ok_or_else(usage)?;
+        return run_fixture(run_audio(id, scenario));
     }
     if mode == "gpu-foreground" {
         if !brightness.is_empty() {
@@ -157,7 +169,7 @@ fn usage() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
         format!(
-            "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <{gpu_scenarios}> or battery-foreground <32 lowercase hex digits> <available|missing|malformed|oversized|failed|stalled> or integrated <id> <new|resume|reconcile> <gpu scenario> <service id> <service pid> <reporter id> [battery-available]"
+            "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <{gpu_scenarios}> or battery-foreground <32 lowercase hex digits> <available|missing|malformed|oversized|failed|stalled> or audio-foreground <32 lowercase hex digits> <available|unavailable|stalled|modern|legacy|ambiguous> or integrated <id> <new|resume|reconcile> <gpu scenario> <service id> <service pid> <reporter id> [battery-available] [audio-available]"
         ),
     )
 }
@@ -251,6 +263,20 @@ async fn run_gpu(id: &str, scenario: GpuScenario) -> io::Result<()> {
         listener,
         Arc::new(AtomicBool::new(false)),
         async |pipe, identity| serve_gpu(pipe, identity, scenario).await,
+    )
+    .await
+}
+
+async fn run_audio(id: &str, scenario: session_audio::Scenario) -> io::Result<()> {
+    let mut fixture = session_audio::Fixture::new(scenario);
+    let endpoint = Endpoint::new(format!("{AUDIO_PREFIX}{id}"), 2)?;
+    let _claim = endpoint.claim()?;
+    let listener = endpoint.listen()?;
+    serve_connections(
+        &endpoint,
+        listener,
+        Arc::new(AtomicBool::new(false)),
+        async |pipe, identity| fixture.serve(pipe, identity).await,
     )
     .await
 }

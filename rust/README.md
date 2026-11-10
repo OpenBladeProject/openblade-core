@@ -244,6 +244,83 @@ Razer driver forwarding and retirement. RZ09-0484 driver strokes require fresh
 host-managed Fn admission, independent of displayed Fn availability. Scripted
 tests exercise the policy without input capture, injection, or action execution.
 
+#### Private Windows Session Audio fixture
+
+Run `audio-foreground <32 lowercase hex digits> <available|unavailable|stalled|modern|legacy|ambiguous>`
+on the development Session Agent. It claims `OpenBlade.Rust.Session.Audio.Dev.<id>`
+with the existing local-only, current-user pipe owner and checks the peer's
+session and logon before dispatch. Close standard input to stop. The unified fixture accepts an explicit
+`audio-available` option after its reporter ID, alone or together with
+`battery-available`. It claims the Audio pipe before announcing readiness
+and serves only the synthetic `available` reads.
+
+The wire oracle is managed commit `6d6abc9ba28f88c102e295567f73cf11e3bbfabe`.
+At that commit Audio uses protocol **v2**. The source pins are
+[message definitions](../src/OpenBlade.Session/SessionAudioMessages.cs),
+[codec](../src/OpenBlade.Session/SessionAudioIpcCodec.cs),
+[dispatcher](../src/OpenBlade.SessionAgent/SessionAudioRequestDispatcher.cs),
+[audio pipe policy](../src/OpenBlade.SessionAgent/SessionAudioPipeServer.cs) and
+[shared pipe lifecycle](../src/OpenBlade.SessionAgent/SessionAgentPipeServer.cs).
+The pinned [codec tests](../tests/OpenBlade.Session.Tests/SessionAudioIpcCodecTests.cs)
+cover wire validation and diagnostic proof. The pinned
+[dispatcher tests](../tests/OpenBlade.SessionAgent.Tests/SessionAudioRequestDispatcherTests.cs)
+cover diagnostic provenance, fresh helper admission and the distinction between
+explicit Read and Connect after an uncertain mutation.
+
+The original three scenarios accept only `read` for Speakers and Headphones.
+Requests use canonical managed member names, a nonempty GUID and the numeric
+endpoint enum.
+It uses a signed little-endian length and a 64 KiB UTF-8 JSON limit. One
+connection serves one request. A successful response is `AvailableReadOnly`
+with fixed synthetic state for the requested endpoint. The unavailable fixture
+returns a correlated `Unavailable` result with a synthetic-provider error and
+no state. Both omit `baseAudio`. The private endpoint and selected fixture
+identify the source of the response. The response supplies no native proof.
+
+Frame reads and writes each have two-second deadlines. A stalled headphone
+read expires after ten seconds and retires only its connection without a
+response. Host shutdown cancels the synthetic future and closes the listener.
+A caller can cancel its own wait without producing a typed server result.
+The synthetic future has no external work to drain.
+
+The opt-in `modern`, `legacy`, and `ambiguous` scenarios also accept the managed
+`connect` and `setSpatial` requests. All scenarios use the same private pipe and framing. The runtime
+slice follows the same managed pin for
+[compatibility](../src/OpenBlade.SessionAgent/ThxAudioCompatibility.cs),
+[runtime admission](../src/OpenBlade.SessionAgent/ThxAudioAdmission.cs),
+[modern helper](../src/OpenBlade.SessionAgent/ThxAudioHelperCommand.cs),
+[legacy helper](../src/OpenBlade.SessionAgent/LegacyThxAudioCommand.cs), and
+[worker results](../src/OpenBlade.SessionAgent/ThxAudioHelperProtocol.cs).
+The [helper tests](../tests/OpenBlade.SessionAgent.Tests/ThxAudioHelperCommandTests.cs)
+pin the modern two-output probe, pre-write admission, and post-write readback.
+
+The stateful fixtures inject interactive host, exact model/USB/codec, controller,
+trusted stack, and typed output evidence. The first modern read probes both
+outputs and confirms only the requested one for dispatch. Legacy reads require
+the exact active output and report EQ as observed only. Modern EQ and application
+profiles are outside this slice. A spatial change requires a prior confirmation
+for that output, fresh matching admission, a typed pre-read, and independent
+same-runtime readback of the requested value. Stack and output changes invalidate
+both endpoints' confirmations.
+
+`ambiguous` applies the first change only to the inert worker's memory and then
+reports `Indeterminate` with no state. Possible submission clears both
+confirmations and blocks further mutations and Connect across connections.
+A successful explicit Read restores confirmation only for its requested
+output. Cancellation during possible submission and a failed response send
+after confirmed submission also require reconciliation. The fixture retains
+no state across process restarts.
+
+Discover, EQ, presets, enhancement changes, application profiles, and
+provisioning remain outside the private command set. Native parity still needs
+actual Windows evidence collection, a supervised native worker, end-to-end
+component and output verification, independent base-audio diagnostics, and
+automation ordering. Production audio IPC and backend selection are unchanged.
+
+Run the managed wire test with the private executable selected by
+`OPENBLADE_RUST_SESSION_AGENT_EXE` and the filter
+`FullyQualifiedName~AudioFixture_` on `OpenBlade.Tray.Tests`.
+
 The workspace guard checks crate boundaries, reviewed targets and dependencies,
 MSRV and compiler policies. Its regression tests use disposable workspace copies.
 Inner crates retain `no_std` and inherit `unsafe_code = "forbid"`. FFI and Windows

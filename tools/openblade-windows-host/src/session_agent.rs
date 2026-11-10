@@ -1,4 +1,6 @@
 #[cfg(windows)]
+mod session_audio;
+#[cfg(windows)]
 mod session_battery;
 #[cfg(windows)]
 mod session_brightness;

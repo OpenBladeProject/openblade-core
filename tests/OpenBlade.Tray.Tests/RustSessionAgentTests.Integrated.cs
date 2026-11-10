@@ -50,6 +50,17 @@ public sealed partial class RustSessionAgentTests
                 await occupied.StopAsync(token);
             }
 
+            await using (var occupied = Host.Start(id, mode: "audio-foreground"))
+            {
+                await occupied.WaitForReadyAsync(token);
+                await using var refused = Start("new", "available", audio: true);
+                await refused.AssertRejectedAsync(token);
+                Assert.False(File.Exists(journal));
+                Assert.Equal(ThxAudioAvailability.AvailableReadOnly,
+                    (await ReadFixtureAudioAsync(id, ThxAudioEndpoint.Speakers, token)).Availability);
+                await occupied.StopAsync(token);
+            }
+
             await using (var wrongService = Start("new", "available", Environment.ProcessId))
             {
                 await wrongService.AssertRejectedAsync(token);
@@ -95,14 +106,29 @@ public sealed partial class RustSessionAgentTests
             Assert.Equal(pending, await File.ReadAllTextAsync(journal, token));
             await original.StopAsync(token);
 
-            await using (var resumed = Start("resume", "available", battery: true))
+            await using (var resumed = Start("resume", "available", battery: true, audio: true))
             {
                 await resumed.WaitForReadyAsync(token);
                 var displayQuery = display.GetStateAsync(token);
                 var gpuQuery = gpu.QueryAsync(token);
                 var battery = new SessionBatteryReportAdapter(BatteryPipeName(id));
                 Task<WindowsBatteryReport> batteryQuery = battery.ReadAsync(token);
-                await Task.WhenAll(displayQuery, gpuQuery, batteryQuery);
+                Task<SessionAudioResponse> audioQuery = ReadFixtureAudioAsync(id, ThxAudioEndpoint.Speakers, token);
+                await Task.WhenAll(displayQuery, gpuQuery, batteryQuery, audioQuery);
+                SessionAudioResponse audio = await audioQuery;
+                Assert.Equal(ThxAudioOperationStatus.Succeeded, audio.Status);
+                Assert.Equal(ThxAudioAvailability.AvailableReadOnly, audio.Availability);
+                Assert.True(Assert.IsType<ThxAudioState>(audio.State).SpatialEnabled);
+                using (var pipe = AudioFixturePipe(id))
+                {
+                    await pipe.ConnectAsync(token);
+                    await SessionAudioIpcCodec.WriteRequestAsync(pipe,
+                        new SetThxSpatialRequest(SessionAudioIpc.ProtocolVersion, Guid.NewGuid(),
+                            ThxAudioEndpoint.Speakers, false), token);
+                    await AssertClosedAsync(pipe, token);
+                }
+                Assert.True(Assert.IsType<ThxAudioState>(
+                    (await ReadFixtureAudioAsync(id, ThxAudioEndpoint.Speakers, token)).State).SpatialEnabled);
                 WindowsBatteryReport report = await batteryQuery;
                 Assert.Equal(new DateTimeOffset(2026, 1, 2, 12, 0, 0, TimeSpan.Zero), report.GeneratedAtUtc);
                 Assert.Equal(50000, report.Status.FullChargeCapacityMilliwattHours);
@@ -141,11 +167,18 @@ public sealed partial class RustSessionAgentTests
             await service.ExpectLineAsync("STOPPED", token);
             await service.StopAsync(token);
 
-            Host Start(string mode, string gpuScenario, int? servicePid = null, bool battery = false)
+            Host Start(string mode, string gpuScenario, int? servicePid = null, bool battery = false, bool audio = false)
             {
                 string[] arguments = [gpuScenario, serviceId, (servicePid ?? service.ProcessId).ToString(CultureInfo.InvariantCulture), Guid.NewGuid().ToString("N")];
-                return Host.Start(id, mode, mode: "integrated",
-                    arguments: battery ? [.. arguments, "battery-available"] : arguments);
+                if (battery)
+                {
+                    arguments = [.. arguments, "battery-available"];
+                }
+                if (audio)
+                {
+                    arguments = [.. arguments, "audio-available"];
+                }
+                return Host.Start(id, mode, mode: "integrated", arguments: arguments);
             }
 
             async Task<ServiceStatusSnapshot> AdvanceAsync(Func<ServiceStatusSnapshot, bool> predicate)

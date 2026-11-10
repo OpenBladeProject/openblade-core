@@ -28,9 +28,10 @@ use windows_sys::Win32::{
 };
 
 use super::{
-    BATTERY_PREFIX, ColorFixture, Endpoint, GPU_PREFIX, GpuScenario, HdrFixture, PREFIX,
-    RefreshFixture, Scenario, StartMode, WmiScenario, announce_ready, display_fixture, listen,
-    serve_battery, serve_display, serve_gpu, session_battery, usage, valid_id, valid_request_id,
+    AUDIO_PREFIX, BATTERY_PREFIX, ColorFixture, Endpoint, GPU_PREFIX, GpuScenario, HdrFixture,
+    PREFIX, RefreshFixture, Scenario, StartMode, WmiScenario, announce_ready, display_fixture,
+    listen, serve_battery, serve_display, serve_gpu, session_audio, session_battery, usage,
+    valid_id, valid_request_id,
 };
 
 const SERVICE_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.ReadOnly.Dev.";
@@ -41,9 +42,16 @@ pub(super) async fn run(id: &str, mode: &OsString, arguments: &[OsString]) -> io
     let [gpu, service, pid, reporter_id, extra @ ..] = arguments else {
         return Err(usage());
     };
-    let battery_requested = match extra {
-        [] => false,
-        [option] if option == "battery-available" => true,
+    let (battery_requested, audio_requested) = match extra {
+        [] => (false, false),
+        [option] if option == "battery-available" => (true, false),
+        [option] if option == "audio-available" => (false, true),
+        [first, second]
+            if (first == "battery-available" && second == "audio-available")
+                || (first == "audio-available" && second == "battery-available") =>
+        {
+            (true, true)
+        }
         _ => return Err(usage()),
     };
     let (mode, color) = match mode.to_str() {
@@ -80,11 +88,15 @@ pub(super) async fn run(id: &str, mode: &OsString, arguments: &[OsString]) -> io
     let battery = battery_requested
         .then(|| Endpoint::new(format!("{BATTERY_PREFIX}{id}"), 2))
         .transpose()?;
+    let audio = audio_requested
+        .then(|| Endpoint::new(format!("{AUDIO_PREFIX}{id}"), 2))
+        .transpose()?;
     let owner = display.identity.fixture_owner();
     if owner != gpu.identity.fixture_owner()
         || battery
-            .as_ref()
-            .is_some_and(|endpoint| owner != endpoint.identity.fixture_owner())
+            .iter()
+            .chain(audio.iter())
+            .any(|endpoint| owner != endpoint.identity.fixture_owner())
     {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -94,7 +106,9 @@ pub(super) async fn run(id: &str, mode: &OsString, arguments: &[OsString]) -> io
     let display_claim = display.claim()?;
     let _gpu_claim = gpu.claim()?;
     let _battery_claim = battery.as_ref().map(Endpoint::claim).transpose()?;
+    let _audio_claim = audio.as_ref().map(Endpoint::claim).transpose()?;
     let battery_listener = battery.as_ref().map(Endpoint::listen).transpose()?;
+    let audio_listener = audio.as_ref().map(Endpoint::listen).transpose()?;
     let display_listener = display.listen()?;
     let gpu_listener = gpu.listen()?;
 
@@ -165,6 +179,18 @@ pub(super) async fn run(id: &str, mode: &OsString, arguments: &[OsString]) -> io
                     (Some(endpoint), Some(listener)) => listen(endpoint, listener, async |pipe, identity| {
                         serve_battery(pipe, identity, session_battery::Scenario::Available).await
                     }).await,
+                    _ => pending().await,
+                }
+            } => result,
+            result = async {
+                match (audio.as_ref(), audio_listener) {
+                    (Some(endpoint), Some(listener)) => {
+                        // The unified fixture admits only synthetic Audio reads.
+                        let mut fixture = session_audio::Fixture::new(session_audio::Scenario::Available);
+                        listen(endpoint, listener, async |pipe, identity| {
+                            fixture.serve(pipe, identity).await
+                        }).await
+                    }
                     _ => pending().await,
                 }
             } => result,

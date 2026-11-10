@@ -381,7 +381,7 @@ public sealed partial class RustSessionAgentTests
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
-            string? scratch = gpu ? null : DisplayFixtureDirectory(id);
+            string? scratch = gpu || mode == "audio-foreground" ? null : DisplayFixtureDirectory(id);
             bool createsScratch = mode == "foreground" || mode == "integrated" && scenario == "new";
             bool ownsScratch = createsScratch && scratch is not null && !Directory.Exists(scratch);
             start.ArgumentList.Add(gpu ? "gpu-foreground" : mode);
