@@ -92,6 +92,9 @@ concurrency:
 
 jobs:
   workspace:
+    # This fixture-only stack has its own Windows check. In particular, its
+    # hosted run must never enter the SCM smoke step in the full matrix.
+    if: github.event_name != 'pull_request' || github.head_ref != 'test/rust-ntfs-admission' || github.base_ref != 'feat/rust-protected-storage' || github.event.pull_request.head.repo.full_name != github.repository
     name: Rust (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -260,3 +263,61 @@ jobs:
 
       - name: Build native libraries and execute C and .NET interop
         run: ./Test-NativeInterop.ps1 -Target ${{ matrix.target }}
+
+  protected-storage:
+    name: Hosted NTFS protected storage
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/rust-ntfs-admission' && github.base_ref == 'feat/rust-protected-storage' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          submodules: false
+      - name: Verify real Administrator admission and transactional replacement
+        env:
+          OPENBLADE_PROTECTED_STORAGE_BASE: ${{ github.event.pull_request.base.sha }}
+        shell: pwsh
+        working-directory: rust
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($env:OPENBLADE_PROTECTED_STORAGE_BASE -cne '1ab52f12eb1165d86c76fc35d6d0fb5aee948644') {
+            throw 'The reviewed protected storage base changed.'
+          }
+          if ($env:RUNNER_ENVIRONMENT -cne 'github-hosted') {
+            throw 'This check requires a disposable GitHub-hosted runner.'
+          }
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          try {
+            $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+            if ($identity.IsSystem -or -not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+              throw 'An enabled Administrators token is required for the Administrator case.'
+            }
+          }
+          finally {
+            $identity.Dispose()
+          }
+
+          # The checked-in Setup factory defines the descriptor used by #912.
+          # Compile the factory in-process and use only its in-memory output.
+          $usings = 'using System; using System.Collections.Generic; using System.IO; using System.Linq; using System.Threading; using System.Threading.Tasks;'
+          $setup = Get-Content ../src/OpenBlade.Setup/MachineDataDirectorySecurity.cs -Raw
+          Add-Type -TypeDefinition "$usings`n$setup"
+          $factory = [OpenBlade.Setup.WindowsMachineDataDirectorySecurity].GetMethod(
+            'CreateProtectedSecurity', [Reflection.BindingFlags]'Static, NonPublic')
+          $descriptor = $factory.Invoke($null, $null)
+          $sections = [Security.AccessControl.AccessControlSections]'Owner, Access'
+          $env:OPENBLADE_HOSTED_SETUP_SDDL = $descriptor.GetSecurityDescriptorSddlForm($sections)
+          $env:OPENBLADE_HOSTED_NTFS_ADMIN = '1'
+          rustup toolchain install --no-self-update
+          $manifest = '../tools/openblade-windows-host/Cargo.toml'
+          $test = 'configuration_writer::protected::tests::hosted::hosted_ntfs_admits_managed_configuration'
+          cargo test --locked --lib --manifest-path $manifest $test -- --exact --ignored --nocapture |
+            Tee-Object -Variable testOutput
+          if (-not ($testOutput -match 'test result: ok\. 1 passed;') -or
+              -not ($testOutput -match 'NTFS fixture removed')) {
+            throw 'The hosted NTFS test or verified teardown did not run.'
+          }

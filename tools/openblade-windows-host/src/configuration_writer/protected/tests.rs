@@ -285,3 +285,5 @@ fn live_private_fixtures_refuse_unprotected_roots_and_records() {
         b"replacement fixture"
     );
 }
+
+mod hosted;
