@@ -23,6 +23,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 use windows_sys::Win32::System::Com::CoCreateGuid;
 
 pub mod fixture;
+pub mod protected;
 
 const NAMES: [&str; 3] = [PROFILE, PREFERENCES, COMMIT];
 const LOCK: &str = "configuration.test-lock";
@@ -610,6 +611,81 @@ fn inspect_bytes(bytes: [Option<&[u8]>; 3]) -> Inspection {
         preferences,
         commit,
     })
+}
+
+// Open a single known child relative to a retained directory. The fixture
+// creates its private child; protected admission only opens existing entries.
+fn open_relative(
+    parent: &File,
+    name: &OsStr,
+    access: u32,
+    share: u32,
+    disposition: u32,
+    options: u32,
+) -> io::Result<File> {
+    use std::{os::windows::io::FromRawHandle, ptr};
+    use windows_sys::{
+        Wdk::{
+            Foundation::OBJECT_ATTRIBUTES,
+            Storage::FileSystem::{FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile},
+        },
+        Win32::{
+            Foundation::{
+                OBJ_CASE_INSENSITIVE, OBJ_DONT_REPARSE, RtlNtStatusToDosError, UNICODE_STRING,
+            },
+            System::IO::IO_STATUS_BLOCK,
+        },
+    };
+
+    let mut wide: Vec<u16> = name.encode_wide().collect();
+    let length = u16::try_from(wide.len() * size_of::<u16>()).map_err(io::Error::other)?;
+    let mut name = UNICODE_STRING {
+        Length: length,
+        MaximumLength: length,
+        Buffer: wide.as_mut_ptr(),
+    };
+    let attributes = OBJECT_ATTRIBUTES {
+        Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
+        RootDirectory: parent.as_raw_handle(),
+        ObjectName: &mut name,
+        Attributes: OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE,
+        ..Default::default()
+    };
+    let mut handle = ptr::null_mut();
+    let mut io_status = IO_STATUS_BLOCK::default();
+    let file_attributes = if disposition == FILE_CREATE {
+        FILE_ATTRIBUTE_DIRECTORY
+    } else {
+        0
+    };
+    // SAFETY: The retained parent owns its handle, and all buffers stay live
+    // for this synchronous call. The only callers supply a single child name.
+    let status = unsafe {
+        NtCreateFile(
+            &mut handle,
+            access,
+            &attributes,
+            &mut io_status,
+            ptr::null(),
+            file_attributes,
+            share,
+            disposition,
+            options | FILE_SYNCHRONOUS_IO_NONALERT,
+            ptr::null(),
+            0,
+        )
+    };
+    if status < 0 {
+        // SAFETY: The returned NTSTATUS is the sole input.
+        return Err(io::Error::from_raw_os_error(
+            unsafe { RtlNtStatusToDosError(status) } as i32,
+        ));
+    }
+    if handle.is_null() || handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+        return Err(io::Error::other("relative open returned no handle"));
+    }
+    // SAFETY: A successful synchronous open transferred ownership of the handle.
+    Ok(unsafe { File::from_raw_handle(handle) })
 }
 
 fn pin_directory(path: &Path) -> io::Result<File> {

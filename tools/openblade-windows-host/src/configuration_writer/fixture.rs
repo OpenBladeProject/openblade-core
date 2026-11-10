@@ -2,7 +2,7 @@
 
 use super::{
     Boundary, CURRENT_SCHEMA, FILE_SHARE_READ, Inspection, Outcome, TestStore, file_identity,
-    handle_information, pin_directory_with_share, transaction_id,
+    handle_information, open_relative, pin_directory_with_share, transaction_id,
 };
 use crate::valid_dev_id;
 use serde::Deserialize;
@@ -10,30 +10,14 @@ use std::{
     ffi::OsStr,
     fs::File,
     io::{self, Write},
-    os::windows::{
-        ffi::OsStrExt,
-        fs::MetadataExt,
-        io::{AsRawHandle, FromRawHandle},
-    },
+    os::windows::{ffi::OsStrExt, fs::MetadataExt},
     path::PathBuf,
     ptr,
 };
 use windows_sys::{
-    Wdk::{
-        Foundation::OBJECT_ATTRIBUTES,
-        Storage::FileSystem::{
-            FILE_CREATE, FILE_DIRECTORY_FILE, FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
-        },
-    },
+    Wdk::Storage::FileSystem::{FILE_CREATE, FILE_DIRECTORY_FILE},
     Win32::{
-        Foundation::{
-            OBJ_CASE_INSENSITIVE, OBJ_DONT_REPARSE, RtlNtStatusToDosError, UNICODE_STRING,
-        },
-        Storage::FileSystem::{
-            FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_GENERIC_READ,
-            GetDriveTypeW,
-        },
-        System::IO::IO_STATUS_BLOCK,
+        Storage::FileSystem::{FILE_ATTRIBUTE_REPARSE_POINT, FILE_GENERIC_READ, GetDriveTypeW},
         System::{Com::CoTaskMemFree, WindowsProgramming::DRIVE_FIXED},
         UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath},
     },
@@ -208,47 +192,14 @@ fn identity(store: &TestStore) -> io::Result<String> {
 // Create and pin one child relative to the already opened Temp directory.
 // There is no absolute path resolution or write-sharing restriction on Temp.
 fn create_relative(parent: &File, name: &OsStr) -> io::Result<File> {
-    let mut wide: Vec<u16> = name.encode_wide().collect();
-    let length = u16::try_from(wide.len() * size_of::<u16>()).map_err(io::Error::other)?;
-    let mut name = UNICODE_STRING {
-        Length: length,
-        MaximumLength: length,
-        Buffer: wide.as_mut_ptr(),
-    };
-    let attributes = OBJECT_ATTRIBUTES {
-        Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
-        RootDirectory: parent.as_raw_handle(),
-        ObjectName: &mut name,
-        Attributes: OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE,
-        ..Default::default()
-    };
-    let mut handle = ptr::null_mut();
-    let mut io_status = IO_STATUS_BLOCK::default();
-    // SAFETY: The parent owns a live directory handle. The name and structures
-    // stay valid for the synchronous call. FILE_CREATE refuses an existing child.
-    let status = unsafe {
-        NtCreateFile(
-            &mut handle,
-            FILE_GENERIC_READ,
-            &attributes,
-            &mut io_status,
-            ptr::null(),
-            FILE_ATTRIBUTE_DIRECTORY,
-            FILE_SHARE_READ,
-            FILE_CREATE,
-            FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
-            ptr::null(),
-            0,
-        )
-    };
-    if status < 0 {
-        // SAFETY: The returned NTSTATUS is the sole input.
-        return Err(io::Error::from_raw_os_error(
-            unsafe { RtlNtStatusToDosError(status) } as i32,
-        ));
-    }
-    // SAFETY: Success transferred ownership of the new handle.
-    Ok(unsafe { File::from_raw_handle(handle) })
+    open_relative(
+        parent,
+        name,
+        FILE_GENERIC_READ,
+        FILE_SHARE_READ,
+        FILE_CREATE,
+        FILE_DIRECTORY_FILE,
+    )
 }
 
 fn local_temp() -> io::Result<PathBuf> {
