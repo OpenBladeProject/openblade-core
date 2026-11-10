@@ -6724,6 +6724,28 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task MachineRememberedLighting_PersistsThroughBoundAggregate()
+    {
+        var writer = new ScratchConfigurationWriter(directory);
+        int acquisitions = 0;
+        var binding = new MachineConfigurationWriterBinding(directory, (root, token) =>
+        {
+            acquisitions++;
+            return writer.Acquire(root, token);
+        });
+
+        TestContext context = await CreateOwnedStaticLightingContextAsync(machineWriter: binding);
+
+        // One lease for each store's initialization and one for the remembered
+        // lighting aggregate. This override lifetime writes no override document.
+        Assert.Equal(3, acquisitions);
+        using IDisposable successor = writer.Acquire();
+        Assert.Equal(context.Runtime.GetStatus().DesiredState.Lighting.Value,
+            (await context.Store.InspectAsync(CancellationToken.None)).Configuration.Preferences.LastKnownLighting);
+        Assert.False(File.Exists(binding.OverridePath));
+    }
+
+    [Fact]
     public async Task Restart_RestoresPersistedLastKnownLighting()
     {
         TestContext original = await CreateOwnedStaticLightingContextAsync();
@@ -20121,7 +20143,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         LowPowerGate? lowPowerGate = null,
         IUserConfigurationRepository? userConfigurationRepository = null,
         bool explicitAction = true,
-        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null)
+        IHyperBoostOwnershipJournalStore? hyperBoostOwnershipJournalStore = null,
+        MachineConfigurationWriterBinding? machineWriter = null)
     {
         LightingSettings lighting = LightingSettingsFactory.Static(
             new RgbColor(0, 128, 255),
@@ -20140,7 +20163,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             transactionBoundary: transactionBoundary,
             lowPowerGate: lowPowerGate,
             userConfigurationRepository: userConfigurationRepository,
-            hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore);
+            hyperBoostOwnershipJournalStore: hyperBoostOwnershipJournalStore,
+            machineWriter: machineWriter);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             LightingEffects = capabilities.LightingEffects,
@@ -31155,7 +31179,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Func<PowerSource>? batterySaverFanStopPowerReader = null,
         IFanStopBackend? fanStopBackend = null,
         ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
-        string? coolingPadStateDirectory = null)
+        string? coolingPadStateDirectory = null,
+        MachineConfigurationWriterBinding? machineWriter = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -31174,13 +31199,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 .GetAwaiter()
                 .GetResult();
         }
-        var store = new BatteryConfigurationStore(
-            profilePath,
-            preferencesPath,
-            markerPath,
-            validator: profileValidator,
-            postCommitBoundary: null,
-            transactionBoundary: transactionBoundary);
+        BatteryConfigurationStore store = machineWriter is null
+            ? new(profilePath, preferencesPath, markerPath, profileValidator,
+                postCommitBoundary: null, transactionBoundary)
+            : new(machineWriter, profileValidator, transactionBoundary);
         BatteryConfiguration configuration = store.LoadAsync(CancellationToken.None)
             .GetAwaiter()
             .GetResult();
@@ -31226,11 +31248,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         var monitor = new FakeControllerPresenceMonitor(
             new ControllerPresenceObservation(conflicts ?? [], detectionFailure));
         var history = new DiagnosticHistory(timeProvider: timeProvider);
-        var overrideStore = new PersistentOverrideStore(
-            persistentOverridePath ?? Path.Combine(
-                directory,
-                $"manual-overrides-{Guid.NewGuid():N}.json"),
-            overrideWriteBoundary);
+        PersistentOverrideStore overrideStore = machineWriter is null
+            ? new(persistentOverridePath ?? Path.Combine(directory, $"manual-overrides-{Guid.NewGuid():N}.json"),
+                overrideWriteBoundary)
+            : new(machineWriter, overrideWriteBoundary);
         var firmwareSource = new FixedFirmwareVersionSource(
             firmwareVersions ?? FirmwareVersions.Unavailable());
         var runtime = new ServiceControlRuntime(
@@ -31261,7 +31282,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             coolingPadStateDirectory: coolingPadStateDirectory);
         if (initialize)
         {
-            PersistentOverrideState overrides = loadPersistentOverrides
+            PersistentOverrideState overrides = loadPersistentOverrides || machineWriter is not null
                 ? overrideStore.LoadAsync(CancellationToken.None).GetAwaiter().GetResult().Overrides
                 : PersistentOverrideState.Empty;
             runtime.Initialize(configuration, initialPowerSource, overrides);
