@@ -92,6 +92,37 @@ pub struct ActiveInternalDisplay {
     pub boost_refresh_rate: bool,
 }
 
+#[cfg(test)]
+impl ActiveInternalDisplay {
+    pub(crate) fn brightness_fixture(path: &str, target: u32) -> Self {
+        let endpoint = |id| EndpointId {
+            adapter_low: 12,
+            adapter_high: 0,
+            id,
+        };
+        Self {
+            source: endpoint(1),
+            target: endpoint(target),
+            source_name: OsString::from(r"\\.\DISPLAY1"),
+            monitor_name: Ok(MonitorName {
+                friendly_name: None,
+                device_path: Some(path.into()),
+            }),
+            advanced_color: Err(AdvancedColorReadError::Native { status: 50 }),
+            desktop_rate: None,
+            physical_rate: None,
+            active_signal: SignalTiming {
+                width: 0,
+                height: 0,
+                scanline_ordering: 0,
+                rate: None,
+            },
+            supports_virtual_mode: false,
+            boost_refresh_rate: false,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct AdvancedColorState {
     pub hdr_supported: bool,
