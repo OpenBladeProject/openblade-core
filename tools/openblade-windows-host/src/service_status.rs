@@ -533,6 +533,27 @@ impl Snapshot {
             )]),
         }
     }
+    #[cfg(all(windows, feature = "installed-service-candidate"))]
+    #[allow(dead_code)] // Shared with the Agent, which only decodes the reply.
+    pub(crate) fn with_standard_performance(mut self, preset: i32) -> Option<Self> {
+        use serde_json::json;
+
+        // The full-adapter admission must agree with the independently
+        // supplied status. Only the two decoded selectors are confirmed here.
+        if self.active_power_source != 0 || !matches!(preset, 1 | 2) {
+            return None;
+        }
+        self.confirmed_state = Some(Map::from_iter([
+            ("performance".into(), json!(preset)),
+            ("fans".into(), json!(0)),
+            ("battery".into(), Value::Null),
+            ("lighting".into(), Value::Null),
+            ("hyperBoostActive".into(), Value::Null),
+        ]));
+        self.confirmed_performance()?;
+        Some(self)
+    }
+
     // Use only for a direct, admitted ObserveState reply. v79 can retain
     // fields during failed observations. Require the managed completion
     // guards and explicit absence of observation or write uncertainty.

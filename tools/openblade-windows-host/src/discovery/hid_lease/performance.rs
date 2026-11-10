@@ -16,6 +16,17 @@ mod windows;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) mod worker_tests;
+
+#[cfg(any(test, feature = "firmware-performance-compile-check"))]
+mod worker;
+#[cfg(all(windows, feature = "installed-service-candidate"))]
+#[allow(unused_imports)] // Shared with the standalone discovery binary.
+pub(crate) use windows::native_worker;
+#[cfg(all(windows, feature = "installed-service-candidate"))]
+#[allow(unused_imports)]
+pub(crate) use worker::Worker;
 
 const MODEL: &str = "RZ09-0581";
 const DEVICE: (u16, u16) = (0x1532, 0x02e0);
@@ -29,7 +40,7 @@ const MAX_OBSERVATION: Duration = Duration::from_secs(3);
 type Frame = [u8; FRAME_LENGTH];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ObservedPerformance {
+pub(crate) enum ObservedPerformance {
     BalancedAutomatic,
     PerformanceAutomatic,
 }
@@ -38,16 +49,16 @@ enum ObservedPerformance {
 // across ownership, power, controller or lifecycle transitions, even if the
 // visible state returns to the same value. Absence of any proof means None.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Admission {
-    epoch: u64,
-    session: u32,
-    full_adapter: bool,
-    controller_clear: bool,
-    awake: bool,
+pub(crate) struct Admission {
+    pub(crate) epoch: u64,
+    pub(crate) session: u32,
+    pub(crate) full_adapter: bool,
+    pub(crate) controller_clear: bool,
+    pub(crate) awake: bool,
 }
 impl Admission {
     fn is_clear(self) -> bool {
-        self.full_adapter && self.controller_clear && self.awake
+        self.session != 0 && self.full_adapter && self.controller_clear && self.awake
     }
 }
 
@@ -84,7 +95,7 @@ enum Transfer {
 trait Port {
     fn reserve_pair(&mut self) -> Option<[u8; 2]>;
     fn verify(&mut self, limit: Limit<'_>) -> io::Result<()>;
-    fn submit(&mut self, transfer: Transfer) -> io::Result<()>;
+    fn submit(&mut self, transfer: Transfer, limit: Limit<'_>) -> io::Result<()>;
     fn poll(&mut self) -> Option<io::Result<(usize, Frame)>>;
     fn cancel(&mut self);
     fn poll_retirement(&mut self) -> io::Result<bool>;
@@ -166,16 +177,17 @@ impl<P: Port> Reader<P> {
 
     // Once retirement begins no further traffic is permitted, even if a
     // canceled operation completes successfully after the observation deadline.
-    async fn retire(&mut self, deadline: Instant) -> io::Result<()> {
+    async fn retire(&mut self, deadline: Option<Instant>) -> io::Result<()> {
         self.seal();
         loop {
             if self.port.poll_retirement()? {
                 return Ok(());
             }
-            if Instant::now() >= deadline {
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                 return Err(io::ErrorKind::TimedOut.into());
             }
-            sleep_until(deadline.min(Instant::now() + POLL)).await;
+            let poll = Instant::now() + POLL;
+            sleep_until(deadline.map_or(poll, |deadline| deadline.min(poll))).await;
         }
     }
 
@@ -258,7 +270,7 @@ impl<P: Port> Attempt<'_, P> {
         limit: Limit<'_>,
     ) -> io::Result<(usize, Frame)> {
         limit.check()?;
-        self.reader.port.submit(transfer)?;
+        self.reader.port.submit(transfer, limit)?;
         loop {
             limit.check()?;
             if let Some(completion) = self.reader.port.poll() {

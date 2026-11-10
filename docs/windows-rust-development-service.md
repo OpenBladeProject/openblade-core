@@ -156,19 +156,32 @@ controller clearance and awake evidence from the same authority epoch
 before each transfer and before returning a result. It reserves a pair of
 transaction IDs across leases in the process and stops after 127 pairs
 without wrapping. Cancellation seals the lease and targets the current
-operation. Native storage and the handle remain fenced until completion
-and ConfigMgr callback drain. A stuck operation that outlives the owner
-quarantines the single native slot until process exit. The observation
-budget bounds async waits and acceptance of the result. Synchronous
-Windows identity and submission calls require an owned worker when a
-service runtime integrates this adapter.
+operation.
 
-The candidate's installed status source continues to return the existing
-refusal. Its metadata scan, listener admission and scripted test sources
-cannot establish live hardware ownership. The adapter's Windows test
-links the native path and exercises the pre-open refusal. The report
-exchange and retirement tests use in-memory transport and pinned capture
-data.
+Phase 10m runs the getter on one owned OS thread per accepted observation.
+Discovery, open, ConfigMgr registration, same-handle verification, submission,
+completion polling, cancellation, and callback drain all run on that thread.
+The Service refuses concurrent observations without queueing them. It releases
+the status-source lock before waiting, so GetStatus and subscription refresh
+can proceed. The request deadline or disconnect revokes delivery. The worker
+rechecks authority and rejects a reply that completes after its deadline.
+
+The worker releases its process-wide fence only after terminal I/O, callback
+drain, and handle closure. A blocked call retains the lease and fence even
+when the caller has returned. Shutdown stops admission and requests cancellation.
+A successful drain joins the worker and confirms cleanup. If the shutdown
+budget expires, the Service can report only that cancellation was requested
+and retirement is unconfirmed. An explicit cleanup failure retains the
+resources and quarantines the native slot until process exit.
+
+The typed result can populate a fresh v79 reply only with independently
+verified status guards for the same live authority epoch. It confirms the
+decoded preset and Automatic fan mode and leaves HyperBoost and other
+unobserved state unknown. It does not publish this reply as ordinary status.
+The installed loaded-generation and sole-owner proofs are still unavailable.
+The metadata observer therefore continues to refuse firmware observation.
+Offline fixtures block native-call substitutes and feed the pinned report
+shape through the real reader and in-memory candidate dispatcher.
 
 The replay in `tools/openblade-windows-host/tests/fixtures/get-status-v79.frames`
 contains two consecutive managed codec frames. The managed

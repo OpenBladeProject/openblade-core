@@ -512,3 +512,122 @@ async fn in_memory_phase_10g_watcher_receives_native_observer_change_through_v79
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn in_memory_firmware_observation_allows_status_and_subscription_progress() {
+    use crate::discovery::performance::worker_tests::{BlockAt, blocking_worker};
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    const OBSERVE: &[u8] = include_bytes!("../../../../tests/fixtures/observe-state-v79.frames");
+    let length = u32::from_le_bytes(OBSERVE[..4].try_into().unwrap()) as usize;
+    let (request, response) = OBSERVE.split_at(4 + length);
+    let mut guards = frame_value(response)["status"].clone();
+    guards["confirmedState"] = Value::Null;
+    let status: Snapshot = serde_json::from_value(guards).unwrap();
+    let (worker, held) = blocking_worker(BlockAt::Retire, None);
+    let firmware = FirmwareSource::new(worker, move |admission| {
+        (admission.epoch == 10).then(|| status.clone())
+    });
+
+    timeout(Duration::from_secs(5), async {
+        let has_metadata = Arc::new(AtomicBool::new(false));
+        let (mut ports, tx) = ports(Fault::None, &Events::default());
+        *Rc::get_mut(&mut ports.source).unwrap().get_mut() =
+            status_source::in_memory_source_with_firmware(
+                {
+                    let has_metadata = has_metadata.clone();
+                    move || has_metadata.load(Ordering::Acquire)
+                },
+                firmware,
+            );
+        let (shutdown, stop) = oneshot::channel();
+        let (failed, _failure) = oneshot::channel();
+        let (_, driver) = prepare(PID, stop, failed, Ok(ports)).await.unwrap();
+        let clients = async {
+            let mut watcher = connect(&tx, 128);
+            let initial = send_subscribe(&mut watcher).await;
+            assert_eq!(initial["status"]["revision"], 0);
+
+            let mut observation = connect(&tx, 128);
+            observation.write_all(request).await.unwrap();
+            held.entered.await.unwrap();
+            assert_eq!(held.submitted.load(Ordering::Acquire), 4);
+
+            let mut competing = connect(&tx, 128);
+            competing.write_all(request).await.unwrap();
+            let refused = read_json(&mut competing).await;
+            assert_eq!(refused["success"], false);
+            assert_eq!(refused["status"], Value::Null);
+
+            has_metadata.store(true, Ordering::Release);
+            get_status(&tx).await;
+            let event = read_json(&mut watcher).await;
+            assert_eq!(event["frame"], "statusEvent");
+            assert_eq!(event["status"]["revision"], 1);
+            assert!(
+                event["status"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("matching control HID metadata")
+            );
+            assert_eq!(event["status"]["confirmedState"], Value::Null);
+
+            held.release.send(()).unwrap();
+            let observed = read_json(&mut observation).await;
+            assert_eq!(observed["requestId"], ID);
+            assert_eq!(observed["success"], true);
+            assert_eq!(
+                observed["status"]["confirmedState"],
+                json!({
+                    "performance": 2,
+                    "fans": 0,
+                    "battery": null,
+                    "lighting": null,
+                    "hyperBoostActive": null,
+                })
+            );
+            shutdown.send(()).unwrap();
+        };
+        let (result, ()) = tokio::join!(driver, clients);
+        result.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn in_memory_firmware_shutdown_reports_pending_native_ownership() {
+    use crate::discovery::performance::worker_tests::{BlockAt, blocking_worker};
+    use std::sync::atomic::Ordering;
+
+    const OBSERVE: &[u8] = include_bytes!("../../../../tests/fixtures/observe-state-v79.frames");
+    let length = u32::from_le_bytes(OBSERVE[..4].try_into().unwrap()) as usize;
+    let request = &OBSERVE[..4 + length];
+    let (worker, held) = blocking_worker(BlockAt::Submit, None);
+    let firmware = FirmwareSource::new(worker.clone(), |_| None);
+    let (mut ports, tx) = ports(Fault::None, &Events::default());
+    *Rc::get_mut(&mut ports.source).unwrap().get_mut() =
+        status_source::in_memory_source_with_firmware(|| false, firmware);
+    let (shutdown, stop) = oneshot::channel();
+    let (failed, _failure) = oneshot::channel();
+    let (_, driver) = prepare(PID, stop, failed, Ok(ports)).await.unwrap();
+
+    let clients = async {
+        let mut client = connect(&tx, 128);
+        client.write_all(request).await.unwrap();
+        held.entered.await.unwrap();
+        shutdown.send(()).unwrap();
+        let mut tail = Vec::new();
+        client.read_to_end(&mut tail).await.unwrap();
+        assert!(tail.is_empty());
+    };
+    let (result, ()) = timeout(Duration::from_secs(5), async { tokio::join!(driver, clients) })
+        .await.unwrap();
+    assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
+    assert_eq!(held.submitted.load(Ordering::Acquire), 1);
+
+    held.release.send(()).unwrap();
+    timeout(DRAIN_TIMEOUT, worker.stop()).await.unwrap().unwrap();
+    assert!(held.cancelled.load(Ordering::Acquire));
+    assert_eq!(held.submitted.load(Ordering::Acquire), 1);
+}

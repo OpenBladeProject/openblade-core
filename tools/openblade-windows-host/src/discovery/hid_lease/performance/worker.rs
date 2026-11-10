@@ -1,0 +1,213 @@
+use std::{
+    cell::RefCell,
+    io,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::{Builder, JoinHandle},
+};
+
+use tokio::time::{Instant, sleep, timeout_at};
+
+use super::{Admission, Limit, MAX_OBSERVATION, ObservedPerformance, POLL, blocked};
+
+pub(crate) struct Reading {
+    pub(crate) admission: Admission,
+    pub(crate) performance: ObservedPerformance,
+}
+
+pub(super) struct Job {
+    deadline: Instant,
+    cancelled: Arc<AtomicBool>,
+    pub(super) session: Option<u32>,
+}
+
+impl Job {
+    pub(super) fn limit(&self) -> Limit<'_> {
+        Limit {
+            deadline: self.deadline,
+            cancelled: &self.cancelled,
+        }
+    }
+}
+
+type Run = dyn Fn(Job) -> io::Result<Option<Reading>> + Send + Sync;
+
+#[derive(Clone)]
+pub(crate) struct Worker {
+    state: Rc<RefCell<State>>,
+    run: Arc<Run>,
+    occupied: Option<&'static AtomicBool>,
+}
+
+#[derive(Default)]
+struct State {
+    active: Option<Active>,
+    stopped: bool,
+    unconfirmed: bool,
+}
+
+struct Active {
+    cancel: Arc<AtomicBool>,
+    thread: JoinHandle<io::Result<Option<Reading>>>,
+}
+
+struct Cancel(Arc<AtomicBool>);
+
+impl Drop for Cancel {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
+impl Drop for State {
+    fn drop(&mut self) {
+        if let Some(active) = &self.active {
+            active.cancel.store(true, Ordering::Release);
+        }
+    }
+}
+
+impl State {
+    // Called only after thread completion. A failed cleanup or panic leaves
+    // the owner fenced, including when the original requester has gone away.
+    fn reap(&mut self) -> io::Result<Option<Reading>> {
+        let result = self
+            .active
+            .take()
+            .expect("finished firmware worker")
+            .thread
+            .join()
+            .map_err(|_| io::Error::other("firmware observation worker panicked"))
+            .and_then(|result| result);
+        self.unconfirmed = result.is_err();
+        result
+    }
+}
+
+impl Worker {
+    pub(super) fn new(
+        run: impl Fn(Job) -> io::Result<Option<Reading>> + Send + Sync + 'static,
+        occupied: Option<&'static AtomicBool>,
+    ) -> Self {
+        Self {
+            state: Rc::default(),
+            run: Arc::new(run),
+            occupied,
+        }
+    }
+
+    pub(crate) async fn observe(
+        &self,
+        deadline: Instant,
+        session: Option<u32>,
+    ) -> io::Result<Option<Reading>> {
+        let deadline = deadline.min(Instant::now() + MAX_OBSERVATION);
+        let Some(_cancel) = self.start(deadline, session)? else {
+            return Ok(None);
+        };
+        if timeout_at(deadline, self.wait()).await.is_err() {
+            return Ok(None);
+        }
+        let mut state = self.state.borrow_mut();
+        if state.stopped {
+            return Ok(None);
+        }
+        let result = state.reap()?;
+        Ok(result.filter(|_| Instant::now() < deadline))
+    }
+
+    fn start(&self, deadline: Instant, session: Option<u32>) -> io::Result<Option<Cancel>> {
+        let mut state = self.state.borrow_mut();
+        if state.stopped || state.unconfirmed || Instant::now() >= deadline {
+            return Ok(None);
+        }
+        if let Some(active) = &state.active {
+            if !active.cancel.load(Ordering::Acquire) || !active.thread.is_finished() {
+                return Ok(None);
+            }
+            state.reap()?;
+        }
+        let occupied = self.occupied;
+        if let Some(occupied) = occupied
+            && occupied
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+        {
+            return Ok(None);
+        }
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let job = Job {
+            deadline,
+            cancelled: cancel.clone(),
+            session,
+        };
+        let run = self.run.clone();
+        // Use an owned OS thread, outside the Service runtime's blocking pool.
+        // A native call may stall past both the request and shutdown deadlines.
+        let thread = Builder::new()
+            .name("openblade-firmware-observer".into())
+            .spawn(move || {
+                let result = if job.limit().check().is_ok() {
+                    run(job)
+                } else {
+                    Ok(None)
+                };
+                if result.is_ok()
+                    && let Some(occupied) = occupied
+                {
+                    occupied.store(false, Ordering::Release);
+                }
+                result
+            });
+        match thread {
+            Ok(thread) => {
+                state.active = Some(Active {
+                    cancel: cancel.clone(),
+                    thread,
+                });
+                Ok(Some(Cancel(cancel)))
+            }
+            Err(error) => {
+                if let Some(occupied) = occupied {
+                    occupied.store(false, Ordering::Release);
+                }
+                Err(error)
+            }
+        }
+    }
+
+    async fn wait(&self) {
+        while self
+            .state
+            .borrow()
+            .active
+            .as_ref()
+            .is_some_and(|active| !active.thread.is_finished())
+        {
+            sleep(POLL).await;
+        }
+    }
+
+    pub(crate) async fn stop(&self) -> io::Result<()> {
+        {
+            let mut state = self.state.borrow_mut();
+            state.stopped = true;
+            if let Some(active) = &state.active {
+                active.cancel.store(true, Ordering::Release);
+            }
+        }
+        self.wait().await;
+        let mut state = self.state.borrow_mut();
+        if state.active.is_some() {
+            state.reap()?;
+        }
+        if state.unconfirmed {
+            return Err(blocked("firmware worker retirement is unconfirmed"));
+        }
+        Ok(())
+    }
+}

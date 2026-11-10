@@ -129,12 +129,6 @@ struct RemovalWatch {
     revoked: *mut AtomicBool,
 }
 
-// SAFETY: ConfigMgr notifications may be unregistered on a different
-// thread from registration. The context is a stable atomic and moving the
-// watch moves only its registration handle and pointer.
-#[cfg(feature = "firmware-performance-compile-check")]
-unsafe impl Send for RemovalWatch {}
-
 impl RemovalWatch {
     fn register(file: &OwnedHandle) -> io::Result<Self> {
         let mut filter = CM_NOTIFY_FILTER {

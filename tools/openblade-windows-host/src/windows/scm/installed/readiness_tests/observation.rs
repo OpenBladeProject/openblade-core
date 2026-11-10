@@ -22,14 +22,19 @@ impl StatusSource for ReadPort {
         panic!("ObserveState must not fall back to GetStatus");
     }
 
-    fn observe_performance(&mut self) -> Pending<'_, Option<Snapshot>> {
+    fn observe_performance(&mut self, _: Caller, _: Instant) -> Observation {
         self.reads.set(self.reads.get() + 1);
         let answer = self.answer.take();
+        let (control_session, retire, stall) = (
+            self.control_session.clone(),
+            self.retire_session_on_read,
+            self.stall,
+        );
         Box::pin(async move {
-            if self.retire_session_on_read {
-                self.control_session.set(None);
+            if retire {
+                control_session.set(None);
             }
-            if self.stall {
+            if stall {
                 pending().await
             } else {
                 answer

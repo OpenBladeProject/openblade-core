@@ -4,8 +4,8 @@
 mod candidate_receipt;
 #[cfg(windows)]
 mod console_session;
-#[cfg(all(windows, not(test)))]
-#[allow(dead_code)] // Only metadata observation is used by the installed candidate.
+#[cfg(windows)]
+#[allow(dead_code)] // Installed firmware access requires an admitted runtime owner.
 mod discovery;
 #[cfg(windows)]
 #[path = "windows/scm/installed.rs"]

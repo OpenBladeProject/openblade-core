@@ -3,7 +3,7 @@ use crate::discovery::{CandidateHint, pnp};
 use serde_json::Value;
 use std::{collections::VecDeque, sync::atomic::Ordering, task::Poll};
 
-const ADMITTED: Admission = Admission {
+pub(super) const ADMITTED: Admission = Admission {
     epoch: 10,
     session: 1,
     full_adapter: true,
@@ -34,7 +34,7 @@ fn reply(transaction: u8, payload: &[u8]) -> Frame {
     frame
 }
 
-struct Script {
+pub(super) struct Script {
     identity: Descriptor,
     transactions: Transactions,
     replies: VecDeque<(usize, Frame)>,
@@ -47,7 +47,7 @@ struct Script {
 }
 
 impl Script {
-    fn pair(selectors: [u8; 2]) -> Self {
+    pub(super) fn pair(selectors: [u8; 2]) -> Self {
         Self {
             identity: EXACT,
             transactions: Transactions::new(),
@@ -75,7 +75,7 @@ impl Port for Script {
             .ok_or_else(|| blocked("wrong descriptor"))
     }
 
-    fn submit(&mut self, transfer: Transfer) -> io::Result<()> {
+    fn submit(&mut self, transfer: Transfer, _: Limit<'_>) -> io::Result<()> {
         assert!(!self.retired && self.pending.is_none());
         self.pending = Some(match transfer {
             Transfer::SendGetter(frame) => {
@@ -370,7 +370,7 @@ async fn timeout_and_explicit_cancellation_fence_the_unretired_operation() {
         assert_eq!(reader.port.received, 0);
         assert_eq!(
             reader
-                .retire(Instant::now() + POLL)
+                .retire(Some(Instant::now() + POLL))
                 .await
                 .unwrap_err()
                 .kind(),
@@ -378,7 +378,7 @@ async fn timeout_and_explicit_cancellation_fence_the_unretired_operation() {
         );
         assert!(reader.port.pending.is_some());
         reader.port.stall = false; // A late successful completion is discarded.
-        reader.retire(Instant::now() + POLL).await.unwrap();
+        reader.retire(Some(Instant::now() + POLL)).await.unwrap();
         assert!(reader.port.retired);
         assert_eq!(
             reader

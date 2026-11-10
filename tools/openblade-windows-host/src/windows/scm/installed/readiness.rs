@@ -1,6 +1,6 @@
 //! Installed v79 status. Ports must own their resources and acknowledge retirement.
 
-use std::{future::Future, io, rc::Rc, sync::Arc, time::Duration};
+use std::{future::Future, io, pin::Pin, rc::Rc, sync::Arc, time::Duration};
 
 #[cfg(test)]
 use crate::service_frame::write_frame;
@@ -26,6 +26,10 @@ use crate::{
 #[path = "readiness_windows.rs"]
 mod windows;
 use windows::{Caller, ControlSession, Logon, MAX_CONNECTIONS, Pending, Stream};
+
+#[path = "firmware_source.rs"]
+mod firmware_source;
+pub(super) use firmware_source::FirmwareSource;
 
 #[path = "status_source.rs"]
 mod status_source;
@@ -113,6 +117,8 @@ impl Endpoint for windows::NativeEndpoint {
 
 // Owns an already admitted runtime source. Requests that overlap an
 // observation can share it, using the projection for the resolved caller.
+type Observation = Pin<Box<dyn Future<Output = io::Result<Option<Snapshot>>> + 'static>>;
+
 trait StatusSource {
     fn snapshot(&mut self, caller: Caller, requested: Instant) -> Pending<'_, Snapshot>;
 
@@ -120,7 +126,7 @@ trait StatusSource {
     // performance. This port must not reconcile, mutate or reuse a publication.
     // Dropping the read must cancel it. The metadata observer has no firmware
     // read authority.
-    fn observe_performance(&mut self) -> Pending<'_, Option<Snapshot>> {
+    fn observe_performance(&mut self, _: Caller, _: Instant) -> Observation {
         Box::pin(async { Ok(None) })
     }
 
@@ -147,8 +153,8 @@ pub(super) async fn prepare_installed_endpoint(
     shutdown: oneshot::Receiver<()>,
     failed: oneshot::Sender<()>,
 ) -> io::Result<(Readiness, impl Future<Output = io::Result<()>> + use<>)> {
-    admission.verify_launch(launch)?;
-    let source = status_source::native_status_source();
+    let firmware = admission.verify_launch(launch)?;
+    let source = status_source::native_status_source(firmware);
     let endpoint = windows::NativeEndpoint::open_managed(
         &production_path(),
         launch.pid,
@@ -398,12 +404,14 @@ async fn serve_observation(
         StatusResponse::failure(request, "Live readings are unavailable.", None)
     } else {
         let observation = async {
-            let mut source = source.lock().await;
-            if refresh_caller(stream, caller)?.access().map_err(Client)? != 0
-                || Instant::now() >= deadline
-            {
-                return Ok(None);
-            }
+            let observed = {
+                let mut source = source.lock().await;
+                let caller = refresh_caller(stream, caller)?;
+                if caller.access().map_err(Client)? != 0 || Instant::now() >= deadline {
+                    return Ok(None);
+                }
+                source.observe_performance(caller, deadline)
+            };
             // EOF or another request cancels this single-request connection.
             let mut probe = [0];
             tokio::select! {
@@ -412,7 +420,7 @@ async fn serve_observation(
                     disconnected.map_err(Client)?;
                     Err(Client(io::ErrorKind::BrokenPipe.into()))
                 }
-                observed = source.observe_performance() => Ok(observed.ok().flatten()),
+                observed = observed => Ok(observed.ok().flatten()),
             }
         };
         let status = timeout_at(deadline, observation)

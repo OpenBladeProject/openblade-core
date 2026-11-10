@@ -22,6 +22,7 @@ scratch-candidate-receipt = ["windows-sys/Win32_System_RemoteDesktop"]
 gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]
 vm-scm-fixture = []
 installed-service-candidate = [
+    "firmware-performance-compile-check",
     "lifecycle-evidence-compile-check",
     "openblade-platform-windows/controller-process-compile-check",
 ]

@@ -1,8 +1,8 @@
-//! Private Win32 composition. No installed caller has live owner admission yet.
+//! Private Win32 composition. Construct and retire the lease on the observation thread.
 #![allow(unsafe_code)]
 
 use super::{
-    Authorize, Frame, Limit, Port, Reader, Selection, Transactions, Transfer, blocked,
+    Admission, Authorize, Frame, Limit, Port, Reader, Selection, Transactions, Transfer, blocked,
     reviewed_descriptor, reviewed_selection, verify_admission,
 };
 use crate::discovery::{
@@ -14,11 +14,7 @@ use std::{
     io,
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     ptr::{NonNull, null, null_mut},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
-    thread::{self, JoinHandle},
+    sync::atomic::AtomicBool,
 };
 use windows_sys::Win32::{
     Foundation::{
@@ -38,34 +34,14 @@ static OCCUPIED: AtomicBool = AtomicBool::new(false);
 // correlation across every lease in this process and refuse exhaustion.
 static TRANSACTIONS: Transactions = Transactions::new();
 
-struct Slot;
-
-impl Slot {
-    fn acquire() -> io::Result<Self> {
-        OCCUPIED
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map(|_| Self)
-            .map_err(|_| blocked("firmware HID owner is occupied or retirement is unconfirmed"))
-    }
-}
-
-impl Drop for Slot {
-    fn drop(&mut self) {
-        OCCUPIED.store(false, Ordering::Release);
-    }
-}
-
 pub(super) struct NativePort {
     lease: Option<Lease>,
     identity: Option<LeaseIdentity>,
-    retirement: Option<JoinHandle<io::Result<()>>>,
-    retirement_failed: bool,
 }
 
 struct Lease {
     operation: Option<Operation>,
     handle: MetadataHandle,
-    slot: Slot,
 }
 
 struct Operation {
@@ -99,36 +75,98 @@ struct Storage {
     event: OwnedHandle,
 }
 
-impl Reader<NativePort> {
-    pub(super) fn open(authorize: Authorize<'_>, limit: Limit<'_>) -> io::Result<Self> {
+use super::worker::{Job, Reading, Worker};
+
+pub(crate) fn native_worker(
+    authorize: impl Fn() -> Option<Admission> + Send + Sync + 'static,
+) -> Worker {
+    Worker::new(move |job| run(&authorize, job), Some(&OCCUPIED))
+}
+
+fn run(authorize: &impl Fn() -> Option<Admission>, job: Job) -> io::Result<Option<Reading>> {
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+    else {
+        return Ok(None);
+    };
+    let limit = job.limit();
+    let mut authorize = || {
+        authorize().filter(|admission| {
+            job.session
+                .is_none_or(|session| admission.session == session)
+        })
+    };
+    let Some(admission) = authorize().filter(|admission| admission.is_clear()) else {
+        return Ok(None);
+    };
+    let Ok((port, selection)) = NativePort::open(&mut authorize, admission, limit) else {
+        return Ok(None);
+    };
+    let mut reader = Reader::new(port, admission);
+    let performance = runtime.block_on(async {
+        let observed = if reader
+            .port
+            .bind(selection, &mut authorize, admission, limit)
+            .is_ok()
+        {
+            reader.observe(&mut authorize, limit).await
+        } else {
+            None
+        };
+        // Caller timeout revokes delivery, but the worker owns the native
+        // resources until terminal I/O and callback drain are both confirmed.
+        reader.retire(None).await?;
+        Ok::<_, io::Error>(observed)
+    })?;
+    let fresh = performance.filter(|_| {
+        limit.check().is_ok()
+            && verify_admission(&mut authorize, admission).is_ok()
+            && limit.check().is_ok()
+    });
+    Ok(fresh.map(|performance| Reading {
+        admission,
+        performance,
+    }))
+}
+
+impl NativePort {
+    fn open(
+        authorize: Authorize<'_>,
+        admission: Admission,
+        limit: Limit<'_>,
+    ) -> io::Result<(Self, Selection)> {
         limit.check()?;
-        let admission = authorize()
-            .filter(|admission| admission.is_clear())
-            .ok_or_else(|| blocked("no live firmware HID owner"))?;
-        let slot = Slot::acquire()?;
         let selection = Selection::fresh(&WindowsMetadata, limit.cancelled)?;
         if !reviewed_selection(&selection) {
             return Err(blocked("unsupported firmware performance model or role"));
         }
         verify_admission(authorize, admission)?;
         limit.check()?;
-        // Match the managed operational open. Shared OS access is not proof
-        // of sole service ownership. The independent admission is mandatory.
+        // Shared OS access is not proof of sole service ownership.
         let handle = MetadataHandle::open(&selection.hint.path, GENERIC_READ | GENERIC_WRITE)?;
-        let mut port = NativePort {
+        let port = Self {
             lease: Some(Lease {
                 operation: None,
                 handle,
-                slot,
             }),
             identity: None,
-            retirement: None,
-            retirement_failed: false,
         };
+        Ok((port, selection))
+    }
+
+    fn bind(
+        &mut self,
+        selection: Selection,
+        authorize: Authorize<'_>,
+        admission: Admission,
+        limit: Limit<'_>,
+    ) -> io::Result<()> {
+        limit.check()?;
         let identity = LeaseIdentity::verify(
             selection,
             &WindowsMetadata,
-            &port.lease.as_ref().unwrap().handle,
+            &self.lease.as_ref().expect("opened firmware lease").handle,
             limit.cancelled,
         )?;
         if !reviewed_descriptor(identity.descriptor) {
@@ -136,8 +174,8 @@ impl Reader<NativePort> {
         }
         verify_admission(authorize, admission)?;
         limit.check()?;
-        port.identity = Some(identity);
-        Ok(Self::new(port, admission))
+        self.identity = Some(identity);
+        Ok(())
     }
 }
 
@@ -157,7 +195,7 @@ impl Port for NativePort {
         identity.revalidate(&WindowsMetadata, &lease.handle, limit.cancelled)
     }
 
-    fn submit(&mut self, transfer: Transfer) -> io::Result<()> {
+    fn submit(&mut self, transfer: Transfer, limit: Limit<'_>) -> io::Result<()> {
         let lease = self
             .lease
             .as_mut()
@@ -191,6 +229,7 @@ impl Port for NativePort {
             cancel_requested: false,
             outstanding: false,
         };
+        limit.check()?;
         let storage = operation.storage();
         let length = super::FRAME_LENGTH as u32;
         let frame = storage.buffer.get().cast();
@@ -295,89 +334,34 @@ impl Port for NativePort {
     }
 
     fn poll_retirement(&mut self) -> io::Result<bool> {
-        if self.retirement_failed {
-            return Err(blocked("firmware HID callback retirement is unconfirmed"));
-        }
-        if let Some(worker) = &self.retirement {
-            if !worker.is_finished() {
-                return Ok(false);
-            }
-            let worker = self.retirement.take().expect("retirement worker finished");
-            let result = worker
-                .join()
-                .map_err(|_| io::Error::other("firmware HID retirement panicked"))
-                .and_then(|result| result);
-            self.retirement_failed = result.is_err();
-            return result.map(|()| true);
-        }
         let _ = self.poll();
-        let Some(lease) = &self.lease else {
+        let Some(lease) = &mut self.lease else {
             return Ok(true);
         };
         if lease.operation.is_some() {
             return Ok(false);
         }
 
-        // ConfigMgr waits for callback drain synchronously. Start one owned
-        // reaper before transferring the handle, so spawn failure preserves
-        // the lease and the caller never waits in ConfigMgr.
-        let (send, receive) = mpsc::channel::<(MetadataHandle, Slot)>();
-        let worker = thread::Builder::new()
-            .name("openblade-hid-retire".into())
-            .spawn(move || {
-                let (mut handle, slot) = receive.recv().map_err(io::Error::other)?;
-                if let Err(error) = handle.retire() {
-                    std::mem::forget((handle, slot));
-                    return Err(error);
-                }
-                drop(handle);
-                drop(slot);
-                Ok(())
-            });
-        let worker = match worker {
-            Ok(worker) => worker,
-            Err(error) => {
-                self.retirement_failed = true;
-                return Err(error);
-            }
-        };
-        let Lease { handle, slot, .. } = self.lease.take().expect("retiring an owned lease");
-        if let Err(error) = send.send((handle, slot)) {
-            self.retirement_failed = true;
-            std::mem::forget(error.0);
-            return Err(blocked("firmware HID retirement worker lost"));
-        }
-        self.retirement = Some(worker);
-        Ok(false)
+        // ConfigMgr drains callbacks synchronously. A stalled unregister
+        // keeps this thread and the process-wide fence occupied.
+        lease.handle.retire()?;
+        drop(self.lease.take());
+        Ok(true)
     }
 }
 
 impl Drop for NativePort {
     fn drop(&mut self) {
-        self.cancel();
-        if !matches!(self.poll_retirement(), Ok(true)) {
-            // An outstanding kernel operation keeps its one process-wide slot
-            // until exit. A callback reaper already owns the slot if started
-            // and releases it only after the handle has closed.
-            std::mem::forget(self.lease.take());
-        }
+        // Only explicit retirement proves that Windows returned all resources.
+        // On unregister error or unwind retain the handle and any operation.
+        std::mem::forget(self.lease.take());
     }
 }
 
 #[cfg(test)]
 #[test]
-fn native_firmware_observation_links_and_refuses_without_owner() {
-    // Link the real open/read/retire code. Execute only the admission refusal.
-    let _ = std::hint::black_box(Reader::<NativePort>::observe);
-    let _ = std::hint::black_box(Reader::<NativePort>::retire);
-    let cancelled = AtomicBool::new(false);
-    let limit = Limit {
-        deadline: tokio::time::Instant::now() + std::time::Duration::from_secs(1),
-        cancelled: &cancelled,
-    };
-    let error = Reader::open(&mut || std::hint::black_box(None), limit)
-        .err()
-        .expect("no installed owner authority");
-    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
-    assert_eq!(error.to_string(), "no live firmware HID owner");
+fn native_firmware_observation_links() {
+    // Retain the Windows composition in the test image without invoking it.
+    let link = |authorize: fn() -> Option<Admission>| native_worker(authorize);
+    std::hint::black_box(link as fn(fn() -> Option<Admission>) -> Worker);
 }

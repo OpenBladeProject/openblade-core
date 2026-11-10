@@ -5,7 +5,7 @@ use windows_sys::Win32::System::{
     Threading::GetCurrentProcessId,
 };
 
-use super::readiness::prepare_installed_endpoint;
+use super::readiness::{FirmwareSource, prepare_installed_endpoint};
 use super::{LaunchIdentity, NAME, ProcessEvidence, denied, dispatch_candidate, io, run_candidate};
 use crate::scm_host::{CONTROLS, dispatch_named, registered_service, report};
 use crate::scm_identity as identity;
@@ -61,16 +61,20 @@ fn process_evidence() -> io::Result<ProcessEvidence> {
 
 pub(super) struct AdmittedRuntime {
     launch_pid: u32,
+    firmware: Option<FirmwareSource>,
 }
 
 impl AdmittedRuntime {
-    pub(super) fn verify_launch(self, launch: &LaunchIdentity) -> io::Result<()> {
+    pub(super) fn verify_launch(
+        self,
+        launch: &LaunchIdentity,
+    ) -> io::Result<Option<FirmwareSource>> {
         if self.launch_pid != launch.pid {
             return Err(denied(
                 "installed runtime admission belongs to another launch",
             ));
         }
-        Ok(())
+        Ok(self.firmware)
     }
 }
 

@@ -12,7 +12,7 @@ use std::{io, sync::atomic::AtomicBool};
 mod windows;
 
 #[cfg(any(test, feature = "firmware-performance-compile-check"))]
-mod performance;
+pub(crate) mod performance;
 
 mod owner;
 #[cfg(test)]

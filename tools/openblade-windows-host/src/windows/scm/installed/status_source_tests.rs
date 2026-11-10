@@ -125,6 +125,22 @@ pub(in crate::installed::readiness) fn in_memory_source(
     }))
 }
 
+pub(in crate::installed::readiness) fn in_memory_source_with_firmware(
+    has_metadata: impl Fn() -> bool + Send + Sync + 'static,
+    firmware: FirmwareSource,
+) -> Box<dyn StatusSource> {
+    let mut source = ObservedStatus::new(move |_| {
+        let device = if has_metadata() {
+            matched(HidMetadata::Candidate)
+        } else {
+            DeviceMetadata::Unavailable
+        };
+        evidence(device, Power::ExternalUnknown)
+    });
+    source.firmware = Some(firmware);
+    Box::new(source)
+}
+
 fn assert_read_only(status: &Value) {
     assert_eq!(status["deviceVerified"], false);
     assert_eq!(status["writesBlocked"], true);

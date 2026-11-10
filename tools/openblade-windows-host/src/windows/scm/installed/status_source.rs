@@ -14,7 +14,7 @@ use tokio::{
 };
 
 use super::{
-    Caller, Pending, Snapshot, StatusSource,
+    Caller, FirmwareSource, Observation, Pending, Snapshot, StatusSource,
     subscription::{Publication, REFRESH_INTERVAL},
 };
 use crate::service_frame::invalid;
@@ -81,6 +81,7 @@ impl Refresh {
 
 struct ObservedStatus {
     read: Option<Arc<ReadEvidence>>,
+    firmware: Option<FirmwareSource>,
     refresh: Option<Refresh>,
     last: Option<(i64, StatusFields)>,
     observed_at: Option<Instant>,
@@ -91,6 +92,7 @@ impl ObservedStatus {
     fn new(read: impl Fn(&AtomicBool) -> Evidence + Send + Sync + 'static) -> Self {
         Self {
             read: Some(Arc::new(read)),
+            firmware: None,
             refresh: None,
             last: None,
             observed_at: None,
@@ -252,6 +254,13 @@ impl StatusSource for ObservedStatus {
         })
     }
 
+    fn observe_performance(&mut self, caller: Caller, deadline: Instant) -> Observation {
+        self.firmware.as_ref().map_or_else(
+            || Box::pin(async { Ok(None) }) as Observation,
+            |firmware| firmware.observe(caller, deadline),
+        )
+    }
+
     fn publications(&self) -> Option<watch::Receiver<Arc<Publication>>> {
         self.publisher.as_ref().map(watch::Sender::subscribe)
     }
@@ -274,14 +283,24 @@ impl StatusSource for ObservedStatus {
             self.last = None;
             self.observed_at = None;
             self.publisher = None;
-            if let Some(refresh) = &self.refresh {
-                refresh.cancel.store(true, Ordering::Relaxed);
-                refresh.wait().await;
-            }
-            if let Some(refresh) = self.refresh.take() {
-                refresh.finish()?;
-            }
-            Ok(())
+            let firmware = async {
+                if let Some(firmware) = &self.firmware {
+                    firmware.stop().await?;
+                }
+                Ok(())
+            };
+            let metadata = async {
+                if let Some(refresh) = &self.refresh {
+                    refresh.cancel.store(true, Ordering::Relaxed);
+                    refresh.wait().await;
+                }
+                if let Some(refresh) = self.refresh.take() {
+                    refresh.finish()?;
+                }
+                Ok(())
+            };
+            let (metadata, firmware) = tokio::join!(metadata, firmware);
+            metadata.and(firmware)
         })
     }
 }
@@ -300,8 +319,10 @@ impl Drop for ObservedStatus {
 mod lifecycle;
 
 #[cfg(not(test))]
-pub(super) fn native_status_source() -> Box<dyn StatusSource> {
-    Box::new(ObservedStatus::new(read_windows))
+pub(super) fn native_status_source(firmware: Option<FirmwareSource>) -> Box<dyn StatusSource> {
+    let mut source = ObservedStatus::new(read_windows);
+    source.firmware = firmware;
+    Box::new(source)
 }
 
 #[cfg(not(test))]
@@ -372,4 +393,4 @@ fn read_windows(cancel: &AtomicBool) -> Evidence {
 mod tests;
 
 #[cfg(test)]
-pub(super) use tests::in_memory_source;
+pub(super) use tests::{in_memory_source, in_memory_source_with_firmware};
