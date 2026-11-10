@@ -48,7 +48,7 @@ public sealed class SetupServiceHealthProbeTests
             Assert.Equal(request, await IpcMessageCodec.ReadRequestAsync(listener, testDeadline.Token));
             await IpcMessageCodec.WriteServerFrameAsync(
                 listener,
-                new ServiceResponse(OpenBladeIpc.ProtocolVersion, request.RequestId, true, null, CreateStatus(), null),
+                CreateStatusResponse(request),
                 testDeadline.Token);
             await verification;
             AssertStage(timing.RequestWrite.Header, succeeded: true);
@@ -157,6 +157,9 @@ public sealed class SetupServiceHealthProbeTests
         Assert.Equal(canceledAtExit, stage.CanceledAtExit);
     }
 
+    internal static ServiceResponse CreateStatusResponse(GetStatusRequest request) =>
+        new(OpenBladeIpc.ProtocolVersion, request.RequestId, true, null, CreateStatus(), null);
+
     private static ServiceStatusSnapshot CreateStatus()
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
@@ -186,12 +189,18 @@ public sealed class SetupServiceHealthProbeTests
             ServiceVersion: "0.1.0-test");
     }
 
-    private sealed class TestDuplexStream(
+    internal sealed class TestDuplexStream(
         Stream response, int? stallAfterWrittenBytes = null, TaskCompletionSource? pending = null) : Stream
     {
         private readonly MemoryStream written = new();
 
         public long BytesWritten => written.Length;
+
+        public Task<ServiceRequest> ReadWrittenRequestAsync(CancellationToken cancellationToken)
+        {
+            written.Position = 0;
+            return IpcMessageCodec.ReadRequestAsync(written, cancellationToken);
+        }
         public override bool CanRead => true;
         public override bool CanSeek => false;
         public override bool CanWrite => true;

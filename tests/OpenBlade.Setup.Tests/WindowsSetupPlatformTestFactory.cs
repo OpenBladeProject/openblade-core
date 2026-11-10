@@ -24,6 +24,7 @@ internal static class WindowsSetupPlatformTestFactory
         string? setupExecutablePath = null,
         string? currentUserSid = null,
         ISignInTaskScheduler? signInTaskScheduler = null,
+        IPawnIoPrerequisite? pawnIoPrerequisite = null,
         ISetupGuardianQuiescenceGuard? guardianQuiescenceGuard = null) =>
         new(
             new WindowsSetupPlatformOptions(
@@ -44,6 +45,7 @@ internal static class WindowsSetupPlatformTestFactory
                 DynamicLightingIdentityRegistration: dynamicLightingIdentityRegistration,
                 ProgressReporter: progressReporter,
                 DotNetRuntimeAdmission: dotNetRuntimeAdmission ?? AcceptingDotNetRuntimeAdmission.Instance,
+                PawnIoPrerequisite: pawnIoPrerequisite,
                 SetupExecutablePath: setupExecutablePath,
                 CurrentUserSid: currentUserSid,
                 // Unit fixtures must not consult installed guardian records or
