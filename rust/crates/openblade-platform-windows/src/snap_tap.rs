@@ -1,5 +1,5 @@
-//! Offline policy for the explicitly selected Windows-hook SnapTap backend.
-//! The module has no native adapter, hook registration, or production caller.
+//! Policy for the explicitly selected Windows-hook SnapTap backend.
+//! The native adapter is compiled on Windows and has no product caller.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -70,6 +70,8 @@ pub enum Reason {
     OutputAdmissionRejected,
     OutputCountMismatch,
     OutputFailed,
+    HookCallbackFailed,
+    HookLoopFailed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -155,7 +157,7 @@ pub struct HookEvent {
 }
 
 impl HookEvent {
-    fn stroke(self) -> Option<Stroke> {
+    fn stroke(&self) -> Option<Stroke> {
         if self.flags & 1 != 0 {
             return None;
         }
@@ -550,6 +552,9 @@ impl SnapTap {
         self.enabled = false;
     }
 }
+
+#[cfg(any(windows, test))]
+mod adapter;
 
 #[cfg(test)]
 mod tests;
