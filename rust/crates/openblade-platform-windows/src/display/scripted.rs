@@ -17,7 +17,7 @@ use windows_sys::Win32::{
 };
 
 pub const MONITOR_INSTANCE: &str = r"DISPLAY\SYN0001\FIXTURE";
-const MONITOR_PATH: &str = r"\\?\DISPLAY#SYN0001#FIXTURE#{SYNTHETIC}";
+pub(crate) const MONITOR_PATH: &str = r"\\?\DISPLAY#SYN0001#FIXTURE#{SYNTHETIC}";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Scenario {

@@ -43,7 +43,7 @@ pub(super) trait ScriptedOperations: ProfileReads {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Failure {
+pub enum Failure {
     Topology(DisplayReadError),
     Target,
     Hdr(HdrState),
@@ -51,6 +51,7 @@ pub(super) enum Failure {
     Read(ProfileReadError),
     Submit(i32),
     StateChanged,
+    Context,
     Readback,
     NullDefault,
 }
@@ -62,7 +63,7 @@ impl From<ProfileReadError> for Failure {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Disposition {
+pub enum Disposition {
     NoSubmission,
     BaselineConfirmed,
     Restored,
@@ -70,13 +71,13 @@ pub(super) enum Disposition {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct Rejected {
+pub struct Rejected {
     pub cause: Failure,
     pub disposition: Disposition,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Outcome {
+pub enum Outcome {
     AlreadySelected(ColorProfileSnapshot),
     Applied(ColorProfileSnapshot),
 }
@@ -86,6 +87,7 @@ pub(super) fn set_color_profile(
     api: &mut impl ScriptedOperations,
     mut topology: impl FnMut() -> Result<InternalDisplayTopology, DisplayReadError>,
     mut hdr: impl FnMut(&ActiveInternalDisplay) -> HdrState,
+    admitted: &dyn Fn() -> bool,
 ) -> Result<Outcome, Rejected> {
     let before_submission = |cause| Rejected {
         cause,
@@ -101,21 +103,32 @@ pub(super) fn set_color_profile(
     else {
         return Err(before_submission(Failure::ProfileUnavailable));
     };
+    let key = monitor_key(api, &display).map_err(before_submission)?;
     if profile.active {
         let fresh = admitted_display(&mut topology, &mut hdr).map_err(before_submission)?;
-        if !same_display(&display, &fresh) {
+        if !same_display(&display, &fresh)
+            || !same_name(&key, &monitor_key(api, &fresh).map_err(before_submission)?)
+        {
             return Err(before_submission(Failure::Target));
         }
         let verified = snapshot(api, &fresh, HdrState::Off)
             .map_err(|error| before_submission(error.into()))?;
-        return if verified.scope == before.scope && selected(&verified, &profile.id) {
+        let scope = api
+            .scope(&fresh)
+            .map_err(|error| before_submission(error.into()))?;
+        if !admitted() {
+            return Err(before_submission(Failure::Context));
+        }
+        return if scope == before.scope
+            && verified.scope == scope
+            && selected(&verified, &profile.id)
+        {
             Ok(Outcome::AlreadySelected(verified))
         } else {
             Err(before_submission(Failure::StateChanged))
         };
     }
 
-    let key = monitor_key(api, &display).map_err(before_submission)?;
     let baseline = State::read(api, &display).map_err(before_submission)?;
     let refreshed =
         snapshot(api, &display, HdrState::Off).map_err(|error| before_submission(error.into()))?;
@@ -126,6 +139,7 @@ pub(super) fn set_color_profile(
         api,
         topology: &mut topology,
         hdr: &mut hdr,
+        admitted,
         display: &display,
         key,
         state: baseline.clone(),
@@ -339,6 +353,7 @@ struct Transaction<'a, Api, Topology, Hdr> {
     api: &'a mut Api,
     topology: &'a mut Topology,
     hdr: &'a mut Hdr,
+    admitted: &'a dyn Fn() -> bool,
     display: &'a ActiveInternalDisplay,
     key: OsString,
     state: State,
@@ -361,7 +376,11 @@ where
         {
             return Err(Failure::Target);
         }
-        State::read(self.api, &fresh)
+        let observed = State::read(self.api, &fresh)?;
+        if !(self.admitted)() {
+            return Err(Failure::Context);
+        }
+        Ok(observed)
     }
 
     fn require_known_state(&mut self) -> Result<(), Failure> {
@@ -378,7 +397,7 @@ where
         let observed = self.observe();
         self.ownership_lost |= matches!(
             observed,
-            Err(Failure::StateChanged | Failure::Target | Failure::Hdr(_))
+            Err(Failure::StateChanged | Failure::Target | Failure::Hdr(_) | Failure::Context)
         );
         observed
     }

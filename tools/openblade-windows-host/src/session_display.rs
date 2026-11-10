@@ -24,6 +24,9 @@ use tokio::{
     time::timeout,
 };
 
+mod color;
+use color::ColorDisplay;
+pub(super) use color::ColorFixture;
 mod hdr;
 pub(super) use hdr::HdrFixture;
 use hdr::HdrObservation;
@@ -43,6 +46,7 @@ const INDETERMINATE: i32 = 3;
 
 pub(super) struct SessionDisplay {
     panel: ScriptedDisplay,
+    color: ColorDisplay,
     brightness: WindowsBrightnessWorker,
     writes_paused: bool,
 }
@@ -53,9 +57,13 @@ impl SessionDisplay {
         brightness: WindowsBrightnessWorker,
         hdr: HdrFixture,
         refresh: RefreshFixture,
+        color: ColorFixture,
     ) -> Self {
+        let mut panel = ScriptedDisplay::new(scenario, hdr, refresh);
+        panel.enabled = color == ColorFixture::Disabled;
         Self {
-            panel: ScriptedDisplay::new(scenario, hdr, refresh),
+            panel,
+            color: ColorDisplay::new(color),
             brightness,
             writes_paused: false,
         }
@@ -79,6 +87,7 @@ impl SessionDisplay {
         let (mut state, target, display_error) = display_state(&reading);
         let (status, error, possible_submission) = match query.operation {
             Operation::Query {} => {
+                self.color.project(&reading, &mut state);
                 if let Some(target) = target
                     && let Ok(brightness) = self.brightness.read_target(target, &cancelled)
                 {
@@ -115,6 +124,9 @@ impl SessionDisplay {
                         &cancelled,
                     );
                     self.writes_paused = result.0 == INDETERMINATE;
+                    if result.0 == SUCCEEDED && self.color.enabled() {
+                        self.color.project(&self.panel.read(false), &mut state);
+                    }
                     result
                 }
             }
@@ -142,6 +154,31 @@ impl SessionDisplay {
                         &cancelled,
                     );
                     self.writes_paused = result.0 == INDETERMINATE;
+                    if result.0 == SUCCEEDED && self.color.enabled() {
+                        self.color.project(&self.panel.read(false), &mut state);
+                    }
+                    result
+                }
+            }
+            Operation::SetColorProfile {
+                expected_power_source,
+                color_profile_key,
+            } => {
+                if self.writes_paused {
+                    (
+                        BLOCKED,
+                        Some("ICC writes are paused after an indeterminate submission.".into()),
+                        false,
+                    )
+                } else {
+                    let result = self.color.apply(
+                        (expected_power_source, &color_profile_key),
+                        &self.panel,
+                        &reading,
+                        &mut state,
+                        &cancelled,
+                    );
+                    self.writes_paused = result.0 == INDETERMINATE;
                     result
                 }
             }
@@ -161,6 +198,7 @@ impl SessionDisplay {
                 } else if expected_power_source != ScriptedBrightness::POWER_SOURCE {
                     (BLOCKED, Some("The expected power source does not match the scripted session; brightness was not submitted.".into()), false)
                 } else if let Some(target) = target {
+                    self.color.project(&reading, &mut state);
                     match self.brightness.apply_target(
                         BrightnessRequest::SetPercent(percent),
                         target,
@@ -363,6 +401,10 @@ enum Operation {
         expected_power_source: u8,
         enabled: bool,
     },
+    SetColorProfile {
+        expected_power_source: u8,
+        color_profile_key: String,
+    },
     SetBrightness {
         expected_power_source: u8,
         percent: u8,
@@ -382,6 +424,10 @@ impl Query {
                 expected_power_source,
                 ..
             } => expected_power_source <= 2,
+            Operation::SetColorProfile {
+                expected_power_source,
+                ref color_profile_key,
+            } => expected_power_source <= 2 && valid_key(color_profile_key),
             Operation::SetBrightness {
                 expected_power_source,
                 percent,
@@ -496,7 +542,7 @@ mod tests {
         include_str!("../../../tests/OpenBlade.Session.Tests/WindowsReplay/v1/session.json");
 
     #[test]
-    fn only_query_and_typed_refresh_hdr_and_brightness_are_admitted_from_the_display_replay() {
+    fn only_query_and_typed_display_setters_are_admitted_from_the_display_replay() {
         let replay: Value = serde_json::from_str(REPLAY).unwrap();
         let display = &replay["families"]["display"];
         assert_eq!(display["version"], VERSION);
@@ -506,7 +552,7 @@ mod tests {
                 let body = serde_json::to_vec(input).unwrap();
                 let result = Query::parse(&body);
                 match vector["id"].as_str().unwrap() {
-                    "query" | "setRefreshRate" | "setHdr" | "setBrightness" => {
+                    "query" | "setRefreshRate" | "setHdr" | "setColorProfile" | "setBrightness" => {
                         assert_eq!(result.unwrap().request_id, input["requestId"]);
                     }
                     "old-version" => {
@@ -521,6 +567,10 @@ mod tests {
     #[test]
     fn rejects_malformed_envelopes_and_operation_fields() {
         for body in [
+            r#"{"operation":"setColorProfile","version":2,"requestId":"11111111-2222-4333-8444-555555555555","expectedPowerSource":0}"#,
+            r#"{"operation":"setColorProfile","version":2,"requestId":"11111111-2222-4333-8444-555555555555","expectedPowerSource":3,"colorProfileKey":"Native.icm"}"#,
+            r#"{"operation":"setColorProfile","version":2,"requestId":"11111111-2222-4333-8444-555555555555","expectedPowerSource":0,"colorProfileKey":" "}"#,
+            r#"{"operation":"setColorProfile","version":2,"requestId":"11111111-2222-4333-8444-555555555555","expectedPowerSource":0,"colorProfileKey":"Native.icm","scope":1}"#,
             r#"{"operation":"setRefreshRate","version":2,"requestId":"11111111-2222-4333-8444-555555555555","expectedPowerSource":0}"#,
             r#"{"operation":"setRefreshRate","version":2,"requestId":"11111111-2222-4333-8444-555555555555","expectedPowerSource":0,"refreshRateKey":" fixed-60"}"#,
             r#"{"operation":"setRefreshRate","version":2,"requestId":"11111111-2222-4333-8444-555555555555","expectedPowerSource":0,"refreshRateKey":"fixed-\u000060"}"#,

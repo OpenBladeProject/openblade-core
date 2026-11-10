@@ -15,7 +15,7 @@ use tokio::{net::windows::named_pipe::NamedPipeServer, runtime::Builder, sync::o
 
 use crate::{
     session_brightness::{ScriptedComPolicy, WmiScenario},
-    session_display::{self, HdrFixture, RefreshFixture, Rejected, SessionDisplay},
+    session_display::{self, ColorFixture, HdrFixture, RefreshFixture, Rejected, SessionDisplay},
     session_gpu,
 };
 
@@ -60,7 +60,13 @@ pub(super) fn entry() -> io::Result<()> {
         Some("refresh-stalled-submission") => Some(RefreshFixture::StalledSubmission),
         _ => None,
     };
+    let color = scenario.to_str().and_then(ColorFixture::parse);
     let (scenario, hdr) = match scenario.to_str() {
+        _ if color == Some(ColorFixture::StalePower) => {
+            (Scenario::Available, HdrFixture::StalePower)
+        }
+        _ if color == Some(ColorFixture::Inactive) => (Scenario::Available, HdrFixture::Inactive),
+        _ if color.is_some() => (Scenario::Available, HdrFixture::Available),
         _ if refresh.is_some() => (Scenario::Dynamic, HdrFixture::Available),
         Some("available") => (Scenario::Available, HdrFixture::Available),
         Some("unavailable") => (Scenario::Unavailable, HdrFixture::Available),
@@ -96,6 +102,7 @@ pub(super) fn entry() -> io::Result<()> {
         brightness,
         hdr,
         refresh.unwrap_or(RefreshFixture::Available),
+        color.unwrap_or(ColorFixture::Disabled),
     ))
 }
 
@@ -128,6 +135,7 @@ async fn run_display(
     brightness: WmiScenario,
     hdr: HdrFixture,
     refresh: RefreshFixture,
+    color: ColorFixture,
 ) -> io::Result<()> {
     // One reserved claim and one data connection. This endpoint has no
     // subscribers or concurrent dispatch, so partial frames can occupy one slot.
@@ -136,7 +144,7 @@ async fn run_display(
     let listener = endpoint.listen()?;
     let worker = ScriptedComPolicy::start(scenario, brightness)?;
     let session = Arc::new(Mutex::new(SessionDisplay::scripted(
-        scenario, worker, hdr, refresh,
+        scenario, worker, hdr, refresh, color,
     )));
 
     let stopping = Arc::new(AtomicBool::new(false));

@@ -13,7 +13,7 @@ use super::{
     query_color_profiles, snapshot,
     transaction::{
         CurrentUserChange, Disposition, Failure, Monitor, Outcome, ScriptedOperations,
-        SetColorProfile, set_color_profile,
+        SetColorProfile, set_color_profile as guarded_set_color_profile,
     },
     valid_monitor_rgb_header,
 };
@@ -41,6 +41,15 @@ fn display() -> ActiveInternalDisplay {
 
 fn names(list: &[&str]) -> Vec<OsString> {
     list.iter().map(OsString::from).collect()
+}
+
+fn set_color_profile(
+    request: SetColorProfile<'_>,
+    api: &mut Script,
+    topology: impl FnMut() -> Result<InternalDisplayTopology, DisplayReadError>,
+    hdr: impl FnMut(&ActiveInternalDisplay) -> HdrState,
+) -> Result<Outcome, super::transaction::Rejected> {
+    guarded_set_color_profile(request, api, topology, hdr, &|| true)
 }
 
 fn sdr() -> Result<InternalDisplayTopology, DisplayReadError> {
@@ -535,6 +544,37 @@ fn device_key_requires_one_active_exact_monitor_with_a_key() {
     let mut api = Script::default();
     api.monitors[0].interface = MONITOR.to_lowercase().into();
     assert!(matches!(api.run(), Ok(Outcome::Applied(_))));
+}
+
+#[test]
+fn lost_admission_stops_before_submission_or_after_the_first_known_change() {
+    for admitted_reads in [0, 2] {
+        let mut api = Script::default();
+        let calls = Cell::new(0);
+        let failure = guarded_set_color_profile(
+            SetColorProfile(OsStr::new(NATIVE)),
+            &mut api,
+            sdr,
+            |_| HdrState::Off,
+            &|| {
+                let count = calls.get();
+                calls.set(count + 1);
+                count < admitted_reads
+            },
+        )
+        .unwrap_err();
+        assert_eq!(failure.cause, Failure::Context);
+        if admitted_reads == 0 {
+            assert_eq!(failure.disposition, Disposition::NoSubmission);
+            api.assert_writes(&[]);
+        } else {
+            assert_eq!(
+                failure.disposition,
+                Disposition::Unresolved(Failure::StateChanged)
+            );
+            api.assert_writes(&["add:Native_CTR.icm"]);
+        }
+    }
 }
 
 #[test]

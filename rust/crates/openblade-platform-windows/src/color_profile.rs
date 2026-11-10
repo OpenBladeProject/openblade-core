@@ -9,9 +9,11 @@ use std::{
 use crate::display::ActiveInternalDisplay;
 
 mod native;
+#[cfg(feature = "scripted-display")]
+pub mod scripted;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
+#[cfg(any(test, feature = "scripted-display"))]
 mod transaction;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,7 +159,7 @@ fn file_name(value: &OsStr) -> OsString {
     OsString::from_wide(&units[index..])
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "scripted-display"))]
 fn profiles_match(left: &OsStr, right: &OsStr) -> bool {
     native::ordinal_ignore_case(left, right) == Ordering::Equal
         || native::ordinal_ignore_case(&file_name(left), &file_name(right)) == Ordering::Equal
