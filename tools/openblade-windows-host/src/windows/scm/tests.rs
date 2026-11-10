@@ -66,6 +66,7 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
                     shutdown,
                     profiles,
                     writer,
+                    false,
                 )?;
                 let status = prepared.0.set_profile_save_barrier(ProfileSaveBarrier {
                     entered,

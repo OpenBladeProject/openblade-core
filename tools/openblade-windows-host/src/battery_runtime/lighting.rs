@@ -426,6 +426,9 @@ impl Scenario {
                 if state.configuration_blocked {
                     return Ok(super::blocked_configuration());
                 }
+                if let Some(blocked) = state.session_block() {
+                    return Ok(blocked);
+                }
                 let exact = state.current["deviceVerified"] == true;
                 let lighting = state.lighting()?;
                 // Ordinary Off serializes under the state lock as before.
@@ -469,6 +472,9 @@ impl Scenario {
             }
             if state.configuration_blocked {
                 return Ok(super::blocked_configuration());
+            }
+            if let Some(blocked) = state.session_block() {
+                return Ok(blocked);
             }
             let lighting = state.lighting()?;
             if temporary && !lighting.temporary {
@@ -534,7 +540,13 @@ impl Scenario {
             let result = tokio::select! {
                 biased;
                 _ = power_stop.wait_for(|stop| *stop) => Ok(()),
-                result = self.drive_power_steps(&mut advance, false) => result,
+                result = async {
+                    if self.accepts_application() {
+                        self.drive_application_steps(&mut advance).await
+                    } else {
+                        self.drive_power_steps(&mut advance, false).await
+                    }
+                } => result,
             };
             if result.is_err() {
                 stopping.send_replace(true);
@@ -918,7 +930,7 @@ mod tests {
                     status["status"].clone(),
                     profiles.clone(),
                     Some(writer),
-                    super::super::ProfileReplay::Integrated,
+                    super::super::ProfileReplay::Integrated { application: false },
                 )
                 .unwrap(),
             );
@@ -994,7 +1006,7 @@ mod tests {
                 status["status"].clone(),
                 profiles,
                 Some(writer),
-                super::super::ProfileReplay::Integrated,
+                super::super::ProfileReplay::Integrated { application: false },
             )
             .unwrap(),
         );

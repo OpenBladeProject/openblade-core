@@ -368,6 +368,34 @@ projects desired performance and gaming behavior for its fixture. It has no
 configuration writer or device adapter, and leaves the durable profile format
 and the other modes' effect admission unchanged.
 
+## Replay application selection in the composed runtime
+
+Use `foreground-integrated-application <id>` for a disposable private writer.
+The companion mode `foreground-protected-integrated-application <id> <root>`
+uses the existing protected-writer admission for a precreated test root.
+Both modes use the same private v79 pipe, composed runtime, and renderer
+shutdown sequence as the integrated fixture. The executable rule is a
+fixture input in memory. Lease reports, expiry, and selected presets leave
+the saved profile aggregate untouched.
+
+An accepted report selects the current source's application override. A
+temporary manual preset takes precedence until cleared or until power
+changes. Reports and lease expiry publish desired intent. They leave
+confirmed state to the scripted preset and independent readback path.
+Battery and limited power select their desired profiles while the scoped
+preset recipe stays closed. Each full-adapter effect still checks the
+session, exact-device admission, fresh adapter, and Automatic fan pair.
+
+After `READY`, report the fixture executable with the managed client.
+The first `n` reconciles that preset. The next steps select battery,
+revoke and restore session control, then classify and apply full-adapter
+power using the currently selected profile. Let the lease expire on full
+power before continuing. The next step loses the setter response and
+immediate readback while returning to the saved full-power profile. The
+following step is fenced. The final step performs a read-only observation
+to settle the result. The renderer keeps its independent release signal
+and drains on STOP even if an application lease is active.
+
 ## Compatibility boundary
 
 - Each connection accepts one request. Every mode serves v79 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v79 in the explicitly scoped foreground modes. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.

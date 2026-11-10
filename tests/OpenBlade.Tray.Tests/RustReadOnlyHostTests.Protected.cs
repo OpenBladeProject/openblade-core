@@ -85,7 +85,7 @@ public sealed partial class RustReadOnlyHostTests
         }
 
         string restartEndpoint = Guid.NewGuid().ToString("N");
-        await using (var restart = DevHost.Start(restartEndpoint, "foreground-protected-integrated", root))
+        await using (var restart = DevHost.Start(restartEndpoint, "foreground-protected-integrated-application", root))
         {
             await restart.ExpectLineAsync("START_PENDING", token);
             await restart.WaitUntilReadyAsync(token);
@@ -97,6 +97,19 @@ public sealed partial class RustReadOnlyHostTests
                 status = await ReadStatusAsync(watch, subscriptionOpened: false);
             }
             AssertComposedBattery(status, saved: 75, temporary: null, confirmed: 80);
+            var app = Assert.Single(status.Profiles.ApplicationProfiles);
+            var report = new ReportApplicationContextRequest(
+                OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), Guid.NewGuid(), 1, app.ExecutablePath);
+            Assert.Equal(ControlOperationStatus.Stored, (await client.ReportApplicationContextAsync(report, token)).Status);
+            AssertSelection(await client.GetStatusAsync(token), app.Id, PerformancePreset.Performance,
+                SettingValueSource.ApplicationProfile, PerformancePreset.Balanced);
+            await restart.AdvanceAsync(token);
+            while (status.ConfirmedState?.Performance != PerformancePreset.Performance)
+            {
+                status = await ReadStatusAsync(watch, subscriptionOpened: false);
+            }
+            AssertSelection(status, app.Id, PerformancePreset.Performance,
+                SettingValueSource.ApplicationProfile, PerformancePreset.Performance);
             AssertPrimaryBytes(root, committed);
             await restart.RequestStopAsync(token);
             await restart.ExpectLineAsync("STOP_PENDING", token);

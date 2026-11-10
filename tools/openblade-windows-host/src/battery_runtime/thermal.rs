@@ -40,12 +40,17 @@ impl Thermal {
         })
     }
 
-    pub(super) fn for_power_profile(status: &mut Value) -> io::Result<Self> {
+    pub(super) fn for_power_profile(
+        status: &mut Value,
+        prior_performance: bool,
+    ) -> io::Result<Self> {
         let mut thermal = Self::new(status)?;
         thermal.power_profile = true;
         // A prior confirmed standard preset provides a differing getter
         // baseline. The durable plugged-in destination remains Balanced.
-        thermal.performance.profile_replay_baseline();
+        if prior_performance {
+            thermal.performance.profile_replay_baseline();
+        }
         Ok(thermal)
     }
 
@@ -97,7 +102,7 @@ impl ScenarioState {
             .then(|| blocked("Fresh external adapter classification is required."))
     }
 
-    fn direct_thermal_block(&self) -> Option<Result> {
+    pub(super) fn direct_thermal_block(&self) -> Option<Result> {
         self.thermal_block()
             .or_else(|| self.unresolved_power())
             .or_else(|| {
@@ -111,6 +116,9 @@ impl ScenarioState {
     }
 
     pub(super) fn thermal_block(&self) -> Option<Result> {
+        if let Some(blocked) = self.session_block() {
+            return Some(blocked);
+        }
         if self.configuration_blocked {
             return Some(blocked_configuration());
         }
@@ -134,13 +142,30 @@ impl Scenario {
                     "Only temporary preset overrides are admitted in this fixture.",
                 ));
             }
+            let selected = state
+                .application
+                .as_ref()
+                .map(|_| state.profile_performance().0);
             let thermal = state.thermal()?;
             if !thermal.fans.automatic_confirmed() {
                 return Ok(blocked(
                     "The scoped preset recipe requires a confirmed Automatic fan pair.",
                 ));
             }
-            let outcome = thermal.performance.request(value)?;
+            let outcome = if let Some(selected) = selected {
+                if !super::power_profile::fresh_full_adapter(&mut thermal.fans)
+                    || !thermal.fans.fresh_automatic()
+                {
+                    return Ok(blocked(
+                        "The scoped preset recipe requires fresh full power and an Automatic fan pair.",
+                    ));
+                }
+                thermal.performance.request_selected(value, selected, || {
+                    super::power_profile::fresh_full_adapter(&mut thermal.fans)
+                })?
+            } else {
+                thermal.performance.request(value)?
+            };
             Ok(Result {
                 status: outcome.status,
                 message: outcome.message,

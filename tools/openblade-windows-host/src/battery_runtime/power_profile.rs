@@ -7,12 +7,12 @@ use std::io;
 use tokio::sync::mpsc;
 
 type Reply = Option<[u8; 2]>;
-const FULL: Reply = Some([0x11, 0x11]);
+pub(super) const FULL: Reply = Some([0x11, 0x11]);
 const LIMITED: Reply = Some([0x07, 0x11]);
 const OTHER_FULL: Reply = Some([0x12, 0x11]);
 const UNKNOWN: Reply = Some([0x10, 0x11]);
 const MAX_ATTEMPTS: usize = 5;
-const CONFIRMATIONS: &[Reply] = &[UNKNOWN, FULL, None, UNKNOWN, FULL];
+pub(super) const CONFIRMATIONS: &[Reply] = &[UNKNOWN, FULL, None, UNKNOWN, FULL];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Adapter {
@@ -86,13 +86,14 @@ fn resolve(ac_line: u8, mut read: impl FnMut() -> Reply) -> io::Result<Option<Po
     Ok(None)
 }
 
-struct Lifecycle {
+#[derive(Default)]
+pub(super) struct Lifecycle {
     epoch: u64,
-    planned_full: Option<u64>,
+    pub(super) planned_full: Option<u64>,
 }
 
 impl Lifecycle {
-    fn notify(
+    pub(super) fn notify(
         &mut self,
         state: &mut ScenarioState,
         ac_line: u8,
@@ -137,7 +138,7 @@ impl Lifecycle {
         }
     }
 
-    fn apply(
+    pub(super) fn apply(
         &mut self,
         state: &mut ScenarioState,
         plan: Option<u64>,
@@ -189,7 +190,7 @@ impl Lifecycle {
             ));
         }
         select_power(state, Power::PluggedIn)?;
-        let value = state.controller.profile().performance;
+        let value = state.profile_performance().0;
         let thermal = state.thermal()?;
         thermal.power_unresolved = false;
         if lose_response {
@@ -213,6 +214,10 @@ fn select_power(state: &mut ScenarioState, source: Power) -> io::Result<()> {
         state.controller.record_power(source);
     }
     Ok(())
+}
+
+pub(super) fn fresh_full_adapter(fans: &mut fan_runtime::Controller) -> bool {
+    fresh_full(fans, FULL)
 }
 
 fn fresh_full(fans: &mut fan_runtime::Controller, reply: Reply) -> bool {
@@ -251,10 +256,7 @@ impl Scenario {
         advance: &mut mpsc::Receiver<()>,
         lose_response: bool,
     ) -> io::Result<()> {
-        let mut lifecycle = Lifecycle {
-            epoch: 0,
-            planned_full: None,
-        };
+        let mut lifecycle = Lifecycle::default();
         use Step::*;
         let steps = [
             Notify(1, &[FULL, OTHER_FULL]),

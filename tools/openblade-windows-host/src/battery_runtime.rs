@@ -643,10 +643,14 @@ pub(crate) struct Scenario {
     lighting_only: bool,
     #[cfg(windows)]
     lighting_operation: Mutex<()>,
+    #[cfg(windows)]
+    application_changed: Option<tokio::sync::Notify>,
     state: Arc<Mutex<ScenarioState>>,
     publish: watch::Sender<Arc<Value>>,
 }
 
+#[cfg(windows)]
+mod application;
 #[cfg(windows)]
 pub(crate) mod lighting;
 #[cfg(windows)]
@@ -668,11 +672,13 @@ pub(crate) enum ProfileReplay {
     Thermal,
     Power { lose_response: bool },
     FullCharge,
-    Integrated,
+    Integrated { application: bool },
     LightingOff { owned: bool, uncertain: bool },
 }
 
 struct ScenarioState {
+    #[cfg(windows)]
+    application: Option<application::Context>,
     #[cfg(windows)]
     lighting: Option<lighting::Lighting>,
     #[cfg(windows)]
@@ -699,6 +705,8 @@ impl Scenario {
             None,
             #[cfg(windows)]
             None,
+            #[cfg(windows)]
+            false,
         )
     }
 
@@ -709,7 +717,8 @@ impl Scenario {
         writer: Option<ProfileWriter>,
         replay: ProfileReplay,
     ) -> io::Result<Self> {
-        if matches!(replay, ProfileReplay::Integrated) && writer.is_none() {
+        let application = matches!(replay, ProfileReplay::Integrated { application: true });
+        if matches!(replay, ProfileReplay::Integrated { .. }) && writer.is_none() {
             return Err(io::Error::other(
                 "The integrated fixture requires an admitted writer.",
             ));
@@ -720,9 +729,9 @@ impl Scenario {
             | ProfileReplay::FullCharge
             | ProfileReplay::LightingOff { .. } => None,
             ProfileReplay::Thermal => Some(thermal::Thermal::new(&mut baseline)?),
-            ProfileReplay::Power { .. } | ProfileReplay::Integrated => {
-                Some(thermal::Thermal::for_power_profile(&mut baseline)?)
-            }
+            ProfileReplay::Power { .. } | ProfileReplay::Integrated { .. } => Some(
+                thermal::Thermal::for_power_profile(&mut baseline, !application)?,
+            ),
         };
         let lighting = match replay {
             ProfileReplay::LightingOff { owned, .. } => {
@@ -732,19 +741,25 @@ impl Scenario {
                 }
                 Some(lighting)
             }
-            ProfileReplay::Integrated => Some(lighting::Lighting::integrated(&mut baseline)?),
+            ProfileReplay::Integrated { .. } => {
+                Some(lighting::Lighting::integrated(&mut baseline)?)
+            }
             _ => None,
         };
+        if application {
+            crate::application_runtime::install_fixture_rule(&mut baseline["profiles"]);
+        }
         Self::start(
             baseline,
             matches!(
                 replay,
-                ProfileReplay::FullCharge | ProfileReplay::Integrated
+                ProfileReplay::FullCharge | ProfileReplay::Integrated { .. }
             ),
             matches!(replay, ProfileReplay::LightingOff { .. }),
             lighting,
             writer,
             thermal,
+            application,
         )
     }
 
@@ -755,6 +770,7 @@ impl Scenario {
         #[cfg(windows)] lighting: Option<lighting::Lighting>,
         #[cfg(windows)] writer: Option<ProfileWriter>,
         #[cfg(windows)] thermal: Option<thermal::Thermal>,
+        #[cfg(windows)] application: bool,
     ) -> io::Result<Self> {
         #[cfg(windows)]
         let editable = writer.is_some();
@@ -764,6 +780,8 @@ impl Scenario {
         #[cfg(windows)]
         let lighting_off = lighting.is_some();
         let mut state = ScenarioState {
+            #[cfg(windows)]
+            application: application.then(application::Context::new),
             #[cfg(windows)]
             lighting,
             #[cfg(windows)]
@@ -799,6 +817,8 @@ impl Scenario {
             lighting_only,
             #[cfg(windows)]
             lighting_operation: Mutex::new(()),
+            #[cfg(windows)]
+            application_changed: application.then(tokio::sync::Notify::new),
             state: Arc::new(Mutex::new(state)),
             publish,
         })
@@ -930,7 +950,7 @@ impl Scenario {
                 return Ok(thermal::await_readback());
             }
             #[cfg(windows)]
-            if let Some(blocked) = state.unresolved_power() {
+            if let Some(blocked) = state.session_block().or_else(|| state.unresolved_power()) {
                 return Ok(blocked);
             }
             state.controller.apply(intent)
@@ -956,8 +976,8 @@ impl Scenario {
         self.state.try_lock().unwrap().profile_save_barrier = Some(barrier);
     }
 
-    /// Mirrors UpdateProfiles for a battery-policy-only edit with no active
-    /// app profile or lighting suppression. Disk admission precedes publication.
+    /// Only the saved battery policy can change. The application fixture rule
+    /// remains in memory. Disk admission precedes publication.
     #[cfg(windows)]
     pub(crate) async fn save_profiles(
         self: Arc<Self>,
@@ -972,6 +992,9 @@ impl Scenario {
             let result = self.update_locked(&mut state, |state| {
                 if state.configuration_blocked {
                     return Ok(blocked_configuration());
+                }
+                if let Some(blocked) = state.session_block() {
+                    return Ok(blocked);
                 }
                 let mut expected = state.current["profiles"].clone();
                 expected["batteryPolicy"]["chargeLimitPercent"] = limit.percent().into();
@@ -1051,6 +1074,8 @@ impl Scenario {
             .and_then(|value| value.checked_add(1))
             .ok_or_else(|| io::Error::other("invalid battery status revision"))?;
         let previous = state.current.clone();
+        #[cfg(windows)]
+        state.expire_application();
         let result = run(state)?;
         state.project(result.message);
         if state.current != previous {
@@ -1115,6 +1140,8 @@ impl ScenarioState {
         if let Some(lighting) = &self.lighting {
             lighting.project(&mut self.current);
         }
+        #[cfg(windows)]
+        self.project_application();
         self.current["message"] = message.into();
     }
 }

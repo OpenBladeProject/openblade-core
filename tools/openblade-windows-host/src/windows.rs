@@ -42,7 +42,9 @@ pub(super) fn entry() -> io::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.as_slice() {
         [mode] if mode == "--scm" => scm::dispatch(),
-        [mode, id] if mode == "foreground-integrated" => {
+        [mode, id]
+            if mode == "foreground-integrated" || mode == "foreground-integrated-application" =>
+        {
             let id = foreground_id(id)?;
             foreground_with_stop(
                 id,
@@ -53,11 +55,21 @@ pub(super) fn entry() -> io::Result<()> {
                     let mut fixture = fixture::Fixture::create(true)?;
                     announce_fixture(&mut fixture)?;
                     let (profiles, writer) = fixture.compose_battery(false)?;
-                    prepare_integrated(advance, release, shutdown, profiles, writer)
+                    prepare_integrated(
+                        advance,
+                        release,
+                        shutdown,
+                        profiles,
+                        writer,
+                        mode == "foreground-integrated-application",
+                    )
                 },
             )
         }
-        [mode, id, root] if mode == "foreground-protected-integrated" => {
+        [mode, id, root]
+            if mode == "foreground-protected-integrated"
+                || mode == "foreground-protected-integrated-application" =>
+        {
             let id = foreground_id(id)?;
             foreground_with_stop(
                 id,
@@ -67,7 +79,14 @@ pub(super) fn entry() -> io::Result<()> {
                 |advance, release, shutdown| {
                     let (profiles, writer) =
                         fixture::BatteryProfileStore::open_protected(std::path::Path::new(root))?;
-                    prepare_integrated(advance, release, shutdown, profiles, writer)
+                    prepare_integrated(
+                        advance,
+                        release,
+                        shutdown,
+                        profiles,
+                        writer,
+                        mode == "foreground-protected-integrated-application",
+                    )
                 },
             )
         }
@@ -319,13 +338,14 @@ fn prepare_integrated(
     shutdown: oneshot::Receiver<()>,
     profiles: serde_json::Value,
     writer: fixture::BatteryProfileStore,
+    application: bool,
 ) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
     let advance = advance.ok_or_else(|| io::Error::other("missing power steps"))?;
     let (status, drive) = Status::fixture()?.with_battery_profiles(
         advance,
         profiles,
         Some(writer),
-        ProfileReplay::Integrated,
+        ProfileReplay::Integrated { application },
         shutdown,
         release,
     )?;

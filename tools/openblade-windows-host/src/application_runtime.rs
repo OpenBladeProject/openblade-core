@@ -21,6 +21,8 @@ const LEASE: Duration = Duration::from_secs(15);
 const PATH: &str = r"C:\Games\Game.exe";
 const ID: &str = "e4c7ac58-003c-4f40-adb3-76f2d9e6ea9e";
 
+pub(crate) const STALE: &str = "A stale application context was ignored.";
+
 pub(crate) const INACTIVE: &str =
     "Session automation reports require the active local interactive Windows session.";
 
@@ -94,12 +96,60 @@ fn same_path(left: &str, right: &str) -> bool {
 }
 
 #[derive(Default)]
-struct Evidence {
+pub(crate) struct Lease {
     last: Option<(String, i64)>,
     deadline: Option<Instant>,
+    selected: Option<SelectedRule>,
 }
 
-impl Evidence {
+impl Lease {
+    pub(crate) fn deadline(&self) -> Option<Instant> {
+        self.deadline
+    }
+
+    pub(crate) fn report(
+        &mut self,
+        rules: &[Value],
+        report: &Report,
+        now: Instant,
+    ) -> &'static str {
+        if !self.accept(report) {
+            return STALE;
+        }
+        let selected = report.executable_path.as_deref().and_then(|path| {
+            rules
+                .iter()
+                .filter_map(SelectedRule::read)
+                .find(|rule| same_path(path, &rule.path))
+        });
+        self.deadline = selected.as_ref().map(|_| now + LEASE);
+        let changed = self.selected != selected;
+        self.selected = selected;
+        if changed {
+            "The active application profile was recorded."
+        } else {
+            "The active application profile lease was renewed."
+        }
+    }
+
+    pub(crate) fn expire(&mut self, expected: Instant, now: Instant) -> bool {
+        if self.deadline != Some(expected) || now < expected {
+            return false;
+        }
+        self.clear_selection();
+        true
+    }
+
+    fn clear_selection(&mut self) {
+        self.deadline = None;
+        self.selected = None;
+    }
+
+    pub(crate) fn rule<'a>(&self, rules: &'a [Value]) -> Option<&'a Value> {
+        let selection = self.selected.as_ref()?;
+        rules.iter().find(|rule| selection.identifies(rule))
+    }
+
     fn accept(&mut self, report: &Report) -> bool {
         // Only the current instance owns a sequence watermark, as in the
         // managed service. A different instance is allowed to start at one.
@@ -141,29 +191,60 @@ impl SelectedRule {
 
 struct State {
     status: Value,
-    evidence: Evidence,
-    selected: Option<SelectedRule>,
+    lease: Lease,
     active_session: bool,
     battery: bool,
     manual: bool,
 }
 
+pub(crate) fn rules(profiles: &Value) -> &[Value] {
+    profiles["applicationProfiles"]
+        .as_array()
+        .expect("fixture application rules")
+}
+
+pub(crate) fn install_fixture_rule(profiles: &mut Value) {
+    // Use the full managed v79 shape so a battery-only update can round-trip
+    // the immutable fixture rule without writing it to the profile aggregate.
+    let battery = json!({
+        "performance": 4, "customPerformance": null, "gpuClockTuning": null,
+        "fans": null, "fanControl": null, "lighting": null, "display": null,
+        "gamingModeEnabled": null, "gamingModeKeyPolicy": null, "isConfigured": true
+    });
+    let mut plugged_in = battery.clone();
+    plugged_in["performance"] = 2.into();
+    plugged_in["gamingModeEnabled"] = true.into();
+    plugged_in["gamingModeKeyPolicy"] = json!({"blockWindowsKey": true, "blockAltTab": true});
+    profiles["applicationProfiles"] = json!([{
+        "id": ID, "name": "Scripted game", "executablePath": PATH,
+        // The agent owns WhileRunningAfterActivation observation.
+        "activationMode": 1, "enabled": true,
+        "overrides": {"pluggedIn": plugged_in, "battery": battery, "usbC": null, "isConfigured": true}
+    }]);
+}
+
+pub(crate) fn project_behavior(mut behavior: Value, overlay: &Value) -> Value {
+    if behavior.is_null() {
+        behavior = json!({
+            "startupAnimationEnabled": null, "functionKeyPrimary": null,
+            "gamingModeEnabled": null, "gamingModeKeyPolicy": null, "isConfigured": false
+        });
+    }
+    for field in ["gamingModeEnabled", "gamingModeKeyPolicy"] {
+        if let Some(value) = overlay.get(field).filter(|value| !value.is_null()) {
+            behavior[field] = value.clone();
+            behavior["isConfigured"] = true.into();
+        }
+    }
+    behavior
+}
+
 impl State {
     fn new(mut status: Value) -> Self {
-        status["profiles"]["applicationProfiles"] = json!([{
-            "id": ID, "name": "Scripted game", "executablePath": PATH,
-            // The agent owns WhileRunningAfterActivation observation.
-            "activationMode": 1, "enabled": true,
-            "overrides": {
-                "pluggedIn": {"performance": 2, "gamingModeEnabled": true,
-                    "gamingModeKeyPolicy": {"blockWindowsKey": true, "blockAltTab": true}},
-                "battery": {"performance": 4}
-            }
-        }]);
+        install_fixture_rule(&mut status["profiles"]);
         let mut state = Self {
             status,
-            evidence: Evidence::default(),
-            selected: None,
+            lease: Lease::default(),
             active_session: true,
             battery: false,
             manual: false,
@@ -179,58 +260,36 @@ impl State {
                 "Application context requires the active local Windows session.",
             );
         }
-        if !self.evidence.accept(report) {
-            return (0, "A stale application context was ignored.");
+        let message = self
+            .lease
+            .report(rules(&self.status["profiles"]), report, now);
+        if message != STALE {
+            self.project(
+                if message == "The active application profile was recorded." {
+                    "The active application profile changed."
+                } else {
+                    message
+                },
+            );
         }
-
-        let selected = report.executable_path.as_deref().and_then(|path| {
-            self.rules()
-                .iter()
-                .filter_map(SelectedRule::read)
-                .find(|rule| same_path(path, &rule.path))
-        });
-        self.evidence.deadline = selected.as_ref().map(|_| now + LEASE);
-        let changed = self.selected != selected;
-        self.selected = selected;
-        self.project(if changed {
-            "The active application profile changed."
-        } else {
-            "The active application profile lease was renewed."
-        });
-        (
-            0,
-            if changed {
-                "The active application profile was recorded."
-            } else {
-                "The active application profile lease was renewed."
-            },
-        )
+        (0, message)
     }
 
     fn expire(&mut self, expected: Instant, now: Instant) {
-        if self.evidence.deadline != Some(expected) || now < expected {
-            return;
+        if self.lease.expire(expected, now) {
+            self.project(
+                "The application profile lease expired; the current power profile is active.",
+            );
         }
-        self.evidence.deadline = None;
-        self.selected = None;
-        self.project("The application profile lease expired; the current power profile is active.");
-    }
-
-    fn rules(&self) -> &[Value] {
-        self.status["profiles"]["applicationProfiles"]
-            .as_array()
-            .expect("fixture application rules")
     }
 
     fn selected_rule(&self) -> Option<&Value> {
-        let selection = self.selected.as_ref()?;
-        self.rules().iter().find(|rule| selection.identifies(rule))
+        self.lease.rule(rules(&self.status["profiles"]))
     }
 
     fn invalidate_changed_rule(&mut self) {
-        if self.selected.is_some() && self.selected_rule().is_none() {
-            self.selected = None;
-            self.evidence.deadline = None;
+        if self.selected_rule().is_none() {
+            self.lease.clear_selection();
         }
     }
 
@@ -260,24 +319,13 @@ impl State {
             _ => 1,
         };
 
-        let mut behavior = base["laptopBehavior"].clone();
-        if behavior.is_null() {
-            behavior = json!({
-                "startupAnimationEnabled": null, "functionKeyPrimary": null,
-                "gamingModeEnabled": null, "gamingModeKeyPolicy": null, "isConfigured": false
-            });
-        }
-        for field in ["gamingModeEnabled", "gamingModeKeyPolicy"] {
-            if let Some(value) = app.get(field).filter(|value| !value.is_null()) {
-                behavior[field] = value.clone();
-                behavior["isConfigured"] = true.into();
-            }
-        }
+        let behavior = project_behavior(base["laptopBehavior"].clone(), app);
 
         self.status["activePowerSource"] = source.into();
         self.status["controlAccess"] = i32::from(!self.active_session).into();
-        self.status["activeApplicationProfileId"] =
-            json!(self.selected.as_ref().map(|rule| &rule.id));
+        self.status["activeApplicationProfileId"] = self
+            .selected_rule()
+            .map_or(Value::Null, |rule| rule["id"].clone());
         self.status["effectiveLaptopBehavior"] = behavior;
         self.status["performanceOverride"] = if self.manual {
             json!({"value": 1, "lifetime": 1, "customPerformance": null, "gpuClockTuning": null})
@@ -353,9 +401,9 @@ impl Scenario {
 
     fn update<T>(&self, operation: impl FnOnce(&mut State) -> T) -> T {
         let mut state = self.state.lock().expect("application state");
-        let deadline = state.evidence.deadline;
+        let deadline = state.lease.deadline();
         let result = operation(&mut state);
-        if state.evidence.deadline != deadline {
+        if state.lease.deadline() != deadline {
             self.deadline_changed.notify_one();
         }
         if *self.publication.borrow().as_ref() != state.status {
@@ -374,8 +422,8 @@ impl Scenario {
                 .state
                 .lock()
                 .expect("application state")
-                .evidence
-                .deadline;
+                .lease
+                .deadline();
             tokio::select! {
                 biased;
                 () = async {
@@ -417,21 +465,21 @@ mod tests {
         );
         let now = Instant::now();
         state.report(&report(ID, 1, Some(PATH)), now);
-        let first = state.evidence.deadline.unwrap();
+        let first = state.lease.deadline().unwrap();
         state.report(&report(ID, 2, Some(PATH)), now + Duration::from_secs(5));
         state.expire(first, first);
-        assert!(state.selected.is_some());
-        let second = state.evidence.deadline.unwrap();
+        assert!(state.selected_rule().is_some());
+        let second = state.lease.deadline().unwrap();
         state.expire(second, second - Duration::from_millis(1));
-        assert!(state.selected.is_some());
+        assert!(state.selected_rule().is_some());
         state.expire(second, second);
-        assert!(state.selected.is_none());
+        assert!(state.selected_rule().is_none());
         assert_eq!(
             state.report(&report(ID, 2, Some(PATH)), second).1,
             "A stale application context was ignored."
         );
         state.report(&report(ID, 3, Some(PATH)), second);
-        assert!(state.selected.is_some());
+        assert!(state.selected_rule().is_some());
     }
 
     #[test]

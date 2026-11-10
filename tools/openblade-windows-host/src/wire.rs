@@ -143,7 +143,7 @@ impl Status {
     ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
         use crate::battery_runtime::ProfileReplay;
 
-        if matches!(replay, ProfileReplay::Integrated) != release.is_some() {
+        if matches!(replay, ProfileReplay::Integrated { .. }) != release.is_some() {
             return Err(io::Error::other(
                 "Unexpected integrated port acknowledgement channel.",
             ));
@@ -154,8 +154,10 @@ impl Status {
             writer,
             replay,
         )?);
-        self.composed_thermal =
-            matches!(replay, ProfileReplay::Thermal | ProfileReplay::Integrated);
+        self.composed_thermal = matches!(
+            replay,
+            ProfileReplay::Thermal | ProfileReplay::Integrated { .. }
+        );
         self.replay = Some(scenario.subscribe());
         // The power script is the only mutation entry point in this mode.
         if !matches!(replay, ProfileReplay::Power { .. }) {
@@ -176,7 +178,7 @@ impl Status {
                     ProfileReplay::Power { lose_response } => {
                         scenario.drive_power_profile(advance, lose_response).await
                     }
-                    ProfileReplay::Integrated => unreachable!(),
+                    ProfileReplay::Integrated { .. } => unreachable!(),
                 }
             };
             tokio::select! {
@@ -602,6 +604,36 @@ where
                     pending::<io::Result<()>>().await
                 } => streamed,
             }
+        }
+        #[cfg(windows)]
+        (CURRENT_VERSION, "reportApplicationContext")
+            if status
+                .battery
+                .as_ref()
+                .is_some_and(|scenario| scenario.accepts_application()) =>
+        {
+            use crate::application_runtime::{INACTIVE, Report};
+            let report = Report::decode(&payload)?;
+            if !matches!(session, Session::Active) {
+                return write_frame(&mut io, request.response(None, Some(INACTIVE), None)).await;
+            }
+            let scenario = status
+                .battery
+                .as_ref()
+                .expect("guarded application runtime");
+            let result = scenario.report_application(&report).await?;
+            if result.status == openblade_domain::recovery::ScopedStatus::Blocked {
+                return write_frame(&mut io, request.response(None, Some(result.message), None))
+                    .await;
+            }
+            write_frame(
+                &mut io,
+                request.operation_response(OperationResult {
+                    status: 0,
+                    message: result.message,
+                }),
+            )
+            .await
         }
         #[cfg(windows)]
         (CURRENT_VERSION, "reportApplicationContext") if status.application.is_some() => {

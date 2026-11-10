@@ -162,7 +162,48 @@ impl Controller {
         }
     }
 
+    #[cfg(windows)]
+    pub(crate) fn request_selected(
+        &mut self,
+        value: Option<Override>,
+        selected: i32,
+        fresh_power: impl FnMut() -> bool,
+    ) -> io::Result<Outcome> {
+        let Ok(intent) = Intent::try_from(value) else {
+            return Ok(Outcome::blocked(
+                "Only standard Balanced and Performance overrides are admitted in this replay.",
+            ));
+        };
+        let selected = Preset::try_from(selected)
+            .map_err(|()| io::Error::other("unsupported scripted full-adapter preset"))?;
+        self.apply_override(intent, selected, fresh_power)
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn manual_selection(&self, power: i32) -> Option<(i32, i32)> {
+        let eligible =
+            |value: &Preset| automation::performance_source_eligible(*value as i32, power);
+        self.store
+            .persistent
+            .filter(eligible)
+            .map(|value| (value as i32, 4))
+            .or_else(|| {
+                self.temporary
+                    .filter(eligible)
+                    .map(|value| (value as i32, 3))
+            })
+    }
+
     fn apply(&mut self, intent: Intent) -> io::Result<Outcome> {
+        self.apply_override(intent, self.store.profile, || true)
+    }
+
+    fn apply_override(
+        &mut self,
+        intent: Intent,
+        profile: Preset,
+        fresh_power: impl FnMut() -> bool,
+    ) -> io::Result<Outcome> {
         if self.pending.is_some() {
             return Ok(Outcome::blocked(PENDING));
         }
@@ -176,7 +217,7 @@ impl Controller {
             Intent::Persistent(value) => (None, Some(value)),
             Intent::Clear => (None, None),
         };
-        let value = temporary.or(persistent).unwrap_or(self.store.profile);
+        let value = temporary.or(persistent).unwrap_or(profile);
         if !automation::performance_source_eligible(value as i32, FULL_ADAPTER) {
             return Ok(Outcome::blocked(
                 "The preset is unavailable on this power source.",
@@ -189,7 +230,7 @@ impl Controller {
         }
         self.temporary = temporary;
 
-        self.apply_preset(value, || true)
+        self.apply_preset(value, fresh_power)
     }
 
     #[cfg(windows)]
