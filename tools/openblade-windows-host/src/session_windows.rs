@@ -11,9 +11,15 @@ use openblade_platform_windows::{
     display::scripted::Scenario, gpu_apps::scripted::Scenario as GpuScenario,
 };
 use openblade_windows_host::pipe::{Endpoint, Identity, stale_connection};
-use tokio::{net::windows::named_pipe::NamedPipeServer, runtime::Builder, sync::oneshot};
+use tokio::{
+    io::{AsyncRead, AsyncReadExt},
+    net::windows::named_pipe::NamedPipeServer,
+    runtime::Builder,
+    sync::oneshot,
+};
 
 use crate::{
+    session_battery,
     session_brightness::{ScriptedComPolicy, WmiScenario},
     session_display::{
         self, ColorFixture, HdrFixture, RefreshFixture, Rejected, SessionDisplay,
@@ -26,6 +32,8 @@ mod integrated;
 
 const PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Display.Dev.";
 
+const BATTERY_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Battery.Dev.";
+
 const GPU_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Gpu.Dev.";
 
 pub(super) fn entry() -> io::Result<()> {
@@ -36,6 +44,16 @@ pub(super) fn entry() -> io::Result<()> {
     let id = id.to_str().filter(|id| valid_id(id)).ok_or_else(usage)?;
     if mode == "integrated" {
         return run_fixture(integrated::run(id, scenario, brightness));
+    }
+    if mode == "battery-foreground" {
+        if !brightness.is_empty() {
+            return Err(usage());
+        }
+        let scenario = scenario
+            .to_str()
+            .and_then(session_battery::Scenario::parse)
+            .ok_or_else(usage)?;
+        return run_fixture(run_battery(id, scenario));
     }
     if mode == "gpu-foreground" {
         if !brightness.is_empty() {
@@ -139,7 +157,7 @@ fn usage() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
         format!(
-            "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <{gpu_scenarios}> or integrated <id> <new|resume|reconcile> <gpu scenario> <service id> <service pid> <reporter id>"
+            "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <{gpu_scenarios}> or battery-foreground <32 lowercase hex digits> <available|missing|malformed|oversized|failed|stalled> or integrated <id> <new|resume|reconcile> <gpu scenario> <service id> <service pid> <reporter id> [battery-available]"
         ),
     )
 }
@@ -183,6 +201,45 @@ async fn run_display(
         serve_display(pipe, identity, &session, &stopping).await
     })
     .await
+}
+
+async fn run_battery(id: &str, scenario: session_battery::Scenario) -> io::Result<()> {
+    let endpoint = Endpoint::new(format!("{BATTERY_PREFIX}{id}"), 2)?;
+    let _claim = endpoint.claim()?;
+    let listener = endpoint.listen()?;
+    serve_connections(
+        &endpoint,
+        listener,
+        Arc::new(AtomicBool::new(false)),
+        async |pipe, identity| serve_battery(pipe, identity, scenario).await,
+    )
+    .await
+}
+
+async fn serve_battery(
+    pipe: &mut NamedPipeServer,
+    identity: &Identity,
+    scenario: session_battery::Scenario,
+) -> io::Result<()> {
+    // Malformed, disconnected or stalled clients retire only their own connection.
+    let _ = session_battery::serve(pipe, identity, scenario).await;
+    Ok(())
+}
+
+pub(super) async fn read_frame_body(
+    pipe: &mut (impl AsyncRead + Unpin),
+    limit: i32,
+) -> io::Result<Vec<u8>> {
+    let length = pipe.read_i32_le().await?;
+    if !(1..=limit).contains(&length) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid Session request length",
+        ));
+    }
+    let mut body = vec![0; length as usize];
+    pipe.read_exact(&mut body).await?;
+    Ok(body)
 }
 
 async fn run_gpu(id: &str, scenario: GpuScenario) -> io::Result<()> {

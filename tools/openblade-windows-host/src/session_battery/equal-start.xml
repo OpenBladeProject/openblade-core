@@ -1,0 +1,25 @@
+<BatteryReport>
+  <ReportInformation><ScanTime>2026-01-02T12:00:00Z</ScanTime></ReportInformation>
+  <RecentUsage>
+    <UsageEntry Timestamp="2026-01-01T11:00:00Z" Duration="72000000000" ChargeCapacity="1" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="2" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="3" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="4" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="5" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="6" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="7" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="8" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="9" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="10" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="11" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="12" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="13" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="14" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="15" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="16" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="17" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="18" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="19" />
+    <UsageEntry Timestamp="2026-01-01T12:00:00Z" Duration="72000000000" ChargeCapacity="20" />
+  </RecentUsage>
+</BatteryReport>

@@ -1,5 +1,6 @@
 use std::{
     ffi::OsString,
+    future::pending,
     io::{self, Read},
     sync::{
         Arc,
@@ -27,9 +28,9 @@ use windows_sys::Win32::{
 };
 
 use super::{
-    ColorFixture, Endpoint, GPU_PREFIX, GpuScenario, HdrFixture, PREFIX, RefreshFixture, Scenario,
-    StartMode, WmiScenario, announce_ready, display_fixture, listen, serve_display, serve_gpu,
-    usage, valid_id, valid_request_id,
+    BATTERY_PREFIX, ColorFixture, Endpoint, GPU_PREFIX, GpuScenario, HdrFixture, PREFIX,
+    RefreshFixture, Scenario, StartMode, WmiScenario, announce_ready, display_fixture, listen,
+    serve_battery, serve_display, serve_gpu, session_battery, usage, valid_id, valid_request_id,
 };
 
 const SERVICE_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.ReadOnly.Dev.";
@@ -37,8 +38,13 @@ const IO_TIMEOUT: Duration = Duration::from_secs(2);
 const STATUS_ID: &str = "8f338bd0-3933-4f3b-88a0-49ff1d899a17";
 
 pub(super) async fn run(id: &str, mode: &OsString, arguments: &[OsString]) -> io::Result<()> {
-    let [gpu, service, pid, reporter_id] = arguments else {
+    let [gpu, service, pid, reporter_id, extra @ ..] = arguments else {
         return Err(usage());
+    };
+    let battery_requested = match extra {
+        [] => false,
+        [option] if option == "battery-available" => true,
+        _ => return Err(usage()),
     };
     let (mode, color) = match mode.to_str() {
         Some("new") => (StartMode::New, "icc-partial-submission-error"),
@@ -71,7 +77,15 @@ pub(super) async fn run(id: &str, mode: &OsString, arguments: &[OsString]) -> io
 
     let display = Endpoint::new(format!("{PREFIX}{id}"), 2)?;
     let gpu = Endpoint::new(format!("{GPU_PREFIX}{id}"), 2)?;
-    if display.identity.fixture_owner() != gpu.identity.fixture_owner() {
+    let battery = battery_requested
+        .then(|| Endpoint::new(format!("{BATTERY_PREFIX}{id}"), 2))
+        .transpose()?;
+    let owner = display.identity.fixture_owner();
+    if owner != gpu.identity.fixture_owner()
+        || battery
+            .as_ref()
+            .is_some_and(|endpoint| owner != endpoint.identity.fixture_owner())
+    {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "fixture endpoint owners differ",
@@ -79,6 +93,8 @@ pub(super) async fn run(id: &str, mode: &OsString, arguments: &[OsString]) -> io
     }
     let display_claim = display.claim()?;
     let _gpu_claim = gpu.claim()?;
+    let _battery_claim = battery.as_ref().map(Endpoint::claim).transpose()?;
+    let battery_listener = battery.as_ref().map(Endpoint::listen).transpose()?;
     let display_listener = display.listen()?;
     let gpu_listener = gpu.listen()?;
 
@@ -144,6 +160,14 @@ pub(super) async fn run(id: &str, mode: &OsString, arguments: &[OsString]) -> io
             result = listen(&gpu, gpu_listener, async |pipe, identity| {
                 serve_gpu(pipe, identity, gpu_scenario).await
             }) => result,
+            result = async {
+                match (battery.as_ref(), battery_listener) {
+                    (Some(endpoint), Some(listener)) => listen(endpoint, listener, async |pipe, identity| {
+                        serve_battery(pipe, identity, session_battery::Scenario::Available).await
+                    }).await,
+                    _ => pending().await,
+                }
+            } => result,
             result = report(&service, &script, &mut watcher, selection, &path, instance) => result,
         }
     }

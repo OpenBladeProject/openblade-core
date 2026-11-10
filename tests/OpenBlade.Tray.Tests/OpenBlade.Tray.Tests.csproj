@@ -36,6 +36,8 @@
 
   <ItemGroup>
     <Compile Include="..\OpenBlade.Testing\AsyncTest.cs" Link="AsyncTest.cs" />
+    <Compile Include="..\..\src\OpenBlade.Tray\SessionBatteryReportAdapter.cs"
+             Link="SessionBatteryReportAdapter.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\SessionGpuAppAdapter.cs"
              Link="SessionGpuAppAdapter.cs" />
     <Compile Include="..\..\src\OpenBlade.Tray\SessionDisplaySettingsAdapter.cs"

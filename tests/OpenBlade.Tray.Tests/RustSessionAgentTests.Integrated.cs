@@ -30,7 +30,7 @@ public sealed partial class RustSessionAgentTests
             var initial = await WaitAsync(status => status.Message == "Renderer frame in flight.");
             Guid profile = Assert.Single(initial.Profiles.ApplicationProfiles).Id;
 
-            // Both claims and the expected service child must be admitted before readiness.
+            // Endpoint claims and the expected service child must be admitted before readiness.
             await using (var occupied = Host.Start(id, "available", gpu: true))
             {
                 await occupied.WaitForReadyAsync(token);
@@ -38,6 +38,15 @@ public sealed partial class RustSessionAgentTests
                 await refused.AssertRejectedAsync(token);
                 Assert.False(File.Exists(journal));
                 Assert.Equal(SessionGpuOperationStatus.Succeeded, (await gpu.QueryAsync(token)).Status);
+                await occupied.StopAsync(token);
+            }
+
+            await using (var occupied = Host.Start(id, mode: "battery-foreground"))
+            {
+                await occupied.WaitForReadyAsync(token);
+                await using var refused = Start("new", "available", battery: true);
+                await refused.AssertRejectedAsync(token);
+                Assert.False(File.Exists(journal));
                 await occupied.StopAsync(token);
             }
 
@@ -86,12 +95,18 @@ public sealed partial class RustSessionAgentTests
             Assert.Equal(pending, await File.ReadAllTextAsync(journal, token));
             await original.StopAsync(token);
 
-            await using (var resumed = Start("resume", "available"))
+            await using (var resumed = Start("resume", "available", battery: true))
             {
                 await resumed.WaitForReadyAsync(token);
                 var displayQuery = display.GetStateAsync(token);
                 var gpuQuery = gpu.QueryAsync(token);
-                await Task.WhenAll(displayQuery, gpuQuery);
+                var battery = new SessionBatteryReportAdapter(BatteryPipeName(id));
+                Task<WindowsBatteryReport> batteryQuery = battery.ReadAsync(token);
+                await Task.WhenAll(displayQuery, gpuQuery, batteryQuery);
+                WindowsBatteryReport report = await batteryQuery;
+                Assert.Equal(new DateTimeOffset(2026, 1, 2, 12, 0, 0, TimeSpan.Zero), report.GeneratedAtUtc);
+                Assert.Equal(50000, report.Status.FullChargeCapacityMilliwattHours);
+                Assert.Equal(3, report.Intervals.Count);
                 Assert.Equal(FactoryProfile, (await displayQuery).SelectedColorProfileKey);
                 SessionGpuResponse grouped = await gpuQuery;
                 Assert.Equal(SessionGpuOperationStatus.Succeeded, grouped.Status);
@@ -126,9 +141,12 @@ public sealed partial class RustSessionAgentTests
             await service.ExpectLineAsync("STOPPED", token);
             await service.StopAsync(token);
 
-            Host Start(string mode, string gpuScenario, int? servicePid = null) =>
-                Host.Start(id, mode, mode: "integrated",
-                    arguments: [gpuScenario, serviceId, (servicePid ?? service.ProcessId).ToString(CultureInfo.InvariantCulture), Guid.NewGuid().ToString("N")]);
+            Host Start(string mode, string gpuScenario, int? servicePid = null, bool battery = false)
+            {
+                string[] arguments = [gpuScenario, serviceId, (servicePid ?? service.ProcessId).ToString(CultureInfo.InvariantCulture), Guid.NewGuid().ToString("N")];
+                return Host.Start(id, mode, mode: "integrated",
+                    arguments: battery ? [.. arguments, "battery-available"] : arguments);
+            }
 
             async Task<ServiceStatusSnapshot> AdvanceAsync(Func<ServiceStatusSnapshot, bool> predicate)
             {

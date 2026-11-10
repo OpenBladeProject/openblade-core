@@ -51,6 +51,7 @@ windows-sys = { version = "=0.61.2", features = [
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Devices_HumanInterfaceDevice",
     "Win32_Globalization",
+    "Win32_Networking_WindowsWebServices",
     "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
@@ -62,6 +63,7 @@ windows-sys = { version = "=0.61.2", features = [
     "Win32_System_SystemInformation",
     "Win32_System_Services",
     "Win32_System_Threading",
+    "Win32_System_Time",
     "Win32_System_WindowsProgramming",
     "Win32_UI_Shell",
 ] }
