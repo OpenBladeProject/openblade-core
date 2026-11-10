@@ -269,6 +269,19 @@ public sealed partial class SetupBackendCutoverTests
     private static void VerifyRustRole(
         string root, IReadOnlyDictionary<string, string> inventory, string fileName, string expectedHash)
     {
+        RequireRustRoleHash(inventory, fileName, expectedHash);
+
+        using var reader = new PEReader(File.OpenRead(Path.Combine(root, fileName)));
+        Assert.Equal(Machine.Amd64, reader.PEHeaders.CoffHeader.Machine);
+        Assert.True(reader.PEHeaders.IsExe);
+        Assert.False(reader.HasMetadata);
+        Assert.Equal(PEMagic.PE32Plus, reader.PEHeaders.PEHeader?.Magic);
+        Assert.True(reader.PEHeaders.PEHeader?.AddressOfEntryPoint > 0);
+    }
+
+    private static void RequireRustRoleHash(
+        IReadOnlyDictionary<string, string> inventory, string fileName, string expectedHash)
+    {
         if (!inventory.TryGetValue(fileName, out string? actualHash))
         {
             throw new InvalidDataException($"Missing backend role {fileName}.");
@@ -277,13 +290,6 @@ public sealed partial class SetupBackendCutoverTests
         {
             throw new InvalidDataException($"Unexpected SHA-256 for {fileName}.");
         }
-
-        using var reader = new PEReader(File.OpenRead(Path.Combine(root, fileName)));
-        Assert.Equal(Machine.Amd64, reader.PEHeaders.CoffHeader.Machine);
-        Assert.True(reader.PEHeaders.IsExe);
-        Assert.False(reader.HasMetadata);
-        Assert.Equal(PEMagic.PE32Plus, reader.PEHeaders.PEHeader?.Magic);
-        Assert.True(reader.PEHeaders.PEHeader?.AddressOfEntryPoint > 0);
     }
 
     private static void WriteFile(string path, byte[] bytes)

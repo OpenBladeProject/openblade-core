@@ -30,7 +30,7 @@ public sealed partial class SetupBackendCutoverTests
     [LocalLiveRustFixtureTheory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task BundleUpgrade_RequiresBothPrivateRustPeersBeforeCommit(bool refuseAgent)
+    public async Task BundleUpgrade_RequiresSignedFixtureAndBothPrivateRustPeersBeforeCommit(bool refuseAgent)
     {
         using var identity = WindowsIdentity.GetCurrent();
         Assert.False(identity.IsSystem);
@@ -43,19 +43,15 @@ public sealed partial class SetupBackendCutoverTests
         Assert.Equal(Path.Combine(tree.Root, "ProgramFiles", "OpenBlade"), tree.Install);
         RequireUnlinkedPath(tree.Root);
 
-        tree.CreateCompletePayload();
-        foreach (string file in ReadManifest(tree.Payload).Keys)
+        var fixture = CreateSignedFixture(SignedFixtureFault.None);
+        var candidate = await StageSignedFixtureAsync(fixture, tree.Payload);
+        foreach (string file in candidate.Keys)
         {
             tree.WriteInstall(file, Encoding.UTF8.GetBytes($"prior managed {file}"));
         }
         tree.WriteInstall("OpenBlade.Setup.exe", "prior uninstaller"u8.ToArray());
         var prior = ReadManifest(tree.Install);
 
-        string source = Environment.GetEnvironmentVariable(LiveFixtureDirectoryVariable)!;
-        Assert.True(Path.IsPathFullyQualified(source));
-        File.Copy(Path.Combine(source, LiveServiceFixture), Path.Combine(tree.Payload, ServiceFile), overwrite: true);
-        File.Copy(Path.Combine(source, LiveAgentFixture), Path.Combine(tree.Payload, AgentFile), overwrite: true);
-        var candidate = ReadManifest(tree.Payload);
         VerifyLiveRoles(tree.Payload, candidate);
 
         SetupPaths paths = tree.Paths;
