@@ -36,8 +36,18 @@ public sealed class ServiceStartupCoordinator(
                 "Invalid or unsupported battery configuration was preserved in quarantine; ordinary thermal writes are disabled.");
         }
 
-        PersistentOverrideLoadResult persistentOverrides =
-            await overrideStore.LoadAsync(cancellationToken);
+        PersistentOverrideLoadResult persistentOverrides;
+        try
+        {
+            persistentOverrides = await overrideStore.LoadAsync(cancellationToken);
+        }
+        catch (Exception exception) when (overrideStore.HasMachineWriter &&
+            exception is (IOException or UnauthorizedAccessException or ConfigurationQuarantinedException))
+        {
+            logger.LogError(exception,
+                "Machine overrides could not be admitted; service initialization was refused before runtime or background work.");
+            return false;
+        }
         if (persistentOverrides.Disposition == ConfigurationLoadDisposition.Quarantined)
         {
             logger.LogWarning(

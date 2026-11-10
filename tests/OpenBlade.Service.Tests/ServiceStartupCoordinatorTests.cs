@@ -260,6 +260,57 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task InitializeAsync_OverrideContentionAfterBootstrapRefusesStartup()
+    {
+        var writer = new ScratchConfigurationWriter(directory);
+        IDisposable? competingLease = null;
+        int acquisitions = 0;
+        var binding = new MachineConfigurationWriterBinding(directory, (root, token) =>
+        {
+            if (++acquisitions == 2)
+            {
+                competingLease = writer.Acquire(root, token);
+            }
+            return writer.Acquire(root, token);
+        });
+        await File.WriteAllTextAsync(binding.OverridePath, MachineConfigurationWriterTests.LegacyOverride);
+        byte[] before = await File.ReadAllBytesAsync(binding.OverridePath);
+        var runtime = new RecordingRuntime(binding.ProfilePath)
+        {
+            Initialized = () => { using IDisposable lease = writer.Acquire(); },
+        };
+        var logger = new RecordingLogger();
+        string markerPath = Path.Combine(directory, "service-running.json");
+        var coordinator = new ServiceStartupCoordinator(
+            new MachineProfileBootstrapper(new BatteryConfigurationStore(binding)),
+            new PersistentOverrideStore(binding),
+            new ServiceRunMarkerStore(markerPath),
+            runtime,
+            new FixedPowerStateProvider(),
+            logger);
+
+        try
+        {
+            Assert.False(await coordinator.InitializeAsync(CancellationToken.None));
+            Assert.False(coordinator.RuntimeInitialized);
+            Assert.Empty(runtime.Calls);
+            Assert.True(File.Exists(binding.MarkerPath));
+            Assert.False(File.Exists(markerPath));
+            Assert.Equal(before, await File.ReadAllBytesAsync(binding.OverridePath));
+            Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Error
+                && entry.Exception is IOException);
+        }
+        finally
+        {
+            competingLease?.Dispose();
+        }
+
+        Assert.True(await coordinator.InitializeAsync(CancellationToken.None));
+        Assert.Equal(PerformancePreset.Performance, runtime.PersistentOverrides?.Performance);
+        Assert.Equal(4, acquisitions);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))
