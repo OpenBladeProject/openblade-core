@@ -2,6 +2,8 @@
 
 The development host serves synthetic status over a local Windows named pipe. The existing WinUI `ServiceClient` can connect by name through its existing constructor. The tool is a standalone Cargo workspace outside the product's Rust dependency graph and publish inputs. The installed C# service remains the hardware owner.
 
+For the feature-gated native SCM lifecycle and the LocalSystem managed client, use the [Phase 5j disposable Windows VM runbook](windows-rust-phase5j-vm.md) under separate VM authorization.
+
 ## Run the isolated test
 
 Use the pinned Rust toolchain, Windows MSVC tools and the repository's .NET SDK. From the repository root in PowerShell:

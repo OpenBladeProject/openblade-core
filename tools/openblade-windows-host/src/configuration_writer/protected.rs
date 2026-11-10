@@ -129,6 +129,37 @@ impl ProtectedStorage {
     }
 
     pub(super) fn open_existing(&self, name: &str, access: u32) -> io::Result<Option<File>> {
+        self.open_with_policy(name, access, Policy::Record)
+    }
+
+    #[cfg(feature = "vm-scm-fixture")]
+    pub fn open_vm_root(root: &Path) -> io::Result<Self> {
+        let storage = Self::open(root)?;
+        storage.require_ntfs()?;
+        Ok(storage)
+    }
+
+    #[cfg(feature = "vm-scm-fixture")]
+    pub fn open_vm_file(&self, name: &str) -> io::Result<Option<File>> {
+        if name.is_empty()
+            || name.ends_with('.')
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+            || reserved_device(name)
+        {
+            return Err(denied("expected one plain VM fixture filename"));
+        }
+        self.check_root()?;
+        self.open_with_policy(name, FILE_GENERIC_READ, Policy::VmFile)
+    }
+
+    fn open_with_policy(
+        &self,
+        name: &str,
+        access: u32,
+        policy: Policy,
+    ) -> io::Result<Option<File>> {
         let file = match open_relative(
             &self.root,
             OsStr::new(name),
@@ -141,11 +172,11 @@ impl ProtectedStorage {
             Err(error) if missing_leaf(&error) => return Ok(None),
             Err(error) => return Err(error),
         };
-        self.verify_record(&file)?;
+        self.verify_file(&file, policy)?;
         Ok(Some(file))
     }
 
-    fn verify_record(&self, file: &File) -> io::Result<FileIdentity> {
+    fn verify_file(&self, file: &File, policy: Policy) -> io::Result<FileIdentity> {
         let identity = check_regular_file(file)?;
         // SAFETY: file owns a live handle.
         if unsafe { GetFileType(file.as_raw_handle()) } != FILE_TYPE_DISK
@@ -153,7 +184,7 @@ impl ProtectedStorage {
         {
             return Err(denied("configuration record is not on the pinned disk"));
         }
-        verify_security(file, Policy::Record)?;
+        verify_security(file, policy)?;
         Ok(identity)
     }
 
@@ -286,7 +317,7 @@ impl ProtectedStorage {
             FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_WRITE_THROUGH,
             Some(&descriptor),
         )?;
-        self.verify_record(&file)?;
+        self.verify_file(&file, Policy::Record)?;
         Ok(file)
     }
 
@@ -535,6 +566,19 @@ enum Policy {
     Ancestor,
     Root,
     Record,
+    #[cfg(feature = "vm-scm-fixture")]
+    VmFile,
+}
+
+impl Policy {
+    fn setup_ace_flags(self) -> Option<u8> {
+        match self {
+            Self::Root => Some(OBJECT_AND_CONTAINER_INHERIT),
+            #[cfg(feature = "vm-scm-fixture")]
+            Self::VmFile => Some(0),
+            Self::Record | Self::Ancestor => None,
+        }
+    }
 }
 
 fn denied(message: &'static str) -> io::Error {
@@ -613,10 +657,11 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
         return Some(false);
     }
     let owner = sid(section(bytes, 4)?)?;
+    let setup_flags = policy.setup_ace_flags();
     if match policy {
-        Policy::Root => owner != ADMINISTRATORS || control & SE_DACL_PROTECTED == 0,
         Policy::Record => owner != ADMINISTRATORS && owner != SYSTEM,
         Policy::Ancestor => !matches!(owner, ADMINISTRATORS | SYSTEM | TRUSTED_INSTALLER),
+        _ => owner != ADMINISTRATORS || control & SE_DACL_PROTECTED == 0,
     } {
         return Some(false);
     }
@@ -626,10 +671,10 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
     }
     let count = word(acl, 4)?;
     let mut aces = acl.get(8..usize::from(word(acl, 2)?))?;
-    if count == 0 || matches!(policy, Policy::Root) && count != 2 {
+    if count == 0 || setup_flags.is_some() && count != 2 {
         return Some(false);
     }
-    let mut root_principals = 0;
+    let mut setup_principals = 0;
     for _ in 0..count {
         let length = usize::from(word(aces, 2)?);
         let ace = aces.get(..length)?;
@@ -645,17 +690,6 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
             _ => 0,
         };
         match policy {
-            // Same two explicit propagating FullControl grants setup verifies.
-            Policy::Root => {
-                if kind != 0
-                    || flags != OBJECT_AND_CONTAINER_INHERIT
-                    || mask != FILE_ALL_ACCESS
-                    || principal == 0
-                {
-                    return Some(false);
-                }
-                root_principals |= principal;
-            }
             // An ancestor may allow creation of a subdirectory. Direct grants
             // that can replace an existing child, redirect traversal or change
             // security are refused. Inherit-only grants are checked where
@@ -682,10 +716,21 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
                     return Some(false);
                 }
             }
+            // Setup grants FullControl to exactly SYSTEM and Administrators.
+            _ => {
+                if kind != 0
+                    || Some(flags) != setup_flags
+                    || mask != FILE_ALL_ACCESS
+                    || principal == 0
+                {
+                    return Some(false);
+                }
+                setup_principals |= principal;
+            }
         }
         aces = &aces[length..];
     }
-    Some(!matches!(policy, Policy::Root) || root_principals == 3)
+    Some(setup_flags.is_none() || setup_principals == 3)
 }
 
 fn section(bytes: &[u8], field: usize) -> Option<&[u8]> {
@@ -718,3 +763,37 @@ fn dword(bytes: &[u8], offset: usize) -> Option<u32> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, feature = "vm-scm-fixture"))]
+#[test]
+fn vm_file_requires_the_setup_file_descriptor() {
+    use windows_sys::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
+
+    for (sddl, expected) in [
+        ("O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)", true),
+        ("O:SYD:P(A;;FA;;;SY)(A;;FA;;;BA)", false),
+        ("O:BAD:(A;;FA;;;SY)(A;;FA;;;BA)", false),
+        ("O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", false),
+        ("O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;WD)", false),
+    ] {
+        let sddl: Vec<_> = sddl.encode_utf16().chain([0]).collect();
+        let mut descriptor = ptr::null_mut();
+        let mut length = 0;
+        // SAFETY: sddl is NUL-terminated and both outputs are writable.
+        let result = unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl.as_ptr(),
+                SDDL_REVISION_1,
+                &mut descriptor,
+                &mut length,
+            )
+        };
+        assert_ne!(result, 0, "{}", io::Error::last_os_error());
+        let descriptor = LocalDescriptor(descriptor);
+        // SAFETY: Windows allocated length bytes and descriptor owns them.
+        let bytes = unsafe { slice::from_raw_parts(descriptor.0.cast(), length as usize) };
+        assert_eq!(accepts_descriptor(bytes, Policy::VmFile), Some(expected));
+    }
+}

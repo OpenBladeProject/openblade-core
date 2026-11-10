@@ -10,6 +10,9 @@ default-run = "openblade-windows-host"
 # Development-only workspace, outside the product dependency graph.
 [workspace]
 
+[features]
+vm-scm-fixture = []
+
 [[bin]]
 name = "openblade-windows-discovery"
 path = "src/discover.rs"

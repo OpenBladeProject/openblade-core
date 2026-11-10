@@ -2,7 +2,10 @@
 
 use std::{ffi::c_void, future::Future, io, ptr::null_mut, sync::Mutex};
 
-use tokio::{runtime::Builder, sync::oneshot};
+use tokio::{
+    runtime::{Builder, Runtime},
+    sync::oneshot,
+};
 use windows_sys::Win32::{
     Foundation::{ERROR_CALL_NOT_IMPLEMENTED, ERROR_GEN_FAILURE, NO_ERROR},
     System::Services::{
@@ -18,6 +21,9 @@ use super::{Phase, SCM_ID, Session, Status, replay_status, run_prepared, startup
 
 const NAME: &str = "OpenBladeRustReadOnlyDev";
 static CONTROLS: Controls = Controls::new();
+
+#[cfg(feature = "vm-scm-fixture")]
+pub(super) mod vm;
 
 pub(super) struct Controls(Mutex<Option<oneshot::Sender<()>>>);
 
@@ -78,11 +84,18 @@ impl Controls {
 }
 
 pub(super) fn dispatch() -> io::Result<()> {
-    let mut name: Vec<u16> = NAME.encode_utf16().chain([0]).collect();
+    dispatch_named(NAME, service_main)
+}
+
+fn dispatch_named(
+    name: &str,
+    callback: unsafe extern "system" fn(u32, *mut *mut u16),
+) -> io::Result<()> {
+    let mut name: Vec<u16> = name.encode_utf16().chain([0]).collect();
     let table = [
         SERVICE_TABLE_ENTRYW {
             lpServiceName: name.as_mut_ptr(),
-            lpServiceProc: Some(service_main),
+            lpServiceProc: Some(callback),
         },
         SERVICE_TABLE_ENTRYW {
             lpServiceName: null_mut(),
@@ -104,8 +117,24 @@ unsafe extern "system" fn service_main(_argc: u32, _argv: *mut *mut u16) {
 }
 
 fn service() {
+    registered_service(NAME, |runtime, handle, receiver| {
+        let _ = runtime.block_on(run_service(
+            &CONTROLS,
+            receiver,
+            SCM_ID,
+            Session::Active,
+            |shutdown| replay_status(None, shutdown),
+            |status| report(handle, status),
+        ));
+    });
+}
+
+fn registered_service(
+    name: &str,
+    run: impl FnOnce(&Runtime, SERVICE_STATUS_HANDLE, oneshot::Receiver<()>),
+) {
     let receiver = CONTROLS.arm();
-    let name: Vec<u16> = NAME.encode_utf16().chain([0]).collect();
+    let name: Vec<u16> = name.encode_utf16().chain([0]).collect();
     // SAFETY: the service name is NUL-terminated, handler is static and uses no context pointer.
     let handle = unsafe { RegisterServiceCtrlHandlerExW(name.as_ptr(), Some(control), null_mut()) };
     if handle.is_null() {
@@ -114,16 +143,7 @@ fn service() {
     }
 
     match Builder::new_current_thread().enable_all().build() {
-        Ok(runtime) => {
-            let _ = runtime.block_on(run_service(
-                &CONTROLS,
-                receiver,
-                SCM_ID,
-                Session::Active,
-                |shutdown| replay_status(None, shutdown),
-                |status| report(handle, status),
-            ));
-        }
+        Ok(runtime) => run(&runtime, handle, receiver),
         Err(_) => {
             let _ = report(handle, &status_for(Phase::Stopped { failed: true }));
         }
