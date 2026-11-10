@@ -20,6 +20,8 @@ const POWER_PROFILE_PROVENANCE: i32 = 1;
 enum Observation {
     Recovery(Option<FunctionKeyMode>),
     Battery,
+    #[cfg(windows)]
+    CommittedLimit(u8),
 }
 
 type TimedObservation = (u64, Option<Observation>);
@@ -43,6 +45,8 @@ const SCRIPT: [&[TimedObservation]; 3] = [
 enum Effect {
     Ignored,
     ProfileSelected,
+    #[cfg(windows)]
+    ConfigurationCommitted,
     ReadUnavailable(LaptopGetter),
     JournalSettled(LaptopGetter, EntryChange),
 }
@@ -132,18 +136,34 @@ impl Replay {
             return Ok(Effect::Ignored);
         };
 
-        let revision = self.current["revision"]
-            .as_i64()
-            .and_then(|revision| revision.checked_add(1))
-            .ok_or_else(|| io::Error::other("invalid replay status revision"))?;
+        let revision = self.next_revision()?;
         let effect = match observation {
             Observation::Recovery(readback) => self.recover(readback)?,
             Observation::Battery => self.select_battery_profile()?,
+            #[cfg(windows)]
+            Observation::CommittedLimit(percent) => {
+                self.project_charge_limit(percent);
+                Effect::ConfigurationCommitted
+            }
         };
         if effect != Effect::Ignored {
             self.current["revision"] = revision.into();
         }
         Ok(effect)
+    }
+
+    fn next_revision(&self) -> io::Result<i64> {
+        self.current["revision"]
+            .as_i64()
+            .and_then(|revision| revision.checked_add(1))
+            .ok_or_else(|| io::Error::other("invalid replay status revision"))
+    }
+
+    #[cfg(windows)]
+    fn project_charge_limit(&mut self, percent: u8) {
+        self.current["profiles"]["batteryPolicy"]["chargeLimitPercent"] = percent.into();
+        self.current["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"] =
+            percent.into();
     }
 
     fn select_battery_profile(&mut self) -> io::Result<Effect> {
@@ -258,6 +278,63 @@ pub fn start(
         Ok(())
     };
     (status, drive)
+}
+
+#[cfg(windows)]
+pub struct DurableUpdate {
+    pub advance: mpsc::Receiver<()>,
+    pub commit: Box<dyn FnOnce() -> io::Result<u8> + Send>,
+}
+
+#[cfg(windows)]
+pub fn start_durable(
+    baseline: Value,
+    percent: u8,
+    update: Option<DurableUpdate>,
+    mut shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> io::Result<(
+    watch::Receiver<Arc<Value>>,
+    impl Future<Output = io::Result<()>>,
+)> {
+    let mut replay = Replay::new(baseline);
+    replay.step(1, Some(Observation::Recovery(None)))?;
+    replay.project_charge_limit(percent);
+    let (publish, status) = watch::channel(Arc::new(replay.current.clone()));
+    let drive = async move {
+        if let Some(DurableUpdate {
+            mut advance,
+            commit,
+        }) = update
+        {
+            let step = tokio::select! {
+                biased;
+                _ = &mut shutdown => return Ok(()),
+                step = advance.recv() => step,
+            };
+            if step.is_some() {
+                replay.next_revision()?;
+                // Once accepted, join the one commit even if the endpoint
+                // stops. Keep synchronous flushes off the pipe executor.
+                let percent = tokio::task::spawn_blocking(commit)
+                    .await
+                    .map_err(io::Error::other)??;
+                replay.step(2, Some(Observation::CommittedLimit(percent)))?;
+                publish.send_replace(Arc::new(replay.current.clone()));
+            }
+            // Retain the one-slot receiver until shutdown. Any further
+            // steps have no effect, and closing stdin still reaches EOF.
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = &mut shutdown => return Ok(()),
+                    step = advance.recv() => if step.is_none() { break; },
+                }
+            }
+        }
+        let _ = shutdown.await;
+        Ok(())
+    };
+    Ok((status, drive))
 }
 
 #[cfg(test)]

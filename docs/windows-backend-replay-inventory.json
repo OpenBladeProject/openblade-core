@@ -148,7 +148,8 @@
       "files": [
         "profiles.json",
         "battery-preferences.json",
-        "battery-configuration.commit.json"
+        "battery-configuration.commit.json",
+        "battery-configuration.commit.json.recovery-required"
       ],
       "readers": [
         "ProfileStore",

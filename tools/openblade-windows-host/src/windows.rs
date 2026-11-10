@@ -1,3 +1,4 @@
+use crate::battery_runtime::ProfileReplay;
 use std::{
     future::Future,
     io::{self, BufRead, Read, Write},
@@ -12,10 +13,16 @@ use tokio::{
 };
 
 use openblade_windows_host::pipe::{self, stale_connection};
+use windows_sys::Win32::System::Services::SERVICE_RUNNING;
 
+use crate::runtime::DurableUpdate;
 use crate::wire::{self, Session, Status};
+use openblade_windows_host::{configuration_writer::fixture, valid_dev_id};
 
 mod scm;
+
+#[cfg(test)]
+mod reporter_tests;
 
 const PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.ReadOnly.Dev.";
 const SCM_ID: &str = "scm";
@@ -36,137 +43,567 @@ pub(super) fn entry() -> io::Result<()> {
     match args.as_slice() {
         [mode] if mode == "--scm" => scm::dispatch(),
         [mode, id]
+            if mode == "foreground-integrated" || mode == "foreground-integrated-application" =>
+        {
+            let id = foreground_id(id)?;
+            foreground_with_stop(
+                id,
+                Session::Active,
+                true,
+                true,
+                |advance, release, shutdown| {
+                    let mut fixture = fixture::Fixture::create(true)?;
+                    announce_fixture(&mut fixture)?;
+                    let (profiles, writer) = fixture.compose_battery(false)?;
+                    prepare_integrated(
+                        advance,
+                        release,
+                        shutdown,
+                        profiles,
+                        writer,
+                        mode == "foreground-integrated-application",
+                    )
+                },
+            )
+        }
+        [mode, id, root]
+            if mode == "foreground-protected-integrated"
+                || mode == "foreground-protected-integrated-application" =>
+        {
+            let id = foreground_id(id)?;
+            foreground_with_stop(
+                id,
+                Session::Active,
+                true,
+                true,
+                |advance, release, shutdown| {
+                    let (profiles, writer) =
+                        fixture::BatteryProfileStore::open_protected(std::path::Path::new(root))?;
+                    prepare_integrated(
+                        advance,
+                        release,
+                        shutdown,
+                        profiles,
+                        writer,
+                        mode == "foreground-protected-integrated-application",
+                    )
+                },
+            )
+        }
+        [mode, id, root] if mode == "foreground-protected-runtime" => {
+            let id = foreground_id(id)?;
+            foreground(id, Session::Active, true, |advance, shutdown| {
+                prepare_protected(std::path::Path::new(root), advance, shutdown)
+            })
+        }
+        [mode, id] if mode == "foreground-application-context" => {
+            let id = foreground_id(id)?;
+            foreground(id, Session::Active, true, |advance, shutdown| {
+                let advance =
+                    advance.ok_or_else(|| io::Error::other("missing application steps"))?;
+                let (status, drive) = Status::fixture()?.with_application_context(advance);
+                let drive = async move {
+                    tokio::select! {
+                        _ = shutdown => Ok(()),
+                        result = drive => result,
+                    }
+                };
+                Ok((status, Some(drive)))
+            })
+        }
+        [mode, id]
+            if mode == "foreground-battery-profile"
+                || mode == "foreground-battery-profile-interrupt"
+                || mode == "foreground-thermal-profile"
+                || mode == "foreground-thermal-profile-interrupt"
+                || mode == "foreground-full-charge"
+                || mode == "foreground-lighting-off"
+                || mode == "foreground-lighting-off-owned"
+                || mode == "foreground-lighting-off-uncertain-owner"
+                || mode == "foreground-power-profile"
+                || mode == "foreground-power-profile-uncertain" =>
+        {
+            let id = foreground_id(id)?;
+            let mut fixture = fixture::Fixture::create(true)?;
+            announce_fixture(&mut fixture)?;
+            let (profiles, writer) = fixture.compose_battery(matches!(
+                mode.to_str(),
+                Some(
+                    "foreground-battery-profile-interrupt" | "foreground-thermal-profile-interrupt"
+                )
+            ))?;
+            let replay = match mode.to_str() {
+                Some("foreground-thermal-profile" | "foreground-thermal-profile-interrupt") => {
+                    ProfileReplay::Thermal
+                }
+                Some("foreground-power-profile" | "foreground-power-profile-uncertain") => {
+                    ProfileReplay::Power {
+                        lose_response: mode == "foreground-power-profile-uncertain",
+                    }
+                }
+                Some("foreground-full-charge") => ProfileReplay::FullCharge,
+                Some("foreground-lighting-off") => ProfileReplay::LightingOff {
+                    owned: false,
+                    uncertain: false,
+                },
+                Some(
+                    "foreground-lighting-off-owned" | "foreground-lighting-off-uncertain-owner",
+                ) => ProfileReplay::LightingOff {
+                    owned: true,
+                    uncertain: mode == "foreground-lighting-off-uncertain-owner",
+                },
+                _ => ProfileReplay::Battery,
+            };
+            let writer = (!matches!(
+                replay,
+                ProfileReplay::Power { .. }
+                    | ProfileReplay::FullCharge
+                    | ProfileReplay::LightingOff { .. }
+            ))
+            .then_some(writer);
+            foreground_battery_profiles(id, profiles, writer, replay)
+        }
+        [mode, id, root, identity]
+            if mode == "foreground-battery-profile-restart"
+                || mode == "foreground-thermal-profile-restart" =>
+        {
+            let id = foreground_id(id)?;
+            let root = foreground_id(root)?;
+            let identity = identity
+                .to_str()
+                .ok_or_else(|| io::Error::other("invalid root identity"))?;
+            let profiles = fixture::restart_battery_profile(root, identity)?;
+            foreground_battery_profiles(
+                id,
+                profiles,
+                None,
+                if mode == "foreground-thermal-profile-restart" {
+                    ProfileReplay::Thermal
+                } else {
+                    ProfileReplay::Battery
+                },
+            )
+        }
+        [mode, id]
+            if mode == "foreground-durable"
+                || mode == "foreground-durable-interrupt"
+                || mode == "foreground-profile-bootstrap"
+                || mode == "foreground-profile-migrate" =>
+        {
+            let id = foreground_id(id)?;
+            let mut fixture = fixture::Fixture::create(mode == "foreground-profile-migrate")?;
+            announce_fixture(&mut fixture)?;
+            let (percent, accepts_steps) = match mode.to_str() {
+                Some("foreground-profile-bootstrap") => (fixture.bootstrap()?, false),
+                Some("foreground-profile-migrate") => (fixture.migrate()?, false),
+                _ => (fixture.seed()?, true),
+            };
+            let fixture = Arc::new(fixture);
+            let interrupt = mode == "foreground-durable-interrupt";
+            foreground(id, Session::Active, accepts_steps, |advance, shutdown| {
+                let update = advance.map(|advance| {
+                    let fixture = Arc::clone(&fixture);
+                    DurableUpdate {
+                        advance,
+                        commit: Box::new(move || fixture.update(interrupt)),
+                    }
+                });
+                let (status, drive) = Status::fixture()?.with_durable(percent, update, shutdown)?;
+                Ok((status, Some(drive)))
+            })
+        }
+        [mode, id, root, identity] if mode == "foreground-durable-restart" => {
+            let id = foreground_id(id)?;
+            let root = foreground_id(root)?;
+            let identity = identity
+                .to_str()
+                .ok_or_else(|| io::Error::other("invalid root identity"))?;
+            let percent = fixture::restart(root, identity)?;
+            foreground(id, Session::Active, false, |_, shutdown| {
+                let (status, drive) = Status::fixture()?.with_durable(percent, None, shutdown)?;
+                Ok((status, Some(drive)))
+            })
+        }
+        [mode, id]
             if mode == "foreground"
                 || mode == "foreground-background"
-                || mode == "foreground-replay" =>
+                || mode == "foreground-replay"
+                || mode == "foreground-battery-parity"
+                || mode == "foreground-performance-parity"
+                || mode == "foreground-fan-parity" =>
         {
-            let id = id.to_str().filter(|id| valid_id(id)).ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "expected a 32-digit lowercase hex ID",
-                )
-            })?;
+            let id = foreground_id(id)?;
             let session = if mode != "foreground-background" {
                 Session::Active
             } else {
                 Session::Background
             };
-
-            let (mut advance, replay) = if mode == "foreground-replay" {
-                let (sender, receiver) = mpsc::channel(1);
-                (Some(sender), Some(receiver))
+            if matches!(
+                mode.to_str(),
+                Some(
+                    "foreground-battery-parity"
+                        | "foreground-performance-parity"
+                        | "foreground-fan-parity"
+                )
+            ) {
+                foreground(id, session, true, |advance, shutdown| {
+                    let advance =
+                        advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
+                    let status = Status::fixture()?;
+                    type Drive = std::pin::Pin<Box<dyn Future<Output = io::Result<()>>>>;
+                    let (status, drive) = match mode.to_str() {
+                        Some("foreground-performance-parity") => {
+                            let (status, drive) = status.with_performance(advance)?;
+                            (status, Box::pin(drive) as Drive)
+                        }
+                        Some("foreground-fan-parity") => {
+                            let (status, drive) = status.with_fan(advance)?;
+                            (status, Box::pin(drive) as Drive)
+                        }
+                        _ => {
+                            let (status, drive) = status.with_battery(advance)?;
+                            (status, Box::pin(drive) as Drive)
+                        }
+                    };
+                    let drive = async move {
+                        tokio::select! {
+                            _ = shutdown => Ok(()),
+                            result = drive => result,
+                        }
+                    };
+                    Ok((status, Some(drive)))
+                })
             } else {
-                (None, None)
-            };
-            let (stop_tx, stop_rx) = oneshot::channel();
-            let mut stop_tx = Some(stop_tx);
-            let runtime = Builder::new_current_thread().enable_all().build()?;
-            runtime.block_on(run(
-                id,
-                session,
-                replay,
-                |phase| {
-                    if phase == Phase::Running {
-                        // This thread owns stdin. EOF stops replay; one byte stops fixed modes.
-                        std::thread::Builder::new()
-                            .name("development-stop".into())
-                            .spawn({
-                                let stop = stop_tx.take().ok_or_else(|| {
-                                    io::Error::other("foreground stop signal already started")
-                                })?;
-                                let advance = advance.take();
-                                move || {
-                                    let mut input = io::stdin().lock();
-                                    if let Some(advance) = advance {
-                                        let mut byte = [0];
-                                        while input.read_exact(&mut byte).is_ok() {
-                                            if byte[0] == b'n' && advance.blocking_send(()).is_err()
-                                            {
-                                                break;
-                                            }
-                                        }
-                                    } else {
-                                        let _ = input.fill_buf();
-                                    }
-                                    let _ = stop.send(());
-                                }
-                            })?;
-                        let mut output = io::stdout().lock();
-                        writeln!(output, "READY")?;
-                        output.flush()?;
-                    }
-                    Ok(())
-                },
-                async {
-                    let _ = stop_rx.await;
-                },
-            ))
+                foreground(id, session, mode == "foreground-replay", replay_status)
+            }
         }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "expected foreground <hex-id>, foreground-background <hex-id>, foreground-replay <hex-id>, or --scm",
+            "expected a development foreground mode with its hex ID(s), or --scm",
         )),
     }
 }
 
-fn valid_id(id: &str) -> bool {
-    id.len() == 32
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+fn announce_fixture(fixture: &mut fixture::Fixture) -> io::Result<()> {
+    let (root, identity) = fixture.restart_key()?;
+    let mut output = io::stdout().lock();
+    writeln!(output, "ROOT {root} {identity}")?;
+    output.flush()?;
+    fixture.hand_off_cleanup();
+    Ok(())
 }
 
+fn foreground_battery_profiles(
+    id: &str,
+    profiles: serde_json::Value,
+    writer: Option<fixture::BatteryProfileStore>,
+    replay: ProfileReplay,
+) -> io::Result<()> {
+    foreground(id, Session::Active, true, |advance, shutdown| {
+        prepare_battery_profiles(advance, shutdown, profiles, writer, replay)
+    })
+}
+
+fn prepare_protected(
+    root: &std::path::Path,
+    advance: Option<mpsc::Receiver<()>>,
+    shutdown: oneshot::Receiver<()>,
+) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
+    let (profiles, writer) = fixture::BatteryProfileStore::open_protected(root)?;
+    prepare_battery_profiles(
+        advance,
+        shutdown,
+        profiles,
+        Some(writer),
+        ProfileReplay::Thermal,
+    )
+}
+
+fn prepare_battery_profiles(
+    advance: Option<mpsc::Receiver<()>>,
+    shutdown: oneshot::Receiver<()>,
+    profiles: serde_json::Value,
+    writer: Option<fixture::BatteryProfileStore>,
+    replay: ProfileReplay,
+) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
+    let advance = advance.ok_or_else(|| io::Error::other("missing battery steps"))?;
+    let (status, drive) = Status::fixture()?
+        .with_battery_profiles(advance, profiles, writer, replay, shutdown, None)?;
+    Ok((status, Some(drive)))
+}
+
+fn prepare_integrated(
+    advance: Option<mpsc::Receiver<()>>,
+    release: Option<oneshot::Receiver<()>>,
+    shutdown: oneshot::Receiver<()>,
+    profiles: serde_json::Value,
+    writer: fixture::BatteryProfileStore,
+    application: bool,
+) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
+    let advance = advance.ok_or_else(|| io::Error::other("missing power steps"))?;
+    let (status, drive) = Status::fixture()?.with_battery_profiles(
+        advance,
+        profiles,
+        Some(writer),
+        ProfileReplay::Integrated { application },
+        shutdown,
+        release,
+    )?;
+    Ok((status, Some(drive)))
+}
+
+fn foreground_id(id: &std::ffi::OsStr) -> io::Result<&str> {
+    id.to_str().filter(|id| valid_dev_id(id)).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected a 32-digit lowercase hex ID",
+        )
+    })
+}
+
+fn foreground<F: Future<Output = io::Result<()>>>(
+    id: &str,
+    session: Session,
+    accept_steps: bool,
+    prepare: impl FnOnce(
+        Option<mpsc::Receiver<()>>,
+        oneshot::Receiver<()>,
+    ) -> io::Result<(Status, Option<F>)>,
+) -> io::Result<()> {
+    foreground_with_stop(id, session, accept_steps, false, |advance, _, shutdown| {
+        prepare(advance, shutdown)
+    })
+}
+
+fn foreground_with_stop<F: Future<Output = io::Result<()>>>(
+    id: &str,
+    session: Session,
+    accept_steps: bool,
+    controlled_stop: bool,
+    prepare: impl FnOnce(
+        Option<mpsc::Receiver<()>>,
+        Option<oneshot::Receiver<()>>,
+        oneshot::Receiver<()>,
+    ) -> io::Result<(Status, Option<F>)>,
+) -> io::Result<()> {
+    let (mut advance, replay) = if accept_steps {
+        // All seven ordered power steps fit without delaying STOP or the
+        // separate renderer port acknowledgement.
+        let (sender, receiver) = mpsc::channel(if controlled_stop { 7 } else { 1 });
+        (Some(sender), Some(receiver))
+    } else {
+        (None, None)
+    };
+    let (mut release, wait_release) = if controlled_stop {
+        let (release, wait_release) = oneshot::channel();
+        (Some(release), Some(wait_release))
+    } else {
+        (None, None)
+    };
+    let controls = Arc::new(scm::Controls::new());
+    let stop = controls.arm();
+    let runtime = Builder::new_current_thread().enable_all().build()?;
+    runtime.block_on(scm::run_service(
+        &controls,
+        stop,
+        id,
+        session,
+        |shutdown| prepare(replay, wait_release, shutdown),
+        |status| {
+            if status.dwCurrentState == SERVICE_RUNNING {
+                // This thread owns stdin. EOF stops replay; one byte stops fixed modes.
+                std::thread::Builder::new()
+                    .name("development-stop".into())
+                    .spawn({
+                        let controls = Arc::clone(&controls);
+                        let advance = advance.take();
+                        let mut release = release.take();
+                        move || {
+                            let mut input = io::stdin().lock();
+                            if let Some(advance) = advance.as_ref() {
+                                let mut byte = [0];
+                                while input.read_exact(&mut byte).is_ok() {
+                                    match byte[0] {
+                                        b'n' if controlled_stop => {
+                                            if advance.try_send(()).is_err() {
+                                                eprintln!(
+                                                    "Invalid power step for the integrated fixture."
+                                                );
+                                                break;
+                                            }
+                                        }
+                                        b'r' if controlled_stop => {
+                                            if let Some(release) = release.take() {
+                                                let _ = release.send(());
+                                            }
+                                        }
+                                        b'n' if advance.blocking_send(()).is_err() => break,
+                                        b's' if controlled_stop => controls.request_stop(),
+                                        _ => {}
+                                    }
+                                }
+                            } else {
+                                let _ = input.fill_buf();
+                            }
+                            controls.request_stop();
+                        }
+                    })?;
+                let mut output = io::stdout().lock();
+                writeln!(output, "READY")?;
+                output.flush()?;
+            } else if controlled_stop {
+                use windows_sys::Win32::System::Services::{
+                    SERVICE_START_PENDING, SERVICE_STOP_PENDING, SERVICE_STOPPED,
+                };
+                let phase = match status.dwCurrentState {
+                    SERVICE_START_PENDING => "START_PENDING",
+                    SERVICE_STOP_PENDING => "STOP_PENDING",
+                    SERVICE_STOPPED => "STOPPED",
+                    _ => return Ok(()),
+                };
+                let mut output = io::stdout().lock();
+                writeln!(output, "{phase}")?;
+                output.flush()?;
+            }
+            Ok(())
+        },
+    ))
+}
+
+#[cfg(test)]
 async fn run(
     id: &str,
     session: Session,
     replay: Option<mpsc::Receiver<()>>,
+    report: impl FnMut(Phase) -> io::Result<()>,
+    stop: impl Future<Output = ()>,
+) -> io::Result<()> {
+    run_prepared(
+        id,
+        session,
+        |shutdown| replay_status(replay, shutdown),
+        report,
+        stop,
+    )
+    .await
+}
+
+fn replay_status(
+    replay: Option<mpsc::Receiver<()>>,
+    shutdown: oneshot::Receiver<()>,
+) -> io::Result<(Status, Option<impl Future<Output = io::Result<()>>>)> {
+    let status = Status::fixture()?;
+    Ok(if let Some(replay) = replay {
+        let (status, drive) = status.with_replay(replay);
+        let drive = async move {
+            tokio::select! {
+                _ = shutdown => Ok(()),
+                result = drive => result,
+            }
+        };
+        (status, Some(drive))
+    } else {
+        (status, None)
+    })
+}
+
+async fn run_prepared<F: Future<Output = io::Result<()>>>(
+    id: &str,
+    session: Session,
+    prepare: impl FnOnce(oneshot::Receiver<()>) -> io::Result<(Status, Option<F>)>,
     mut report: impl FnMut(Phase) -> io::Result<()>,
     stop: impl Future<Output = ()>,
 ) -> io::Result<()> {
     let result = async {
         report(Phase::Starting)?;
-        let status = Status::fixture()?;
-        let (status, drive) = if let Some(replay) = replay {
-            let (status, drive) = status.with_replay(replay);
-            (status, Some(drive))
-        } else {
-            (status, None)
-        };
+        tokio::pin!(stop);
+        check_starting(stop.as_mut()).await?;
+        let (shutdown, retiring) = oneshot::channel();
+        let (status, drive) = prepare(retiring)?;
+        let status = Arc::new(status);
+        check_starting(stop.as_mut()).await?;
         let endpoint = pipe::Endpoint::new(format!("{PREFIX}{id}"), PIPE_INSTANCES)?;
         let claim = endpoint.claim()?;
         let listener = endpoint.listen()?;
         report(Phase::Running)?;
 
         let mut clients = JoinSet::new();
-        let serve = accept(
-            listener,
-            &endpoint,
-            session,
-            Arc::new(status),
-            &mut clients,
-            stop,
-        );
-        let result = tokio::select! {
-            biased;
-            result = serve => result,
-            result = async {
-                if let Some(drive) = drive {
-                    drive.await?;
-                }
-                std::future::pending().await
-            } => result,
+        let drive = async {
+            match drive {
+                Some(drive) => drive.await,
+                None => Ok(()),
+            }
+        };
+        tokio::pin!(drive);
+        let (result, drive_pending) = {
+            let serve = accept(
+                listener,
+                &endpoint,
+                session,
+                Arc::clone(&status),
+                &mut clients,
+                stop,
+            );
+            tokio::pin!(serve);
+            tokio::select! {
+                biased;
+                result = &mut serve => (result, true),
+                result = &mut drive => (match result {
+                    Ok(()) => serve.await,
+                    Err(error) => Err(error),
+                }, false),
+            }
         };
         let stopping = report(Phase::Stopping);
+        let _ = shutdown.send(());
         clients.abort_all();
         while clients.join_next().await.is_some() {}
+        let driven = if drive_pending { drive.await } else { Ok(()) };
+        let writer = status.take_profile_writer().await;
+        // The listener and clients are gone. Keep the name reserved until
+        // a replacement can acquire the released writer lease.
+        drop(writer);
         drop(claim);
-        result.and(stopping)
+        result.and(stopping).and(driven)
     }
     .await;
+    let result = match result {
+        Err(error)
+            if error
+                .get_ref()
+                .is_some_and(|cause| cause.is::<StartupStopped>()) =>
+        {
+            Ok(())
+        }
+        result => result,
+    };
     let stopped = report(Phase::Stopped {
         failed: result.is_err(),
     });
     result.and(stopped)
+}
+
+async fn check_starting(stop: std::pin::Pin<&mut impl Future<Output = ()>>) -> io::Result<()> {
+    tokio::select! {
+        biased;
+        () = stop => Err(startup_stopped()),
+        () = std::future::ready(()) => Ok(()),
+    }
+}
+
+#[derive(Debug)]
+struct StartupStopped;
+
+impl std::fmt::Display for StartupStopped {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("development host startup stopped")
+    }
+}
+
+impl std::error::Error for StartupStopped {}
+
+fn startup_stopped() -> io::Error {
+    io::Error::new(io::ErrorKind::Interrupted, StartupStopped)
 }
 
 async fn accept(
@@ -237,7 +674,7 @@ mod tests {
 
     use super::*;
 
-    fn test_id() -> String {
+    pub(super) fn test_id() -> String {
         let time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -251,13 +688,13 @@ mod tests {
         )
     }
 
-    fn runtime() -> tokio::runtime::Runtime {
+    pub(super) fn runtime() -> tokio::runtime::Runtime {
         Builder::new_current_thread().enable_all().build().unwrap()
     }
 
     #[test]
     fn foreground_names_are_confined_to_the_development_namespace() {
-        assert!(valid_id("00000000000000000000000000000000"));
+        assert!(valid_dev_id("00000000000000000000000000000000"));
         for invalid in [
             "scm",
             "OpenBlade.Service.v2",
@@ -265,7 +702,7 @@ mod tests {
             "0000000000000000000000000000000A",
             "0000000000000000000000000000000\\",
         ] {
-            assert!(!valid_id(invalid));
+            assert!(!valid_dev_id(invalid));
         }
     }
 
@@ -474,7 +911,7 @@ mod tests {
         });
     }
 
-    async fn open_pipe(path: &str) -> tokio::net::windows::named_pipe::NamedPipeClient {
+    pub(super) async fn open_pipe(path: &str) -> tokio::net::windows::named_pipe::NamedPipeClient {
         loop {
             match ClientOptions::new().open(path) {
                 Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
@@ -485,7 +922,7 @@ mod tests {
         }
     }
 
-    async fn read_status(path: &str) {
+    pub(super) async fn read_status(path: &str) {
         let mut pipe = open_pipe(path).await;
         let request = br#"{"operation":"getStatus","version":79,"requestId":"11111111-2222-4333-8444-555555555555"}"#;
         pipe.write_all(&(request.len() as i32).to_le_bytes())
@@ -495,7 +932,7 @@ mod tests {
         assert!((1..=65_536).contains(&pipe.read_i32_le().await.unwrap()));
     }
 
-    fn assert_closed(result: io::Result<usize>) {
+    pub(super) fn assert_closed(result: io::Result<usize>) {
         match result {
             Ok(0) => {}
             Err(error) if stale_connection(&error) => {}
