@@ -114,39 +114,46 @@ public sealed class NamedPipeControlServerTests
         }
     }
 
-    [Fact]
-    public async Task Protocol51Mutation_IsRejectedBeforeHandler()
+    [Theory]
+    [MemberData(nameof(WindowsReplayData.Cases), "compatibilityEdge", MemberType = typeof(WindowsReplayData))]
+    public async Task WindowsReplay_Protocol51OneShotUsesTheProductionPipeEdge(string id)
     {
+        using JsonDocument fixture = WindowsReplayData.Open();
+        JsonElement vector = WindowsReplayData.Find(fixture, "compatibilityEdge", id);
+        JsonElement expected = vector.GetProperty("expected");
+        JsonElement input = vector.GetProperty("input");
+        byte[] payload = Encoding.UTF8.GetBytes(input.GetRawText());
+        byte[] prefix = new byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(prefix, payload.Length);
+        using var connection = new MemoryStream();
+        connection.Write(prefix);
+        connection.Write(payload);
+        long responseStart = connection.Position;
+        connection.Position = 0;
+
         TestServer context = CreateServer();
-        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
-        (Stream serverConnection, Stream client) =
-            await CreateDuplexPairAsync(timeout.Token);
-        await using (serverConnection)
-        await using (client)
+        await context.Server.ServeConnectionAsync(connection, CancellationToken.None);
+        connection.Position = responseStart;
+        JsonObject response = await ReadJsonFrameAsync(connection, CancellationToken.None);
+
+        Assert.Equal(input.GetProperty("version").GetInt32(), response["version"]!.GetValue<int>());
+        Assert.Equal(input.GetProperty("requestId").GetGuid(), response["requestId"]!.GetValue<Guid>());
+        Assert.Equal(expected.GetProperty("success").GetBoolean(), response["success"]!.GetValue<bool>());
+        if (expected.GetProperty("success").GetBoolean())
         {
-            Task serverTask = context.Server.ServeConnectionAsync(
-                serverConnection,
-                timeout.Token);
-            Guid requestId = Guid.NewGuid();
-            await WriteProtocol51RequestAsync(
-                client,
-                "setFullChargeOverride",
-                requestId,
-                timeout.Token,
-                "\"enabled\":true");
-
-            JsonObject response = await ReadJsonFrameAsync(client, timeout.Token);
-            await serverTask;
-
-            Assert.Equal(51, response["version"]!.GetValue<int>());
-            Assert.False(response["success"]!.GetValue<bool>());
-            Assert.Contains(
-                "Update or repair",
-                response["error"]!.GetValue<string>(),
-                StringComparison.Ordinal);
-            Assert.Equal(0, context.Runtime.FullChargeOverrideCalls);
-            Assert.Equal(0, context.Runtime.ProtocolCompatibilityClients);
+            JsonObject status = Assert.IsType<JsonObject>(response["status"]);
+            Assert.Equal(expected.GetProperty("writesBlocked").GetBoolean(), status["writesBlocked"]!.GetValue<bool>());
+            Assert.Null(status["thermalConvergence"]);
         }
+        else
+        {
+            Assert.Contains("read-only", response["error"]!.GetValue<string>(), StringComparison.Ordinal);
+            Assert.Null(response["result"]);
+        }
+
+        Assert.Equal(0, context.Runtime.FullChargeOverrideCalls);
+        Assert.Equal(0, context.Runtime.ActivationCalls);
+        Assert.Equal(0, context.Runtime.ProtocolCompatibilityClients);
     }
 
     [Fact]

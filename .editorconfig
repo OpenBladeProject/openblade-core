@@ -74,3 +74,6 @@ end_of_line = lf
 
 [tools/openblade-discovery/**]
 end_of_line = lf
+
+[tools/openblade-windows-host/**]
+end_of_line = lf
