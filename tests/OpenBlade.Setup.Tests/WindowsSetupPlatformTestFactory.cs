@@ -84,11 +84,16 @@ internal sealed class InMemorySignInTaskScheduler : ISignInTaskScheduler
 {
     private readonly Dictionary<string, SignInTaskState> states = [];
 
+    public Action<SignInTaskDefinition>? BeforeRegister { get; set; }
+
     public SignInTaskState GetState(string taskName) =>
         states.TryGetValue(taskName, out SignInTaskState state) ? state : SignInTaskState.Missing;
 
-    public void Register(SignInTaskDefinition definition) =>
+    public void Register(SignInTaskDefinition definition)
+    {
+        BeforeRegister?.Invoke(definition);
         states[definition.TaskName] = SignInTaskState.Enabled;
+    }
 
     public void Delete(string taskName) => states.Remove(taskName);
 }

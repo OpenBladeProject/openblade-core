@@ -1,3 +1,5 @@
+using System.Reflection.PortableExecutable;
+using System.Text;
 using OpenBlade.Contracts;
 using OpenBlade.Setup;
 using static OpenBlade.Setup.Tests.SetupPayloadTransactionTests;
@@ -9,13 +11,58 @@ public sealed class SetupBackendCutoverTests
     private const string ServiceFile = "OpenBlade.Service.exe";
     private const string AgentFile = "OpenBlade.SessionAgent.exe";
 
+    internal const string FixtureDirectoryVariable = "OPENBLADE_PHASE_7B_FIXTURES";
+
+    // These pins identify the locally verified build outputs. The caller supplies
+    // only a directory, and the payload's own inventory cannot authorize a role.
+    // Phase 5j, 87c3eead825f52f59554fadc7eeb80696fae493a.
+    private const string ServiceFixture = "openblade-windows-scm-vm.exe";
+    private const string ServiceSha256 = "0EAACBAAF40FAF1AD027614D11D1A0AEF34147B2EF36CB513DA56E228B68C414";
+    // Phase 6o, 7e4781de5144bcc72a16dd3d195057a5db878c8a.
+    private const string AgentFixture = "openblade-rust-session-agent.exe";
+    private const string AgentSha256 = "C55CFB6C34B10751D97113F422A23E35070490E2558276E2E7AB3A1A7074403B";
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task BundleUpgrade_RequiresCompatibleStatusAfterReplacingBothBackendArtifacts(bool compatible)
+    public Task BundleUpgrade_RequiresCompatibleStatusAfterReplacingBothBackendArtifacts(bool compatible) =>
+        RehearseBundleUpgradeAsync(compatible, null);
+
+    [LocalRustFixtureTheory]
+    [InlineData(RustOutcome.Ready)]
+    [InlineData(RustOutcome.ServiceNotReady)]
+    [InlineData(RustOutcome.AgentNotReady)]
+    [InlineData(RustOutcome.WrongAgentRole)]
+    [InlineData(RustOutcome.MissingAgentRole)]
+    public Task BundleUpgrade_RehearsesPinnedRustBackends(RustOutcome outcome) =>
+        RehearseBundleUpgradeAsync(outcome != RustOutcome.ServiceNotReady, outcome);
+
+    public enum RustOutcome
+    {
+        Ready,
+        ServiceNotReady,
+        AgentNotReady,
+        WrongAgentRole,
+        MissingAgentRole,
+    }
+
+    private static async Task RehearseBundleUpgradeAsync(bool compatible, RustOutcome? rustOutcome)
     {
         using var tree = new TestTree();
         tree.CreateCompletePayload();
+        if (rustOutcome.HasValue)
+        {
+            // Keep a full prior managed-shaped tree with distinct sidecar bytes,
+            // so rollback checks more than the two replaced executables.
+            foreach (string file in ReadManifest(tree.Payload).Keys)
+            {
+                tree.WriteInstall(file, Encoding.UTF8.GetBytes($"prior managed {file}"));
+            }
+
+            string fixtureDirectory = Environment.GetEnvironmentVariable(FixtureDirectoryVariable)!;
+            File.Copy(Path.Combine(fixtureDirectory, ServiceFixture), Path.Combine(tree.Payload, ServiceFile), overwrite: true);
+            File.Copy(Path.Combine(fixtureDirectory, AgentFixture), Path.Combine(tree.Payload, AgentFile), overwrite: true);
+        }
         tree.WriteInstall(ServiceFile, "prior service"u8.ToArray());
         tree.WriteInstall(AgentFile, "prior agent"u8.ToArray());
         tree.WriteInstall("OpenBlade.Setup.exe", "prior uninstaller"u8.ToArray());
@@ -23,6 +70,10 @@ public sealed class SetupBackendCutoverTests
         var candidatePayload = ReadManifest(tree.Payload);
         Assert.NotEqual(priorPayload[ServiceFile], candidatePayload[ServiceFile]);
         Assert.NotEqual(priorPayload[AgentFile], candidatePayload[AgentFile]);
+        if (rustOutcome.HasValue)
+        {
+            VerifyRustRoles(tree.Payload, candidatePayload);
+        }
 
         SetupPaths paths = tree.Paths;
         WriteFile(Path.Combine(paths.MachineDataDirectory, "profiles.json"), "saved profiles\r\n"u8.ToArray());
@@ -78,6 +129,63 @@ public sealed class SetupBackendCutoverTests
             return connection;
         }, () => request);
 
+        bool agentReadinessObserved = false;
+        bool agentReady = false;
+        SortedDictionary<string, string>? stagedInventory = null;
+        var stoppedCandidate = candidatePayload;
+        if (rustOutcome.HasValue)
+        {
+            windows.InspectStagedPayload = directory =>
+            {
+                Assert.Equal(tree.ProgramFiles, Path.GetDirectoryName(directory));
+                Assert.NotEqual(tree.Install, directory);
+                Assert.Empty(windows.StoppedPayloads);
+                Assert.Equal(priorPayload, ReadManifest(tree.Install));
+                stagedInventory = ReadManifest(directory);
+                VerifyRustRoles(directory, stagedInventory);
+                Assert.Equal(candidatePayload, stagedInventory);
+            };
+            tasks.BeforeRegister = definition =>
+            {
+                if (definition.TaskName != SignInTaskNames.SessionAgent)
+                {
+                    return;
+                }
+
+                // This hook simulates readiness after Setup's typed service probe
+                // returned successfully and before candidate ownership or commit.
+                Assert.False(agentReadinessObserved);
+                agentReadinessObserved = true;
+                Assert.Single(observedRequests);
+                Assert.Equal(OfflineWindows.PriorOwner, windows.Ownership);
+                Assert.Equal(stagedInventory, windows.StartedPayload);
+                Assert.Equal(candidatePayload, ReadManifest(tree.Install));
+                Assert.Equal(agentPath, definition.ExecutablePath);
+                Assert.Equal(tree.Install, definition.WorkingDirectory);
+                Assert.DoesNotContain(progress.Events, entry => entry.Code == SetupProgressCode.CommitFiles);
+
+                // Inject post-swap damage only in the test tree, with the backup
+                // still present, to exercise rollback after either role failure.
+                if (rustOutcome == RustOutcome.WrongAgentRole)
+                {
+                    File.Copy(Path.Combine(tree.Install, ServiceFile), agentPath, overwrite: true);
+                }
+                else if (rustOutcome == RustOutcome.MissingAgentRole)
+                {
+                    File.Delete(agentPath);
+                }
+
+                stoppedCandidate = ReadManifest(tree.Install);
+                VerifyRustRoles(tree.Install, stoppedCandidate);
+                if (rustOutcome == RustOutcome.AgentNotReady)
+                {
+                    throw new InvalidDataException("Simulated Session Agent readiness failed.");
+                }
+
+                agentReady = true;
+            };
+        }
+
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             serviceControl: windows, shortcutWriter: windows, healthProbe: probe, processOperations: windows,
             paths: paths, payloadDirectory: tree.Payload, uninstallRegistration: windows,
@@ -86,7 +194,8 @@ public sealed class SetupBackendCutoverTests
             currentUserSid: "S-1-5-21-1-2-3-1001", pawnIoPrerequisite: windows);
         var runner = new SetupCommandRunner(platform, progressReporter: progress);
         string[] command = ["install", "--bundle-managed", "--bundle-owner-id", "01234567-89ab-cdef-0123-456789abcdef"];
-        if (compatible)
+        bool succeeds = compatible && (rustOutcome is null or RustOutcome.Ready);
+        if (succeeds)
         {
             Assert.Equal(0, await runner.RunAsync(command, CancellationToken.None));
             Assert.Single(observedRequests);
@@ -100,10 +209,25 @@ public sealed class SetupBackendCutoverTests
         }
         else
         {
-            var failure = await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(
-                () => runner.RunAsync(command, CancellationToken.None));
-            Assert.Equal(OpenBladeIpc.ProtocolVersion, failure.ExpectedVersion);
-            Assert.Equal(OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion, failure.ActualVersion);
+            if (!compatible)
+            {
+                var failure = await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(
+                    () => runner.RunAsync(command, CancellationToken.None));
+                Assert.Equal(OpenBladeIpc.ProtocolVersion, failure.ExpectedVersion);
+                Assert.Equal(OpenBladeIpc.ReadOnlyCompatibilityProtocolVersion, failure.ActualVersion);
+            }
+            else
+            {
+                var failure = await Assert.ThrowsAsync<InvalidDataException>(
+                    () => runner.RunAsync(command, CancellationToken.None));
+                Assert.Equal(rustOutcome switch
+                {
+                    RustOutcome.WrongAgentRole => $"Unexpected SHA-256 for {AgentFile}.",
+                    RustOutcome.MissingAgentRole => $"Missing backend role {AgentFile}.",
+                    RustOutcome.AgentNotReady => "Simulated Session Agent readiness failed.",
+                    _ => throw new InvalidOperationException("Unexpected rehearsal outcome."),
+                }, failure.Message);
+            }
             Assert.Equal(2, observedRequests.Count);
             Assert.Equal(priorPayload, ReadManifest(tree.Install));
             Assert.Equal(OfflineWindows.PriorOwner, windows.Ownership);
@@ -112,14 +236,20 @@ public sealed class SetupBackendCutoverTests
             Assert.Equal(agentPath, File.ReadAllText(paths.SessionAgentStartupFile));
             Assert.Equal(trayPath, File.ReadAllText(paths.StartupFile));
             Assert.DoesNotContain(progress.Events, entry => entry.Code == SetupProgressCode.CommitFiles);
-            Assert.Equal(candidatePayload, windows.StoppedPayloads[1]);
+            Assert.Equal(stoppedCandidate, windows.StoppedPayloads[1]);
         }
 
         foreach (var connection in observedRequests)
         {
             Assert.Equal(request, await connection.ReadWrittenRequestAsync(CancellationToken.None));
         }
-        Assert.Equal(compatible ? 1 : 2, windows.StoppedPayloads.Count);
+        Assert.Equal(succeeds ? 1 : 2, windows.StoppedPayloads.Count);
+        if (rustOutcome.HasValue)
+        {
+            Assert.Equal(candidatePayload, stagedInventory);
+            Assert.Equal(compatible, agentReadinessObserved);
+            Assert.Equal(succeeds, agentReady);
+        }
         Assert.Equal(priorPayload, windows.StoppedPayloads[0]);
         Assert.Equal(SetupServiceState.Running, windows.ServiceState);
         Assert.Equal(trayPath, File.ReadAllText(paths.StartMenuFile));
@@ -128,6 +258,32 @@ public sealed class SetupBackendCutoverTests
         Assert.Equal(machineData, ReadManifest(paths.MachineDataDirectory));
         Assert.Equal(userData, ReadManifest(paths.UserDataDirectory));
         Assert.Equal(candidatePayload, ReadManifest(tree.Payload));
+    }
+
+    private static void VerifyRustRoles(string root, IReadOnlyDictionary<string, string> inventory)
+    {
+        VerifyRustRole(root, inventory, ServiceFile, ServiceSha256);
+        VerifyRustRole(root, inventory, AgentFile, AgentSha256);
+    }
+
+    private static void VerifyRustRole(
+        string root, IReadOnlyDictionary<string, string> inventory, string fileName, string expectedHash)
+    {
+        if (!inventory.TryGetValue(fileName, out string? actualHash))
+        {
+            throw new InvalidDataException($"Missing backend role {fileName}.");
+        }
+        if (!string.Equals(expectedHash, actualHash, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException($"Unexpected SHA-256 for {fileName}.");
+        }
+
+        using var reader = new PEReader(File.OpenRead(Path.Combine(root, fileName)));
+        Assert.Equal(Machine.Amd64, reader.PEHeaders.CoffHeader.Machine);
+        Assert.True(reader.PEHeaders.IsExe);
+        Assert.False(reader.HasMetadata);
+        Assert.Equal(PEMagic.PE32Plus, reader.PEHeaders.PEHeader?.Magic);
+        Assert.True(reader.PEHeaders.PEHeader?.AddressOfEntryPoint > 0);
     }
 
     private static void WriteFile(string path, byte[] bytes)
@@ -146,6 +302,7 @@ public sealed class SetupBackendCutoverTests
         public static readonly BundleOwnershipIdentity CandidateOwner = new("WiX Burn", "0.2.0", "candidate");
         public BundleOwnershipIdentity? Ownership { get; private set; } = PriorOwner;
         public SetupServiceState ServiceState { get; private set; } = SetupServiceState.Running;
+        public Action<string>? InspectStagedPayload { get; set; }
         public SortedDictionary<string, string>? StartedPayload { get; private set; }
         public List<SortedDictionary<string, string>> StoppedPayloads { get; } = [];
 
@@ -208,7 +365,21 @@ public sealed class SetupBackendCutoverTests
             Task.CompletedTask;
         public Task WriteVerifiedAsync(InstalledUninstallerWriteRequest request, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
-        public Task<bool> EnsureAsync(string stagedPayloadDirectory, CancellationToken cancellationToken) =>
-            Task.FromResult(false);
+        public Task<bool> EnsureAsync(string stagedPayloadDirectory, CancellationToken cancellationToken)
+        {
+            InspectStagedPayload?.Invoke(stagedPayloadDirectory);
+            return Task.FromResult(false);
+        }
+    }
+}
+
+internal sealed class LocalRustFixtureTheoryAttribute : TheoryAttribute
+{
+    public LocalRustFixtureTheoryAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(SetupBackendCutoverTests.FixtureDirectoryVariable)))
+        {
+            Skip = "Set OPENBLADE_PHASE_7B_FIXTURES to the local directory containing the two pinned Rust executables.";
+        }
     }
 }
