@@ -230,6 +230,20 @@ Ordinary long paths still depend on the eventual host's Win32 long-path
 configuration. Managed NLS, invariant mode and app-local ICU overrides are
 outside the checked comparison contract.
 
+The same crate contains the current-user WindowsHook function-row adapter for
+RZ09-0581 and RZ09-0528. It accepts canonical F1–F12 callback packets, uses a
+single expiring host observation, and queues typed actions for a worker. The
+first down for each key passes through until the hook observes that key's up.
+The hook has desktop scope, so its packet cannot identify the originating
+keyboard. Tests use inert packets and a scripted message loop. Agent wiring,
+independent hook health evidence, and live Windows validation remain separate.
+
+The standalone `openblade-domain::function_row` module consumes a single typed
+observation per edge. It keeps Windows hook pairing and recovery separate from
+Razer driver forwarding and retirement. RZ09-0484 driver strokes require fresh
+host-managed Fn admission, independent of displayed Fn availability. Scripted
+tests exercise the policy without input capture, injection, or action execution.
+
 The workspace guard checks crate boundaries, reviewed targets and dependencies,
 MSRV and compiler policies. Its regression tests use disposable workspace copies.
 Inner crates retain `no_std` and inherit `unsafe_code = "forbid"`. FFI and Windows

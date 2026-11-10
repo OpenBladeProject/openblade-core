@@ -16,6 +16,7 @@ foreground-watcher-replay = ["foreground-watcher"]
 
 [target.'cfg(windows)'.dependencies]
 openblade-application-reporter = { path = "../openblade-application-reporter" }
+openblade-domain.workspace = true
 windows-sys = { version = "=0.61.2", default-features = false, features = [
     "Win32_Devices_Display",
     "Win32_Foundation",
@@ -25,6 +26,7 @@ windows-sys = { version = "=0.61.2", default-features = false, features = [
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
     "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_LibraryLoader",
     "Win32_System_Ole",
     "Win32_System_Performance",
     "Win32_System_Registry",
@@ -36,6 +38,7 @@ windows-sys = { version = "=0.61.2", default-features = false, features = [
     "Win32_System_Variant",
     "Win32_System_Wmi",
     "Win32_UI_ColorSystem",
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

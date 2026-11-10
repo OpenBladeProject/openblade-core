@@ -131,5 +131,5 @@ pub fn apply_display<'a>(
 }
 
 pub mod automation;
-
+pub mod function_row;
 pub mod recovery;
