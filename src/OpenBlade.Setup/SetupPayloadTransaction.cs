@@ -113,7 +113,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
     internal static async Task<ISetupPayloadTransaction> StageCandidateAsync(
         SetupPaths paths, string payloadDirectory, ISetupPayloadFileSystem files,
         OpenBlade.Deployment.WindowsCandidatePackageReceipt receipt, Guid installationId, Guid requestId,
-        Action ensureGuardianQuiescent, CancellationToken cancellationToken)
+        Action ensureGuardianQuiescent, CancellationToken cancellationToken, Action? requireLiveLaunch = null)
     {
         receipt.RequireBinding(installationId, requestId, paths.ProgramFilesRoot);
         using var source = receipt.PinSourcePayload(payloadDirectory);
@@ -122,6 +122,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             ensureGuardianQuiescent: ensureGuardianQuiescent);
         try
         {
+            requireLiveLaunch?.Invoke();
             receipt.Claim(transaction.stagingDirectory, cancellationToken);
             transaction.candidateReceipt = receipt;
             return transaction;

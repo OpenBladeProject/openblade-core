@@ -22,9 +22,7 @@ public sealed class WindowsCandidatePackageReceiptTests
         using var fixture = await Fixture.CreateAsync();
         Guid first = Guid.NewGuid();
         var original = await fixture.PrepareAsync(first);
-        await fixture.RunReceiverAsync(process =>
-            new BrokerInFlightStore(fixture.Paths).BindInstallerProcess(first, process.Id, DateTimeOffset.UtcNow),
-            expectedExit: 0);
+        await fixture.RunReceiverAsync(first, expectedExit: 0);
         original.VerifyCommitted(fixture.Tree.Install, default);
         byte[] committed = File.ReadAllBytes(fixture.Committed);
         byte[] expected = SHA256.HashData(committed);
@@ -86,9 +84,7 @@ public sealed class WindowsCandidatePackageReceiptTests
         byte[] pending = File.ReadAllBytes(fixture.Pending(request));
         byte[] beforeLaunch = File.ReadAllBytes(fixture.Paths.InFlightPath);
 
-        await fixture.RunReceiverAsync(process =>
-            new BrokerInFlightStore(fixture.Paths).BindInstallerProcess(request, process.Id, DateTimeOffset.UtcNow),
-            expectedExit: 0);
+        await fixture.RunReceiverAsync(request, expectedExit: 0);
 
         Assert.NotEqual(beforeLaunch, File.ReadAllBytes(fixture.Paths.InFlightPath));
         Assert.False(File.Exists(fixture.Pending(request)));
@@ -96,7 +92,7 @@ public sealed class WindowsCandidatePackageReceiptTests
         issued.VerifyCommitted(fixture.Tree.Install, default);
         byte[] committed = File.ReadAllBytes(fixture.Committed);
 
-        await fixture.RunReceiverAsync(_ => { }, expectedExit: 3, "no active launch binding");
+        await fixture.RunReceiverAsync(request, expectedExit: 3, "no active launch binding", publishBinding: false);
         Assert.Equal(committed, File.ReadAllBytes(fixture.Committed));
     }
 
@@ -105,7 +101,13 @@ public sealed class WindowsCandidatePackageReceiptTests
     [InlineData("other-pid", "no active launch binding")]
     [InlineData("old-generation", "launch generations differ")]
     [InlineData("terminal", "no active launch binding")]
-    [InlineData("immutable-state", "pending candidate receipt differs")]
+    [InlineData("immutable-state", "differs from the issued record")]
+    [InlineData("pid-only", "receipt path could not be retained")]
+    [InlineData("wrong-secret", "differs from the issued record")]
+    [InlineData("receiver-generation", "differs from the issued record")]
+    [InlineData("broker-generation", "differs from the issued record")]
+    [InlineData("image-digest", "differs from the issued record")]
+    [InlineData("wrong-image", "differs from its fixed launch image")]
     [InlineData("enrollment", "pending candidate receipt differs")]
     [InlineData("sequence", "differs from the issued record")]
     [InlineData("signature", "deployment signature is invalid")]
@@ -121,16 +123,29 @@ public sealed class WindowsCandidatePackageReceiptTests
         await fixture.PrepareAsync(request);
         fixture.Tree.WriteInstall(WindowsCandidatePackageReceipt.CommittedName, "prior proof"u8.ToArray());
         var state = new BrokerInFlightStore(fixture.Paths);
-        await fixture.RunReceiverAsync(process =>
+        bool pidOnly = change is "unbound" or "other-pid" or "old-generation" or "pid-only" or "wrong-image";
+        await fixture.RunReceiverAsync(request, expectedExit: 3, diagnostic, afterStart: process =>
         {
             if (change == "unbound")
             {
                 return;
             }
-            state.BindInstallerProcess(request, change == "other-pid" ? Environment.ProcessId : process.Id,
-                change == "old-generation" ? process.StartTime.ToUniversalTime().AddTicks(-1) : DateTimeOffset.UtcNow);
+            if (pidOnly)
+            {
+                state.BindInstallerProcess(request, change == "other-pid" ? Environment.ProcessId : process.Id,
+                    change == "old-generation" ? process.StartTime.ToUniversalTime().AddTicks(-1) : DateTimeOffset.UtcNow);
+            }
             switch (change)
             {
+                case "broker-generation":
+                case "receiver-generation":
+                case "image-digest":
+                    string launch = Path.Combine(fixture.StageDirectory(request), ScratchCandidateLaunch.EvidenceName);
+                    byte[] evidence = File.ReadAllBytes(launch);
+                    int offset = change switch { "broker-generation" => 4, "receiver-generation" => 16, _ => 56 };
+                    evidence[offset] ^= 1;
+                    File.WriteAllBytes(launch, evidence);
+                    break;
                 case "terminal":
                     state.BindInstallerResult(request, 0, DateTimeOffset.UtcNow);
                     break;
@@ -176,10 +191,26 @@ public sealed class WindowsCandidatePackageReceiptTests
                     File.Copy(fixture.Pending(request), fixture.Claimed(request));
                     break;
             }
-        }, expectedExit: 3, diagnostic);
+        }, publishBinding: !pidOnly, wrongSecret: change == "wrong-secret", wrongImage: change == "wrong-image");
         Assert.Equal("prior proof", File.ReadAllText(fixture.Committed));
         Assert.Equal(change == "claimed", File.Exists(fixture.Claimed(request)));
         Assert.Equal(change != "pending-missing", File.Exists(fixture.Pending(request)));
+    }
+
+    [Fact]
+    public async Task ClosingTheRendezvousLeavesTheReceiptPendingAndTheExitedChildCannotBeBound()
+    {
+        using var fixture = await Fixture.CreateAsync();
+        Guid request = Guid.NewGuid();
+        await fixture.PrepareAsync(request);
+        byte[] before = File.ReadAllBytes(fixture.Paths.InFlightPath);
+
+        await fixture.RunReceiverAsync(request, expectedExit: 3, publishBinding: false, closeWithoutRelease: true);
+
+        Assert.Equal(before, File.ReadAllBytes(fixture.Paths.InFlightPath));
+        Assert.True(File.Exists(fixture.Pending(request)));
+        Assert.False(File.Exists(fixture.Claimed(request)));
+        Assert.False(File.Exists(fixture.Committed));
     }
 
     [Fact]
@@ -385,15 +416,15 @@ public sealed class WindowsCandidatePackageReceiptTests
         private readonly ECDsa signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         private readonly byte[] package;
         private readonly BrokerCandidateReceiptStage broker;
-        private readonly Guid scratchId;
+        private readonly WindowsCandidateReceiptStorage storage;
+        private Guid ScratchId => storage.ScratchId;
         private readonly string keyId;
 
         private Fixture(string bundle)
         {
             package = File.ReadAllBytes(bundle);
             Assert.Equal(PackageHash, Convert.ToHexStringLower(SHA256.HashData(package)));
-            var storage = WindowsCandidateReceiptStorage.CreateScratch();
-            scratchId = storage.ScratchId;
+            storage = WindowsCandidateReceiptStorage.CreateScratch();
             Tree = new(storage.Root);
             Paths = BrokerPaths.CreateForTests(storage.Root);
             broker = new(storage);
@@ -447,19 +478,52 @@ public sealed class WindowsCandidatePackageReceiptTests
         internal Task ReconcileAsync(WindowsCandidatePackageReceipt receipt, Guid request) =>
             broker.ReconcileCommittedAsync(receipt, Installation, request, default);
 
-        internal Task RunReceiverAsync(Action<Process> bind, int expectedExit, string? expectedDiagnostic = null) =>
-            RunScratchChildAsync("OpenBlade.CandidateReceipt.Scratch.exe", scratchId.ToByteArray(),
-                expectedExit, expectedDiagnostic, bind);
+        internal async Task RunReceiverAsync(Guid request, int expectedExit, string? expectedDiagnostic = null,
+            Action<Process>? afterStart = null, bool publishBinding = true, bool wrongSecret = false,
+            bool wrongImage = false, bool closeWithoutRelease = false)
+        {
+            string source = AppContext.BaseDirectory;
+            string image = ScratchCandidateLaunch.ReceiverPath(storage);
+            string directory = Path.GetDirectoryName(image)!;
+            if (!Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+                foreach (string path in Directory.EnumerateFiles(source))
+                {
+                    string name = Path.GetFileName(path);
+                    if (name == ScratchCandidateLaunch.ReceiverName || name.EndsWith(".dll", StringComparison.Ordinal)
+                        || name is "OpenBlade.CandidateReceipt.Scratch.deps.json" or "OpenBlade.CandidateReceipt.Scratch.runtimeconfig.json")
+                    {
+                        File.Copy(path, Path.Combine(directory, name));
+                    }
+                }
+            }
+
+            using var root = storage.PinDirectory(directory);
+            using var heldImage = storage.OpenFile(image);
+            byte[] secret = RandomNumberGenerator.GetBytes(ScratchCandidateLaunch.SecretLength);
+            await RunScratchChildAsync(wrongImage ? Path.Combine(source, ScratchCandidateLaunch.ReceiverName) : image,
+                closeWithoutRelease ? [] : [.. ScratchId.ToByteArray(), .. (wrongSecret ? new byte[secret.Length] : secret)],
+                expectedExit, expectedDiagnostic, process =>
+                {
+                    if (publishBinding)
+                    {
+                        ScratchCandidateLaunch.Bind(storage, request, process, heldImage, secret);
+                    }
+                    afterStart?.Invoke(process);
+                }, afterExit: closeWithoutRelease ? child => Assert.Throws<InvalidDataException>(
+                    () => ScratchCandidateLaunch.Bind(storage, request, child, heldImage, secret)) : null);
+        }
 
 #if OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE
         internal Task RunRustReaderAsync(byte[] expected, string? expectedRefusal = null) =>
             RunScratchChildAsync("openblade-scratch-candidate-receipt.exe",
-                [.. System.Text.Encoding.ASCII.GetBytes(scratchId.ToString("D")), .. expected],
+                [.. System.Text.Encoding.ASCII.GetBytes(ScratchId.ToString("D")), .. expected],
                 expectedRefusal is null ? 0 : 3, expectedRefusal, timeoutSeconds: 15);
 #endif
 
         private static async Task RunScratchChildAsync(string name, byte[] input, int expectedExit,
-            string? expectedDiagnostic, Action<Process>? bind = null, int timeoutSeconds = 75)
+            string? expectedDiagnostic, Action<Process>? bind = null, int timeoutSeconds = 75, Action<Process>? afterExit = null)
         {
             string testDirectory = Path.GetDirectoryName(typeof(WindowsCandidatePackageReceiptTests).Assembly.Location)!;
             string image = Path.Combine(testDirectory, name);
@@ -485,6 +549,7 @@ public sealed class WindowsCandidatePackageReceiptTests
                 {
                     Assert.Contains(expectedDiagnostic, diagnostics, StringComparison.Ordinal);
                 }
+                afterExit?.Invoke(child);
             }
             finally
             {

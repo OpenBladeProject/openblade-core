@@ -90,8 +90,8 @@ internal sealed class BrokerCandidateReceiptStage(WindowsCandidateReceiptStorage
         }
     }
 
-    internal async Task WithCurrentProcessReceiptAsync(Func<WindowsCandidatePackageReceipt, Task> receive,
-        CancellationToken cancellationToken)
+    internal async Task WithCurrentProcessReceiptAsync(byte[] secret,
+        Func<WindowsCandidatePackageReceipt, Action, Task> receive, CancellationToken cancellationToken)
     {
         using var root = storage.PinDirectory(paths.RootDirectory);
         using var binding = storage.OpenFile(paths.InFlightPath);
@@ -126,6 +126,24 @@ internal sealed class BrokerCandidateReceiptStage(WindowsCandidateReceiptStorage
             UpdatedAt = issuedAt,
         });
 
+        using var broker = ScratchCandidateLaunch.OpenBroker(current.BrokerProcessId);
+        string image = ScratchCandidateLaunch.ReceiverPath(storage);
+        using var imageDirectory = storage.PinDirectory(Path.GetDirectoryName(image)!);
+        using var heldImage = storage.OpenFile(image);
+        ScratchCandidateLaunch.RequireLiveImage(receiver, image);
+        using var launch = storage.OpenFile(Path.Combine(stage, ScratchCandidateLaunch.EvidenceName));
+        WindowsCandidateReceiptStorage.RequireExact(launch,
+            ScratchCandidateLaunch.Encode(active, broker, receiver, heldImage, secret));
+
+        void RequireLiveLaunch()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (broker.HasExited)
+            {
+                throw new InvalidDataException("The scratch broker exited before Setup completed its handoff.");
+            }
+        }
+
         using var enrollmentFile = storage.OpenFile(paths.EnrollmentPath);
         byte[] enrollmentBytes = WindowsCandidateReceiptStorage.ReadBounded(enrollmentFile, BrokerEnrollmentCodec.MaximumBytes);
         var enrollment = BrokerEnrollmentCodec.ParseCanonical(enrollmentBytes);
@@ -143,7 +161,8 @@ internal sealed class BrokerCandidateReceiptStage(WindowsCandidateReceiptStorage
             cancellationToken).ConfigureAwait(false);
         var receipt = WindowsCandidatePackageReceipt.Reopen(storage, proof, release, manifest, enrollmentBytes,
             issued, active, current.RequestId, issuedAt, pending);
-        await receive(receipt).ConfigureAwait(false);
+        RequireLiveLaunch();
+        await receive(receipt, RequireLiveLaunch).ConfigureAwait(false);
     }
 
     private static OpenBladeReleaseTrustPolicy CreateTrust(BrokerEnrollment enrollment)
