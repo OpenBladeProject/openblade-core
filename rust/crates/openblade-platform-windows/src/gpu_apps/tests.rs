@@ -61,21 +61,25 @@ impl Script {
 }
 
 impl GpuAppSource for Script {
-    fn refresh(&mut self) -> Option<NvidiaAdapterLuid> {
-        self.adapter
+    fn refresh(&mut self) -> Result<NvidiaAdapterLuid, QueryUnavailable> {
+        self.adapter.ok_or(QueryUnavailable::Counters)
     }
 
-    fn read(&mut self) -> Option<Sample<'_>> {
+    fn read(&mut self) -> Result<Sample<'_>, QueryUnavailable> {
         self.reads += 1;
         self.frame = self.pending.pop_front().flatten();
-        self.frame.as_ref().map(|frame| Sample {
-            counters: &frame.counters,
-            processes: &frame.processes,
-        })
+        self.frame
+            .as_ref()
+            .map(|frame| Sample {
+                counters: &frame.counters,
+                processes: frame.processes.clone(),
+            })
+            .ok_or(QueryUnavailable::Counters)
     }
 
-    fn wait(&mut self, interval: Duration) {
+    fn wait(&mut self, interval: Duration) -> Result<(), QueryUnavailable> {
         self.waits.push(interval);
+        Ok(())
     }
 
     fn compare_names(&self, left: &str, right: &str) -> Ordering {

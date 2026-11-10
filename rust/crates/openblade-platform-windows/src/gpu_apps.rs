@@ -1,6 +1,6 @@
-//! QueryGpuApps projection from scripted Windows observations.
+//! QueryGpuApps projection from Windows observations.
 //!
-//! A future Windows reader must bind each process record to the counter
+//! The Windows reader binds each process record to the counter
 //! observation without reopening a bare PID for its metadata. Two matching
 //! identities are required before residency becomes an app row.
 
@@ -9,6 +9,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     time::Duration,
 };
+
+mod sampling;
+
+pub use sampling::sample_windows_gpu_apps;
 
 #[cfg(test)]
 mod tests;
@@ -57,15 +61,15 @@ pub enum ProcessObservation<'a> {
 pub struct Sample<'a> {
     pub counters: &'a [EngineCounter],
     /// Missing keys mean process provenance could not be established.
-    pub processes: &'a BTreeMap<i32, ProcessObservation<'a>>,
+    pub processes: BTreeMap<i32, ProcessObservation<'a>>,
 }
 
 /// Supplies observations from one refreshed NVIDIA counter query. An available
 /// sample may contain no counters. A failed read breaks the stability window.
 pub trait GpuAppSource {
-    fn refresh(&mut self) -> Option<NvidiaAdapterLuid>;
-    fn read(&mut self) -> Option<Sample<'_>>;
-    fn wait(&mut self, interval: Duration);
+    fn refresh(&mut self) -> Result<NvidiaAdapterLuid, QueryUnavailable>;
+    fn read(&mut self) -> Result<Sample<'_>, QueryUnavailable>;
+    fn wait(&mut self, interval: Duration) -> Result<(), QueryUnavailable>;
     /// The host supplies the managed OrdinalIgnoreCase semantics for names,
     /// including non-ASCII executable names. Comparisons must be consistent.
     fn compare_names(&self, left: &str, right: &str) -> Ordering;
@@ -119,14 +123,22 @@ pub struct GpuAppInventory {
     pub omissions: BTreeMap<i32, OmissionReason>,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QueryUnavailable {
     CurrentUser,
     Counters,
+    UnsupportedAdapter,
+    AdapterDiscovery(i32),
+    AdapterChanged,
+    MissingData,
+    MalformedCounters,
+    NativeCounter(u32),
+    Cancelled,
+    NameComparison,
 }
 
-/// Projects QueryGpuApps rows and the list cap. The host owns cancellation,
-/// native collection, and the Session request/response envelope.
+/// Projects QueryGpuApps rows and the list cap. The source owns cancellation and
+/// collection. The Session request/response envelope stays with the host.
 pub fn query_gpu_apps(
     source: &mut impl GpuAppSource,
     current_user: &CurrentUser<'_>,
@@ -134,14 +146,15 @@ pub fn query_gpu_apps(
     if current_user.sid.is_empty() {
         return Err(QueryUnavailable::CurrentUser);
     }
-    let adapter = source.refresh().ok_or(QueryUnavailable::Counters)?;
-    let token = format!("luid_0x{:08x}_0x{:08x}", adapter.high as u32, adapter.low);
+    let adapter = source.refresh()?;
+    let token = adapter.counter_token();
     let mut primed = false;
     let mut previous = None;
+    let mut unavailable = QueryUnavailable::Counters;
     for attempt in 0..SAMPLE_ATTEMPTS {
         match source.read() {
-            Some(_) if !primed => primed = true,
-            Some(sample) => {
+            Ok(_) if !primed => primed = true,
+            Ok(sample) => {
                 let current = Snapshot::from_sample(sample, &token);
                 if let Some(previous) = previous {
                     return Ok(project(previous, current, current_user, |left, right| {
@@ -150,16 +163,23 @@ pub fn query_gpu_apps(
                 }
                 previous = Some(current);
             }
-            None => {
+            Err(
+                error @ (QueryUnavailable::Counters
+                | QueryUnavailable::MissingData
+                | QueryUnavailable::MalformedCounters
+                | QueryUnavailable::NativeCounter(_)),
+            ) => {
+                unavailable = error;
                 primed = false;
                 previous = None;
             }
+            Err(error) => return Err(error),
         }
         if attempt + 1 < SAMPLE_ATTEMPTS {
-            source.wait(SAMPLE_INTERVAL);
+            source.wait(SAMPLE_INTERVAL)?;
         }
     }
-    Err(QueryUnavailable::Counters)
+    Err(unavailable)
 }
 
 struct Process {
@@ -179,10 +199,7 @@ impl Snapshot {
     fn from_sample(sample: Sample<'_>, token: &str) -> Self {
         let mut utilization = BTreeMap::new();
         for counter in sample.counters {
-            if !matches!(counter.status, 0 | 1) || !counter.utilization_percent.is_finite() {
-                continue;
-            }
-            if let Some(pid) = nvidia_pid(&counter.instance, token) {
+            if let Some(pid) = counter_pid(counter, token) {
                 *utilization.entry(pid).or_insert(0.0) += counter.utilization_percent.max(0.0);
             }
         }
@@ -226,6 +243,19 @@ impl Snapshot {
             .as_ref()
             .map_err(|reason| *reason)
     }
+}
+
+impl NvidiaAdapterLuid {
+    fn counter_token(self) -> String {
+        format!("luid_0x{:08x}_0x{:08x}", self.high as u32, self.low)
+    }
+}
+
+fn counter_pid(counter: &EngineCounter, token: &str) -> Option<i32> {
+    if !matches!(counter.status, 0 | 1) || !counter.utilization_percent.is_finite() {
+        return None;
+    }
+    nvidia_pid(&counter.instance, token)
 }
 
 fn nvidia_pid(instance: &str, token: &str) -> Option<i32> {
