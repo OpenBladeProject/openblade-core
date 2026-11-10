@@ -3,6 +3,10 @@ mod battery_policy;
 #[cfg(any(windows, test))]
 mod battery_runtime;
 #[cfg(any(windows, test))]
+mod fan_runtime;
+#[cfg(any(windows, test))]
+mod performance_runtime;
+#[cfg(any(windows, test))]
 mod runtime;
 #[cfg(windows)]
 mod windows;

@@ -226,7 +226,8 @@ jobs:
           $env:OPENBLADE_RUST_DEV_HOST_EXE = (Resolve-Path '../tools/openblade-windows-host/target/${{ matrix.target }}/debug/openblade-windows-host.exe').Path
           dotnet restore ../src/OpenBlade.Tray/OpenBlade.Tray.csproj
           dotnet test ../tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter FullyQualifiedName~RustReadOnlyHostTests
-          dotnet test ../tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter FullyQualifiedName~RustBatteryParity
+          dotnet test ../tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter 'FullyQualifiedName~RustBatteryParity|FullyQualifiedName~RustPerformanceParity|FullyQualifiedName~RustFanParity'
+          dotnet test ../tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj --filter FullyQualifiedName~RustFanParity
 
       - name: Verify the Windows configuration writer against the managed store
         if: runner.os == 'Windows'

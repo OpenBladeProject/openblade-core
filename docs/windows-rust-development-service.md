@@ -87,10 +87,6 @@ These modes own no hardware, and the restart mode has read-only configuration
 access. Other profile edits, production recovery, and ownership transfer remain
 outside the scenario.
 
-## Compatibility boundary
-
-- Each connection accepts one v79 `getStatus` or `subscribeStatus` request, or one v51 `getStatus` request. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every pipe read uses a cached snapshot and has no activation or state changes.
-- Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Other operations receive a correlated refusal before any dispatch. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
 
 ## Exercise standard battery policy
 
@@ -137,9 +133,114 @@ C# client. The scenario has no HID transport or production storage. Temporary fu
 charge, RZ09-0528 and source-reviewed model paths, real power and device admission,
 and the rest of the full-service transition remain separate work.
 
+## Exercise a standard performance override
+
+Run `foreground-performance-parity <id>` on a fresh private development pipe.
+The same-logon v79 client can send `setPerformanceOverride` with Balanced or
+Performance, a temporary or persistent lifetime, or an explicit null to clear.
+The scenario fixes the RZ09-0581 (1532:02E0) on full adapter power with Automatic
+fans. It starts at Balanced, with no HyperBoost or manual fan ownership. The
+[exact-device thermal capture](../evidence/legacy-captures/decoded/rz09-0581-pid-02e0-bios-3.01-thermal-write-validation-fixture.json)
+records the pair and its independent readback.
+
+The controller reads both thermal channels through the scoped coordinator check
+and the port's own preflight. If the first read already matches, the operation
+returns Applied without a setter. Otherwise the fake device receives the
+destination's two `0D/02` commands in channel order and must echo each payload
+exactly. Independent `0D/82` reads must agree before the confirmed preset changes.
+Performance uses `01010200` then `01020200`. Balanced uses `01010000` then
+`01020000`. The selected path leaves the fans on Automatic throughout.
+
+The operation stores a persistent override before attempting hardware admission
+or a write. A temporary override clears the persistent slot and changes in-memory
+intent. Clearing returns to the saved profile without editing it. A canceled
+request can leave accepted intent in storage while the last published snapshot
+stays unchanged until the next publication. The test store survives controller
+reconstruction in the Rust tests. Each new foreground process starts with a
+fresh store.
+
+After `READY`, send one lowercase `n` for each fixed step. Wait for the status
+event before sending the next request.
+
+| Step | Effect |
+| --- | --- |
+| 1 | Arm cancellation before the first eligible setter. The request closes without a result and submits no command. |
+| 2 | Arm a lost echo after the second setter changes the fake device, and fail the immediate reconciliation read. The result is Failed and performance writes stay blocked. |
+| 3 | Observe the fake device read-only. Matching readback publishes the preset and clears the block without replaying either setter. |
+
+The managed runtime oracle checks the typed operation, storage order and
+observed outcomes separately from the Rust replay. The tray test uses the
+existing `ServiceClient` and v79 status stream. Rust tests also check the
+exact payloads and partial-pair failure. Native admission, durable production
+configuration and restart recovery, power-source transitions, other presets,
+Custom, HyperBoost, manual fan ownership and handback, Guardian, and other
+thermal routes remain outside this scenario. The installed service remains
+the only live owner.
+
+## Exercise ordinary fan ownership
+
+Run `foreground-fan-parity <id>` on a fresh private development pipe. The
+same-logon v79 client admits a persistent Fixed 4,000 RPM fan override. The
+scripted RZ09-0581 (1532:02E0) starts in Performance with Automatic fans and
+full adapter power.
+
+The typed recipe follows the [managed port trace](../tests/Fixtures/Parity/rz09-0581-ordinary-fan-transitions.json).
+Entry changes both fan selectors to manual while retaining Performance. A
+paired getter confirms that state before either RPM target is submitted.
+Handback changes only the fan selector pair. Fresh adapter checks precede
+each write in both transitions. A repeated Fixed request on confirmed manual
+topology sends the two targets directly because the getter cannot report the
+requested RPM.
+
+The host stores the Fixed request in memory and publishes the firmware's
+Automatic or manual topology separately. Confirmed manual topology alone
+does not establish ownership. Handback requires an owned, confirmed manual
+state and current synthetic admission. A split or unavailable read preserves
+the last confirmed topology and gates further writes after possible submission.
+Read-only reconciliation never grants ownership or replays the saved request.
+
+After `READY`, send a lowercase `n` for each step and wait for its status event.
+
+| Step | Effect |
+| --- | --- |
+| 1 | Invoke synthetic lifecycle handback. Preserve the saved Fixed request and Performance. |
+| 2 | Arm a lost reply after the first selector changes. |
+| 3 | Read the split pair without issuing a write. |
+| 4 | The scripted device restores the Automatic pair externally. A read-only observation clears the block. |
+
+Native lifecycle integration still needs current owner-epoch continuity, fresh
+controller and prior-authority cleanup admission, and durable production
+recovery. This mode uses only the private foreground pipe, scripted device and
+process-local intent. Fan Stop, HyperBoost and other presets or models are
+outside its scope.
+
+## Compose durable profiles with thermal replay
+
+`foreground-thermal-profile <pipe-id>` loads the migrated configuration used by
+the battery/profile scenario. One private pipe serves battery, profile, standard
+performance and ordinary Fixed fan operations. The scenario guard serializes
+these effects and publishes one status revision. The thermal recipes use the
+existing exact-device scripted transports. The bounded composition runs at
+full-adapter power with an Automatic baseline. Fan entry and handback require
+confirmed Performance. Fixed entry also requires a fresh Automatic fan pair.
+A manual pair observed during reconciliation stays outside the entry recipe.
+
+The C# client exercises preset cancellation, explicit preset selection, Fixed
+entry and owned Automatic handback. A lost final fan response leaves the last
+confirmed topology visible until a later getter reads the pair. That observation
+does not acquire ownership. The durable battery profile edit remains separate
+from temporary battery and thermal requests. The temporary Fixed intent stays in
+memory through handback. `foreground-thermal-profile-restart <pipe-id> <fixture-id>
+<file-identity>` loads the verified profile from disk with a fresh scripted device.
+Production override persistence and device recovery are separate work.
+
+`foreground-thermal-profile-interrupt <pipe-id>` interrupts the same profile
+transaction while the fan write is unresolved. Quarantine blocks further mutations
+while a read-only fan observation can still resolve the device state.
+
 ## Compatibility boundary
 
-- Each connection accepts one v79 `getStatus` or `subscribeStatus` request, or one v51 `getStatus` request. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.
+- Each connection accepts one request. Every mode serves v79 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v79 in the explicitly scoped foreground modes. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.
 - Framing uses a signed 32-bit little-endian byte count and caps bodies at 64 KiB. There is a two-second first-frame deadline and a two-second deadline per write. Invalid lengths, malformed envelopes, invalid identity and unsupported versions close the connection. Each mode returns a correlated refusal for operations outside its allowlist. The host allows eight concurrent handlers and four concurrent subscriptions, with one additional listening instance and a private first-instance claim. The host promptly closes connections above capacity and retries a temporarily busy listener replacement for up to two seconds.
 - Windows claims the first instance exclusively and rejects remote connections. The explicit DACL restricts access to the host account. After reading the request bytes, the host resolves the pipe token and requires the same SID, logon authentication ID and Windows session. This is a same-logon development trust boundary. The ordinary duplex C# client asks for generic write, which also gives its SID permission to create pipe instances. It does not establish server trust against another process in that logon. Both projections exercise synthetic authorization inputs behind the native identity check. They do not replicate active-session selection or LocalSystem access policy.
 - Rust tests cover the wire fixtures and native endpoint checks, including first-instance contention, listener saturation and recovery, an anonymous client, and start/stop ordering through the shared lifecycle with an injected SCM reporter and stop signal. The .NET tests exercise the real tray client through the foreground endpoint, including initial status, event, cancellation and reconnect. They supplement that path with managed codec and v51 raw frames. The Windows job in the Rust workflow runs both sets on stacked PRs.

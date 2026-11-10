@@ -12,6 +12,7 @@ use tokio::time::timeout;
 use crate::{
     battery_policy::{Intent, Limit},
     battery_runtime::{self, LimitValue, Scenario},
+    fan_runtime, performance_runtime,
 };
 use openblade_domain::recovery::ScopedStatus;
 
@@ -36,7 +37,11 @@ pub struct Status {
     active: Projection,
     replay: Option<watch::Receiver<Arc<Value>>>,
     battery: Option<Arc<Scenario>>,
+    performance: Option<Arc<performance_runtime::Scenario>>,
+    fan: Option<Arc<fan_runtime::Scenario>>,
     background: Projection,
+    #[cfg(windows)]
+    composed_thermal: bool,
 }
 
 struct Projection {
@@ -93,7 +98,11 @@ impl Status {
             active: Projection::new(current, legacy)?,
             replay: None,
             battery: None,
+            performance: None,
+            fan: None,
             background: Projection::new(background, background_legacy)?,
+            #[cfg(windows)]
+            composed_thermal: false,
         })
     }
 
@@ -107,17 +116,29 @@ impl Status {
 
     #[cfg(windows)]
     pub fn with_battery_profiles(
-        self,
+        mut self,
         advance: tokio::sync::mpsc::Receiver<()>,
         profiles: Value,
         writer: Option<openblade_windows_host::configuration_writer::fixture::BatteryProfileStore>,
+        composed_thermal: bool,
     ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
         let scenario = Arc::new(Scenario::composed(
             self.active.current.clone(),
             profiles,
             writer,
+            composed_thermal,
         )?);
-        Ok(self.attach_battery(scenario, advance))
+        self.composed_thermal = composed_thermal;
+        self.replay = Some(scenario.subscribe());
+        self.battery = Some(Arc::clone(&scenario));
+        let drive = async move {
+            if composed_thermal {
+                scenario.drive_thermal(advance).await
+            } else {
+                scenario.drive(advance).await
+            }
+        };
+        Ok((self, drive))
     }
 
     fn attach_battery(
@@ -129,6 +150,30 @@ impl Status {
         self.battery = Some(Arc::clone(&scenario));
         let drive = async move { scenario.drive(advance).await };
         (self, drive)
+    }
+
+    pub fn with_performance(
+        mut self,
+        advance: tokio::sync::mpsc::Receiver<()>,
+    ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
+        let scenario = Arc::new(performance_runtime::Scenario::new(
+            self.active.current.clone(),
+        )?);
+        self.replay = Some(scenario.subscribe());
+        self.performance = Some(Arc::clone(&scenario));
+        let drive = async move { scenario.drive(advance).await };
+        Ok((self, drive))
+    }
+
+    pub fn with_fan(
+        mut self,
+        advance: tokio::sync::mpsc::Receiver<()>,
+    ) -> io::Result<(Self, impl Future<Output = io::Result<()>>)> {
+        let scenario = Arc::new(fan_runtime::Scenario::new(self.active.current.clone())?);
+        self.replay = Some(scenario.subscribe());
+        self.fan = Some(Arc::clone(&scenario));
+        let drive = async move { scenario.drive(advance).await };
+        Ok((self, drive))
     }
 
     pub fn with_replay(
@@ -151,6 +196,22 @@ impl Status {
             crate::runtime::start_durable(self.active.current.clone(), percent, update, shutdown)?;
         self.replay = Some(status);
         Ok((self, drive))
+    }
+
+    fn admits_performance(&self) -> bool {
+        #[cfg(windows)]
+        if self.composed_thermal {
+            return true;
+        }
+        self.performance.is_some()
+    }
+
+    fn admits_fan(&self) -> bool {
+        #[cfg(windows)]
+        if self.composed_thermal {
+            return true;
+        }
+        self.fan.is_some()
     }
 
     fn for_session(&self, session: Session) -> &Projection {
@@ -199,15 +260,18 @@ struct OperationResult {
 
 impl From<battery_runtime::Result> for OperationResult {
     fn from(result: battery_runtime::Result) -> Self {
-        let status = match result.status {
+        Self::scoped(result.status, result.message)
+    }
+}
+
+impl OperationResult {
+    fn scoped(result: ScopedStatus, message: &'static str) -> Self {
+        let status = match result {
             ScopedStatus::Applied | ScopedStatus::Unchanged => 1,
             ScopedStatus::Blocked => 2,
             ScopedStatus::Failed => 3,
         };
-        Self {
-            status,
-            message: result.message,
-        }
+        Self { status, message }
     }
 }
 
@@ -254,6 +318,34 @@ struct UpdateProfilesRequest {
     #[serde(rename = "requestId")]
     _request_id: String,
     profiles: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
+enum PerformanceRequest {
+    SetPerformanceOverride {
+        #[serde(rename = "version")]
+        _version: i32,
+        #[serde(rename = "requestId")]
+        _request_id: String,
+        // Require the field while allowing the explicit null used to clear.
+        #[serde(deserialize_with = "Deserialize::deserialize")]
+        value: Option<performance_runtime::Override>,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
+enum FanRequest {
+    SetFanOverride {
+        #[serde(rename = "version")]
+        _version: i32,
+        #[serde(rename = "requestId")]
+        _request_id: String,
+        #[serde(deserialize_with = "Deserialize::deserialize")]
+        value: Option<fan_runtime::Override>,
+        settings: Option<fan_runtime::Settings>,
+    },
 }
 
 #[derive(Deserialize)]
@@ -460,6 +552,54 @@ where
                 .apply(intent)
                 .await?;
             write_frame(&mut io, request.operation_response(result.into())).await
+        }
+        (CURRENT_VERSION, "setPerformanceOverride")
+            if matches!(session, Session::Active) && status.admits_performance() =>
+        {
+            let PerformanceRequest::SetPerformanceOverride { value, .. } =
+                serde_json::from_slice(&payload)
+                    .map_err(|_| invalid("invalid performance request"))?;
+            #[cfg(windows)]
+            if status.composed_thermal {
+                let result = status
+                    .battery
+                    .as_ref()
+                    .ok_or_else(|| invalid("missing composed scenario"))?
+                    .apply_performance(value)
+                    .await?;
+                return write_frame(&mut io, request.operation_response(result.into())).await;
+            }
+            let result = status
+                .performance
+                .as_ref()
+                .ok_or_else(|| invalid("missing performance scenario"))?
+                .apply(value)?;
+            let result = OperationResult::scoped(result.status, result.message);
+            write_frame(&mut io, request.operation_response(result)).await
+        }
+        (CURRENT_VERSION, "setFanOverride")
+            if matches!(session, Session::Active) && status.admits_fan() =>
+        {
+            let FanRequest::SetFanOverride {
+                value, settings, ..
+            } = serde_json::from_slice(&payload).map_err(|_| invalid("invalid fan request"))?;
+            #[cfg(windows)]
+            if status.composed_thermal {
+                let result = status
+                    .battery
+                    .as_ref()
+                    .ok_or_else(|| invalid("missing composed scenario"))?
+                    .apply_fans(value, settings)
+                    .await?;
+                return write_frame(&mut io, request.operation_response(result.into())).await;
+            }
+            let result = status
+                .fan
+                .as_ref()
+                .ok_or_else(|| invalid("missing fan scenario"))?
+                .apply(value, settings)?;
+            let result = OperationResult::scoped(result.status, result.message);
+            write_frame(&mut io, request.operation_response(result)).await
         }
         _ => {
             write_frame(
