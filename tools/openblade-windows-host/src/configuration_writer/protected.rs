@@ -4,7 +4,8 @@
 //! Setup #912 protects only the root during service installation. Existing
 //! records are checked independently and are never re-owned here. The positive
 //! on-disk ACL path still needs validation under the intended Windows identity
-//! with setup-equivalent permissions on an isolated NTFS runner.
+//! with setup-equivalent permissions on an isolated NTFS runner. That exercise
+//! must include the effective ancestor ACLs on the intended Windows layout.
 
 use super::{
     NAMES, check_regular_file, handle_information, inspect_bytes, open_relative, read_file,
@@ -30,10 +31,11 @@ use windows_sys::{
             SE_DACL_PRESENT, SE_DACL_PROTECTED, SE_SELF_RELATIVE,
         },
         Storage::FileSystem::{
-            BY_HANDLE_FILE_INFORMATION, FILE_ALL_ACCESS, FILE_ATTRIBUTE_DIRECTORY,
-            FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-            FILE_GENERIC_EXECUTE, FILE_GENERIC_READ, FILE_SHARE_READ, FILE_SHARE_WRITE,
-            FILE_TYPE_DISK, GetDriveTypeW, GetFileType, GetFinalPathNameByHandleW,
+            BY_HANDLE_FILE_INFORMATION, FILE_ADD_SUBDIRECTORY, FILE_ALL_ACCESS,
+            FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
+            FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_EXECUTE, FILE_GENERIC_READ, FILE_SHARE_READ,
+            FILE_SHARE_WRITE, FILE_TYPE_DISK, GetDriveTypeW, GetFileType,
+            GetFinalPathNameByHandleW,
         },
         System::WindowsProgramming::DRIVE_FIXED,
     },
@@ -68,31 +70,20 @@ impl ProtectedStorage {
         let mut names = names.into_iter().peekable();
         while let Some(name) = names.next() {
             let parent = ancestors.last().expect("the drive is pinned");
-            let root = names.peek().is_none();
-            let share = if root {
-                FILE_SHARE_READ
-            } else {
-                FILE_SHARE_READ | FILE_SHARE_WRITE
-            };
-            let file = open_relative(
-                parent,
-                name,
-                FILE_GENERIC_READ,
-                share,
-                FILE_OPEN,
-                FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
-            )?;
+            let is_leaf = names.peek().is_none();
+            let file = open_directory(parent, name)?;
             let info = directory_info(&file)?;
             if info.dwVolumeSerialNumber != volume {
                 return Err(denied("configuration directory changed volumes"));
             }
-            if root {
-                verify_security(&file, Policy::Root)?;
-                return Ok(Self {
+            if is_leaf {
+                let storage = Self {
                     root: file,
                     ancestors,
                     identity: super::file_identity(&info),
-                });
+                };
+                storage.check_root()?;
+                return Ok(storage);
             }
             ancestors.push(file);
         }
@@ -113,16 +104,18 @@ impl ProtectedStorage {
     }
 
     fn check_root(&self) -> io::Result<()> {
+        verify_security(&self.root, Policy::Root)?;
         for ancestor in &self.ancestors {
             let info = directory_info(ancestor)?;
             if info.dwVolumeSerialNumber != self.identity.volume {
                 return Err(denied("configuration ancestor changed volumes"));
             }
+            verify_security(ancestor, Policy::Ancestor)?;
         }
         if super::file_identity(&directory_info(&self.root)?) != self.identity {
             return Err(denied("configuration root identity changed"));
         }
-        verify_security(&self.root, Policy::Root)
+        Ok(())
     }
 
     fn open_record(&self, name: &str) -> io::Result<Option<File>> {
@@ -206,12 +199,14 @@ fn split_path(path: &Path) -> io::Result<(PathBuf, Vec<&OsStr>)> {
         let Component::Normal(name) = component else {
             return Err(denied("unexpected configuration path component"));
         };
-        let mut chars = name.encode_wide();
-        if chars.by_ref().any(|ch| ch < 32 || ch == u16::from(b':'))
-            || name
-                .encode_wide()
-                .last()
-                .is_some_and(|ch| matches!(ch, 32 | 46))
+        let name_text = name
+            .to_str()
+            .ok_or_else(|| denied("invalid configuration path text"))?;
+        if name_text
+            .chars()
+            .any(|ch| ch < ' ' || r#"<>:"|?*"#.contains(ch))
+            || name_text.ends_with([' ', '.'])
+            || reserved_device(name_text)
         {
             return Err(denied("ambiguous configuration path component"));
         }
@@ -226,6 +221,27 @@ fn split_path(path: &Path) -> io::Result<(PathBuf, Vec<&OsStr>)> {
     Ok((drive, names))
 }
 
+fn reserved_device(name: &str) -> bool {
+    let base = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(' ');
+    let base = base.to_ascii_uppercase();
+    matches!(
+        base.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || base
+        .strip_prefix("COM")
+        .or_else(|| base.strip_prefix("LPT"))
+        .is_some_and(|suffix| {
+            matches!(
+                suffix,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        })
+}
+
 fn check_drive(file: &File, drive: &Path) -> io::Result<()> {
     let mut actual = [0u16; 16];
     // SAFETY: The file owns a live handle and actual is writable UTF-16 storage.
@@ -237,6 +253,9 @@ fn check_drive(file: &File, drive: &Path) -> io::Result<()> {
             0,
         )
     } as usize;
+    if len == 0 {
+        return Err(io::Error::last_os_error());
+    }
     let expected: Vec<_> = OsStr::new(r"\\?\")
         .encode_wide()
         .chain(drive.as_os_str().encode_wide())
@@ -256,6 +275,19 @@ fn check_drive(file: &File, drive: &Path) -> io::Result<()> {
     Ok(())
 }
 
+fn open_directory(parent: &File, name: &OsStr) -> io::Result<File> {
+    // Allow same-directory replacement after admission. Withholding delete
+    // sharing pins this directory without interfering with child renames.
+    open_relative(
+        parent,
+        name,
+        FILE_GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        FILE_OPEN,
+        FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+    )
+}
+
 fn directory_info(file: &File) -> io::Result<BY_HANDLE_FILE_INFORMATION> {
     let info = handle_information(file)?;
     // SAFETY: file owns a live handle.
@@ -272,6 +304,7 @@ fn directory_info(file: &File) -> io::Result<BY_HANDLE_FILE_INFORMATION> {
 
 #[derive(Clone, Copy)]
 enum Policy {
+    Ancestor,
     Root,
     Record,
 }
@@ -329,7 +362,15 @@ fn verify_security(file: &File, policy: Policy) -> io::Result<()> {
 
 const SYSTEM: &[u8] = &[1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0];
 const ADMINISTRATORS: &[u8] = &[1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0];
+// Windows Modules Installer is trusted on ancestors only, using the same SID as the
+// managed guardian path policy. It is not part of setup's machine-data ACL.
+const TRUSTED_INSTALLER: &[u8] = &[
+    1, 6, 0, 0, 0, 0, 0, 5, 80, 0, 0, 0, 181, 137, 251, 56, 25, 132, 194, 203, 92, 108, 35, 109,
+    87, 0, 119, 110, 192, 2, 100, 135,
+];
 const OBJECT_AND_CONTAINER_INHERIT: u8 = 0x03;
+const INHERIT_ONLY_ACE: u8 = 0x08;
+const DIRECTORY_ACE_FLAGS: u8 = 0x1f;
 const INHERITED_ACE: u8 = 0x10;
 const SAFE_RECORD_RIGHTS: u32 =
     FILE_GENERIC_READ | FILE_GENERIC_EXECUTE | GENERIC_READ | GENERIC_EXECUTE;
@@ -347,6 +388,7 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
     if match policy {
         Policy::Root => owner != ADMINISTRATORS || control & SE_DACL_PROTECTED == 0,
         Policy::Record => owner != ADMINISTRATORS && owner != SYSTEM,
+        Policy::Ancestor => !matches!(owner, ADMINISTRATORS | SYSTEM | TRUSTED_INSTALLER),
     } {
         return Some(false);
     }
@@ -386,6 +428,22 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
                 }
                 root_principals |= principal;
             }
+            // An ancestor may allow creation of a subdirectory. Direct grants
+            // that can replace an existing child, redirect traversal or change
+            // security are refused. Inherit-only grants are checked where
+            // they apply, on the next directory or record's own descriptor.
+            Policy::Ancestor => {
+                if !matches!(kind, 0 | 1)
+                    || flags & !DIRECTORY_ACE_FLAGS != 0
+                    || kind == 0
+                        && flags & INHERIT_ONLY_ACE == 0
+                        && principal == 0
+                        && trustee != TRUSTED_INSTALLER
+                        && mask & !(SAFE_RECORD_RIGHTS | FILE_ADD_SUBDIRECTORY) != 0
+                {
+                    return Some(false);
+                }
+            }
             // Legacy files may have explicit or inherited grants. Denies and
             // read/execute grants convey no write authority.
             Policy::Record => {
@@ -399,7 +457,7 @@ fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
         }
         aces = &aces[length..];
     }
-    Some(matches!(policy, Policy::Record) || root_principals == 3)
+    Some(!matches!(policy, Policy::Root) || root_principals == 3)
 }
 
 fn section(bytes: &[u8], field: usize) -> Option<&[u8]> {

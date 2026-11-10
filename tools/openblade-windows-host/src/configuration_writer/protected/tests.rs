@@ -92,6 +92,31 @@ fn records_allow_safe_inheritance_but_reject_untrusted_mutation() {
 }
 
 #[test]
+fn ancestors_allow_child_creation_without_allowing_redirection() {
+    let trusted_installer = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464";
+    let sddl =
+        format!("O:{trusted_installer}D:(A;OICI;FA;;;SY)(A;CIIO;GA;;;CO)(A;;0x4;;;BU)(A;;FR;;;BU)");
+    let bytes = descriptor(&sddl);
+    assert_eq!(accepts_descriptor(&bytes, Policy::Ancestor), Some(true));
+    assert_ne!(accepts_descriptor(&bytes, Policy::Root), Some(true));
+    assert_ne!(accepts_descriptor(&bytes, Policy::Record), Some(true));
+    for invalid in [
+        "O:BUD:(A;;FR;;;BU)",
+        "O:SYD:(A;;0x40;;;BU)",
+        "O:SYD:(A;CI;SD;;;BU)",
+        "O:SYD:(A;ID;WD;;;BU)",
+        "O:SYD:(A;;0x100;;;BU)",
+        "O:SYD:(A;;GW;;;BU)",
+    ] {
+        assert_ne!(
+            accepts_descriptor(&descriptor(invalid), Policy::Ancestor),
+            Some(true),
+            "{invalid}"
+        );
+    }
+}
+
+#[test]
 fn malformed_descriptors_fail_closed() {
     let valid = descriptor(ROOT);
     for end in 0..valid.len() {
@@ -128,6 +153,9 @@ fn exact_local_path_and_absence_are_required() {
         r"C:\private\OpenBlade:ads",
         r"C:\private\OpenBlade.",
         r"C:\private\OpenBlade ",
+        r"C:\NUL.txt\OpenBlade",
+        r"C:\private\CoM¹",
+        r"C:\private\CON .txt",
     ] {
         assert!(split_path(Path::new(path)).is_err(), "{path}");
     }
@@ -211,7 +239,8 @@ fn live_private_fixtures_refuse_unprotected_roots_and_records() {
 
     // Exercise the record open in isolation without granting the fixture root
     // production admission or applying any security descriptor to disk.
-    let handle = super::super::pin_directory(root).unwrap();
+    let parent = super::super::pin_directory(root.parent().unwrap()).unwrap();
+    let handle = open_directory(&parent, root.file_name().unwrap()).unwrap();
     let candidate = ProtectedStorage {
         identity: super::super::file_identity(&directory_info(&handle).unwrap()),
         root: handle,
@@ -240,7 +269,19 @@ fn live_private_fixtures_refuse_unprotected_roots_and_records() {
             .to_string()
             .contains("plain file")
     );
+    // The exact admission open must permit the existing writer's rename while
+    // the directory remains pinned. Only the fixture below is modified.
+    let stage = root.join("private.stage");
+    fs::write(&stage, b"replacement fixture").unwrap();
+    super::super::move_file(&stage, &root.join(PROFILE), true).unwrap();
+    assert_eq!(
+        fs::read(root.join(PROFILE)).unwrap(),
+        b"replacement fixture"
+    );
     drop(candidate);
     fs::remove_dir(root.join(RECOVERY_REQUIRED)).unwrap();
-    assert_eq!(fs::read(root.join(PROFILE)).unwrap(), b"private fixture");
+    assert_eq!(
+        fs::read(root.join(PROFILE)).unwrap(),
+        b"replacement fixture"
+    );
 }

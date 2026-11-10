@@ -627,7 +627,9 @@ fn open_relative(
     use windows_sys::{
         Wdk::{
             Foundation::OBJECT_ATTRIBUTES,
-            Storage::FileSystem::{FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile},
+            Storage::FileSystem::{
+                FILE_DIRECTORY_FILE, FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
+            },
         },
         Win32::{
             Foundation::{
@@ -653,7 +655,7 @@ fn open_relative(
     };
     let mut handle = ptr::null_mut();
     let mut io_status = IO_STATUS_BLOCK::default();
-    let file_attributes = if disposition == FILE_CREATE {
+    let file_attributes = if options & FILE_DIRECTORY_FILE != 0 {
         FILE_ATTRIBUTE_DIRECTORY
     } else {
         0
