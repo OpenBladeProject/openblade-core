@@ -40,6 +40,21 @@ pub(super) fn entry() -> io::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.as_slice() {
         [mode] if mode == "--scm" => scm::dispatch(),
+        [mode, id] if mode == "foreground-application-context" => {
+            let id = foreground_id(id)?;
+            foreground(id, Session::Active, true, |advance, shutdown| {
+                let advance =
+                    advance.ok_or_else(|| io::Error::other("missing application steps"))?;
+                let (status, drive) = Status::fixture()?.with_application_context(advance);
+                let drive = async move {
+                    tokio::select! {
+                        _ = shutdown => Ok(()),
+                        result = drive => result,
+                    }
+                };
+                Ok((status, Some(drive)))
+            })
+        }
         [mode, id]
             if mode == "foreground-battery-profile"
                 || mode == "foreground-battery-profile-interrupt"

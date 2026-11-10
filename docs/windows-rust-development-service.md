@@ -238,6 +238,31 @@ Production override persistence and device recovery are separate work.
 transaction while the fan write is unresolved. Quarantine blocks further mutations
 while a read-only fan observation can still resolve the device state.
 
+## Application context replay
+
+Run the existing managed client against `foreground-application-context <id>`
+with a fresh development pipe ID. This foreground mode accepts v79
+`ReportApplicationContext` only after the same native pipe peer check used by
+the other modes. A scripted authority stands in for the active local interactive
+session. It is checked again where the report changes state.
+
+The in-memory fixture has one enabled executable rule with different AC and
+battery intent. A matching report leases it for 15 seconds. Only increasing
+sequences from the current agent instance can renew it; a new agent instance
+can start a fresh sequence. A null or unmatched executable clears the selection.
+Expiry clears the selection while retaining the sequence watermark, and process
+restart clears both. The executable is only evidence supplied by the Session
+Agent. The development host does not inspect process lifetime or treat a path
+as proof that an application is running.
+
+Successive `n` steps change the scripted session to inactive and back to active, then
+records a persistent performance override, selects battery power, disables the
+application rule, and enables it again. The managed test checks typed results
+and status updates, including precedence, expiry and recovery. This mode only
+projects desired performance and gaming behavior for its fixture. It has no
+configuration writer or device adapter, and leaves the durable profile format
+and the other modes' effect admission unchanged.
+
 ## Compatibility boundary
 
 - Each connection accepts one request. Every mode serves v79 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v79 in the explicitly scoped foreground modes. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.
