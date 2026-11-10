@@ -28,6 +28,7 @@
   </PropertyGroup>
   <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
     <ProjectReference Include="../../src/OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj" />
+    <ProjectReference Include="../OpenBlade.CandidateReceipt.Scratch/OpenBlade.CandidateReceipt.Scratch.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(OpenBladeLocalDevDeployment)' != 'true'">
     <Compile Remove="LocalDevRelatedBundleCompatibilityTests.cs" />

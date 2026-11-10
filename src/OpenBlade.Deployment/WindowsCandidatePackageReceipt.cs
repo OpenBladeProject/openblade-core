@@ -5,8 +5,7 @@ using System.Text.Json;
 
 namespace OpenBlade.Deployment;
 
-// Typed handoff within the offline rehearsal. The trusted Broker issues it after
-// admission. Setup independently checks the retained file against that handoff.
+// Canonical records for the offline rehearsal. Claim consumes the pending name.
 [SupportedOSPlatform("windows")]
 internal sealed class WindowsCandidatePackageReceipt
 {
@@ -23,9 +22,13 @@ internal sealed class WindowsCandidatePackageReceipt
     private readonly Guid installationId;
     private readonly Guid requestId;
 
+    internal Guid InstallationId => installationId;
+    internal Guid RequestId => requestId;
+
     private WindowsCandidatePackageReceipt(WindowsCandidateReceiptStorage storage,
         WindowsNativePackageRoleProof proof, OpenBladeVerifiedRelease release,
-        string manifestSha256, byte[] activeState, Guid requestId)
+        string manifestSha256, string enrollmentSha256, byte[] issuedState, byte[] activeState,
+        Guid requestId, DateTimeOffset issuedAt)
     {
         var manifest = release.Manifest;
         this.storage = storage;
@@ -34,23 +37,24 @@ internal sealed class WindowsCandidatePackageReceipt
         this.activeState = activeState;
         installationId = manifest.InstallationId;
         staging = Path.Combine(storage.Root, "staging", requestId.ToString("N"));
-        Guid issuance = Guid.NewGuid();
-        string brokerBindingSha256 = Convert.ToHexStringLower(SHA256.HashData(activeState));
+        string brokerBindingSha256 = Convert.ToHexStringLower(SHA256.HashData(issuedState));
         pending = Encode("BrokerVerified");
         committed = Encode("SetupPayloadCommitted");
 
         byte[] Encode(string phase) => JsonSerializer.SerializeToUtf8Bytes(new
         {
-            schema = 1,
+            schema = 2,
             phase,
+            scratchId = storage.ScratchId,
             installationId,
             requestId,
-            issuance,
+            issuedAt,
             packageSha256 = proof.Identity.PackageSha256,
             packageLength = manifest.InstallerSize,
             version = manifest.Version,
             sourceRevision = manifest.SourceRevision,
             manifestSha256,
+            enrollmentSha256,
             brokerBindingSha256,
             signingKeyId = release.SigningKeyId,
             sequence = manifest.Sequence,
@@ -61,7 +65,54 @@ internal sealed class WindowsCandidatePackageReceipt
 
     internal static WindowsCandidatePackageReceipt Publish(WindowsCandidateReceiptStorage storage,
         WindowsNativePackageRoleProof proof, OpenBladeVerifiedRelease release,
-        ReadOnlySpan<byte> verifiedManifest, byte[] activeState, Guid requestId)
+        byte[] verifiedManifest, byte[] enrollment, byte[] issuedState, Guid requestId, DateTimeOffset issuedAt)
+    {
+        var receipt = Create(storage, proof, release, verifiedManifest, enrollment, issuedState, issuedState,
+            requestId, issuedAt);
+        using FileStream binding = receipt.OpenActiveBinding();
+        using var directory = storage.PinDirectory(receipt.staging);
+        WindowsCandidateReceiptStorage.RequireAbsent(Path.Combine(receipt.staging, ClaimedName));
+        storage.Publish(Path.Combine(receipt.staging, PendingName), receipt.pending);
+        return receipt;
+    }
+
+    internal static WindowsCandidatePackageReceipt Reopen(WindowsCandidateReceiptStorage storage,
+        WindowsNativePackageRoleProof proof, OpenBladeVerifiedRelease release, byte[] verifiedManifest,
+        byte[] enrollment, byte[] issuedState, byte[] activeState, Guid requestId, DateTimeOffset issuedAt,
+        ReadOnlySpan<byte> record)
+    {
+        var receipt = Create(storage, proof, release, verifiedManifest, enrollment, issuedState, activeState,
+            requestId, issuedAt);
+        if (!record.SequenceEqual(receipt.pending))
+        {
+            throw new InvalidDataException("The pending candidate receipt differs from the independently verified binding.");
+        }
+        return receipt;
+    }
+
+    internal static DateTimeOffset ReadIssuedAt(byte[] record)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(record);
+            if (document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("issuedAt", out var value)
+                && value.ValueKind == JsonValueKind.String && value.TryGetDateTimeOffset(out var timestamp)
+                && timestamp.Offset == TimeSpan.Zero)
+            {
+                return timestamp;
+            }
+        }
+        catch (JsonException error)
+        {
+            throw new InvalidDataException("The pending candidate receipt is malformed.", error);
+        }
+        throw new InvalidDataException("The pending candidate receipt has an invalid issuance timestamp.");
+    }
+
+    private static WindowsCandidatePackageReceipt Create(WindowsCandidateReceiptStorage storage,
+        WindowsNativePackageRoleProof proof, OpenBladeVerifiedRelease release, byte[] verifiedManifest,
+        byte[] enrollment, byte[] issuedState, byte[] activeState, Guid requestId, DateTimeOffset issuedAt)
     {
         var manifest = release.Manifest;
         if (requestId == Guid.Empty || manifest.InstallationId == Guid.Empty
@@ -71,13 +122,8 @@ internal sealed class WindowsCandidatePackageReceipt
             throw new InvalidDataException("The candidate role proof and signed release binding differ.");
         }
 
-        var receipt = new WindowsCandidatePackageReceipt(storage, proof, release,
-            Convert.ToHexStringLower(SHA256.HashData(verifiedManifest)), activeState.ToArray(), requestId);
-        using FileStream binding = receipt.OpenActiveBinding();
-        using var directory = storage.PinDirectory(receipt.staging);
-        WindowsCandidateReceiptStorage.RequireAbsent(Path.Combine(receipt.staging, ClaimedName));
-        storage.Publish(Path.Combine(receipt.staging, PendingName), receipt.pending);
-        return receipt;
+        return new(storage, proof, release, Convert.ToHexStringLower(SHA256.HashData(verifiedManifest)),
+            Convert.ToHexStringLower(SHA256.HashData(enrollment)), issuedState, activeState, requestId, issuedAt);
     }
 
     internal void RequireBinding(Guid installation, Guid request, string programFilesRoot)

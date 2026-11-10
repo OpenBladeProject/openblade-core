@@ -1,4 +1,5 @@
 #if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
+using System.Diagnostics;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -13,6 +14,111 @@ public sealed class WindowsCandidatePackageReceiptTests
     private const string PackageHash = "4079c110978af3008ef929fac309b9637e9e77b0c68a660dd8d956758449359f";
     private const string Revision = "af61a8c842429bc0564390dee39b466ee0da9023";
     private const string Version = "65535.1.2.3";
+
+    [Fact]
+    public async Task ReceiverReopensAfterBrokerBindsItsProcessAndConsumesReceiptOnce()
+    {
+        using var fixture = await Fixture.CreateAsync();
+        Guid request = Guid.NewGuid();
+        var issued = await fixture.PrepareAsync(request);
+        byte[] pending = File.ReadAllBytes(fixture.Pending(request));
+        byte[] beforeLaunch = File.ReadAllBytes(fixture.Paths.InFlightPath);
+
+        await fixture.RunReceiverAsync(process =>
+            new BrokerInFlightStore(fixture.Paths).BindInstallerProcess(request, process.Id, DateTimeOffset.UtcNow),
+            expectedExit: 0);
+
+        Assert.NotEqual(beforeLaunch, File.ReadAllBytes(fixture.Paths.InFlightPath));
+        Assert.False(File.Exists(fixture.Pending(request)));
+        Assert.Equal(pending, File.ReadAllBytes(fixture.Claimed(request)));
+        issued.VerifyCommitted(fixture.Tree.Install, default);
+        byte[] committed = File.ReadAllBytes(fixture.Committed);
+
+        await fixture.RunReceiverAsync(_ => { }, expectedExit: 3, "no active launch binding");
+        Assert.Equal(committed, File.ReadAllBytes(fixture.Committed));
+    }
+
+    [Theory]
+    [InlineData("unbound", "no active launch binding")]
+    [InlineData("other-pid", "no active launch binding")]
+    [InlineData("old-generation", "launch generations differ")]
+    [InlineData("terminal", "no active launch binding")]
+    [InlineData("immutable-state", "pending candidate receipt differs")]
+    [InlineData("enrollment", "pending candidate receipt differs")]
+    [InlineData("sequence", "differs from the issued record")]
+    [InlineData("signature", "deployment signature is invalid")]
+    [InlineData("package", "installer size does not match")]
+    [InlineData("pending-role", "pending candidate receipt differs")]
+    [InlineData("other-request", "pending candidate receipt differs")]
+    [InlineData("pending-missing", "receipt path could not be retained")]
+    [InlineData("claimed", "already contains the fixed name")]
+    public async Task ReceiverRejectsMissingStaleOrReplacedEvidence(string change, string diagnostic)
+    {
+        using var fixture = await Fixture.CreateAsync();
+        Guid request = Guid.NewGuid();
+        await fixture.PrepareAsync(request);
+        fixture.Tree.WriteInstall(WindowsCandidatePackageReceipt.CommittedName, "prior proof"u8.ToArray());
+        var state = new BrokerInFlightStore(fixture.Paths);
+        await fixture.RunReceiverAsync(process =>
+        {
+            if (change == "unbound")
+            {
+                return;
+            }
+            state.BindInstallerProcess(request, change == "other-pid" ? Environment.ProcessId : process.Id,
+                change == "old-generation" ? process.StartTime.ToUniversalTime().AddTicks(-1) : DateTimeOffset.UtcNow);
+            switch (change)
+            {
+                case "terminal":
+                    state.BindInstallerResult(request, 0, DateTimeOffset.UtcNow);
+                    break;
+                case "immutable-state":
+                    var bound = BrokerInFlightDeploymentCodec.ParseCanonical(File.ReadAllBytes(fixture.Paths.InFlightPath));
+                    File.WriteAllBytes(fixture.Paths.InFlightPath, BrokerInFlightDeploymentCodec.SerializeCanonical(
+                        bound with { PreviousPayloadSha256 = new string('1', 64) }));
+                    break;
+                case "enrollment":
+                    var enrollment = BrokerEnrollmentCodec.ParseCanonical(File.ReadAllBytes(fixture.Paths.EnrollmentPath));
+                    File.WriteAllBytes(fixture.Paths.EnrollmentPath,
+                        BrokerEnrollmentCodec.SerializeCanonical(enrollment with { BrokerVersion = "0.58.5" }));
+                    break;
+                case "sequence":
+                    File.WriteAllText(fixture.Paths.AcceptedSequencePath, "2");
+                    break;
+                case "signature":
+                    File.WriteAllBytes(Path.Combine(fixture.StageDirectory(request), FixedLocalDevInboxSource.SignatureFileName),
+                        new byte[FixedLocalDevInboxSource.SignatureBytes]);
+                    break;
+                case "package":
+                    using (var package = File.OpenWrite(Path.Combine(fixture.StageDirectory(request),
+                        FixedLocalDevInboxSource.InstallerFileName)))
+                    {
+                        package.SetLength(package.Length - 1);
+                    }
+                    break;
+                case "pending-role":
+                    string pending = fixture.Pending(request);
+                    File.WriteAllText(pending, File.ReadAllText(pending).Replace(
+                        "6235dfd6b3aa304f3be525d51de05733d3678cf006547a1f94cfed367a00885c",
+                        new string('0', 64), StringComparison.Ordinal));
+                    break;
+                case "other-request":
+                    string receipt = fixture.Pending(request);
+                    File.WriteAllText(receipt, File.ReadAllText(receipt).Replace(
+                        request.ToString("D"), Guid.NewGuid().ToString("D"), StringComparison.Ordinal));
+                    break;
+                case "pending-missing":
+                    File.Delete(fixture.Pending(request));
+                    break;
+                case "claimed":
+                    File.Copy(fixture.Pending(request), fixture.Claimed(request));
+                    break;
+            }
+        }, expectedExit: 3, diagnostic);
+        Assert.Equal("prior proof", File.ReadAllText(fixture.Committed));
+        Assert.Equal(change == "claimed", File.Exists(fixture.Claimed(request)));
+        Assert.Equal(change != "pending-missing", File.Exists(fixture.Pending(request)));
+    }
 
     [Fact]
     public async Task CommitsExactRolesAndKeepsInstalledProofAfterBrokerCleanup()
@@ -207,6 +313,7 @@ public sealed class WindowsCandidatePackageReceiptTests
         private readonly ECDsa signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         private readonly byte[] package;
         private readonly BrokerCandidateReceiptStage broker;
+        private readonly Guid scratchId;
         private readonly string keyId;
 
         private Fixture(string bundle)
@@ -214,6 +321,7 @@ public sealed class WindowsCandidatePackageReceiptTests
             package = File.ReadAllBytes(bundle);
             Assert.Equal(PackageHash, Convert.ToHexStringLower(SHA256.HashData(package)));
             var storage = WindowsCandidateReceiptStorage.CreateScratch();
+            scratchId = storage.ScratchId;
             Tree = new(storage.Root);
             Paths = BrokerPaths.CreateForTests(storage.Root);
             broker = new(storage);
@@ -266,6 +374,43 @@ public sealed class WindowsCandidatePackageReceiptTests
 
         internal Task ReconcileAsync(WindowsCandidatePackageReceipt receipt, Guid request) =>
             broker.ReconcileCommittedAsync(receipt, Installation, request, default);
+
+        internal async Task RunReceiverAsync(Action<Process> bind, int expectedExit, string? expectedDiagnostic = null)
+        {
+            string testDirectory = Path.GetDirectoryName(typeof(WindowsCandidatePackageReceiptTests).Assembly.Location)!;
+            string image = Path.Combine(testDirectory, "OpenBlade.CandidateReceipt.Scratch.exe");
+            using var child = Process.Start(new ProcessStartInfo(image)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardError = true,
+            }) ?? throw new InvalidOperationException("Unable to start the scratch receiver.");
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(75));
+            try
+            {
+                bind(child);
+                await child.StandardInput.BaseStream.WriteAsync(scratchId.ToByteArray(), deadline.Token);
+                child.StandardInput.Close();
+                var error = child.StandardError.ReadToEndAsync(deadline.Token);
+                await child.WaitForExitAsync(deadline.Token);
+                string diagnostics = await error;
+                Assert.True(child.ExitCode == expectedExit,
+                    $"Scratch receiver exit {child.ExitCode}, expected {expectedExit}. {diagnostics}");
+                if (expectedDiagnostic is not null)
+                {
+                    Assert.Contains(expectedDiagnostic, diagnostics, StringComparison.Ordinal);
+                }
+            }
+            finally
+            {
+                if (!child.HasExited)
+                {
+                    child.Kill();
+                    await child.WaitForExitAsync(CancellationToken.None);
+                }
+            }
+        }
 
         internal void WriteSignedInbox(long sequence, bool changePackage = false)
         {

@@ -27,7 +27,11 @@ internal sealed class WindowsCandidateReceiptStorage
 
     internal string Root { get; }
 
-    internal static WindowsCandidateReceiptStorage CreateScratch()
+    internal static WindowsCandidateReceiptStorage CreateScratch() => OpenScratch(Guid.NewGuid(), create: true);
+
+    internal static WindowsCandidateReceiptStorage OpenScratch(Guid scratchId) => OpenScratch(scratchId, create: false);
+
+    private static WindowsCandidateReceiptStorage OpenScratch(Guid scratchId, bool create)
     {
         using WindowsIdentity identity = WindowsIdentity.GetCurrent();
         if (identity.User is not { } user || identity.IsSystem
@@ -36,23 +40,31 @@ internal sealed class WindowsCandidateReceiptStorage
             throw new UnauthorizedAccessException("Candidate receipt rehearsal requires a standard Windows token.");
         }
 
-        string temp = Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath()));
+        if (scratchId == Guid.Empty)
+        {
+            throw new InvalidDataException("Candidate receipt rehearsal requires a scratch identifier.");
+        }
+        string localData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string temp = Path.Combine(localData, "Temp");
         if (temp.Length < 3 || temp[1..3] != @":\" || GetDriveTypeW(temp[..3]) != 3)
         {
             throw new IOException("Candidate receipt rehearsal requires a fixed local scratch drive.");
         }
 
-        string root = Path.Combine(temp, RootPrefix + Guid.NewGuid().ToString("N"));
-        var security = new DirectorySecurity();
-        security.SetOwner(user);
-        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl,
-            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
-            PropagationFlags.None, AccessControlType.Allow));
-        using var ancestry = new DirectoryLease();
-        PinAncestors(temp, ancestry, scope: null);
-        RequireAbsent(root);
-        new DirectoryInfo(root).Create(security);
+        string root = Path.Combine(temp, RootPrefix + scratchId.ToString("N"));
+        if (create)
+        {
+            var security = new DirectorySecurity();
+            security.SetOwner(user);
+            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags.None, AccessControlType.Allow));
+            using var ancestry = new DirectoryLease();
+            PinAncestors(temp, ancestry, scope: null);
+            RequireAbsent(root);
+            new DirectoryInfo(root).Create(security);
+        }
         var storage = new WindowsCandidateReceiptStorage(root, user);
         using var verified = storage.PinDirectory(root);
         var fileSystem = new StringBuilder(16);
@@ -63,6 +75,8 @@ internal sealed class WindowsCandidateReceiptStorage
         }
         return storage;
     }
+
+    internal Guid ScratchId => Guid.ParseExact(Path.GetFileName(Root)[RootPrefix.Length..], "N");
 
     internal DirectoryLease PinDirectory(string path)
     {
@@ -162,6 +176,17 @@ internal sealed class WindowsCandidateReceiptStorage
         {
             throw new InvalidDataException("Candidate receipt differs from the issued record.");
         }
+    }
+
+    internal static byte[] ReadBounded(FileStream stream, int maximumBytes = MaximumRecordBytes)
+    {
+        if (stream.Length < 1 || stream.Length > maximumBytes)
+        {
+            throw new InvalidDataException("The protected candidate record has an invalid size.");
+        }
+        byte[] bytes = new byte[(int)stream.Length];
+        stream.ReadExactly(bytes);
+        return bytes;
     }
 
     private bool IsInRoot(string path) =>

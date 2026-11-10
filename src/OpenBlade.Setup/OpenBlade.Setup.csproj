@@ -19,6 +19,10 @@
   <PropertyGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENBLADE_CANDIDATE_RECEIPT_FIXTURE</DefineConstants>
   </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <ProjectReference Include="../OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj" />
+    <InternalsVisibleTo Include="OpenBlade.CandidateReceipt.Scratch" />
+  </ItemGroup>
   <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' Or '$(OpenBladePackageProofFixture)' == 'true'">
     <ProjectReference Include="../OpenBlade.Deployment/OpenBlade.Deployment.csproj" />
   </ItemGroup>

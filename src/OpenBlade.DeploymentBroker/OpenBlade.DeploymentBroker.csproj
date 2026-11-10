@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
     <InternalsVisibleTo Include="OpenBlade.Setup.Tests" />
+    <InternalsVisibleTo Include="OpenBlade.Setup" />
   </ItemGroup>
 
   <ItemGroup>
