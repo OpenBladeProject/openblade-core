@@ -150,6 +150,65 @@ fn unknown_confirmation_cannot_be_upgraded_to_exact_ownership_by_topology() {
     assert!(setters(&controller.device).is_empty());
 }
 
+#[cfg(all(windows, feature = "controller-admission-compile-check"))]
+#[test]
+fn controller_observation_fences_each_fan_setter_and_preserves_partial_submission() {
+    use openblade_platform_windows::controller_presence::{
+        Scan, Service, ServiceState,
+        admission::{ReadOnlyAdmission, Sample},
+        observe,
+    };
+
+    let reports = [
+        "0D02:01010201",
+        "0D02:01020201",
+        "0D01:010128",
+        "0D01:010228",
+    ];
+    for (deny_on, status, submitted) in [
+        (1, ScopedStatus::Blocked, 0),
+        (2, ScopedStatus::Failed, 0),
+        (3, ScopedStatus::Failed, 1),
+        (4, ScopedStatus::Failed, 2),
+        (5, ScopedStatus::Failed, 3),
+        (6, ScopedStatus::Applied, 4),
+    ] {
+        let mut check = 0;
+        let mut device = Device::new();
+        device.admission.controller_check = Some(ReadOnlyAdmission::from_source(move || {
+            check += 1;
+            Sample::capture(|| {
+                let unknown = [Service {
+                    name: "RazerSynapseService",
+                    display_name: "",
+                    state: ServiceState::Unknown,
+                }];
+                observe(
+                    Scan::Complete(&[]),
+                    if check == deny_on {
+                        Scan::Complete(&unknown)
+                    } else {
+                        Scan::Complete(&[])
+                    },
+                    None,
+                    Scan::Incomplete(&[]),
+                    1,
+                )
+            })
+        }));
+        let mut controller = Controller::new(device);
+        assert_eq!(controller.set_fixed(settings()).unwrap().status, status);
+        assert_eq!(setters(&controller.device), reports[..submitted]);
+        assert_eq!(controller.pending, (1..4).contains(&submitted));
+        assert_eq!(controller.owned, submitted == 4);
+        if submitted != 4 {
+            controller.device.trace.clear();
+            assert_eq!(controller.handback().unwrap().status, ScopedStatus::Blocked);
+            assert!(setters(&controller.device).is_empty());
+        }
+    }
+}
+
 #[test]
 fn exact_identity_controller_and_power_are_checked_before_writes_and_again_before_ownership() {
     let mut controller = Controller::new(Device::new());
