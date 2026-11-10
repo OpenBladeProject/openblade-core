@@ -140,6 +140,36 @@ v79 status envelope alone carries no proof of a fresh firmware read. The
 Agent also checks verified device state, control access, power classification,
 observation state, Fan Stop ownership and unresolved performance writes.
 
+The private `firmware-performance-compile-check` adapter implements the
+reviewed RZ09-0581 thermal getter. It reuses the exact registry and HID
+selection, then verifies the retained overlapped handle as
+`1532:02E0`, usage `0001:0002`, with a 91-byte feature report. HID
+`SET_FEATURE` submits the `0D/82` getter for each of the two channels.
+After the managed 30 ms settling interval, HID `GET_FEATURE` reads the
+corresponding reply. Both replies must pass report ID, length, checksum,
+transaction, command, status and channel validation and agree on
+Balanced or Performance with automatic fans. These observations carry
+no RPM, Custom settings, HyperBoost state or live sensor readings.
+
+The adapter requires live sole-owner, active session, full adapter,
+controller clearance and awake evidence from the same authority epoch
+before each transfer and before returning a result. It reserves a pair of
+transaction IDs across leases in the process and stops after 127 pairs
+without wrapping. Cancellation seals the lease and targets the current
+operation. Native storage and the handle remain fenced until completion
+and ConfigMgr callback drain. A stuck operation that outlives the owner
+quarantines the single native slot until process exit. The observation
+budget bounds async waits and acceptance of the result. Synchronous
+Windows identity and submission calls require an owned worker when a
+service runtime integrates this adapter.
+
+The candidate's installed status source continues to return the existing
+refusal. Its metadata scan, listener admission and scripted test sources
+cannot establish live hardware ownership. The adapter's Windows test
+links the native path and exercises the pre-open refusal. The report
+exchange and retirement tests use in-memory transport and pinned capture
+data.
+
 The replay in `tools/openblade-windows-host/tests/fixtures/get-status-v79.frames`
 contains two consecutive managed codec frames. The managed
 `IpcMessageCodec.WriteRequestAsync` writes `GetStatusRequest(79, id)`, then

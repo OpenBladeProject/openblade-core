@@ -33,28 +33,7 @@ impl LeaseSource for WindowsMetadata {
     type Handle = MetadataHandle;
 
     fn open_metadata(&self, path: &str) -> io::Result<MetadataHandle> {
-        let path: Vec<u16> = path.encode_utf16().chain([0]).collect();
-        // SAFETY: SetupAPI supplied the bounded interface name and path has a
-        // terminator. Zero desired access requests metadata only. Null
-        // security attributes make the returned handle noninheritable.
-        let raw = unsafe {
-            CreateFileW(
-                path.as_ptr(),
-                0,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
-                null(),
-                OPEN_EXISTING,
-                FILE_FLAG_OVERLAPPED,
-                null_mut(),
-            )
-        };
-        if raw == INVALID_HANDLE_VALUE {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: CreateFileW returned an owned file handle.
-        let file = unsafe { OwnedHandle::from_raw_handle(raw) };
-        let removal = RemovalWatch::register(&file)?;
-        Ok(MetadataHandle { removal, file })
+        MetadataHandle::open(path, 0)
     }
 
     fn describe(&self, handle: &MetadataHandle) -> io::Result<Descriptor> {
@@ -99,6 +78,43 @@ pub(super) struct MetadataHandle {
     file: OwnedHandle,
 }
 
+impl MetadataHandle {
+    pub(super) fn open(path: &str, access: u32) -> io::Result<Self> {
+        let path: Vec<u16> = path.encode_utf16().chain([0]).collect();
+        // SAFETY: SetupAPI supplied the bounded interface name. Null security
+        // attributes make the returned overlapped handle noninheritable.
+        let raw = unsafe {
+            CreateFileW(
+                path.as_ptr(),
+                access,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                null(),
+                OPEN_EXISTING,
+                FILE_FLAG_OVERLAPPED,
+                null_mut(),
+            )
+        };
+        if raw == INVALID_HANDLE_VALUE {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: CreateFileW returned an owned file handle.
+        let file = unsafe { OwnedHandle::from_raw_handle(raw) };
+        let removal = RemovalWatch::register(&file)?;
+        Ok(Self { removal, file })
+    }
+
+    #[cfg(feature = "firmware-performance-compile-check")]
+    pub(super) fn retire(&mut self) -> io::Result<()> {
+        self.removal.unregister()
+    }
+}
+
+impl AsRawHandle for MetadataHandle {
+    fn as_raw_handle(&self) -> std::os::windows::io::RawHandle {
+        self.file.as_raw_handle()
+    }
+}
+
 struct PreparsedData(PHIDP_PREPARSED_DATA);
 
 impl Drop for PreparsedData {
@@ -112,6 +128,12 @@ struct RemovalWatch {
     registration: HCMNOTIFICATION,
     revoked: *mut AtomicBool,
 }
+
+// SAFETY: ConfigMgr notifications may be unregistered on a different
+// thread from registration. The context is a stable atomic and moving the
+// watch moves only its registration handle and pointer.
+#[cfg(feature = "firmware-performance-compile-check")]
+unsafe impl Send for RemovalWatch {}
 
 impl RemovalWatch {
     fn register(file: &OwnedHandle) -> io::Result<Self> {
@@ -150,17 +172,30 @@ impl RemovalWatch {
         }
         Ok(())
     }
+
+    fn unregister(&mut self) -> io::Result<()> {
+        if self.registration.is_null() {
+            return Ok(());
+        }
+        // SAFETY: The callback only touches its atomic. It never waits on
+        // this thread or accesses the file handle.
+        let result = unsafe { CM_Unregister_Notification(self.registration) };
+        if result != CR_SUCCESS {
+            // SAFETY: Both arguments are scalar error codes.
+            let error = unsafe { CM_MapCrToWin32Err(result, ERROR_GEN_FAILURE) };
+            return Err(io::Error::from_raw_os_error(error as i32));
+        }
+        self.registration = null_mut();
+        // SAFETY: Unregistration drained callbacks.
+        unsafe { drop(Box::from_raw(self.revoked)) };
+        Ok(())
+    }
 }
 
 impl Drop for RemovalWatch {
     fn drop(&mut self) {
-        // SAFETY: This owns the registration. The callback never waits on
-        // this thread or accesses the file handle.
-        if unsafe { CM_Unregister_Notification(self.registration) } == CR_SUCCESS {
-            // SAFETY: Unregistration drained callbacks. On failure retain
-            // only the context so a late callback cannot use freed memory.
-            unsafe { drop(Box::from_raw(self.revoked)) };
-        }
+        // Keep the callback context alive if metadata-only retirement fails.
+        let _ = self.unregister();
     }
 }
 

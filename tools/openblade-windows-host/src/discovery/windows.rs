@@ -2,13 +2,13 @@
 
 use super::{
     DiscoverySource, HostObservation, Interface, MAX_INTERFACES, MAX_REGISTRY_TEXT, Platform,
-    RegistrySource, RegistryText, ScanState, check_cancelled, discover, pnp,
+    RegistrySource, RegistryText, ScanState, check_cancelled, pnp,
 };
 use std::{
     io,
     mem::{offset_of, size_of},
     ptr::{null, null_mut},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::AtomicBool,
 };
 use windows_sys::{
     Wdk::System::SystemServices::RtlGetVersion,
@@ -27,7 +27,6 @@ use windows_sys::{
             ERROR_SUCCESS, ERROR_UNSUPPORTED_TYPE, GetLastError, INVALID_HANDLE_VALUE,
         },
         System::{
-            Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, SetConsoleCtrlHandler},
             Registry::{
                 HKEY_LOCAL_MACHINE, REG_MULTI_SZ, RRF_NOEXPAND, RRF_RT_REG_EXPAND_SZ,
                 RRF_RT_REG_SZ, RRF_SUBKEY_WOW6464KEY, RegGetValueW,
@@ -45,8 +44,17 @@ const CURRENT_VERSION_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion
 const MAX_INTERFACE_PATH: usize = 2048;
 const MAX_HARDWARE_ID_UNITS: usize = 4096;
 
+#[cfg(not(test))]
+use super::discover;
+#[cfg(not(test))]
+use std::sync::atomic::Ordering;
+#[cfg(not(test))]
+use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, SetConsoleCtrlHandler};
+
+#[cfg(not(test))]
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(not(test))]
 pub(crate) fn run() -> io::Result<()> {
     if std::env::args_os().len() != 1 {
         return Err(io::Error::new(
@@ -64,6 +72,7 @@ pub(crate) fn run() -> io::Result<()> {
     writeln!(io::stdout().lock(), "{snapshot}")
 }
 
+#[cfg(not(test))]
 unsafe extern "system" fn cancel(event: u32) -> i32 {
     // Leave a second interrupt to the default handler if a synchronous call stalls.
     i32::from(

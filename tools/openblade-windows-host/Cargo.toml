@@ -26,6 +26,7 @@ installed-service-candidate = [
     "openblade-platform-windows/controller-process-compile-check",
 ]
 hid-identity-compile-check = []
+firmware-performance-compile-check = ["hid-identity-compile-check"]
 controller-admission-compile-check = ["openblade-platform-windows/controller-process-compile-check"]
 lifecycle-evidence-compile-check = [
     "windows-sys/Win32_System_Power",

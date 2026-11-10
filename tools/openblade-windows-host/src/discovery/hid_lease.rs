@@ -4,8 +4,15 @@
 use super::{CandidateHint, DiscoverySource, Inventory, check_cancelled, discover_hid};
 use std::{io, sync::atomic::AtomicBool};
 
-#[cfg(all(windows, feature = "hid-identity-compile-check", not(test)))]
+#[cfg(all(
+    windows,
+    feature = "hid-identity-compile-check",
+    any(not(test), feature = "firmware-performance-compile-check")
+))]
 mod windows;
+
+#[cfg(any(test, feature = "firmware-performance-compile-check"))]
+mod performance;
 
 mod owner;
 #[cfg(test)]

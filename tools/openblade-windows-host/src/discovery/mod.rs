@@ -13,7 +13,10 @@ pub(crate) use hid_lease::tests::service_fixture;
 mod pnp;
 #[cfg(test)]
 mod tests;
-#[cfg(all(windows, not(test)))]
+#[cfg(all(
+    windows,
+    any(not(test), feature = "firmware-performance-compile-check")
+))]
 pub(crate) mod windows;
 
 const MAX_INTERFACES: usize = 4096;
