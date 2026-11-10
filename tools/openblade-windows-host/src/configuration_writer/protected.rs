@@ -348,7 +348,7 @@ pub(super) fn require_ntfs(volume: &File) -> io::Result<()> {
     Ok(())
 }
 
-fn rename_same_directory(file: &File, target: &str, replace: bool) -> io::Result<()> {
+pub(super) fn rename_same_directory(file: &File, target: &str, replace: bool) -> io::Result<()> {
     use windows_sys::{
         Wdk::Storage::FileSystem::{
             FILE_RENAME_INFORMATION, FileRenameInformation, NtSetInformationFile,

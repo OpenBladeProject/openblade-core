@@ -7,6 +7,8 @@ use windows_sys::{
     },
 };
 
+pub mod run_marker;
+
 pub struct Lease {
     // Close the exclusive file before releasing the retained directories.
     _file: File,
