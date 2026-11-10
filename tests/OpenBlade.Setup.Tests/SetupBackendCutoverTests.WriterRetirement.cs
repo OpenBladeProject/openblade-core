@@ -219,7 +219,7 @@ public sealed partial class SetupBackendCutoverTests
         private SortedDictionary<string, string>? recoveryAfterStop;
 
         public ScratchWriters(string root, SetupPaths paths, OfflineWindows scm,
-            ISetupGuardianQuiescenceGuard guardian, string priorBuildSha256)
+            ISetupGuardianQuiescenceGuard guardian, string priorBuildSha256, Backend initial = Backend.Managed)
         {
             this.root = root;
             this.paths = paths;
@@ -239,13 +239,21 @@ public sealed partial class SetupBackendCutoverTests
                 lockId = FenceNative.Inspect(file, directory: false).Identity;
             }
 
-            (process, Observer initialObserver, image) = Launch(Backend.Managed, priorBuildSha256);
+            (process, Observer initialObserver, image) = Launch(initial, priorBuildSha256);
             observer = initialObserver;
             generation = initialObserver.Generation;
         }
 
         public Backend Current => generation.Backend;
         public int StopRequests { get; private set; }
+        public string LeaseRoot => leaseRoot;
+
+        public IDisposable AcquireSuccessorLease(string path, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            Assert.Equal(leaseRoot, path);
+            return WriterLease.AcquireExactRoot(path, rootId, lockId);
+        }
 
         public async Task StopAsync(RetirementFault fault, CancellationToken token)
         {
