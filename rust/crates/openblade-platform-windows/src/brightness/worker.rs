@@ -44,8 +44,12 @@ type ReadResult = Result<BrightnessSnapshot, BrightnessError>;
 type ApplyResult = Result<BrightnessOutcome, BrightnessFailure>;
 
 enum Operation {
-    Read(SyncSender<ReadResult>),
-    Apply(BrightnessRequest, SyncSender<ApplyResult>),
+    Read(Option<BrightnessTarget>, SyncSender<ReadResult>),
+    Apply(
+        BrightnessRequest,
+        Option<BrightnessTarget>,
+        SyncSender<ApplyResult>,
+    ),
 }
 
 struct Request {
@@ -105,6 +109,15 @@ impl WindowsBrightnessWorker {
         Self::spawn(super::windows::WindowsWmi::default)
     }
 
+    /// The development host supplies a synthetic backend and owns its
+    /// script-only COM policy. This uses the same queue and submission gate.
+    #[cfg(feature = "scripted-display")]
+    pub fn start_scripted<N: WmiBrightnessNative + 'static>(
+        native: impl FnOnce() -> N + Send + 'static,
+    ) -> io::Result<Self> {
+        Self::spawn(native)
+    }
+
     fn spawn<N: WmiBrightnessNative + 'static>(
         native: impl FnOnce() -> N + Send + 'static,
     ) -> io::Result<Self> {
@@ -122,13 +135,14 @@ impl WindowsBrightnessWorker {
                         submission_gate: Some(&request.gate),
                     };
                     match request.operation {
-                        Operation::Read(reply) => {
-                            let result = brightness.read_with_budget(&budget);
+                        Operation::Read(target, reply) => {
+                            let result = brightness.read_with_budget(target.as_ref(), &budget);
                             drop(completion);
                             let _ = reply.send(result);
                         }
-                        Operation::Apply(intent, reply) => {
-                            let result = brightness.apply_with_budget(intent, &budget);
+                        Operation::Apply(intent, target, reply) => {
+                            let result =
+                                brightness.apply_with_budget(intent, target.as_ref(), &budget);
                             drop(completion);
                             let _ = reply.send(result);
                         }
@@ -143,13 +157,49 @@ impl WindowsBrightnessWorker {
     }
 
     pub fn read(&mut self, cancelled: impl Fn() -> bool) -> ReadResult {
-        self.execute(CALL_LIMIT, &cancelled, Operation::Read)
-            .map_err(|(failure, _)| BrightnessError::Native(failure))?
+        self.read_with_target(None, cancelled)
+    }
+
+    pub fn read_target(
+        &mut self,
+        target: BrightnessTarget,
+        cancelled: impl Fn() -> bool,
+    ) -> ReadResult {
+        self.read_with_target(Some(target), cancelled)
+    }
+
+    fn read_with_target(
+        &mut self,
+        target: Option<BrightnessTarget>,
+        cancelled: impl Fn() -> bool,
+    ) -> ReadResult {
+        self.execute(CALL_LIMIT, &cancelled, |reply| {
+            Operation::Read(target, reply)
+        })
+        .map_err(|(failure, _)| BrightnessError::Native(failure))?
     }
 
     pub fn apply(
         &mut self,
         intent: BrightnessRequest,
+        cancelled: impl Fn() -> bool,
+    ) -> ApplyResult {
+        self.apply_with_target(intent, None, cancelled)
+    }
+
+    pub fn apply_target(
+        &mut self,
+        intent: BrightnessRequest,
+        target: BrightnessTarget,
+        cancelled: impl Fn() -> bool,
+    ) -> ApplyResult {
+        self.apply_with_target(intent, Some(target), cancelled)
+    }
+
+    fn apply_with_target(
+        &mut self,
+        intent: BrightnessRequest,
+        target: Option<BrightnessTarget>,
         cancelled: impl Fn() -> bool,
     ) -> ApplyResult {
         if self.submission_unresolved {
@@ -160,7 +210,7 @@ impl WindowsBrightnessWorker {
             });
         }
         self.execute(WRITE_REPLY_LIMIT, &cancelled, |reply| {
-            Operation::Apply(intent, reply)
+            Operation::Apply(intent, target, reply)
         })
         .map_err(|(failure, started)| BrightnessFailure {
             reason: BrightnessError::Native(failure),

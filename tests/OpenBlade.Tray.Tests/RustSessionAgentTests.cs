@@ -24,12 +24,12 @@ public sealed class RustSessionAgentTests
             DisplaySettingsSnapshot result = await client.GetStateAsync(token);
             Assert.True(result.OperationSucceeded);
             Assert.Equal(scenario == "available", result.IsAvailable);
-            Assert.Null(result.BrightnessPercent);
             Assert.Null(result.SelectedColorProfileKey);
             Assert.Empty(result.ColorProfileOptions);
-            Assert.Empty(result.SupportedBrightnessLevels);
             if (result.IsAvailable)
             {
+                Assert.Equal((byte)40, result.BrightnessPercent);
+                Assert.Equal(new byte[] { 10, 40, 70, 100 }, result.SupportedBrightnessLevels);
                 Assert.Equal("Synthetic panel", result.DisplayName);
                 Assert.Equal(2560, result.Width);
                 Assert.Equal(1600, result.Height);
@@ -44,6 +44,8 @@ public sealed class RustSessionAgentTests
             }
             else
             {
+                Assert.Null(result.BrightnessPercent);
+                Assert.Empty(result.SupportedBrightnessLevels);
                 Assert.Null(result.DisplayName);
                 Assert.Null(result.BitsPerColorChannel);
                 Assert.Empty(result.RefreshRateOptions);
@@ -59,6 +61,185 @@ public sealed class RustSessionAgentTests
             Assert.Equal(result.IsAvailable, (await client.GetStateAsync(token)).IsAvailable);
             await host.StopAsync(token);
         }
+    }
+
+    [RustSessionAgentFact]
+    public async Task TrayDisplayClient_ConfirmsBrightnessAndRecognizesNoOp()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        CancellationToken token = timeout.Token;
+        string id = Guid.NewGuid().ToString("N");
+        await using var host = Host.Start(id);
+        await host.WaitForReadyAsync(token);
+        var client = new SessionDisplaySettingsAdapter(PipeName(id));
+
+        DisplaySettingsSnapshot blocked = await client.SetBrightnessAsync(PowerSource.Battery, 70, token);
+        Assert.False(blocked.OperationSucceeded);
+        Assert.Contains("was not submitted", blocked.StatusMessage);
+        Assert.Equal((byte)40, (await client.GetStateAsync(token)).BrightnessPercent);
+
+        DisplaySettingsSnapshot noOp = await client.SetBrightnessAsync(PowerSource.PluggedIn, 55, token);
+        Assert.True(noOp.OperationSucceeded);
+        Assert.Equal((byte)40, noOp.BrightnessPercent);
+        Assert.Equal("Brightness was already at the selected level.", noOp.StatusMessage);
+
+        DisplaySettingsSnapshot confirmed = await client.SetBrightnessAsync(PowerSource.PluggedIn, 67, token);
+        Assert.True(confirmed.OperationSucceeded);
+        Assert.True(confirmed.IsAvailable);
+        Assert.Equal((byte)70, confirmed.BrightnessPercent);
+        Assert.Equal(new byte[] { 10, 40, 70, 100 }, confirmed.SupportedBrightnessLevels);
+        Assert.Equal((byte)70, (await client.GetStateAsync(token)).BrightnessPercent);
+        await host.StopAsync(token);
+    }
+
+    [RustSessionAgentFact]
+    public async Task TrayDisplayClient_KeepsConfirmedDisplayFieldsWhenBrightnessIsUnavailable()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        CancellationToken token = timeout.Token;
+        foreach (string scenario in new[] { "missing-wmi", "replaced-panel" })
+        {
+            string id = Guid.NewGuid().ToString("N");
+            await using var host = Host.Start(id, brightness: scenario);
+            await host.WaitForReadyAsync(token);
+            var client = new SessionDisplaySettingsAdapter(PipeName(id));
+            DisplaySettingsSnapshot before = await client.GetStateAsync(token);
+            Assert.Equal(scenario == "missing-wmi" ? (byte?)null : 40, before.BrightnessPercent);
+            DisplaySettingsSnapshot blocked = await client.SetBrightnessAsync(PowerSource.PluggedIn, 70, token);
+            Assert.False(blocked.OperationSucceeded);
+            Assert.Contains(scenario == "missing-wmi" ? "MissingData" : "PanelChanged", blocked.StatusMessage);
+            Assert.Null(blocked.BrightnessPercent);
+
+            DisplaySettingsSnapshot result = await client.GetStateAsync(token);
+            Assert.True(result.OperationSucceeded);
+            Assert.True(result.IsAvailable);
+            Assert.Equal("Synthetic panel", result.DisplayName);
+            Assert.Equal(2560, result.Width);
+            Assert.Equal(10, result.BitsPerColorChannel);
+            Assert.True(result.IsHdrSupported);
+            Assert.True(result.IsHdrEnabled);
+            Assert.Equal(2, result.RefreshRateOptions.Count);
+            Assert.Null(result.BrightnessPercent);
+            Assert.Empty(result.SupportedBrightnessLevels);
+            await host.StopAsync(token);
+        }
+    }
+
+    [RustSessionAgentFact]
+    public async Task PrivateHost_RequiresExactReadbackAndPausesWritesAcrossConnections()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        CancellationToken token = timeout.Token;
+        foreach (string scenario in new[] { "sibling-readback", "stalled-write" })
+        {
+            string id = Guid.NewGuid().ToString("N");
+            await using var host = Host.Start(id, brightness: scenario);
+            await host.WaitForReadyAsync(token);
+            using var pipe = Pipe(id);
+            await pipe.ConnectAsync(token);
+            Guid requestId = Guid.NewGuid();
+            await SessionDisplayIpcCodec.WriteRequestAsync(
+                pipe, new SetBrightnessRequest(SessionDisplayIpc.ProtocolVersion,
+                    requestId, PowerSource.PluggedIn, 70), token);
+            SessionDisplayResponse response = await SessionDisplayIpcCodec.ReadResponseAsync(pipe, token);
+            Assert.Equal(requestId, response.RequestId);
+            Assert.Equal(SessionDisplayOperationStatus.Indeterminate, response.Status);
+            Assert.Contains(scenario == "sibling-readback" ? "PanelChanged" : "DeadlineExceeded", response.Error);
+            Assert.Equal(scenario == "sibling-readback" ? (byte?)null : 70, response.State.BrightnessPercent);
+
+            var client = new SessionDisplaySettingsAdapter(PipeName(id));
+            Assert.Equal((byte)70, (await client.GetStateAsync(token)).BrightnessPercent);
+            DisplaySettingsSnapshot blocked = await client.SetBrightnessAsync(PowerSource.PluggedIn, 10, token);
+            Assert.False(blocked.OperationSucceeded);
+            Assert.Contains("writes are paused", blocked.StatusMessage);
+            Assert.Equal((byte)70, (await client.GetStateAsync(token)).BrightnessPercent);
+            await host.StopAsync(token);
+        }
+    }
+
+    [RustSessionAgentFact]
+    public async Task TrayDisplayClient_CancellationDuringAdmissionLeavesTheBaseline()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        CancellationToken token = timeout.Token;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+        string id = Guid.NewGuid().ToString("N");
+        await using var host = Host.Start(id, brightness: "stalled-admission");
+        await host.WaitForReadyAsync(token);
+        var client = new SessionDisplaySettingsAdapter(PipeName(id));
+
+        Task<DisplaySettingsSnapshot> apply = client.SetBrightnessAsync(
+            PowerSource.PluggedIn, 70, cancellation.Token);
+        await host.WaitForSignalAsync("BRIGHTNESS ADMISSION", token);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => apply);
+        Assert.Equal((byte)40, await ObserveBrightnessAsync(client, token));
+        await host.StopAsync(token);
+    }
+
+    [RustSessionAgentFact]
+    public async Task PrivateHost_PausesAfterClientDisappearsDuringSubmission()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        CancellationToken token = timeout.Token;
+        string id = Guid.NewGuid().ToString("N");
+        await using var host = Host.Start(id, brightness: "stalled-write");
+        await host.WaitForReadyAsync(token);
+        using (NamedPipeClientStream pipe = Pipe(id))
+        {
+            await pipe.ConnectAsync(token);
+            await SessionDisplayIpcCodec.WriteRequestAsync(
+                pipe, new SetBrightnessRequest(SessionDisplayIpc.ProtocolVersion,
+                    Guid.NewGuid(), PowerSource.PluggedIn, 70), token);
+            await host.WaitForSignalAsync("BRIGHTNESS SUBMITTED", token);
+        }
+
+        var client = new SessionDisplaySettingsAdapter(PipeName(id));
+        Assert.Equal((byte)70, await ObserveBrightnessAsync(client, token));
+        DisplaySettingsSnapshot blocked = await client.SetBrightnessAsync(PowerSource.PluggedIn, 10, token);
+        Assert.False(blocked.OperationSucceeded);
+        Assert.Contains("writes are paused", blocked.StatusMessage);
+        Assert.Equal((byte)70, (await client.GetStateAsync(token)).BrightnessPercent);
+        await host.StopAsync(token);
+    }
+
+    private static async Task<byte> ObserveBrightnessAsync(
+        SessionDisplaySettingsAdapter client,
+        CancellationToken token)
+    {
+        // A cancelled caller can leave the one worker occupied briefly.
+        while (true)
+        {
+            DisplaySettingsSnapshot state = await client.GetStateAsync(token);
+            if (state.BrightnessPercent is byte percent)
+            {
+                Assert.True(state.OperationSucceeded);
+                return percent;
+            }
+
+            await Task.Delay(25, token);
+        }
+    }
+
+    [RustSessionAgentFact]
+    public async Task PrivateHost_ShutsDownWithAnOutstandingScriptedSubmission()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        CancellationToken token = timeout.Token;
+        string id = Guid.NewGuid().ToString("N");
+        await using var host = Host.Start(id, brightness: "stalled-write");
+        await host.WaitForReadyAsync(token);
+        using var pipe = Pipe(id);
+        await pipe.ConnectAsync(token);
+        await SessionDisplayIpcCodec.WriteRequestAsync(
+            pipe, new SetBrightnessRequest(SessionDisplayIpc.ProtocolVersion,
+                Guid.NewGuid(), PowerSource.PluggedIn, 70), token);
+        await host.WaitForSignalAsync("BRIGHTNESS SUBMITTED", token);
+
+        using var stopDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        stopDeadline.CancelAfter(TimeSpan.FromSeconds(1));
+        await host.StopAsync(stopDeadline.Token);
+        await AssertClosedAsync(pipe, token);
     }
 
     [RustSessionAgentFact]
@@ -180,7 +361,7 @@ public sealed class RustSessionAgentTests
             standardError = process.StandardError.ReadToEndAsync();
         }
 
-        internal static Host Start(string id, string scenario = "available")
+        internal static Host Start(string id, string scenario = "available", string? brightness = null)
         {
             string path = Environment.GetEnvironmentVariable(RustSessionAgentFactAttribute.PathVariable)!;
             Assert.True(Path.IsPathFullyQualified(path)
@@ -198,13 +379,19 @@ public sealed class RustSessionAgentTests
             start.ArgumentList.Add("foreground");
             start.ArgumentList.Add(id);
             start.ArgumentList.Add(scenario);
+            if (brightness is not null)
+            {
+                start.ArgumentList.Add(brightness);
+            }
             return new Host(Process.Start(start)!);
         }
 
-        internal async Task WaitForReadyAsync(CancellationToken token)
+        internal Task WaitForReadyAsync(CancellationToken token) => WaitForSignalAsync("READY", token);
+
+        internal async Task WaitForSignalAsync(string signal, CancellationToken token)
         {
             string? line = await process.StandardOutput.ReadLineAsync(token);
-            Assert.True(line == "READY", line ?? await standardError.WaitAsync(token));
+            Assert.True(line == signal, line ?? await standardError.WaitAsync(token));
         }
 
         internal async Task AssertRejectedAsync(CancellationToken token)

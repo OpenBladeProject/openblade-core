@@ -11,6 +11,9 @@ use windows_sys::Win32::{
     Graphics::Gdi::ENUM_CURRENT_SETTINGS,
 };
 
+pub const MONITOR_INSTANCE: &str = r"DISPLAY\SYN0001\FIXTURE";
+const MONITOR_PATH: &str = r"\\?\DISPLAY#SYN0001#FIXTURE#{SYNTHETIC}";
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Scenario {
     Available,
@@ -21,6 +24,13 @@ pub enum Scenario {
 }
 
 impl Scenario {
+    pub fn topology(self, replaced: bool) -> Result<InternalDisplayTopology, DisplayReadError> {
+        read_with(&mut Script {
+            scenario: self,
+            target: if replaced { 5 } else { 4 },
+        })
+    }
+
     pub fn read(self) -> Result<InternalDisplayRefresh, DisplayReadError> {
         refresh::read_refresh_with(&mut Script {
             scenario: self,
@@ -120,6 +130,13 @@ impl DisplayApi for Script {
         {
             *unit = value;
         }
+        for (unit, value) in request
+            .monitorDevicePath
+            .iter_mut()
+            .zip(MONITOR_PATH.encode_utf16())
+        {
+            *unit = value;
+        }
         ERROR_SUCCESS
     }
 
@@ -167,7 +184,7 @@ impl RefreshApi for Script {
     }
 
     fn edid(&mut self, _: &[u16]) -> Result<Vec<u8>, u32> {
-        unreachable!("script has no monitor device path");
+        Err(ERROR_NOT_SUPPORTED)
     }
 }
 

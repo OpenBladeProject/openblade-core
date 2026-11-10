@@ -572,7 +572,7 @@ fn expired_budget_prevents_native_work_and_submission() {
     };
     let mut controller = WmiBrightness::new(Script::new([]));
     assert!(matches!(
-        controller.observe(&budget),
+        controller.observe(None, &budget),
         Err(BrightnessError::Native(NativeFailure::DeadlineExceeded))
     ));
     let mut submission = Submission {

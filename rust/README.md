@@ -71,7 +71,21 @@ dotnet test tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj --filter Full
 
 The managed Display tests check the shared refresh and HDR input oracles.
 The Session tests check the v2 envelopes, including a successful query with
-unavailable state. The replay leaves brightness and color profiles unavailable.
+unavailable state. The private query includes brightness and supported levels
+only when the synthetic WMI reading matches the CCD endpoints and monitor path.
+Unavailable brightness leaves the independently observed display fields intact.
+Color profiles remain unavailable.
+
+The private endpoint accepts only query and the existing typed brightness
+request. Each process starts one scripted brightness worker; no COM policy is
+applied to Windows and no native display or WMI transport is started. A confirmed
+write requires a separate read from the full submitted WMI instance. A lost or
+ambiguous write reply pauses writes for that process; read-only observations
+remain available when the worker drains. Stopping the fixture is bounded and
+does not assert that an outstanding submission completed. A native host still
+needs process-wide COM security, a confirmed current-user session and power
+source, and recovery that survives host restart before live writes can be tried.
+
 Current HDR output mode, complete snapshot parity, and native display behavior
 need separate evidence before replacement. Product, Session IPC and persisted
 schema versions are unchanged by this replay.

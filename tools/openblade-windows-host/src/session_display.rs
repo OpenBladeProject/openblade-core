@@ -1,6 +1,20 @@
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering::SeqCst},
+    },
+    time::Duration,
+};
 
-use openblade_platform_windows::display::{InternalDisplayRefresh, scripted::Scenario};
+use openblade_platform_windows::{
+    brightness::{
+        BrightnessError, BrightnessOutcome, BrightnessRequest, BrightnessSnapshot,
+        BrightnessTarget, NativeFailure, WindowsBrightnessWorker,
+    },
+    display::{InternalDisplayRefresh, scripted::Scenario},
+};
+
+use crate::session_brightness::ScriptedBrightness;
 use openblade_windows_host::pipe::Identity;
 use serde::Deserialize;
 #[cfg(test)]
@@ -16,9 +30,132 @@ const VERSION: i32 = 2;
 const MAX_FRAME_BYTES: i32 = 65_536;
 const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
 
-fn response(query: Query, scenario: Scenario) -> Result<Vec<u8>, Rejected> {
-    // The private replay only observes topology, refresh and HDR. Other
-    // v2 fields use their unavailable representation.
+const SUCCEEDED: i32 = 0;
+const BLOCKED: i32 = 1;
+const FAILED: i32 = 2;
+const INDETERMINATE: i32 = 3;
+
+pub(super) struct SessionDisplay {
+    scenario: Scenario,
+    brightness: WindowsBrightnessWorker,
+    writes_paused: bool,
+}
+
+impl SessionDisplay {
+    pub(super) fn scripted(scenario: Scenario, brightness: WindowsBrightnessWorker) -> Self {
+        Self {
+            scenario,
+            brightness,
+            writes_paused: false,
+        }
+    }
+
+    fn response(
+        &mut self,
+        query: Query,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<(Vec<u8>, bool), Rejected> {
+        let (mut state, target, display_error) = display_state(self.scenario);
+        let (status, error, possible_submission) = match query.operation {
+            Operation::Query {} => {
+                if let Some(target) = target
+                    && let Ok(brightness) = self.brightness.read_target(target, &cancelled)
+                {
+                    set_snapshot(&mut state, brightness);
+                }
+                let status = if display_error.is_some() {
+                    FAILED
+                } else {
+                    SUCCEEDED
+                };
+                (status, display_error, false)
+            }
+            Operation::SetBrightness {
+                expected_power_source,
+                percent,
+            } => {
+                if self.writes_paused {
+                    (
+                        BLOCKED,
+                        Some(
+                            "Brightness writes are paused after an indeterminate submission."
+                                .into(),
+                        ),
+                        false,
+                    )
+                } else if expected_power_source != ScriptedBrightness::POWER_SOURCE {
+                    (BLOCKED, Some("The expected power source does not match the scripted session; brightness was not submitted.".into()), false)
+                } else if let Some(target) = target {
+                    match self.brightness.apply_target(
+                        BrightnessRequest::SetPercent(percent),
+                        target,
+                        &cancelled,
+                    ) {
+                        Ok(BrightnessOutcome::Unchanged(snapshot)) => {
+                            set_snapshot(&mut state, snapshot);
+                            state["message"] =
+                                json!("Brightness was already at the selected level.");
+                            (SUCCEEDED, None, false)
+                        }
+                        Ok(BrightnessOutcome::Confirmed(snapshot)) => {
+                            set_snapshot(&mut state, snapshot);
+                            (SUCCEEDED, None, true)
+                        }
+                        Err(failure) if failure.submission_may_have_occurred => {
+                            // A later query may observe brightness, but cannot
+                            // authorize another write in this private agent.
+                            self.writes_paused = true;
+                            if let Some(snapshot) = failure.state {
+                                set_snapshot(&mut state, snapshot);
+                            }
+                            (
+                                INDETERMINATE,
+                                Some(format!(
+                                    "Brightness submission is indeterminate ({:?}); writes are paused.",
+                                    failure.reason
+                                )),
+                                true,
+                            )
+                        }
+                        Err(failure) => {
+                            let error = if failure.reason
+                                == BrightnessError::Native(NativeFailure::Cancelled)
+                            {
+                                "Brightness was cancelled before submission.".into()
+                            } else {
+                                format!("Brightness was not submitted ({:?}).", failure.reason)
+                            };
+                            (FAILED, Some(error), false)
+                        }
+                    }
+                } else {
+                    (
+                        FAILED,
+                        Some(display_error.unwrap_or_else(|| {
+                            "Brightness was not submitted; the internal display is unavailable."
+                                .into()
+                        })),
+                        false,
+                    )
+                }
+            }
+        };
+        let frame = encode(&query.request_id, status, error, state);
+        if frame.is_err() && possible_submission {
+            self.writes_paused = true;
+        }
+        Ok((frame?, possible_submission))
+    }
+}
+
+fn set_snapshot(state: &mut serde_json::Value, brightness: BrightnessSnapshot) {
+    state["brightnessPercent"] = json!(brightness.percent);
+    state["supportedBrightnessLevels"] = json!(brightness.supported_levels);
+}
+
+fn display_state(
+    scenario: Scenario,
+) -> (serde_json::Value, Option<BrightnessTarget>, Option<String>) {
     let mut state = json!({
         "isAvailable": false,
         "displayName": null,
@@ -36,13 +173,16 @@ fn response(query: Query, scenario: Scenario) -> Result<Vec<u8>, Rejected> {
         "brightnessPercent": null,
         "supportedBrightnessLevels": [],
     });
+    let mut target = None;
     let error = match scenario.read() {
         Ok(InternalDisplayRefresh::Single(snapshot)) => {
+            let brightness_target = BrightnessTarget::from_display(&snapshot.display).ok();
             match (
                 snapshot.display.monitor_name,
                 snapshot.display.advanced_color,
             ) {
                 (Ok(name), Ok(hdr)) => {
+                    target = brightness_target;
                     state["isAvailable"] = json!(true);
                     state["displayName"] = json!(
                         name.friendly_name
@@ -96,12 +236,19 @@ fn response(query: Query, scenario: Scenario) -> Result<Vec<u8>, Rejected> {
         Err(error) => Some(format!("Display read failed: {error:?}.")),
     };
 
-    const SUCCEEDED: i32 = 0;
-    const FAILED: i32 = 2;
+    (state, target, error)
+}
+
+fn encode(
+    request_id: &str,
+    status: i32,
+    error: Option<String>,
+    state: serde_json::Value,
+) -> Result<Vec<u8>, Rejected> {
     let body = serde_json::to_vec(&json!({
         "version": VERSION,
-        "requestId": query.request_id,
-        "status": if error.is_some() { FAILED } else { SUCCEEDED },
+        "requestId": request_id,
+        "status": status,
         "error": error,
         "state": state,
     }))
@@ -116,23 +263,40 @@ fn response(query: Query, scenario: Scenario) -> Result<Vec<u8>, Rejected> {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct Query {
-    operation: Operation,
     version: i32,
     request_id: String,
+    #[serde(flatten)]
+    operation: Operation,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(
+    tag = "operation",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 enum Operation {
-    Query,
+    Query {},
+    SetBrightness {
+        expected_power_source: u8,
+        percent: u8,
+    },
 }
 
 impl Query {
     fn parse(body: &[u8]) -> Result<Self, Rejected> {
         let query: Self = serde_json::from_slice(body).map_err(|_| Rejected::InvalidRequest)?;
-        let Operation::Query = query.operation;
+        if let Operation::SetBrightness {
+            expected_power_source,
+            percent,
+        } = query.operation
+            && (expected_power_source > 2 || percent > 100)
+        {
+            return Err(Rejected::InvalidRequest);
+        }
         if query.version != VERSION {
             return Err(Rejected::UnsupportedVersion);
         }
@@ -164,6 +328,7 @@ pub(super) enum Rejected {
     InvalidRequest,
     UnsupportedVersion,
     InvalidResponse,
+    WorkerFailed,
     WriteDeadline,
     WriteFailed,
 }
@@ -171,7 +336,8 @@ pub(super) enum Rejected {
 pub(super) async fn serve(
     pipe: &mut NamedPipeServer,
     identity: &Identity,
-    scenario: Scenario,
+    session: &Arc<Mutex<SessionDisplay>>,
+    stopping: &Arc<AtomicBool>,
 ) -> Result<(), Rejected> {
     let body = timeout(FRAME_TIMEOUT, async {
         let length = pipe.read_i32_le().await.map_err(|_| Rejected::ReadFailed)?;
@@ -191,11 +357,47 @@ pub(super) async fn serve(
     identity
         .authorize(pipe)
         .map_err(|_| Rejected::Unauthorized)?;
-    let frame = response(Query::parse(&body)?, scenario)?;
-    timeout(FRAME_TIMEOUT, pipe.write_all(&frame))
-        .await
-        .map_err(|_| Rejected::WriteDeadline)?
-        .map_err(|_| Rejected::WriteFailed)
+    let query = Query::parse(&body)?;
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let mut task = tokio::task::spawn_blocking({
+        let session = Arc::clone(session);
+        let stopping = Arc::clone(stopping);
+        let cancelled = Arc::clone(&cancelled);
+        move || {
+            session
+                .lock()
+                .map_err(|_| Rejected::WorkerFailed)?
+                .response(query, || stopping.load(SeqCst) || cancelled.load(SeqCst))
+        }
+    });
+
+    // A connection is one request. EOF, a broken pipe, or another byte while
+    // the job is running cancels admission, never an already submitted write.
+    let mut extra = [0];
+    let (result, disconnected) = tokio::select! {
+        biased;
+        _ = pipe.read(&mut extra) => {
+            cancelled.store(true, SeqCst);
+            (task.await, true)
+        }
+        result = &mut task => (result, false),
+    };
+    let (frame, possible_submission) = result.map_err(|_| Rejected::WorkerFailed)??;
+    let delivery = if disconnected {
+        Err(Rejected::WriteFailed)
+    } else {
+        match timeout(FRAME_TIMEOUT, pipe.write_all(&frame)).await {
+            Ok(result) => result.map_err(|_| Rejected::WriteFailed),
+            Err(_) => Err(Rejected::WriteDeadline),
+        }
+    };
+    if delivery.is_err() && possible_submission {
+        session
+            .lock()
+            .map_err(|_| Rejected::WorkerFailed)?
+            .writes_paused = true;
+    }
+    delivery
 }
 
 #[cfg(test)]
@@ -206,7 +408,7 @@ mod tests {
         include_str!("../../../tests/OpenBlade.Session.Tests/WindowsReplay/v1/session.json");
 
     #[test]
-    fn only_canonical_query_is_admitted_from_the_display_replay() {
+    fn only_query_and_typed_brightness_are_admitted_from_the_display_replay() {
         let replay: Value = serde_json::from_str(REPLAY).unwrap();
         let display = &replay["families"]["display"];
         assert_eq!(display["version"], VERSION);
@@ -216,7 +418,9 @@ mod tests {
                 let body = serde_json::to_vec(input).unwrap();
                 let result = Query::parse(&body);
                 match vector["id"].as_str().unwrap() {
-                    "query" => assert_eq!(result.unwrap().request_id, input["requestId"]),
+                    "query" | "setBrightness" => {
+                        assert_eq!(result.unwrap().request_id, input["requestId"]);
+                    }
                     "old-version" => {
                         assert_eq!(result.unwrap_err(), Rejected::UnsupportedVersion);
                     }
@@ -227,10 +431,15 @@ mod tests {
     }
 
     #[test]
-    fn query_rejects_duplicate_fields_and_empty_correlation() {
+    fn rejects_malformed_envelopes_and_operation_fields() {
         for body in [
             r#"{"operation":"query","version":2,"version":2,"requestId":"11111111-2222-4333-8444-555555555555"}"#,
             r#"{"operation":"query","version":2,"requestId":"00000000-0000-0000-0000-000000000000"}"#,
+            r#"{"operation":"query","version":2,"requestId":"11111111-2222-4333-8444-555555555555","percent":20}"#,
+            r#"{"operation":"setBrightness","version":2,"requestId":"11111111-2222-4333-8444-555555555555","percent":101,"expectedPowerSource":0}"#,
+            r#"{"operation":"setBrightness","version":2,"requestId":"11111111-2222-4333-8444-555555555555","percent":20,"expectedPowerSource":3}"#,
+            r#"{"operation":"setBrightness","version":2,"requestId":"11111111-2222-4333-8444-555555555555","percent":20}"#,
+            r#"{"operation":"setBrightness","version":2,"requestId":"11111111-2222-4333-8444-555555555555","percent":20,"percent":30,"expectedPowerSource":0}"#,
         ] {
             assert_eq!(
                 Query::parse(body.as_bytes()).unwrap_err(),

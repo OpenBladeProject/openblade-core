@@ -2,7 +2,9 @@
 
 use std::time::{Duration, Instant};
 
-use crate::display::{DisplayReadError, EndpointId, InternalDisplayTopology};
+use crate::display::{
+    ActiveInternalDisplay, DisplayReadError, EndpointId, InternalDisplayTopology,
+};
 
 #[cfg(test)]
 mod tests;
@@ -11,6 +13,15 @@ mod worker;
 
 use worker::RequestGate;
 pub use worker::WindowsBrightnessWorker;
+
+/// The exact CCD endpoints and monitor path selected by the display owner.
+pub struct BrightnessTarget(Panel);
+
+impl BrightnessTarget {
+    pub fn from_display(display: &ActiveInternalDisplay) -> Result<Self, BrightnessError> {
+        Panel::from_display(display).map(Self)
+    }
+}
 
 const CALL_LIMIT: Duration = Duration::from_secs(2);
 const MAX_ROWS: usize = 64;
@@ -234,14 +245,15 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         &mut self,
         cancelled: impl Fn() -> bool,
     ) -> Result<BrightnessSnapshot, BrightnessError> {
-        self.read_with_budget(&budget(&cancelled))
+        self.read_with_budget(None, &budget(&cancelled))
     }
 
     fn read_with_budget(
         &mut self,
+        expected: Option<&BrightnessTarget>,
         admission: &CallBudget<'_>,
     ) -> Result<BrightnessSnapshot, BrightnessError> {
-        let (panel, reading) = self.observe(admission)?;
+        let (panel, reading) = self.observe(expected, admission)?;
         if let Some(WritePause::AwaitingReadback(submitted)) = &self.pause
             && submitted.matches_panel(&panel, &reading)
             && submitted.percent == reading.snapshot.percent
@@ -258,17 +270,18 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         request: BrightnessRequest,
         cancelled: impl Fn() -> bool,
     ) -> Result<BrightnessOutcome, BrightnessFailure> {
-        self.apply_with_budget(request, &budget(&cancelled))
+        self.apply_with_budget(request, None, &budget(&cancelled))
     }
 
     fn apply_with_budget(
         &mut self,
         request: BrightnessRequest,
+        expected: Option<&BrightnessTarget>,
         admission: &CallBudget<'_>,
     ) -> Result<BrightnessOutcome, BrightnessFailure> {
         let mut submitted = false;
         let mut state = None;
-        let result = self.apply_core(request, admission, &mut submitted, &mut state);
+        let result = self.apply_core(request, expected, admission, &mut submitted, &mut state);
         result.map_err(|reason| BrightnessFailure {
             reason,
             submission_may_have_occurred: submitted,
@@ -279,6 +292,7 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
     fn apply_core(
         &mut self,
         request: BrightnessRequest,
+        expected: Option<&BrightnessTarget>,
         admission: &CallBudget<'_>,
         submitted: &mut bool,
         state: &mut Option<BrightnessSnapshot>,
@@ -290,7 +304,7 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
             return Err(BrightnessError::SubmissionUnresolved);
         }
 
-        let (panel, baseline) = self.observe(admission)?;
+        let (panel, baseline) = self.observe(expected, admission)?;
         let target = select_level(request, &baseline.snapshot);
         let Some(target) = target.filter(|target| *target != baseline.snapshot.percent) else {
             return Ok(BrightnessOutcome::Unchanged(baseline.snapshot));
@@ -312,7 +326,7 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         .handle;
 
         *state = None;
-        let (fresh_panel, fresh) = self.observe(admission)?;
+        let (fresh_panel, fresh) = self.observe(expected, admission)?;
         if !panel.same_as(&fresh_panel) || !fresh.instance.eq_ignore_ascii_case(&baseline.instance)
         {
             return Err(BrightnessError::PanelChanged);
@@ -364,7 +378,7 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
             percent: target,
         };
         let readback = self
-            .observe(&budget(&|| false))
+            .observe(expected, &budget(&|| false))
             .and_then(|(panel, observed)| {
                 if target.matches_panel(&panel, &observed) {
                     Ok(observed.snapshot)
@@ -393,8 +407,15 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         }
     }
 
-    fn observe(&mut self, budget: &CallBudget<'_>) -> Result<(Panel, Reading), BrightnessError> {
+    fn observe(
+        &mut self,
+        expected: Option<&BrightnessTarget>,
+        budget: &CallBudget<'_>,
+    ) -> Result<(Panel, Reading), BrightnessError> {
         let panel = self.panel(budget)?;
+        if expected.is_some_and(|target| !target.0.same_as(&panel)) {
+            return Err(BrightnessError::PanelChanged);
+        }
         let rows = checked(budget, |budget| {
             self.native
                 .active_readings(budget, MAX_ROWS)
@@ -407,6 +428,11 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
             BrightnessError::ReadingUnavailable,
             BrightnessError::AmbiguousReading,
         )?;
+        // A composed display snapshot must not carry a WMI observation made
+        // across a target replacement, even when the instance prefix is reused.
+        if expected.is_some() && !panel.same_as(&self.panel(budget)?) {
+            return Err(BrightnessError::PanelChanged);
+        }
         Ok((panel, Reading::decode(row)?))
     }
 
@@ -455,13 +481,18 @@ impl Panel {
             }
             _ => return Err(BrightnessError::PanelUnavailable),
         };
+        Self::from_display(&display)
+    }
+
+    fn from_display(display: &ActiveInternalDisplay) -> Result<Self, BrightnessError> {
         let path = display
             .monitor_name
+            .as_ref()
             .ok()
-            .and_then(|name| name.device_path)
-            .and_then(|path| path.into_string().ok())
+            .and_then(|name| name.device_path.as_ref())
+            .and_then(|path| path.to_str())
             .ok_or(BrightnessError::PanelUnavailable)?;
-        let device = path.strip_prefix(r"\\?\").unwrap_or(&path);
+        let device = path.strip_prefix(r"\\?\").unwrap_or(path);
         let mut parts = device.split('#');
         let (Some(kind), Some(model), Some(device_instance)) =
             (parts.next(), parts.next(), parts.next())
@@ -479,7 +510,7 @@ impl Panel {
         Ok(Self {
             source: display.source,
             target: display.target,
-            path,
+            path: path.to_owned(),
             instance_prefix,
         })
     }
