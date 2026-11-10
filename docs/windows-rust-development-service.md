@@ -238,6 +238,26 @@ Production override persistence and device recovery are separate work.
 transaction while the fan write is unresolved. Quarantine blocks further mutations
 while a read-only fan observation can still resolve the device state.
 
+## Private CPU temperature worker replay
+
+The development host crate includes a separate CPU worker supervisor tested over
+an in-memory private duplex stream. It uses the managed worker's 8-byte request
+and 20-byte reply formats. Readiness consumes a sequence without producing a
+sample; sequence numbers continue across worker replacement. A reading is tied
+to its own request, rounds up, and ages from when that request was sent.
+
+A caller may stop waiting for initialization without canceling the worker's
+startup budget. A timed out or canceled sample retires the stream. A terminal
+worker reply also stops the worker, and the next worker must wait for independently
+confirmed exit and any retry cooldown. A closed stream or expired stop deadline
+cannot confirm exit. Unavailable readings never reuse a temperature.
+
+PR #936's private composition covers the standard preset and ordinary fan
+recipes. It has no temperature admission interface, so this replay does not
+feed its status fixture or enable Fan Stop or HyperBoost. Protected launch, Job
+Object ownership, native exit observation, sensor initialization, and installed
+thermal admission remain separate work.
+
 ## Compatibility boundary
 
 - Each connection accepts one request. Every mode serves v79 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v79 in the explicitly scoped foreground modes. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.

@@ -1,6 +1,7 @@
 //! Development contracts for the Windows host.
 
 pub mod configuration;
+pub mod cpu_worker;
 
 #[cfg(windows)]
 pub fn valid_dev_id(id: &str) -> bool {
