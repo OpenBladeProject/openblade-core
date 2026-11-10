@@ -7,7 +7,7 @@ use tokio::{
 };
 
 use super::{
-    Caller, ExchangeError, GetStatus, Snapshot, StatusResponse, Stream, denied, resolve_caller,
+    Caller, ExchangeError, Snapshot, StatusRequest, StatusResponse, Stream, denied, refresh_caller,
 };
 use crate::{
     service_frame::{encode, invalid, write_payload},
@@ -62,17 +62,7 @@ pub(super) struct Publication {
 
 impl Publication {
     fn for_peer(&self, stream: &dyn Stream, original: Caller) -> Result<&Snapshot, ExchangeError> {
-        let peer = stream.caller_after_read().map_err(ExchangeError::Client)?;
-        if original.pid.is_none()
-            || peer.pid != original.pid
-            || peer.session != original.session
-            || peer.logon != original.logon
-        {
-            return Err(ExchangeError::Client(denied(
-                "installed status peer changed",
-            )));
-        }
-        let access = resolve_caller(stream, peer)?
+        let access = refresh_caller(stream, original)?
             .access()
             .map_err(ExchangeError::Client)?;
         self.active.verify(0).map_err(ExchangeError::Runtime)?;
@@ -92,7 +82,7 @@ impl Publication {
 
 pub(super) async fn serve_subscription(
     stream: &mut dyn Stream,
-    request: &GetStatus,
+    request: &StatusRequest,
     caller: Caller,
     publications: Option<watch::Receiver<Arc<Publication>>>,
     subscriptions: &Subscriptions,

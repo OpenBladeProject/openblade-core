@@ -1,0 +1,187 @@
+use super::*;
+
+const REPLAY: &[u8] = include_bytes!("../../../../../tests/fixtures/observe-state-v79.frames");
+const ID: &str = "11111111-2222-4333-8444-555555555555";
+
+fn managed_frames() -> (&'static [u8], Value) {
+    let length = u32::from_le_bytes(REPLAY[..4].try_into().unwrap()) as usize;
+    let (request, response) = REPLAY.split_at(4 + length);
+    (request, serde_json::from_slice(&response[4..]).unwrap())
+}
+
+struct ReadPort {
+    answer: Option<Value>,
+    reads: Rc<Cell<usize>>,
+    control_session: Rc<Cell<Option<u32>>>,
+    retire_session_on_read: bool,
+    stall: bool,
+}
+
+impl StatusSource for ReadPort {
+    fn snapshot(&mut self, _: Caller, _: Instant) -> Pending<'_, Snapshot> {
+        panic!("ObserveState must not fall back to GetStatus");
+    }
+
+    fn observe_performance(&mut self) -> Pending<'_, Option<Snapshot>> {
+        self.reads.set(self.reads.get() + 1);
+        let answer = self.answer.take();
+        Box::pin(async move {
+            if self.retire_session_on_read {
+                self.control_session.set(None);
+            }
+            if self.stall {
+                pending().await
+            } else {
+                answer
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(io::Error::from)
+            }
+        })
+    }
+
+    fn drain(&mut self) -> Pending<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+async fn serve(
+    request: &[u8],
+    caller: Caller,
+    port: ReadPort,
+) -> (Result<(), ExchangeError>, Vec<u8>) {
+    let (mut client, server) = duplex(16_384);
+    let active = port.control_session.clone();
+    let source: Rc<Mutex<Box<dyn StatusSource>>> = Rc::new(Mutex::new(Box::new(port)));
+    let server = test_stream_with_authority(
+        server,
+        caller,
+        Fault::None,
+        Rc::new(move || Ok(active.get())),
+    );
+    let served = serve_connection(server, source, None, Rc::new(Subscriptions::new(1)));
+    let sent = async {
+        client.write_all(request).await.unwrap();
+        let mut reply = Vec::new();
+        client.read_to_end(&mut reply).await.unwrap();
+        reply
+    };
+    tokio::join!(served, sent)
+}
+
+fn refusal(reply: &[u8]) {
+    let frame: Value = serde_json::from_slice(&reply[4..]).unwrap();
+    assert_eq!(frame["frame"], "response");
+    assert_eq!(frame["version"], 79);
+    assert_eq!(frame["requestId"], ID);
+    assert_eq!(frame["success"], false);
+    assert!(frame["error"].as_str().is_some());
+    assert_eq!(frame["status"], Value::Null);
+    assert_eq!(frame["result"], Value::Null);
+    assert_eq!(frame["errorCode"], Value::Null);
+}
+
+fn port(answer: Option<Value>) -> ReadPort {
+    ReadPort {
+        answer,
+        reads: Rc::new(Cell::new(0)),
+        control_session: Rc::new(Cell::new(Some(SETUP.session))),
+        retire_session_on_read: false,
+        stall: false,
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn in_memory_observe_state_dispatches_only_admitted_fresh_reads() {
+    let (request, expected) = managed_frames();
+    assert!(StatusRequest::decode_get(&request[4..]).is_err());
+    let source = port(Some(expected["status"].clone()));
+    let reads = source.reads.clone();
+    let (result, reply) = serve(request, SETUP, source).await;
+    result.unwrap();
+    assert_eq!(reads.get(), 1);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&reply[4..]).unwrap(),
+        expected
+    );
+
+    let mut stale = expected["status"].clone();
+    stale["writesBlocked"] = json!(true);
+    for answer in [None, Some(stale)] {
+        let (result, reply) = serve(request, SYSTEM, port(answer)).await;
+        result.unwrap();
+        refusal(&reply);
+    }
+
+    for logon in [Logon::Interactive, Logon::RemoteInteractive] {
+        let source = port(Some(expected["status"].clone()));
+        let reads = source.reads.clone();
+        source.control_session.set(Some(SETUP.session + 1));
+        let (result, reply) = serve(request, Caller { logon, ..SETUP }, source).await;
+        result.unwrap();
+        refusal(&reply);
+        assert_eq!(reads.get(), 0);
+    }
+
+    let mut source = port(Some(expected["status"].clone()));
+    source.retire_session_on_read = true;
+    let (result, reply) = serve(request, SETUP, source).await;
+    result.unwrap();
+    refusal(&reply);
+}
+
+#[tokio::test(start_paused = true)]
+async fn in_memory_observe_state_rejects_bad_selectors_and_bounds_a_stalled_source() {
+    let (managed, expected) = managed_frames();
+    let request: Value = serde_json::from_slice(&managed[4..]).unwrap();
+
+    for (field, value) in [
+        ("version", json!(78)),
+        ("requestedLiveReadings", json!(16)),
+        ("requestedLiveReadings", json!(-1)),
+        ("effectiveLiveReadings", json!(1)),
+        ("requestId", json!("00000000-0000-0000-0000-000000000000")),
+    ] {
+        let mut bad = request.clone();
+        bad[field] = value;
+        let frame = framed(&bad);
+        let source = port(Some(expected["status"].clone()));
+        let reads = source.reads.clone();
+        let (result, reply) = serve(&frame, SYSTEM, source).await;
+        assert_eq!(
+            io::Error::from(result.unwrap_err()).kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(reads.get(), 0);
+        assert!(reply.is_empty());
+    }
+
+    // The older request omits both mask fields, so true still means All.
+    let mut legacy = request.clone();
+    legacy["includeLiveReadings"] = json!(true);
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("requestedLiveReadings");
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("effectiveLiveReadings");
+    let source = port(Some(expected["status"].clone()));
+    let reads = source.reads.clone();
+    let (result, reply) = serve(&framed(&legacy), SYSTEM, source).await;
+    result.unwrap();
+    refusal(&reply);
+    assert_eq!(reads.get(), 0);
+
+    let mut source = port(Some(expected["status"].clone()));
+    source.stall = true;
+    let (result, reply) = serve(managed, SYSTEM, source).await;
+    result.unwrap();
+    refusal(&reply);
+}
+
+fn framed(frame: &Value) -> Vec<u8> {
+    let payload = serde_json::to_vec(frame).unwrap();
+    [(payload.len() as i32).to_le_bytes().as_slice(), &payload].concat()
+}

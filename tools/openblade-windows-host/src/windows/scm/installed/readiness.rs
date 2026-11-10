@@ -7,17 +7,18 @@ use crate::service_frame::write_frame;
 #[cfg(test)]
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::{
+    io::AsyncReadExt,
     sync::{Mutex, oneshot, watch},
     task::{JoinSet, LocalSet},
-    time::{Instant, timeout},
+    time::{Instant, timeout, timeout_at},
 };
 
 use super::{Readiness, denied};
 use crate::{
     scm_host::startup_stopped,
-    service_frame::{FRAME_TIMEOUT, read_payload},
+    service_frame::{FRAME_TIMEOUT, encode, read_payload, write_payload},
     service_status::{
-        GetStatus, PIPE_NAME, PROTOCOL_VERSION, Snapshot, StatusResponse, exchange,
+        PIPE_NAME, PROTOCOL_VERSION, Snapshot, StatusRequest, StatusResponse, exchange,
         production_path, request_id as probe_id,
     },
 };
@@ -114,6 +115,15 @@ impl Endpoint for windows::NativeEndpoint {
 // observation can share it, using the projection for the resolved caller.
 trait StatusSource {
     fn snapshot(&mut self, caller: Caller, requested: Instant) -> Pending<'_, Snapshot>;
+
+    // Only an admitted, independent read started for this call can supply
+    // performance. This port must not reconcile, mutate or reuse a publication.
+    // Dropping the read must cancel it. The metadata observer has no firmware
+    // read authority.
+    fn observe_performance(&mut self) -> Pending<'_, Option<Snapshot>> {
+        Box::pin(async { Ok(None) })
+    }
+
     // The admitted runtime must seed this feed and publish monotonically,
     // with the managed inactive-session projection for every revision.
     fn publications(&self) -> Option<watch::Receiver<Arc<Publication>>> {
@@ -189,7 +199,7 @@ async fn prepare(
 impl Ports {
     async fn probe(&mut self, pid: u32) -> io::Result<()> {
         self.endpoint.listener()?.verify()?;
-        let request = GetStatus::new(probe_id()?)?;
+        let request = StatusRequest::get(probe_id()?)?;
         let endpoint = &*self.endpoint;
         let served = async {
             let mut source = self.source.lock().await;
@@ -317,7 +327,7 @@ impl From<ExchangeError> for io::Error {
 async fn serve(
     source: &mut dyn StatusSource,
     accept: impl Future<Output = io::Result<Box<dyn Stream>>>,
-    probe: Option<(u32, &GetStatus)>,
+    probe: Option<(u32, &StatusRequest)>,
 ) -> Result<Box<dyn Stream>, ExchangeError> {
     use ExchangeError::{Client, Runtime};
     let mut stream = accept.await.map_err(Runtime)?;
@@ -353,6 +363,8 @@ async fn serve_connection(
             async { source.lock().await.refresh_publications().await },
         )
         .await
+    } else if request.is_observation() {
+        serve_observation(&mut *stream, &request, caller, &source).await
     } else {
         caller.access().map_err(ExchangeError::Client)?;
         let requested = Instant::now();
@@ -367,10 +379,68 @@ async fn serve_connection(
     }
 }
 
+async fn serve_observation(
+    stream: &mut dyn Stream,
+    request: &StatusRequest,
+    caller: Caller,
+    source: &Mutex<Box<dyn StatusSource>>,
+) -> Result<(), ExchangeError> {
+    use ExchangeError::{Client, Runtime};
+    caller.access().map_err(Client)?;
+    let deadline = Instant::now() + FRAME_TIMEOUT;
+    let response = if refresh_caller(stream, caller)?.access().map_err(Client)? != 0 {
+        StatusResponse::failure(
+            request,
+            "Another Windows session currently controls OpenBlade hardware.",
+            None,
+        )
+    } else if request.requests_live_readings() {
+        StatusResponse::failure(request, "Live readings are unavailable.", None)
+    } else {
+        let observation = async {
+            let mut source = source.lock().await;
+            if refresh_caller(stream, caller)?.access().map_err(Client)? != 0
+                || Instant::now() >= deadline
+            {
+                return Ok(None);
+            }
+            // EOF or another request cancels this single-request connection.
+            let mut probe = [0];
+            tokio::select! {
+                biased;
+                disconnected = stream.read(&mut probe) => {
+                    disconnected.map_err(Client)?;
+                    Err(Client(io::ErrorKind::BrokenPipe.into()))
+                }
+                observed = source.observe_performance() => Ok(observed.ok().flatten()),
+            }
+        };
+        let status = timeout_at(deadline, observation)
+            .await
+            .unwrap_or(Ok(None))?;
+        let access = refresh_caller(stream, caller)?.access().map_err(Client)?;
+        if let Some(status) = status.filter(|status| {
+            Instant::now() < deadline && access == 0 && status.confirmed_performance().is_some()
+        }) {
+            status.verify(access).map_err(Runtime)?;
+            StatusResponse::success(request, status)
+        } else {
+            StatusResponse::failure(
+                request,
+                "Fresh performance observation is unavailable.",
+                None,
+            )
+        }
+    };
+    write_payload(stream, &encode(&response).map_err(Runtime)?)
+        .await
+        .map_err(Client)
+}
+
 async fn read_request(
     stream: &mut dyn Stream,
     get_only: bool,
-) -> Result<(GetStatus, Caller), ExchangeError> {
+) -> Result<(StatusRequest, Caller), ExchangeError> {
     use ExchangeError::Client;
     let payload = timeout(FRAME_TIMEOUT, read_payload(&mut *stream))
         .await
@@ -379,9 +449,9 @@ async fn read_request(
     // Windows impersonation uses the token from the last read on this handle.
     let caller = stream.caller_after_read().map_err(Client)?;
     let request = if get_only {
-        GetStatus::decode(&payload)
+        StatusRequest::decode_get(&payload)
     } else {
-        GetStatus::decode_status(&payload)
+        StatusRequest::decode(&payload)
     }
     .map_err(Client)?;
     Ok((request, caller))
@@ -396,10 +466,24 @@ fn resolve_caller(stream: &dyn Stream, mut caller: Caller) -> Result<Caller, Exc
     Ok(caller)
 }
 
+fn refresh_caller(stream: &dyn Stream, original: Caller) -> Result<Caller, ExchangeError> {
+    let peer = stream.caller_after_read().map_err(ExchangeError::Client)?;
+    if original.pid.is_none()
+        || peer.pid != original.pid
+        || peer.session != original.session
+        || peer.logon != original.logon
+    {
+        return Err(ExchangeError::Client(denied(
+            "installed status peer changed",
+        )));
+    }
+    resolve_caller(stream, peer)
+}
+
 async fn serve_get(
     source: &mut dyn StatusSource,
     stream: &mut dyn Stream,
-    request: &GetStatus,
+    request: &StatusRequest,
     caller: Caller,
 ) -> Result<(), ExchangeError> {
     let caller = resolve_caller(stream, caller)?;
@@ -411,7 +495,7 @@ async fn serve_get(
 
 async fn status_payload(
     source: &mut dyn StatusSource,
-    request: &GetStatus,
+    request: &StatusRequest,
     caller: Caller,
     requested: Instant,
 ) -> Result<Vec<u8>, ExchangeError> {

@@ -62,7 +62,7 @@ async fn assert_eof(client: &mut DuplexStream) {
 
 async fn get_status(tx: &Ingress) {
     let mut client = connect(tx, 128);
-    let request = GetStatus::new(ID.to_owned()).unwrap();
+    let request = StatusRequest::get(ID.to_owned()).unwrap();
     exchange(&mut client, &request, Some(0), |_| Ok(()))
         .await
         .unwrap();
@@ -107,7 +107,7 @@ async fn installed_subscription_keeps_managed_event_published_during_initial_wri
 }
 
 #[tokio::test(start_paused = true)]
-async fn installed_subscription_quota_disconnect_rotation_and_get_status_coexist() {
+async fn in_memory_observe_state_refusal_coexists_with_get_status_and_subscription() {
     let initial = frame_value(replay()[1]);
     let (_publish, feed) = watch::channel(publication(initial["status"].clone()));
     let (ports, tx) = ports_with_feed(Fault::None, &Events::default(), Some(feed));
@@ -132,6 +132,16 @@ async fn installed_subscription_quota_disconnect_rotation_and_get_status_coexist
         );
         assert_eof(&mut overflow).await;
         get_status(&tx).await;
+
+        let mut observer = connect(&tx, 128);
+        let replay = include_bytes!("../../../../tests/fixtures/observe-state-v79.frames");
+        let length = u32::from_le_bytes(replay[..4].try_into().unwrap()) as usize;
+        observer.write_all(&replay[..4 + length]).await.unwrap();
+        let refused = read_json(&mut observer).await;
+        assert_eq!(refused["requestId"], ID);
+        assert_eq!(refused["success"], false);
+        assert_eq!(refused["status"], Value::Null);
+        assert_eof(&mut observer).await;
 
         drop(subscribers.pop());
         sleep(Duration::from_millis(1)).await;
@@ -369,7 +379,7 @@ async fn in_memory_candidate_shares_initial_refresh_with_get_and_drains_one_pend
             let mut second = connect(&tx, 128);
             second.write_all(replay()[0]).await.unwrap();
             let (mut get, read) = in_memory_get(&tx);
-            let request = GetStatus::new(ID.to_owned()).unwrap();
+            let request = StatusRequest::get(ID.to_owned()).unwrap();
             write_frame(&mut get, &request).await.unwrap();
             read.await.unwrap();
             assert_eq!(scans.load(Ordering::Relaxed), 2);

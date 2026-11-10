@@ -21,25 +21,44 @@ pub(crate) fn production_path() -> String {
     format!(r"\\.\pipe\{PIPE_NAME}")
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-enum Operation {
-    GetStatus,
-    SubscribeStatus,
-}
+// LiveReadingSensors is a four-bit mask. The managed legacy default is All.
+const ALL_LIVE_READINGS: u8 = 15;
 
 #[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct GetStatus {
-    operation: Operation,
-    version: i32,
-    request_id: String,
+#[serde(
+    tag = "operation",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub(crate) enum StatusRequest {
+    GetStatus {
+        version: i32,
+        request_id: String,
+    },
+    SubscribeStatus {
+        version: i32,
+        request_id: String,
+    },
+    ObserveState {
+        include_live_readings: bool,
+        #[serde(default = "all_live_readings")]
+        requested_live_readings: u8,
+        // Computed by the managed codec. Dispatch derives it from the
+        // request fields so an advisory value cannot change admission.
+        effective_live_readings: Option<u8>,
+        version: i32,
+        request_id: String,
+    },
 }
 
-impl GetStatus {
-    pub(crate) fn new(request_id: String) -> io::Result<Self> {
-        let request = Self {
-            operation: Operation::GetStatus,
+fn all_live_readings() -> u8 {
+    ALL_LIVE_READINGS
+}
+
+impl StatusRequest {
+    pub(crate) fn get(request_id: String) -> io::Result<Self> {
+        let request = Self::GetStatus {
             version: PROTOCOL_VERSION,
             request_id,
         };
@@ -47,38 +66,103 @@ impl GetStatus {
         Ok(request)
     }
 
+    #[cfg(feature = "native-agent-entry-compile-check")]
+    pub(crate) fn observe_performance(request_id: String) -> io::Result<Self> {
+        let request = Self::ObserveState {
+            version: PROTOCOL_VERSION,
+            request_id,
+            include_live_readings: false,
+            requested_live_readings: 0,
+            effective_live_readings: Some(0),
+        };
+        request.validate()?;
+        Ok(request)
+    }
+
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) fn decode(payload: &[u8]) -> io::Result<Self> {
-        let request = Self::decode_status(payload)?;
-        if request.is_subscription() {
+    pub(crate) fn decode_get(payload: &[u8]) -> io::Result<Self> {
+        let request = Self::decode(payload)?;
+        if !matches!(request, Self::GetStatus { .. }) {
             return Err(invalid("invalid GetStatus operation"));
         }
         Ok(request)
     }
 
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) fn decode_status(payload: &[u8]) -> io::Result<Self> {
+    pub(crate) fn decode(payload: &[u8]) -> io::Result<Self> {
         let request: Self = serde_json::from_slice(payload)
             .map_err(|_| invalid("invalid Service status request"))?;
         request.validate()?;
         Ok(request)
     }
 
-    #[cfg(feature = "installed-service-candidate")]
     pub(crate) fn is_subscription(&self) -> bool {
-        self.operation == Operation::SubscribeStatus
+        matches!(self, Self::SubscribeStatus { .. })
+    }
+
+    pub(crate) fn is_observation(&self) -> bool {
+        matches!(self, Self::ObserveState { .. })
+    }
+
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn requests_live_readings(&self) -> bool {
+        matches!(
+            self,
+            Self::ObserveState {
+                include_live_readings: true,
+                requested_live_readings: 1..,
+                ..
+            }
+        )
+    }
+
+    fn header(&self) -> (i32, &str) {
+        match self {
+            Self::GetStatus {
+                version,
+                request_id,
+            }
+            | Self::SubscribeStatus {
+                version,
+                request_id,
+            }
+            | Self::ObserveState {
+                version,
+                request_id,
+                ..
+            } => (*version, request_id),
+        }
     }
 
     fn validate(&self) -> io::Result<()> {
-        if self.version != PROTOCOL_VERSION || !is_guid(&self.request_id) {
-            return Err(invalid("invalid GetStatus version or request ID"));
+        let (version, request_id) = self.header();
+        if version != PROTOCOL_VERSION || !is_guid(request_id) {
+            return Err(invalid("invalid Service status version or request ID"));
+        }
+        if let Self::ObserveState {
+            include_live_readings,
+            requested_live_readings,
+            effective_live_readings,
+            ..
+        } = self
+            && (*requested_live_readings & !ALL_LIVE_READINGS != 0
+                || effective_live_readings.is_some_and(|effective| {
+                    effective
+                        != if *include_live_readings {
+                            *requested_live_readings
+                        } else {
+                            0
+                        }
+                }))
+        {
+            return Err(invalid("invalid ObserveState live readings selector"));
         }
         Ok(())
     }
 
     #[cfg(feature = "installed-service-candidate")]
     pub(crate) fn matches(&self, other: &Self) -> bool {
-        self.request_id.eq_ignore_ascii_case(&other.request_id)
+        self.header().1.eq_ignore_ascii_case(other.header().1)
     }
 }
 
@@ -86,6 +170,38 @@ impl GetStatus {
 #[serde(rename_all = "camelCase")]
 enum Frame {
     Response,
+}
+
+// Check confirmation fields before Snapshot's feature maps can collapse
+// duplicate members. GetStatus and SubscribeStatus keep their existing codec.
+#[derive(Deserialize)]
+struct ObserveReplyMembers {
+    #[serde(rename = "status")]
+    _status: ObserveStatusMembers,
+}
+
+#[derive(Deserialize)]
+struct ObserveStatusMembers {
+    #[serde(rename = "observationReason")]
+    _observation_reason: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "unconfirmedWrites")]
+    _unconfirmed_writes: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "confirmedState")]
+    _confirmed_state: Option<ObservedPerformanceMember>,
+    #[serde(rename = "fanStopStatus")]
+    _fan_stop_status: Option<ObservedFanStopMember>,
+}
+
+#[derive(Deserialize)]
+struct ObservedPerformanceMember {
+    #[serde(rename = "performance")]
+    _performance: Option<serde::de::IgnoredAny>,
+}
+
+#[derive(Deserialize)]
+struct ObservedFanStopMember {
+    #[serde(rename = "state")]
+    _state: Option<serde::de::IgnoredAny>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -104,11 +220,11 @@ pub(crate) struct StatusResponse {
 
 impl StatusResponse {
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) fn success(request: &GetStatus, status: Snapshot) -> Self {
+    pub(crate) fn success(request: &StatusRequest, status: Snapshot) -> Self {
         Self {
             frame: Frame::Response,
             version: PROTOCOL_VERSION,
-            request_id: request.request_id.to_ascii_lowercase(),
+            request_id: request.header().1.to_ascii_lowercase(),
             success: true,
             error: None,
             status: Some(status),
@@ -119,11 +235,11 @@ impl StatusResponse {
     }
 
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) fn failure(request: &GetStatus, error: &str, error_code: Option<i32>) -> Self {
+    pub(crate) fn failure(request: &StatusRequest, error: &str, error_code: Option<i32>) -> Self {
         Self {
             frame: Frame::Response,
             version: PROTOCOL_VERSION,
-            request_id: request.request_id.to_ascii_lowercase(),
+            request_id: request.header().1.to_ascii_lowercase(),
             success: false,
             error: Some(error.to_owned()),
             status: None,
@@ -134,23 +250,23 @@ impl StatusResponse {
     }
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
-    pub(crate) fn verify(payload: &[u8], request: &GetStatus) -> io::Result<()> {
+    pub(crate) fn verify(payload: &[u8], request: &StatusRequest) -> io::Result<()> {
         Self::decode(payload, request, Some(0)).map(drop)
     }
 
     fn decode(
         payload: &[u8],
-        request: &GetStatus,
+        request: &StatusRequest,
         expected_access: Option<i32>,
     ) -> io::Result<Snapshot> {
         let reply: Self = serde_json::from_slice(payload)
             .map_err(|_| invalid("invalid Service status response"))?;
         if reply.version != PROTOCOL_VERSION
-            || !reply.request_id.eq_ignore_ascii_case(&request.request_id)
+            || !reply.request_id.eq_ignore_ascii_case(request.header().1)
         {
             return Err(invalid("uncorrelated Service status response"));
         }
-        if request.operation == Operation::SubscribeStatus
+        if request.is_subscription()
             && !reply.success
             && reply.error_code == Some(0) // ServiceResponseErrorCode.CapacityUnavailable
             && reply.error.as_ref().is_some_and(|error| !error.trim().is_empty())
@@ -161,6 +277,22 @@ impl StatusResponse {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
                 "Service subscription capacity is unavailable",
+            ));
+        }
+        if request.is_observation()
+            && !reply.success
+            && reply
+                .error
+                .as_ref()
+                .is_some_and(|error| !error.trim().is_empty())
+            && reply.status.is_none()
+            && reply.result.is_none()
+            && reply.archive.is_none()
+            && reply.error_code.is_none()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Service refused fresh state observation",
             ));
         }
         if !reply.success
@@ -174,6 +306,10 @@ impl StatusResponse {
         let status = reply
             .status
             .ok_or_else(|| invalid("Service status response has no snapshot"))?;
+        if request.is_observation() {
+            serde_json::from_slice::<ObserveReplyMembers>(payload)
+                .map_err(|_| invalid("invalid ObserveState confirmation members"))?;
+        }
         status.verify(expected_access.unwrap_or(status.control_access))?;
         Ok(status)
     }
@@ -199,8 +335,11 @@ pub(crate) async fn subscribe<S: AsyncRead + AsyncWrite + Unpin>(
     id: String,
     verify_peer: impl FnMut(&S) -> io::Result<()>,
 ) -> io::Result<Snapshot> {
-    let mut request = GetStatus::new(id)?;
-    request.operation = Operation::SubscribeStatus;
+    let request = StatusRequest::SubscribeStatus {
+        version: PROTOCOL_VERSION,
+        request_id: id,
+    };
+    request.validate()?;
     exchange(stream, &request, None, verify_peer).await
 }
 
@@ -253,6 +392,13 @@ pub(crate) struct Snapshot {
     service_version: String,
     #[serde(flatten)]
     feature_fields: FeatureRecord,
+}
+
+// Wire values in the managed PerformancePreset and PowerSource enums.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ConfirmedPerformance {
+    pub(crate) preset: i32,
+    pub(crate) active_power_source: i32,
 }
 
 impl Snapshot {
@@ -387,6 +533,45 @@ impl Snapshot {
             )]),
         }
     }
+    // Use only for a direct, admitted ObserveState reply. v79 can retain
+    // fields during failed observations. Require the managed completion
+    // guards and explicit absence of observation or write uncertainty.
+    pub(crate) fn confirmed_performance(&self) -> Option<ConfirmedPerformance> {
+        let observing = self.feature_fields.get("observationReason")?.as_i64()? != 0;
+        let unconfirmed = self.feature_fields.get("unconfirmedWrites")?.as_array()?;
+        let fan_stop = self
+            .feature_fields
+            .get("fanStopStatus")?
+            .get("state")?
+            .as_i64()?;
+        if !self.device_verified
+            || self.writes_blocked
+            || self.control_access != 0
+            || self.active_power_source == 3 // ExternalUnknown
+            || observing
+            // Managed ObserveAsync can skip the read while the guardian owns
+            // hardware. Only Unavailable, Inactive or Automatic can confirm.
+            || !matches!(fan_stop, 0 | 1 | 3)
+            || unconfirmed
+                .iter()
+                .any(|subsystem| !matches!(subsystem.as_i64(), Some(1..=3)))
+            || unconfirmed
+                .windows(2)
+                .any(|pair| pair[0].as_i64() >= pair[1].as_i64())
+        {
+            return None;
+        }
+        let preset = self
+            .confirmed_state
+            .as_ref()?
+            .get("performance")?
+            .as_i64()?;
+        (0..=9).contains(&preset).then_some(ConfirmedPerformance {
+            preset: preset as i32,
+            active_power_source: self.active_power_source,
+        })
+    }
+
     pub(crate) fn verify(&self, access: i32) -> io::Result<()> {
         if self.revision < 0
             || self.service_version.trim().is_empty()
@@ -473,7 +658,7 @@ struct LiveReadings {
 // the snapshot. A valid response does not authenticate its sender.
 pub(crate) async fn exchange<S: AsyncRead + AsyncWrite + Unpin + ?Sized>(
     stream: &mut S,
-    request: &GetStatus,
+    request: &StatusRequest,
     expected_access: Option<i32>,
     mut verify_peer: impl FnMut(&S) -> io::Result<()>,
 ) -> io::Result<Snapshot> {
@@ -481,7 +666,7 @@ pub(crate) async fn exchange<S: AsyncRead + AsyncWrite + Unpin + ?Sized>(
     write_frame(stream, request).await?;
     let reply = timeout(FRAME_TIMEOUT, read_payload(stream)).await??;
     let status = StatusResponse::decode(&reply, request, expected_access);
-    if status.is_ok() || request.operation == Operation::SubscribeStatus {
+    if status.is_ok() || request.is_subscription() || request.is_observation() {
         verify_peer(stream)?;
     }
     status

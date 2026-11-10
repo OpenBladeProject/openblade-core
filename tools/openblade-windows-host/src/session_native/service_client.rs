@@ -16,7 +16,8 @@ use windows_sys::Win32::{
 use crate::{
     pipe_server_identity::server_identity,
     service_status::{
-        GetStatus, Snapshot, exchange, production_path, read_status_event, request_id, subscribe,
+        ConfirmedPerformance, Snapshot, StatusRequest, exchange, production_path,
+        read_status_event, request_id, subscribe,
     },
 };
 
@@ -30,6 +31,11 @@ const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(5);
 pub(crate) trait InstalledServiceAuthority {
     fn verify_live_process(&self) -> io::Result<NonZeroU32>;
 }
+
+// Implement only for a pinned Service generation whose ObserveState path
+// independently reads performance or refuses. A v79 status peer alone
+// cannot attest that its observation handler refreshed the hardware.
+pub(crate) trait InstalledObservationAuthority: InstalledServiceAuthority {}
 
 pub(crate) struct StatusObservation {
     pub(crate) snapshot: Snapshot,
@@ -45,6 +51,15 @@ impl StatusObservation {
             ));
         }
         Ok(())
+    }
+}
+
+pub(crate) struct PerformanceObservation(StatusObservation);
+
+impl PerformanceObservation {
+    pub(crate) fn confirmed(&self) -> io::Result<Option<ConfirmedPerformance>> {
+        self.0.require_fresh()?;
+        Ok(self.0.snapshot.confirmed_performance())
     }
 }
 
@@ -185,11 +200,56 @@ async fn read_on<S: AsyncRead + AsyncWrite + Unpin>(
     connect: impl AsyncFnOnce() -> io::Result<S>,
     peer: impl Fn(&S) -> io::Result<(u32, u32)>,
 ) -> io::Result<StatusObservation> {
+    request_on(
+        authority,
+        canceled,
+        || StatusRequest::get(next_id()?),
+        connect,
+        peer,
+    )
+    .await
+}
+
+pub(super) async fn observe_state(
+    authority: Option<&dyn InstalledObservationAuthority>,
+    canceled: impl Future<Output = ()>,
+) -> io::Result<PerformanceObservation> {
+    observe_on(authority, canceled, request_id, connect_installed, |pipe| {
+        server_identity(pipe.as_raw_handle())
+    })
+    .await
+}
+
+async fn observe_on<S: AsyncRead + AsyncWrite + Unpin>(
+    authority: Option<&dyn InstalledObservationAuthority>,
+    canceled: impl Future<Output = ()>,
+    next_id: impl FnOnce() -> io::Result<String>,
+    connect: impl AsyncFnOnce() -> io::Result<S>,
+    peer: impl Fn(&S) -> io::Result<(u32, u32)>,
+) -> io::Result<PerformanceObservation> {
+    request_on(
+        authority.map(|authority| authority as &dyn InstalledServiceAuthority),
+        canceled,
+        || StatusRequest::observe_performance(next_id()?),
+        connect,
+        peer,
+    )
+    .await
+    .map(PerformanceObservation)
+}
+
+async fn request_on<S: AsyncRead + AsyncWrite + Unpin>(
+    authority: Option<&dyn InstalledServiceAuthority>,
+    canceled: impl Future<Output = ()>,
+    request: impl FnOnce() -> io::Result<StatusRequest>,
+    connect: impl AsyncFnOnce() -> io::Result<S>,
+    peer: impl Fn(&S) -> io::Result<(u32, u32)>,
+) -> io::Result<StatusObservation> {
     let deadline = Instant::now() + STATUS_BUDGET;
     let read = async {
         let authority = require_authority(authority)?;
         let pid = authority.verify_live_process()?;
-        let request = GetStatus::new(next_id()?)?;
+        let request = request()?;
         let mut stream = connect().await?;
         let snapshot = exchange(&mut stream, &request, None, |stream| {
             check_deadline(deadline)?;

@@ -124,12 +124,21 @@ Managed Agent call sites use the following Service operations:
 The managed server's protocol-51 compatibility path is limited to cached
 `GetStatus` and `SubscribeStatus` with a read-only projection. The native
 Agent status binding requires v79, matching the ordinary managed Agent. The
-state observation and request dispatch for the remaining operations still
-need native bindings. The installed Service candidate has a v79
-`SubscribeStatus` handler behind the existing listener admission. Its
-request-driven native status source has no live publication feed, so the
-handler returns a correlated failure without a snapshot. The startup probe
+installed Service candidate has a v79 `SubscribeStatus` handler behind the
+existing listener admission. It returns a correlated failure when the
+publication feed is unavailable. The startup probe
 still requires the exact self-issued `GetStatus` exchange.
+
+The Agent candidate also has a one-shot v79 `ObserveState` client for
+performance shortcut readback. Its request matches
+`ObserveStateAsync(LiveReadingSensors.None)`. The Service candidate requires
+an active caller and a fresh performance read from a separate admitted port.
+The installed metadata observer has no firmware read port, so it returns a
+correlated refusal. Optional live sensor selections also receive a refusal.
+The Agent requires a Service generation admitted for fresh observation. The
+v79 status envelope alone carries no proof of a fresh firmware read. The
+Agent also checks verified device state, control access, power classification,
+observation state, Fan Stop ownership and unresolved performance writes.
 
 The replay in `tools/openblade-windows-host/tests/fixtures/get-status-v79.frames`
 contains two consecutive managed codec frames. The managed
@@ -140,6 +149,12 @@ The status comes from decoding the checked-in
 through the managed codec. The ID is
 `11111111-2222-4333-8444-555555555555`. Tests replay the bytes in memory without
 opening a named pipe.
+
+`tools/openblade-windows-host/tests/fixtures/observe-state-v79.frames` uses
+the same managed codec and request ID. The synthetic status starts from the
+same replay template and supplies confirmed Performance on AC power.
+In-memory tests exercise the client and candidate dispatcher with this
+fixture, including the refusal from a source without performance read access.
 
 `tools/openblade-windows-host/tests/fixtures/subscribe-status-v79.frames`
 contains three consecutive frames written by the same managed codec.

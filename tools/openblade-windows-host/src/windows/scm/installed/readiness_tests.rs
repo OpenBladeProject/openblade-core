@@ -1,3 +1,6 @@
+#[path = "readiness_tests/observation.rs"]
+mod observation;
+
 use std::{
     cell::{Cell, RefCell},
     future::pending,
@@ -579,8 +582,8 @@ fn closed_v79_get_status_contract_rejects_mutation_duplicates_and_uncorrelated_r
     let id = "11111111-2222-4333-8444-555555555555";
     let contract: Value = serde_json::from_str(CONTRACT).unwrap();
     let input = &contract["requests"][0]["input"];
-    let request = GetStatus::decode(&serde_json::to_vec(input).unwrap()).unwrap();
-    assert!(request.matches(&GetStatus::new(id.to_owned()).unwrap()));
+    let request = StatusRequest::decode_get(&serde_json::to_vec(input).unwrap()).unwrap();
+    assert!(request.matches(&StatusRequest::get(id.to_owned()).unwrap()));
     for rejected in [
         json!({"operation": "shutdownOpenBlade", "version": 79, "requestId": id}).to_string(),
         json!({"operation": "subscribeStatus", "version": 79, "requestId": id}).to_string(),
@@ -590,7 +593,7 @@ fn closed_v79_get_status_contract_rejects_mutation_duplicates_and_uncorrelated_r
             .to_string(),
         format!(r#"{{"operation":"getStatus","version":79,"version":79,"requestId":"{id}"}}"#),
     ] {
-        assert!(GetStatus::decode(rejected.as_bytes()).is_err());
+        assert!(StatusRequest::decode_get(rejected.as_bytes()).is_err());
     }
 
     let response = json!({
@@ -627,9 +630,12 @@ async fn session_authority_failure_is_runtime_failure_before_status_read() {
     };
     let (server, mut client) = duplex(1024);
     let stream = test_stream(server, SETUP, Fault::SessionUnavailable);
-    write_frame(&mut client, &GetStatus::new(probe_id().unwrap()).unwrap())
-        .await
-        .unwrap();
+    write_frame(
+        &mut client,
+        &StatusRequest::get(probe_id().unwrap()).unwrap(),
+    )
+    .await
+    .unwrap();
     let result = serve(&mut source, std::future::ready(Ok(stream)), None).await;
     assert!(matches!(result, Err(ExchangeError::Runtime(error))
         if error.to_string() == "session authority unavailable"));

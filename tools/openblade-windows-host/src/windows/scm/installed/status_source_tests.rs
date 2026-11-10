@@ -9,7 +9,7 @@ use crate::installed::readiness::Logon;
 #[tokio::test]
 async fn private_pipe_serves_and_retires_observed_v79_status() {
     use crate::installed::readiness::{
-        DRAIN_TIMEOUT, GetStatus, StatusResponse, read_payload, serve, verify_peer,
+        DRAIN_TIMEOUT, StatusRequest, StatusResponse, read_payload, serve, verify_peer,
         windows::private_endpoint, write_frame,
     };
     use std::{rc::Rc, sync::atomic::AtomicUsize};
@@ -36,7 +36,8 @@ async fn private_pipe_serves_and_retires_observed_v79_status() {
                 _ => panic!("unexpected additional scan"),
             }
         });
-        let request = GetStatus::new("aa40bce5-c278-4179-a620-580ac694b7d8".to_owned()).unwrap();
+        let request =
+            StatusRequest::get("aa40bce5-c278-4179-a620-580ac694b7d8".to_owned()).unwrap();
         let pid = std::process::id();
         for (revision, power, controllers, message) in [
             (0, 1, json!(["RazerAppEngine"]), "matching control HID"),
