@@ -442,6 +442,38 @@ following step is fenced. The final step performs a read-only observation
 to settle the result. The renderer keeps its independent release signal
 and drains on STOP even if an application lease is active.
 
+## Replay private Fan Stop ownership and handback
+
+Run `foreground-fan-stop <pipe-id> <case>` on the Windows development host.
+Only the active v79 test endpoint accepts the existing typed
+`setFanStopMode` request. The scenario represents the exact SO6120 EC 1.04
+entry with a fixture clock, Balanced readback and resolved USB-C. It shares
+the manual-entry fixture and drives Phase 5q's guardian replay using inert
+reservation, owner, signal, exit and receipt observations.
+
+In `complete`, send Stop and advance one stdin `n` to confirm it. Send
+Automatic and advance three times: independent Auto readback, the owner's
+cleanup receipt while exit is pending, then independent exit and durable
+receipt verification. The ordinary fan fence stays closed through the first
+two observations. After release a separate `n` supplies the full-adapter
+context required by the existing scripted 4,000 RPM fan request. That
+request is a canary for the ordinary write gate.
+
+`incomplete` omits cleanup confirmation. `stale` repeats the last live owner
+revision after Stop. `ambiguous` loses certainty about the Automatic signal.
+Each retains recovery and refuses repeat writes. `refused` proves that Stop
+was never submitted, then waits for exit before releasing as Inactive.
+`entry-stale`, `entry-power`, and `entry-console` refuse before dispatch.
+Stop and Automatic replies wait for the relevant proof; dropping the
+Automatic caller leaves the scripted owner active. Each process scripts at
+most one operation.
+
+These cases exercise the existing managed client, private pipe framing and
+typed status. They do not launch a guardian or CPU worker, inspect protected
+journals, monitor native lifecycle events, acquire a hardware lease, send a
+device command, or validate physical readback. The service, IPC schema and
+product ABI are unchanged.
+
 ## Compatibility boundary
 
 - Each connection accepts one request. Every mode serves v79 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v79 in the explicitly scoped foreground modes. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.

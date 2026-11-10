@@ -6,6 +6,8 @@ mod battery_policy;
 mod battery_runtime;
 #[cfg(any(windows, test))]
 mod fan_runtime;
+#[cfg(windows)]
+mod fan_stop_fixture;
 #[cfg(any(windows, test))]
 mod performance_runtime;
 #[cfg(any(windows, test))]

@@ -41,6 +41,8 @@ pub struct Status {
     battery: Option<Arc<Scenario>>,
     performance: Option<Arc<performance_runtime::Scenario>>,
     fan: Option<Arc<fan_runtime::Scenario>>,
+    #[cfg(windows)]
+    fan_stop: Option<Arc<crate::fan_stop_fixture::Scenario>>,
     background: Projection,
     #[cfg(windows)]
     composed_thermal: bool,
@@ -104,6 +106,8 @@ impl Status {
             battery: None,
             performance: None,
             fan: None,
+            #[cfg(windows)]
+            fan_stop: None,
             background: Projection::new(background, background_legacy)?,
             #[cfg(windows)]
             composed_thermal: false,
@@ -243,6 +247,21 @@ impl Status {
         self.fan = Some(Arc::clone(&scenario));
         let drive = async move { scenario.drive(advance).await };
         Ok((self, drive))
+    }
+
+    #[cfg(windows)]
+    pub fn with_fan_stop(
+        mut self,
+        advance: tokio::sync::mpsc::Receiver<()>,
+        case: crate::fan_stop_fixture::Case,
+    ) -> (Self, impl Future<Output = io::Result<()>>) {
+        let scenario = Arc::new(crate::fan_stop_fixture::Scenario::new(
+            self.active.current.clone(),
+            case,
+        ));
+        self.replay = Some(scenario.subscribe());
+        self.fan_stop = Some(Arc::clone(&scenario));
+        (self, async move { scenario.drive(advance).await })
     }
 
     pub fn with_replay(
@@ -439,6 +458,19 @@ enum FanRequest {
         #[serde(deserialize_with = "Deserialize::deserialize")]
         value: Option<fan_runtime::Override>,
         settings: Option<fan_runtime::Settings>,
+    },
+}
+
+#[cfg(windows)]
+#[derive(Deserialize)]
+#[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
+enum FanStopRequest {
+    SetFanStopMode {
+        #[serde(rename = "version")]
+        _version: i32,
+        #[serde(rename = "requestId")]
+        _request_id: String,
+        mode: u8,
     },
 }
 
@@ -759,6 +791,65 @@ where
                 .apply(value)?;
             let result = OperationResult::scoped(result.status, result.message);
             write_frame(&mut io, request.operation_response(result)).await
+        }
+        #[cfg(windows)]
+        (CURRENT_VERSION, "setFanStopMode")
+            if matches!(session, Session::Active) && status.fan_stop.is_some() =>
+        {
+            use crate::fan_stop_fixture::{Mode, Response};
+            let FanStopRequest::SetFanStopMode { mode, .. } = serde_json::from_slice(&payload)
+                .map_err(|_| invalid("invalid Fan Stop request"))?;
+            let mode = match mode {
+                0 => Mode::Automatic,
+                1 => Mode::Stop,
+                _ => return Err(invalid("invalid Fan Stop mode")),
+            };
+            let scenario = status.fan_stop.as_ref().expect("guarded Fan Stop scenario");
+            let (outcome, message) = match scenario.begin(mode)? {
+                Response::Immediate(result) => result,
+                Response::Pending(waiter) => {
+                    let mut probe = [0];
+                    tokio::select! {
+                        biased;
+                        result = waiter => result.map_err(|_| io::Error::other("Fan Stop fixture ended"))?,
+                        disconnected = io.read(&mut probe) => {
+                            // Any abandoned Stop wait gets independent cleanup;
+                            // malformed traffic must not strand the scripted owner.
+                            scenario.disconnected(mode)?;
+                            match disconnected {
+                                Ok(0) => {}
+                                Err(error) if error.kind() == io::ErrorKind::BrokenPipe => {}
+                                Err(error) => return Err(error),
+                                Ok(_) => return Err(invalid("unexpected data while awaiting Fan Stop response")),
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
+            };
+            write_frame(
+                &mut io,
+                request.operation_response(OperationResult::scoped(outcome, message)),
+            )
+            .await
+        }
+        #[cfg(windows)]
+        (CURRENT_VERSION, "setFanOverride")
+            if matches!(session, Session::Active) && status.fan_stop.is_some() =>
+        {
+            let FanRequest::SetFanOverride {
+                value, settings, ..
+            } = serde_json::from_slice(&payload).map_err(|_| invalid("invalid fan request"))?;
+            let (outcome, message) = status
+                .fan_stop
+                .as_ref()
+                .expect("guarded Fan Stop scenario")
+                .ordinary_fan(value, settings)?;
+            write_frame(
+                &mut io,
+                request.operation_response(OperationResult::scoped(outcome, message)),
+            )
+            .await
         }
         (CURRENT_VERSION, "setFanOverride")
             if matches!(session, Session::Active) && status.admits_fan() =>

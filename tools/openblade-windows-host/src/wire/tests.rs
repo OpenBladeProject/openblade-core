@@ -433,3 +433,53 @@ async fn fan_override_is_confined_to_the_active_current_fan_replay() {
     assert_eq!(replay.borrow()["confirmedState"]["fans"], 0);
     assert_eq!(replay.borrow()["fanOverride"], Value::Null);
 }
+
+#[cfg(windows)]
+#[tokio::test]
+async fn fan_stop_requires_private_v79_mode_active_session_and_strict_mode() {
+    use crate::fan_stop_fixture::Case;
+    let (_advance, input) = tokio::sync::mpsc::channel(1);
+    let (status, _drive) = Status::fixture()
+        .unwrap()
+        .with_fan_stop(input, Case::Complete);
+    let status = Arc::new(status);
+    let passive = Arc::new(Status::fixture().unwrap());
+    let slots = Arc::new(Semaphore::new(1));
+
+    for (endpoint, version, session) in [
+        (passive, 79, Session::Active),
+        (status.clone(), 51, Session::Active),
+        (status.clone(), 79, Session::Background),
+    ] {
+        let (mut client, server) = connect(endpoint, slots.clone(), session, 256);
+        let request = json!({
+            "operation": "setFanStopMode", "version": version, "requestId": ID, "mode": 1
+        });
+        send(&mut client, &serde_json::to_vec(&request).unwrap()).await;
+        let reply = receive(&mut client, "response").await;
+        assert_eq!(reply["success"], false);
+        assert_eq!(reply["requestId"], ID);
+        server.await.unwrap().unwrap();
+    }
+
+    for fields in [
+        "",
+        r#","mode":2"#,
+        r#","mode":"Stop""#,
+        r#","mode":0,"mode":1"#,
+    ] {
+        let (mut client, server) = connect(status.clone(), slots.clone(), Session::Active, 256);
+        let request =
+            format!(r#"{{"operation":"setFanStopMode","version":79,"requestId":"{ID}"{fields}}}"#);
+        send(&mut client, request.as_bytes()).await;
+        assert_eq!(
+            server.await.unwrap().unwrap_err().kind(),
+            ErrorKind::InvalidData
+        );
+        assert_eq!(client.read(&mut [0]).await.unwrap(), 0);
+    }
+
+    let snapshot = status.replay.as_ref().unwrap().borrow();
+    assert_eq!(snapshot["fanStopStatus"]["state"], 1);
+    assert_eq!(snapshot["writesBlocked"], false);
+}

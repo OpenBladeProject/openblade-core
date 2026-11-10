@@ -96,6 +96,24 @@ pub(super) fn entry() -> io::Result<()> {
                 prepare_protected(std::path::Path::new(root), advance, shutdown)
             })
         }
+        [mode, id, case] if mode == "foreground-fan-stop" => {
+            let id = foreground_id(id)?;
+            let case = crate::fan_stop_fixture::Case::parse(
+                case.to_str()
+                    .ok_or_else(|| io::Error::other("Invalid Fan Stop fixture case."))?,
+            )?;
+            foreground(id, Session::Active, true, |advance, shutdown| {
+                let advance =
+                    advance.ok_or_else(|| io::Error::other("Missing Fan Stop fixture steps."))?;
+                let (status, drive) = Status::fixture()?.with_fan_stop(advance, case);
+                Ok((
+                    status,
+                    Some(async move {
+                        tokio::select! { _ = shutdown => Ok(()), result = drive => result }
+                    }),
+                ))
+            })
+        }
         [mode, id] if mode == "foreground-application-context" => {
             let id = foreground_id(id)?;
             foreground(id, Session::Active, true, |advance, shutdown| {
