@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Security.Principal;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Setup;
@@ -17,7 +18,7 @@ public sealed class SetupServiceHealthProbe : ISetupServiceHealthProbe
     private readonly Func<GetStatusRequest> createRequest;
 
     public SetupServiceHealthProbe()
-        : this(ConnectAsync, () => new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()))
+        : this(token => ConnectAsync(TokenImpersonationLevel.None, token), CreateStatusRequest)
     {
     }
 
@@ -29,6 +30,12 @@ public sealed class SetupServiceHealthProbe : ISetupServiceHealthProbe
         this.createRequest = createRequest ?? throw new ArgumentNullException(nameof(createRequest));
     }
 
+    internal static SetupServiceHealthProbe CreateCandidate()
+        => new(token => ConnectAsync(TokenImpersonationLevel.Identification, token), CreateStatusRequest);
+
+    private static GetStatusRequest CreateStatusRequest()
+        => new(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+
     public Task VerifyAsync(CancellationToken cancellationToken)
         => VerifyAsync(cancellationToken, timing: null);
 
@@ -39,8 +46,14 @@ public sealed class SetupServiceHealthProbe : ISetupServiceHealthProbe
 
     internal async Task VerifyAsync(
         CancellationToken cancellationToken,
-        SetupServiceHealthTiming? timing)
+        SetupServiceHealthTiming? timing,
+        SetupCandidateServiceVerification? candidate = null)
     {
+        if (candidate is not null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
         if (timing is not null)
         {
             timing.StagesObserved = true;
@@ -53,7 +66,20 @@ public sealed class SetupServiceHealthProbe : ISetupServiceHealthProbe
             timing?.Connect.End(cancellationToken, succeeded: true);
             try
             {
+                if (candidate is not null)
+                {
+                    candidate.VerifyPeer(connection);
+                    await candidate.VerifyLaunchAsync(cancellationToken);
+                }
+
                 await VerifyConnectionAsync(connection, request, cancellationToken, timing);
+
+                // Keep the original client handle through the final checks.
+                if (candidate is not null)
+                {
+                    candidate.VerifyPeer(connection);
+                    await candidate.VerifyLaunchAsync(cancellationToken);
+                }
             }
             finally
             {
@@ -101,13 +127,15 @@ public sealed class SetupServiceHealthProbe : ISetupServiceHealthProbe
         }
     }
 
-    private static async ValueTask<Stream> ConnectAsync(CancellationToken cancellationToken)
+    private static async ValueTask<Stream> ConnectAsync(
+        TokenImpersonationLevel impersonationLevel, CancellationToken cancellationToken)
     {
         var pipe = new NamedPipeClientStream(
             ".",
             OpenBladeIpc.PipeName,
             PipeDirection.InOut,
-            PipeOptions.Asynchronous);
+            PipeOptions.Asynchronous,
+            impersonationLevel);
         try
         {
             await pipe.ConnectAsync(cancellationToken);
