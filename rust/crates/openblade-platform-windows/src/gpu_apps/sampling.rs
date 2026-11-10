@@ -6,6 +6,8 @@ use super::*;
 use QueryUnavailable as Unavailable;
 
 mod native;
+#[cfg(feature = "scripted-gpu")]
+pub mod scripted;
 #[cfg(test)]
 mod tests;
 

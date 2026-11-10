@@ -55,6 +55,13 @@ try {
         'mio', 'pin-project-lite', 'signal-hook-registry', 'socket2', 'tokio',
         'tokio-macros', 'wasi', 'windows-link', 'windows-sys'
     )
+    $expectedWindowsFeatures = @(
+        'Win32_Devices_Display', 'Win32_Foundation', 'Win32_Globalization',
+        'Win32_Graphics_Gdi', 'Win32_Security', 'Win32_System_Com',
+        'Win32_System_Ole', 'Win32_System_Performance', 'Win32_System_Registry',
+        'Win32_System_Rpc', 'Win32_System_Threading', 'Win32_System_Variant',
+        'Win32_System_Wmi'
+    ) -join ','
     $fixtureReaderPackages = @('openblade-protocol', 'openblade-domain')
     $expectedTests = @{
         'openblade-protocol' = @('report_parity', 'report_properties')
@@ -139,7 +146,7 @@ try {
                 $null -eq $dependency.PSObject.Properties['path'] -and
                 $dependency.source -ceq 'registry+https://github.com/rust-lang/crates.io-index' -and
                 $dependency.req -ceq '=0.61.2' -and -not $dependency.uses_default_features -and
-                (@($dependency.features | Sort-Object) -join ',') -ceq 'Win32_Devices_Display,Win32_Foundation,Win32_Graphics_Gdi,Win32_System_Registry') {
+                (@($dependency.features | Sort-Object) -join ',') -ceq $expectedWindowsFeatures) {
                 $windowsSdkCount++
                 continue
             }

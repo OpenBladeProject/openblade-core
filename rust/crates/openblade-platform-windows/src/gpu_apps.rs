@@ -14,6 +14,9 @@ mod sampling;
 
 pub use sampling::sample_windows_gpu_apps;
 
+#[cfg(feature = "scripted-gpu")]
+pub use sampling::scripted;
+
 #[cfg(test)]
 mod tests;
 

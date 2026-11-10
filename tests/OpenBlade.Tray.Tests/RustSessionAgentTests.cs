@@ -7,7 +7,7 @@ using OpenBlade.Session;
 
 namespace OpenBlade.Tray.Tests;
 
-public sealed class RustSessionAgentTests
+public sealed partial class RustSessionAgentTests
 {
     [RustSessionAgentFact]
     public async Task TrayDisplayClient_ReadsScriptedAcquisitionAndPreservesUnavailableQuerySuccess()
@@ -354,14 +354,17 @@ public sealed class RustSessionAgentTests
     {
         private readonly Process process;
         private readonly Task<string> standardError;
+        private readonly bool gpu;
 
-        private Host(Process process)
+        private Host(Process process, bool gpu)
         {
             this.process = process;
+            this.gpu = gpu;
             standardError = process.StandardError.ReadToEndAsync();
         }
 
-        internal static Host Start(string id, string scenario = "available", string? brightness = null)
+        internal static Host Start(
+            string id, string scenario = "available", string? brightness = null, bool gpu = false)
         {
             string path = Environment.GetEnvironmentVariable(RustSessionAgentFactAttribute.PathVariable)!;
             Assert.True(Path.IsPathFullyQualified(path)
@@ -376,14 +379,14 @@ public sealed class RustSessionAgentTests
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
-            start.ArgumentList.Add("foreground");
+            start.ArgumentList.Add(gpu ? "gpu-foreground" : "foreground");
             start.ArgumentList.Add(id);
             start.ArgumentList.Add(scenario);
             if (brightness is not null)
             {
                 start.ArgumentList.Add(brightness);
             }
-            return new Host(Process.Start(start)!);
+            return new Host(Process.Start(start)!, gpu);
         }
 
         internal Task WaitForReadyAsync(CancellationToken token) => WaitForSignalAsync("READY", token);
@@ -414,7 +417,14 @@ public sealed class RustSessionAgentTests
             {
                 if (!process.HasExited)
                 {
-                    process.Kill();
+                    if (gpu)
+                    {
+                        process.StandardInput.Close();
+                    }
+                    else
+                    {
+                        process.Kill();
+                    }
                     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                     await process.WaitForExitAsync(timeout.Token);
                 }

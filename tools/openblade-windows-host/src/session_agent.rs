@@ -3,6 +3,8 @@ mod session_brightness;
 #[cfg(windows)]
 mod session_display;
 #[cfg(windows)]
+mod session_gpu;
+#[cfg(windows)]
 mod session_windows;
 
 fn main() -> std::process::ExitCode {

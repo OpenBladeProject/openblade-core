@@ -14,7 +14,7 @@ use openblade_platform_windows::{
     display::{InternalDisplayRefresh, scripted::Scenario},
 };
 
-use crate::session_brightness::ScriptedBrightness;
+use crate::{session_brightness::ScriptedBrightness, session_windows::valid_request_id};
 use openblade_windows_host::pipe::Identity;
 use serde::Deserialize;
 #[cfg(test)]
@@ -305,18 +305,6 @@ impl Query {
         }
         Ok(query)
     }
-}
-
-fn valid_request_id(id: &str) -> bool {
-    id.len() == 36
-        && id.bytes().enumerate().all(|(position, byte)| {
-            if matches!(position, 8 | 13 | 18 | 23) {
-                byte == b'-'
-            } else {
-                byte.is_ascii_hexdigit()
-            }
-        })
-        && id != "00000000-0000-0000-0000-000000000000"
 }
 
 #[derive(Debug, PartialEq, Eq)]

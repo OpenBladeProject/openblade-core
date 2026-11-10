@@ -29,7 +29,7 @@ openblade-protocol = { path = '../../rust/crates/openblade-protocol' }
 openblade-types = { path = '../../rust/crates/openblade-types' }
 
 [target.'cfg(windows)'.dependencies]
-openblade-platform-windows = { path = '../../rust/crates/openblade-platform-windows', features = ["scripted-display"] }
+openblade-platform-windows = { path = '../../rust/crates/openblade-platform-windows', features = ["scripted-display", "scripted-gpu"] }
 windows-sys = { version = "=0.61.2", features = [
     "Wdk_System_SystemServices",
     "Win32_Devices_DeviceAndDriverInstallation",

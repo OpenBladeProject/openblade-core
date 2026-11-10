@@ -127,11 +127,34 @@ make a current-user parent eligible. The host supplies the managed ordinal
 name comparison. Tests port examples from the managed GPU activity and Session
 GPU dispatcher tests.
 
-Native query integration still needs a bounded PDH reader, cancelable sampling
-and coherent process and parent metadata tied to the counter observations.
-Session IPC must map the resulting rows, unavailable status and list cap.
-Any later close path needs a fresh scan and revalidation of the retained target
-handle before an action. Inventory eligibility alone does not authorize a close.
+#### Private Windows Session GPU replay
+
+The same development executable can run one GPU endpoint instead of Display:
+`gpu-foreground <32 lowercase hex digits> <available|empty|no-data|large|stalled>`.
+It claims a separate `OpenBlade.Rust.Session.Gpu.Dev.<id>` pipe for the
+current user. It also checks the peer's session and logon before dispatch.
+Use the same Windows build and managed interoperability test commands above.
+
+The fixture supplies fixed observations to the Phase 6n sampler and projection.
+It uses the managed v2 GPU request and response format. A successful empty
+inventory is distinct from unavailable data; stable idle holders still appear
+with zero utilization. Partial replies retain the ordered prefix that fits both
+the row and frame limits. The endpoint accepts one request per connection.
+Frame I/O has deadlines, and a disconnect, extra input, deadline or shutdown
+cancels a pending scripted scan. The fixture drains a cancelled scan before
+accepting another connection.
+
+The private endpoint reports every row as unavailable for closing. The internal
+inventory retains policy eligibility and its reasons for later use. Both normal
+and forced close return a correlated failure before sampling. The host has no
+process action or fallback on this endpoint.
+
+Live GPU query and coherent parent metadata still need separate validation.
+The Phase 6n native sampler does not supply a process parent table. A later
+close implementation needs fresh identity checks on a retained target handle
+and separate action validation. This fixture does not run the native sampler,
+inspect system processes or change the installed product.
+
 
 The workspace guard checks crate boundaries, reviewed targets and dependencies,
 MSRV and compiler policies. Its regression tests use disposable workspace copies.
