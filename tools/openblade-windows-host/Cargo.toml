@@ -15,6 +15,7 @@ name = "openblade-windows-discovery"
 path = "src/discover.rs"
 
 [features]
+native-agent-entry-compile-check = ["windows-sys/Win32_System_RemoteDesktop"]
 cpu-worker-fixture = []
 scratch-writer-fence = []
 gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]

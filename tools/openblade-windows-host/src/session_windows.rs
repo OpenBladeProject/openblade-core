@@ -40,6 +40,10 @@ const AUDIO_PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.Session.Audio.Dev.";
 
 pub(super) fn entry() -> io::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(feature = "native-agent-entry-compile-check")]
+    if args.is_empty() {
+        return crate::session_native::entry();
+    }
     let [mode, id, scenario, brightness @ ..] = args.as_slice() else {
         return Err(usage());
     };
