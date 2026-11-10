@@ -1,6 +1,7 @@
 #[cfg(any(windows, test))]
 mod discovery;
 
+#[cfg(not(test))]
 fn main() -> std::process::ExitCode {
     #[cfg(windows)]
     let result = discovery::windows::run();

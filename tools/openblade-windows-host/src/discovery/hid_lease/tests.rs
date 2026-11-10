@@ -13,6 +13,10 @@ use std::{
     task::Poll,
 };
 
+#[cfg(windows)]
+#[allow(dead_code)] // Consumed by the service host's test harness.
+pub(crate) mod service_fixture;
+
 const EXACT: Descriptor = Descriptor {
     device: (0x1532, 0x02e0),
     usage: (1, 2),

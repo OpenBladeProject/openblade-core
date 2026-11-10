@@ -17,6 +17,8 @@ use crate::windows::{
     tests::{assert_closed, open_pipe, read_status, runtime, test_id},
 };
 
+mod metadata_lifecycle;
+
 fn phase(status: &SERVICE_STATUS) -> (u32, u32, u32) {
     (
         status.dwCurrentState,

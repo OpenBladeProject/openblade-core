@@ -114,6 +114,38 @@ impl Status {
         })
     }
 
+    #[cfg(all(windows, test))]
+    pub(crate) fn with_metadata_replay(mut self) -> io::Result<(Self, impl FnMut(bool))> {
+        for projection in [&mut self.active, &mut self.background] {
+            let mut current = projection.current.clone();
+            current["deviceVerified"] = false.into();
+            current["writesBlocked"] = true.into();
+            current["message"] = "Metadata-only fixture. Hardware writes are blocked.".into();
+            current["potentialControllers"] = serde_json::json!([]);
+            for field in [
+                "capabilities",
+                "confirmedState",
+                "liveReadings",
+                "keyboardDriverModeActive",
+            ] {
+                current[field] = Value::Null;
+            }
+            let mut legacy = projection.legacy.clone();
+            legacy["deviceVerified"] = false.into();
+            legacy["liveReadings"] = Value::Null;
+            *projection = Projection::new(current, legacy)?;
+        }
+        let (publish, replay) = watch::channel(Arc::new(self.active.current.clone()));
+        self.replay = Some(replay);
+        Ok((self, move |verified: bool| {
+            publish.send_modify(|status| {
+                let status = Arc::make_mut(status);
+                status["deviceVerified"] = verified.into();
+                status["revision"] = (status["revision"].as_i64().unwrap() + 1).into();
+            });
+        }))
+    }
+
     #[cfg(windows)]
     pub fn with_application_context(
         mut self,

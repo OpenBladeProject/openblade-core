@@ -4,6 +4,9 @@ mod application_runtime;
 mod battery_policy;
 #[cfg(any(windows, test))]
 mod battery_runtime;
+#[cfg(all(windows, test))]
+#[allow(dead_code)] // The host tests use scripted discovery only.
+mod discovery;
 #[cfg(any(windows, test))]
 mod fan_runtime;
 #[cfg(windows)]

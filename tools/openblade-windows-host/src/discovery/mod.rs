@@ -7,10 +7,13 @@ use std::{
 
 #[cfg(any(test, feature = "hid-identity-compile-check"))]
 mod hid_lease;
+#[cfg(all(windows, test))]
+#[allow(unused_imports)] // Consumed by the service host's test harness.
+pub(crate) use hid_lease::tests::service_fixture;
 mod pnp;
 #[cfg(test)]
 mod tests;
-#[cfg(windows)]
+#[cfg(all(windows, not(test)))]
 pub(crate) mod windows;
 
 const MAX_INTERFACES: usize = 4096;

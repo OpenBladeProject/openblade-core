@@ -9,7 +9,7 @@ mod windows;
 
 mod owner;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Descriptor {
