@@ -20,11 +20,11 @@ public sealed partial class SetupBackendCutoverTests
 
     // Both roles were built from the same Rust revision with default features.
     // Neither the caller's environment nor the signed archive selects the pins.
-    private const string LiveFixtureRevision = "ab3a6977d2ed914cb348e67feac3cf3eb275e7f9";
+    private const string LiveFixtureRevision = "ea37d770bc6feaa9544407e535a7f765d532c4ae";
     private const string LiveServiceFixture = "openblade-windows-host.exe";
-    private const string LiveServiceHash = "ABC991ADA1B4BD05471DF721E5A9D6F3AA8A4D274627C99DD50482AE3E040392";
+    private const string LiveServiceHash = "B736832DFAE7D485D6DA247E1A1A0D4FBFD0A5759E113CE2502C8D37B507C96F";
     private const string LiveAgentFixture = "openblade-rust-session-agent.exe";
-    private const string LiveAgentHash = "0EB8094D131B5C20F0452FD0B9477EAD1F8DD2763551532322CBC8ACEB4201FD";
+    private const string LiveAgentHash = "FEC4902FDCAC508B1167EC101DF47EA1F89F11E7C82B2D82B3570658EEF300B5";
 
     private const string AgentRefusal = "The GPU inventory scan timed out.";
 
