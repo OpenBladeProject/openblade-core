@@ -44,16 +44,22 @@ fn hosted_ntfs_admits_managed_configuration() -> io::Result<()> {
     {
         return Err(io::Error::last_os_error());
     }
-    if !filesystem.starts_with(&[78, 84, 70, 83, 0]) {
+    if !filesystem
+        .into_iter()
+        .take(5)
+        .eq("NTFS".encode_utf16().chain([0]))
+    {
         return Err(io::Error::other("fixture drive must be NTFS"));
     }
 
     let setup_sddl = std::env::var("OPENBLADE_HOSTED_SETUP_SDDL").map_err(io::Error::other)?;
-    let (setup, size) = local_descriptor(&setup_sddl);
-    // SAFETY: the aligned Windows allocation is still live and size is
-    // returned by the conversion routine.
-    let setup_bytes = unsafe { slice::from_raw_parts(setup.0.cast(), size) };
-    if accepts_descriptor(setup_bytes, Policy::Root) != Some(true) {
+    let setup = local_descriptor(&setup_sddl).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("could not convert the Setup descriptor: {error}"),
+        )
+    })?;
+    if accepts_descriptor(setup.bytes(), Policy::Root) != Some(true) {
         return Err(denied("Setup descriptor does not match Rust admission"));
     }
     let created = open_relative_with_security(
@@ -63,7 +69,7 @@ fn hosted_ntfs_admits_managed_configuration() -> io::Result<()> {
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         FILE_CREATE,
         FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
-        Some(&setup),
+        Some(&setup.allocation),
     )?;
 
     let result = std::panic::catch_unwind(|| {
@@ -93,6 +99,8 @@ fn exercise_admission(root: &Path, created: FileIdentity) -> io::Result<()> {
     let storage = ProtectedStorage::open(root)?;
     assert!(storage.identity == created);
     assert_eq!(storage.inspect()?, Inspection::Empty);
+    // ProtectedStorage retains the actual drive and root handles throughout the
+    // existing writer call. The outer fixture owns the only teardown.
     let store = TestStore {
         root: root.to_owned(),
         pins: Vec::new(),
@@ -190,6 +198,7 @@ fn cleanup_fixture(root: &Path, created: File) -> io::Result<()> {
     if file_identity(&directory_info(&created)?) != file_identity(&directory_info(&pin)?) {
         return Err(denied("fixture identity changed before cleanup"));
     }
+    let mut files = Vec::new();
     for (index, entry) in fs::read_dir(root)?.enumerate() {
         let entry = entry?;
         let kind = entry.file_type()?;
@@ -200,7 +209,10 @@ fn cleanup_fixture(root: &Path, created: File) -> io::Result<()> {
         {
             return Err(io::Error::other("fixture cleanup found unexpected entries"));
         }
-        fs::remove_file(entry.path())?;
+        files.push(entry.path());
+    }
+    for file in files {
+        fs::remove_file(file)?;
     }
     drop(pin);
     drop(created);

@@ -274,6 +274,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
           persist-credentials: false
           submodules: false
       - name: Verify real Administrator admission and transactional replacement
@@ -286,6 +287,20 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           if ($env:OPENBLADE_PROTECTED_STORAGE_BASE -cne '1ab52f12eb1165d86c76fc35d6d0fb5aee948644') {
             throw 'The reviewed protected storage base changed.'
+          }
+          # Any broader change must use the ordinary Rust matrix.
+          $allowed = @(
+            '.github/workflows/rust.yml'
+            '.trail/learnings/2026-11-10-exercise-protected-storage-on-disposable-ntfs-jack.md'
+            'tools/openblade-windows-host/src/configuration_writer.rs'
+            'tools/openblade-windows-host/src/configuration_writer/fixture.rs'
+            'tools/openblade-windows-host/src/configuration_writer/protected.rs'
+            'tools/openblade-windows-host/src/configuration_writer/protected/tests.rs'
+            'tools/openblade-windows-host/src/configuration_writer/protected/tests/hosted.rs'
+          )
+          $changes = @(git diff --name-only --no-renames $env:OPENBLADE_PROTECTED_STORAGE_BASE HEAD --)
+          if ($changes.Count -eq 0 -or ($changes | Where-Object { $_ -cnotin $allowed })) {
+            throw 'Use ordinary Rust CI for changes outside the focused NTFS test scope.'
           }
           if ($env:RUNNER_ENVIRONMENT -cne 'github-hosted') {
             throw 'This check requires a disposable GitHub-hosted runner.'
