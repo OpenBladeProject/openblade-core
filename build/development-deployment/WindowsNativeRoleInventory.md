@@ -26,19 +26,35 @@ revision, four little-endian unsigned 16-bit version components, and two
 revision and product version, under their fixed Cargo names. The PE check
 cannot infer an executable's behavior or correct a mislabeled build input.
 
-A future product reader must authenticate the selected package using the
-applicable existing product trust, independently establish its product purpose,
-and read the single fixed resource from the **same authenticated snapshot**.
-It must reject missing or duplicate resources and bind the authenticated
-package SHA-256, product version, and source revision to the returned bytes.
-For LocalDev, enrollment and signed-release admission remain the broker's job;
-the installation ID identifies an enrollment, not a package. The package digest
-stays outside the inventory because embedding it would be circular. A loose
-resource, an arbitrary expected role digest, or an authentic scratch package
-cannot substitute for the trusted reader.
+## Phase 9l offline package reader
 
-Only a successful bind exposes the fixed role's expected SHA-256 for a future
-Phase 9f protected-file read. Phase 9i does not implement a product Burn
-extractor, modify package authoring or Setup, or activate the candidates. The
-seam is compiled only by the offline deployment test project. Tests use
-deterministic inert PE headers, an injected product reader, and scratch trust.
+The reader accepts the selected standard LocalDev release from the existing
+signed-manifest verifier and compares its SHA-256, version, and source revision
+with the selection. It opens the staged installer once with a Windows
+read-sharing handle that denies write and delete sharing. The existing installer
+verifier checks the size and SHA-256 through that handle. The adapter then
+reads from the same handle after it is rewound.
+
+The fixed location for a future inventory is
+`WixAttachedContainer\payload\OpenBlade.WindowsNativeRoleInventory.bin`,
+owned by the `OpenBladeSetup` chain package. The reader requires one exact
+match and validates the embedded Windows x64 build and distinct role digests.
+The adapter must inspect the complete logical declarations and physical
+container membership for duplicate or aliased entries, establish unique
+ownership, and bound the resource read to its fixed size. It takes the
+verified stream as input. External payloads and loose files are outside
+that stream.
+
+The offline reader returns a snapshot separate from the product admission
+claim consumed by `Bind`. A signature under test-only trust can establish
+fixture byte identity. Product authority still requires the existing
+protected enrollment and release admission and a vetted Burn adapter.
+
+The pinned WiX 7.0.0 CLI is present locally. `InstallerValidation.ps1` uses
+its path-based `burn extract` command to expand the bootstrapper and payload
+containers, then checks the expanded files and manifest against the published
+build. A product adapter still needs evidence that it reads the verified
+snapshot, preserves physical member multiplicity, and bounds extraction
+before materializing data. The pinned product authoring has no inventory entry.
+Phase 9l exercises the reader with an inert byte fixture and an injected
+adapter. The seam is compiled only by the offline deployment test project.

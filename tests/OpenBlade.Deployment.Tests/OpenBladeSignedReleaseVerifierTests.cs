@@ -326,7 +326,7 @@ public sealed class OpenBladeSignedReleaseVerifierTests
         Assert.Equal(expected, exception.Failure);
     }
 
-    private sealed class TestRelease : IDisposable
+    internal sealed class TestRelease : IDisposable
     {
         private readonly ECDsa signingKey;
 
@@ -367,8 +367,12 @@ public sealed class OpenBladeSignedReleaseVerifierTests
 
         public static TestRelease CreateWithRealInstallerIdentity()
         {
-            byte[] installerBytes = Encoding.UTF8.GetBytes("synthetic OpenBlade installer fixture");
-            string installerSha256 = Convert.ToHexString(SHA256.HashData(installerBytes)).ToLowerInvariant();
+            return CreateWithInstallerBytes("synthetic OpenBlade installer fixture"u8.ToArray());
+        }
+
+        internal static TestRelease CreateWithInstallerBytes(byte[] installerBytes)
+        {
+            string installerSha256 = Convert.ToHexStringLower(SHA256.HashData(installerBytes));
             return CreateCore(installerBytes.Length, installerSha256, installerBytes);
         }
 

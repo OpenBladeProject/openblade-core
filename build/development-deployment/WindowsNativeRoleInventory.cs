@@ -28,13 +28,27 @@ internal sealed record AuthenticatedWindowsNativeInventory(
     WindowsNativePayloadIdentity Identity,
     ImmutableArray<byte> Resource);
 
+internal sealed record WindowsNativeInventoryEntry(
+    string FilePath,
+    string OwnerPackageId,
+    string? AttachedContainerId,
+    ImmutableArray<byte> Resource);
+
+// A snapshot binds bytes to a selected release. Product admission is a separate decision.
+internal sealed record WindowsNativeInventorySnapshot(
+    WindowsNativePayloadIdentity Identity,
+    ImmutableArray<byte> Resource);
+
 internal sealed class WindowsNativeRoleInventory
 {
     internal const string ResourceName = "OpenBlade.WindowsNativeRoleInventory.bin";
+    internal const string ResourcePath = @"payload\" + ResourceName;
     private const int RevisionBytes = 20;
     private const int BuildBytes = RevisionBytes + (4 * sizeof(ushort));
     private const int DigestBytes = SHA256.HashSizeInBytes;
     private static ReadOnlySpan<byte> Header => "OpenBlade.WindowsNativeRoles\0v1\0win-x64\0"u8;
+
+    internal static int ResourceSize => Header.Length + BuildBytes + (2 * DigestBytes);
 
     private readonly string serviceSha256;
     private readonly string sessionAgentSha256;
@@ -67,6 +81,63 @@ internal sealed class WindowsNativeRoleInventory
         return [.. Header, .. identity, .. service, .. agent];
     }
 
+    // The caller supplies the selected release from existing signed-release verification.
+    // The vetted adapter must reconcile declarations with physical members across containers.
+    // It must account for aliases, reject ambiguous ownership or layout, and bound extraction
+    // to ResourceSize. Each returned entry represents a uniquely resolved declaration and member.
+    internal static async Task<WindowsNativeInventorySnapshot> ReadVerifiedPackageAsync(
+        string installerPath,
+        OpenBladeVerifiedRelease release,
+        WindowsNativePayloadIdentity selected,
+        Func<Stream, CancellationToken, ImmutableArray<WindowsNativeInventoryEntry>> extract,
+        CancellationToken cancellationToken = default)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("The installer snapshot requires Windows file sharing.");
+        }
+
+        OpenBladeReleaseManifest manifest = release.Manifest;
+        var identity = new WindowsNativePayloadIdentity(
+            manifest.InstallerSha256, new(manifest.SourceRevision, Version.Parse(manifest.Version)));
+        if (manifest.SchemaVersion != OpenBladeReleaseManifestCodec.CurrentSchemaVersion
+            || identity != selected
+            || !Path.IsPathFullyQualified(installerPath)
+            || !string.Equals(Path.GetFileName(installerPath), OpenBladeReleaseManifestCodec.InstallerFileName,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The installer is not the selected standard LocalDev release.");
+        }
+
+        // On Windows this handle excludes writers and deletion through verification and extraction.
+        // The adapter receives the same handle rewound to the beginning.
+        await using FileStream snapshot = new(
+            installerPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous);
+        await OpenBladeSignedReleaseVerifier.VerifyInstallerAsync(snapshot, release, cancellationToken)
+            .ConfigureAwait(false);
+        snapshot.Position = 0;
+        var entries = extract(snapshot, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (entries.IsDefaultOrEmpty || entries.Length != 1
+            || !string.Equals(entries[0].FilePath, ResourcePath, StringComparison.Ordinal)
+            || !string.Equals(entries[0].OwnerPackageId, "OpenBladeSetup", StringComparison.Ordinal)
+            || !string.Equals(entries[0].AttachedContainerId, "WixAttachedContainer", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The installer must contain one exact attached Setup inventory.");
+        }
+
+        ReadOnlySpan<byte> resource = entries[0].Resource.AsSpan();
+        if (resource.Length != ResourceSize)
+        {
+            throw new InvalidDataException("The attached Setup inventory has an invalid size.");
+        }
+
+        ImmutableArray<byte> bytes = [.. resource];
+        _ = Decode(EncodeBuild(identity.Build), bytes.AsSpan());
+        return new(identity, bytes);
+    }
+
     // No raw-inventory or expected-role-hash overload. The selector alone grants no trust.
     internal static WindowsNativeRoleInventory Bind(
         WindowsNativePayloadIdentity expected, Func<string, AuthenticatedWindowsNativeInventory?> authenticate)
@@ -85,8 +156,12 @@ internal sealed class WindowsNativeRoleInventory
             throw new InvalidDataException("The native inventory has no trust for the selected product payload.");
         }
 
-        ReadOnlySpan<byte> resource = authenticated.Resource.AsSpan();
-        if (resource.Length != Header.Length + BuildBytes + (2 * DigestBytes)
+        return Decode(build, authenticated.Resource.AsSpan());
+    }
+
+    private static WindowsNativeRoleInventory Decode(ReadOnlySpan<byte> build, ReadOnlySpan<byte> resource)
+    {
+        if (resource.Length != ResourceSize
             || !resource.StartsWith(Header)
             || !resource.Slice(Header.Length, BuildBytes).SequenceEqual(build))
         {

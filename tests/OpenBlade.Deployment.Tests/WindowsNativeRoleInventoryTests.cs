@@ -112,7 +112,172 @@ public sealed class WindowsNativeRoleInventoryTests
         Assert.Throws<InvalidDataException>(() => WindowsNativeRoleInventory.CreateResource(Build, _ => Service));
     }
 
-    private static ImmutableArray<byte> Resource() => WindowsNativeRoleInventory.CreateResource(Build, file => file switch
+    private static readonly WindowsNativeBuildIdentity LocalDevBuild = new(new string('a', 40), new(65535, 1, 2, 3));
+
+    [Fact]
+    public async Task ReadsInventoryFromTheVerifiedLockedHandle()
+    {
+        var resource = Resource(LocalDevBuild);
+        using var fixture = new ScratchPackage(SetupEntry(resource));
+        WindowsNativeInventorySnapshot snapshot = await fixture.ReadAsync((stream, _) =>
+        {
+            Assert.Equal(0, stream.Position);
+            Assert.False(stream.CanWrite);
+            Assert.Throws<IOException>(() => File.OpenWrite(fixture.InstallerPath));
+            Assert.Throws<IOException>(() => File.Move(fixture.InstallerPath, fixture.LooseResourcePath));
+            return ExtractFixture(stream);
+        });
+
+        Assert.Equal(fixture.Identity, snapshot.Identity);
+        Assert.Equal(resource.AsSpan().ToArray(), snapshot.Resource.AsSpan().ToArray());
+        using FileStream writableAfterRead = File.OpenWrite(fixture.InstallerPath);
+    }
+
+    [Fact]
+    public async Task RejectsSameLengthPackageMutationBeforeExtraction()
+    {
+        var resource = Resource(LocalDevBuild);
+        using var fixture = new ScratchPackage(SetupEntry(resource));
+        byte[] changed = File.ReadAllBytes(fixture.InstallerPath);
+        changed[^1] ^= 1;
+        File.WriteAllBytes(fixture.InstallerPath, changed);
+
+        var failure = await Assert.ThrowsAsync<OpenBladeReleaseVerificationException>(() =>
+            fixture.ReadAsync((_, _) => throw new InvalidOperationException("Unexpected extraction.")));
+        Assert.Equal(OpenBladeReleaseVerificationFailure.InstallerHashMismatch, failure.Failure);
+    }
+
+    [Fact]
+    public async Task RejectsAValidLooseInventoryWhenThePackageHasNone()
+    {
+        using var fixture = new ScratchPackage();
+        File.WriteAllBytes(fixture.LooseResourcePath, Resource(LocalDevBuild).AsSpan().ToArray());
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.ReadAsync());
+    }
+
+    [Fact]
+    public async Task RejectsDuplicateAliasAndWrongOriginEvenWhenThePackageHashMatches()
+    {
+        var entry = SetupEntry(Resource(LocalDevBuild));
+        var alias = entry with { FilePath = entry.FilePath.ToLowerInvariant() };
+        var otherPackage = entry with { OwnerPackageId = "OtherPackage" };
+        var external = entry with { AttachedContainerId = null };
+        var otherContainer = entry with { AttachedContainerId = "OtherContainer" };
+        var wrongDirectory = entry with { FilePath = WindowsNativeRoleInventory.ResourceName };
+
+        foreach (WindowsNativeInventoryEntry[] entries in new[]
+        {
+            new[] { entry, entry }, new[] { entry, alias }, new[] { entry, otherPackage },
+            new[] { alias }, new[] { otherPackage }, new[] { external },
+            new[] { otherContainer }, new[] { wrongDirectory },
+        })
+        {
+            using var fixture = new ScratchPackage(entries);
+            await Assert.ThrowsAsync<InvalidDataException>(() => fixture.ReadAsync());
+        }
+    }
+
+    [Fact]
+    public async Task RejectsMismatchedSelectedIdentityAndEmbeddedBuild()
+    {
+        using var fixture = new ScratchPackage(SetupEntry(Resource(LocalDevBuild)));
+        var otherBuilds = new[]
+        {
+            LocalDevBuild with { ProductVersion = new Version(65535, 1, 2, 4) },
+            LocalDevBuild with { SourceRevision = new string('b', 40) },
+        };
+
+        foreach (var build in otherBuilds)
+        {
+            using var wrongResource = new ScratchPackage(SetupEntry(Resource(build)));
+            await Assert.ThrowsAsync<InvalidDataException>(() => wrongResource.ReadAsync());
+            await Assert.ThrowsAsync<InvalidDataException>(() => fixture.ReadAsync(selected: fixture.Identity with { Build = build }));
+        }
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            fixture.ReadAsync(selected: fixture.Identity with { PackageSha256 = new string('b', 64) }));
+    }
+
+    [Fact]
+    public async Task RejectsMalformedInventoryInsideAnOtherwiseVerifiedPackage()
+    {
+        using var fixture = new ScratchPackage(SetupEntry(Resource(LocalDevBuild).Add(0)));
+        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.ReadAsync());
+    }
+
+    private static WindowsNativeInventoryEntry SetupEntry(ImmutableArray<byte> resource) =>
+        new(WindowsNativeRoleInventory.ResourcePath, "OpenBladeSetup", "WixAttachedContainer", resource);
+
+    // This test-only container is a byte fixture. It does not model the Burn file format.
+    private static ImmutableArray<WindowsNativeInventoryEntry> ExtractFixture(Stream stream)
+    {
+        using BinaryReader reader = new(stream, System.Text.Encoding.UTF8, leaveOpen: true);
+        var matches = ImmutableArray.CreateBuilder<WindowsNativeInventoryEntry>();
+        int count = reader.ReadByte();
+        for (int i = 0; i < count; i++)
+        {
+            string name = reader.ReadString();
+            string owner = reader.ReadString();
+            string container = reader.ReadString();
+            byte[] bytes = reader.ReadBytes(reader.ReadByte());
+            if (string.Equals(Path.GetFileName(name), WindowsNativeRoleInventory.ResourceName, StringComparison.OrdinalIgnoreCase))
+            {
+                matches.Add(new(name, owner, container.Length == 0 ? null : container, [.. bytes]));
+            }
+        }
+
+        return matches.ToImmutable();
+    }
+
+    private sealed class ScratchPackage : IDisposable
+    {
+        private readonly DirectoryInfo directory = Directory.CreateTempSubdirectory("openblade-role-test-");
+        private readonly OpenBladeVerifiedRelease verified;
+
+        internal ScratchPackage(params WindowsNativeInventoryEntry[] entries)
+        {
+            using MemoryStream fixture = new();
+            using BinaryWriter writer = new(fixture);
+            writer.Write(checked((byte)entries.Length));
+            foreach (var entry in entries)
+            {
+                writer.Write(entry.FilePath);
+                writer.Write(entry.OwnerPackageId);
+                writer.Write(entry.AttachedContainerId ?? string.Empty);
+                writer.Write(checked((byte)entry.Resource.Length));
+                writer.Write(entry.Resource.AsSpan());
+            }
+
+            byte[] installerBytes = fixture.ToArray();
+            using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(installerBytes);
+            verified = OpenBladeSignedReleaseVerifier.Verify(signed.ManifestBytes, signed.SignatureBytes, signed.Policy);
+            Identity = new(signed.InstallerSha256, LocalDevBuild);
+            File.WriteAllBytes(InstallerPath, installerBytes);
+        }
+
+        internal string InstallerPath => Path.Combine(directory.FullName, OpenBladeReleaseManifestCodec.InstallerFileName);
+        internal string LooseResourcePath => Path.Combine(directory.FullName, WindowsNativeRoleInventory.ResourceName);
+        internal WindowsNativePayloadIdentity Identity { get; }
+
+        internal Task<WindowsNativeInventorySnapshot> ReadAsync(
+            Func<Stream, CancellationToken, ImmutableArray<WindowsNativeInventoryEntry>>? extractor = null,
+            WindowsNativePayloadIdentity? selected = null) =>
+            WindowsNativeRoleInventory.ReadVerifiedPackageAsync(
+                InstallerPath, verified, selected ?? Identity, extractor ?? ((stream, _) => ExtractFixture(stream)));
+
+        public void Dispose()
+        {
+            File.Delete(InstallerPath);
+            File.Delete(LooseResourcePath);
+            directory.Delete();
+        }
+    }
+
+    private static ImmutableArray<byte> Resource() => Resource(Build);
+
+    private static ImmutableArray<byte> Resource(WindowsNativeBuildIdentity build) =>
+        WindowsNativeRoleInventory.CreateResource(build, file => file switch
     {
         "openblade-windows-service-candidate.exe" => Service,
         "openblade-windows-agent-candidate.exe" => Agent,
