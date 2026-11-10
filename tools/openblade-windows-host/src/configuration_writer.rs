@@ -69,6 +69,13 @@ impl Report {
     }
 }
 
+enum ExpectedPreimage<'a> {
+    Fixture([Option<&'a [u8]>; 3]),
+    Migration(profile::LegacyPreimage<'a>),
+    #[cfg(test)]
+    Unspecified,
+}
+
 // Construction is private to the native tests and the fixed developer fixture.
 struct TestStore {
     root: PathBuf,
@@ -280,13 +287,13 @@ impl TestStore {
 
     #[cfg(test)]
     fn commit(&self, intent: [&[u8]; 3], at: impl FnMut(Boundary) -> io::Result<()>) -> Report {
-        self.commit_from(intent, None, at)
+        self.commit_from(intent, ExpectedPreimage::Unspecified, at)
     }
 
     fn commit_from(
         &self,
         intent: [&[u8]; 3],
-        expected: Option<[Option<&[u8]>; 3]>,
+        expected: ExpectedPreimage<'_>,
         mut at: impl FnMut(Boundary) -> io::Result<()>,
     ) -> Report {
         let _lock = match self.lock() {
@@ -321,23 +328,26 @@ impl TestStore {
             Err(error) => return Report::new(Outcome::Unchanged(error)),
         };
         let prior = prior.each_ref().map(Option::as_deref);
-        let inspection = inspect_bytes(prior);
-        if expected.is_some_and(|expected| expected != prior) {
+        let expected_bytes = match &expected {
+            ExpectedPreimage::Fixture(bytes) => *bytes,
+            ExpectedPreimage::Migration(legacy) => legacy.bytes().map(Some),
+            #[cfg(test)]
+            ExpectedPreimage::Unspecified => prior,
+        };
+        if expected_bytes != prior {
             return Report::new(Outcome::Unchanged(io::Error::other(
                 "fixture transaction preimage changed",
             )));
         }
-        match inspection {
-            Inspection::Empty
-            | Inspection::CommittedEnvelope {
-                schema: CURRENT_SCHEMA,
-            } => {}
-            // Only the typed fixture migration can supply a verified, exact
-            // schema 24 preimage. The ordinary writer still refuses old state.
-            Inspection::CommittedEnvelope {
-                schema: profile::LEGACY_SCHEMA,
-            } if expected.is_some() => {}
-            other => return Report::new(Outcome::Refused(other)),
+        // A typed migration preimage already passed inspection for these exact bytes.
+        if !matches!(expected, ExpectedPreimage::Migration(_)) {
+            match inspect_bytes(prior) {
+                Inspection::Empty
+                | Inspection::CommittedEnvelope {
+                    schema: CURRENT_SCHEMA,
+                } => {}
+                other => return Report::new(Outcome::Refused(other)),
+            }
         }
         let id = match transaction_id() {
             Ok(id) => id,

@@ -187,6 +187,10 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             migrated.Preferences);
         Assert.True(JsonNode.DeepEquals(vector["currentFanStop"],
             JsonSerializer.SerializeToNode(migrated.Preferences.FanStopSettings, ProfileStore.SerializerOptions)));
+        JsonNode expectedProfile = profile.DeepClone();
+        expectedProfile["schemaVersion"] = 25;
+        Assert.True(JsonNode.DeepEquals(expectedProfile,
+            JsonNode.Parse(await File.ReadAllBytesAsync(paths.Profiles))));
         foreach (string path in paths.All)
         {
             using JsonDocument document = JsonDocument.Parse(await File.ReadAllBytesAsync(path));

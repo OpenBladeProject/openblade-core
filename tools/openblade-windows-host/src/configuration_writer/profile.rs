@@ -2,9 +2,9 @@
 //! preferences fields must match the managed default fixture as JSON values.
 
 use super::{CURRENT_SCHEMA, Inspection, inspect_bytes};
+use crate::configuration::{digest_hex, web_integer};
 use serde::{Deserialize, Deserializer, Serialize, de};
-use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use serde_json::{Value, json, value::RawValue};
 use std::io;
 
 pub(super) const LEGACY_SCHEMA: i32 = 24;
@@ -142,13 +142,8 @@ struct BatteryPolicy {
 }
 
 fn web_i32<'de, D: Deserializer<'de>>(reader: D) -> Result<i32, D::Error> {
-    let value = Value::deserialize(reader)?;
-    match value {
-        Value::Number(number) => number.as_i64().and_then(|n| i32::try_from(n).ok()),
-        Value::String(text) => text.parse().ok(),
-        _ => None,
-    }
-    .ok_or_else(|| de::Error::custom("expected a managed Int32"))
+    let value = Box::<RawValue>::deserialize(reader)?;
+    web_integer(&value).ok_or_else(|| de::Error::custom("expected a managed Int32"))
 }
 
 fn invalid() -> io::Error {
@@ -156,6 +151,18 @@ fn invalid() -> io::Error {
         io::ErrorKind::InvalidData,
         "invalid fixture battery policy or Fan Stop settings",
     )
+}
+
+// Only typed schema 24 validation can construct this write precondition.
+pub(super) struct LegacyPreimage<'a> {
+    bytes: [&'a [u8]; 3],
+    pub(super) policy: ProfilePolicy,
+}
+
+impl<'a> LegacyPreimage<'a> {
+    pub(super) fn bytes(&self) -> [&'a [u8]; 3] {
+        self.bytes
+    }
 }
 
 pub(super) struct ProfileTemplate {
@@ -174,8 +181,30 @@ impl ProfileTemplate {
         })
     }
 
-    pub(super) fn decode(&self, docs: [&[u8]; 3]) -> io::Result<ProfilePolicy> {
-        let inspection = inspect_bytes(docs.map(Some));
+    pub(super) fn validate_legacy<'a>(
+        &self,
+        bytes: [&'a [u8]; 3],
+    ) -> io::Result<LegacyPreimage<'a>> {
+        let inspection = inspect_bytes(bytes.map(Some));
+        if inspection
+            != (Inspection::CommittedEnvelope {
+                schema: LEGACY_SCHEMA,
+            })
+        {
+            return Err(io::Error::other(format!(
+                "fixture migration refused: {inspection:?}"
+            )));
+        }
+        let policy = self.decode_verified(bytes, inspection)?;
+        Ok(LegacyPreimage { bytes, policy })
+    }
+
+    // The caller supplies the envelope inspection for these exact bytes.
+    pub(super) fn decode_verified(
+        &self,
+        docs: [&[u8]; 3],
+        inspection: Inspection,
+    ) -> io::Result<ProfilePolicy> {
         let Inspection::CommittedEnvelope {
             schema: schema @ (LEGACY_SCHEMA | CURRENT_SCHEMA),
         } = inspection
@@ -232,8 +261,8 @@ impl ProfileTemplate {
         let preferences = serde_json::to_string_pretty(&preferences)?;
         let marker = serde_json::to_string_pretty(&json!({
             "schemaVersion": schema,
-            "profileSha256": format!("{:X}", Sha256::digest(profile.as_bytes())),
-            "preferencesSha256": format!("{:X}", Sha256::digest(preferences.as_bytes())),
+            "profileSha256": digest_hex(profile.as_bytes()),
+            "preferencesSha256": digest_hex(preferences.as_bytes()),
         }))?;
         Ok([profile, preferences, marker])
     }

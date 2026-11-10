@@ -112,7 +112,10 @@ fn inspect_committed(
     if !marker.has_exact_members(&["schemaVersion", "profileSha256", "preferencesSha256"]) {
         return Err(Reason::InvalidDocument);
     }
-    let schema = web_integer(marker.get("schemaVersion")).filter(|n| supported(*n));
+    let schema = marker
+        .get("schemaVersion")
+        .and_then(web_integer)
+        .filter(|n| supported(*n));
     let schema = schema.ok_or(Reason::InvalidDocument)?;
     let profile_digest: Option<String> = decode(marker.get("profileSha256"))?;
     let preference_digest: Option<String> = decode(marker.get("preferencesSha256"))?;
@@ -124,7 +127,7 @@ fn inspect_committed(
 
     let prefs = preferences.strict_object()?;
     if !prefs.has_exact_members(&["schemaVersion", "preferences"])
-        || web_integer(prefs.get("schemaVersion")) != Some(schema)
+        || prefs.get("schemaVersion").and_then(web_integer) != Some(schema)
         || !is_object(prefs.get("preferences"))
     {
         // The managed preference reader reports this as invalid, including a
@@ -149,8 +152,8 @@ fn supported(version: i32) -> bool {
     (1..=CURRENT_SCHEMA).contains(&version)
 }
 
-fn web_integer(value: Option<&RawValue>) -> Option<i32> {
-    let raw = value?.get();
+pub(crate) fn web_integer(value: &RawValue) -> Option<i32> {
+    let raw = value.get();
     if raw.starts_with('"') {
         let text: String = serde_json::from_str(raw).ok()?;
         text.parse().ok()
@@ -162,7 +165,11 @@ fn web_integer(value: Option<&RawValue>) -> Option<i32> {
 fn hash_matches(supplied: Option<&str>, bytes: &[u8]) -> bool {
     // Hashes are public integrity metadata. Compare the exact uppercase spelling
     // over the original bytes, including whitespace and line endings.
-    supplied.is_some_and(|expected| expected == format!("{:X}", Sha256::digest(bytes)))
+    supplied.is_some_and(|expected| expected == digest_hex(bytes))
+}
+
+pub(crate) fn digest_hex(bytes: &[u8]) -> String {
+    format!("{:X}", Sha256::digest(bytes))
 }
 
 fn is_object(value: Option<&RawValue>) -> bool {

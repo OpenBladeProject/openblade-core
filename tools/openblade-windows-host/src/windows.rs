@@ -47,7 +47,7 @@ pub(super) fn entry() -> io::Result<()> {
                 || mode == "foreground-profile-migrate" =>
         {
             let id = foreground_id(id)?;
-            let mut fixture = fixture::Fixture::create()?;
+            let mut fixture = fixture::Fixture::create(mode == "foreground-profile-migrate")?;
             let (root, identity) = fixture.restart_key()?;
             let mut output = io::stdout().lock();
             writeln!(output, "ROOT {root} {identity}")?;

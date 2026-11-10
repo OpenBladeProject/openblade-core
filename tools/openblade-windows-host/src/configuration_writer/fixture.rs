@@ -2,8 +2,9 @@
 
 use super::profile::{LEGACY_SCHEMA, ProfilePolicy, ProfileTemplate};
 use super::{
-    Boundary, CURRENT_SCHEMA, FILE_SHARE_READ, Inspection, NAMES, Outcome, TestStore,
-    file_identity, handle_information, pin_directory_with_share, transaction_id,
+    Boundary, CURRENT_SCHEMA, ExpectedPreimage, FILE_SHARE_READ, Inspection, NAMES, Outcome,
+    TestStore, file_identity, handle_information, inspect_bytes, pin_directory_with_share,
+    transaction_id,
 };
 use crate::valid_dev_id;
 use serde::Deserialize;
@@ -72,7 +73,7 @@ pub struct Fixture {
 impl Fixture {
     /// This is the only constructor with write authority. An existing root
     /// (including a reparse point) makes the exclusive create fail.
-    pub fn create() -> io::Result<Self> {
+    pub fn create(seed_legacy: bool) -> io::Result<Self> {
         let documents: Documents = serde_json::from_str(FIXTURE)?;
         let template = ProfileTemplate::from_managed(&documents.prior)?;
         let (temp, pins) = TestStore::pin_temp(&local_temp()?)?;
@@ -89,12 +90,19 @@ impl Fixture {
             return Err(io::Error::other("fixture parent became a reparse point"));
         }
         let store = TestStore::initialize(root, pins, Some(creation_pin))?;
-        Ok(Self {
+        let fixture = Self {
             id,
             store,
             documents,
             template,
-        })
+        };
+        if seed_legacy {
+            // Keep cleanup ownership until all synthetic inputs are ready.
+            for (name, document) in NAMES.into_iter().zip(legacy_documents(&fixture.template)?) {
+                fixture.store.create_durable(name, document.as_bytes())?;
+            }
+        }
+        Ok(fixture)
     }
 
     pub fn restart_key(&self) -> io::Result<(&str, String)> {
@@ -107,20 +115,21 @@ impl Fixture {
     }
 
     pub fn seed(&self) -> io::Result<u8> {
-        self.write(&self.documents.prior, [None; 3], false)
+        self.write(
+            &self.documents.prior,
+            ExpectedPreimage::Fixture([None; 3]),
+            false,
+        )
     }
 
     pub fn bootstrap(&self) -> io::Result<u8> {
         let intent = self.template.encode(ProfilePolicy::default())?;
-        self.write(&intent, [None; 3], false)
+        self.write(&intent, ExpectedPreimage::Fixture([None; 3]), false)
     }
 
     pub fn migrate(&self) -> io::Result<u8> {
         let legacy = legacy_documents(&self.template)?;
-        let legacy = legacy.each_ref().map(|doc| doc.as_bytes());
-        for (name, bytes) in NAMES.into_iter().zip(legacy) {
-            self.store.create_durable(name, bytes)?;
-        }
+        let legacy = document_bytes(&legacy);
 
         let (inspection, prior) = self.store.inspect_snapshot()?;
         let prior = prior.each_ref().map(Option::as_deref);
@@ -134,29 +143,26 @@ impl Fixture {
                 "fixture migration refused: {inspection:?}"
             )));
         }
-        let policy = self.template.decode(legacy)?;
-        let intent = self.template.encode(policy)?;
-        self.write(&intent, prior, false)
+        let preimage = self.template.validate_legacy(legacy)?;
+        let intent = self.template.encode(preimage.policy)?;
+        self.write(&intent, ExpectedPreimage::Migration(preimage), false)
     }
 
     pub fn update(&self, interrupt: bool) -> io::Result<u8> {
-        let prior = self
-            .documents
-            .prior
-            .each_ref()
-            .map(|doc| Some(doc.as_bytes()));
+        let prior = ExpectedPreimage::Fixture(document_bytes(&self.documents.prior).map(Some));
         self.write(&self.documents.committed, prior, interrupt)
     }
 
     fn write(
         &self,
         intent: &[String; 3],
-        expected: [Option<&[u8]>; 3],
+        expected: ExpectedPreimage<'_>,
         interrupt: bool,
     ) -> io::Result<u8> {
-        let bytes = intent.each_ref().map(|doc| doc.as_bytes());
-        self.template.decode(bytes)?;
-        let report = self.store.commit_from(bytes, Some(expected), |at| {
+        let bytes = document_bytes(intent);
+        self.template
+            .decode_verified(bytes, inspect_bytes(bytes.map(Some)))?;
+        let report = self.store.commit_from(bytes, expected, |at| {
             if interrupt && matches!(at, Boundary::AfterReplace(0) | Boundary::BeforeRestore(0)) {
                 return Err(io::Error::other("injected developer interruption"));
             }
@@ -169,7 +175,7 @@ impl Fixture {
                 for error in &report.artifact_errors {
                     let _ = writeln!(io::stderr().lock(), "fixture artifact cleanup: {error}");
                 }
-                load(&self.store, &self.template, &[intent])
+                load(&self.store, &self.template, |actual| Ok(actual == bytes))
             }
             Outcome::RecoveryRequired {
                 cause,
@@ -207,20 +213,26 @@ pub fn restart(id: &str, expected: &str) -> io::Result<u8> {
     }
     let documents: Documents = serde_json::from_str(FIXTURE)?;
     let template = ProfileTemplate::from_managed(&documents.prior)?;
-    let bootstrap = template.encode(ProfilePolicy::default())?;
-    let legacy = legacy_documents(&template)?;
-    let migrated =
-        template.encode(template.decode(legacy.each_ref().map(|doc| doc.as_bytes()))?)?;
-    load(
-        &store,
-        &template,
-        &[
-            &documents.prior,
-            &documents.committed,
-            &bootstrap,
-            &migrated,
-        ],
-    )
+    load(&store, &template, |actual| {
+        if [&documents.prior, &documents.committed]
+            .into_iter()
+            .any(|allowed| document_bytes(allowed) == actual)
+        {
+            return Ok(true);
+        }
+        let bootstrap = template.encode(ProfilePolicy::default())?;
+        if document_bytes(&bootstrap) == actual {
+            return Ok(true);
+        }
+        let legacy = legacy_documents(&template)?;
+        let migrated =
+            template.encode(template.validate_legacy(document_bytes(&legacy))?.policy)?;
+        Ok(document_bytes(&migrated) == actual)
+    })
+}
+
+fn document_bytes(documents: &[String; 3]) -> [&[u8]; 3] {
+    documents.each_ref().map(|doc| doc.as_bytes())
 }
 
 fn legacy_documents(template: &ProfileTemplate) -> io::Result<[String; 3]> {
@@ -232,7 +244,11 @@ fn legacy_documents(template: &ProfileTemplate) -> io::Result<[String; 3]> {
     )
 }
 
-fn load(store: &TestStore, template: &ProfileTemplate, allowed: &[&[String; 3]]) -> io::Result<u8> {
+fn load(
+    store: &TestStore,
+    template: &ProfileTemplate,
+    allowed: impl FnOnce([&[u8]; 3]) -> io::Result<bool>,
+) -> io::Result<u8> {
     let (inspection, bytes) = store.inspect_snapshot()?;
     if inspection
         != (Inspection::CommittedEnvelope {
@@ -248,11 +264,8 @@ fn load(store: &TestStore, template: &ProfileTemplate, allowed: &[&[String; 3]])
         return Err(io::Error::other("fixture documents missing"));
     };
     let docs = [profile, preferences, marker];
-    let policy = template.decode(docs)?;
-    if !allowed
-        .iter()
-        .any(|allowed| allowed.each_ref().map(|doc| doc.as_bytes()) == docs)
-    {
+    let policy = template.decode_verified(docs, inspection)?;
+    if !allowed(docs)? {
         return Err(io::Error::other(
             "configuration outside the managed fixture",
         ));
@@ -381,13 +394,15 @@ mod tests {
         let template = ProfileTemplate::from_managed(&documents.prior).unwrap();
         let decode = |schema, limit, settings| {
             let docs = template.documents(schema, limit, settings).unwrap();
-            template.decode(docs.each_ref().map(|doc| doc.as_bytes()))
+            let bytes = document_bytes(&docs);
+            template.decode_verified(bytes, inspect_bytes(bytes.map(Some)))
         };
 
         let legacy = legacy_documents(&template).unwrap();
         let effective = template
-            .decode(legacy.each_ref().map(|doc| doc.as_bytes()))
-            .unwrap();
+            .validate_legacy(document_bytes(&legacy))
+            .unwrap()
+            .policy;
         let spec: Value = serde_json::from_str(PROFILE_FIXTURE).unwrap();
         assert_eq!(
             serde_json::to_value(effective.fan_stop).unwrap(),
@@ -449,7 +464,7 @@ mod tests {
 
     #[test]
     fn a_different_valid_legacy_preimage_never_reaches_the_writer() {
-        let fixture = Fixture::create().unwrap();
+        let fixture = Fixture::create(false).unwrap();
         let legacy = legacy_documents(&fixture.template).unwrap();
         let mut spec: MigrationFixture = serde_json::from_str(PROFILE_FIXTURE).unwrap();
         spec.charge_limit_percent += 1;
@@ -464,17 +479,24 @@ mod tests {
         for (name, doc) in NAMES.into_iter().zip(&different) {
             fixture.store.create_durable(name, doc.as_bytes()).unwrap();
         }
-        let policy = fixture
+        let preimage = fixture
             .template
-            .decode(legacy.each_ref().map(|doc| doc.as_bytes()))
+            .validate_legacy(document_bytes(&legacy))
             .unwrap();
-        let intent = fixture.template.encode(policy).unwrap();
+        let intent = fixture.template.encode(preimage.policy).unwrap();
+        let unvalidated = fixture.store.commit_from(
+            document_bytes(&intent),
+            ExpectedPreimage::Fixture(document_bytes(&different).map(Some)),
+            |_| panic!("an exact legacy preimage still needs typed migration admission"),
+        );
+        assert!(matches!(
+            unvalidated.outcome,
+            Outcome::Refused(Inspection::CommittedEnvelope {
+                schema: LEGACY_SCHEMA,
+            })
+        ));
         let error = fixture
-            .write(
-                &intent,
-                legacy.each_ref().map(|doc| Some(doc.as_bytes())),
-                false,
-            )
+            .write(&intent, ExpectedPreimage::Migration(preimage), false)
             .unwrap_err();
         assert!(error.to_string().contains("preimage changed"), "{error}");
         let (inspection, actual) = fixture.store.inspect_snapshot().unwrap();
@@ -490,7 +512,7 @@ mod tests {
 
     #[test]
     fn durable_update_preserves_an_integrity_valid_but_damaged_profile() {
-        let fixture = Fixture::create().unwrap();
+        let fixture = Fixture::create(false).unwrap();
         let damaged = fixture
             .template
             .documents(
@@ -517,7 +539,7 @@ mod tests {
 
     #[test]
     fn an_unannounced_fixture_is_removed_when_the_owner_exits() {
-        let fixture = Fixture::create().unwrap();
+        let fixture = Fixture::create(false).unwrap();
         let root = fixture.store.root.clone();
         assert!(root.is_dir());
         drop(fixture);
