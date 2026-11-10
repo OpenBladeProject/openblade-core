@@ -61,9 +61,61 @@ struct RetainedRecord {
     _ancestors: Vec<File>,
 }
 
-pub(super) struct ActiveBinding {
+#[cfg(feature = "scratch-candidate-receipt")]
+pub(super) struct ActiveBinding<'a> {
     pub(super) digest: [u8; 32],
     pub(super) setup_identity: [u8; 12],
+    pub(super) deployment_request_id: &'a str,
+    pub(super) launch_secret_digest: [u8; 32],
+}
+
+#[cfg(feature = "scratch-candidate-receipt")]
+fn verify_scratch_launch(
+    evidence: &[u8; 120],
+    active: &[u8],
+    issuer: &ActiveBinding<'_>,
+) -> io::Result<[u8; 32]> {
+    // v1: broker generation, receiver generation, then three SHA-256 digests.
+    let active_digest: [u8; 32] = Sha256::digest(active).into();
+    if evidence[12..24] != issuer.setup_identity
+        || evidence[24..56] != active_digest
+        || evidence[88..120] != issuer.launch_secret_digest
+    {
+        return Err(denied(
+            "provisional Setup issuer differs from the broker launch evidence",
+        ));
+    }
+    Ok(evidence[56..88].try_into().expect("fixed v1 image digest"))
+}
+
+#[cfg(all(test, feature = "scratch-candidate-receipt"))]
+mod scratch_launch_tests {
+    use super::*;
+
+    #[test]
+    fn issuer_requires_the_original_launch_generation_binding_and_secret() {
+        let active = b"active deployment";
+        let issuer = ActiveBinding {
+            digest: [0; 32],
+            setup_identity: [1; 12],
+            deployment_request_id: "310b8316-4a6d-412d-82cb-c4c1b34a725d",
+            launch_secret_digest: Sha256::digest([2; 32]).into(),
+        };
+        let mut evidence = [0; 120];
+        evidence[12..24].copy_from_slice(&issuer.setup_identity);
+        evidence[24..56].copy_from_slice(&Sha256::digest(active));
+        evidence[56..88].fill(3);
+        evidence[88..].copy_from_slice(&issuer.launch_secret_digest);
+        assert_eq!(
+            verify_scratch_launch(&evidence, active, &issuer).unwrap(),
+            [3; 32]
+        );
+        for offset in [16, 24, 88] {
+            let mut changed = evidence;
+            changed[offset] ^= 1;
+            assert!(verify_scratch_launch(&changed, active, &issuer).is_err());
+        }
+    }
 }
 
 #[cfg(feature = "installed-service-candidate")]
@@ -107,6 +159,7 @@ pub(super) fn read(
         check_directory,
         check_file,
         expected_receipt,
+        #[cfg(feature = "scratch-candidate-receipt")]
         None,
     )?;
     Ok(CommittedServiceImage { _files: files })
@@ -126,7 +179,7 @@ pub(super) fn read_provisional(
     check_directory: impl Fn(&File, usize, bool, usize) -> io::Result<()>,
     check_file: impl Fn(&File) -> io::Result<()>,
     expected: [u8; 32],
-    active_binding: ActiveBinding,
+    active_binding: ActiveBinding<'_>,
 ) -> io::Result<ProvisionalStartup> {
     let (files, startup) = read_record(
         install,
@@ -152,7 +205,7 @@ fn read_record(
     check_directory: impl Fn(&File, usize, bool, usize) -> io::Result<()>,
     check_file: impl Fn(&File) -> io::Result<()>,
     expected_receipt: impl FnOnce() -> Option<[u8; 32]>,
-    active_binding: Option<ActiveBinding>,
+    #[cfg(feature = "scratch-candidate-receipt")] active_binding: Option<ActiveBinding<'_>>,
 ) -> io::Result<(RetainedRecord, Option<(File, File)>)> {
     let (root, ancestors, info) = pin_root(install)?;
     require_ntfs(&ancestors[0])?;
@@ -216,7 +269,13 @@ fn read_record(
         ));
     }
 
+    #[cfg(feature = "scratch-candidate-receipt")]
     let startup = if let Some(expected_binding) = active_binding {
+        if record.request_id != expected_binding.deployment_request_id {
+            return Err(denied(
+                "provisional receipt has a different deployment request",
+            ));
+        }
         // Scratch layout is <scratch>/program-files/OpenBlade. The retained
         // scratch ancestor already passed the same owner and DACL checks.
         let scratch = ancestors
@@ -247,6 +306,53 @@ fn read_record(
                 "provisional receipt has a different active generation",
             ));
         }
+        // Verify the original broker launch evidence using the issuer identity
+        // obtained from the live pipe peer and the inherited launch secret.
+        let open_directory = |parent: &File, name: &str| {
+            use windows_sys::Wdk::Storage::FileSystem::FILE_DIRECTORY_FILE;
+            let directory = open_relative(
+                parent,
+                OsStr::new(name),
+                FILE_GENERIC_READ,
+                FILE_SHARE_READ,
+                FILE_OPEN,
+                FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+            )?;
+            if directory_info(&directory)?.dwVolumeSerialNumber != info.dwVolumeSerialNumber {
+                return Err(denied("scratch launch directory changed volumes"));
+            }
+            check_directory(&directory, ancestors.len(), true, ancestors.len())?;
+            Ok(directory)
+        };
+        let staging = open_directory(scratch, "staging")?;
+        let request = open_directory(&staging, &record.request_id.replace('-', ""))?;
+        let mut launch = open(&request, "candidate-setup-launch.v1")?;
+        verify_file(&launch)?;
+        let launch_snapshot = snapshot(&launch)?;
+        let mut evidence = [0; 120];
+        if launch_snapshot.size != evidence.len() as u64 {
+            return Err(denied("invalid scratch launch evidence length"));
+        }
+        launch.read_exact(&mut evidence)?;
+        if snapshot(&launch)? != launch_snapshot {
+            return Err(denied(
+                "scratch launch evidence changed during verification",
+            ));
+        }
+        let receiver_digest = verify_scratch_launch(&evidence, &active, &expected_binding)?;
+        let receiver_directory = open_directory(scratch, "receiver")?;
+        let mut receiver = open(
+            &receiver_directory,
+            "OpenBlade.CandidateReceipt.Scratch.exe",
+        )?;
+        verify_file(&receiver)?;
+        let size = snapshot(&receiver)?.size;
+        service_image::verify(&mut receiver, size, receiver_digest).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("Setup issuer image verification failed: {error}"),
+            )
+        })?;
         let mut agent = open(&root, AGENT_NAME)?;
         verify_file(&agent)?;
         service_image::verify(
@@ -274,6 +380,7 @@ fn read_record(
     )?;
     verify_file(&image)?;
     verify_file(&receipt)?;
+    #[cfg(feature = "scratch-candidate-receipt")]
     if let Some((binding, agent)) = &startup {
         verify_file(binding)?;
         verify_file(agent)?;
@@ -289,7 +396,10 @@ fn read_record(
             _install_directory: root,
             _ancestors: ancestors,
         },
+        #[cfg(feature = "scratch-candidate-receipt")]
         startup,
+        #[cfg(not(feature = "scratch-candidate-receipt"))]
+        None,
     ))
 }
 

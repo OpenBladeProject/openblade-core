@@ -16,6 +16,10 @@ internal static class ScratchCandidateLaunch
     internal const string EvidenceName = "candidate-setup-launch.v1";
     internal const string ReceiverName = "OpenBlade.CandidateReceipt.Scratch.exe";
     internal const int SecretLength = 32;
+    private const int ProcessIdentityLength = sizeof(int) + sizeof(long);
+
+    internal static byte[] ReceiverIdentity(byte[] launchEvidence) =>
+        launchEvidence[ProcessIdentityLength..(2 * ProcessIdentityLength)];
 
     internal static string ReceiverPath(WindowsCandidateReceiptStorage storage) =>
         Path.Combine(storage.Root, "receiver", ReceiverName);

@@ -31,13 +31,18 @@ mod scratch {
     #![allow(unsafe_code)]
 
     use std::{
-        io::{self, Read},
+        io::{self, Read, Write},
         mem::size_of_val,
-        os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+        os::windows::{
+            ffi::OsStrExt,
+            io::{AsRawHandle, FromRawHandle, OwnedHandle},
+        },
+        path::Path,
         slice,
     };
     use windows_sys::Win32::{
         Foundation::{FILETIME, WAIT_TIMEOUT},
+        Globalization::{CSTR_EQUAL, CompareStringOrdinal},
         Security::{
             GetLengthSid, GetTokenInformation, IsWellKnownSid, SE_DACL_PRESENT, SE_DACL_PROTECTED,
             SE_SELF_RELATIVE, SECURITY_MAX_SID_SIZE, TOKEN_USER, TokenElevation, TokenUser,
@@ -46,7 +51,7 @@ mod scratch {
         Storage::FileSystem::FILE_ALL_ACCESS,
         System::Threading::{
             GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
-            WaitForSingleObject,
+            QueryFullProcessImageNameW, WaitForSingleObject,
         },
         UI::Shell::FOLDERID_LocalAppData,
     };
@@ -60,8 +65,11 @@ mod scratch {
         windows_token::{check, process_token},
     };
     use serde::{Deserialize, Serialize};
+    use sha2::{Digest, Sha256};
     use std::time::Duration;
     use tokio::{io::AsyncReadExt, time::timeout};
+
+    const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 
     #[derive(Deserialize, Serialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -69,23 +77,22 @@ mod scratch {
         frame: String,
         version: u32,
         request_id: String,
+        deployment_request_id: String,
         step: u8,
         commitment: String,
     }
 
     pub(super) fn run() -> io::Result<()> {
         let owner = scratch_owner()?;
-        // The fixture protocol conveys the scratch GUID and receipt digest.
-        // Startup also supplies the current binding digest and live Setup
-        // identity from the authenticated scratch rendezvous.
+        // Only committed disk inspection accepts a digest on stdin. Startup
+        // accepts routing and the inherited broker launch secret there.
         const COMMITTED_INPUT: usize = 68;
-        const STARTUP_INPUT: usize = 112;
-        const PIPE_INPUT: usize = STARTUP_INPUT + 36;
+        const PIPE_INPUT: usize = 36 + 36 + 32;
         let mut input = Vec::new();
         io::stdin()
             .take((PIPE_INPUT + 1) as u64)
             .read_to_end(&mut input)?;
-        if !matches!(input.len(), COMMITTED_INPUT | STARTUP_INPUT | PIPE_INPUT) {
+        if !matches!(input.len(), COMMITTED_INPUT | PIPE_INPUT) {
             return Err(denied("invalid scratch receipt commitment"));
         }
         let scope = std::str::from_utf8(&input[..36]).map_err(io::Error::other)?;
@@ -96,14 +103,10 @@ mod scratch {
         {
             return Err(denied("expected an exact scratch GUID"));
         }
-        let expected = input[36..68]
-            .try_into()
-            .expect("checked fixture input length");
-        let install = known_folder(&FOLDERID_LocalAppData)?
+        let scratch = known_folder(&FOLDERID_LocalAppData)?
             .join("Temp")
-            .join(format!("OpenBlade.CandidateReceipt-{short}"))
-            .join("program-files")
-            .join(INSTALL_DIRECTORY);
+            .join(format!("OpenBlade.CandidateReceipt-{short}"));
+        let install = scratch.join("program-files").join(INSTALL_DIRECTORY);
         let check_directory = |file: &std::fs::File, index, _, ancestor_count| {
             // The last two ancestors are the scratch root and its
             // program-files child. Earlier handles pin location only.
@@ -116,54 +119,38 @@ mod scratch {
         let check_file = |file: &std::fs::File| {
             verify_descriptor(file, |bytes| accepts(bytes, &owner, false, false))
         };
-        if input.len() >= STARTUP_INPUT {
-            let active = input[68..100]
+        if input.len() == PIPE_INPUT {
+            let endpoint_id = std::str::from_utf8(&input[36..72]).map_err(io::Error::other)?;
+            let launch_secret_digest = Sha256::digest(&input[72..]).into();
+            let receiver = scratch
+                .join("receiver")
+                .join("OpenBlade.CandidateReceipt.Scratch.exe");
+            tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()?
+                .block_on(serve_startup(
+                    endpoint_id,
+                    &receiver,
+                    |first, setup_identity| {
+                        candidate_receipt::read_provisional(
+                            &install,
+                            scope,
+                            check_directory,
+                            check_file,
+                            candidate_receipt::digest(&first.commitment[..64])?,
+                            candidate_receipt::ActiveBinding {
+                                digest: candidate_receipt::digest(&first.commitment[64..128])?,
+                                setup_identity,
+                                deployment_request_id: &first.deployment_request_id,
+                                launch_secret_digest,
+                            },
+                        )
+                    },
+                ))?;
+        } else {
+            let expected = input[36..68]
                 .try_into()
                 .expect("checked fixture input length");
-            let pid = u32::from_le_bytes(
-                input[100..104]
-                    .try_into()
-                    .expect("checked fixture input length"),
-            );
-            let started = u64::from_le_bytes(
-                input[104..112]
-                    .try_into()
-                    .expect("checked fixture input length"),
-            );
-            let setup = pin_setup(pid, started)?;
-            let startup = candidate_receipt::read_provisional(
-                &install,
-                scope,
-                check_directory,
-                check_file,
-                expected,
-                candidate_receipt::ActiveBinding {
-                    digest: active,
-                    setup_identity: input[100..112]
-                        .try_into()
-                        .expect("checked fixture input length"),
-                },
-            )?;
-            require_running(&setup)?;
-            if input.len() == PIPE_INPUT {
-                let endpoint_id =
-                    std::str::from_utf8(&input[STARTUP_INPUT..]).map_err(io::Error::other)?;
-                let commitment = input[36..112]
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>();
-                tokio::runtime::Builder::new_current_thread()
-                    .enable_time()
-                    .build()?
-                    .block_on(serve_startup(
-                        endpoint_id,
-                        &commitment,
-                        pid,
-                        &setup,
-                        startup,
-                    ))?;
-            }
-        } else {
             let _disk =
                 candidate_receipt::read(&install, scope, check_directory, check_file, || {
                     Some(expected)
@@ -174,22 +161,39 @@ mod scratch {
 
     async fn serve_startup(
         endpoint_id: &str,
-        commitment: &str,
-        setup_pid: u32,
-        setup: &OwnedHandle,
-        startup: candidate_receipt::ProvisionalStartup,
+        receiver: &Path,
+        verify: impl FnOnce(
+            &StartupFrame,
+            [u8; 12],
+        ) -> io::Result<candidate_receipt::ProvisionalStartup>,
     ) -> io::Result<()> {
         let (mut endpoint, session) = NativeEndpoint::open_scratch(endpoint_id)?;
-        let mut stream = timeout(Duration::from_secs(10), endpoint.accept()).await??;
-        let mut first =
-            read_request(&mut *stream, commitment, 1, setup_pid, setup, session).await?;
+        // Tell the launcher it can connect after the first instance is parked.
+        // This byte carries no readiness evidence.
+        let mut output = io::stdout().lock();
+        output.write_all(b"1")?;
+        output.flush()?;
+        drop(output);
+        let mut stream = timeout(STARTUP_TIMEOUT, endpoint.accept()).await??;
+        let (mut first, setup_pid) = read_request(&mut *stream, 1, session).await?;
+        let (setup, identity) = pin_setup(setup_pid, receiver)?;
+        let identity_hex: String = identity.iter().map(|byte| format!("{byte:02x}")).collect();
+        if first.commitment[128..] != identity_hex {
+            return Err(denied("provisional Setup process generation differs"));
+        }
+        let startup = verify(&first, identity)?;
+        require_running(&setup)?;
         first.frame = "provisionalReady".into();
         write_frame(&mut *stream, &first).await?;
-        let mut readback =
-            read_request(&mut *stream, commitment, 2, setup_pid, setup, session).await?;
-        if readback.request_id == first.request_id {
+        let (mut readback, readback_pid) = read_request(&mut *stream, 2, session).await?;
+        require_running(&setup)?;
+        if readback_pid != setup_pid
+            || readback.deployment_request_id != first.deployment_request_id
+            || readback.commitment != first.commitment
+            || readback.request_id == first.request_id
+        {
             return Err(denied(
-                "scratch readiness readback reused the initial request ID",
+                "scratch readiness readback differs from the retained Setup proof",
             ));
         }
         // Release the receipt and both roles for Setup's independent commit
@@ -207,36 +211,41 @@ mod scratch {
 
     async fn read_request(
         stream: &mut dyn Stream,
-        commitment: &str,
         step: u8,
-        setup_pid: u32,
-        setup: &OwnedHandle,
         session: u32,
-    ) -> io::Result<StartupFrame> {
-        let bytes = timeout(FRAME_TIMEOUT, read_payload(stream)).await??;
+    ) -> io::Result<(StartupFrame, u32)> {
+        let limit = if step == 1 {
+            STARTUP_TIMEOUT
+        } else {
+            FRAME_TIMEOUT
+        };
+        let bytes = timeout(limit, read_payload(stream)).await??;
         let caller = stream.caller_after_read()?;
-        require_running(setup)?;
-        if caller.pid != Some(setup_pid)
-            || caller.session != session
+        if caller.session != session
             || !matches!(caller.logon, Logon::Interactive | Logon::RemoteInteractive)
         {
             return Err(denied("scratch readiness reached a different Setup peer"));
         }
+        let pid = caller
+            .pid
+            .filter(|pid| *pid != 0)
+            .ok_or_else(|| denied("scratch readiness has no kernel-observed Setup peer"))?;
         let frame: StartupFrame = serde_json::from_slice(&bytes)?;
         if frame.frame != "verifyProvisional"
             || frame.version != 79
             || !is_guid(&frame.request_id)
+            || !is_guid(&frame.deployment_request_id)
             || frame.step != step
-            || frame.commitment != commitment
+            || !candidate_receipt::lower_hex(&frame.commitment, 152)
         {
             return Err(denied(
                 "scratch readiness request differs from the verified startup",
             ));
         }
-        Ok(frame)
+        Ok((frame, pid))
     }
 
-    fn pin_setup(pid: u32, started: u64) -> io::Result<OwnedHandle> {
+    fn pin_setup(pid: u32, receiver: &Path) -> io::Result<(OwnedHandle, [u8; 12])> {
         // SAFETY: Query and wait only, with no handle inheritance.
         let handle = unsafe {
             OpenProcess(
@@ -256,11 +265,32 @@ mod scratch {
         let mut user = FILETIME::default();
         // SAFETY: The process is retained and the output values are writable.
         check(unsafe { GetProcessTimes(handle, &mut created, &mut exit, &mut kernel, &mut user) })?;
-        if (u64::from(created.dwHighDateTime) << 32 | u64::from(created.dwLowDateTime)) != started {
-            return Err(denied("provisional Setup process generation differs"));
+        let expected: Vec<u16> = receiver.as_os_str().encode_wide().collect();
+        let mut image = [0u16; 512];
+        let mut len = image.len() as u32;
+        // SAFETY: The retained process and the writable name buffer are live.
+        check(unsafe { QueryFullProcessImageNameW(handle, 0, image.as_mut_ptr(), &mut len) })?;
+        // SAFETY: Both paths have the specified UTF-16 length.
+        if unsafe {
+            CompareStringOrdinal(
+                image.as_ptr(),
+                len as i32,
+                expected.as_ptr(),
+                expected.len() as i32,
+                1,
+            )
+        } != CSTR_EQUAL
+        {
+            return Err(denied(
+                "provisional Setup peer is not the fixed scratch receiver image",
+            ));
         }
         require_running(&process)?;
-        Ok(process)
+        let mut identity = [0; 12];
+        identity[..4].copy_from_slice(&pid.to_le_bytes());
+        identity[4..8].copy_from_slice(&created.dwLowDateTime.to_le_bytes());
+        identity[8..].copy_from_slice(&created.dwHighDateTime.to_le_bytes());
+        Ok((process, identity))
     }
 
     fn require_running(process: &OwnedHandle) -> io::Result<()> {

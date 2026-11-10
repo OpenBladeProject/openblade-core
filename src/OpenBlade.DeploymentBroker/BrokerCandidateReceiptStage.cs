@@ -91,7 +91,7 @@ internal sealed class BrokerCandidateReceiptStage(WindowsCandidateReceiptStorage
     }
 
     internal async Task WithCurrentProcessReceiptAsync(byte[] secret,
-        Func<WindowsCandidatePackageReceipt, Action, Task> receive, CancellationToken cancellationToken)
+        Func<WindowsCandidatePackageReceipt, byte[], Action, Task> receive, CancellationToken cancellationToken)
     {
         using var root = storage.PinDirectory(paths.RootDirectory);
         using var binding = storage.OpenFile(paths.InFlightPath);
@@ -132,8 +132,8 @@ internal sealed class BrokerCandidateReceiptStage(WindowsCandidateReceiptStorage
         using var heldImage = storage.OpenFile(image);
         ScratchCandidateLaunch.RequireLiveImage(receiver, image);
         using var launch = storage.OpenFile(Path.Combine(stage, ScratchCandidateLaunch.EvidenceName));
-        WindowsCandidateReceiptStorage.RequireExact(launch,
-            ScratchCandidateLaunch.Encode(active, broker, receiver, heldImage, secret));
+        byte[] launchEvidence = ScratchCandidateLaunch.Encode(active, broker, receiver, heldImage, secret);
+        WindowsCandidateReceiptStorage.RequireExact(launch, launchEvidence);
 
         void RequireLiveLaunch()
         {
@@ -162,7 +162,8 @@ internal sealed class BrokerCandidateReceiptStage(WindowsCandidateReceiptStorage
         var receipt = WindowsCandidatePackageReceipt.Reopen(storage, proof, release, manifest, enrollmentBytes,
             issued, active, current.RequestId, issuedAt, pending);
         RequireLiveLaunch();
-        await receive(receipt, RequireLiveLaunch).ConfigureAwait(false);
+        await receive(receipt, ScratchCandidateLaunch.ReceiverIdentity(launchEvidence), RequireLiveLaunch)
+            .ConfigureAwait(false);
     }
 
     private static OpenBladeReleaseTrustPolicy CreateTrust(BrokerEnrollment enrollment)

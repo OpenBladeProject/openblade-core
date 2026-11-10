@@ -1,5 +1,6 @@
 #if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
 using System.Diagnostics;
+using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -24,49 +25,16 @@ public sealed class WindowsCandidatePackageReceiptTests
         Guid first = Guid.NewGuid();
         var original = await fixture.PrepareAsync(first);
         byte[] startup = [];
-        byte[] startupInput = [];
+        byte[] observedCommitment = [];
         await fixture.RunReceiverAsync(first, expectedExit: 0, observeStartup: async commitment =>
         {
             startup = File.ReadAllBytes(fixture.Startup);
-            startupInput = commitment;
+            observedCommitment = commitment;
             Assert.Equal(SHA256.HashData(startup), commitment[..32]);
             Assert.False(File.Exists(fixture.Committed));
             await fixture.RunRustReaderAsync(commitment[..32], expectedRefusal: "");
-            await fixture.RunRustReaderAsync(startupInput);
-            byte[] wrongGeneration = startupInput.ToArray();
-            wrongGeneration[32] ^= 1;
-            await fixture.RunRustReaderAsync(wrongGeneration, "different active generation");
-            byte[] wrongProcess = startupInput.ToArray();
-            wrongProcess[68] ^= 1;
-            await fixture.RunRustReaderAsync(wrongProcess, "process generation differs");
-
-            string json = System.Text.Encoding.UTF8.GetString(startup);
-            foreach ((byte[] bytes, string diagnostic) in new[]
-            {
-                (File.ReadAllBytes(fixture.Claimed(first)), "invalid canonical"),
-                (new byte[4097], "invalid canonical"),
-                (System.Text.Encoding.UTF8.GetBytes(json.Replace("\"Role\":0", "\"Role\":1")), "invalid canonical"),
-                (System.Text.Encoding.UTF8.GetBytes(json.Replace(first.ToString("D"), Guid.NewGuid().ToString("D"))),
-                    "authenticated release binding"),
-            })
-            {
-                File.WriteAllBytes(fixture.Startup, bytes);
-                await fixture.RunRustReaderAsync(startupInput, diagnostic);
-            }
-            byte[] mismatched = startupInput.ToArray();
-            SHA256.HashData(File.ReadAllBytes(fixture.Startup)).CopyTo(mismatched, 0);
-            await fixture.RunRustReaderAsync(mismatched, "different active generation");
-            File.WriteAllBytes(fixture.Startup, startup);
-            using (File.Open(fixture.Startup, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-            {
-                await fixture.RunRustReaderAsync(startupInput, expectedRefusal: "");
-            }
-            string agent = Path.Combine(fixture.Tree.Install, "OpenBlade.SessionAgent.exe");
-            byte[] originalAgent = File.ReadAllBytes(agent);
-            File.WriteAllBytes(agent, originalAgent[..^1]);
-            await fixture.RunRustReaderAsync(startupInput, "Session Agent verification failed");
-            File.WriteAllBytes(agent, originalAgent);
-            await fixture.RunRustReaderAsync(startupInput);
+            await fixture.RunRustReaderAsync(observedCommitment, "invalid scratch receipt commitment");
+            await fixture.VerifyUnrelatedPeerIsRejectedAsync(first, commitment);
         });
         original.VerifyCommitted(fixture.Tree.Install, default);
         byte[] committed = File.ReadAllBytes(fixture.Committed);
@@ -74,7 +42,7 @@ public sealed class WindowsCandidatePackageReceiptTests
         byte[] claimed = File.ReadAllBytes(fixture.Claimed(first));
         Assert.False(File.Exists(fixture.Startup));
         File.WriteAllBytes(fixture.Startup, startup);
-        await fixture.RunRustReaderAsync(startupInput, "provisional Setup process");
+        await fixture.RunRustReaderAsync(observedCommitment, "invalid scratch receipt commitment");
         File.Delete(fixture.Startup);
         await fixture.RunRustReaderAsync(expected);
 
@@ -122,6 +90,39 @@ public sealed class WindowsCandidatePackageReceiptTests
         File.Delete(fixture.Committed);
         File.WriteAllBytes(fixture.Committed, committed);
         await fixture.RunRustReaderAsync(expected);
+    }
+
+    [Theory]
+    [InlineData("startup-receipt")]
+    [InlineData("session-agent")]
+    public async Task AuthenticatedScratchIssuerStillRequiresExactDiskReadback(string changed)
+    {
+        using var fixture = await Fixture.CreateAsync();
+        Guid request = Guid.NewGuid();
+        await fixture.PrepareAsync(request);
+        string diagnostic = changed == "startup-receipt" ? "differs from the authenticated release binding"
+            : "Session Agent verification failed";
+        await fixture.RunReceiverAsync(request, expectedExit: 3, diagnostic, observeStartup: _ =>
+        {
+            string path = changed == "startup-receipt" ? fixture.Startup
+                : Path.Combine(fixture.Tree.Install, "OpenBlade.SessionAgent.exe");
+            byte[] bytes = File.ReadAllBytes(path);
+            if (changed == "startup-receipt")
+            {
+                // Change canonical data while keeping the published digest stale.
+                string json = System.Text.Encoding.UTF8.GetString(bytes);
+                bytes = System.Text.Encoding.UTF8.GetBytes(json.Replace(request.ToString("D"),
+                    Guid.NewGuid().ToString("D"), StringComparison.Ordinal));
+            }
+            else
+            {
+                bytes = bytes[..^1];
+            }
+            File.WriteAllBytes(path, bytes);
+            return Task.CompletedTask;
+        });
+        Assert.False(File.Exists(fixture.Startup));
+        Assert.False(File.Exists(fixture.Committed));
     }
 #endif
 
@@ -175,6 +176,7 @@ public sealed class WindowsCandidatePackageReceiptTests
     [Theory]
     [InlineData("generic")]
     [InlineData("request")]
+    [InlineData("deployment-request")]
     [InlineData("commitment")]
     [InlineData("step")]
     [InlineData("duplicate")]
@@ -182,7 +184,7 @@ public sealed class WindowsCandidatePackageReceiptTests
     public async Task ScratchReadinessRejectsGenericStaleAndMalformedFrames(string fault)
     {
         var request = new WindowsScratchCandidateReadiness.StartupFrame("verifyProvisional",
-            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), 2, new string('a', 152));
+            OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), Guid.NewGuid(), 2, new string('a', 152));
         var response = request with { Frame = "provisionalReady" };
         using var frame = new MemoryStream();
         await IpcMessageCodec.WriteFramedAsync(frame, response, default);
@@ -194,9 +196,10 @@ public sealed class WindowsCandidatePackageReceiptTests
         {
             "generic" => new { Frame = "response", response.Version, response.RequestId, Success = true },
             "request" => response with { RequestId = Guid.NewGuid() },
+            "deployment-request" => response with { DeploymentRequestId = Guid.NewGuid() },
             "commitment" => response with { Commitment = new string('b', 152) },
             "step" => response with { Step = 1 },
-            "duplicate" => JsonDocument.Parse($$"""{"frame":"provisionalReady","version":79,"version":79,"requestId":"{{request.RequestId}}","step":2,"commitment":"{{request.Commitment}}"}""").RootElement,
+            "duplicate" => JsonDocument.Parse($$"""{"frame":"provisionalReady","version":79,"version":79,"requestId":"{{request.RequestId}}","deploymentRequestId":"{{request.DeploymentRequestId}}","step":2,"commitment":"{{request.Commitment}}"}""").RootElement,
             _ => response,
         };
         await IpcMessageCodec.WriteFramedAsync(frame, stale, default);
@@ -704,11 +707,30 @@ public sealed class WindowsCandidatePackageReceiptTests
             RunScratchChildAsync("openblade-scratch-candidate-receipt.exe",
                 [.. System.Text.Encoding.ASCII.GetBytes(ScratchId.ToString("D")), .. expected],
                 expectedRefusal is null ? 0 : 3, expectedRefusal, timeoutSeconds: 15);
+
+        internal Task VerifyUnrelatedPeerIsRejectedAsync(Guid request, byte[] commitment)
+        {
+            string endpoint = Guid.NewGuid().ToString("D");
+            return RunScratchChildAsync(WindowsScratchCandidateReadiness.ImageName,
+                [.. System.Text.Encoding.ASCII.GetBytes(ScratchId.ToString("D") + endpoint), .. new byte[32]],
+                3, "peer is not the fixed scratch receiver image", timeoutSeconds: 15,
+                exchange: async token =>
+                {
+                    using var pipe = new NamedPipeClientStream(".", "OpenBlade.Rust.CandidateReceipt.Test." + endpoint,
+                        PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
+                    await pipe.ConnectAsync(token);
+                    var frame = new WindowsScratchCandidateReadiness.StartupFrame("verifyProvisional",
+                        OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), request, 1, Convert.ToHexStringLower(commitment));
+                    await IpcMessageCodec.WriteFramedAsync(pipe, frame, token);
+                    Assert.Equal(0, await pipe.ReadAsync(new byte[1], token));
+                });
+        }
 #endif
 
         private static async Task RunScratchChildAsync(string name, byte[] input, int expectedExit,
             string? expectedDiagnostic, Action<Process>? bind = null, int timeoutSeconds = 75,
-            Action<Process>? afterExit = null, Func<byte[], Task>? observeStartup = null)
+            Action<Process>? afterExit = null, Func<byte[], Task>? observeStartup = null,
+            Func<CancellationToken, Task>? exchange = null)
         {
             using WindowsIdentity identity = WindowsIdentity.GetCurrent();
             if (identity.IsSystem || new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
@@ -723,7 +745,7 @@ public sealed class WindowsCandidatePackageReceiptTests
                 CreateNoWindow = true,
                 RedirectStandardInput = true,
                 RedirectStandardError = true,
-                RedirectStandardOutput = observeStartup is not null,
+                RedirectStandardOutput = observeStartup is not null || exchange is not null,
             }) ?? throw new InvalidOperationException($"Unable to start scratch child {name}.");
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             try
@@ -738,13 +760,22 @@ public sealed class WindowsCandidatePackageReceiptTests
                     await observeStartup(commitment);
                 }
                 child.StandardInput.Close();
+                if (exchange is not null)
+                {
+                    byte[] marker = new byte[1];
+                    await child.StandardOutput.BaseStream.ReadExactlyAsync(marker, deadline.Token)
+                        .AsTask().WaitAsync(deadline.Token);
+                    Assert.Equal(WindowsScratchCandidateReadiness.PipeClaimedMarker, marker[0]);
+                    await exchange(deadline.Token);
+                }
                 await child.WaitForExitAsync(deadline.Token);
                 string diagnostics = await error;
                 Assert.True(child.ExitCode == expectedExit,
                     $"{name} exit {child.ExitCode}, expected {expectedExit}. {diagnostics}");
                 if (expectedDiagnostic is { Length: > 0 })
                 {
-                    Assert.Contains(expectedDiagnostic, diagnostics, StringComparison.Ordinal);
+                    Assert.True(diagnostics.Contains(expectedDiagnostic, StringComparison.Ordinal),
+                        $"{name} did not report {expectedDiagnostic}. {diagnostics}");
                 }
                 afterExit?.Invoke(child);
             }

@@ -16,27 +16,31 @@ namespace OpenBlade.Setup;
 internal sealed class WindowsScratchCandidateReadiness : IDisposable
 {
     internal const string ImageName = "openblade-scratch-candidate-receipt.exe";
+    internal const byte PipeClaimedMarker = (byte)'1';
     private const string PipePrefix = "OpenBlade.Rust.CandidateReceipt.Test.";
     private readonly Process child;
     private readonly WindowsSetupRetainedCandidateProcess generation;
     private readonly NamedPipeClientStream pipe;
+    private readonly Guid deploymentRequestId;
     private readonly string commitment;
     private readonly IDisposable location;
     private readonly FileStream image;
 
     private WindowsScratchCandidateReadiness(Process child, WindowsSetupRetainedCandidateProcess generation,
-        NamedPipeClientStream pipe, byte[] commitment, IDisposable location, FileStream image)
+        NamedPipeClientStream pipe, Guid deploymentRequestId, byte[] commitment, IDisposable location, FileStream image)
     {
         this.child = child;
         this.generation = generation;
         this.pipe = pipe;
+        this.deploymentRequestId = deploymentRequestId;
         this.commitment = Convert.ToHexStringLower(commitment);
         this.location = location;
         this.image = image;
     }
 
     internal static async Task<WindowsScratchCandidateReadiness> ConnectAsync(
-        WindowsCandidateReceiptStorage storage, Guid scratchId, byte[] commitment, CancellationToken cancellationToken)
+        WindowsCandidateReceiptStorage storage, Guid deploymentRequestId, byte[] commitment, byte[] launchSecret,
+        CancellationToken cancellationToken)
     {
         using WindowsIdentity identity = WindowsIdentity.GetCurrent();
         if (identity.IsSystem || new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
@@ -68,19 +72,29 @@ internal sealed class WindowsScratchCandidateReadiness : IDisposable
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardInput = true,
+                RedirectStandardOutput = true,
             }) ?? throw new InvalidDataException("Could not launch the scratch readiness fixture.");
             var expected = new SetupCandidateProcessIdentity((uint)child.Id, child.StartTime.ToFileTimeUtc(), image);
             generation = WindowsSetupRetainedCandidateProcess.TryCapture(child.SafeHandle, expected, cancellationToken)
                 ?? throw new InvalidDataException("Could not retain the launched scratch readiness generation.");
-            byte[] bootstrap = [.. Encoding.ASCII.GetBytes(scratchId.ToString("D")), .. commitment,
+            byte[] route = [.. Encoding.ASCII.GetBytes(storage.ScratchId.ToString("D")),
                 .. Encoding.ASCII.GetBytes(endpoint)];
-            await child.StandardInput.BaseStream.WriteAsync(bootstrap, cancellationToken);
+            await child.StandardInput.BaseStream.WriteAsync(route, cancellationToken);
+            await child.StandardInput.BaseStream.WriteAsync(launchSecret, cancellationToken);
             child.StandardInput.Close();
 
-            pipe = new NamedPipeClientStream(".", PipePrefix + endpoint, PipeDirection.InOut,
-                PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
             using var connect = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             connect.CancelAfter(TimeSpan.FromSeconds(10));
+            // Connecting earlier can take the instance Rust reserves for its parked client.
+            byte[] marker = new byte[1];
+            await child.StandardOutput.BaseStream.ReadExactlyAsync(marker, connect.Token)
+                .AsTask().WaitAsync(connect.Token);
+            if (marker[0] != PipeClaimedMarker)
+            {
+                throw new InvalidDataException("The scratch readiness fixture did not claim its pipe.");
+            }
+            pipe = new NamedPipeClientStream(".", PipePrefix + endpoint, PipeDirection.InOut,
+                PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
             Task connection = pipe.ConnectAsync(connect.Token);
             Task exit = child.WaitForExitAsync(connect.Token);
             if (await Task.WhenAny(connection, exit) == exit)
@@ -93,7 +107,8 @@ internal sealed class WindowsScratchCandidateReadiness : IDisposable
             }
             await connection;
             await connect.CancelAsync();
-            var readiness = new WindowsScratchCandidateReadiness(child, generation, pipe, commitment, location, file);
+            var readiness = new WindowsScratchCandidateReadiness(child, generation, pipe, deploymentRequestId,
+                commitment, location, file);
             readiness.RequireLive(cancellationToken);
             return readiness;
         }
@@ -114,9 +129,11 @@ internal sealed class WindowsScratchCandidateReadiness : IDisposable
     internal async Task VerifyAsync(int step, CancellationToken cancellationToken)
     {
         using var exchange = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        exchange.CancelAfter(TimeSpan.FromSeconds(2));
+        // The first reply now waits for issuer and disk verification after connect.
+        exchange.CancelAfter(TimeSpan.FromSeconds(step == 1 ? 10 : 2));
         RequireLive(exchange.Token);
-        var request = new StartupFrame("verifyProvisional", OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), step, commitment);
+        var request = new StartupFrame("verifyProvisional", OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
+            deploymentRequestId, step, commitment);
         await IpcMessageCodec.WriteFramedAsync(pipe, request, exchange.Token);
         await ReadResponseAsync(pipe, request, exchange.Token);
         RequireLive(exchange.Token);
@@ -185,6 +202,7 @@ internal sealed class WindowsScratchCandidateReadiness : IDisposable
         [property: JsonRequired] string Frame,
         [property: JsonRequired] int Version,
         [property: JsonRequired] Guid RequestId,
+        [property: JsonRequired] Guid DeploymentRequestId,
         [property: JsonRequired] int Step,
         [property: JsonRequired] string Commitment);
 }

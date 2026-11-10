@@ -97,14 +97,22 @@ while those files and the active deployment binding are retained.
 The explicit fixture build pins the Rust receipt verifier by SHA-256. Setup
 opens that image in the protected scratch tree, retains it across direct launch
 and commit, and verifies the returned process handle, creation time, and image
-path. The verifier checks the provisional record, active deployment binding,
-live Setup generation, and both role images. It serves two framed challenges
-on a unique local pipe using the existing protected first-instance transport.
-Each reply binds a fresh request ID and step to the verified startup
-commitment. Each side checks the peer on the same connection. Setup retains
-the verifier generation through readback and rechecks it just before publishing
-the committed record. The observation channel exposes provisional bytes to the
-test harness and carries no readiness response.
+path. The verifier derives the issuer PID from the connected local pipe peer,
+then retains the process and reads its creation time and fixed scratch image
+path. It checks that generation, the receiver image, the active binding and the
+launch secret against the original broker launch evidence for the deployment
+request. Setup passes the secret through the verifier's inherited stdin. The
+observation channel exposes only the commitment to the test harness.
+
+The verifier checks the provisional receipt and both role images before
+replying on the protected first-instance pipe. Setup waits for the child to
+reserve that first instance before connecting. The two exchanges bind the same
+deployment request and startup commitment to distinct challenge IDs and steps.
+Each side checks the peer on that connection. Setup retains the verifier
+generation through readback and rechecks it just before publishing the committed
+record. A standalone reader can inspect committed bytes only. The issuer proof
+is scoped to the standard-token fixture and its trusted launcher and binaries
+in the same-user scratch tree.
 
 The verifier releases its record and role handles after accepting readback.
 Setup independently rechecks both roles and the claim, retires the exact startup

@@ -1,6 +1,4 @@
 #if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
-using System.Buffers.Binary;
-using System.Diagnostics;
 using OpenBlade.Deployment;
 using OpenBlade.DeploymentBroker;
 
@@ -19,7 +17,7 @@ internal static class WindowsCandidateSetupReceiver
         string root = storage.Root;
         var paths = SetupPaths.Create(Path.Combine(root, "program-files"), Path.Combine(root, "ProgramData"),
             Path.Combine(root, "LocalData"), Path.Combine(root, "Startup"));
-        return new BrokerCandidateReceiptStage(storage).WithCurrentProcessReceiptAsync(secret, async (receipt, requireLiveLaunch) =>
+        return new BrokerCandidateReceiptStage(storage).WithCurrentProcessReceiptAsync(secret, async (receipt, identity, requireLiveLaunch) =>
         {
             WindowsScratchCandidateReadiness? verified = null;
             await using var transaction = await SetupPayloadTransaction.StageCandidateAsync(paths,
@@ -37,13 +35,11 @@ internal static class WindowsCandidateSetupReceiver
                 await transaction.ActivateAsync(cancellationToken);
                 // Mirrors the command runner's activate -> start/health -> commit
                 // order. This rendezvous is offline fixture readiness only.
-                using var setup = Process.GetCurrentProcess();
-                byte[] identity = new byte[12];
-                BinaryPrimitives.WriteInt32LittleEndian(identity, setup.Id);
-                BinaryPrimitives.WriteInt64LittleEndian(identity.AsSpan(4), setup.StartTime.ToFileTimeUtc());
                 byte[] commitment = [.. receipt.StartupCommitment(identity), .. identity];
                 await observeStartup(commitment, cancellationToken);
-                using var candidate = await WindowsScratchCandidateReadiness.ConnectAsync(storage, scratchId, commitment, cancellationToken);
+                requireLiveLaunch();
+                using var candidate = await WindowsScratchCandidateReadiness.ConnectAsync(storage, receipt.RequestId,
+                    commitment, secret, cancellationToken);
                 await candidate.VerifyAsync(1, cancellationToken);
                 await candidate.VerifyAsync(2, cancellationToken);
                 verified = candidate;
