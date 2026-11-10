@@ -16,6 +16,7 @@ use openblade_domain::function_row::{
     Backend, Device, Event, Lifecycle, Observation, Phase, PrimaryMode, Status, Stroke, WindowsHook,
 };
 
+pub mod executor;
 mod native;
 #[cfg(test)]
 mod tests;
@@ -178,6 +179,8 @@ struct Shared {
     handoff_ready: AtomicBool,
     slot: OnceLock<&'static AtomicBool>,
     consumer_ready: AtomicBool,
+    worker_pending: AtomicBool,
+    cancel_actions: AtomicBool,
 }
 
 impl Shared {
@@ -209,6 +212,7 @@ impl Shared {
             | Recovery::UnhookUnconfirmed as usize;
         if !self.retired.load(SeqCst)
             || self.pending.load(SeqCst) != 0
+            || self.worker_pending.load(SeqCst)
             || self.recovery.load(SeqCst) & BLOCKERS != 0
         {
             return;
@@ -255,6 +259,13 @@ impl HookControl {
         if !self.0.stop.swap(true, SeqCst) {
             self.0.notify();
         }
+    }
+
+    /// Stop action admission and skip queued Down and Repeat effects.
+    /// Held releases and the final worker reset remain eligible.
+    pub fn cancel(&self) {
+        self.0.cancel_actions.store(true, SeqCst);
+        self.stop();
     }
 
     pub fn needs_recovery(&self, reason: Recovery) -> bool {

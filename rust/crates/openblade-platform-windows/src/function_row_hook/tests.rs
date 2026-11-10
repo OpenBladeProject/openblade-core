@@ -426,3 +426,6 @@ fn atomic_admission_retains_exact_layer_and_expiry_together() {
     assert_eq!(observation.selected_backend, None);
     assert_eq!(observation.status, Status::Unknown);
 }
+
+#[path = "executor_tests.rs"]
+mod executor_tests;
