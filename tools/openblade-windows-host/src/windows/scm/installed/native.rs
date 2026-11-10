@@ -1,8 +1,6 @@
 #![allow(unsafe_code)]
 
-use std::{
-    ffi::OsString, future, os::windows::ffi::OsStringExt, path::PathBuf, ptr::null_mut, slice,
-};
+use std::{ffi::OsString, os::windows::ffi::OsStringExt, path::PathBuf, ptr::null_mut, slice};
 
 use windows_sys::Win32::{
     System::{
@@ -12,10 +10,8 @@ use windows_sys::Win32::{
     UI::Shell::{FOLDERID_ProgramFiles, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath},
 };
 
-use super::{
-    LaunchIdentity, NAME, ProcessEvidence, Readiness, denied, dispatch_candidate, io, oneshot,
-    run_candidate,
-};
+use super::readiness::prepare_installed_endpoint;
+use super::{LaunchIdentity, NAME, ProcessEvidence, denied, dispatch_candidate, io, run_candidate};
 use crate::scm_host::{CONTROLS, dispatch_named, registered_service, report};
 use crate::scm_identity as identity;
 
@@ -102,17 +98,4 @@ fn admit_candidate(_: &LaunchIdentity) -> io::Result<()> {
     // path admission, plus the installed controller/ownership prerequisites.
     // The signed development ZIP proves none of these for this process.
     Err(denied("installed candidate prerequisites are unavailable"))
-}
-
-async fn prepare_installed_endpoint(
-    _: &LaunchIdentity,
-    _: oneshot::Receiver<()>,
-) -> io::Result<(Readiness, future::Ready<io::Result<()>>)> {
-    // Integration seam for the installed ACL, caller admission and real
-    // v79 GetStatus provider. It must return a driver that retires the
-    // listener and owned runtime when shutdown is signaled.
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "installed candidate status endpoint is unavailable",
-    ))
 }

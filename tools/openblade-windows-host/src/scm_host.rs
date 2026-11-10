@@ -229,6 +229,6 @@ impl std::fmt::Display for StartupStopped {
 
 impl std::error::Error for StartupStopped {}
 
-fn startup_stopped() -> io::Error {
+pub(crate) fn startup_stopped() -> io::Error {
     io::Error::new(io::ErrorKind::Interrupted, StartupStopped)
 }

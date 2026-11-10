@@ -1,0 +1,217 @@
+//! The managed ServiceMessages v79 shape used by the installed GetStatus port.
+//! Preserve rich feature records verbatim; readiness consumes the core snapshot
+//! and never interprets feature data as independent device or write evidence.
+
+use std::io;
+
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+
+use super::PROTOCOL_VERSION;
+use crate::service_frame::{invalid, is_guid};
+
+#[derive(Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+enum Operation {
+    GetStatus,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct GetStatus {
+    operation: Operation,
+    version: i32,
+    request_id: String,
+}
+
+impl GetStatus {
+    pub(super) fn new(request_id: String) -> io::Result<Self> {
+        let request = Self {
+            operation: Operation::GetStatus,
+            version: PROTOCOL_VERSION,
+            request_id,
+        };
+        request.validate()?;
+        Ok(request)
+    }
+
+    pub(super) fn decode(payload: &[u8]) -> io::Result<Self> {
+        let request: Self =
+            serde_json::from_slice(payload).map_err(|_| invalid("invalid GetStatus request"))?;
+        request.validate()?;
+        Ok(request)
+    }
+
+    fn validate(&self) -> io::Result<()> {
+        if self.version != PROTOCOL_VERSION || !is_guid(&self.request_id) {
+            return Err(invalid("invalid GetStatus version or request ID"));
+        }
+        Ok(())
+    }
+
+    pub(super) fn matches(&self, other: &Self) -> bool {
+        self.request_id.eq_ignore_ascii_case(&other.request_id)
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum Frame {
+    Response,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct StatusResponse {
+    frame: Frame,
+    version: i32,
+    request_id: String,
+    success: bool,
+    error: Option<String>,
+    status: Option<Snapshot>,
+    result: Option<Value>,
+    archive: Option<Value>,
+    error_code: Option<i32>,
+}
+
+impl StatusResponse {
+    pub(super) fn success(request: &GetStatus, status: Snapshot) -> Self {
+        Self {
+            frame: Frame::Response,
+            version: PROTOCOL_VERSION,
+            request_id: request.request_id.to_ascii_lowercase(),
+            success: true,
+            error: None,
+            status: Some(status),
+            result: None,
+            archive: None,
+            error_code: None,
+        }
+    }
+
+    pub(super) fn verify(payload: &[u8], request: &GetStatus) -> io::Result<()> {
+        let reply: Self =
+            serde_json::from_slice(payload).map_err(|_| invalid("invalid GetStatus response"))?;
+        if reply.version != PROTOCOL_VERSION
+            || !reply.request_id.eq_ignore_ascii_case(&request.request_id)
+            || !reply.success
+            || reply.error.is_some()
+            || reply.result.is_some()
+            || reply.archive.is_some()
+            || reply.error_code.is_some()
+        {
+            return Err(invalid("uncorrelated or unsuccessful GetStatus response"));
+        }
+        reply
+            .status
+            .ok_or_else(|| invalid("GetStatus response has no snapshot"))?
+            .verify(0)
+    }
+}
+
+type FeatureRecord = Map<String, Value>;
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Snapshot {
+    revision: i64,
+    device_verified: bool,
+    writes_blocked: bool,
+    potential_controllers: Vec<String>,
+    controller_detection_warning: Option<String>,
+    external_changes: Vec<i32>,
+    message: String,
+    capabilities: Option<FeatureRecord>,
+    confirmed_state: Option<FeatureRecord>,
+    profiles: Profiles,
+    desired_state: DesiredState,
+    active_power_source: i32,
+    live_readings: Option<LiveReadings>,
+    performance_override: Option<FeatureRecord>,
+    fan_override: Option<FeatureRecord>,
+    lighting_override: Option<FeatureRecord>,
+    full_charge_override: bool,
+    control_access: i32,
+    #[serde(flatten)]
+    feature_fields: FeatureRecord,
+}
+
+impl Snapshot {
+    pub(super) fn verify(&self, access: i32) -> io::Result<()> {
+        if self.revision < 0
+            || !(0..=3).contains(&self.active_power_source)
+            || !(0..=2).contains(&self.control_access)
+            || self.control_access != access
+            || self
+                .external_changes
+                .iter()
+                .any(|value| !(0..=3).contains(value))
+        {
+            return Err(invalid("invalid v79 status snapshot"));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Profiles {
+    plugged_in: PowerProfile,
+    battery: PowerProfile,
+    usb_c: PowerProfile,
+    battery_policy: BatteryPolicy,
+    #[serde(flatten)]
+    feature_fields: FeatureRecord,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PowerProfile {
+    performance: i32,
+    fans: i32,
+    lighting: FeatureRecord,
+    #[serde(flatten)]
+    feature_fields: FeatureRecord,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatteryPolicy {
+    charge_limit_percent: i32,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesiredState {
+    performance: Resolved<i32>,
+    fans: Resolved<i32>,
+    lighting: Resolved<FeatureRecord>,
+    battery: DesiredBattery,
+    #[serde(flatten)]
+    feature_fields: FeatureRecord,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Resolved<T> {
+    value: T,
+    source: i32,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesiredBattery {
+    configured_policy: BatteryPolicy,
+    protection_enabled: bool,
+    temporary_full_charge: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveReadings {
+    battery_power_flow_milliwatts: Option<i32>,
+    fan1_rpm: Option<i32>,
+    fan2_rpm: Option<i32>,
+    cpu_temperature_celsius: Option<i32>,
+    gpu_temperature_celsius: Option<i32>,
+}
