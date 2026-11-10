@@ -59,8 +59,8 @@ try {
         'Win32_Devices_Display', 'Win32_Foundation', 'Win32_Globalization',
         'Win32_Graphics_Gdi', 'Win32_Security', 'Win32_System_Com',
         'Win32_System_Ole', 'Win32_System_Performance', 'Win32_System_Registry',
-        'Win32_System_Rpc', 'Win32_System_Threading', 'Win32_System_Variant',
-        'Win32_System_Wmi'
+        'Win32_System_Rpc', 'Win32_System_SystemInformation', 'Win32_System_Threading',
+        'Win32_System_Variant', 'Win32_System_Wmi', 'Win32_UI_ColorSystem'
     ) -join ','
     $fixtureReaderPackages = @('openblade-protocol', 'openblade-domain')
     $expectedTests = @{

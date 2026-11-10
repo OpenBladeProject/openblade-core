@@ -2,5 +2,6 @@
 #![cfg(windows)]
 
 pub mod brightness;
+pub mod color_profile;
 pub mod display;
 pub mod gpu_apps;
