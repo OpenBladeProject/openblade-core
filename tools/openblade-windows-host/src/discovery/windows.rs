@@ -72,7 +72,7 @@ unsafe extern "system" fn cancel(event: u32) -> i32 {
     )
 }
 
-struct WindowsMetadata;
+pub(super) struct WindowsMetadata;
 
 impl DiscoverySource for WindowsMetadata {
     fn read_host(&self, cancelled: &AtomicBool) -> io::Result<HostObservation> {

@@ -5,6 +5,8 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+#[cfg(any(test, feature = "hid-identity-compile-check"))]
+mod hid_lease;
 mod pnp;
 #[cfg(test)]
 mod tests;
@@ -298,7 +300,7 @@ fn discover(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result
     let host = source.read_host(cancelled)?;
     check_cancelled(cancelled)?;
     let (registry_match, model) = host.resolve(&inventory);
-    let hid = discover_hid(source, model, cancelled)?;
+    let (hid, _) = discover_hid(source, model, cancelled)?;
     let snapshot = serde_json::to_string(&Snapshot {
         schema_version: 1,
         platform: host.platform,
@@ -309,11 +311,20 @@ fn discover(source: &impl DiscoverySource, cancelled: &AtomicBool) -> io::Result
     Ok(snapshot)
 }
 
+#[cfg_attr(
+    not(any(test, feature = "hid-identity-compile-check")),
+    allow(dead_code)
+)]
+struct CandidateHint {
+    path: String,
+    facts: pnp::Facts,
+}
+
 fn discover_hid(
     source: &impl DiscoverySource,
     model: Option<&Model<'_>>,
     cancelled: &AtomicBool,
-) -> io::Result<HidEvidence> {
+) -> io::Result<(HidEvidence, Option<CandidateHint>)> {
     let expected_id = model.and_then(Model::device_id);
     let mut interfaces = HashMap::new();
     let mut interface_count = 0;
@@ -338,12 +349,12 @@ fn discover_hid(
         }
         match interfaces.entry(interface.path.to_ascii_uppercase()) {
             std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(facts);
+                entry.insert((interface.path, facts));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 duplicate_interfaces += 1;
-                if *entry.get() != facts {
-                    entry.insert(None);
+                if entry.get().1 != facts {
+                    entry.get_mut().1 = None;
                 }
             }
         }
@@ -358,22 +369,23 @@ fn discover_hid(
     } else {
         scan
     };
+    let mut hint = None;
     let counts = model.zip(expected_id).map(|(model, expected_id)| {
         let mut counts = CandidateCounts {
             matching_hints: 0,
             missing_usage_hint: 0,
             wrong_usage_hint: 0,
         };
-        let expected_usage = model.windows_control_usage;
-        for facts in interfaces.values().filter_map(Option::as_ref) {
-            if facts.device() == Some(expected_id) {
-                match (expected_usage, facts.usage) {
-                    (None, _) => counts.matching_hints += 1,
-                    (Some(expected), Some(usage)) if usage == expected => {
-                        counts.matching_hints += 1
-                    }
-                    (Some(_), Some(_)) => counts.wrong_usage_hint += 1,
-                    (Some(_), None) => counts.missing_usage_hint += 1,
+        for (path, facts) in interfaces.into_values() {
+            let Some(facts) = facts.filter(|facts| facts.device() == Some(expected_id)) else {
+                continue;
+            };
+            match (model.windows_control_usage, facts.usage) {
+                (Some(_), None) => counts.missing_usage_hint += 1,
+                (Some(expected), Some(usage)) if usage != expected => counts.wrong_usage_hint += 1,
+                _ => {
+                    counts.matching_hints += 1;
+                    hint = Some(CandidateHint { path, facts });
                 }
             }
         }
@@ -388,12 +400,16 @@ fn discover_hid(
         Some(counts) if counts.matching_hints == 1 => CandidateState::SingleUnresolved,
         Some(_) => CandidateState::None,
     };
-    Ok(HidEvidence {
-        inventory,
-        interface_count,
-        unreadable_interfaces,
-        duplicate_interfaces,
-        candidates,
-        counts,
-    })
+    let hint = hint.filter(|_| candidates == CandidateState::SingleUnresolved);
+    Ok((
+        HidEvidence {
+            inventory,
+            interface_count,
+            unreadable_interfaces,
+            duplicate_interfaces,
+            candidates,
+            counts,
+        },
+        hint,
+    ))
 }
