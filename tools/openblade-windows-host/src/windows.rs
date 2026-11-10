@@ -47,6 +47,7 @@ pub(super) fn entry() -> io::Result<()> {
                 || mode == "foreground-thermal-profile"
                 || mode == "foreground-thermal-profile-interrupt"
                 || mode == "foreground-full-charge"
+                || mode == "foreground-lighting-off"
                 || mode == "foreground-power-profile"
                 || mode == "foreground-power-profile-uncertain" =>
         {
@@ -69,11 +70,14 @@ pub(super) fn entry() -> io::Result<()> {
                     }
                 }
                 Some("foreground-full-charge") => ProfileReplay::FullCharge,
+                Some("foreground-lighting-off") => ProfileReplay::LightingOff,
                 _ => ProfileReplay::Battery,
             };
             let writer = (!matches!(
                 replay,
-                ProfileReplay::Power { .. } | ProfileReplay::FullCharge
+                ProfileReplay::Power { .. }
+                    | ProfileReplay::FullCharge
+                    | ProfileReplay::LightingOff
             ))
             .then_some(writer);
             foreground_battery_profiles(id, profiles, writer, replay)

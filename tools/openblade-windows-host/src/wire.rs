@@ -141,6 +141,7 @@ impl Status {
                 ProfileReplay::Battery => scenario.drive(advance).await,
                 ProfileReplay::Thermal => scenario.drive_thermal(advance).await,
                 ProfileReplay::FullCharge => scenario.drive_full_charge(advance).await,
+                ProfileReplay::LightingOff => scenario.drive_lighting(advance).await,
                 ProfileReplay::Power { lose_response } => {
                     scenario.drive_power_profile(advance, lose_response).await
                 }
@@ -324,6 +325,20 @@ impl BatteryRequest {
             Self::FullCharge { enabled, .. } => Ok(Intent::FullCharge(enabled)),
         }
     }
+}
+
+#[cfg(windows)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LightingRequest {
+    #[serde(rename = "operation")]
+    _operation: String,
+    #[serde(rename = "version")]
+    _version: i32,
+    #[serde(rename = "requestId")]
+    _request_id: String,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    value: Option<battery_runtime::lighting::LightingOverride>,
 }
 
 #[cfg(windows)]
@@ -565,7 +580,7 @@ where
             operation @ ("setBatteryPolicy" | "setBatteryProtection" | "setFullChargeOverride"),
         ) if matches!(session, Session::Active)
             && status.battery.as_ref().is_some_and(|scenario| {
-                operation != "setFullChargeOverride" || scenario.accepts_full_charge()
+                scenario.accepts_battery(operation == "setFullChargeOverride")
             }) =>
         {
             let intent = BatteryRequest::decode(&payload)?;
@@ -574,6 +589,24 @@ where
                 .as_ref()
                 .ok_or_else(|| invalid("missing battery scenario"))?
                 .apply(intent)
+                .await?;
+            write_frame(&mut io, request.operation_response(result.into())).await
+        }
+        #[cfg(windows)]
+        (CURRENT_VERSION, "setLightingOverride")
+            if matches!(session, Session::Active)
+                && status
+                    .battery
+                    .as_ref()
+                    .is_some_and(|scenario| scenario.accepts_lighting()) =>
+        {
+            let lighting: LightingRequest = serde_json::from_slice(&payload)
+                .map_err(|_| invalid("invalid lighting request"))?;
+            let result = status
+                .battery
+                .as_ref()
+                .ok_or_else(|| invalid("missing lighting scenario"))?
+                .apply_lighting(lighting.value)
                 .await?;
             write_frame(&mut io, request.operation_response(result.into())).await
         }

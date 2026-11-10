@@ -287,6 +287,40 @@ preflight and submission through the production lifecycle are separate gates.
 The broader lifecycle also needs owned HyperBoost and fan handback, the
 appropriate battery and limited-power preset recipes, and session admission.
 
+
+## Replay keyboard Off
+
+`foreground-lighting-off <pipe-id>` admits the existing v79 keyboard Off
+override on a scripted RZ09-0581 (1532:02E0) with no owned renderer. The
+saved profile selects Off, so clearing the override selects that same
+profile setting. The fixture records persistent and temporary intent in
+separate process-local slots. A temporary override clears the persistent
+slot. The profile documents remain byte-for-byte intact.
+
+The managed port and Rust replay use the scoped brightness getter, the
+port's preflight getter, the zero-brightness setter, its verification
+getter, and the final scoped getter. A scoped zero skips the setter.
+The independent logo observation remains separate. Nonzero keyboard
+brightness leaves the active effect unknown. No renderer is acquired.
+
+After `READY`, send one lowercase `n` per step and wait for the status event.
+
+| Step | Effect |
+| --- | --- |
+| 1 | An external controller restores nonzero brightness. New Off intent can be stored while writes are blocked. |
+| 2 | The controller leaves. The next setter's port verification sees zero, then the final scoped getter loses its response. |
+| 3 | A read-only getter still observes nonzero brightness and the write fence stays set. |
+| 4 | A read-only getter observes zero after an external change and clears the fence. |
+| 5 | Expire an unused getter failure. |
+
+A matching setter echo or intermediate read cannot settle an unavailable
+final read. The replay keeps the accepted override while the final state is
+unknown and never repeats the setter during reconciliation. An owned
+renderer still needs producer cancellation, frame drain, native port
+retirement and fresh hardware admission. Protected override persistence,
+restart and power/session lifecycle, logo changes, visible effects, and
+other devices remain separate work.
+
 ## Compatibility boundary
 
 - Each connection accepts one request. Every mode serves v79 `getStatus` and `subscribeStatus` and v51 `getStatus`. Mutations use v79 in the explicitly scoped foreground modes. The v79 response and event use the [managed replay fixtures](windows-backend-replay.md). In the fixed replay modes, the subscription first sends the preceding synthetic revision and then one exact newer fixture event. v51 returns only the CLI fixture's approved fields and closes. Request IDs correlate replies. Every read uses in-memory fixtures and has no activation or state changes.

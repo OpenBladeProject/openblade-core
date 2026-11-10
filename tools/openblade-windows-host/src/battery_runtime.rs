@@ -637,10 +637,14 @@ pub(crate) struct Scenario {
     #[cfg(windows)]
     editable: bool,
     full_charge: bool,
+    #[cfg(windows)]
+    lighting_off: bool,
     state: Arc<Mutex<ScenarioState>>,
     publish: watch::Sender<Arc<Value>>,
 }
 
+#[cfg(windows)]
+pub(crate) mod lighting;
 #[cfg(windows)]
 mod power_profile;
 #[cfg(windows)]
@@ -653,9 +657,12 @@ pub(crate) enum ProfileReplay {
     Thermal,
     Power { lose_response: bool },
     FullCharge,
+    LightingOff,
 }
 
 struct ScenarioState {
+    #[cfg(windows)]
+    lighting: Option<lighting::Lighting>,
     #[cfg(windows)]
     thermal: Option<thermal::Thermal>,
     controller: Controller<FakeDevice>,
@@ -674,6 +681,8 @@ impl Scenario {
             None,
             #[cfg(windows)]
             None,
+            #[cfg(windows)]
+            None,
         )
     }
 
@@ -686,15 +695,19 @@ impl Scenario {
     ) -> io::Result<Self> {
         baseline["profiles"] = profiles;
         let thermal = match replay {
-            ProfileReplay::Battery | ProfileReplay::FullCharge => None,
+            ProfileReplay::Battery | ProfileReplay::FullCharge | ProfileReplay::LightingOff => None,
             ProfileReplay::Thermal => Some(thermal::Thermal::new(&mut baseline)?),
             ProfileReplay::Power { .. } => {
                 Some(thermal::Thermal::for_power_profile(&mut baseline)?)
             }
         };
+        let lighting = matches!(replay, ProfileReplay::LightingOff)
+            .then(|| lighting::Lighting::new(&mut baseline))
+            .transpose()?;
         Self::start(
             baseline,
             matches!(replay, ProfileReplay::FullCharge),
+            lighting,
             writer,
             thermal,
         )
@@ -703,6 +716,7 @@ impl Scenario {
     fn start(
         baseline: Value,
         full_charge: bool,
+        #[cfg(windows)] lighting: Option<lighting::Lighting>,
         #[cfg(windows)] writer: Option<ProfileWriter>,
         #[cfg(windows)] thermal: Option<thermal::Thermal>,
     ) -> io::Result<Self> {
@@ -711,7 +725,11 @@ impl Scenario {
         let mut controller = Controller::fixture(&baseline)?;
         controller.device.report_reads = full_charge;
         controller.observe();
+        #[cfg(windows)]
+        let lighting_off = lighting.is_some();
         let mut state = ScenarioState {
+            #[cfg(windows)]
+            lighting,
             #[cfg(windows)]
             thermal,
             controller,
@@ -733,13 +751,24 @@ impl Scenario {
             #[cfg(windows)]
             editable,
             full_charge,
+            #[cfg(windows)]
+            lighting_off,
             state: Arc::new(Mutex::new(state)),
             publish,
         })
     }
 
-    pub(crate) fn accepts_full_charge(&self) -> bool {
-        self.full_charge
+    pub(crate) fn accepts_battery(&self, full_charge: bool) -> bool {
+        #[cfg(windows)]
+        if self.lighting_off {
+            return false;
+        }
+        !full_charge || self.full_charge
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn accepts_lighting(&self) -> bool {
+        self.lighting_off
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<Arc<Value>> {
@@ -1003,6 +1032,10 @@ impl ScenarioState {
         #[cfg(windows)]
         if let Some(thermal) = &self.thermal {
             thermal.project(&mut self.current);
+        }
+        #[cfg(windows)]
+        if let Some(lighting) = &self.lighting {
+            lighting.project(&mut self.current);
         }
         self.current["message"] = message.into();
     }

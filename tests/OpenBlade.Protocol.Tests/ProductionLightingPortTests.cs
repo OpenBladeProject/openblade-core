@@ -2171,6 +2171,28 @@ public sealed partial class ProductionLightingPortTests
         Assert.Null(await port.ReadStateAsync(default));
     }
 
+
+    [Fact]
+    public async Task RustLightingOffParity_PortUsesOnlyKeyboardBrightnessAndIndependentGetters()
+    {
+        var session = new LightingSession(initialBrightness: 197);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+
+        Assert.Null(await port.ReadStateAsync(default));
+        await port.SetLightingAsync(LightingSettingsFactory.Off(), default);
+        Assert.Equal(LightingSettingsFactory.Off(), await port.ReadStateAsync(default));
+
+        Assert.Equal(
+            ["03/83:010500", "03/83:010500", "03/03:010500", "03/83:010500", "03/83:010500"],
+            session.Commands.Select(command =>
+                $"{command.ClassId:X2}/{command.CommandId:X2}:{Convert.ToHexString(command.Arguments.Span)}"));
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Empty(writer.Reports);
+        Assert.True(session.LogoEnabled);
+        Assert.Equal(LogoLightingProtocol.StaticEffect, session.LogoEffect);
+    }
+
     [Fact]
     public async Task ReadState_DoesNotFabricateEffectWhenExternalControllerEnablesLighting()
     {
