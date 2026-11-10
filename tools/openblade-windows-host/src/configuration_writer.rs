@@ -623,6 +623,27 @@ fn open_relative(
     disposition: u32,
     options: u32,
 ) -> io::Result<File> {
+    open_relative_inner(
+        parent,
+        name,
+        access,
+        share,
+        disposition,
+        options,
+        #[cfg(test)]
+        None,
+    )
+}
+
+fn open_relative_inner(
+    parent: &File,
+    name: &OsStr,
+    access: u32,
+    share: u32,
+    disposition: u32,
+    options: u32,
+    #[cfg(test)] security: Option<&protected::LocalDescriptor>,
+) -> io::Result<File> {
     use std::{os::windows::io::FromRawHandle, ptr};
     use windows_sys::{
         Wdk::{
@@ -651,6 +672,8 @@ fn open_relative(
         RootDirectory: parent.as_raw_handle(),
         ObjectName: &mut name,
         Attributes: OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE,
+        #[cfg(test)]
+        SecurityDescriptor: security.map_or(ptr::null(), protected::LocalDescriptor::as_ptr),
         ..Default::default()
     };
     let mut handle = ptr::null_mut();

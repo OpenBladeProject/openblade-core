@@ -5,26 +5,48 @@ use windows_sys::Win32::Security::Authorization::ConvertStringSecurityDescriptor
 
 const ROOT: &str = "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)";
 
-fn descriptor(sddl: &str) -> Vec<u8> {
+struct TestDescriptor {
+    allocation: LocalDescriptor,
+    size: usize,
+}
+
+impl TestDescriptor {
+    fn bytes(&self) -> &[u8] {
+        // SAFETY: Windows supplied the size and the allocation is owned by self.
+        unsafe { slice::from_raw_parts(self.allocation.0.cast(), self.size) }
+    }
+}
+
+fn local_descriptor(sddl: &str) -> io::Result<TestDescriptor> {
     let wide: Vec<u16> = sddl.encode_utf16().chain([0]).collect();
     let mut descriptor = ptr::null_mut();
     let mut size = 0;
     // SAFETY: wide is NUL-terminated and both out parameters are writable.
-    assert_ne!(
-        unsafe {
-            ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                wide.as_ptr(),
-                1,
-                &mut descriptor,
-                &mut size,
-            )
-        },
-        0
-    );
-    assert!(!descriptor.is_null());
-    let descriptor = LocalDescriptor(descriptor);
-    // SAFETY: The Windows allocation remains owned until after the copy.
-    unsafe { slice::from_raw_parts(descriptor.0.cast(), size as usize) }.to_vec()
+    if unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            wide.as_ptr(),
+            1,
+            &mut descriptor,
+            &mut size,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    if descriptor.is_null() {
+        return Err(io::Error::other("Windows returned no security descriptor"));
+    }
+    Ok(TestDescriptor {
+        allocation: LocalDescriptor(descriptor),
+        size: size as usize,
+    })
+}
+
+fn descriptor(sddl: &str) -> Vec<u8> {
+    local_descriptor(sddl)
+        .expect("invalid test SDDL")
+        .bytes()
+        .to_vec()
 }
 
 #[test]
@@ -285,3 +307,5 @@ fn live_private_fixtures_refuse_unprotected_roots_and_records() {
         b"replacement fixture"
     );
 }
+
+mod hosted;
