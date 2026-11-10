@@ -980,10 +980,10 @@ public sealed class SetupPayloadTransactionTests
             @"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png",
         ];
 
-        public TestTree()
+        public TestTree(string? candidateScratchRoot = null)
         {
-            Root = Path.Combine(Path.GetTempPath(), "OpenBlade.Setup.Tests", Guid.NewGuid().ToString("N"));
-            ProgramFiles = Path.Combine(Root, "ProgramFiles");
+            Root = candidateScratchRoot ?? Path.Combine(Path.GetTempPath(), "OpenBlade.Setup.Tests", Guid.NewGuid().ToString("N"));
+            ProgramFiles = Path.Combine(Root, candidateScratchRoot is null ? "ProgramFiles" : "program-files");
             Payload = Path.Combine(Root, "payload");
             Directory.CreateDirectory(ProgramFiles);
             Directory.CreateDirectory(Payload);

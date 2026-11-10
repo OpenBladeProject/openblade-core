@@ -30,6 +30,27 @@ internal sealed class WindowsNativePackageRoleProof
             cancellationToken);
     }
 
+#if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
+    internal static async Task<WindowsNativePackageRoleProof> ReadHeldCandidateAsync(
+        FileStream snapshot, OpenBladeVerifiedRelease release, WindowsNativePayloadIdentity selected,
+        CancellationToken cancellationToken)
+    {
+        var manifest = release.Manifest;
+        var identity = new WindowsNativePayloadIdentity(manifest.InstallerSha256,
+            new(manifest.SourceRevision, Version.Parse(manifest.Version)));
+        if (manifest.SchemaVersion != OpenBladeReleaseManifestCodec.CurrentSchemaVersion || identity != selected)
+        {
+            throw new InvalidDataException("The signed release differs from the admitted Rust candidate.");
+        }
+
+        await OpenBladeSignedReleaseVerifier.VerifyInstallerAsync(snapshot, release, cancellationToken)
+            .ConfigureAwait(false);
+        snapshot.Position = 0;
+        return ReadRoles(snapshot, identity, WindowsNativeBurnProfile.AuthoredOpenBlade, manifest.Version,
+            cancellationToken);
+    }
+#endif
+
 #if OPENBLADE_PACKAGE_PROOF_FIXTURE
     // The signed 9p fixture has a product-shaped version outside the reserved LocalDev range.
     // Authenticate the exact fixture by its independently pinned whole-file identity.

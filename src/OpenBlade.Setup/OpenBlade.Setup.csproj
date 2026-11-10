@@ -16,11 +16,16 @@
   </PropertyGroup>
 
   <!-- Offline-only proof reader and scratch image-pin seam. -->
+  <PropertyGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_CANDIDATE_RECEIPT_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' Or '$(OpenBladePackageProofFixture)' == 'true'">
+    <ProjectReference Include="../OpenBlade.Deployment/OpenBlade.Deployment.csproj" />
+  </ItemGroup>
   <PropertyGroup Condition="'$(OpenBladePackageProofFixture)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENBLADE_PACKAGE_PROOF_FIXTURE</DefineConstants>
   </PropertyGroup>
-  <ItemGroup Condition="'$(OpenBladePackageProofFixture)' == 'true'">
-    <ProjectReference Include="../OpenBlade.Deployment/OpenBlade.Deployment.csproj" />
+  <ItemGroup Condition="'$(OpenBladePackageProofFixture)' == 'true' And '$(OpenBladeCandidateReceiptFixture)' != 'true'">
     <Compile Include="../../build/development-deployment/WindowsNativeRoleInventory.cs" Link="WindowsNativeRoleInventory.cs" />
     <Compile Include="../../build/development-deployment/WindowsNativeInventoryBurnExtractor.cs" Link="WindowsNativeInventoryBurnExtractor.cs" />
     <Compile Include="../../build/development-deployment/BurnFixtureCabinet.cs" Link="BurnFixtureCabinet.cs" />

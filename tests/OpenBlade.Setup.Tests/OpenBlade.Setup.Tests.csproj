@@ -23,6 +23,12 @@
   <PropertyGroup Condition="'$(OpenBladePackageProofFixture)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENBLADE_PACKAGE_PROOF_FIXTURE</DefineConstants>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_CANDIDATE_RECEIPT_FIXTURE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <ProjectReference Include="../../src/OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj" />
+  </ItemGroup>
   <ItemGroup Condition="'$(OpenBladeLocalDevDeployment)' != 'true'">
     <Compile Remove="LocalDevRelatedBundleCompatibilityTests.cs" />
   </ItemGroup>

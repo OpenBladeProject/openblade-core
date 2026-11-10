@@ -105,6 +105,35 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
     private readonly ISetupProgressReporter progressReporter;
     private readonly Action ensureGuardianQuiescent;
     private TransactionState state = TransactionState.Staged;
+#if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
+    private OpenBlade.Deployment.WindowsCandidatePackageReceipt? candidateReceipt;
+
+    // Typed rehearsal entry only. The normal Setup command and Burn owner ID do
+    // not authorize this path. Staging and rollback retain their normal semantics.
+    internal static async Task<ISetupPayloadTransaction> StageCandidateAsync(
+        SetupPaths paths, string payloadDirectory, ISetupPayloadFileSystem files,
+        OpenBlade.Deployment.WindowsCandidatePackageReceipt receipt, Guid installationId, Guid requestId,
+        Action ensureGuardianQuiescent, CancellationToken cancellationToken)
+    {
+        receipt.RequireBinding(installationId, requestId, paths.ProgramFilesRoot);
+        using var source = receipt.PinSourcePayload(payloadDirectory);
+        using var programFiles = receipt.PinProgramFiles();
+        var transaction = (SetupPayloadTransaction)await StageAsync(paths, payloadDirectory, files, cancellationToken,
+            ensureGuardianQuiescent: ensureGuardianQuiescent);
+        try
+        {
+            receipt.Claim(transaction.stagingDirectory, cancellationToken);
+            transaction.candidateReceipt = receipt;
+            return transaction;
+        }
+        catch (Exception failure)
+        {
+            try { await transaction.RollbackAsync(CancellationToken.None); }
+            catch (Exception cleanupFailure) { throw new AggregateException(failure, cleanupFailure); }
+            throw;
+        }
+    }
+#endif
 
     private SetupPayloadTransaction(
         SetupPaths paths,
@@ -236,6 +265,10 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
         cancellationToken.ThrowIfCancellationRequested();
         progressReporter.Report(SetupProgressCode.ActivateFiles);
+#if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
+        using var programFiles = candidateReceipt?.PinProgramFiles();
+        candidateReceipt?.VerifyClaimedPayload(stagingDirectory, cancellationToken);
+#endif
         EnsureTransactionPaths(paths, stagingDirectory, backupDirectory, failedDirectory);
         bool liveExists = files.DirectoryExists(paths.InstallDirectory);
         if (liveExists != HadExistingInstall)
@@ -284,6 +317,11 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             state = TransactionState.Active;
         }
 
+#if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
+        // The rename cannot run while the source directory is retained. Verify
+        // the live name before returning, with Active state available to rollback.
+        candidateReceipt?.VerifyClaimedPayload(paths.InstallDirectory, cancellationToken);
+#endif
     }
 
     private void GuardedMoveDirectory(string source, string destination)
@@ -333,6 +371,10 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
         cancellationToken.ThrowIfCancellationRequested();
         progressReporter.Report(SetupProgressCode.CommitFiles);
+#if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
+        using var programFiles = candidateReceipt?.PinProgramFiles();
+        candidateReceipt?.PublishCommitted(paths.InstallDirectory, cancellationToken);
+#endif
         state = TransactionState.Committed;
         if (HadExistingInstall && files.DirectoryExists(backupDirectory))
         {
@@ -367,6 +409,9 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
         cancellationToken.ThrowIfCancellationRequested();
         progressReporter.Report(SetupProgressCode.RestoreFiles);
+#if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
+        using var programFiles = candidateReceipt?.PinProgramFiles();
+#endif
         switch (state)
         {
             case TransactionState.Staged:
