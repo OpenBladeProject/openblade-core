@@ -44,4 +44,35 @@ absolute paths of the TSV and pins fixtures, respectively. Run
 It calls the managed policy and diagnostic formatter directly. The Rust tests
 consume the same fixtures and exercise the full typed replay and refusal order.
 
+## Phase 5p worker-backed replay
+
+The local integration composes Phase 5o
+(`2b442608d49a6d06fce1bc1b05f940be5a5b540d`) with the Phase 5l private CPU
+worker (`b4abf2424b1d0aae528ddd20c1ab4eed820c2afc`).
+`fan_stop_entry::worker::replay_worker` shares the original context,
+power, cancellation and first-refusal order. Its inputs keep readiness, CPU
+temperature and scripted GPU state separate.
+
+The supervisor issues a typed readiness value and a separately sequenced
+sample. The replay accepts a sample only for its original attempt and volatile
+observation, after readiness and volatile completion, and only if the reply
+arrived by the safety snapshot's completion. It ages the reading from its
+request and ages the whole proof from the start of volatile admission, with a
+two-second limit for each. Replacement, retirement and loss of exit observation
+invalidate worker evidence. A newer safety snapshot must carry its own sample.
+Auto requires observed GPU inactivity. Custom accepts an observed in-range GPU
+temperature or explicit D3.
+
+The managed sampler supplies the ordering and age rules. Both Rust paths use
+the shared thermal corpus. Worker-backed tests cover the corpus rows that fit
+the worker wire and replay timing and use separate cases for missing, expired,
+misordered, canceled and uncertain evidence. The native transport smoke
+launches only the existing inert worker fixture. That smoke exercises process,
+pipe and exit observation independently of the composed replay.
+
+The composed verdict is scripted and carries no hardware authority. Live
+sampling and protected installed-worker identity, exact native admission,
+ownership, command submission and independent readback remain separate gates.
+The local input commits and composed delta await exact external review.
+
 Version impact: none. Product, persisted configuration and IPC versions are unchanged.

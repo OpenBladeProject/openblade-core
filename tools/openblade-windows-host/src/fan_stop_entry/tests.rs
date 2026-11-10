@@ -1,5 +1,7 @@
 use super::*;
 
+mod worker;
+
 const EXACT_HID: HidCandidate<'_> = HidCandidate {
     path: r"\\?\hid#vid_1532&pid_02e0&mi_03#fixture",
     identity: Some((0x1532, 0x02e0, 1, 2, 91)),
@@ -35,10 +37,9 @@ fn volatile(started: u64, completed: u64) -> VolatileEvidence {
 }
 
 fn safety(started: u64) -> SafetyObservation {
-    SafetyObservation {
-        capture: span(started, started + 20),
-        volatile: volatile(started + 1, started + 5),
-        thermal: ThermalRead::Observed {
+    safety_with(
+        started,
+        ThermalRead::Observed {
             started: ms(started + 6),
             reading: Readings {
                 cpu: Some(52),
@@ -48,6 +49,14 @@ fn safety(started: u64) -> SafetyObservation {
             },
             canceled: false,
         },
+    )
+}
+
+fn safety_with<T>(started: u64, thermal: T) -> SafetyObservation<T> {
+    SafetyObservation {
+        capture: span(started, started + 20),
+        volatile: volatile(started + 1, started + 5),
+        thermal,
     }
 }
 
@@ -60,6 +69,12 @@ fn power(started: u64, completed: u64) -> PowerRead {
 }
 
 fn admitted() -> ManualEntry<'static> {
+    let mut entry = admitted_with(safety(40).thermal, true);
+    entry.entry = Some(safety(120));
+    entry
+}
+
+fn admitted_with<T, R>(thermal: T, readiness: R) -> ManualEntry<'static, T, R> {
     ManualEntry {
         service: ServiceEntry {
             caller_controls_session: true,
@@ -105,17 +120,17 @@ fn admitted() -> ManualEntry<'static> {
         },
         owner_check_at: ms(30),
         initial_check_at: ms(70),
-        cpu_reader_ready: true,
+        cpu_reader_ready: readiness,
         settings_valid: true,
         policy: ThermalPolicy::Auto,
-        initial: Some(safety(40)),
+        initial: Some(safety_with(40, thermal)),
         initial_power: Some(power(80, 100)),
         entry_started: ms(110),
         refreshed_at: ms(150),
         entry_canceled: false,
         entry_volatile: volatile(111, 119),
         refreshed_power: None,
-        entry: Some(safety(120)),
+        entry: None,
         apply: ApplyEvidence {
             now: ms(155),
             canceled: false,

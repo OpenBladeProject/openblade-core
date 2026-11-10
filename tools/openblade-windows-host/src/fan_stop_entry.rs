@@ -3,6 +3,8 @@
 
 use std::time::Duration;
 
+pub mod worker;
+
 const MAX_AGE: Duration = Duration::from_secs(2);
 const METADATA_AGE: Duration = Duration::from_secs(5);
 const ENTRY_LIMIT: Duration = Duration::from_secs(45);
@@ -14,7 +16,7 @@ pub const DRIVER_SHA256: &str = "F8965FDCE668692C3785AFA3559159F9A18287BC0D53ABB
 
 /// Monotonic offsets on the replay clock. The run binding prevents reuse from
 /// another activation; the fixture producer is responsible for using one clock.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Span {
     pub run: u64,
     pub started: Duration,
@@ -152,11 +154,11 @@ pub enum ThermalRead {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct SafetyObservation {
+pub struct SafetyObservation<T = ThermalRead> {
     /// Starts before the volatile check, so thermal acquisition cannot extend expiry.
     pub capture: Span,
     pub volatile: VolatileEvidence,
-    pub thermal: ThermalRead,
+    pub thermal: T,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -181,19 +183,19 @@ impl ConsoleEvidence {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ManualEntry<'a> {
+pub struct ManualEntry<'a, T = ThermalRead, R = bool> {
     pub service: ServiceEntry,
     pub binding: OwnerBinding<'a>,
     pub owner: OwnerMetadata<'a>,
     pub owner_check_at: Duration,
     pub initial_check_at: Duration,
     /// Preparation readiness is independent of a completed temperature observation.
-    pub cpu_reader_ready: bool,
+    pub cpu_reader_ready: R,
     /// Managed immutable settings validation precedes owner startup. This
     /// replay consumes its verdict; it does not parse user preferences.
     pub settings_valid: bool,
     pub policy: ThermalPolicy,
-    pub initial: Option<SafetyObservation>,
+    pub initial: Option<SafetyObservation<T>>,
     pub initial_power: Option<PowerRead>,
     pub entry_started: Duration,
     pub refreshed_at: Duration,
@@ -201,10 +203,10 @@ pub struct ManualEntry<'a> {
     pub entry_volatile: VolatileEvidence,
     /// A new typed read only when the prior one expired or AC changed.
     pub refreshed_power: Option<PowerRead>,
-    pub entry: Option<SafetyObservation>,
+    pub entry: Option<SafetyObservation<T>>,
     pub apply: ApplyEvidence,
     /// A newer completed sampler observation at the cached boundary, if any.
-    pub newer_safety: Option<SafetyObservation>,
+    pub newer_safety: Option<SafetyObservation<T>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -351,12 +353,13 @@ fn assess_volatile(
     Ok(())
 }
 
-impl SafetyObservation {
+impl<T> SafetyObservation<T> {
     fn apply(
         self,
         binding: OwnerBinding<'_>,
         at: Duration,
         policy: ThermalPolicy,
+        assess: impl FnOnce(Self, Duration, ThermalPolicy) -> Result<(), SafetyRefusal>,
     ) -> Result<(), SafetyRefusal> {
         if !self.capture.fresh(binding.run, at, MAX_AGE) {
             return Err(SafetyRefusal::MissingOrExpired);
@@ -367,23 +370,36 @@ impl SafetyObservation {
         // A reading from a different attempt must not decorate this refusal.
         assess_volatile(self.volatile, binding, self.capture.completed)
             .map_err(SafetyRefusal::Volatile)?;
-        match self.thermal {
-            ThermalRead::NotAttempted => {
-                Err(SafetyRefusal::NotObserved(ThermalNotObserved::NotAttempted))
-            }
-            ThermalRead::Unavailable => {
-                Err(SafetyRefusal::NotObserved(ThermalNotObserved::Unavailable))
-            }
-            ThermalRead::Observed {
-                started,
-                reading,
-                canceled,
-            } => {
-                let age = (started >= self.volatile.capture.completed)
-                    .then(|| self.capture.completed.checked_sub(started))
-                    .flatten();
-                assess_thermal(policy, reading, age, canceled).map_err(SafetyRefusal::Thermal)
-            }
+        assess(self, at, policy)
+    }
+}
+
+fn scripted_thermal(
+    observation: SafetyObservation,
+    _at: Duration,
+    policy: ThermalPolicy,
+) -> Result<(), SafetyRefusal> {
+    let SafetyObservation {
+        capture,
+        volatile,
+        thermal,
+    } = observation;
+    match thermal {
+        ThermalRead::NotAttempted => {
+            Err(SafetyRefusal::NotObserved(ThermalNotObserved::NotAttempted))
+        }
+        ThermalRead::Unavailable => {
+            Err(SafetyRefusal::NotObserved(ThermalNotObserved::Unavailable))
+        }
+        ThermalRead::Observed {
+            started,
+            reading,
+            canceled,
+        } => {
+            let age = (started >= volatile.capture.completed)
+                .then(|| capture.completed.checked_sub(started))
+                .flatten();
+            assess_thermal(policy, reading, age, canceled).map_err(SafetyRefusal::Thermal)
         }
     }
 }
@@ -438,7 +454,11 @@ fn assess_thermal(
     }
 }
 
-fn entry_window(e: &ManualEntry<'_>, at: Duration, canceled: bool) -> Result<(), Refusal> {
+fn entry_window<T, R>(
+    e: &ManualEntry<'_, T, R>,
+    at: Duration,
+    canceled: bool,
+) -> Result<(), Refusal> {
     if canceled {
         return Err(Refusal::EntryCanceled);
     }
@@ -454,6 +474,14 @@ fn entry_window(e: &ManualEntry<'_>, at: Duration, canceled: bool) -> Result<(),
 /// Replay manual Stop entry and the application of its evidence at the cached
 /// boundary. A success is only a fixture verdict. It confers no ownership.
 pub fn replay(e: &ManualEntry<'_>) -> Result<(), Refusal> {
+    replay_core(e, e.cpu_reader_ready, scripted_thermal)
+}
+
+fn replay_core<T: Copy, R>(
+    e: &ManualEntry<'_, T, R>,
+    prepared: bool,
+    assess: impl Fn(SafetyObservation<T>, Duration, ThermalPolicy) -> Result<(), SafetyRefusal>,
+) -> Result<(), Refusal> {
     let (s, b, o) = (e.service, e.binding, e.owner);
     if !s.caller_controls_session {
         return Err(Refusal::DispatchSession);
@@ -538,7 +566,7 @@ pub fn replay(e: &ManualEntry<'_>) -> Result<(), Refusal> {
     if o.service_state != ServiceState::Running {
         return Err(Refusal::ServiceRunning);
     }
-    if !e.cpu_reader_ready {
+    if !prepared {
         return Err(Refusal::CpuReaderPreparation);
     }
     let initial = e
@@ -546,7 +574,7 @@ pub fn replay(e: &ManualEntry<'_>) -> Result<(), Refusal> {
         .filter(|proof| proof.capture.started >= e.owner_check_at)
         .ok_or(Refusal::InitialSafety(SafetyRefusal::MissingOrExpired))?;
     initial
-        .apply(b, e.initial_check_at, e.policy)
+        .apply(b, e.initial_check_at, e.policy, &assess)
         .map_err(Refusal::InitialSafety)?;
     let initial_power = e
         .initial_power
@@ -590,7 +618,7 @@ pub fn replay(e: &ManualEntry<'_>) -> Result<(), Refusal> {
         return Err(Refusal::EntryThermal(SafetyRefusal::MissingOrExpired));
     }
     proof
-        .apply(b, e.refreshed_at, e.policy)
+        .apply(b, e.refreshed_at, e.policy, &assess)
         .map_err(Refusal::EntryThermal)?;
     entry_window(e, e.apply.now, e.apply.canceled)?;
     let cached_proof = e.newer_safety.unwrap_or(proof);
@@ -607,7 +635,7 @@ pub fn replay(e: &ManualEntry<'_>) -> Result<(), Refusal> {
         return Err(Refusal::EntryCached(CachedRefusal::Chronology));
     }
     cached_proof
-        .apply(b, e.apply.now, e.policy)
+        .apply(b, e.apply.now, e.policy, &assess)
         .map_err(|reason| Refusal::EntryCached(CachedRefusal::Safety(reason)))
 }
 

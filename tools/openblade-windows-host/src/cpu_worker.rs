@@ -49,15 +49,62 @@ pub struct Diagnostics {
     pub exit_unconfirmed: bool,
 }
 
+/// Evidence that this worker generation completed the Ready exchange.
+#[derive(Debug)]
+pub struct Readiness(WorkerGeneration);
+
+impl Readiness {
+    pub(crate) fn is_active(&self) -> bool {
+        self.0.active()
+    }
+}
+
+#[derive(Debug)]
+struct WorkerGeneration {
+    stop: watch::Receiver<Option<Instant>>,
+    exit: watch::Receiver<Exit>,
+}
+
+impl WorkerGeneration {
+    fn active(&self) -> bool {
+        self.stop.has_changed().is_ok()
+            && self.stop.borrow().is_none()
+            && self.exit.has_changed().is_ok()
+            && *self.exit.borrow() == Exit::Pending
+    }
+}
+
 /// Evidence of a completed sample request. The supervisor does not cache samples.
 #[derive(Debug)]
 pub struct Sample {
     celsius: u8,
+    #[cfg(windows)]
+    generation: WorkerGeneration,
     requested_at: Instant,
     received_at: Instant,
 }
 
 impl Sample {
+    #[cfg(windows)]
+    pub(crate) fn for_entry(
+        &self,
+        ready: &Readiness,
+        start: Instant,
+        completed: Instant,
+        at: Instant,
+        max_age: Duration,
+    ) -> Option<(u8, Instant)> {
+        if !self.generation.exit.same_channel(&ready.0.exit)
+            || !self.generation.stop.same_channel(&ready.0.stop)
+            || !self.generation.active()
+            || self.received_at > completed
+        {
+            return None;
+        }
+        self.celsius_for(start, at, max_age)
+            .map(|celsius| (celsius, self.requested_at))
+    }
+
     /// Times use the same monotonic clock. Age starts at the request, even when
     /// the response spent most of that age in flight.
     pub fn celsius_for(
@@ -88,6 +135,13 @@ struct Lease<S> {
 }
 
 impl<S> Lease<S> {
+    fn generation(&self) -> WorkerGeneration {
+        WorkerGeneration {
+            stop: self.stop.subscribe(),
+            exit: self.exit.clone(),
+        }
+    }
+
     fn exit(&self) -> Exit {
         let closed = self.exit.has_changed().is_err();
         let status = *self.exit.borrow();
@@ -151,10 +205,17 @@ where
     /// Initialize without taking a reading. The factory only attaches a
     /// nonblocking private adapter; process launch is outside this contract.
     pub async fn prepare(&mut self, attach: impl FnOnce() -> io::Result<PrivateChild<S>>) -> bool {
+        self.prepare_readiness(attach).await.is_some()
+    }
+
+    pub async fn prepare_readiness(
+        &mut self,
+        attach: impl FnOnce() -> io::Result<PrivateChild<S>>,
+    ) -> Option<Readiness> {
         let deadline = Instant::now() + STARTUP_TIMEOUT;
-        self.ready(attach, deadline, Failure::Unavailable)
-            .await
-            .is_some()
+        self.ready(attach, deadline, Failure::Unavailable).await?;
+        let ready = Readiness(self.lease.as_ref()?.generation());
+        ready.is_active().then_some(ready)
     }
 
     pub async fn sample(
@@ -209,8 +270,15 @@ where
                 owner.failures = 0;
                 owner.retry_at = None;
                 owner.last_failure = None;
+                let generation = owner.lease.as_ref().unwrap().generation();
+                if !generation.active() {
+                    owner.fail(Failure::Unavailable, received_at);
+                    return None;
+                }
                 return Some(Sample {
                     celsius: value.rounded_celsius(),
+                    #[cfg(windows)]
+                    generation,
                     requested_at,
                     received_at,
                 });

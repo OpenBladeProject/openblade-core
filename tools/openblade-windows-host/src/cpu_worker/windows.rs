@@ -17,7 +17,7 @@ use tokio::{
     time::{Instant, sleep, timeout},
 };
 
-use super::{Diagnostics, Exit, PrivateChild, STOP_TIMEOUT, Sample, Supervisor};
+use super::{Diagnostics, Exit, PrivateChild, Readiness, STOP_TIMEOUT, Sample, Supervisor};
 
 mod native;
 
@@ -95,8 +95,12 @@ impl FixtureSupervisor {
     }
 
     pub async fn prepare(&mut self) -> bool {
+        self.prepare_readiness().await.is_some()
+    }
+
+    pub async fn prepare_readiness(&mut self) -> Option<Readiness> {
         self.supervisor
-            .prepare(|| attach(&self.directory, &self.faults))
+            .prepare_readiness(|| attach(&self.directory, &self.faults))
             .await
     }
 
