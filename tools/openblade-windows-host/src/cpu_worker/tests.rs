@@ -361,3 +361,33 @@ async fn attach_failures_back_off_without_spending_wire_sequences() {
     let (ready, ()) = tokio::join!(owner.prepare(|| Ok(child)), respond(&mut peer, 1, 2, 0));
     assert!(ready);
 }
+
+#[tokio::test(start_paused = true)]
+async fn deadline_before_send_preserves_the_ready_worker_and_sequence() {
+    let (child, mut peer, stopped, _exited) = child();
+    let mut owner = Supervisor::default();
+    let (ready, ()) = tokio::join!(owner.prepare(|| Ok(child)), respond(&mut peer, 1, 2, 0));
+    assert!(ready);
+    assert!(owner.sample_ready(true, Instant::now()).await.is_none());
+    assert_eq!(owner.diagnostics().last_failure, Some(Failure::Timeout));
+    assert!(stopped.borrow().is_none());
+    assert!(!owner.defer_cold_sampling);
+    let (value, ()) = tokio::join!(owner.sample(no_attach), respond(&mut peer, 2, 1, 50_000));
+    assert!(value.is_some());
+}
+
+#[tokio::test(start_paused = true)]
+async fn idle_lost_exit_observation_is_visible_without_sampling() {
+    let (child, mut peer, stopped, exited) = child();
+    let mut owner = Supervisor::default();
+    let (ready, ()) = tokio::join!(owner.prepare(|| Ok(child)), respond(&mut peer, 1, 2, 0));
+    assert!(ready);
+    drop(exited);
+    assert!(owner.diagnostics().exit_unconfirmed);
+    assert!(stopped.borrow().is_none());
+    assert!(owner.sample(no_attach).await.is_none());
+    assert_eq!(peer.read(&mut [0; 1]).await.unwrap(), 0);
+    assert!(stopped.borrow().is_some());
+    assert_eq!(owner.diagnostics().last_failure, Some(Failure::Unavailable));
+    assert!(!owner.prepare(no_attach).await);
+}

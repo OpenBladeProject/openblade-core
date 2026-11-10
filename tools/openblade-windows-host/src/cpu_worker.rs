@@ -153,7 +153,6 @@ where
         self.ready(attach, deadline, Failure::Unavailable)
             .await
             .is_some()
-            && Instant::now() < deadline
     }
 
     pub async fn sample(
@@ -173,8 +172,12 @@ where
             return None;
         }
 
+        self.sample_ready(warming, deadline).await
+    }
+
+    async fn sample_ready(&mut self, warming: bool, deadline: Instant) -> Option<Sample> {
         let Some(sequence) = self.next_sequence() else {
-            self.fail(Failure::Unavailable, now);
+            self.fail(Failure::Unavailable, Instant::now());
             return None;
         };
 
@@ -185,59 +188,66 @@ where
         let Phase::Ready(io) = &mut active.owner.lease.as_mut().unwrap().phase else {
             unreachable!("ready must have returned a stream");
         };
-        let requested_at = Instant::now();
-        let result = exchange_by(io, sequence, deadline).await;
-        let received_at = Instant::now();
-        let result = if received_at >= deadline {
-            Err(Failure::Timeout)
-        } else {
-            result
-        };
+        let exchange = exchange_by(io, sequence, deadline).await;
         active.pending = false;
         let owner = &mut *active.owner;
-        match result {
-            Ok(Reply::Value(value)) => {
+        let Some(result) = exchange else {
+            // The deadline elapsed before any write attempt. Leave the healthy
+            // worker and the unused wire sequence in place.
+            owner.last_failure = Some(Failure::Timeout);
+            return None;
+        };
+        owner.sequence += 1;
+        let failure = match result {
+            Ok(TimedReply {
+                reply: Reply::Value(value),
+                requested_at,
+                received_at,
+            }) => {
                 owner.failures = 0;
                 owner.retry_at = None;
                 owner.last_failure = None;
-                Some(Sample {
+                return Some(Sample {
                     celsius: value.rounded_celsius(),
                     requested_at,
                     received_at,
-                })
+                });
             }
-            Ok(Reply::Unavailable) => {
+            Ok(TimedReply {
+                reply: Reply::Unavailable,
+                received_at,
+                ..
+            }) => {
                 owner.back_off(received_at);
                 owner.last_failure = Some(Failure::Unavailable);
-                None
+                return None;
             }
-            outcome => {
-                let failure = match outcome {
-                    Ok(Reply::TerminalUnavailable) => Failure::TerminalUnavailable,
-                    Ok(Reply::Ready) | Err(Failure::MalformedReply) => Failure::MalformedReply,
-                    Err(failure) => failure,
-                    _ => unreachable!("handled temperature outcomes"),
-                };
-                if warming && failure == Failure::Timeout {
-                    owner.defer_cold_sampling = true;
-                }
-                owner.fail(failure, received_at);
-                None
-            }
+            Ok(TimedReply {
+                reply: Reply::Ready,
+                ..
+            }) => Failure::MalformedReply,
+            Ok(TimedReply {
+                reply: Reply::TerminalUnavailable,
+                ..
+            }) => Failure::TerminalUnavailable,
+            Err(failure) => failure,
+        };
+        if warming && failure == Failure::Timeout {
+            // The managed reader retains this observation across generations.
+            owner.defer_cold_sampling = true;
         }
+        owner.fail(failure, Instant::now());
+        None
     }
 
     pub fn diagnostics(&self) -> Diagnostics {
-        let exit_unconfirmed = self.lease.as_ref().is_some_and(|lease| {
-            if let Some(since) = *lease.stop.borrow() {
-                match lease.exit() {
-                    Exit::Confirmed => false,
-                    Exit::Unobservable => true,
-                    Exit::Pending => since.elapsed() >= STOP_TIMEOUT,
-                }
-            } else {
-                false
-            }
+        let exit_unconfirmed = self.lease.as_ref().is_some_and(|lease| match lease.exit() {
+            Exit::Confirmed => false,
+            Exit::Unobservable => true,
+            Exit::Pending => lease
+                .stop
+                .borrow()
+                .is_some_and(|since| since.elapsed() >= STOP_TIMEOUT),
         });
         Diagnostics {
             last_failure: self.last_failure,
@@ -265,7 +275,7 @@ where
 
         let mut warming = false;
         if self.lease.is_none() {
-            let Some(sequence) = self.sequence.checked_add(1).and_then(Sequence::new) else {
+            let Some(sequence) = self.next_sequence() else {
                 self.last_failure = Some(Failure::Unavailable);
                 return None;
             };
@@ -301,6 +311,8 @@ where
         match lease.exit() {
             Exit::Pending => Some(warming),
             Exit::Confirmed => {
+                // As in the managed reader, an observed idle exit is not a
+                // sample fault. Retire it and let the next call attach.
                 lease.stop(Instant::now());
                 None
             }
@@ -311,9 +323,8 @@ where
         }
     }
 
-    fn next_sequence(&mut self) -> Option<Sequence> {
-        self.sequence = self.sequence.checked_add(1)?;
-        Sequence::new(self.sequence)
+    fn next_sequence(&self) -> Option<Sequence> {
+        self.sequence.checked_add(1).and_then(Sequence::new)
     }
 
     fn back_off(&mut self, at: Instant) {
@@ -343,6 +354,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Drop for ActiveSample<'
         if self.pending {
             // The worker may have received the request. Discard its stream and
             // keep the exit fence even if the caller canceled before a reply.
+            self.owner.sequence += 1;
             self.owner.poison(Instant::now());
         }
     }
@@ -357,7 +369,15 @@ where
     let watch_exit = exit.clone();
     let task = tokio::spawn(async move {
         let open = watch_exit.has_changed().is_ok() && *watch_exit.borrow() == Exit::Pending;
-        if open && exchange_by(&mut io, sequence, deadline).await == Ok(Reply::Ready) {
+        if open
+            && matches!(
+                exchange_by(&mut io, sequence, deadline).await,
+                Some(Ok(TimedReply {
+                    reply: Reply::Ready,
+                    ..
+                }))
+            )
+        {
             Ok(io)
         } else {
             let at = Instant::now();
@@ -382,30 +402,51 @@ fn signal_stop(stop: &watch::Sender<Option<Instant>>, at: Instant) {
     });
 }
 
+struct TimedReply {
+    reply: Reply,
+    requested_at: Instant,
+    received_at: Instant,
+}
+
+/// None means the deadline elapsed before any request could have been written.
+/// An error inside Some retires the stream: submission or framing may be uncertain.
 async fn exchange_by<S: AsyncRead + AsyncWrite + Unpin>(
     io: &mut S,
     sequence: Sequence,
     deadline: Instant,
-) -> Result<Reply, Failure> {
-    if Instant::now() >= deadline {
-        return Err(Failure::Timeout);
-    }
+) -> Option<Result<TimedReply, Failure>> {
     let frame = timeout_at(deadline, async {
+        let requested_at = Instant::now();
+        if requested_at >= deadline {
+            return Ok(None);
+        }
         io.write_all(&sequence.encode()).await?;
         io.flush().await?;
         let mut reply = [0; REPLY_LENGTH];
         io.read_exact(&mut reply).await?;
-        Ok::<_, io::Error>(reply)
+        Ok::<_, io::Error>(Some((reply, requested_at)))
     })
-    .await
-    .map_err(|_| Failure::Timeout)?;
-    // Tokio may poll the exchange first when both it and its deadline are ready.
-    if Instant::now() >= deadline {
-        return Err(Failure::Timeout);
+    .await;
+    let received_at = Instant::now();
+    let (frame, requested_at) = match frame {
+        Err(_) => return Some(Err(Failure::Timeout)),
+        Ok(Err(_)) => return Some(Err(Failure::Unavailable)),
+        Ok(Ok(None)) => return None,
+        Ok(Ok(Some(result))) => result,
+    };
+    // Tokio can poll a frame first when both the exchange and timer are ready.
+    if received_at > deadline {
+        return Some(Err(Failure::Timeout));
     }
-    let frame = frame.map_err(|_| Failure::Unavailable)?;
-    decode_reply(&frame, sequence).ok_or(Failure::MalformedReply)
+    Some(
+        decode_reply(&frame, sequence)
+            .map(|reply| TimedReply {
+                reply,
+                requested_at,
+                received_at,
+            })
+            .ok_or(Failure::MalformedReply),
+    )
 }
-
 #[cfg(test)]
 mod tests;
