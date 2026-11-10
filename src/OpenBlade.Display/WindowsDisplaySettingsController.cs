@@ -95,8 +95,8 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
     {
         DisplayTopology topology = QueryTopology();
         DisplayTarget target = GetSingleInternalTarget(topology);
-        DisplaySettingsSnapshot before = BuildSnapshot(topology, target, cancellationToken);
-        DisplayBrightnessReading? brightness = WindowsDisplayBrightness.Query(target.MonitorDevicePath, cancellationToken);
+        DisplaySettingsSnapshot before = BuildSnapshot(topology, target, cancellationToken,
+            null, out _, out DisplayBrightnessReading? brightness);
         if (brightness is null || target.MonitorDevicePath is not { } monitorPath)
         {
             return new(() => DisplayOperationResult.Failure(
@@ -124,10 +124,18 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
                 // through independent readback. An uncertain result is never replayed.
                 WindowsDisplayBrightness.Set(monitorPath, brightness, level, CancellationToken.None,
                     () => submitted = true);
-                DisplaySettingsSnapshot after = QueryCore(CancellationToken.None);
-                return after.BrightnessPercent == level
-                    ? DisplayOperationResult.Success(after)
-                    : DisplayOperationResult.Failure("Windows did not confirm the requested brightness.", after);
+                DisplayTopology readbackTopology = QueryTopology();
+                DisplayTarget readbackTarget = GetSingleInternalTarget(readbackTopology);
+                DisplaySettingsSnapshot after = BuildSnapshot(
+                    readbackTopology, readbackTarget, CancellationToken.None,
+                    null, out _, out DisplayBrightnessReading? observed);
+                if (!string.Equals(readbackTarget.MonitorDevicePath, monitorPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return DisplayOperationResult.Failure(
+                        "The internal display changed before brightness could be confirmed.", after);
+                }
+
+                return ConfirmBrightnessReadback(brightness.InstanceName, level, observed, after);
             }
             catch (Exception exception)
             {
@@ -168,7 +176,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         DisplayTopology original = QueryTopology();
         DisplayTarget target = GetSingleInternalTarget(original);
         DisplaySettingsSnapshot before = BuildSnapshot(
-            original, target, cancellationToken, key, out DisplayConfigTargetMode? dynamicMode);
+            original, target, cancellationToken, key, out DisplayConfigTargetMode? dynamicMode, out _);
         DisplayRefreshOption? requested = before.RefreshOptions.FirstOrDefault(option => option.Key == key);
         if (requested is null)
         {
@@ -387,6 +395,12 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         return Task.Run(operation, cancellationToken);
     }
 
+    internal static DisplayOperationResult ConfirmBrightnessReadback(
+        string instanceName, byte level, DisplayBrightnessReading? observed, DisplaySettingsSnapshot state) =>
+        observed?.Confirms(instanceName, level) == true
+            ? DisplayOperationResult.Success(state)
+            : DisplayOperationResult.Failure("Windows did not confirm the requested brightness.", state);
+
     private static DisplaySettingsSnapshot QueryCore(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -399,14 +413,15 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         DisplayTopology topology,
         DisplayTarget target,
         CancellationToken cancellationToken) =>
-        BuildSnapshot(topology, target, cancellationToken, null, out _);
+        BuildSnapshot(topology, target, cancellationToken, null, out _, out _);
 
     private static DisplaySettingsSnapshot BuildSnapshot(
         DisplayTopology topology,
         DisplayTarget target,
         CancellationToken cancellationToken,
         string? requestedRefreshKey,
-        out DisplayConfigTargetMode? requestedDynamicMode)
+        out DisplayConfigTargetMode? requestedDynamicMode,
+        out DisplayBrightnessReading? brightness)
     {
         cancellationToken.ThrowIfCancellationRequested();
         DevMode currentMode = GetCurrentMode(target.SourceName);
@@ -447,7 +462,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             .OrderBy(profile => ProfileSortOrder(profile.Name))
             .ThenBy(profile => profile.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
-        DisplayBrightnessReading? brightness = WindowsDisplayBrightness.Query(target.MonitorDevicePath, cancellationToken);
+        brightness = WindowsDisplayBrightness.Query(target.MonitorDevicePath, cancellationToken);
 
         return new DisplaySettingsSnapshot(
             true,
