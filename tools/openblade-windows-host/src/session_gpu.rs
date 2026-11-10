@@ -1,4 +1,4 @@
-//! Version 2 of the managed Session GPU wire contract on a private query-only pipe.
+//! Version 2 of the managed Session GPU wire contract on a private fixture pipe.
 
 use std::{
     io,
@@ -115,7 +115,16 @@ struct Response<'a> {
     status: u8,
     error: Option<&'static str>,
     apps: Vec<App>,
-    results: [(); 0],
+    results: Vec<ActionResult>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActionResult {
+    process_id: i32,
+    start_time_utc_ticks: i64,
+    succeeded: bool,
+    error: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -137,17 +146,17 @@ impl<'a> Response<'a> {
             status,
             error,
             apps: Vec::new(),
-            results: [],
+            results: Vec::new(),
         }
     }
 
     fn inventory(request_id: &'a str, inventory: GpuAppInventory) -> io::Result<Self> {
-        let mut response = if inventory.truncated {
+        let mut response = if inventory.truncated || inventory.apps.len() > MAXIMUM_APPS {
             Self::new(request_id, PARTIAL, Some(TRUNCATED))
         } else {
             Self::new(request_id, SUCCEEDED, None)
         };
-        for app in inventory.apps {
+        for app in inventory.apps.into_iter().take(MAXIMUM_APPS) {
             if app.process_id <= 0
                 || app.start_time_utc_ticks <= 0
                 || !valid_name(&app.name)
@@ -174,8 +183,10 @@ impl<'a> Response<'a> {
         let limit = MAX_FRAME_BYTES as usize;
         let mut body = serde_json::to_vec(&self).map_err(invalid_data)?;
         if body.len() > limit {
-            self.status = PARTIAL;
-            self.error = Some(TRUNCATED);
+            if self.results.is_empty() {
+                self.status = PARTIAL;
+                self.error = Some(TRUNCATED);
+            }
             // Preserve the largest ordered prefix that fits the byte cap.
             let apps = std::mem::take(&mut self.apps);
             let mut length = serde_json::to_vec(&self).map_err(invalid_data)?.len();
@@ -230,38 +241,82 @@ pub(super) async fn serve(
     // The read supplies the token for this message. No dispatch before admission.
     identity.authorize(pipe)?;
     let request = Request::parse(&body)?;
-    let frame = match request {
-        Request::Close { request_id, .. } => {
-            Response::new(&request_id, FAILED, Some(NO_ACTIONS)).frame()?
-        }
-        Request::Query { request_id, .. } => {
-            let cancel = CancelScan(Arc::new(AtomicBool::new(false)));
-            let worker_cancel = Arc::clone(&cancel.0);
-            let mut worker =
-                tokio::task::spawn_blocking(move || scripted::sample(scenario, &worker_cancel));
-            let mut extra = [0];
-            let response = tokio::select! {
-                biased;
-                _ = pipe.read(&mut extra) => {
-                    drop(cancel);
-                    // Retire the old scan before accepting another client.
-                    let _ = worker.await.map_err(io::Error::other)?;
-                    return Ok(());
-                }
-                result = &mut worker => match result.map_err(io::Error::other)? {
-                    Ok(inventory) => Response::inventory(&request_id, inventory)?,
-                    Err(QueryUnavailable::MissingData) => Response::new(&request_id, FAILED, Some("GPU activity data is unavailable.")),
-                    Err(_) => Response::new(&request_id, FAILED, Some("GPU application inventory is unavailable.")),
-                },
-                _ = sleep(SCAN_TIMEOUT) => {
-                    drop(cancel);
-                    let _ = worker.await.map_err(io::Error::other)?;
-                    Response::new(&request_id, FAILED, Some("The GPU inventory scan timed out."))
-                }
+    let (request_id, close) = match request {
+        Request::Close {
+            request_id,
+            force,
+            targets,
+            ..
+        } if matches!(scenario, Scenario::SimulatedClose) => {
+            let kind = if force {
+                scripted::Kind::ForceClose
+            } else {
+                scripted::Kind::Close
             };
-            response.frame()?
+            let targets = targets
+                .into_iter()
+                .map(|target| scripted::Target {
+                    process_id: target.process_id,
+                    start_time_utc_ticks: target.start_time_utc_ticks,
+                    name: target.name,
+                })
+                .collect::<Vec<_>>();
+            (request_id, Some((kind, targets)))
+        }
+        Request::Close { request_id, .. } => {
+            let frame = Response::new(&request_id, FAILED, Some(NO_ACTIONS)).frame()?;
+            return timeout(FRAME_TIMEOUT, pipe.write_all(&frame)).await?;
+        }
+        Request::Query { request_id, .. } => (request_id, None),
+    };
+    let cancel = CancelScan(Arc::new(AtomicBool::new(false)));
+    let worker_cancel = Arc::clone(&cancel.0);
+    let mut worker = tokio::task::spawn_blocking(move || match close {
+        Some((kind, targets)) => scripted::simulate_close(&targets, kind, &worker_cancel)
+            .map(|(inventory, report)| (inventory, Some(report))),
+        None => scripted::sample(scenario, &worker_cancel).map(|inventory| (inventory, None)),
+    });
+    let mut extra = [0];
+    let response = tokio::select! {
+        biased;
+        _ = pipe.read(&mut extra) => {
+            drop(cancel);
+            // Retire the old worker before accepting another client.
+            let _ = worker.await.map_err(io::Error::other)?;
+            return Ok(());
+        }
+        result = &mut worker => match result.map_err(io::Error::other)? {
+            Ok((inventory, report)) => {
+                let mut response = Response::inventory(&request_id, inventory)?;
+                if let Some(report) = report {
+                    let succeeded = report.results.iter().filter(|r| r.error.is_none()).count();
+                    response.status = if report.error.is_none() {
+                        SUCCEEDED
+                    } else if succeeded == 0 {
+                        FAILED
+                    } else {
+                        PARTIAL
+                    };
+                    response.error = report.error;
+                    response.results = report.results.into_iter().map(|r| ActionResult {
+                        process_id: r.process_id,
+                        start_time_utc_ticks: r.start_time_utc_ticks,
+                        succeeded: r.error.is_none(),
+                        error: r.error,
+                    }).collect();
+                }
+                response
+            }
+            Err(QueryUnavailable::MissingData) => Response::new(&request_id, FAILED, Some("GPU activity data is unavailable.")),
+            Err(_) => Response::new(&request_id, FAILED, Some("GPU application inventory is unavailable.")),
+        },
+        _ = sleep(SCAN_TIMEOUT) => {
+            drop(cancel);
+            let _ = worker.await.map_err(io::Error::other)?;
+            Response::new(&request_id, FAILED, Some("The GPU inventory scan timed out."))
         }
     };
+    let frame = response.frame()?;
     timeout(FRAME_TIMEOUT, pipe.write_all(&frame)).await??;
     Ok(())
 }

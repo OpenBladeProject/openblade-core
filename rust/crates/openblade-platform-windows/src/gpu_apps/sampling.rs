@@ -33,6 +33,14 @@ fn scan(
     api: &mut impl SamplingApi,
     cancelled: &AtomicBool,
 ) -> Result<GpuAppInventory, Unavailable> {
+    scan_with_limit(api, cancelled, MAXIMUM_APPS)
+}
+
+fn scan_with_limit(
+    api: &mut impl SamplingApi,
+    cancelled: &AtomicBool,
+    app_limit: usize,
+) -> Result<GpuAppInventory, Unavailable> {
     check_cancelled(cancelled)?;
     let user = api.current_user();
     check_cancelled(cancelled)?;
@@ -45,12 +53,13 @@ fn scan(
         counters: Vec::new(),
         identities: BTreeMap::new(),
     };
-    let inventory = query_gpu_apps(
+    let inventory = query_gpu_apps_with_limit(
         &mut source,
         &CurrentUser {
             sid: &sid,
             session_id,
         },
+        app_limit,
     );
     check_cancelled(cancelled)?;
     inventory

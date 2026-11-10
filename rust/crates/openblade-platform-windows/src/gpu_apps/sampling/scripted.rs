@@ -3,16 +3,20 @@
 use super::*;
 use std::{thread, time::Instant};
 
+use crate::gpu_apps::action::fixture;
+pub use crate::gpu_apps::action::{Kind, Report, Target};
+
 const ADAPTER: NvidiaAdapterLuid = NvidiaAdapterLuid {
     high: -1,
     low: 0x1234,
 };
-const USER: &[u8] = b"fixture-user";
-const SESSION: u32 = 5;
+pub(in crate::gpu_apps) const USER: &[u8] = b"fixture-user";
+pub(in crate::gpu_apps) const SESSION: u32 = 5;
 
 #[derive(Clone, Copy)]
 pub enum Scenario {
     Available,
+    SimulatedClose,
     Empty,
     NoData,
     Large,
@@ -25,11 +29,33 @@ pub fn sample(
 ) -> Result<GpuAppInventory, QueryUnavailable> {
     scan(
         &mut Script {
-            scenario,
+            scenario: match scenario {
+                Scenario::SimulatedClose => Scenario::Available,
+                other => other,
+            },
             sample: 0,
         },
         cancelled,
     )
+}
+
+pub fn simulate_close(
+    targets: &[Target],
+    kind: Kind,
+    cancelled: &AtomicBool,
+) -> Result<(GpuAppInventory, Report), QueryUnavailable> {
+    // Match against the complete fresh projection, even if the wire would
+    // omit a lower-ranked app. Only the response is subject to the list cap.
+    let inventory = scan_with_limit(
+        &mut Script {
+            scenario: Scenario::Available,
+            sample: 0,
+        },
+        cancelled,
+        usize::MAX,
+    )?;
+    let report = fixture::simulate(&inventory, targets, kind, cancelled);
+    Ok((inventory, report))
 }
 
 struct Script {
@@ -131,7 +157,11 @@ impl SamplingApi for Script {
     }
 
     fn compare_names(&self, left: &str, right: &str) -> Ordering {
-        // Fixture names use ASCII case or the same uncased Unicode character.
-        left.to_ascii_uppercase().cmp(&right.to_ascii_uppercase())
+        compare_names(left, right)
     }
+}
+
+pub(in crate::gpu_apps) fn compare_names(left: &str, right: &str) -> Ordering {
+    // Fixture names use ASCII case or the same uncased Unicode character.
+    left.to_ascii_uppercase().cmp(&right.to_ascii_uppercase())
 }

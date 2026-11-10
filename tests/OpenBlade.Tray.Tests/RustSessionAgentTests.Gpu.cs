@@ -41,6 +41,55 @@ public sealed partial class RustSessionAgentTests
     }
 
     [RustSessionAgentFact]
+    public async Task TrayGpuClient_RoundTripsOnlyFixedSimulatedCloseActions()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        CancellationToken token = timeout.Token;
+        string id = Guid.NewGuid().ToString("N");
+        await using var host = Host.Start(id, "simulated-close", gpu: true);
+        await host.WaitForReadyAsync(token);
+        var client = new SessionGpuAppAdapter(GpuPipeName(id));
+        SessionGpuResponse snapshot = await client.QueryAsync(token);
+        Assert.Equal(SessionGpuOperationStatus.Succeeded, snapshot.Status);
+        SessionGpuApp owner = Assert.Single(snapshot.Apps, app => app.ProcessId == 41);
+        SessionGpuApp idle = Assert.Single(snapshot.Apps, app => app.ProcessId == 42);
+        SessionGpuApp foreign = Assert.Single(snapshot.Apps, app => app.ProcessId == 43);
+        Assert.Equal(15.0, owner.UtilizationPercent);
+        Assert.All(snapshot.Apps, app => Assert.False(app.CanClose));
+        SessionGpuApp helper = owner with
+        {
+            ProcessId = 46,
+            StartTimeUtcTicks = 504911232000000046,
+        };
+
+        SessionGpuResponse mixed = await client.CloseAsync(
+            [owner with { Name = "ACTIVE-GAME" }, idle, helper, foreign], force: false, token);
+        Assert.Equal(SessionGpuOperationStatus.PartiallySucceeded, mixed.Status);
+        Assert.Equal("Some applications could not be closed.", mixed.Error);
+        Assert.Collection(mixed.Results,
+            result => Assert.Equal(new SessionGpuActionResult(46, helper.StartTimeUtcTicks, false,
+                "The process no longer holds GPU resources or its identity changed after confirmation."), result),
+            result => Assert.Equal(new SessionGpuActionResult(41, owner.StartTimeUtcTicks, true, null), result),
+            result => Assert.Equal(new SessionGpuActionResult(42, idle.StartTimeUtcTicks, false,
+                "The application has no window that can be closed gracefully."), result),
+            result => Assert.Equal(new SessionGpuActionResult(43, foreign.StartTimeUtcTicks, false,
+                "The process belongs to another Windows session."), result));
+
+        SessionGpuResponse stale = await client.CloseAsync(
+            [owner with { StartTimeUtcTicks = owner.StartTimeUtcTicks - 1 }], force: true, token);
+        Assert.Equal(SessionGpuOperationStatus.Failed, stale.Status);
+        Assert.False(Assert.Single(stale.Results).Succeeded);
+
+        SessionGpuResponse forced = await client.CloseAsync([idle], force: true, token);
+        Assert.Equal(SessionGpuOperationStatus.Succeeded, forced.Status);
+        Assert.Null(forced.Error);
+        Assert.Equal(new SessionGpuActionResult(42, idle.StartTimeUtcTicks, true, null),
+            Assert.Single(forced.Results));
+        Assert.Equal(snapshot.Apps.ToArray(), forced.Apps.ToArray());
+        await host.StopAsync(token);
+    }
+
+    [RustSessionAgentFact]
     public async Task TrayGpuClient_DistinguishesEmptyMissingAndPartialInventories()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));

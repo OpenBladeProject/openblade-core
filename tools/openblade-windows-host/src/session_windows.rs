@@ -43,6 +43,7 @@ pub(super) fn entry() -> io::Result<()> {
         }
         let scenario = match scenario.to_str() {
             Some("available") => GpuScenario::Available,
+            Some("simulated-close") => GpuScenario::SimulatedClose,
             Some("empty") => GpuScenario::Empty,
             Some("no-data") => GpuScenario::NoData,
             Some("large") => GpuScenario::Large,
@@ -131,7 +132,7 @@ fn run_fixture(fixture: impl Future<Output = io::Result<()>>) -> io::Result<()> 
 fn usage() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
-        "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <available|empty|no-data|large|stalled> or integrated <id> <new|resume|reconcile> <gpu scenario> <service id> <service pid> <reporter id>",
+        "expected foreground|resume-display|reconcile-display <32 lowercase hex digits> <display fixture> [brightness fixture] or gpu-foreground <32 lowercase hex digits> <available|simulated-close|empty|no-data|large|stalled> or integrated <id> <new|resume|reconcile> <gpu scenario> <service id> <service pid> <reporter id>",
     )
 }
 
