@@ -123,6 +123,43 @@ public sealed class SetupServiceHealthProbeTests
         Assert.True(connection.BytesWritten > sizeof(int));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SetupHealthCheck_ReconnectsOnceAfterDroppedPipe(bool respondsOnRetry)
+    {
+        var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+        await using var firstResponse = new MemoryStream();
+        await using var retryResponse = new MemoryStream();
+        if (respondsOnRetry)
+        {
+            await IpcMessageCodec.WriteServerFrameAsync(
+                retryResponse,
+                new ServiceResponse(OpenBladeIpc.ProtocolVersion, request.RequestId, true, null, CreateStatus(), null),
+                CancellationToken.None);
+            retryResponse.Position = 0;
+        }
+
+        int connections = 0;
+        var probe = new SetupServiceHealthProbe(
+            _ => ValueTask.FromResult<Stream>(new TestDuplexStream(
+                ++connections == 1 ? firstResponse : retryResponse)),
+            () => request);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(healthProbe: probe);
+
+        if (respondsOnRetry)
+        {
+            await platform.VerifyServiceHealthAsync(CancellationToken.None);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<EndOfStreamException>(
+                () => platform.VerifyServiceHealthAsync(CancellationToken.None));
+        }
+
+        Assert.Equal(2, connections);
+    }
+
     [Fact]
     public async Task VerifyAsync_RejectsResponseForDifferentRequest()
     {
@@ -146,6 +183,33 @@ public sealed class SetupServiceHealthProbeTests
             () => probe.VerifyAsync(CancellationToken.None));
 
         Assert.Equal("Service health response ID does not match the request.", error.Message);
+    }
+
+    [Fact]
+    public async Task SetupHealthCheck_RejectsIncompatibleResponseWithoutReconnect()
+    {
+        await using var response = new MemoryStream();
+        ReadOnlySpan<byte> payload = """{"version":-1}"""u8;
+        using (var writer = new BinaryWriter(response, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(payload.Length);
+            writer.Write(payload);
+        }
+        response.Position = 0;
+
+        int connections = 0;
+        var probe = new SetupServiceHealthProbe(
+            _ =>
+            {
+                connections++;
+                return ValueTask.FromResult<Stream>(new TestDuplexStream(response));
+            },
+            () => new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()));
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(healthProbe: probe);
+
+        await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(
+            () => platform.VerifyServiceHealthAsync(CancellationToken.None));
+        Assert.Equal(1, connections);
     }
 
     private static void AssertStage(

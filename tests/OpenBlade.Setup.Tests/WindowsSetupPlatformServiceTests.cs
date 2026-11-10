@@ -239,7 +239,7 @@ public sealed class WindowsSetupPlatformServiceTests
                 custom => Assert.Contains("StageTiming=unavailable", custom));
             Assert.All(entries.Take(2), entry =>
             {
-                Assert.Contains("BudgetMs=10000", entry);
+                Assert.Contains("BudgetMs=30000", entry);
                 Assert.Contains("Connect=[", entry);
                 Assert.Contains("Succeeded=False", entry);
                 Assert.Contains("HeaderWrite=not-entered", entry);
