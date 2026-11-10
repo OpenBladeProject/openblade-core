@@ -1,0 +1,67 @@
+//! Service IPC envelope framing shared by the fixture and installed roles.
+use std::{io, time::Duration};
+
+use serde::Serialize;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::time::timeout;
+
+const MAX_FRAME_BYTES: i32 = 65_536;
+pub(crate) const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
+
+pub(crate) fn is_guid(id: &str) -> bool {
+    id.len() == 36
+        && id.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
+        && id != "00000000-0000-0000-0000-000000000000"
+}
+
+pub(crate) async fn read_payload(
+    io: &mut (impl AsyncRead + Unpin + ?Sized),
+) -> io::Result<Vec<u8>> {
+    let length = io.read_i32_le().await?;
+    if !(1..=MAX_FRAME_BYTES).contains(&length) {
+        return Err(invalid("invalid frame length"));
+    }
+    let mut payload = vec![0; length as usize];
+    io.read_exact(&mut payload).await?;
+    Ok(payload)
+}
+
+pub(crate) fn encode(frame: &impl Serialize) -> io::Result<Vec<u8>> {
+    let payload = serde_json::to_vec(frame)?;
+    frame_length(&payload)?;
+    Ok(payload)
+}
+
+pub(crate) async fn write_frame(
+    io: &mut (impl AsyncWrite + Unpin + ?Sized),
+    frame: &impl Serialize,
+) -> io::Result<()> {
+    write_payload(io, &encode(frame)?).await
+}
+
+pub(crate) async fn write_payload(
+    io: &mut (impl AsyncWrite + Unpin + ?Sized),
+    payload: &[u8],
+) -> io::Result<()> {
+    let length = frame_length(payload)?;
+    timeout(FRAME_TIMEOUT, async {
+        io.write_i32_le(length).await?;
+        io.write_all(payload).await?;
+        io.flush().await
+    })
+    .await?
+}
+
+fn frame_length(payload: &[u8]) -> io::Result<i32> {
+    i32::try_from(payload.len())
+        .ok()
+        .filter(|length| (1..=MAX_FRAME_BYTES).contains(length))
+        .ok_or_else(|| invalid("invalid frame length"))
+}
+
+pub(crate) fn invalid(message: &'static str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message)
+}

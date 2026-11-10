@@ -8,6 +8,8 @@ mod scm_host;
 #[cfg(windows)]
 #[path = "windows/scm/identity.rs"]
 mod scm_identity;
+#[cfg(windows)]
+mod service_frame;
 
 fn main() -> std::process::ExitCode {
     #[cfg(windows)]

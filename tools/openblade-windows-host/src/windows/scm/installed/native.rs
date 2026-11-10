@@ -1,15 +1,14 @@
 #![allow(unsafe_code)]
 
-use std::future;
-
 use windows_sys::Win32::System::{
     RemoteDesktop::ProcessIdToSessionId, Services::SERVICE_AUTO_START,
     Threading::GetCurrentProcessId,
 };
 
+use super::readiness::prepare_installed_endpoint;
 use super::{
-    LaunchIdentity, NAME, ProcessEvidence, Readiness, denied, dispatch_candidate, io, oneshot,
-    run_candidate, service_image,
+    LaunchIdentity, NAME, ProcessEvidence, denied, dispatch_candidate, io, run_candidate,
+    service_image,
 };
 use crate::scm_host::{CONTROLS, dispatch_named, registered_service, report};
 use crate::scm_identity as identity;
@@ -69,18 +68,5 @@ fn admit_candidate(_: &LaunchIdentity) -> io::Result<()> {
     // Controller and ownership admission are also pending.
     Err(denied(
         "installed build, launch or runtime evidence is unavailable",
-    ))
-}
-
-async fn prepare_installed_endpoint(
-    _: &LaunchIdentity,
-    _: oneshot::Receiver<()>,
-) -> io::Result<(Readiness, future::Ready<io::Result<()>>)> {
-    // Integration seam for the installed ACL, caller admission and real
-    // v79 GetStatus provider. It must return a driver that retires the
-    // listener and owned runtime when shutdown is signaled.
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "installed candidate status endpoint is unavailable",
     ))
 }

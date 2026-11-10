@@ -159,7 +159,7 @@ async fn failed_identity_or_prerequisites_never_prepare_the_endpoint() {
                 assert!(allowed);
                 Err(denied("missing installed candidate admission"))
             },
-            async |_, _| panic!("unexpected endpoint preparation"),
+            async |_, _, _| panic!("unexpected endpoint preparation"),
             |status| {
                 phases
                     .borrow_mut()
@@ -229,7 +229,7 @@ async fn readiness_and_stop_order() {
                 events.borrow_mut().push("admission");
                 Ok(())
             },
-            async |_, shutdown| {
+            async |_, shutdown, _| {
                 events.borrow_mut().push("prepare");
                 Ok((ready, async {
                     shutdown.await.unwrap();
@@ -278,7 +278,7 @@ async fn stop_before_prepare_cancels_startup() {
             controls.request_stop();
             Ok(())
         },
-        async |_, _| panic!("prepare must not run after STOP"),
+        async |_, _, _| panic!("prepare must not run after STOP"),
         |status| {
             phases
                 .borrow_mut()
@@ -307,7 +307,7 @@ async fn stop_during_prepare_still_reports_retirement_failure() {
         || Ok(process()),
         |_| Ok(registration()),
         |_| Ok(()),
-        async |_, shutdown| {
+        async |_, shutdown, _| {
             controls.request_stop();
             Ok((readiness(), async {
                 shutdown.await.unwrap();
