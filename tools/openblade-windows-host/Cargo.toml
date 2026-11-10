@@ -16,12 +16,12 @@ path = "src/discover.rs"
 
 [dependencies]
 openblade-domain = { path = '../../rust/crates/openblade-domain' }
+openblade-protocol = { path = '../../rust/crates/openblade-protocol' }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.149"
 tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 
 [dev-dependencies]
-openblade-protocol = { path = '../../rust/crates/openblade-protocol' }
 openblade-types = { path = '../../rust/crates/openblade-types' }
 
 [target.'cfg(windows)'.dependencies]

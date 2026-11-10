@@ -365,6 +365,102 @@ public sealed class RustReadOnlyHostTests
 
 
 
+    [RustReadOnlyHostFact]
+    public async Task TrayClient_PerformanceParitySeparatesRequestedAndConfirmedState()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = timeout.Token;
+        string endpointId = Guid.NewGuid().ToString("N");
+        await using var host = DevHost.Start(endpointId, "foreground-performance-parity");
+        await host.WaitUntilReadyAsync(token);
+        await using var client = new ServiceClient(PipeName(endpointId));
+
+        var balanced = PerformancePreset.Balanced;
+        var performance = PerformancePreset.Performance;
+        var temporary = new ManualOverride<PerformancePreset>(performance, OverrideLifetime.UntilPowerSourceChange);
+        var persistent = new ManualOverride<PerformancePreset>(performance, OverrideLifetime.Persistent);
+
+        var initial = await client.GetStatusAsync(token);
+        AssertState(initial, balanced, balanced, null);
+        Assert.False(initial.WritesBlocked);
+        Assert.Empty(initial.UnconfirmedWrites);
+
+        async Task ExpectAsync(ManualOverride<PerformancePreset>? requested, ControlOperationStatus expected) =>
+            Assert.Equal(expected, (await client.SetPerformanceOverrideAsync(requested, token)).Status);
+
+        void AssertState(
+            ServiceStatusSnapshot status,
+            PerformancePreset confirmed,
+            PerformancePreset desired,
+            ManualOverride<PerformancePreset>? expectedOverride)
+        {
+            Assert.Equal(confirmed, status.ConfirmedState!.Performance);
+            Assert.Equal(FanMode.Automatic, status.ConfirmedState.Fans);
+            Assert.Equal(desired, status.DesiredState.Performance.Value);
+            Assert.Equal((PerformanceOverride?)expectedOverride, status.PerformanceOverride);
+            Assert.Equal(initial.Profiles, status.Profiles);
+        }
+
+        await ExpectAsync(temporary, ControlOperationStatus.Applied);
+        var applied = await client.GetStatusAsync(token);
+        AssertState(applied, performance, performance, temporary);
+        Assert.Equal(SettingValueSource.TemporaryOverride, applied.DesiredState.Performance.Source);
+        await ExpectAsync(temporary, ControlOperationStatus.Applied);
+        await ExpectAsync(
+            new(PerformancePreset.Silent, OverrideLifetime.Persistent),
+            ControlOperationStatus.Blocked);
+        Assert.Equal(
+            ControlOperationStatus.Blocked,
+            (await client.SetPerformanceConfigurationOverrideAsync(
+                new(PerformancePreset.Custom, OverrideLifetime.Persistent, CustomPerformanceSettings.Default),
+                token)).Status);
+        AssertState(await client.GetStatusAsync(token), performance, performance, temporary);
+
+        await ExpectAsync(null, ControlOperationStatus.Applied);
+        AssertState(await client.GetStatusAsync(token), balanced, balanced, null);
+
+        await using (var watch = client.WatchStatusAsync(token).GetAsyncEnumerator())
+        {
+            await ReadStatusAsync(watch, subscriptionOpened: true);
+            await host.AdvanceAsync(token);
+            Assert.Contains("cancellation armed", (await ReadStatusAsync(watch, subscriptionOpened: false)).Message);
+        }
+
+        await Assert.ThrowsAnyAsync<IOException>(() => client.SetPerformanceOverrideAsync(persistent, token));
+        var canceled = await client.GetStatusAsync(token);
+        AssertState(canceled, balanced, balanced, null);
+        Assert.Empty(canceled.UnconfirmedWrites);
+        Assert.False(canceled.WritesBlocked);
+
+        await using var recoveryWatch = client.WatchStatusAsync(token).GetAsyncEnumerator();
+        Assert.Equal(canceled.Revision, (await ReadStatusAsync(recoveryWatch, subscriptionOpened: true)).Revision);
+        await host.AdvanceAsync(token);
+        var armed = await ReadStatusAsync(recoveryWatch, subscriptionOpened: false);
+        Assert.Contains("lost response armed", armed.Message);
+        AssertState(armed, balanced, performance, persistent);
+        await ExpectAsync(persistent, ControlOperationStatus.Failed);
+        var pending = await ReadStatusAsync(recoveryWatch, subscriptionOpened: false);
+        AssertState(pending, balanced, performance, persistent);
+        Assert.True(pending.WritesBlocked);
+        Assert.Equal(DeviceSubsystem.Performance, Assert.Single(pending.UnconfirmedWrites));
+        await ExpectAsync(persistent, ControlOperationStatus.Blocked);
+        var retry = await ReadStatusAsync(recoveryWatch, subscriptionOpened: false);
+        AssertState(retry, balanced, performance, persistent);
+        Assert.True(retry.WritesBlocked);
+        Assert.Equal(DeviceSubsystem.Performance, Assert.Single(retry.UnconfirmedWrites));
+
+        await host.AdvanceAsync(token);
+        var recovered = await ReadStatusAsync(recoveryWatch, subscriptionOpened: false);
+        AssertState(recovered, performance, performance, persistent);
+        Assert.Equal(SettingValueSource.PersistentOverride, recovered.DesiredState.Performance.Source);
+        Assert.Empty(recovered.UnconfirmedWrites);
+        Assert.Empty(recovered.ExternalChanges);
+        Assert.False(recovered.WritesBlocked);
+        Assert.Equal(recovered.Revision, (await client.GetStatusAsync(token)).Revision);
+
+        await host.StopAsync(token);
+    }
+
     private static string PipeName(string endpointId) => $"OpenBlade.Rust.ReadOnly.Dev.{endpointId}";
 
     private static async Task<ServiceStatusSnapshot> ReadStatusAsync(
