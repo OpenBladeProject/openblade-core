@@ -1,6 +1,13 @@
 use super::*;
 use std::{collections::VecDeque, hint::black_box};
-use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_NOT_SUPPORTED};
+use windows_sys::Win32::{
+    Devices::Display::{
+        DISPLAYCONFIG_MODE_INFO_0, DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE,
+        DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HDMI,
+        DISPLAYCONFIG_TARGET_MODE, DISPLAYCONFIG_VIDEO_SIGNAL_INFO,
+    },
+    Foundation::{ERROR_ACCESS_DENIED, ERROR_NOT_SUPPORTED},
+};
 
 const SOURCE: LUID = LUID {
     LowPart: 9,
@@ -43,6 +50,7 @@ struct Script {
     frames: VecDeque<Frame>,
     pending: Option<Frame>,
     source_status: u32,
+    source_name: [u16; 32],
     target_status: u32,
     reads: (usize, usize),
 }
@@ -53,6 +61,7 @@ impl Script {
             frames: frames.into_iter().collect(),
             pending: None,
             source_status: ERROR_SUCCESS,
+            source_name: std::array::from_fn(|i| if i == 0 { u16::from(b'S') } else { 0 }),
             target_status: ERROR_SUCCESS,
             reads: (0, 0),
         }
@@ -100,7 +109,7 @@ impl DisplayApi for Script {
             EndpointId::new(request.header.adapterId, request.header.id),
             EndpointId::new(SOURCE, 3)
         );
-        request.viewGdiDeviceName[0] = b'S'.into();
+        request.viewGdiDeviceName = self.source_name;
         self.source_status
     }
 
@@ -171,9 +180,9 @@ fn keeps_desktop_rate_and_physical_signal_separate_with_or_without_drr() {
     for boost in [0, PATH_BOOST_REFRESH_RATE] {
         let packed = path(
             (1 << 16) | 0xFFFF,
-            PATH_ACTIVE | PATH_SUPPORT_VIRTUAL_MODE | boost,
+            DISPLAYCONFIG_PATH_ACTIVE | DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE | boost,
         );
-        let legacy = path(1, PATH_ACTIVE | boost);
+        let legacy = path(1, DISPLAYCONFIG_PATH_ACTIVE | boost);
         for internal in [packed, legacy] {
             let mut external = internal;
             external.targetInfo.outputTechnology = DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HDMI;
@@ -209,6 +218,10 @@ fn keeps_desktop_rate_and_physical_signal_separate_with_or_without_drr() {
                     denominator: 1001
                 })
             );
+            assert_eq!(
+                display.supports_virtual_mode,
+                internal.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE != 0
+            );
             assert_eq!(display.boost_refresh_rate, boost != 0);
             assert_eq!(api.reads, (1, 1));
         }
@@ -217,7 +230,7 @@ fn keeps_desktop_rate_and_physical_signal_separate_with_or_without_drr() {
 
 #[test]
 fn distinguishes_empty_non_internal_and_ambiguous_topology() {
-    let internal = path(0, PATH_ACTIVE);
+    let internal = path(0, DISPLAYCONFIG_PATH_ACTIVE);
     let mut external = internal;
     external.targetInfo.outputTechnology = DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HDMI;
     let inactive = path(0, 0);
@@ -243,7 +256,10 @@ fn resizes_from_fresh_counts_and_uses_returned_lengths() {
     let mut raced = Frame::status(ERROR_INSUFFICIENT_BUFFER);
     raced.counts = (u32::MAX, u32::MAX);
     let mut stable = Frame::success(
-        vec![path(0, PATH_ACTIVE), path(0, PATH_ACTIVE)],
+        vec![
+            path(0, DISPLAYCONFIG_PATH_ACTIVE),
+            path(0, DISPLAYCONFIG_PATH_ACTIVE),
+        ],
         vec![target_mode()],
     );
     stable.sizes = Ok((2, 3));
@@ -287,16 +303,24 @@ fn rejects_invalid_counts_at_both_boundaries() {
 #[test]
 fn rejects_missing_and_out_of_range_target_indices() {
     for (index, flags, error) in [
-        (u32::MAX, PATH_ACTIVE, DisplayReadError::MissingTargetMode),
         (
-            0xFFFF_0000,
-            PATH_ACTIVE | PATH_SUPPORT_VIRTUAL_MODE,
+            u32::MAX,
+            DISPLAYCONFIG_PATH_ACTIVE,
             DisplayReadError::MissingTargetMode,
         ),
-        (1, PATH_ACTIVE, DisplayReadError::InvalidTargetModeIndex),
+        (
+            0xFFFF_0000,
+            DISPLAYCONFIG_PATH_ACTIVE | DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE,
+            DisplayReadError::MissingTargetMode,
+        ),
+        (
+            1,
+            DISPLAYCONFIG_PATH_ACTIVE,
+            DisplayReadError::InvalidTargetModeIndex,
+        ),
         (
             1 << 16,
-            PATH_ACTIVE | PATH_SUPPORT_VIRTUAL_MODE,
+            DISPLAYCONFIG_PATH_ACTIVE | DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE,
             DisplayReadError::InvalidTargetModeIndex,
         ),
     ] {
@@ -323,7 +347,7 @@ fn rejects_a_mode_with_the_wrong_type_or_endpoint() {
             ..expected
         },
     ] {
-        let frame = Frame::success(vec![path(0, PATH_ACTIVE)], vec![mode]);
+        let frame = Frame::success(vec![path(0, DISPLAYCONFIG_PATH_ACTIVE)], vec![mode]);
         assert_eq!(
             read_with(&mut Script::new([frame])),
             Err(DisplayReadError::MismatchedTargetMode)
@@ -334,7 +358,7 @@ fn rejects_a_mode_with_the_wrong_type_or_endpoint() {
 #[test]
 fn missing_rates_are_independent_and_target_lookup_keeps_its_status() {
     for missing_desktop in [true, false] {
-        let mut internal = path(0, PATH_ACTIVE | PATH_BOOST_REFRESH_RATE);
+        let mut internal = path(0, DISPLAYCONFIG_PATH_ACTIVE | PATH_BOOST_REFRESH_RATE);
         let mut mode = target_mode();
         if missing_desktop {
             internal.targetInfo.refreshRate.Numerator = 0;
@@ -375,7 +399,7 @@ fn preserves_native_failure_stage_and_status() {
         );
     }
     let mut api = Script::new([Frame::success(
-        vec![path(0, PATH_ACTIVE)],
+        vec![path(0, DISPLAYCONFIG_PATH_ACTIVE)],
         vec![target_mode()],
     )]);
     api.source_status = ERROR_ACCESS_DENIED;
@@ -387,4 +411,31 @@ fn preserves_native_failure_stage_and_status() {
         })
     );
     assert_eq!(api.reads, (1, 0));
+}
+
+#[test]
+fn accepts_exact_capacity_limit() {
+    let mut frame = Frame::status(ERROR_SUCCESS);
+    frame.sizes = Ok((MAX_ENTRIES, MAX_ENTRIES));
+    assert_eq!(
+        read_with(&mut Script::new([frame])),
+        Ok(InternalDisplayTopology::Empty)
+    );
+}
+
+#[test]
+fn rejects_empty_and_unterminated_source_names() {
+    for name in [[0; 32], [u16::from(b'S'); 32]] {
+        let frame = Frame::success(
+            vec![path(0, DISPLAYCONFIG_PATH_ACTIVE)],
+            vec![target_mode()],
+        );
+        let mut api = Script::new([frame]);
+        api.source_name = name;
+        assert_eq!(
+            read_with(&mut api),
+            Err(DisplayReadError::MissingSourceName)
+        );
+        assert_eq!(api.reads, (1, 0));
+    }
 }

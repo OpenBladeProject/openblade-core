@@ -2,8 +2,17 @@
 
 use std::{ffi::OsString, os::windows::ffi::OsStringExt};
 use windows_sys::Win32::{
-    Devices::Display::*,
+    Devices::Display::{
+        DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME,
+        DISPLAYCONFIG_DEVICE_INFO_HEADER, DISPLAYCONFIG_MODE_INFO,
+        DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED,
+        DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL, DISPLAYCONFIG_OUTPUT_TECHNOLOGY_LVDS,
+        DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EMBEDDED, DISPLAYCONFIG_PATH_INFO,
+        DISPLAYCONFIG_RATIONAL, DISPLAYCONFIG_SOURCE_DEVICE_NAME, DISPLAYCONFIG_TARGET_DEVICE_NAME,
+        QDC_ONLY_ACTIVE_PATHS, QDC_VIRTUAL_MODE_AWARE, QDC_VIRTUAL_REFRESH_RATE_AWARE,
+    },
     Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, LUID},
+    Graphics::Gdi::{DISPLAYCONFIG_PATH_ACTIVE, DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE},
 };
 
 mod native;
@@ -16,9 +25,7 @@ const MAX_ATTEMPTS: usize = 5;
 // Bound allocation even if the driver reports implausible counts.
 const MAX_ENTRIES: u32 = 4096;
 
-// WinSDK winuser.h / wingdi.h macros absent from the pinned windows-sys bindings.
-const PATH_ACTIVE: u32 = 0x01;
-const PATH_SUPPORT_VIRTUAL_MODE: u32 = 0x08;
+// WinSDK wingdi.h defines this flag; windows-sys 0.61.2 does not export it.
 const PATH_BOOST_REFRESH_RATE: u32 = 0x10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +77,8 @@ pub struct ActiveInternalDisplay {
     pub desktop_rate: Option<RefreshRate>,
     /// Physical signal rate reported by the matching target mode.
     pub physical_rate: Option<RefreshRate>,
+    /// Whether the path uses the virtual-mode-aware layout.
+    pub supports_virtual_mode: bool,
     /// The OS path flag for DRR. Rates alone do not establish DRR state.
     pub boost_refresh_rate: bool,
 }
@@ -172,7 +181,7 @@ fn resolve_internal_display(
         return Ok(InternalDisplayTopology::Empty);
     }
     let mut internal = paths.iter().filter(|path| {
-        path.flags & PATH_ACTIVE != 0
+        path.flags & DISPLAYCONFIG_PATH_ACTIVE != 0
             && matches!(
                 path.targetInfo.outputTechnology,
                 DISPLAYCONFIG_OUTPUT_TECHNOLOGY_LVDS
@@ -190,7 +199,7 @@ fn resolve_internal_display(
 
     let source = EndpointId::new(path.sourceInfo.adapterId, path.sourceInfo.id);
     let target = EndpointId::new(path.targetInfo.adapterId, path.targetInfo.id);
-    let physical_rate = physical_rate(path, modes, target)?;
+    let physical_rate = native::physical_rate(path, modes, target)?;
     let mut source_name = DISPLAYCONFIG_SOURCE_DEVICE_NAME {
         header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
             r#type: DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
@@ -216,38 +225,9 @@ fn resolve_internal_display(
         monitor_name: monitor_name(api, path),
         desktop_rate: RefreshRate::observed(path.targetInfo.refreshRate),
         physical_rate,
+        supports_virtual_mode: path.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE != 0,
         boost_refresh_rate: path.flags & PATH_BOOST_REFRESH_RATE != 0,
     }))
-}
-
-#[allow(unsafe_code)]
-fn physical_rate(
-    path: &DISPLAYCONFIG_PATH_INFO,
-    modes: &[DISPLAYCONFIG_MODE_INFO],
-    target: EndpointId,
-) -> Result<Option<RefreshRate>, DisplayReadError> {
-    // SAFETY: Both index layouts are initialized 32-bit words. Virtual mode
-    // packs the target index into the high 16 bits and the desktop image below.
-    let index_word = unsafe { path.targetInfo.Anonymous.modeInfoIdx };
-    let (index, invalid) = if path.flags & PATH_SUPPORT_VIRTUAL_MODE != 0 {
-        (index_word >> 16, u32::from(u16::MAX))
-    } else {
-        (index_word, u32::MAX)
-    };
-    if index == invalid {
-        return Err(DisplayReadError::MissingTargetMode);
-    }
-    let mode = modes
-        .get(index as usize)
-        .ok_or(DisplayReadError::InvalidTargetModeIndex)?;
-    if mode.infoType != DISPLAYCONFIG_MODE_INFO_TYPE_TARGET
-        || EndpointId::new(mode.adapterId, mode.id) != target
-    {
-        return Err(DisplayReadError::MismatchedTargetMode);
-    }
-    // SAFETY: The discriminant and endpoint matched this path's target.
-    let signal = unsafe { mode.Anonymous.targetMode.targetVideoSignalInfo };
-    Ok(RefreshRate::observed(signal.vSyncFreq))
 }
 
 fn monitor_name(
@@ -274,6 +254,7 @@ fn monitor_name(
 }
 
 fn native_name(units: &[u16]) -> Option<OsString> {
+    // The SDK defines these arrays as NUL-terminated strings.
     let end = units.iter().position(|unit| *unit == 0)?;
     (end != 0).then(|| OsString::from_wide(&units[..end]))
 }

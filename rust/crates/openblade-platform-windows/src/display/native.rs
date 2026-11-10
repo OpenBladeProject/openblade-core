@@ -1,7 +1,16 @@
-//! Windows SDK calls. The rest of the adapter accepts scripted responses.
+//! Windows SDK calls and union decoding.
 #![allow(unsafe_code)]
 
 use super::*;
+use windows_sys::Win32::{
+    Devices::Display::{
+        DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DisplayConfigGetDeviceInfo,
+        GetDisplayConfigBufferSizes, QueryDisplayConfig,
+    },
+    Graphics::Gdi::{
+        DISPLAYCONFIG_PATH_MODE_IDX_INVALID, DISPLAYCONFIG_PATH_TARGET_MODE_IDX_INVALID,
+    },
+};
 
 pub(super) struct WindowsDisplay;
 
@@ -51,4 +60,33 @@ impl DisplayApi for WindowsDisplay {
         // specifies the target type and size.
         unsafe { DisplayConfigGetDeviceInfo(std::ptr::from_mut(request).cast()) as u32 }
     }
+}
+
+pub(super) fn physical_rate(
+    path: &DISPLAYCONFIG_PATH_INFO,
+    modes: &[DISPLAYCONFIG_MODE_INFO],
+    target: EndpointId,
+) -> Result<Option<RefreshRate>, DisplayReadError> {
+    // SAFETY: Both index layouts are initialized 32-bit words. Virtual mode
+    // packs the target index into the high 16 bits and the desktop image below.
+    let index_word = unsafe { path.targetInfo.Anonymous.modeInfoIdx };
+    let (index, invalid) = if path.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE != 0 {
+        (index_word >> 16, DISPLAYCONFIG_PATH_TARGET_MODE_IDX_INVALID)
+    } else {
+        (index_word, DISPLAYCONFIG_PATH_MODE_IDX_INVALID)
+    };
+    if index == invalid {
+        return Err(DisplayReadError::MissingTargetMode);
+    }
+    let mode = modes
+        .get(index as usize)
+        .ok_or(DisplayReadError::InvalidTargetModeIndex)?;
+    if mode.infoType != DISPLAYCONFIG_MODE_INFO_TYPE_TARGET
+        || EndpointId::new(mode.adapterId, mode.id) != target
+    {
+        return Err(DisplayReadError::MismatchedTargetMode);
+    }
+    // SAFETY: The discriminant and endpoint matched this path's target.
+    let signal = unsafe { mode.Anonymous.targetMode.targetVideoSignalInfo };
+    Ok(RefreshRate::observed(signal.vSyncFreq))
 }
