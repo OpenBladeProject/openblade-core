@@ -40,19 +40,28 @@ pub(super) fn entry() -> io::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.as_slice() {
         [mode] if mode == "--scm" => scm::dispatch(),
-        [mode, id] if mode == "foreground-durable" || mode == "foreground-durable-interrupt" => {
+        [mode, id]
+            if mode == "foreground-durable"
+                || mode == "foreground-durable-interrupt"
+                || mode == "foreground-profile-bootstrap"
+                || mode == "foreground-profile-migrate" =>
+        {
             let id = foreground_id(id)?;
-            let mut fixture = fixture::Fixture::create()?;
+            let mut fixture = fixture::Fixture::create(mode == "foreground-profile-migrate")?;
             let (root, identity) = fixture.restart_key()?;
             let mut output = io::stdout().lock();
             writeln!(output, "ROOT {root} {identity}")?;
             output.flush()?;
             drop(output);
             fixture.hand_off_cleanup();
-            let percent = fixture.seed()?;
+            let (percent, accepts_steps) = match mode.to_str() {
+                Some("foreground-profile-bootstrap") => (fixture.bootstrap()?, false),
+                Some("foreground-profile-migrate") => (fixture.migrate()?, false),
+                _ => (fixture.seed()?, true),
+            };
             let fixture = Arc::new(fixture);
             let interrupt = mode == "foreground-durable-interrupt";
-            foreground(id, Session::Active, true, |advance, shutdown| {
+            foreground(id, Session::Active, accepts_steps, |advance, shutdown| {
                 let update = advance.map(|advance| {
                     let fixture = Arc::clone(&fixture);
                     DurableUpdate {

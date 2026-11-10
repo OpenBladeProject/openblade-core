@@ -23,6 +23,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 use windows_sys::Win32::System::Com::CoCreateGuid;
 
 pub mod fixture;
+mod profile;
 
 const NAMES: [&str; 3] = [PROFILE, PREFERENCES, COMMIT];
 const LOCK: &str = "configuration.test-lock";
@@ -66,6 +67,13 @@ impl Report {
             artifact_errors: Vec::new(),
         }
     }
+}
+
+enum ExpectedPreimage<'a> {
+    Fixture([Option<&'a [u8]>; 3]),
+    Migration(profile::LegacyPreimage<'a>),
+    #[cfg(test)]
+    Unspecified,
 }
 
 // Construction is private to the native tests and the fixed developer fixture.
@@ -277,7 +285,17 @@ impl TestStore {
         move_file(&self.path(source), &self.path(target), replace)
     }
 
-    fn commit(&self, intent: [&[u8]; 3], mut at: impl FnMut(Boundary) -> io::Result<()>) -> Report {
+    #[cfg(test)]
+    fn commit(&self, intent: [&[u8]; 3], at: impl FnMut(Boundary) -> io::Result<()>) -> Report {
+        self.commit_from(intent, ExpectedPreimage::Unspecified, at)
+    }
+
+    fn commit_from(
+        &self,
+        intent: [&[u8]; 3],
+        expected: ExpectedPreimage<'_>,
+        mut at: impl FnMut(Boundary) -> io::Result<()>,
+    ) -> Report {
         let _lock = match self.lock() {
             Ok(lock) => lock,
             Err(error) => return Report::new(Outcome::Unchanged(error)),
@@ -310,12 +328,26 @@ impl TestStore {
             Err(error) => return Report::new(Outcome::Unchanged(error)),
         };
         let prior = prior.each_ref().map(Option::as_deref);
-        match inspect_bytes(prior) {
-            Inspection::Empty
-            | Inspection::CommittedEnvelope {
-                schema: CURRENT_SCHEMA,
-            } => {}
-            other => return Report::new(Outcome::Refused(other)),
+        let expected_bytes = match &expected {
+            ExpectedPreimage::Fixture(bytes) => *bytes,
+            ExpectedPreimage::Migration(legacy) => legacy.bytes().map(Some),
+            #[cfg(test)]
+            ExpectedPreimage::Unspecified => prior,
+        };
+        if expected_bytes != prior {
+            return Report::new(Outcome::Unchanged(io::Error::other(
+                "fixture transaction preimage changed",
+            )));
+        }
+        // A typed migration preimage already passed inspection for these exact bytes.
+        if !matches!(expected, ExpectedPreimage::Migration(_)) {
+            match inspect_bytes(prior) {
+                Inspection::Empty
+                | Inspection::CommittedEnvelope {
+                    schema: CURRENT_SCHEMA,
+                } => {}
+                other => return Report::new(Outcome::Refused(other)),
+            }
         }
         let id = match transaction_id() {
             Ok(id) => id,

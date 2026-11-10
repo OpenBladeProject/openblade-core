@@ -2,9 +2,11 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Win32.SafeHandles;
 using OpenBlade.Contracts;
 
@@ -251,6 +253,95 @@ public sealed class RustReadOnlyHostTests
 
     private static readonly string[] ConfigurationNames =
         ["profiles.json", "battery-preferences.json", "battery-configuration.commit.json"];
+
+    [RustReadOnlyHostFact]
+    public async Task ProfileHost_BootstrapsAndMigratesBeforePublishingAndRestartsReadOnly()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken token = timeout.Token;
+        using Stream aggregate = typeof(RustReadOnlyHostTests).Assembly
+            .GetManifestResourceStream("OpenBlade.WindowsReplay.ConfigurationAggregate")!;
+        using Stream profileFixture = typeof(RustReadOnlyHostTests).Assembly
+            .GetManifestResourceStream("OpenBlade.WindowsReplay.ConfigurationProfile")!;
+        using JsonDocument managed = await JsonDocument.ParseAsync(aggregate, cancellationToken: token);
+        JsonNode vector = (await JsonNode.ParseAsync(profileFixture, cancellationToken: token))!;
+        byte[][] defaults = ReadManagedDocuments(managed.RootElement, "prior");
+
+        foreach (bool migrate in new[] { false, true })
+        {
+            string endpoint = Guid.NewGuid().ToString("N");
+            await using var host = DevHost.Start(endpoint,
+                migrate ? "foreground-profile-migrate" : "foreground-profile-bootstrap");
+            (string rootId, string identity) = await host.ReadFixtureRootAsync(token);
+            string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Temp", $"openblade-durable-host-{rootId}");
+            using SafeFileHandle pin = OpenFixtureDirectory(root);
+            Assert.False(pin.IsInvalid, $"Could not pin fixture directory. Win32 {Marshal.GetLastWin32Error()}");
+            try
+            {
+                await host.WaitUntilReadyAsync(token);
+                int percent = migrate ? vector["chargeLimitPercent"]!.GetValue<int>() : 80;
+                await using var client = new ServiceClient(PipeName(endpoint));
+                AssertDurableStatus(await client.GetStatusAsync(token), 2, percent);
+
+                byte[][] actual = ConfigurationNames.Select(name => File.ReadAllBytes(Path.Combine(root, name))).ToArray();
+                JsonNode expectedProfile = JsonNode.Parse(defaults[0])!;
+                JsonNode expectedPreferences = JsonNode.Parse(defaults[1])!;
+                if (migrate)
+                {
+                    expectedProfile["profiles"]!["batteryPolicy"]!["chargeLimitPercent"] = percent;
+                    expectedPreferences["preferences"]!["fanStopSettings"] = vector["currentFanStop"]!.DeepClone();
+                }
+                Assert.True(JsonNode.DeepEquals(expectedProfile, JsonNode.Parse(actual[0])));
+                Assert.True(JsonNode.DeepEquals(expectedPreferences, JsonNode.Parse(actual[1])));
+                using JsonDocument marker = JsonDocument.Parse(actual[2]);
+                Assert.Equal(25, marker.RootElement.GetProperty("schemaVersion").GetInt32());
+                Assert.Equal(Convert.ToHexString(SHA256.HashData(actual[0])),
+                    marker.RootElement.GetProperty("profileSha256").GetString());
+                Assert.Equal(Convert.ToHexString(SHA256.HashData(actual[1])),
+                    marker.RootElement.GetProperty("preferencesSha256").GetString());
+
+                await host.StopAsync(token);
+                string restartEndpoint = Guid.NewGuid().ToString("N");
+                await using var restart = DevHost.Start(restartEndpoint, "foreground-durable-restart", rootId, identity);
+                await restart.WaitUntilReadyAsync(token);
+                await using var reader = new ServiceClient(PipeName(restartEndpoint));
+                AssertDurableStatus(await reader.GetStatusAsync(token), 2, percent);
+                await restart.StopAsync(token);
+                AssertPrimaryBytes(root, actual);
+                Assert.Equal(4, Directory.GetFileSystemEntries(root).Length);
+
+                if (migrate)
+                {
+                    // Rehash the damaged payload so envelope checks alone would pass.
+                    expectedPreferences["preferences"]!["fanStopSettings"]!["endMode"] = 99;
+                    actual[1] = JsonSerializer.SerializeToUtf8Bytes(expectedPreferences);
+                    JsonNode damagedMarker = JsonNode.Parse(actual[2])!;
+                    damagedMarker["preferencesSha256"] = Convert.ToHexString(SHA256.HashData(actual[1]));
+                    actual[2] = JsonSerializer.SerializeToUtf8Bytes(damagedMarker);
+                    for (int i = 1; i < actual.Length; i++)
+                    {
+                        await File.WriteAllBytesAsync(Path.Combine(root, ConfigurationNames[i]), actual[i], token);
+                    }
+                    await using var refused = DevHost.Start(Guid.NewGuid().ToString("N"),
+                        "foreground-durable-restart", rootId, identity);
+                    Assert.Contains("unknown Fan Stop end mode", await refused.AssertRejectedAsync(token));
+                    AssertPrimaryBytes(root, actual);
+                    Assert.Equal(4, Directory.GetFileSystemEntries(root).Length);
+                }
+            }
+            finally
+            {
+                await host.DisposeAsync();
+                foreach (string file in Directory.EnumerateFiles(root))
+                {
+                    File.Delete(file);
+                }
+                pin.Dispose();
+                Directory.Delete(root);
+            }
+        }
+    }
 
     private static async Task ExerciseDurableHostAsync(bool interrupt)
     {
