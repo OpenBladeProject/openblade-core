@@ -92,6 +92,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "openblade-application-reporter"
+version = "0.0.0"
+
+[[package]]
 name = "openblade-domain"
 version = "0.0.0"
 dependencies = [
@@ -113,6 +117,7 @@ version = "0.0.0"
 name = "openblade-windows-host"
 version = "0.0.0"
 dependencies = [
+ "openblade-application-reporter",
  "openblade-domain",
  "openblade-protocol",
  "openblade-types",

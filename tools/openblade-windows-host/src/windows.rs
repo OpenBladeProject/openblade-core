@@ -25,6 +25,9 @@ use openblade_windows_host::{configuration_writer::fixture, valid_dev_id};
 mod pipe;
 mod scm;
 
+#[cfg(test)]
+mod reporter_tests;
+
 const PREFIX: &str = r"\\.\pipe\OpenBlade.Rust.ReadOnly.Dev.";
 const SCM_ID: &str = "scm";
 const CLIENTS: usize = 8;
