@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using OpenBlade.WriterFence.Scratch;
-using static OpenBlade.Setup.Tests.ScratchWriterRetirementGate;
 
 if (args is ["hold", string root, string rootId, string lockId, string generation] &&
     Guid.TryParseExact(generation, "N", out _))
@@ -44,6 +43,8 @@ return 3;
 
 internal sealed class Rehearsal(string rustExe, string root, string rootId, string lockId)
 {
+    private enum Backend { Managed, Candidate }
+
     private readonly string lockPath = Path.Combine(root, WriterLease.Name);
 
     internal static async Task Run(string rustExe, string parent)
@@ -99,12 +100,7 @@ internal sealed class Rehearsal(string rustExe, string root, string rootId, stri
         using var successor = Start(incoming);
         await successor.RequireHeld();
         Check(!writer.Process.HasExited, "original writer exited before explicit release was proved");
-        Refuses("Outgoing writer process exit was not confirmed.", () =>
-            RequireRetired(writer.Generation, scmStopped: true, exitedCleanly: false,
-                () => writer.Receipt, () => throw new UnreachableException()));
         await writer.Finish();
-        RequireRetired(writer.Generation, scmStopped: true, exitedCleanly: writer.Process.ExitCode == 0,
-            () => writer.Receipt, () => { });
         await successor.Retire();
         Console.WriteLine($"PASS {outgoing} -> {incoming}: live contention and clean release");
     }
@@ -184,33 +180,15 @@ internal sealed class Rehearsal(string rustExe, string root, string rootId, stri
         // retirement and recovery are unresolved.
         using var successor = Start(incoming);
         await successor.RequireHeld();
-        Refuses("Outgoing writer process exit was not confirmed.", () =>
-            RequireRetired(writer.Generation, scmStopped: true, exitedCleanly: false,
-                () => writer.Receipt, () => throw new UnreachableException()));
-        Refuses("Retirement receipt is missing, incomplete, or stale.", () =>
-            RequireRetired(writer.Generation, scmStopped: true, exitedCleanly: true,
-                () => writer.Receipt, () => throw new UnreachableException()));
         await successor.Retire();
-        Refuses("Retirement receipt is missing, incomplete, or stale.", () =>
-            RequireRetired(writer.Generation, scmStopped: true, exitedCleanly: true,
-                () => successor.Receipt, () => throw new UnreachableException()));
-        Refuses("Recovery pending.", () =>
-            RequireRetired(successor.Generation, scmStopped: true, exitedCleanly: true,
-                () => successor.Receipt, () =>
-                {
-                    if (File.Exists(pending))
-                    {
-                        throw new InvalidOperationException("Recovery pending.");
-                    }
-                }));
         Check(File.ReadAllBytes(pending).SequenceEqual(evidence), "recovery evidence was changed");
         File.Delete(pending);
-        Console.WriteLine($"PASS {outgoing} abrupt exit: {incoming} reacquired; retirement refused and recovery preserved");
+        Console.WriteLine($"PASS {outgoing} abrupt exit: {incoming} reacquired; no receipt and recovery bytes preserved");
     }
 
     private Child Start(Backend backend, string? expectedRoot = null, string? expectedLock = null)
     {
-        var generation = new Generation(backend, Guid.NewGuid());
+        Guid generation = Guid.NewGuid();
         var info = new ProcessStartInfo
         {
             FileName = backend == Backend.Managed
@@ -230,21 +208,8 @@ internal sealed class Rehearsal(string rustExe, string root, string rootId, stri
         info.ArgumentList.Add(root);
         info.ArgumentList.Add(expectedRoot ?? rootId);
         info.ArgumentList.Add(expectedLock ?? lockId);
-        info.ArgumentList.Add(generation.Instance.ToString("N"));
-        return new Child(Process.Start(info) ?? throw new InvalidOperationException("Child failed to start."), generation);
-    }
-
-    private static void Refuses(string message, Action act)
-    {
-        try
-        {
-            act();
-        }
-        catch (InvalidOperationException e) when (e.Message == message)
-        {
-            return;
-        }
-        throw new InvalidOperationException($"Expected retirement gate to report {message}");
+        info.ArgumentList.Add(generation.ToString("N"));
+        return new Child(Process.Start(info) ?? throw new InvalidOperationException("Child failed to start."), backend, generation);
     }
 
     private static void Check(bool condition, string message)
@@ -255,19 +220,17 @@ internal sealed class Rehearsal(string rustExe, string root, string rootId, stri
         }
     }
 
-    private sealed class Child(Process process, Generation generation) : IDisposable
+    private sealed class Child(Process process, Backend backend, Guid generation) : IDisposable
     {
         private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(15);
         public Process Process { get; } = process;
-        public Generation Generation { get; } = generation;
-        public Generation? Receipt { get; private set; }
 
         public async Task RequireHeld()
         {
             string? line = await Process.StandardOutput.ReadLineAsync().WaitAsync(Deadline);
             if (line != "held")
             {
-                throw new InvalidOperationException($"Expected {Generation.Backend} ownership. {await Error()}");
+                throw new InvalidOperationException($"Expected {backend} ownership. {await Error()}");
             }
         }
 
@@ -280,11 +243,10 @@ internal sealed class Rehearsal(string rustExe, string root, string rootId, stri
         public async Task Release()
         {
             await Send("retire");
-            string backend = Generation.Backend == Backend.Managed ? "managed" : "candidate";
+            string role = backend == Backend.Managed ? "managed" : "candidate";
             string? line = await Process.StandardOutput.ReadLineAsync().WaitAsync(Deadline);
-            Check(line == $"retired:{backend}:{Generation.Instance:N}",
+            Check(line == $"retired:{role}:{generation:N}",
                 "missing or incorrect child retirement receipt");
-            Receipt = Generation;
         }
 
         public async Task Finish()
@@ -306,7 +268,7 @@ internal sealed class Rehearsal(string rustExe, string root, string rootId, stri
             if (Process.ExitCode != code)
             {
                 throw new InvalidOperationException(
-                    $"{Generation.Backend} exited {Process.ExitCode}, expected {code}. {await Error()}");
+                    $"{backend} exited {Process.ExitCode}, expected {code}. {await Error()}");
             }
         }
 

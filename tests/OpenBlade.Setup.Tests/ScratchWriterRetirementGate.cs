@@ -16,7 +16,7 @@ internal sealed class ScratchWriterRetirementGate(string directory)
     internal enum Backend : byte { Managed = 1, Candidate = 2 }
 
     internal sealed record Generation(Backend Backend, Guid Instance, long Boot, long Creation,
-        string ImagePath, string ImageSha256, string BuildSha256);
+        string ImagePath, string FixtureSha256, string BuildSha256);
 
     internal sealed record Observer(Generation Generation, SafeProcessHandle OriginalHandle);
 
@@ -35,7 +35,7 @@ internal sealed class ScratchWriterRetirementGate(string directory)
     }
 
     internal void RequireRetired(Generation outgoing, bool scmStopped, Observer? observer,
-        Func<long> readBoot, Action requireRecoveryClear)
+        string? observedReceipt, Func<long> readBoot, Action requireRecoveryClear)
     {
         if (!scmStopped)
         {
@@ -57,20 +57,29 @@ internal sealed class ScratchWriterRetirementGate(string directory)
         {
             throw new InvalidOperationException("Scratch retirement boot identity changed.");
         }
-        if (!Matches(outgoing, "intent") || !Matches(outgoing, "receipt"))
+        if (!IsReceiptFor(outgoing, observedReceipt) || !Matches(outgoing, "intent")
+            || !Matches(outgoing, "receipt", observedReceipt))
         {
             throw new InvalidOperationException("Retirement evidence is missing, incomplete, or stale.");
         }
         requireRecoveryClear();
     }
 
+    internal static bool IsReceiptFor(Generation generation, string? frame)
+    {
+        string role = generation.Backend == Backend.Managed ? "managed" : "candidate";
+        string expected = $"retired:{role}:{generation.Instance:N}";
+        return frame == expected + "\n" || frame == expected + "\r\n";
+    }
+
     internal string RecordPath(Generation generation, string role) =>
         Path.Combine(directory, $"scratch-retirement-{generation.Instance:N}.{role}");
 
-    internal void WriteRecord(Generation generation, string role, Generation reported, bool torn = false)
+    internal void WriteRecord(Generation generation, string role, Generation reported, bool torn = false,
+        string? receipt = null)
     {
         string path = RecordPath(generation, role);
-        byte[] bytes = Encode(reported, role);
+        byte[] bytes = Encode(reported, role, receipt);
         using (var file = new FileStream(path + ".new", FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
             file.Write(torn ? bytes.AsSpan(0, 8) : bytes);
@@ -82,7 +91,7 @@ internal sealed class ScratchWriterRetirementGate(string directory)
         }
     }
 
-    private bool Matches(Generation generation, string role)
+    private bool Matches(Generation generation, string role, string? receipt = null)
     {
         string path = RecordPath(generation, role);
         try
@@ -97,7 +106,7 @@ internal sealed class ScratchWriterRetirementGate(string directory)
         try
         {
             using var file = File.OpenRead(path);
-            byte[] expected = Encode(generation, role);
+            byte[] expected = Encode(generation, role, receipt);
             byte[] actual = new byte[expected.Length];
             file.ReadExactly(actual);
             return file.ReadByte() == -1 && actual.AsSpan().SequenceEqual(expected);
@@ -108,19 +117,23 @@ internal sealed class ScratchWriterRetirementGate(string directory)
         }
     }
 
-    private static byte[] Encode(Generation generation, string role)
+    private static byte[] Encode(Generation generation, string role, string? receipt)
     {
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes, Encoding.UTF8, leaveOpen: true);
-        writer.Write("OpenBlade scratch retirement v1");
+        writer.Write("OpenBlade scratch retirement v2");
         writer.Write(role);
         writer.Write((byte)generation.Backend);
         writer.Write(generation.Instance.ToByteArray());
         writer.Write(generation.Boot);
         writer.Write(generation.Creation);
         writer.Write(generation.ImagePath);
-        writer.Write(Convert.FromHexString(generation.ImageSha256));
+        writer.Write(Convert.FromHexString(generation.FixtureSha256));
         writer.Write(Convert.FromHexString(generation.BuildSha256));
+        if (receipt is not null)
+        {
+            writer.Write(receipt);
+        }
         return bytes.ToArray();
     }
 
@@ -147,7 +160,7 @@ internal sealed class ScratchWriterRetirementGate(string directory)
     }
 
     internal static Observer ObserveLaunch(Process child, Backend backend, long boot, string imagePath,
-        string imageSha256, string buildSha256)
+        string fixtureSha256, string buildSha256, Guid instance)
     {
         // Process.Start keeps CreateProcess's handle on Windows. Use that
         // handle for identity and the terminal observation, with no reopen.
@@ -162,7 +175,7 @@ internal sealed class ScratchWriterRetirementGate(string directory)
             throw new InvalidOperationException("Scratch writer process identity is unavailable.");
         }
 
-        return new(new(backend, Guid.NewGuid(), boot, creation, imagePath, imageSha256, buildSha256), handle);
+        return new(new(backend, instance, boot, creation, imagePath, fixtureSha256, buildSha256), handle);
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = false)]

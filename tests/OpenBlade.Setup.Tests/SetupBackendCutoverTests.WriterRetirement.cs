@@ -1,8 +1,11 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using OpenBlade.Setup;
+using OpenBlade.WriterFence.Scratch;
+using FenceNative = OpenBlade.WriterFence.Scratch.Native;
 using static OpenBlade.Setup.Tests.ScratchWriterRetirementGate;
 using static OpenBlade.Setup.Tests.SetupPayloadTransactionTests;
 
@@ -14,6 +17,10 @@ public sealed partial class SetupBackendCutoverTests
     {
         None,
         MissingReceipt,
+        ReceiptObservationLost,
+        StaleTransport,
+        TornTransport,
+        AbruptExit,
         StaleReceipt,
         TornReceipt,
         TornIntent,
@@ -53,6 +60,7 @@ public sealed partial class SetupBackendCutoverTests
         bool rollback, RetirementFault fault)
     {
         using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        Assert.False(identity.IsSystem);
         Assert.False(new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator));
         using var tree = new TestTree();
         using var synthetic = new TestTree();
@@ -82,7 +90,8 @@ public sealed partial class SetupBackendCutoverTests
         {
             RetirementFault.None => null,
             RetirementFault.StopTimeout => "Writer stop was not confirmed.",
-            RetirementFault.ProcessStillRunning or RetirementFault.ProcessIndeterminate or RetirementFault.ProcessFailed =>
+            RetirementFault.ProcessStillRunning or RetirementFault.ProcessIndeterminate or RetirementFault.ProcessFailed
+                or RetirementFault.AbruptExit =>
                 "Outgoing writer process exit was not confirmed.",
             RetirementFault.ObserverLost => "Scratch retirement evidence requires the original observer.",
             RetirementFault.StaleBoot => "Scratch retirement boot identity changed.",
@@ -196,12 +205,14 @@ public sealed partial class SetupBackendCutoverTests
         private readonly ScratchWriterRetirementGate gate;
         private readonly string pending;
         private readonly string ownership;
-        private readonly string imagePath = Path.Combine(Environment.SystemDirectory, "cmd.exe");
-        private readonly FileStream image;
-        private readonly string imageSha256;
+        private readonly string leaseRoot;
+        private readonly string rootId;
+        private readonly string lockId;
+        private SealedFixture image;
         private Process process;
         private Generation generation;
         private Observer? observer;
+        private string? observedReceipt;
         private bool retirementStarted;
         private RetirementFault fault;
         private bool stopConfirmed;
@@ -218,21 +229,19 @@ public sealed partial class SetupBackendCutoverTests
             ownership = Path.Combine(paths.MachineDataDirectory, "hyperboost-ownership.json");
             gate = new(paths.MachineDataDirectory);
             gate.ClaimFreshObserver();
-            // Seal the trusted inert image before launch. The installed service
-            // artifact is separate test data and is never executed.
-            image = File.Open(imagePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            try
+            string name = $"openblade-writer-fence-{Guid.NewGuid():N}";
+            leaseRoot = Path.Combine(root, name);
+            using var parent = PinnedRoot.OpenPath(root);
+            using var directory = FenceNative.OpenRelative(parent.Handle, name, directory: true, create: true);
+            rootId = FenceNative.Inspect(directory, directory: true).Identity;
+            using (var file = FenceNative.OpenRelative(directory, WriterLease.Name, directory: false, create: true))
             {
-                imageSha256 = Convert.ToHexString(SHA256.HashData(image));
-                (process, Observer initialObserver) = Launch(Backend.Managed, priorBuildSha256);
-                observer = initialObserver;
-                generation = initialObserver.Generation;
+                lockId = FenceNative.Inspect(file, directory: false).Identity;
             }
-            catch
-            {
-                image.Dispose();
-                throw;
-            }
+
+            (process, Observer initialObserver, image) = Launch(Backend.Managed, priorBuildSha256);
+            observer = initialObserver;
+            generation = initialObserver.Generation;
         }
 
         public Backend Current => generation.Backend;
@@ -246,32 +255,13 @@ public sealed partial class SetupBackendCutoverTests
             stopConfirmed = false;
             this.fault = fault;
             RequireInstalledBuild(generation.BuildSha256);
-            // Persist the intent before signaling the retained child. The
-            // scripted receipt and fake SCM cannot prove kernel process exit.
+            // Persist intent before touching the original child. A private
+            // stdout frame and the fake SCM each prove a different condition.
             gate.WriteRecord(generation, "intent", generation);
             if (fault == RetirementFault.TornIntent)
             {
                 gate.WriteRecord(generation, "intent", generation, torn: true);
             }
-            if (fault != RetirementFault.MissingReceipt)
-            {
-                Generation reported = fault switch
-                {
-                    RetirementFault.StaleReceipt => generation with { Instance = Guid.NewGuid() },
-                    RetirementFault.StaleBootReceipt => generation with { Boot = generation.Boot - 1 },
-                    RetirementFault.StaleBuild => generation with { BuildSha256 = new string('0', 64) },
-                    RetirementFault.StaleImage => generation with { ImageSha256 = new string('0', 64) },
-                    RetirementFault.StaleCreation => generation with { Creation = generation.Creation - 1 },
-                    _ => generation,
-                };
-                gate.WriteRecord(generation, "receipt", reported, fault == RetirementFault.TornReceipt);
-                if (fault == RetirementFault.TornReceipt)
-                {
-                    string receipt = gate.RecordPath(generation, "receipt");
-                    File.Move(receipt + ".new", receipt);
-                }
-            }
-
             if (fault == RetirementFault.GuardianPending)
             {
                 WriteFile(pending, """{"schemaVersion":"""u8.ToArray());
@@ -289,14 +279,53 @@ public sealed partial class SetupBackendCutoverTests
                 WriteFile(Path.Combine(paths.MachineDataDirectory, BatteryPreferences), """{"schemaVersion":"""u8.ToArray());
             }
 
-            recoveryAfterStop = ReadManifest(paths.MachineDataDirectory);
-            if (fault != RetirementFault.ProcessStillRunning)
+            var recoveryBeforeStop = ReadRecoveryState();
+            if (fault == RetirementFault.AbruptExit)
             {
-                string exit = fault == RetirementFault.ProcessFailed ? "exit 19" : "exit 0";
-                await process.StandardInput.WriteLineAsync(exit.AsMemory(), token);
-                await process.StandardInput.FlushAsync(token);
+                process.Kill();
                 await process.WaitForExitAsync(token);
+                Assert.NotEqual(0, process.ExitCode);
+                Assert.Null(await ReadFrameAsync(process.StandardOutput, token));
+                Assert.False(File.Exists(gate.RecordPath(generation, "receipt")));
             }
+            else
+            {
+                await SendAsync(process, "retire", token);
+                observedReceipt = await ReadFrameAsync(process.StandardOutput, token);
+                if (IsReceiptFor(generation, observedReceipt))
+                {
+                    // Independently verify that the same enrolled file can be
+                    // opened exclusively while the retiring child is still live.
+                    using (WriterLease.Acquire(leaseRoot, rootId, lockId))
+                    {
+                        Assert.False(process.HasExited);
+                    }
+                    PersistReceipt(fault, observedReceipt!);
+                }
+
+                if (fault != RetirementFault.ProcessStillRunning)
+                {
+                    await SendAsync(process, fault == RetirementFault.ProcessFailed ? "fail" : "exit", token);
+                    await process.WaitForExitAsync(token);
+                    if (await ReadFrameAsync(process.StandardOutput, token) is not null)
+                    {
+                        observedReceipt = null;
+                    }
+                }
+            }
+
+            // Faults on the observer side exercise rejection even when the
+            // complete record from the real child is available on disk.
+            observedReceipt = fault switch
+            {
+                RetirementFault.ReceiptObservationLost => null,
+                RetirementFault.StaleTransport => observedReceipt!.Replace(generation.Instance.ToString("N"),
+                    Guid.NewGuid().ToString("N"), StringComparison.Ordinal),
+                RetirementFault.TornTransport => observedReceipt![..^1],
+                _ => observedReceipt,
+            };
+            Assert.Equal(recoveryBeforeStop, ReadRecoveryState());
+            recoveryAfterStop = ReadManifest(paths.MachineDataDirectory);
             if (fault == RetirementFault.ProcessIndeterminate)
             {
                 observer!.OriginalHandle.Dispose();
@@ -305,6 +334,30 @@ public sealed partial class SetupBackendCutoverTests
             {
                 // The harness keeps its child reference solely for cleanup.
                 observer = null;
+            }
+        }
+
+        private void PersistReceipt(RetirementFault fault, string frame)
+        {
+            if (fault == RetirementFault.MissingReceipt)
+            {
+                return;
+            }
+            Generation reported = fault switch
+            {
+                RetirementFault.StaleReceipt => generation with { Instance = Guid.NewGuid() },
+                RetirementFault.StaleBootReceipt => generation with { Boot = generation.Boot - 1 },
+                RetirementFault.StaleBuild => generation with { BuildSha256 = new string('0', 64) },
+                RetirementFault.StaleImage => generation with { FixtureSha256 = new string('0', 64) },
+                RetirementFault.StaleCreation => generation with { Creation = generation.Creation - 1 },
+                _ => generation,
+            };
+            bool torn = fault == RetirementFault.TornReceipt;
+            gate.WriteRecord(generation, "receipt", reported, torn, frame);
+            if (torn)
+            {
+                string receipt = gate.RecordPath(generation, "receipt");
+                File.Move(receipt + ".new", receipt);
             }
         }
 
@@ -323,7 +376,8 @@ public sealed partial class SetupBackendCutoverTests
             if (retirementStarted)
             {
                 gate.RequireRetired(generation, stopConfirmed && scm.ServiceState == SetupServiceState.Stopped,
-                    observer, fault == RetirementFault.StaleBoot ? () => ReadWindowsBoot() - 1 : ReadWindowsBoot,
+                    observer, observedReceipt,
+                    fault == RetirementFault.StaleBoot ? () => ReadWindowsBoot() - 1 : ReadWindowsBoot,
                     RequireRecoveryClear);
             }
             else
@@ -338,9 +392,12 @@ public sealed partial class SetupBackendCutoverTests
             Assert.NotEqual(generation.Backend, incoming);
             EnsureClear();
             AssertRecoveryPreserved();
-            (Process next, Observer nextObserver) = Launch(incoming, buildSha256);
+            (Process next, Observer nextObserver, SealedFixture nextImage) = Launch(incoming, buildSha256);
             process.Dispose();
+            image.Dispose();
             process = next;
+            image = nextImage;
+            observedReceipt = null;
             observer = nextObserver;
             generation = nextObserver.Generation;
             retirementStarted = false;
@@ -377,6 +434,10 @@ public sealed partial class SetupBackendCutoverTests
             throw new InvalidOperationException(failure);
         }
 
+        private KeyValuePair<string, string>[] ReadRecoveryState() => ReadManifest(paths.MachineDataDirectory)
+            .Where(file => !file.Key.StartsWith("scratch-retirement-", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
         public void AssertRecoveryPreserved()
         {
             Assert.NotNull(recoveryAfterStop);
@@ -384,29 +445,138 @@ public sealed partial class SetupBackendCutoverTests
             Assert.Equal("saved profiles", File.ReadAllText(Path.Combine(paths.MachineDataDirectory, "profiles.json")));
         }
 
-        private (Process, Observer) Launch(Backend backend, string buildSha256)
+        private (Process, Observer, SealedFixture) Launch(Backend backend, string buildSha256)
         {
             RequireInstalledBuild(buildSha256);
             long boot = ReadWindowsBoot();
-            var start = new ProcessStartInfo(imagePath, "/d /q")
-            {
-                WorkingDirectory = root,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            Process child = Process.Start(start) ?? throw new InvalidOperationException("Scratch process did not start.");
+            Guid instance = Guid.NewGuid();
+            string imagePath = FixtureImage(backend);
+            // The signed synthetic payload is data only. Execute the separately
+            // built inert child and retain its image and original Windows handle.
+            var sealedImage = new SealedFixture(imagePath, backend);
+            Process? child = null;
             try
             {
-                return (child, ObserveLaunch(child, backend, boot, imagePath, imageSha256, buildSha256));
+                var start = new ProcessStartInfo(imagePath)
+                {
+                    WorkingDirectory = root,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                if (backend == Backend.Managed)
+                {
+                    start.ArgumentList.Add("hold");
+                }
+                start.ArgumentList.Add(leaseRoot);
+                start.ArgumentList.Add(rootId);
+                start.ArgumentList.Add(lockId);
+                start.ArgumentList.Add(instance.ToString("N"));
+                child = Process.Start(start) ?? throw new InvalidOperationException("Scratch child did not start.");
+                Observer launched = ObserveLaunch(child, backend, boot, imagePath, sealedImage.Sha256, buildSha256, instance);
+                using var startup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                string? ready = ReadFrameAsync(child.StandardOutput, startup.Token).GetAwaiter().GetResult();
+                if (ready is not ("held\n" or "held\r\n"))
+                {
+                    throw new InvalidOperationException("Scratch child did not acquire the writer lease.");
+                }
+                var held = Assert.Throws<Win32Exception>(() =>
+                {
+                    using var unexpected = WriterLease.Acquire(leaseRoot, rootId, lockId);
+                });
+                Assert.Equal(32, held.NativeErrorCode); // ERROR_SHARING_VIOLATION
+                return (child, launched, sealedImage);
             }
             catch
             {
-                DisposeChild(child);
+                using (sealedImage)
+                {
+                    if (child is not null)
+                    {
+                        DisposeChild(child);
+                    }
+                }
                 throw;
             }
+        }
+
+        private static string FixtureImage(Backend backend)
+        {
+            (string variable, string name) = backend == Backend.Managed
+                ? ("OPENBLADE_PHASE_8K_MANAGED_WRITER", "OpenBlade.WriterFence.Scratch.exe")
+                : ("OPENBLADE_PHASE_8K_RUST_WRITER", "openblade-scratch-rust-writer.exe");
+            string? path = Environment.GetEnvironmentVariable(variable);
+            if (path is null || !Path.IsPathFullyQualified(path) || Path.GetFileName(path) != name)
+            {
+                throw new InvalidOperationException($"Set {variable} to the absolute path of the built {name} fixture.");
+            }
+            path = Path.GetFullPath(path);
+            return path;
+        }
+
+        private sealed class SealedFixture : IDisposable
+        {
+            private readonly List<FileStream> files = [];
+
+            public SealedFixture(string imagePath, Backend backend)
+            {
+                string stem = Path.ChangeExtension(imagePath, null);
+                string[] members = backend == Backend.Managed
+                    ? [imagePath, stem + ".dll", stem + ".deps.json", stem + ".runtimeconfig.json"]
+                    : [imagePath];
+                try
+                {
+                    using var combined = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                    foreach (string member in members)
+                    {
+                        RequireUnlinkedPath(member);
+                        var file = File.Open(member, FileMode.Open, FileAccess.Read, FileShare.Read);
+                        files.Add(file);
+                        combined.AppendData(SHA256.HashData(file));
+                    }
+                    Sha256 = Convert.ToHexString(combined.GetHashAndReset());
+                }
+                catch
+                {
+                    Dispose();
+                    throw;
+                }
+            }
+
+            public string Sha256 { get; }
+
+            public void Dispose()
+            {
+                foreach (FileStream file in files)
+                {
+                    file.Dispose();
+                }
+            }
+        }
+
+        private static async Task SendAsync(Process child, string command, CancellationToken token)
+        {
+            await child.StandardInput.WriteLineAsync(command.AsMemory(), token);
+            await child.StandardInput.FlushAsync(token);
+        }
+
+        private static async Task<string?> ReadFrameAsync(StreamReader reader, CancellationToken token)
+        {
+            // Retain the line terminator to distinguish a complete frame from
+            // an EOF after a partial write. Both existing children fit in 64 chars.
+            var frame = new StringBuilder(64);
+            char[] next = new char[1];
+            while (frame.Length < frame.Capacity && await reader.ReadAsync(next.AsMemory(), token) != 0)
+            {
+                frame.Append(next[0]);
+                if (next[0] == '\n')
+                {
+                    break;
+                }
+            }
+            return frame.Length == 0 ? null : frame.ToString();
         }
 
         private void RequireInstalledBuild(string expected)
@@ -452,9 +622,9 @@ internal sealed class LocalWriterRetirementTheoryAttribute : TheoryAttribute
     public LocalWriterRetirementTheoryAttribute()
     {
         if (!OperatingSystem.IsWindows()
-            || Environment.GetEnvironmentVariable("OPENBLADE_PHASE_8G_RETIREMENT") != "1")
+            || Environment.GetEnvironmentVariable("OPENBLADE_PHASE_8K_RETIREMENT") != "1")
         {
-            Skip = "Set OPENBLADE_PHASE_8G_RETIREMENT=1 for the non-elevated Windows scratch rehearsal.";
+            Skip = "Set OPENBLADE_PHASE_8K_RETIREMENT=1 for the non-elevated Windows scratch rehearsal.";
         }
     }
 }
