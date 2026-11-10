@@ -1,88 +1,97 @@
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 
 use super::*;
+use crate::discovery::hid_lease::owner::Epoch;
 
-pub(crate) async fn drive(
-    mut steps: mpsc::Receiver<oneshot::Sender<()>>,
-    mut shutdown: oneshot::Receiver<()>,
-    draining: oneshot::Sender<()>,
-    release: oneshot::Receiver<()>,
-    mut publish: impl FnMut(bool),
-) -> io::Result<()> {
-    let source = fake();
-    let mut owner = scripted_owner(&source);
-    let cancelled = AtomicBool::new(false);
-    let script = async {
-        let done = next_step(&mut steps).await;
-        let original = owner.acquire(&cancelled).unwrap();
-        publish(true);
-        done.send(()).unwrap();
+pub(crate) struct Lease {
+    source: Rc<Fake>,
+    owner: HidLeaseOwner<Rc<Fake>>,
+    epoch: Option<Epoch>,
+    cancelled: AtomicBool,
+}
 
-        let done = next_step(&mut steps).await;
-        source.retirements.borrow_mut().push_back(Poll::Pending);
-        assert_eq!(owner.invalidate(&original), Some(Retirement::Pending));
-        assert!(owner.revalidate(&original, &cancelled).is_err());
-        assert!(owner.acquire(&cancelled).is_err());
-        assert_eq!(source.opened.borrow().len(), 1);
-        assert_eq!(*source.retired.borrow(), [1]);
-        assert_eq!(source.drops.get(), 0);
-        publish(false);
-        done.send(()).unwrap();
+pub(crate) struct Script(Rc<Fake>);
 
-        let done = next_step(&mut steps).await;
-        assert_eq!(owner.poll_retirement(), Retirement::Complete);
-        let replacement = owner.acquire(&cancelled).unwrap();
-        assert_eq!(source.opened.borrow()[0], source.opened.borrow()[1]);
-        assert_eq!(owner.invalidate(&original), None);
-        assert!(owner.revalidate(&original, &cancelled).is_err());
-        owner.revalidate(&replacement, &cancelled).unwrap();
-        assert_eq!(*source.retired.borrow(), [1, 1]);
-        assert_eq!(source.drops.get(), 1);
-        publish(true);
-        done.send(()).unwrap();
-
-        let done = next_step(&mut steps).await;
-        let rows = source.rows.take();
-        source.retirements.borrow_mut().push_back(Poll::Pending);
-        assert!(owner.revalidate(&replacement, &cancelled).is_err());
-        assert_eq!(owner.retirement(), Retirement::Pending);
-        source.rows.replace(rows);
-        assert!(owner.acquire(&cancelled).is_err());
-        assert_eq!(source.opened.borrow().len(), 2);
-        assert_eq!(*source.retired.borrow(), [1, 1, 2]);
-        assert_eq!(source.drops.get(), 1);
-        publish(false);
-        done.send(()).unwrap();
-    };
-    tokio::select! {
-        biased;
-        _ = &mut shutdown => {}
-        () = script => { let _ = shutdown.await; }
+impl Script {
+    pub(crate) fn on_open(&self, on_open: impl FnOnce() + 'static) {
+        assert!(self.0.on_open.replace(Some(Box::new(on_open))).is_none());
     }
 
-    // STOP uses the same owner and retains it throughout the pending drain.
-    match owner.stop() {
-        Retirement::Complete => Ok(()),
-        Retirement::Uncertain => Err(io::Error::other("HID retirement is uncertain")),
-        Retirement::Pending => {
-            draining
-                .send(())
-                .map_err(|()| io::Error::other("HID drain observer disconnected"))?;
-            release.await.map_err(io::Error::other)?;
-            if owner.poll_retirement() != Retirement::Complete {
-                return Err(io::Error::other("HID retirement did not settle"));
-            }
-            assert!(owner.acquire(&cancelled).is_err());
-            assert_eq!(*source.retired.borrow(), [1, 1, 2, 2]);
-            assert_eq!(source.drops.get(), 2);
-            Ok(())
-        }
+    pub(crate) fn defer_retirement(&self) {
+        self.0.retirements.borrow_mut().push_back(Poll::Pending);
     }
 }
 
-async fn next_step(steps: &mut mpsc::Receiver<oneshot::Sender<()>>) -> oneshot::Sender<()> {
-    match steps.recv().await {
-        Some(done) => done,
-        None => std::future::pending().await,
+impl Lease {
+    pub(crate) fn new() -> (Self, Script) {
+        let source = fake();
+        let owner = scripted_owner(&source);
+        let script = Script(Rc::clone(&source));
+        (
+            Self {
+                owner,
+                source,
+                epoch: None,
+                cancelled: AtomicBool::new(false),
+            },
+            script,
+        )
+    }
+
+    pub(crate) fn invalidate(&mut self) {
+        if let Some(epoch) = self.epoch.take() {
+            assert!(self.owner.invalidate(&epoch).is_some());
+            assert!(self.owner.revalidate(&epoch, &self.cancelled).is_err());
+        }
+    }
+
+    pub(crate) fn refresh(&mut self) -> io::Result<bool> {
+        match self.owner.poll_retirement() {
+            Retirement::Pending => return Ok(false),
+            Retirement::Uncertain => return Err(io::Error::other("HID retirement is uncertain")),
+            Retirement::Complete => {}
+        }
+        let verified = if let Some(epoch) = &self.epoch {
+            if self.owner.revalidate(epoch, &self.cancelled).is_ok() {
+                true
+            } else {
+                self.epoch = None;
+                false
+            }
+        } else {
+            self.epoch = self.owner.acquire(&self.cancelled).ok();
+            self.epoch.is_some()
+        };
+        if self.owner.retirement() == Retirement::Uncertain {
+            return Err(io::Error::other("HID retirement is uncertain"));
+        }
+        Ok(verified)
+    }
+
+    pub(crate) fn counts(&self) -> (usize, usize) {
+        (self.source.opened.borrow().len(), self.source.drops.get())
+    }
+
+    pub(crate) async fn stop(
+        &mut self,
+        draining: oneshot::Sender<()>,
+        release: oneshot::Receiver<()>,
+    ) -> io::Result<()> {
+        match self.owner.stop() {
+            Retirement::Complete => {}
+            Retirement::Uncertain => return Err(io::Error::other("HID retirement is uncertain")),
+            Retirement::Pending => {
+                draining
+                    .send(())
+                    .map_err(|()| io::Error::other("HID drain observer disconnected"))?;
+                release.await.map_err(io::Error::other)?;
+                if self.owner.poll_retirement() != Retirement::Complete {
+                    return Err(io::Error::other("HID retirement did not settle"));
+                }
+            }
+        }
+        assert!(self.owner.acquire(&self.cancelled).is_err());
+        assert_eq!(self.counts().0, self.counts().1);
+        Ok(())
     }
 }

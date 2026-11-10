@@ -177,6 +177,11 @@ pub struct Identity {
 }
 
 impl Identity {
+    /// Session of the same process token used to create a private endpoint.
+    pub fn fixture_session() -> io::Result<u32> {
+        Ok(Self::read(&process_token()?)?.session)
+    }
+
     pub fn fixture_owner(&self) -> String {
         format!(
             "{}:{}:{}:{}",

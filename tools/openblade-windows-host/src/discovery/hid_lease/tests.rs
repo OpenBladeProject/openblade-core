@@ -38,6 +38,8 @@ struct Fake {
     descriptors: RefCell<VecDeque<io::Result<Descriptor>>>,
     removal_observed: Cell<bool>,
     open_fails: Cell<bool>,
+    #[cfg(windows)]
+    on_open: RefCell<Option<Box<dyn FnOnce()>>>,
     cancel_on_scan: Cell<bool>,
 }
 
@@ -79,6 +81,10 @@ impl LeaseSource for Rc<Fake> {
 
     fn open_metadata(&self, path: &str) -> io::Result<FakeHandle> {
         self.opened.borrow_mut().push(path.to_owned());
+        #[cfg(windows)]
+        if let Some(on_open) = self.on_open.borrow_mut().take() {
+            on_open();
+        }
         if self.open_fails.get() {
             return Err(io::ErrorKind::NotFound.into());
         }
@@ -132,6 +138,8 @@ fn fake() -> Rc<Fake> {
         descriptors: RefCell::new(VecDeque::new()),
         removal_observed: Cell::new(false),
         open_fails: Cell::new(false),
+        #[cfg(windows)]
+        on_open: RefCell::new(None),
         cancel_on_scan: Cell::new(false),
     })
 }

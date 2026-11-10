@@ -77,6 +77,8 @@ struct State {
     display_on: Option<bool>,
     last_resume: Option<Instant>,
     pending: Pending,
+    #[cfg(test)]
+    metadata_current: bool,
 }
 
 struct Shared {
@@ -95,6 +97,33 @@ impl Shared {
 pub(super) struct Callbacks(Weak<Shared>);
 
 impl Callbacks {
+    #[cfg(test)]
+    pub(super) fn fake_control(&self, code: u32, event: u32, now: Instant) {
+        self.control(code, event, None, now);
+    }
+
+    #[cfg(test)]
+    pub(super) fn metadata_current(&self) -> bool {
+        self.0.upgrade().is_some_and(|shared| {
+            let state = shared.state();
+            state.accepting && state.metadata_current
+        })
+    }
+
+    #[cfg(test)]
+    pub(super) fn publish_metadata(&self, verified: bool, publish: impl FnOnce(bool)) -> bool {
+        let Some(shared) = self.0.upgrade() else {
+            return false;
+        };
+        let mut state = shared.state();
+        // A callback can arrive inside acquisition after the worker's last
+        // pending check. Commit under the same lock that invalidates evidence.
+        let current = state.accepting && !state.pending.invalidate && !state.pending.refresh;
+        state.metadata_current = current && verified;
+        publish(state.metadata_current);
+        current
+    }
+
     fn control(&self, code: u32, event: u32, setting: Option<PowerSetting>, now: Instant) {
         let Some(shared) = self.0.upgrade() else {
             return;
@@ -160,6 +189,10 @@ impl Callbacks {
             }
             _ => return,
         }
+        #[cfg(test)]
+        {
+            state.metadata_current = false;
+        }
         drop(state);
         shared.wake.notify_one();
     }
@@ -179,6 +212,8 @@ impl Worker {
                     refresh: true,
                     ..Pending::default()
                 },
+                #[cfg(test)]
+                metadata_current: false,
             }),
             wake: Notify::new(),
         });

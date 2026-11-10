@@ -38,6 +38,8 @@ pub struct Status {
     #[cfg(windows)]
     application: Option<Arc<crate::application_runtime::Scenario>>,
     replay: Option<watch::Receiver<Arc<Value>>>,
+    #[cfg(all(windows, test))]
+    metadata_current: Option<Box<dyn Fn() -> bool + Send + Sync>>,
     battery: Option<Arc<Scenario>>,
     performance: Option<Arc<performance_runtime::Scenario>>,
     fan: Option<Arc<fan_runtime::Scenario>>,
@@ -103,6 +105,8 @@ impl Status {
             #[cfg(windows)]
             application: None,
             replay: None,
+            #[cfg(all(windows, test))]
+            metadata_current: None,
             battery: None,
             performance: None,
             fan: None,
@@ -115,7 +119,11 @@ impl Status {
     }
 
     #[cfg(all(windows, test))]
-    pub(crate) fn with_metadata_replay(mut self) -> io::Result<(Self, impl FnMut(bool))> {
+    pub(crate) fn with_metadata_replay(
+        mut self,
+        metadata_current: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> io::Result<(Self, impl FnMut(bool))> {
+        self.metadata_current = Some(Box::new(metadata_current));
         for projection in [&mut self.active, &mut self.background] {
             let mut current = projection.current.clone();
             current["deviceVerified"] = false.into();
@@ -144,6 +152,23 @@ impl Status {
                 status["revision"] = (status["revision"].as_i64().unwrap() + 1).into();
             });
         }))
+    }
+
+    #[cfg(all(windows, test))]
+    fn fence_metadata<'a>(&self, snapshot: &'a Value) -> std::borrow::Cow<'a, Value> {
+        // A read can race queued invalidation before the serialized driver
+        // retires the lease and updates the watch channel.
+        if snapshot["deviceVerified"] == true
+            && self
+                .metadata_current
+                .as_ref()
+                .is_some_and(|current| !current())
+        {
+            let mut blocked = snapshot.clone();
+            blocked["deviceVerified"] = false.into();
+            return std::borrow::Cow::Owned(blocked);
+        }
+        std::borrow::Cow::Borrowed(snapshot)
     }
 
     #[cfg(windows)]
@@ -628,6 +653,8 @@ where
         (CURRENT_VERSION, "getStatus") => {
             let latest = replay.map(|status| Arc::clone(&status.borrow()));
             let current = latest.as_deref().unwrap_or(&projected.current);
+            #[cfg(all(windows, test))]
+            let current = &*status.fence_metadata(current);
             write_frame(&mut io, request.response(Some(current), None, None)).await
         }
         (CURRENT_VERSION, "subscribeStatus") => {
@@ -649,6 +676,8 @@ where
                 .as_mut()
                 .map(|status| Arc::clone(&status.borrow_and_update()));
             let initial = latest.as_deref().unwrap_or(&projected.initial);
+            #[cfg(all(windows, test))]
+            let initial = &*status.fence_metadata(initial);
             write_frame(&mut io, request.response(Some(initial), None, None)).await?;
 
             let (mut reader, mut writer) = tokio::io::split(io);
@@ -659,7 +688,10 @@ where
                     if let Some(mut replay) = replay {
                         while replay.changed().await.is_ok() {
                             let latest = Arc::clone(&replay.borrow_and_update());
-                            write_status_event(&mut writer, &latest).await?;
+                            let snapshot = &*latest;
+                            #[cfg(all(windows, test))]
+                            let snapshot = &*status.fence_metadata(snapshot);
+                            write_status_event(&mut writer, snapshot).await?;
                         }
                         return Ok(());
                     }
