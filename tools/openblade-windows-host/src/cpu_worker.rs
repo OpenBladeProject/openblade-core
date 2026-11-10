@@ -11,6 +11,8 @@ use tokio::{
 };
 
 pub mod protocol;
+#[cfg(all(windows, feature = "cpu-worker-fixture"))]
+pub mod windows;
 use protocol::{REPLY_LENGTH, Reply, Sequence, decode_reply};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(1);

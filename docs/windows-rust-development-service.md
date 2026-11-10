@@ -238,25 +238,51 @@ Production override persistence and device recovery are separate work.
 transaction while the fan write is unresolved. Quarantine blocks further mutations
 while a read-only fan observation can still resolve the device state.
 
-## Private CPU temperature worker replay
+## Private CPU temperature worker
 
-The development host crate includes a separate CPU worker supervisor tested over
-an in-memory private duplex stream. It uses the managed worker's 8-byte request
-and 20-byte reply formats. Readiness consumes a sequence without producing a
-sample; sequence numbers continue across worker replacement. A reading is tied
-to its own request, rounds up, and ages from when that request was sent.
+The development host crate tests the CPU worker supervisor over an in-memory
+duplex stream and a Windows-only protocol fixture behind the
+`cpu-worker-fixture` feature. Both use the managed worker's 8-byte request and
+20-byte reply formats. Readiness consumes a sequence without producing a
+sample. Sequence numbers continue across worker replacement. A reading rounds
+up and ages from its own request.
 
-A caller may stop waiting for initialization without canceling the worker's
-startup budget. A timed out or canceled sample retires the stream. A terminal
-worker reply also stops the worker, and the next worker must wait for independently
-confirmed exit and any retry cooldown. A closed stream or expired stop deadline
-cannot confirm exit. Unavailable readings never reuse a temperature.
+A caller may stop waiting for initialization while the worker continues under
+its own startup deadline. A timeout after a send attempt, cancellation during
+an exchange, or a terminal reply retires the stream. Replacement requires
+confirmed exit and any retry cooldown. Unavailable readings never reuse a
+temperature.
 
-PR #936's private composition covers the standard preset and ordinary fan
-recipes. It has no temperature admission interface, so this replay does not
-feed its status fixture or enable Fan Stop or HyperBoost. Protected launch, Job
-Object ownership, native exit observation, sensor initialization, and installed
-thermal admission remain separate work.
+The fixture launcher supplies the absolute image path and an explicit stdio
+handle list to `CreateProcessW`. Windows assigns the child to the unnamed,
+non-inheritable kill-on-close job as part of creation. The launcher releases the
+private pipe stream to the supervisor after creation and pipe registration
+succeed. The parent uses overlapped I/O and the child writes only two typed
+replies. Standard error goes to `NUL`. The original process handle must signal
+before replacement. The stop deadline bounds the caller's wait, while the
+observer retains the handle and keeps checking after a timeout or a failed
+wait. Diagnostics distinguish the native launch or I/O stage from the
+exit-observation stage.
+[Process creation attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) ·
+[Job objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) ·
+[Process handle waits](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitforsingleobject)
+
+Run the CPU worker unit tests and the no-image test on Windows with the pinned
+toolchain. Run the ignored smoke separately in the ordinary-user sandbox. It
+copies the Cargo-built fixture to a fresh task-owned directory and launches it
+once.
+
+```powershell
+$manifest = 'tools/openblade-windows-host/Cargo.toml'
+cargo +1.99.1 test --offline --locked --manifest-path $manifest --features cpu-worker-fixture --lib cpu_worker
+cargo +1.99.1 test --offline --locked --manifest-path $manifest --features cpu-worker-fixture --test cpu_worker_windows
+cargo +1.99.1 test --offline --locked --manifest-path $manifest --features cpu-worker-fixture --test cpu_worker_windows -- --ignored --exact exchanges_with_an_inert_job_owned_fixture
+```
+
+Installed thermal admission still requires a protected and verified worker
+image, the approved PawnIO and CPU sensor admission path, and fresh sample
+evidence wired into the installed thermal policy. The fixture returns a
+constant synthetic value and the development host has no CLI mode that launches it.
 
 ## Compatibility boundary
 
