@@ -9,6 +9,8 @@ using Microsoft.Win32.SafeHandles;
 
 namespace OpenBlade.Deployment;
 
+internal enum ManagedBootstrapBoundary { IntentPublished, DirectoryCreated, ExclusionCreated, RootPublished, Completed }
+
 internal enum NativeFileBoundary { Created, Written, Flushed, Verified, Renamed, OwnerDirectoryCreated }
 
 // Retained non-reparse NTFS files and namespaces for native package/epoch evidence.
@@ -31,12 +33,20 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
     internal string Root { get; }
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
     internal NativeFileBoundary? CrashBoundaryForTests { get; set; }
+    internal ManagedBootstrapBoundary? BootstrapCrashForTests { get; set; }
     internal Action<string>? PublishedForTests { get; set; }
 #endif
     private void AtBoundary(NativeFileBoundary boundary)
     {
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
         if (CrashBoundaryForTests == boundary) { throw new IOException("Injected private-filesystem publication failure."); }
+#endif
+    }
+
+    private void AtBootstrapBoundary(ManagedBootstrapBoundary boundary)
+    {
+#if OPENBLADE_NATIVE_PACKAGE_TESTS
+        if (BootstrapCrashForTests == boundary) { throw new IOException("Injected authenticated handoff bootstrap interruption."); }
 #endif
     }
 
@@ -174,43 +184,105 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         catch { files.Dispose(); throw; }
     }
 
-    // Separate protected namespace: handoff records never pollute NativeEpochs.
-    internal static string ManagedHandoffRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "OpenBlade.ManagedHandoff");
+    // The installer-protected machine-data namespace is the creation anchor.
+    // Never create a migration leaf directly under writable ProgramData.
+    internal static string ManagedHandoffAnchor => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "OpenBlade");
+    internal static string ManagedHandoffRoot => Path.Combine(ManagedHandoffAnchor, "ManagedHandoff");
+    internal static string LegacyManagedHandoffRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "OpenBlade.ManagedHandoff");
     internal static WindowsNativeEpochFiles CreateOrOpenManagedHandoff()
     {
-        string parent = Path.GetDirectoryName(ManagedHandoffRoot)!;
-        using var ancestors = new DirectoryLease();
-        PinAncestors(parent, ancestors, null);
-        for (int i = 0; i < ancestors.Handles.Count; i++)
-        { VerifySharedAncestor(ancestors.Handles[i], i + 1 == ancestors.Handles.Count); }
-        if (!IsPresentDirectory(ManagedHandoffRoot))
+        using var anchor = OpenProtected(ManagedHandoffAnchor);
+        return anchor.CreateOrOpenManagedHandoffChild();
+    }
+    internal WindowsNativeEpochFiles CreateOrOpenManagedHandoffChild()
+    {
+        using var anchor = RetainDirectory(Root);
+        using var writer = AcquireWriter();
+        string child = Path.Combine(Root, "ManagedHandoff");
+        string intent = Path.Combine(Root, "managed-handoff-bootstrap-v2.bin");
+        string completed = Path.Combine(Root, "managed-handoff-complete-v2.bin");
+        byte[] creation = NativeCanonical.Lines("OpenBlade.ManagedMailboxBootstrap.v2", "protected-installer-anchor", "ManagedHandoff");
+        byte[] complete = NativeCanonical.Lines("OpenBlade.ManagedMailboxBootstrapComplete.v2", NativeCanonical.Digest(creation));
+        if (!Present(intent))
         {
-            RequireAbsent(ManagedHandoffRoot);
+            // A pre-existing leaf without this positive creation intent is never
+            // adopted, even if its owner could subsequently be made privileged.
+            RequireAbsent(child);
+            RequireAbsent(completed);
+            PublishCustody(intent, creation);
+            AtBootstrapBoundary(ManagedBootstrapBoundary.IntentPublished);
+        }
+        using (var held = OpenFile(intent)) { RequireExact(held, creation); }
+        if (Present(completed))
+        {
+            using var held = OpenFile(completed); RequireExact(held, complete);
+            if (!IsPresentDirectory(child)) { throw new IOException("Completed handoff namespace disappeared; no bootstrap reset."); }
+        }
+        if (!IsPresentDirectory(child))
+        {
+            RequireAbsent(child);
             var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
             var security = new DirectorySecurity();
-            security.SetOwner(administrators);
+            security.SetOwner(owner ?? administrators);
             security.SetAccessRuleProtection(true, false);
-            foreach (var sid in new[] { administrators, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
+            foreach (var sid in owner is null ? new[] { administrators, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) } : new[] { owner })
             {
                 security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
-                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
             }
-            new DirectoryInfo(ManagedHandoffRoot).Create(security);
+            new DirectoryInfo(child).Create(security);
+            AtBootstrapBoundary(ManagedBootstrapBoundary.DirectoryCreated);
         }
-        var files = OpenProtected(ManagedHandoffRoot);
+        var files = new WindowsNativeEpochFiles(child, owner);
         try
         {
-            using var writer = files.AcquireWriter();
-            string exclusion = Path.Combine(files.Root, "exclusion.lock");
-            if (!Present(exclusion))
+            files.retained.Add(files.PinDirectory(child));
+            using var childWriter = files.AcquireWriter();
+            string marker = Path.Combine(child, "handoff-root.bin");
+            byte[] markerBytes = NativeCanonical.Lines("OpenBlade.ManagedMailboxRoot.v2", NativeCanonical.Digest(creation));
+            if (!Present(completed))
             {
-                if (Directory.EnumerateFileSystemEntries(files.Root).Any(p => Path.GetFileName(p) != "writer.lock"))
-                { throw new IOException("Handoff exclusion is missing from historical storage."); }
-                files.PublishCustody(exclusion, NativeCanonical.Lines("OpenBlade.MailboxExclusion.v1"));
+                // Only this creation prefix can precede completion. Interrupted
+                // publication bytes remain unchanged; they grant no run authority.
+                foreach (string entry in Directory.EnumerateFileSystemEntries(child).Take(33))
+                {
+                    string name = Path.GetFileName(entry);
+                    if (name is "writer.lock" or "exclusion.lock" or "handoff-root.bin") { continue; }
+                    if (!name.StartsWith("receipt-", StringComparison.Ordinal) || !name.EndsWith(".tmp", StringComparison.Ordinal))
+                    { throw new IOException("Unknown interrupted handoff bootstrap was preserved."); }
+                    using var residue = files.OpenFile(entry);
+                    byte[] bytes = residue.Length == 0 ? [] : ReadBounded(residue);
+                    if (bytes.Length > markerBytes.Length || !markerBytes.AsSpan(0, bytes.Length).SequenceEqual(bytes))
+                    { throw new IOException("Unmatched bootstrap residue was preserved."); }
+                }
+                if (Directory.EnumerateFileSystemEntries(child).Take(33).Count() > 32) { throw new IOException("Bootstrap residue exceeds its bound."); }
+                string exclusion = Path.Combine(child, "exclusion.lock");
+                if (!Present(exclusion))
+                {
+                    // A zero-byte private mutex has no partial payload boundary.
+                    // Its existence is exclusion only, never a drain certificate.
+                    using var created = files.CreatePublicationFile(exclusion, privateCustody: true);
+                    created.Flush(true);
+                    AtBootstrapBoundary(ManagedBootstrapBoundary.ExclusionCreated);
+                }
+                using (var custody = files.AcquireServiceCustody(exclusion))
+                { if (custody.Length != 0) { throw new IOException("Bootstrap exclusion differs."); } }
+                if (!Present(marker)) { files.PublishCustody(marker, markerBytes); AtBootstrapBoundary(ManagedBootstrapBoundary.RootPublished); }
+                using (var held = files.OpenFile(marker)) { RequireExact(held, markerBytes); }
+                PublishCustody(completed, complete);
+                AtBootstrapBoundary(ManagedBootstrapBoundary.Completed);
             }
+            using (var held = files.OpenFile(marker)) { RequireExact(held, markerBytes); }
             return files;
         }
         catch { files.Dispose(); throw; }
+    }
+
+    internal WindowsNativeEpochFiles RetainView()
+    {
+        var view = new WindowsNativeEpochFiles(Root, owner);
+        view.retained.Add(view.PinDirectory(Root));
+        return view;
     }
 
     internal static bool AcceptsPublicRoot(RawSecurityDescriptor descriptor)

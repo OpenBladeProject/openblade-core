@@ -124,6 +124,7 @@ fn require_launch_budget(
     epoch: &Epoch,
     origin: &[u8],
     image: &std::path::Path,
+    read_only_mailbox: bool,
 ) -> io::Result<()> {
     use std::collections::BTreeMap;
     if names.len() > MAXIMUM_ATTEMPT_ENTRIES {
@@ -180,7 +181,11 @@ fn require_launch_budget(
         if let Some(drain) = drains.get(name) {
             if *drain
                 != encode(
-                    "OpenBlade.NativeStatusDrain.v2",
+                    if read_only_mailbox {
+                        "OpenBlade.NativeTransportDrain.v1"
+                    } else {
+                        "OpenBlade.NativeStatusDrain.v2"
+                    },
                     &[&epoch.id, &digest(bytes), f[5], f[6]],
                 )
             {
@@ -1146,6 +1151,7 @@ impl InstalledPackage {
             &self.epoch,
             &origin,
             image,
+            startup_policy(&self.service_identity)? == "service-mailbox-observation-v1",
         )?;
         create_attempt_record(&attempts, &format!("launch-{pid}-{created}.bin"), &bytes)?;
         self.service_attempt = Some((attempts, digest(&bytes)));
@@ -1205,8 +1211,8 @@ impl InstalledPackage {
         crate::windows_protected_path::check_regular_file(&mapping)?;
         crate::windows_protected_path::verify_security(&mapping, Policy::Record)?;
         let bytes = read_bytes(&mut mapping, 4096)?;
-        let f = lines(&bytes, "OpenBlade.ManagedMailboxEpoch.v1", 6)?;
-        if f[2..] != expected_prefix {
+        let f = lines(&bytes, "OpenBlade.ManagedMailboxEpoch.v2", 8)?;
+        if f[2..6] != expected_prefix || !is_hex(f[6], 32) || !is_hex(f[7], 64) {
             return Err(deny());
         }
         Ok(bytes)

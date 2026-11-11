@@ -85,9 +85,11 @@ binds it to the retained original Service process, independently refuses unresol
 firmware-owner history, then retires package selection. Enrollment replacement or
 removal refuses active or inconsistent selection/history before changing private
 trust. Metadata Retired and status drain are not firmware-drain certificates.
-Enrollment install/upgrade/removal also retains the shared managed exclusion
-before maintenance changes, refusing while a managed Service holds enrollment
-or a transfer is unresolved. It never stops that Service automatically.
+Enrollment replacement/removal retains managed and legacy exclusion plus native
+custody proof throughout maintenance, refusing active signed ownership or an
+unresolved transfer. First enrollment has a separate protected creation mutex
+and positively unenrolled admission, so an unenrolled default Service may keep
+running. It never stops that Service automatically.
 
 ## Managed upgrade prerequisite
 
@@ -97,28 +99,45 @@ managed build from an enrolled, signed standard LocalDev package. During that
 managed upgrade the Service authenticates the broker's original signed package,
 verifies its actual resolved Service dependency closure and loaded module IDs,
 and preserves the original package/signature/enrollment binding in protected
-`OpenBlade.ManagedHandoff` storage before broker staging disappears. Cached
-enrollment is reauthenticated on restart. Self-reported hashes, copied markers,
+`%ProgramData%\OpenBlade\ManagedHandoff` storage under the installer-protected
+namespace before broker staging disappears. A new authenticated run revalidates
+its current enrollment. Legacy storage remains unchanged in its old namespace. Self-reported hashes, copied markers,
 SCM Stopped and process exit cannot replace this prerequisite. Without enrollment,
 ordinary managed operation continues but cannot issue a transferable receipt.
 
 One shared scope reserves before actual CreateFile/native submission and follows
 control/battery, fan-RPM, retained lighting/keyboard and matrix workers, handles,
 deferred disposal and late callbacks. After producers and guarded cleanup finish,
-shutdown seals admission and awaits successful terminal resources within bounds.
+remaining legitimate owner close runs before final admission sealing. Its actual
+retirement task is separate from bounded disposal waiting and stays rooted on
+timeout or failure. Shutdown waits within the caller's remaining budget for that
+task and successful terminal resources.
 Full external Fan Stop Guardian exclusion is checked independently. Fault,
 timeout or unknown guardian custody prevents the protected create-once receipt.
 Stored/uncertain firmware settings alone do not prevent a transport-only receipt;
 that receipt makes no claim of Automatic fans, Normal keyboard or write authority.
 
 Setup retains the actual original process before requesting stop, authenticates
-its signed managed build, and requires both original exit and its protected
-receipt. Installed-tree pins are released only then, permitting activation.
+its signed managed build, and requires a bounded cancellable monotonic wait for
+that original's exit plus its protected receipt. Installed-tree pins are released only then, permitting activation.
 StagePayload -> PrepareService/stop -> StopAgent -> Activate ordering is preserved.
-Before startup submission, Begin binds receipt/request/package to one immutable
-epoch mapping. The native read factory retains the same exclusive transfer through
-worker and native callback retirement. A managed restart, conflicting mapping,
-receipt reuse, partial publication or crash without receipt refuses adoption.
+Before startup submission, Begin records original custody, policy and origin,
+then binds the exact receipt/request/package through immutable per-request intent
+to one epoch. Partial mapping/terminal publication can finish only for those same
+bytes under authenticated custody. The native read factory retains exclusive
+transfer through worker and native callback retirement. Positive terminal
+resolution permits a new authenticated managed run, new original process and
+new request/receipt. Unknown history, receipt reuse and ambiguous submission
+remain fenced. Intact ffc legacy mappings use a separately pinned historical
+exit-contract proof; they are never remapped.
+
+A valid-origin attempt that never acquired a reader can keep diagnostic GetStatus
+and subscriptions. It certifies only its own transport work on stop. Read
+revocation remains sticky while independent origin permits metadata; real origin
+loss remains fatal. Both caller projections retain last confirmed thermal
+presentation for five monotonic seconds from getter completion, using current
+metadata and no fresh-read or write authority. At expiry those values become
+unavailable. See [mailbox corrections](windows-rust-mailbox-corrections.md).
 
 Offline tests use pure algorithms, inert native-operation adapters and private
 current-token filesystem fixtures. Native launch, standard-user access, SCM,

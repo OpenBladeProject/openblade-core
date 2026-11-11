@@ -91,8 +91,14 @@ internal sealed class WindowsManagedMailboxPackage : IDisposable
                 string name = metadata.GetString(metadata.GetAssemblyReference(handle).Name);
                 // Use the host's deps/RID resolution, including runtime-specific
                 // implementations. Equal basenames in other RIDs are not loaded.
-                resolver ??= new(Path.Combine(directory, "OpenBlade.Service.dll"));
-                string? resolved = resolver.ResolveAssemblyToPath(new System.Reflection.AssemblyName(name));
+                string? resolved;
+                try
+                {
+                    resolver ??= new(Path.Combine(directory, "OpenBlade.Service.dll"));
+                    resolved = resolver.ResolveAssemblyToPath(new System.Reflection.AssemblyName(name));
+                }
+                catch (InvalidOperationException error)
+                { throw new InvalidDataException("Signed Service dependency resolution is unavailable.", error); }
                 if (resolved is not null)
                 {
                     string selected = Path.GetRelativePath(directory, resolved);
@@ -165,10 +171,16 @@ internal sealed class WindowsManagedMailboxPackage : IDisposable
     private byte[] CacheBinding() => NativeCanonical.Lines("OpenBlade.ManagedMailboxPackage.v1", Installation, PackageDigest,
         NativeCanonical.Digest(manifest), NativeCanonical.Digest(signature), EnrollmentDigest);
 
-    internal static WindowsManagedMailboxPackage OpenCached(WindowsNativeEpochFiles files, string digest)
+    internal static WindowsManagedMailboxPackage OpenCached(WindowsNativeEpochFiles files, string digest) =>
+        OpenCached(files, digest, NativeLocalDevEnrollment.Acquire);
+
+    internal static WindowsManagedMailboxPackage OpenCachedHistorical(WindowsNativeEpochFiles files, string digest, byte[] projection) =>
+        OpenCached(files, digest, () => NativeLocalDevEnrollment.FromProtectedProjection(projection));
+
+    private static WindowsManagedMailboxPackage OpenCached(WindowsNativeEpochFiles files, string digest, Func<NativeLocalDevEnrollment> acquire)
     {
         if (!NativeCanonical.IsHex(digest, 64)) { throw new InvalidDataException("Managed cached package identity differs."); }
-        var enrollment = NativeLocalDevEnrollment.Acquire();
+        var enrollment = acquire();
         var leases = new HeldFiles();
         FileStream? package = null;
         try

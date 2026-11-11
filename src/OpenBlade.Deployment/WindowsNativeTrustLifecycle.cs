@@ -6,17 +6,64 @@ public static class WindowsNativeTrustLifecycle
     // Keep the same exclusion as managed/native mailbox custody throughout
     // maintenance. A check-and-release permits a Service restart between file
     // replacements; enrollment is itself held by an authenticated managed run.
-    public static IDisposable AcquireManagedEnrollmentChangeCustody() =>
-        AcquireManagedEnrollmentChangeCustody(WindowsNativeEpochFiles.CreateOrOpenManagedHandoff());
+    public static IDisposable AcquireManagedEnrollmentChangeCustody()
+    {
+        var native = ManagedMailboxNativeCustody.Acquire();
+        IDisposable? legacy = null, managed = null;
+        try
+        {
+            legacy = WindowsManagedMailboxRun.AcquireLegacyExclusion(native);
+            managed = AcquireManagedEnrollmentChangeCustody(WindowsNativeEpochFiles.CreateOrOpenManagedHandoff(), native);
+            return new CombinedLease(new ManagedMailboxStartup.Admission(null, managed, legacy), native);
+        }
+        catch { try { managed?.Dispose(); } finally { legacy?.Dispose(); native.Dispose(); } throw; }
+    }
+    private static readonly AsyncLocal<ManagedMailboxNativeCustody?> CurrentMaintenance = new();
+    private sealed class CombinedLease : IDisposable
+    {
+        private readonly IDisposable managed;
+        private readonly ManagedMailboxNativeCustody native;
+        private readonly ManagedMailboxNativeCustody? prior;
+        internal CombinedLease(IDisposable managed, ManagedMailboxNativeCustody native)
+        { this.managed = managed; this.native = native; prior = CurrentMaintenance.Value; CurrentMaintenance.Value = native; }
+        public void Dispose()
+        {
+            try { managed.Dispose(); }
+            finally { CurrentMaintenance.Value = prior; native.Dispose(); }
+        }
+    }
 
-    internal static IDisposable AcquireManagedEnrollmentChangeCustody(WindowsNativeEpochFiles files)
+    public static IDisposable AcquireFirstEnrollmentCustody()
+    {
+        // Program Files is a trusted creation anchor. This mutex serializes only
+        // positively unenrolled creation; it does not claim the running default
+        // managed Service's transport or replace any retained signed trust.
+        var native = ManagedMailboxNativeCustody.Acquire();
+        WindowsNativeEpochFiles? files = null;
+        try
+        {
+            native.RequireSafe();
+            files = WindowsNativeEpochFiles.OpenProtected(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
+            string path = Path.Combine(files.Root, "OpenBlade.LocalDevEnrollment.lock");
+            if (ManagedMailboxRecovery.ReadOptional(files, path) is null)
+            { files.PublishCustody(path, NativeCanonical.Lines("OpenBlade.FirstEnrollmentMutex.v2")); }
+            return new CombinedLease(new EnrollmentLease(files, files.AcquireServiceCustody(path)), native);
+        }
+        catch { files?.Dispose(); native.Dispose(); throw; }
+    }
+
+    internal static IDisposable AcquireManagedEnrollmentChangeCustody(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody? native = null)
     {
         FileStream? exclusion = null;
         try
         {
             exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock"));
-            foreach (string name in new[] { "request.bin", "receipt.bin", "mapping.bin" })
-            { WindowsNativeEpochFiles.RequireAbsent(Path.Combine(files.Root, name)); }
+            if (native is not null) { ManagedMailboxRecovery.Resolve(files, native); }
+            else
+            {
+                var selected = ManagedMailboxRecovery.Selected(files);
+                if (selected is not null) { ManagedMailboxRecovery.ValidateTerminal(files, selected); }
+            }
             return new EnrollmentLease(files, exclusion);
         }
         catch (Exception error)
@@ -34,20 +81,17 @@ public static class WindowsNativeTrustLifecycle
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     public static void RequireReadyForEnrollmentChange()
     {
-        WindowsNativeEpochFiles.RequireLegacyStoreAbsent();
-        if (!WindowsNativeEpochFiles.IsPresentDirectory(WindowsNativeEpochFiles.ProductRoot)) { return; }
-        using var files = WindowsNativeEpochFiles.OpenProduct();
-        using var writer = files.AcquireWriter();
-        byte[]? selected = files.ReadCurrent();
-        WindowsNativeEpochTransaction.RequireFrontier(files, selected);
-        if (selected is not null && NativeEpochRecord.Parse(selected).Phase != NativeEpochPhase.Retired)
-        { throw new IOException("Stop and retire the selected native generation before changing enrollment; its cleanup proof was retained."); }
-        // Durable owner state is outside generations. Any Reserved/Active/Retiring
-        // history is an unresolved drain fence, even if the process disappeared.
-        using var owner = AcquireRetiredOwner(files);
-        // Preserve every record/mapping/reservation. There is no recursive delete,
-        // relocation, adoption or history reset in this revocation path.
+        if (CurrentMaintenance.Value is { } retained)
+        {
+            // The same original locks remain held through both maintenance
+            // checks and all byte mutations; do not reacquire our own mutexes.
+            retained.RequireSafe();
+            return;
+        }
+        using var native = ManagedMailboxNativeCustody.Acquire();
+        native.RequireSafe();
     }
+
     internal static void RequireOwnerRetired(WindowsNativeEpochFiles files)
     {
         using var lease = AcquireRetiredOwner(files);

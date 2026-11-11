@@ -585,6 +585,7 @@ fn shared_attempt_budget_reserves_last_drain_and_preserves_exhausted_or_malforme
             &epoch,
             origin,
             &image,
+            false,
         )
     };
     for pid in 1..MAXIMUM_ATTEMPTS {
@@ -738,4 +739,69 @@ fn late_queued_start_cannot_reuse_submission_after_retirement_or_unresolved_sele
                 .is_err()
         );
     }
+}
+
+#[test]
+fn observation_restart_requires_transport_drain_and_preserves_unmatched_prior_attempts() {
+    use std::{collections::BTreeMap, os::windows::ffi::OsStrExt};
+    let epoch = Epoch::parse(&bytes(&vector(), "epoch")).unwrap();
+    let origin = b"injected original origin";
+    let image = PathBuf::from(r"C:\Fixture\app\OpenBlade.Service.exe");
+    let path: Vec<_> = image
+        .as_os_str()
+        .encode_wide()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    let launch = encode(
+        "OpenBlade.NativeServiceLaunch.v1",
+        &[
+            &epoch.id,
+            &digest(origin),
+            &epoch.request,
+            &epoch.package,
+            &epoch.service,
+            "17",
+            "100",
+            "0",
+            "LocalSystem-primary-session0",
+            &encode64(&path),
+        ],
+    );
+    let mut records = BTreeMap::from([
+        (
+            "custody.lock".to_owned(),
+            encode("OpenBlade.NativeServiceCustody.v1", &[&epoch.id]),
+        ),
+        ("launch-17-100.bin".to_owned(), launch.clone()),
+    ]);
+    let check = |records: &BTreeMap<String, Vec<u8>>, read| {
+        require_launch_budget(
+            records.keys().cloned().collect(),
+            |name| Ok(records[name].clone()),
+            &epoch,
+            origin,
+            &image,
+            read,
+        )
+    };
+    let before = records.clone();
+    check(&records, true).unwrap(); // Diagnostic restart does not claim older drain.
+    assert_eq!(records, before);
+    records.insert(
+        "drain-17-100.bin".into(),
+        encode(
+            "OpenBlade.NativeStatusDrain.v2",
+            &[&epoch.id, &digest(&launch), "17", "100"],
+        ),
+    );
+    assert!(check(&records, true).is_err());
+    records.insert(
+        "drain-17-100.bin".into(),
+        encode(
+            "OpenBlade.NativeTransportDrain.v1",
+            &[&epoch.id, &digest(&launch), "17", "100"],
+        ),
+    );
+    check(&records, true).unwrap();
+    assert!(check(&records, false).is_err());
 }

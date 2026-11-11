@@ -610,17 +610,38 @@ impl Snapshot {
         let mut retained = self.clone();
         retained.read_confirmation = None;
         retained.confirmed_state = thermal.confirmed_state.clone();
-        retained.device_verified = thermal.device_verified;
         retained.writes_blocked = true;
         retained.capabilities = None;
         retained.revision = revision;
-        if retained.control_access == 0 {
-            retained.message =
-                "Last confirmed thermal settings retained. Request an observation to read again."
-                    .into();
-        }
+        retained
+            .message
+            .push_str(" Last confirmed thermal settings retained; no fresh read is confirmed.");
         retained
     }
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn unavailable_mailbox(&self, revision: i64, reason: &str) -> Self {
+        let mut unavailable = self.clone();
+        unavailable.read_confirmation = None;
+        unavailable.confirmed_state = None;
+        unavailable.writes_blocked = true;
+        unavailable.capabilities = None;
+        unavailable.revision = revision;
+        unavailable.message.push_str(reason);
+        unavailable
+    }
+
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn metadata_only(&self) -> bool {
+        self.confirmed_state.is_none()
+    }
+
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn read_revoked(mut self) -> Self {
+        self.message
+            .push_str(" Thermal read permission is revoked; diagnostic status remains available.");
+        self
+    }
+
     #[cfg(feature = "installed-service-candidate")]
     pub(crate) fn has_same_thermal(&self, other: &Self) -> bool {
         self.confirmed_state == other.confirmed_state

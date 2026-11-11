@@ -432,6 +432,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
     internal void RequireTransportDelegationClear() => device.RequireTransportDelegationClear();
 
+    internal Task RetireMailboxOwnersAsync()
+    {
+        Dispose();
+        return device.WaitForOwnerRetirementAsync();
+    }
+
     public void Dispose()
     {
         lock (providerLifecycleSync)
@@ -492,6 +498,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         private readonly SemaphoreSlim hardwareOperationGate = new(1, 1);
         private bool fanStopDelegated;
         private Task? deferredDisposal;
+        internal async Task WaitForOwnerRetirementAsync()
+        {
+            Task? deferred;
+            lock (lifecycleSync) { deferred = deferredDisposal; }
+            if (deferred is not null) { await deferred.ConfigureAwait(false); }
+            await lightingSession.OwnerRetirement.ConfigureAwait(false);
+        }
         private bool closing;
         private bool disposed;
         // Querying NVML can wake an otherwise idle discrete GPU. Management

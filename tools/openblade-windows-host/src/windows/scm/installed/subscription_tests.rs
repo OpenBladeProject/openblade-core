@@ -789,3 +789,39 @@ async fn in_memory_firmware_shutdown_reports_pending_native_ownership() {
     assert!(held.cancelled.load(Ordering::Acquire));
     assert_eq!(held.submitted.load(Ordering::Acquire), 1);
 }
+
+#[cfg(feature = "service-mailbox-observation-v1")]
+#[tokio::test]
+async fn in_memory_guarded_no_reader_serves_status_subscription_and_own_transport_drain() {
+    timeout(Duration::from_secs(5), async {
+        let (mut ports, tx) = ports(Fault::None, &Events::default());
+        let (source, origin) = status_source::in_memory_guarded_no_reader();
+        *Rc::get_mut(&mut ports.source).unwrap().get_mut() = source;
+        let (shutdown, stop) = oneshot::channel();
+        let (failed, _failure) = oneshot::channel();
+        let (_, driver) = prepare(PID, stop, failed, Ok(ports)).await.unwrap();
+        let clients = async {
+            let mut watcher = connect(&tx, 128);
+            let initial = send_subscribe(&mut watcher).await;
+            assert!(
+                initial["status"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("before native I/O")
+            );
+            assert!(initial["status"]["confirmedState"].is_null());
+            get_status(&tx).await;
+            shutdown.send(()).unwrap();
+        };
+        let (result, ()) = tokio::join!(driver, clients);
+        result.unwrap();
+        assert_eq!(
+            origin
+                .transport_drains
+                .load(std::sync::atomic::Ordering::Acquire),
+            1
+        );
+    })
+    .await
+    .unwrap();
+}

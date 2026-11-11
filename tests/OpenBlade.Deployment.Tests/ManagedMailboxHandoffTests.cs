@@ -111,11 +111,11 @@ public sealed class ManagedMailboxHandoffTests
         var record = new NativeEpochRecord(NativeEpochPhase.Provisional, epoch, new string('0', 64), 1,
             request.Installation, request.Package, request.Request, new string('a', 64) + "-service", new string('b', 64) + "-agent", new string('0', 64), new string('f', 64));
         transfer.BindEpoch(epochs, record);
-        using var parity = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "managed-mailbox-handoff-v1.json")));
+        using var parity = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "managed-mailbox-handoff-v2.json")));
         Assert.Equal(parity.RootElement.GetProperty("run").GetString(), System.Text.Encoding.ASCII.GetString(run.Encode()));
-        Assert.Equal(parity.RootElement.GetProperty("request").GetString(), System.Text.Encoding.ASCII.GetString(File.ReadAllBytes(Path.Combine(files.Root, "request.bin"))));
-        Assert.Equal(parity.RootElement.GetProperty("receipt").GetString(), System.Text.Encoding.ASCII.GetString(File.ReadAllBytes(Path.Combine(files.Root, "receipt.bin"))));
-        Assert.Equal(parity.RootElement.GetProperty("mapping").GetString(), System.Text.Encoding.ASCII.GetString(File.ReadAllBytes(Path.Combine(files.Root, "mapping.bin"))));
+        Assert.Equal(parity.RootElement.GetProperty("request").GetString(), System.Text.Encoding.ASCII.GetString(File.ReadAllBytes(Path.Combine(files.Root, "handoff-" + request.Request + "-request.bin"))));
+        Assert.Equal(parity.RootElement.GetProperty("receipt").GetString(), System.Text.Encoding.ASCII.GetString(File.ReadAllBytes(Path.Combine(files.Root, "handoff-" + request.Request + "-receipt.bin"))));
+        Assert.Equal(parity.RootElement.GetProperty("mapping").GetString(), System.Text.Encoding.ASCII.GetString(File.ReadAllBytes(Path.Combine(files.Root, "handoff-" + request.Request + "-mapping.bin"))));
         Assert.ThrowsAny<IOException>(() => transfer.BindEpoch(epochs, record with { Epoch = new string('d', 32) }));
         Assert.ThrowsAny<IOException>(() => WindowsManagedMailboxRun.StartForTests(files.RetainFixtureView(), run with { Run = new string('9', 32) }));
     }

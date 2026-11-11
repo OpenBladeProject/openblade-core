@@ -5,16 +5,17 @@ namespace OpenBlade.Setup;
 internal interface ISetupOriginalManagedProcess : IDisposable
 {
     SetupCandidateLaunch Launch { get; }
-    void RequireExited();
+    Task WaitForExitAsync(TimeSpan budget, CancellationToken token);
 }
 
 internal static class SetupManagedMailboxAdmission
 {
-    internal static void Confirm(ISetupOriginalManagedProcess original, IManagedMailboxReceipt receipt)
+    internal static async Task ConfirmAsync(ISetupOriginalManagedProcess original, IManagedMailboxReceipt receipt, TimeSpan budget, CancellationToken token)
     {
         // Retained original process evidence and protected transport evidence
         // are both required. SCM Stopped never substitutes for either.
-        original.RequireExited();
+        await original.WaitForExitAsync(budget, token).ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
         receipt.ConfirmOriginalExited();
     }
 }

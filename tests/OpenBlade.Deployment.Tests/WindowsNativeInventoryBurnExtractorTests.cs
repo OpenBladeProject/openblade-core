@@ -744,9 +744,9 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
         { if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OPENBLADE_MAILBOX_MANAGED_BUILD"))) { Skip = "Requires an explicitly selected private managed build; images are read as bytes only."; } }
     }
 
-    internal static byte[] NativeEpochBundle(byte[] service, byte[] agent)
+    internal static byte[] NativeEpochBundle(byte[] service, byte[] agent, string? sourceRevision = null)
     {
-        var build = new WindowsNativeBuildIdentity(new string('a', 40), Version.Parse(LocalDevVersion));
+        var build = new WindowsNativeBuildIdentity(sourceRevision ?? new string('a', 40), Version.Parse(LocalDevVersion));
         byte[] inventory = WindowsNativeRoleInventory.CreateResource(build,
             file => file == WindowsNativeRoleInventory.FileName(WindowsNativeRole.Service) ? [.. service] : [.. agent]).ToArray();
         return Bundle(inventory, includeRoles: true, authored: true, serviceImage: service, agentImage: agent);

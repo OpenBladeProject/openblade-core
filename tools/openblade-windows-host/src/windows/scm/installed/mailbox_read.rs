@@ -41,7 +41,7 @@ struct ReadLease {
     state: AtomicU8,
 }
 
-trait ReadCustody: Send + Sync {
+pub(super) trait ReadCustody: Send + Sync {
     fn authorize(&self) -> Option<ReadAdmission>;
     fn revoke(&self);
     fn retire(&self) -> io::Result<()>;
@@ -56,7 +56,16 @@ fn validate_transfer(
     receipt: &[u8],
     run: &[u8],
 ) -> io::Result<()> {
-    let f = lines(mapping, "OpenBlade.ManagedMailboxEpoch.v1", 6)?;
+    let version_two = mapping.starts_with(b"OpenBlade.ManagedMailboxEpoch.v2\n");
+    let f = lines(
+        mapping,
+        if version_two {
+            "OpenBlade.ManagedMailboxEpoch.v2"
+        } else {
+            "OpenBlade.ManagedMailboxEpoch.v1"
+        },
+        if version_two { 8 } else { 6 },
+    )?;
     let r = lines(run, "OpenBlade.ManagedMailboxRun.v1", 5)?;
     let hex = |s: &str, n| {
         s.len() == n
@@ -72,13 +81,14 @@ fn validate_transfer(
         && process[1]
             .parse::<u64>()
             .ok()
-            .is_some_and(|t| t != 0 && t.to_string() == process[1]);
+            .is_some_and(|t| t != 0 && t <= i64::MAX as u64 && t.to_string() == process[1]);
     if !hex(r[0], 32)
         || r[0].bytes().all(|b| b == b'0')
         || !hex(r[2], 64)
         || !hex(r[3], 64)
         || !hex(r[4], 32)
         || !numeric
+        || version_two && (!hex(f[6], 32) || f[6] != r[0] || !hex(f[7], 64))
         || !hex(f[0], 64)
         || !hex(f[1], 64)
         || !hex(f[2], 32)
@@ -104,6 +114,40 @@ fn validate_transfer(
                     &encode64(run),
                     "transport-quiescent-no-mutation",
                 ],
+            )
+    {
+        return Err(deny());
+    }
+    Ok(())
+}
+fn validate_selected_transfer(
+    mapping: &[u8],
+    actual: &[u8],
+    request: &[u8],
+    receipt: &[u8],
+    run: &[u8],
+    selection: &[u8],
+    exited: &[u8],
+) -> io::Result<()> {
+    validate_transfer(mapping, actual, request, receipt, run)?;
+    let m = lines(mapping, "OpenBlade.ManagedMailboxEpoch.v2", 8)?;
+    let s = lines(selection, "OpenBlade.ManagedMailboxTransfer.v2", 4)?;
+    let r = lines(run, "OpenBlade.ManagedMailboxRun.v1", 5)?;
+    if s[0]
+        .parse::<u64>()
+        .ok()
+        .is_none_or(|n| n == 0 || n > i64::MAX as u64 || n.to_string() != s[0])
+        || s[1].len() != 64
+        || !s[1]
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        || digest(selection) != m[7]
+        || s[2] != encode64(run)
+        || s[3] != encode64(request)
+        || exited
+            != encode(
+                "OpenBlade.ManagedMailboxOriginalExited.v2",
+                &[&digest(selection), r[1], &digest(receipt)],
             )
     {
         return Err(deny());
@@ -160,7 +204,8 @@ impl ReadLease {
         let path = crate::service_install_identity::known_folder(
             &windows_sys::Win32::UI::Shell::FOLDERID_ProgramData,
         )?
-        .join("OpenBlade.ManagedHandoff");
+        .join("OpenBlade")
+        .join("ManagedHandoff");
         let (root, ancestors, _) = paths::pin_root(&path)?;
         paths::require_ntfs(&root)?;
         paths::verify_security(&root, Policy::ROOT)?;
@@ -168,6 +213,8 @@ impl ReadLease {
             paths::verify_security(
                 parent,
                 if i + 1 == ancestors.len() {
+                    Policy::ROOT
+                } else if i + 2 == ancestors.len() {
                     Policy::PROGRAM_DATA
                 } else {
                     Policy::ANCESTOR
@@ -186,10 +233,52 @@ impl ReadLease {
         paths::verify_security(&exclusion, Policy::PrivateCustody)?;
         let owner = Box::new(super::ownership::durable::acquire_empty_read_history()?);
         let mut held = Vec::new();
-        let actual_mapping = record(&root, "mapping.bin", &mut held)?;
-        let request = record(&root, "request.bin", &mut held)?;
-        let receipt = record(&root, "receipt.bin", &mut held)?;
-        let run = record(&root, "current.bin", &mut held)?;
+        let creation = encode(
+            "OpenBlade.ManagedMailboxBootstrap.v2",
+            &["protected-installer-anchor", "ManagedHandoff"],
+        );
+        let anchor = ancestors.last().ok_or_else(deny)?;
+        if record(anchor, "managed-handoff-bootstrap-v2.bin", &mut held)? != creation
+            || record(anchor, "managed-handoff-complete-v2.bin", &mut held)?
+                != encode(
+                    "OpenBlade.ManagedMailboxBootstrapComplete.v2",
+                    &[&digest(&creation)],
+                )
+            || record(&root, "handoff-root.bin", &mut held)?
+                != encode("OpenBlade.ManagedMailboxRoot.v2", &[&digest(&creation)])
+        {
+            return Err(deny());
+        }
+        let m = lines(&mapping, "OpenBlade.ManagedMailboxEpoch.v2", 8)?;
+        let name = |part: &str| format!("handoff-{}-{}.bin", m[4], part);
+        let actual_mapping = record(&root, &name("mapping"), &mut held)?;
+        let request = record(&root, &name("request"), &mut held)?;
+        let receipt = record(&root, &name("receipt"), &mut held)?;
+        let run = record(&root, &name("run"), &mut held)?;
+        let selection = record(&root, &name("selection"), &mut held)?;
+        let exited = record(&root, &name("original-exit"), &mut held)?;
+        validate_selected_transfer(
+            &mapping,
+            &actual_mapping,
+            &request,
+            &receipt,
+            &run,
+            &selection,
+            &exited,
+        )?;
+        // A terminal disposition permanently closes this original transfer.
+        let terminal = paths::open_relative(
+            &root,
+            OsStr::new(&name("terminal")),
+            FILE_GENERIC_READ,
+            FILE_SHARE_READ,
+            FILE_OPEN,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+        );
+        match terminal {
+            Err(error) if matches!(error.raw_os_error(), Some(2 | 3)) => (),
+            _ => return Err(deny()),
+        }
         let r = lines(&run, "OpenBlade.ManagedMailboxRun.v1", 5)?;
         if record(&root, &format!("run-{}.bin", r[0]), &mut held)? != run {
             return Err(deny());
@@ -357,10 +446,113 @@ impl Drop for ReadLease {
 }
 
 #[derive(Clone)]
+pub(super) enum MailboxSource {
+    Reader(ReadSource),
+    NoReader {
+        origin: Arc<dyn super::status_source::StatusOrigin>,
+        retired: Arc<std::sync::atomic::AtomicBool>,
+    },
+}
+impl MailboxSource {
+    pub(super) fn acquire(origin: Arc<Origin>) -> io::Result<Self> {
+        let actual = origin.clone();
+        Self::compose(origin, || ReadSource::acquire(actual))
+    }
+    pub(super) fn compose(
+        origin: Arc<dyn super::status_source::StatusOrigin>,
+        acquire_before_worker: impl FnOnce() -> io::Result<ReadSource>,
+    ) -> io::Result<Self> {
+        origin.verify()?;
+        let result = acquire_before_worker();
+        // Invalid startup custody or genuine origin loss remains fatal. Every
+        // error before ReadSource construction proves only this attempt had no
+        // firmware worker; it says nothing about earlier acquisition markers.
+        origin.verify()?;
+        Ok(match result {
+            Ok(reader) => Self::Reader(reader),
+            Err(_) => Self::NoReader {
+                origin,
+                retired: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            },
+        })
+    }
+    pub(super) fn decorate(
+        &self,
+        publisher: &watch::Sender<Arc<Publication>>,
+        metadata: Arc<Publication>,
+    ) -> io::Result<()> {
+        match self {
+            Self::Reader(reader) => reader.decorate(publisher, Some(metadata)),
+            Self::NoReader { .. } => {
+                let current = publisher.borrow().clone();
+                let reason =
+                    " Thermal reader unavailable before native I/O; diagnostic status only.";
+                let mut next = Publication {
+                    active: metadata
+                        .active
+                        .unavailable_mailbox(current.active.revision(), reason),
+                    inactive: metadata
+                        .inactive
+                        .unavailable_mailbox(current.active.revision(), reason),
+                };
+                if serde_json::to_vec(&next.active)? != serde_json::to_vec(&current.active)?
+                    || serde_json::to_vec(&next.inactive)? != serde_json::to_vec(&current.inactive)?
+                {
+                    let revision = current.active.revision().checked_add(1).ok_or_else(deny)?;
+                    next.active.set_observation_revision(revision);
+                    next.inactive.set_observation_revision(revision);
+                    publisher.send_replace(Arc::new(next));
+                }
+                Ok(())
+            }
+        }
+    }
+    pub(super) fn next_refresh(&self) -> Option<Instant> {
+        match self {
+            Self::Reader(reader) => reader.next_refresh(),
+            Self::NoReader { .. } => None,
+        }
+    }
+    pub(super) fn observe(
+        &self,
+        snapshot: Snapshot,
+        deadline: Instant,
+        publisher: watch::Sender<Arc<Publication>>,
+    ) -> Observation {
+        match self {
+            Self::Reader(reader) => reader.observe(snapshot, deadline, publisher),
+            Self::NoReader { .. } => Box::pin(async { Ok(None) }),
+        }
+    }
+    pub(super) async fn stop(&self) -> io::Result<()> {
+        match self {
+            Self::Reader(reader) => reader.stop().await,
+            Self::NoReader { retired, .. } => {
+                retired.store(true, Ordering::Release);
+                Ok(())
+            }
+        }
+    }
+    pub(super) fn confirm_drained(&self) -> io::Result<()> {
+        match self {
+            Self::Reader(reader) => reader.confirm_drained(),
+            Self::NoReader { origin, retired } if retired.load(Ordering::Acquire) => {
+                origin.confirm_transport_drain()
+            }
+            _ => Err(deny()),
+        }
+    }
+}
+
+// Last getter completion owns this monotonic age; status refresh never renews it.
+const RETENTION_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
+
+#[derive(Clone)]
 pub(super) struct ReadSource {
     lease: Arc<dyn ReadCustody>,
     worker: Worker<ReadAdmission>,
-    last: Rc<RefCell<Option<Snapshot>>>,
+    last: Rc<RefCell<Option<(Snapshot, Instant)>>>,
+    metadata: Rc<RefCell<Option<Arc<Publication>>>>,
 }
 impl ReadSource {
     pub(super) fn acquire(origin: Arc<Origin>) -> io::Result<Self> {
@@ -369,7 +561,7 @@ impl ReadSource {
             native_read_worker(move || custody.authorize())
         }))
     }
-    fn compose(
+    pub(super) fn compose(
         lease: Arc<dyn ReadCustody>,
         factory: impl FnOnce(Arc<dyn ReadCustody>) -> Worker<ReadAdmission>,
     ) -> Self {
@@ -378,32 +570,85 @@ impl ReadSource {
             lease,
             worker,
             last: Rc::default(),
+            metadata: Rc::default(),
         }
     }
-    pub(super) fn decorate(&self, publisher: &watch::Sender<Arc<Publication>>) -> io::Result<()> {
-        let mut last = self.last.borrow_mut();
-        let Some(thermal) = last.as_mut() else {
-            return Ok(());
-        };
+    pub(super) fn decorate(
+        &self,
+        publisher: &watch::Sender<Arc<Publication>>,
+        metadata: Option<Arc<Publication>>,
+    ) -> io::Result<()> {
+        self.decorate_at(publisher, metadata, Instant::now())
+    }
+    fn decorate_at(
+        &self,
+        publisher: &watch::Sender<Arc<Publication>>,
+        metadata: Option<Arc<Publication>>,
+        now: Instant,
+    ) -> io::Result<()> {
+        if let Some(metadata) = metadata {
+            *self.metadata.borrow_mut() = Some(metadata);
+        }
         let current = publisher.borrow().clone();
-        if current.active.has_same_thermal(thermal) {
+        let metadata = self
+            .metadata
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| current.clone());
+        // Authorization loss is sticky in the custody object, independent of
+        // metadata origin. Never turn its failure into a metadata endpoint error.
+        let authorized = self.lease.authorize().is_some();
+        let last = self.last.borrow();
+        let thermal = last.as_ref().filter(|(_, completed)| {
+            now.checked_duration_since(*completed).unwrap_or_default() < RETENTION_WINDOW
+        });
+        let project = |base: &Snapshot| match thermal {
+            Some((thermal, _)) => {
+                let retained = base.retained_mailbox(thermal, current.active.revision());
+                if authorized {
+                    retained
+                } else {
+                    retained.read_revoked()
+                }
+            }
+            None => base.unavailable_mailbox(
+                current.active.revision(),
+                if last.is_some() {
+                    " Last thermal observation expired; current settings are unavailable."
+                } else if !authorized {
+                    " Thermal reader is revoked or unavailable; no fresh read is confirmed."
+                } else {
+                    " No fresh thermal read is confirmed."
+                },
+            ),
+        };
+        let mut next = Publication {
+            active: project(&metadata.active),
+            inactive: project(&metadata.inactive),
+        };
+        if serde_json::to_vec(&next.active)? == serde_json::to_vec(&current.active)?
+            && serde_json::to_vec(&next.inactive)? == serde_json::to_vec(&current.inactive)?
+        {
             return Ok(());
         }
-        if self.lease.authorize().is_none() {
-            return Err(deny());
-        }
-        let revision = current
-            .active
-            .revision()
-            .max(thermal.revision())
-            .checked_add(1)
-            .ok_or_else(deny)?;
-        thermal.set_observation_revision(revision);
-        publisher.send_replace(Arc::new(Publication {
-            active: current.active.retained_mailbox(thermal, revision),
-            inactive: current.inactive.retained_mailbox(thermal, revision),
-        }));
+        let revision = current.active.revision().checked_add(1).ok_or_else(deny)?;
+        next.active.set_observation_revision(revision);
+        next.inactive.set_observation_revision(revision);
+        publisher.send_replace(Arc::new(next));
         Ok(())
+    }
+    #[cfg(test)]
+    pub(super) fn expire_for_tests(&self) {
+        if let Some((_, at)) = self.last.borrow_mut().as_mut() {
+            *at = Instant::now() - RETENTION_WINDOW;
+        }
+    }
+    pub(super) fn next_refresh(&self) -> Option<Instant> {
+        self.last
+            .borrow()
+            .as_ref()
+            .map(|(_, at)| *at + RETENTION_WINDOW)
+            .filter(|due| *due > Instant::now())
     }
     pub(super) fn observe(
         &self,
@@ -412,8 +657,23 @@ impl ReadSource {
         publisher: watch::Sender<Arc<Publication>>,
     ) -> Observation {
         let source = self.clone();
+        if self.metadata.borrow().is_none() {
+            *self.metadata.borrow_mut() = Some(publisher.borrow().clone());
+        }
         Box::pin(async move {
-            let Some(reading) = source.worker.observe(deadline, None).await? else {
+            if source.lease.authorize().is_none() {
+                source.decorate(&publisher, None)?;
+                return Ok(None);
+            }
+            let reading = match source.worker.observe(deadline, None).await {
+                Ok(reading) => reading,
+                Err(_) => {
+                    source.lease.revoke();
+                    source.decorate(&publisher, None)?;
+                    return Ok(None);
+                }
+            };
+            let Some(reading) = reading else {
                 return Ok(None);
             };
             if source.lease.authorize() != Some(reading.admission) || Instant::now() >= deadline {
@@ -430,9 +690,8 @@ impl ReadSource {
                     lease.authorize() == Some(proof)
                 }),
             );
-            *source.last.borrow_mut() =
-                Some(observed.retained_mailbox(&observed, observed.revision()));
-            source.decorate(&publisher)?;
+            *source.last.borrow_mut() = Some((observed.clone(), Instant::now()));
+            source.decorate(&publisher, None)?;
             observed.set_observation_revision(publisher.borrow().active.revision());
             if !observed.has_fresh_mailbox_read() {
                 return Ok(None);
@@ -727,6 +986,8 @@ mod tests {
             active: metadata(0),
             inactive: metadata(1),
         }));
+        let clean_metadata = publisher.borrow().clone();
+        source.decorate(&publisher, Some(clean_metadata)).unwrap();
         held.release.send(()).unwrap();
         let fresh = observed.await.unwrap().unwrap();
         let json = serde_json::to_value(&fresh).unwrap();
@@ -739,5 +1000,100 @@ mod tests {
         assert_eq!(json["revision"], retained["revision"]);
         assert_eq!(json["activePowerSource"], retained["activePowerSource"]);
         source.stop().await.unwrap();
+    }
+    #[test]
+    fn canonical_v2_selected_transfer_and_terminal_records_match_csharp_and_reject_substitution() {
+        let f: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../../tests/Fixtures/Parity/managed-mailbox-handoff-v2.json"
+        ))
+        .unwrap();
+        let b = |key: &str| f[key].as_str().unwrap().as_bytes();
+        let values = [
+            b("mapping"),
+            b("mapping"),
+            b("request"),
+            b("receipt"),
+            b("run"),
+            b("selection"),
+            b("originalExit"),
+        ];
+        validate_selected_transfer(
+            values[0], values[1], values[2], values[3], values[4], values[5], values[6],
+        )
+        .unwrap();
+        for selected in 0..values.len() {
+            let mut changed = values.map(|v| v.to_vec());
+            let index = changed[selected].len() / 2;
+            changed[selected][index] ^= 1;
+            assert!(
+                validate_selected_transfer(
+                    &changed[0],
+                    &changed[1],
+                    &changed[2],
+                    &changed[3],
+                    &changed[4],
+                    &changed[5],
+                    &changed[6]
+                )
+                .is_err()
+            );
+        }
+        for bad in f["rejectedTransfers"].as_array().unwrap() {
+            let b = |key: &str| bad[key].as_str().unwrap().as_bytes();
+            assert!(
+                validate_selected_transfer(
+                    b("mapping"),
+                    b("mapping"),
+                    b("request"),
+                    b("receipt"),
+                    b("run"),
+                    b("selection"),
+                    b("originalExit")
+                )
+                .is_err()
+            );
+        }
+        let terminal = lines(b("terminal"), "OpenBlade.ManagedMailboxTerminal.v2", 6).unwrap();
+        assert_eq!(terminal[0], digest(b("selection")));
+        assert_eq!(terminal[1], digest(b("receipt")));
+        assert_eq!(terminal[2], digest(b("originalExit")));
+        assert_eq!(terminal[3], "consumed-and-retired");
+        assert_eq!(terminal[4], digest(b("mapping")));
+        assert_eq!(terminal[5], digest(b("nativeProof")));
+    }
+
+    #[tokio::test]
+    async fn worker_error_revokes_read_projection_without_retiring_or_releasing_custody() {
+        let custody = Arc::new(InjectedCustody {
+            proof: ReadAdmission {
+                generation: [7; 32],
+            },
+            live: true.into(),
+            retired: false.into(),
+            releases: 0.into(),
+        });
+        let source = ReadSource::compose(custody.clone(), |_| {
+            crate::discovery::performance::worker_tests::failing_worker()
+        });
+        let publisher = publisher();
+        assert!(
+            source
+                .observe(
+                    status(0),
+                    Instant::now() + Duration::from_secs(2),
+                    publisher.clone()
+                )
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(custody.authorize().is_none());
+        source.decorate(&publisher, None).unwrap();
+        let value = serde_json::to_value(&publisher.borrow().active).unwrap();
+        assert!(value["message"].as_str().unwrap().contains("revoked"));
+        assert!(value["confirmedState"].is_null());
+        assert!(source.stop().await.is_err());
+        assert!(source.confirm_drained().is_err());
+        assert_eq!(custody.releases.load(Ordering::Acquire), 0);
     }
 }

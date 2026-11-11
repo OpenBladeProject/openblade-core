@@ -11,7 +11,7 @@ internal sealed record ManagedMailboxRun(string Run, string Process, string Exec
     {
         var f = NativeCanonical.ParseLines(bytes, "OpenBlade.ManagedMailboxRun.v1", 6);
         var process = f[1].Split(':');
-        if (!NativeCanonical.IsHex(f[0], 32) || !NativeCanonical.IsHex(f[2], 64) || !NativeCanonical.IsHex(f[3], 64)
+        if (!NativeCanonical.IsHex(f[0], 32) || f[0].All(c => c == '0') || !NativeCanonical.IsHex(f[2], 64) || !NativeCanonical.IsHex(f[3], 64)
             || !NativeCanonical.IsHex(f[4], 32) || process.Length != 2
             || !uint.TryParse(process[0], NumberStyles.None, CultureInfo.InvariantCulture, out uint pid) || pid == 0
             || !long.TryParse(process[1], NumberStyles.None, CultureInfo.InvariantCulture, out long created) || created <= 0
@@ -67,17 +67,65 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
     // Development/custom-location managed builds retain their existing behavior.
     // If installed migration custody already exists, they must respect it too,
     // but they cannot publish an authenticated installed-run receipt.
-    internal static IDisposable? AcquireUnenrolledExclusion()
+    internal static WindowsNativeEpochFiles? OpenOptionalStorage(ManagedMailboxNativeCustody native)
     {
-        if (!WindowsNativeEpochFiles.IsPresentDirectory(WindowsNativeEpochFiles.ManagedHandoffRoot)) { return null; }
-        var files = WindowsNativeEpochFiles.OpenProtected(WindowsNativeEpochFiles.ManagedHandoffRoot);
+        try { return WindowsNativeEpochFiles.CreateOrOpenManagedHandoff(); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException
+            || error is System.ComponentModel.Win32Exception { NativeErrorCode: 2 or 3 or 5 or 32 or 33 })
+        {
+            // Storage that cannot satisfy the creation protocol is unavailable,
+            // never adopted. Independent native custody must still be safe.
+            native.RequireSafe();
+            System.Diagnostics.Trace.TraceWarning("Optional mailbox handoff storage unavailable: {0}", error.Message);
+            return null;
+        }
+    }
+    internal static IDisposable? AcquireUnenrolledExclusion(ManagedMailboxNativeCustody native)
+    {
+        var files = OpenOptionalStorage(native);
+        if (files is null) { native.RequireSafe(); return null; }
+        return AcquireUnenrolledExclusion(files, native);
+    }
+    internal static IDisposable AcquireUnenrolledExclusion(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody native)
+    {
         FileStream? exclusion = null;
         try
         {
             exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock"));
-            WindowsNativeEpochFiles.RequireAbsent(Path.Combine(files.Root, "request.bin"));
-            WindowsNativeEpochFiles.RequireAbsent(Path.Combine(files.Root, "receipt.bin"));
-            WindowsNativeEpochFiles.RequireAbsent(Path.Combine(files.Root, "mapping.bin"));
+            ManagedMailboxRecovery.Resolve(files, native);
+            return new UnenrolledExclusion(files, exclusion);
+        }
+        catch { exclusion?.Dispose(); files.Dispose(); throw; }
+    }
+    internal static IDisposable? AcquireLegacyExclusion(ManagedMailboxNativeCustody native)
+    {
+        WindowsNativeEpochFiles files;
+        try
+        {
+            if (!WindowsNativeEpochFiles.IsPresentDirectory(WindowsNativeEpochFiles.LegacyManagedHandoffRoot)) { return null; }
+            files = WindowsNativeEpochFiles.OpenProtected(WindowsNativeEpochFiles.LegacyManagedHandoffRoot);
+        }
+        catch (Exception error) when (error is UnauthorizedAccessException or IOException or InvalidDataException
+            || error is System.ComponentModel.Win32Exception { NativeErrorCode: 2 or 3 or 5 or 32 or 33 })
+        { return null; } // An untrusted leaf cannot admit the old native reader.
+        return AcquireLegacyExclusion(files, native);
+    }
+    internal static IDisposable? AcquireLegacyExclusion(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody native)
+    {
+        FileStream? exclusion = null;
+        try
+        {
+            bool history = new[] { "request.bin", "receipt.bin", "mapping.bin", "legacy-native-proof-v2.bin", "legacy-original-exit-contract-v2.bin", "legacy-terminal-intent-v2.bin", "legacy-terminal-v2.bin" }
+                .Any(name => ManagedMailboxRecovery.ReadOptional(files, Path.Combine(files.Root, name)) is not null)
+                || Directory.EnumerateFiles(files.Root, "read-acquired-*.bin").Any() || Directory.EnumerateFiles(files.Root, "read-retired-*.bin").Any();
+            if (ManagedMailboxRecovery.ReadOptional(files, Path.Combine(files.Root, "exclusion.lock")) is null)
+            {
+                if (history) { throw new IOException("Legacy transfer history is missing its original custody lock; no optional fallback was admitted."); }
+                files.Dispose(); return null;
+            }
+            exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock"));
+            if (history)
+            { ManagedMailboxLegacyRecovery.Resolve(files, native); }
             return new UnenrolledExclusion(files, exclusion);
         }
         catch { exclusion?.Dispose(); files.Dispose(); throw; }
@@ -85,16 +133,17 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
     private sealed class UnenrolledExclusion(IDisposable files, IDisposable exclusion) : IDisposable
     { public void Dispose() { try { exclusion.Dispose(); } finally { files.Dispose(); } } }
 
-    internal static WindowsManagedMailboxRun? Start(WindowsManagedMailboxPackage? incoming)
+    internal static WindowsManagedMailboxRun? Start(WindowsManagedMailboxPackage? incoming, ManagedMailboxNativeCustody native)
     {
         string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "OpenBlade");
         if (!IsEnrolledImage) { throw new IOException("Managed handoff requires its installed Service image."); }
-        var files = WindowsNativeEpochFiles.CreateOrOpenManagedHandoff();
+        var files = OpenOptionalStorage(native);
+        if (files is null) { return null; }
         FileStream? exclusion = null;
         WindowsManagedMailboxPackage? authenticated = null;
         try
         {
-            exclusion = AcquireRunExclusion(files);
+            exclusion = AcquireRunExclusion(files, native);
             if (incoming is not null)
             {
                 _ = incoming.AuthenticateInstalled(directory, requireLoadedEntry: true);
@@ -116,14 +165,17 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
         catch { authenticated?.Dispose(); exclusion?.Dispose(); files.Dispose(); throw; }
     }
 
-    private static FileStream AcquireRunExclusion(WindowsNativeEpochFiles files)
+    private static FileStream AcquireRunExclusion(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody? native = null)
     {
         var exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock"));
         try
         {
-            WindowsNativeEpochFiles.RequireAbsent(Path.Combine(files.Root, "request.bin"));
-            WindowsNativeEpochFiles.RequireAbsent(Path.Combine(files.Root, "receipt.bin"));
-            WindowsNativeEpochFiles.RequireAbsent(Path.Combine(files.Root, "mapping.bin"));
+            if (native is not null) { ManagedMailboxRecovery.Resolve(files, native); }
+            else
+            {
+                var selected = ManagedMailboxRecovery.Selected(files);
+                if (selected is not null) { ManagedMailboxRecovery.ValidateTerminal(files, selected); }
+            }
             return exclusion;
         }
         catch { exclusion.Dispose(); throw; }
@@ -139,10 +191,10 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
     }
 
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
-    internal static WindowsManagedMailboxRun StartForTests(WindowsNativeEpochFiles files, ManagedMailboxRun record)
+    internal static WindowsManagedMailboxRun StartForTests(WindowsNativeEpochFiles files, ManagedMailboxRun record, string? installation = null)
     {
         var exclusion = AcquireRunExclusion(files);
-        return BeginRun(files, exclusion, record, new(NativeCanonical.Digest(record.Encode()), new string('5', 32), new string('7', 64), new string('8', 64)), null);
+        return BeginRun(files, exclusion, record, new(NativeCanonical.Digest(record.Encode()), installation ?? new string('5', 32), new string('7', 64), new string('8', 64)), null);
     }
 #endif
 
@@ -152,16 +204,14 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
     {
         if (sealedRun) { throw new InvalidOperationException("Managed transport handoff is never replayed."); }
         sealedRun = true;
-        string requestPath = Path.Combine(files.Root, "request.bin");
-        try { _ = File.GetAttributes(requestPath); }
-        catch (FileNotFoundException) { return; }
-        using var requestFile = files.OpenFile(requestPath);
-        byte[] bytes = WindowsNativeEpochFiles.ReadBounded(requestFile);
-        var request = ManagedMailboxRequest.Parse(bytes);
-        if (request.Installation != installation || request.RunDigest != NativeCanonical.Digest(Record.Encode()) || !(files.ReadCurrent() ?? []).AsSpan().SequenceEqual(Record.Encode()))
+        using var writer = files.AcquireWriter();
+        var selected = ManagedMailboxRecovery.Selected(files);
+        if (selected is null || selected.Value.RunDigest != NativeCanonical.Digest(Record.Encode())) { return; }
+        ManagedMailboxRecovery.RequireActive(files, selected);
+        var request = selected.Value;
+        if (request.Installation != installation || !(files.ReadCurrent() ?? []).AsSpan().SequenceEqual(Record.Encode()))
         { throw new IOException("Managed handoff request belongs to another original run/build."); }
-        files.PublishCustody(Path.Combine(files.Root, "receipt.bin"), NativeCanonical.Lines("OpenBlade.ManagedMailboxQuiescent.v1",
-            NativeCanonical.Digest(bytes), Convert.ToBase64String(Record.Encode()), "transport-quiescent-no-mutation"));
+        ManagedMailboxRecovery.ExactOrPublish(files, ManagedMailboxRecovery.PathFor(files, selected, "receipt"), ManagedMailboxRecovery.Receipt(selected));
         // Keep exclusion until this original process's host disposes. A restart
         // encounters immutable request.bin and cannot reacquire the mailbox.
     }
@@ -175,8 +225,12 @@ internal sealed class WindowsManagedMailboxTransfer : IDisposable, IManagedMailb
     private readonly WindowsNativeEpochFiles files;
     private readonly byte[] request;
     private readonly byte[] run;
+    private readonly ManagedMailboxSelection selected;
     private byte[]? receipt;
     private readonly IDisposable? predecessor;
+#if OPENBLADE_NATIVE_PACKAGE_TESTS
+    internal WindowsNativeEpochFiles FilesForTests => files;
+#endif
     internal WindowsManagedMailboxTransfer(WindowsNativeEpochFiles files, byte[] run, ManagedMailboxRequest request,
         IDisposable? predecessor = null)
     {
@@ -187,16 +241,18 @@ internal sealed class WindowsManagedMailboxTransfer : IDisposable, IManagedMailb
         using var current = files.OpenFile(Path.Combine(files.Root, "run-" + ManagedMailboxRun.Parse(run).Run + ".bin"));
         WindowsNativeEpochFiles.RequireExact(current, run);
         if (!(files.ReadCurrent() ?? []).AsSpan().SequenceEqual(run)) { throw new IOException("Managed run changed before handoff request."); }
-        files.PublishCustody(Path.Combine(files.Root, "request.bin"), this.request);
+        selected = ManagedMailboxRecovery.Create(files, run, request);
     }
     internal void ConfirmOriginalExited()
     {
         // Caller retains and checks the original process object; SCM Stopped is insufficient.
         using var exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock"));
-        using var held = files.OpenFile(Path.Combine(files.Root, "receipt.bin"));
+        ManagedMailboxRecovery.RequireActive(files, selected);
+        using var held = files.OpenFile(ManagedMailboxRecovery.PathFor(files, selected, "receipt"));
         receipt = WindowsNativeEpochFiles.ReadBounded(held);
         byte[] expected = NativeCanonical.Lines("OpenBlade.ManagedMailboxQuiescent.v1", NativeCanonical.Digest(request), Convert.ToBase64String(run), "transport-quiescent-no-mutation");
         if (!receipt.AsSpan().SequenceEqual(expected)) { throw new IOException("Managed transport quiescence is unconfirmed."); }
+        ManagedMailboxRecovery.ExactOrPublish(files, ManagedMailboxRecovery.PathFor(files, selected, "original-exit"), ManagedMailboxRecovery.OriginalExit(selected));
         // Setup must now be able to rename the predecessor installation. Keep
         // its original signed package evidence, but release installed-tree pins.
         if (predecessor is WindowsManagedMailboxPackage package) { package.ReleaseInstalledPins(); }
@@ -209,11 +265,13 @@ internal sealed class WindowsManagedMailboxTransfer : IDisposable, IManagedMailb
         if (value.Installation != epoch.Installation || value.Request != epoch.Request || value.Package != epoch.Package)
         { throw new IOException("Managed handoff incoming request/package changed."); }
         using var exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock"));
-        byte[] mapping = NativeCanonical.Lines("OpenBlade.ManagedMailboxEpoch.v1", NativeCanonical.Digest(receipt), NativeCanonical.Digest(request), epoch.Epoch, epoch.Installation, epoch.Request, epoch.Package);
-        files.PublishCustody(Path.Combine(files.Root, "mapping.bin"), mapping);
-        // The create-once global mapping claims the receipt before any startup.
-        // A partial second publication remains fenced and cannot select a new epoch.
-        epochs.Publish(Path.Combine(epochs.Root, epoch.Epoch, "managed-handoff.bin"), mapping);
+        ManagedMailboxRecovery.RequireActive(files, selected);
+        ManagedMailboxRecovery.RequireOriginal(files, selected);
+        byte[] intent = NativeCanonical.Lines("OpenBlade.ManagedMailboxEpochIntent.v2", NativeCanonical.Digest(selected.Encode()), Convert.ToBase64String(epoch.Encode()));
+        ManagedMailboxRecovery.ExactOrPublish(files, ManagedMailboxRecovery.PathFor(files, selected, "epoch-intent"), intent);
+        byte[] mapping = ManagedMailboxRecovery.Mapping(selected, epoch);
+        ManagedMailboxRecovery.ExactOrPublish(files, ManagedMailboxRecovery.PathFor(files, selected, "mapping"), mapping);
+        ManagedMailboxRecovery.ExactOrPublish(epochs, Path.Combine(epochs.Root, epoch.Epoch, "managed-handoff.bin"), mapping);
     }
     public void Dispose() { try { predecessor?.Dispose(); } finally { files.Dispose(); } }
 }

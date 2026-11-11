@@ -361,7 +361,7 @@ internal static class DevelopmentDeploymentProvisioner
 
     private static async Task InstallAsync(CancellationToken cancellationToken)
     {
-        using var managedCustody = OpenBlade.Deployment.WindowsNativeTrustLifecycle.AcquireManagedEnrollmentChangeCustody();
+        using var firstEnrollment = OpenBlade.Deployment.WindowsNativeTrustLifecycle.AcquireFirstEnrollmentCustody();
         await RequireUnenrolledMachineAsync(cancellationToken).ConfigureAwait(false);
 
         string brokerSource = RequirePayloadFile(DevelopmentDeploymentLayout.BrokerExe);
@@ -383,6 +383,7 @@ internal static class DevelopmentDeploymentProvisioner
 
         try
         {
+            await RequireUnenrolledMachineAsync(cancellationToken).ConfigureAwait(false);
             CopyProtectedPayload(
                 brokerSource,
                 DevelopmentDeploymentLayout.BrokerDirectory,

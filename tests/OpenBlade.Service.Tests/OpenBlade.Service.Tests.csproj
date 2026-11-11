@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <None Include="../Fixtures/Parity/managed-mailbox-handoff-v2.json" Link="managed-mailbox-handoff-v2.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/Parity/managed-mailbox-handoff-v1.json" Link="managed-mailbox-handoff-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="WindowsReplay\v1\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

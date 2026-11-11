@@ -274,3 +274,10 @@ async fn firmware_worker_quarantines_unconfirmed_retirement() {
             .is_none()
     );
 }
+
+pub(crate) fn failing_worker<A: ObservationProof>() -> Worker<A> {
+    Worker::new(
+        |_| Err(io::Error::other("injected native retirement failure")),
+        None,
+    )
+}

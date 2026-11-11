@@ -10,6 +10,9 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
     private byte[] selected;
     private WindowsNativePackage? package;
     internal NativeEpochRecord Record { get; private set; }
+    internal NativeArtifact ServiceArtifact => package?.Service ?? throw new ObjectDisposedException(nameof(WindowsNativeInstalledSelection));
+    internal byte[] ManagedVerificationProjection => package?.VerificationProjection ?? throw new ObjectDisposedException(nameof(WindowsNativeInstalledSelection));
+    internal string SourceRevision => package?.Release.Manifest.SourceRevision ?? throw new ObjectDisposedException(nameof(WindowsNativeInstalledSelection));
     internal string ServicePath => Path.Combine(files.Root, Record.Epoch, "app", "OpenBlade.Service.exe");
     internal string AgentPath => Path.Combine(files.Root, Record.Epoch, "app", "OpenBlade.SessionAgent.exe");
     internal string ServiceSha256 => package?.Service.Sha256 ?? throw new ObjectDisposedException(nameof(WindowsNativeInstalledSelection));
@@ -45,13 +48,13 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         catch { writer.Dispose(); throw; }
     }
     private static async Task<WindowsNativeInstalledSelection> OpenWithWriterAsync(WindowsNativeEpochFiles files, byte[] selected,
-        FileStream writer, CancellationToken token, bool interrupted)
+        IDisposable writer, CancellationToken token, bool interrupted, bool historical = false, bool preparation = false)
     {
         var value = new WindowsNativeInstalledSelection(files, selected);
         try
         {
             value.held.Add(writer);
-            if (!interrupted) { value.RequireCurrent(); }
+            if (!interrupted && !historical) { value.RequireCurrent(); }
             string directory = Path.Combine(files.Root, value.Record.Epoch);
             value.held.Add(files.RetainDirectory(directory));
             value.held.Add(files.RetainDirectory(Path.Combine(directory, "app")));
@@ -60,7 +63,7 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
                 var stream = files.OpenFile(Path.Combine(directory, name)); value.held.Add(stream);
                 return WindowsNativeEpochFiles.ReadBounded(stream, max);
             }
-            byte[] phase = Read(value.Record.Phase + ".bin");
+            byte[] phase = preparation ? Read("origin.bin") : Read(value.Record.Phase + ".bin");
             if (!phase.AsSpan().SequenceEqual(selected)) { throw new InvalidDataException("Native phase differs."); }
             byte[] projection = Read("verification.bin", 2048);
             byte[] record = Read("package.bin");
@@ -95,11 +98,17 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
                 value.selected = files.ReadCurrent()!;
                 value.Record = NativeEpochRecord.Parse(value.selected);
             }
-            value.RequireCurrent();
+            if (!historical) { value.RequireCurrent(); }
             return value;
         }
         catch { value.Dispose(); throw; }
     }
+    // Caller retains the epoch writer, original attempt custody and owner lock.
+    // Historical authentication grants no selection or startup authority.
+    internal static Task<WindowsNativeInstalledSelection> AuthenticateManagedHistoryAsync(
+        WindowsNativeEpochFiles files, NativeEpochRecord record, bool preparation, CancellationToken token) =>
+        OpenWithWriterAsync(files, record.Encode(), new NoLease(), token, false, historical: true, preparation: preparation);
+
     internal void RequireCurrent()
     {
         string? frontier = Directory.EnumerateFiles(files.Root, "selection-*.bin").Order(StringComparer.Ordinal).LastOrDefault();

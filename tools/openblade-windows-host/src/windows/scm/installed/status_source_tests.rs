@@ -452,3 +452,243 @@ async fn failed_prior_refresh_retires_without_polling_its_result_twice() {
     assert!(source.snapshot(SYSTEM, Instant::now()).await.is_err());
     source.drain().await.unwrap();
 }
+
+#[cfg(feature = "service-mailbox-observation-v1")]
+pub(in crate::installed::readiness) struct InjectedStatusOrigin {
+    pub(in crate::installed::readiness) live: AtomicBool,
+    pub(in crate::installed::readiness) transport_drains: std::sync::atomic::AtomicUsize,
+    metadata_drains: std::sync::atomic::AtomicUsize,
+}
+#[cfg(feature = "service-mailbox-observation-v1")]
+impl InjectedStatusOrigin {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            live: AtomicBool::new(true),
+            transport_drains: 0.into(),
+            metadata_drains: 0.into(),
+        })
+    }
+}
+#[cfg(feature = "service-mailbox-observation-v1")]
+impl StatusOrigin for InjectedStatusOrigin {
+    fn verify(&self) -> io::Result<()> {
+        if self.live.load(Ordering::Acquire) {
+            Ok(())
+        } else {
+            Err(invalid("injected origin lost"))
+        }
+    }
+    fn revoke(&self) {
+        self.live.store(false, Ordering::Release);
+    }
+    fn confirm_metadata_drain(&self) -> io::Result<()> {
+        self.metadata_drains.fetch_add(1, Ordering::AcqRel);
+        Ok(())
+    }
+    fn confirm_transport_drain(&self) -> io::Result<()> {
+        self.transport_drains.fetch_add(1, Ordering::AcqRel);
+        Ok(())
+    }
+}
+#[cfg(feature = "service-mailbox-observation-v1")]
+pub(in crate::installed::readiness) fn in_memory_guarded_no_reader()
+-> (Box<dyn StatusSource>, Arc<InjectedStatusOrigin>) {
+    let origin = InjectedStatusOrigin::new();
+    let mailbox = super::super::mailbox_read::MailboxSource::compose(origin.clone(), || {
+        Err(invalid("prior reader already consumed"))
+    })
+    .unwrap();
+    (
+        compose_guarded_status(
+            ObservedStatus::new(|_| evidence(matched(HidMetadata::Candidate), Power::Battery)),
+            origin.clone(),
+            mailbox,
+        ),
+        origin,
+    )
+}
+
+#[cfg(feature = "service-mailbox-observation-v1")]
+#[tokio::test]
+async fn guarded_no_reader_opens_metadata_but_certifies_only_own_transport_attempt_after_drain() {
+    let (mut source, origin) = in_memory_guarded_no_reader();
+    assert!(source.confirm_drained().is_err());
+    let status = source.snapshot(SYSTEM, Instant::now()).await.unwrap();
+    let status = to_value(status).unwrap();
+    assert_read_only(&status);
+    assert!(
+        status["message"]
+            .as_str()
+            .unwrap()
+            .contains("before native I/O")
+    );
+    assert!(
+        source
+            .observe_performance(SYSTEM, Instant::now() + Duration::from_secs(1))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(origin.transport_drains.load(Ordering::Acquire), 0);
+    source.drain().await.unwrap();
+    source.confirm_drained().unwrap();
+    assert_eq!(origin.transport_drains.load(Ordering::Acquire), 1);
+    assert_eq!(origin.metadata_drains.load(Ordering::Acquire), 0);
+}
+#[cfg(feature = "service-mailbox-observation-v1")]
+#[tokio::test]
+async fn guarded_origin_loss_is_fatal_even_for_no_reader_status() {
+    let (mut source, origin) = in_memory_guarded_no_reader();
+    source.snapshot(SYSTEM, Instant::now()).await.unwrap();
+    origin.live.store(false, Ordering::Release);
+    assert!((source.publication_guard())().is_err());
+    assert!(source.snapshot(SYSTEM, Instant::now()).await.is_err());
+    assert!(source.refresh_publications().await.is_err());
+    let denied = super::super::mailbox_read::MailboxSource::compose(origin, || {
+        panic!("invalid origin cannot enter reader factory")
+    });
+    assert!(denied.is_err());
+}
+#[cfg(feature = "service-mailbox-observation-v1")]
+#[tokio::test]
+async fn guarded_sticky_read_loss_retains_current_metadata_and_expires_both_projections() {
+    use super::super::mailbox_read::{MailboxSource, ReadCustody, ReadSource};
+    use crate::discovery::performance::{
+        ReadAdmission,
+        worker_tests::{BlockAt, blocking_worker_with_authority},
+    };
+    use std::sync::atomic::AtomicU8;
+    struct Custody {
+        mapping: Arc<AtomicBool>,
+        state: AtomicU8,
+    }
+    impl ReadCustody for Custody {
+        fn authorize(&self) -> Option<ReadAdmission> {
+            if !self.mapping.load(Ordering::Acquire) {
+                self.revoke();
+            }
+            (self.state.load(Ordering::Acquire) == 0).then_some(ReadAdmission {
+                generation: [7; 32],
+            })
+        }
+        fn revoke(&self) {
+            let _ = self
+                .state
+                .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire);
+        }
+        fn retire(&self) -> io::Result<()> {
+            self.state.store(2, Ordering::Release);
+            Ok(())
+        }
+        fn confirm_drained(&self) -> io::Result<()> {
+            if self.state.load(Ordering::Acquire) == 2 {
+                Ok(())
+            } else {
+                Err(invalid("not retired"))
+            }
+        }
+    }
+    let origin = InjectedStatusOrigin::new();
+    let mapping = Arc::new(AtomicBool::new(true));
+    let custody = Arc::new(Custody {
+        mapping: mapping.clone(),
+        state: AtomicU8::new(0),
+    });
+    let mut held = None;
+    let reader = ReadSource::compose(custody, |lease| {
+        let (worker, control) =
+            blocking_worker_with_authority(BlockAt::Verify, None, move || lease.authorize());
+        held = Some(control);
+        worker
+    });
+    let held = held.unwrap();
+    let metadata_available = Arc::new(AtomicBool::new(true));
+    let flag = metadata_available.clone();
+    let mut source = GuardedStatus {
+        inner: ObservedStatus::new(move |_| {
+            if flag.load(Ordering::Acquire) {
+                evidence(matched(HidMetadata::Candidate), Power::Battery)
+            } else {
+                Evidence {
+                    controllers: vec!["current-controller".into()],
+                    ..evidence(DeviceMetadata::Unavailable, Power::Unknown)
+                }
+            }
+        }),
+        origin: origin.clone(),
+        mailbox: MailboxSource::compose(origin, || Ok(reader.clone())).unwrap(),
+    };
+    source.snapshot(SYSTEM, Instant::now()).await.unwrap();
+    held.release.send(()).unwrap();
+    let fresh = source
+        .observe_performance(SYSTEM, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(fresh.has_fresh_mailbox_read());
+    reader.expire_for_tests();
+    source.refresh_publications().await.unwrap();
+    assert!(
+        to_value(source.publications().unwrap().borrow().active.clone()).unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .contains("expired")
+    );
+    let again = source
+        .observe_performance(SYSTEM, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(again.has_fresh_mailbox_read());
+    let clean_success = to_value(source.publications().unwrap().borrow().active.clone()).unwrap();
+    let message = clean_success["message"].as_str().unwrap();
+    assert!(!message.contains("expired"));
+    assert_eq!(
+        message
+            .matches("Last confirmed thermal settings retained")
+            .count(),
+        1
+    );
+    let deadline = reader.next_refresh().unwrap();
+    mapping.store(false, Ordering::Release);
+    metadata_available.store(false, Ordering::Release);
+    let retained = source.snapshot(SYSTEM, Instant::now()).await.unwrap();
+    assert!(!retained.has_fresh_mailbox_read());
+    let retained = to_value(retained).unwrap();
+    assert!(!retained["confirmedState"].is_null());
+    assert_eq!(retained["deviceVerified"], false);
+    assert_eq!(retained["activePowerSource"], 3);
+    assert_eq!(
+        retained["potentialControllers"],
+        json!(["current-controller"])
+    );
+    assert!(retained["message"].as_str().unwrap().contains("revoked"));
+    assert_eq!(reader.next_refresh(), Some(deadline));
+    mapping.store(true, Ordering::Release);
+    assert!(
+        source
+            .observe_performance(SYSTEM, Instant::now() + Duration::from_secs(1))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(held.submitted.load(Ordering::Acquire), 8);
+    let active_and_inactive = source.publications().unwrap().borrow().clone();
+    for status in [&active_and_inactive.active, &active_and_inactive.inactive] {
+        let value = to_value(status).unwrap();
+        assert!(value["message"].as_str().unwrap().contains("retained"));
+        assert_eq!(value["deviceVerified"], false);
+        assert!(value["capabilities"].is_null());
+    }
+    reader.expire_for_tests();
+    source.refresh_publications().await.unwrap();
+    let publication = source.publications().unwrap().borrow().clone();
+    for status in [&publication.active, &publication.inactive] {
+        let value = to_value(status).unwrap();
+        assert!(value["confirmedState"].is_null());
+        assert!(value["capabilities"].is_null());
+        assert_eq!(value["writesBlocked"], true);
+        assert!(value["message"].as_str().unwrap().contains("expired"));
+    }
+    source.drain().await.unwrap();
+}

@@ -64,12 +64,21 @@ internal sealed class WindowsSetupRetainedNativeLaunch : ISetupRetainedCandidate
     }
     private static void RequireLive(SafeProcessHandle process)
     { if (WaitForSingleObject(process, 0) != 258) { throw new IOException("Native original process is exited or unknown."); } }
-    internal void RequireExited()
-    { if (WaitForSingleObject(process, 0) != 0) { throw new IOException("Original native process retirement is unconfirmed."); } }
-    void ISetupOriginalManagedProcess.RequireExited() => RequireExited();
+    public Task WaitForExitAsync(TimeSpan budget, CancellationToken token) =>
+        SetupRetainedOriginalExit.WaitAsync(() =>
+        {
+            uint result = WaitForSingleObject(process, 0);
+            return result switch
+            {
+                0 => true,
+                258 => false,
+                0xffffffff => throw new Win32Exception(Marshal.GetLastPInvokeError()),
+                _ => throw new IOException("Original process wait returned an unknown result."),
+            };
+        }, budget, token);
     public void Dispose() { lost = true; process.Dispose(); }
     [DllImport("kernel32.dll", SetLastError = true)] private static extern SafeProcessHandle OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint pid);
-    [DllImport("kernel32.dll")] private static extern uint WaitForSingleObject(SafeProcessHandle process, uint milliseconds);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern uint WaitForSingleObject(SafeProcessHandle process, uint milliseconds);
     [DllImport("kernel32.dll")] private static extern uint GetProcessId(SafeProcessHandle process);
     [DllImport("kernel32.dll", SetLastError = true)][return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetProcessTimes(SafeProcessHandle process, out long created, out long exit, out long kernel, out long user);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)][return: MarshalAs(UnmanagedType.Bool)] private static extern bool QueryFullProcessImageNameW(SafeProcessHandle process, uint flags, StringBuilder image, ref uint size);

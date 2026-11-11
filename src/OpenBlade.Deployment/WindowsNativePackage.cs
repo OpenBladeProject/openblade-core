@@ -144,7 +144,7 @@ internal static class NativeCanonical
 
     internal static byte[] Lines(string header, params string[] fields)
     {
-        int maximum = header is "OpenBlade.NativeStartupOwner.v2" or "OpenBlade.NativeServiceLaunch.v1" or "OpenBlade.NativeReadiness.v2" ? 10924 : 2048;
+        int maximum = header is "OpenBlade.NativeStartupOwner.v2" or "OpenBlade.NativeServiceLaunch.v1" or "OpenBlade.NativeReadiness.v2" or "OpenBlade.ManagedNativeResolution.v2" ? 10924 : 2048;
         if (fields.Any(f => f.Length > maximum || f.Any(c => c < 0x20 || c > 0x7e))
             || header.Length + fields.Sum(f => f.Length + 1) + 1 > 16384)
         { throw new InvalidDataException("Canonical native records require bounded ASCII fields."); }

@@ -19,7 +19,7 @@ public sealed class ServiceMailboxHandoffTests
         var native = coordinator.Lifetime.Reserve();
         var callback = native.Child();
         Task completion = coordinator.CompleteCoreAsync(() => { native.Dispose(); return Task.CompletedTask; }, () => { }, true, default);
-        Assert.False(File.Exists(Path.Combine(files.Root, "receipt.bin")));
+        Assert.False(File.Exists(Path.Combine(files.Root, "handoff-" + request.Request + "-receipt.bin")));
         Assert.False(completion.IsCompleted);
         callback.Dispose();
         await completion;
@@ -30,10 +30,10 @@ public sealed class ServiceMailboxHandoffTests
         Directory.CreateDirectory(Path.Combine(epochs.Root, new string('e', 32)));
         transfer.BindEpoch(epochs, new NativeEpochRecord(NativeEpochPhase.Provisional, new string('e', 32), new string('0', 64), 1,
             request.Installation, request.Package, request.Request, new string('a', 64) + "-service", new string('b', 64) + "-agent", new string('0', 64), new string('f', 64)));
-        using var parity = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "managed-mailbox-handoff-v1.json")));
+        using var parity = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "managed-mailbox-handoff-v2.json")));
         foreach (string name in new[] { "run", "request", "receipt", "mapping" })
         {
-            string file = name == "run" ? "current.bin" : name + ".bin";
+            string file = name == "run" ? "current.bin" : "handoff-" + request.Request + "-" + name + ".bin";
             Assert.Equal(parity.RootElement.GetProperty(name).GetString(), System.Text.Encoding.ASCII.GetString(File.ReadAllBytes(Path.Combine(files.Root, file))));
         }
     }
@@ -98,6 +98,63 @@ public sealed class ServiceMailboxHandoffTests
             Assert.Equal(0, run.Receipts);
             Assert.Equal(0, run.Disposals);
         }
+    }
+
+    [Fact]
+    public async Task OwnerCloseAdmitsResidualCleanupBeforeSealing()
+    {
+        var run = new InjectedRun();
+        using var coordinator = new ServiceMailboxHandoff(run);
+        await coordinator.CompleteCoreAsync(() =>
+        {
+            using var cleanup = coordinator.Lifetime.Reserve();
+            return Task.CompletedTask;
+        }, () => { }, true, default);
+        Assert.Equal(1, run.Receipts);
+        Assert.Throws<IOException>(() => coordinator.Lifetime.Reserve());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OwnerCloseUsesCallerBudgetAndLateCompletionCannotPublish(bool synchronous)
+    {
+        var run = new InjectedRun();
+        var coordinator = new ServiceMailboxHandoff(run);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+        Task closing = coordinator.CompleteCoreAsync(() =>
+        {
+            entered.SetResult();
+            if (synchronous) { release.Task.GetAwaiter().GetResult(); return Task.CompletedTask; }
+            return release.Task;
+        }, () => { }, true, cancellation.Token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => closing.WaitAsync(TimeSpan.FromSeconds(5)));
+        coordinator.Dispose();
+        Assert.Equal(0, run.Disposals);
+        Assert.Equal(0, run.Receipts);
+        release.SetResult();
+        await Assert.ThrowsAsync<IOException>(() => coordinator.Lifetime.WhenTerminal);
+        Assert.Equal(0, run.Receipts);
+    }
+
+    [Fact]
+    public async Task ExpiredBudgetDoesNotStartOwnerCleanupOrReleaseCustody()
+    {
+        var run = new InjectedRun();
+        var coordinator = new ServiceMailboxHandoff(run);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        bool closed = false;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.CompleteCoreAsync(
+            () => { closed = true; return Task.CompletedTask; }, () => { }, true, cancellation.Token));
+        coordinator.Dispose();
+        Assert.False(closed);
+        Assert.Equal(0, run.Receipts);
+        Assert.Equal(0, run.Disposals);
     }
 
     private sealed class InjectedRun : IManagedMailboxRun

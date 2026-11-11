@@ -866,6 +866,23 @@ public sealed partial class ProductionLightingPortTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task DriverModeCleanup_DoesNotReplayAmbiguousRelease(bool rz090528)
+    {
+        var session = new LightingSession(initialBrightness: 0xC5) { DeviceMode = RazerDeviceMode.Normal };
+        (IProductionLightingPort port, _) = CreateDriverModeCleanupPort(session, rz090528);
+        await port.MaintainDriverModeAsync(default);
+        session.DeviceModeQueryOverrides.Enqueue(RazerDeviceMode.Driver);
+        session.DeviceModeQueryOverrides.Enqueue(RazerDeviceMode.Driver);
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.ReleaseDriverModeAsync(default));
+        int submissions = session.DeviceModeSetCalls;
+        await port.DisposeAsync();
+        Assert.Equal(submissions, session.DeviceModeSetCalls);
+        Assert.Equal(DriverModeRestoreOutcome.Indeterminate, port.DriverModeRestoreOutcome);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task DriverModeCleanup_ReadbackMismatchRetainsOwnershipAndReportsIndeterminate(
         bool rz090528)
     {

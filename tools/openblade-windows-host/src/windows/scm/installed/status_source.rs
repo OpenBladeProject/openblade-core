@@ -90,6 +90,7 @@ struct ObservedStatus {
     last: Option<(i64, StatusFields)>,
     observed_at: Option<Instant>,
     publisher: Option<watch::Sender<Arc<Publication>>>,
+    metadata: Option<Arc<Publication>>,
 }
 
 impl ObservedStatus {
@@ -102,6 +103,7 @@ impl ObservedStatus {
             last: None,
             observed_at: None,
             publisher: None,
+            metadata: None,
         }
     }
 
@@ -225,7 +227,12 @@ impl ObservedStatus {
         // create a new status revision.
         let revision = match &self.last {
             Some((_, last)) if *last == fields => return Ok(()),
-            Some((revision, _)) => revision
+            Some((revision, _)) => (*revision)
+                .max(
+                    self.publisher
+                        .as_ref()
+                        .map_or(0, |p| p.borrow().active.revision()),
+                )
                 .checked_add(1)
                 .ok_or_else(|| invalid("status revision exhausted"))?,
             None => 0,
@@ -248,6 +255,7 @@ impl ObservedStatus {
                 "Another Windows session currently controls OpenBlade hardware.".to_owned(),
             ),
         });
+        self.metadata = Some(publication.clone());
         if let Some(publisher) = &self.publisher {
             publisher.send_replace(publication);
         } else {
@@ -351,22 +359,53 @@ pub(super) fn native_status_source(
     origin: Arc<crate::loaded_origin::Origin>,
 ) -> io::Result<Box<dyn StatusSource>> {
     #[cfg(feature = "service-mailbox-observation-v1")]
-    let mailbox = super::mailbox_read::ReadSource::acquire(origin.clone())?;
-    Ok(Box::new(GuardedStatus {
-        inner: ObservedStatus::new(read_windows),
+    let mailbox = super::mailbox_read::MailboxSource::acquire(origin.clone())?;
+    Ok(compose_guarded_status(
+        ObservedStatus::new(read_windows),
         origin,
         #[cfg(feature = "service-mailbox-observation-v1")]
         mailbox,
-    }))
+    ))
 }
-#[cfg(not(test))]
+fn compose_guarded_status(
+    inner: ObservedStatus,
+    origin: Arc<dyn StatusOrigin>,
+    #[cfg(feature = "service-mailbox-observation-v1")] mailbox: super::mailbox_read::MailboxSource,
+) -> Box<dyn StatusSource> {
+    Box::new(GuardedStatus {
+        inner,
+        origin,
+        #[cfg(feature = "service-mailbox-observation-v1")]
+        mailbox,
+    })
+}
+
+pub(super) trait StatusOrigin: Send + Sync {
+    fn verify(&self) -> io::Result<()>;
+    fn revoke(&self);
+    fn confirm_metadata_drain(&self) -> io::Result<()>;
+    fn confirm_transport_drain(&self) -> io::Result<()>;
+}
+impl StatusOrigin for crate::loaded_origin::Origin {
+    fn verify(&self) -> io::Result<()> {
+        self.verify()
+    }
+    fn revoke(&self) {
+        self.revoke();
+    }
+    fn confirm_metadata_drain(&self) -> io::Result<()> {
+        self.confirm_metadata_drain()
+    }
+    fn confirm_transport_drain(&self) -> io::Result<()> {
+        self.confirm_transport_drain()
+    }
+}
 struct GuardedStatus {
     inner: ObservedStatus,
-    origin: Arc<crate::loaded_origin::Origin>,
+    origin: Arc<dyn StatusOrigin>,
     #[cfg(feature = "service-mailbox-observation-v1")]
-    mailbox: super::mailbox_read::ReadSource,
+    mailbox: super::mailbox_read::MailboxSource,
 }
-#[cfg(not(test))]
 impl StatusSource for GuardedStatus {
     fn observe_performance(&mut self, caller: Caller, deadline: Instant) -> Observation {
         #[cfg(feature = "service-mailbox-observation-v1")]
@@ -411,7 +450,14 @@ impl StatusSource for GuardedStatus {
             let value = self.inner.snapshot(caller, requested).await?;
             #[cfg(feature = "service-mailbox-observation-v1")]
             if let Some(publisher) = &self.inner.publisher {
-                self.mailbox.decorate(publisher)?;
+                self.mailbox.decorate(
+                    publisher,
+                    self.inner
+                        .metadata
+                        .as_ref()
+                        .ok_or_else(|| invalid("metadata not observed"))?
+                        .clone(),
+                )?;
                 let access = caller.access()?;
                 let current = publisher.borrow();
                 let value = if access == 0 {
@@ -432,12 +478,30 @@ impl StatusSource for GuardedStatus {
     fn refresh_publications(&mut self) -> Pending<'_, Instant> {
         Box::pin(async move {
             self.origin.verify()?;
+            // Expire presentation before a slow metadata observation can defer it.
+            #[cfg(feature = "service-mailbox-observation-v1")]
+            if let (Some(publisher), Some(metadata)) = (&self.inner.publisher, &self.inner.metadata)
+            {
+                self.mailbox.decorate(publisher, metadata.clone())?;
+            }
             let due = self.inner.refresh_publications().await?;
             #[cfg(feature = "service-mailbox-observation-v1")]
             if let Some(publisher) = &self.inner.publisher {
-                self.mailbox.decorate(publisher)?;
+                self.mailbox.decorate(
+                    publisher,
+                    self.inner
+                        .metadata
+                        .as_ref()
+                        .ok_or_else(|| invalid("metadata not observed"))?
+                        .clone(),
+                )?;
             }
             self.origin.verify()?;
+            #[cfg(feature = "service-mailbox-observation-v1")]
+            let due = self
+                .mailbox
+                .next_refresh()
+                .map_or(due, |expiry| expiry.min(due));
             Ok(due)
         })
     }
@@ -523,3 +587,6 @@ mod tests;
 
 #[cfg(test)]
 pub(super) use tests::{in_memory_source, in_memory_source_with_firmware};
+
+#[cfg(all(test, feature = "service-mailbox-observation-v1"))]
+pub(super) use tests::in_memory_guarded_no_reader;

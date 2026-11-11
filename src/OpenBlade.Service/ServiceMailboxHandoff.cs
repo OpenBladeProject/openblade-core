@@ -7,29 +7,25 @@ namespace OpenBlade.Service;
 internal sealed class ServiceMailboxHandoff : IDisposable
 {
     private readonly IManagedMailboxRun? run;
-    private readonly IDisposable? unenrolledExclusion;
+    private readonly ManagedMailboxStartup.Admission? startup;
     private int quarantined;
     private int completionAttempted;
+    private Task? ownerRetirement;
+    private Func<Task>? retainedOwnerClose;
+    private Action? retainedGuardianProof;
     internal MailboxLifetime Lifetime { get; } = new();
     public ServiceMailboxHandoff()
     {
-        if (WindowsManagedMailboxRun.IsEnrolledImage)
-        {
-            try
+        startup = ManagedMailboxStartup.Open(ManagedMailboxNativeCustody.Acquire,
+            WindowsManagedMailboxRun.AcquireLegacyExclusion,
+            native =>
             {
+                if (!WindowsManagedMailboxRun.IsEnrolledImage) { return null; }
                 using var upgrade = OpenBlade.DeploymentBroker.BrokerNativePackageCommitmentProducer
                     .OpenManagedCurrentAsync(CancellationToken.None).GetAwaiter().GetResult();
-                run = WindowsManagedMailboxRun.Start(upgrade);
-            }
-            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException
-                or System.Security.Cryptography.CryptographicException or OpenBladeReleaseVerificationException)
-            {
-                // An unauthenticated/default managed run remains operational;
-                // the native migration prerequisite is explicitly unavailable.
-                System.Diagnostics.Trace.TraceWarning("Managed mailbox handoff enrollment unavailable: {0}", error.Message);
-            }
-        }
-        if (run is null) { unenrolledExclusion = WindowsManagedMailboxRun.AcquireUnenrolledExclusion(); }
+                return WindowsManagedMailboxRun.Start(upgrade, native);
+            }, WindowsManagedMailboxRun.AcquireUnenrolledExclusion);
+        run = startup.Run;
     }
     internal ServiceMailboxHandoff(IManagedMailboxRun run) { this.run = run; }
 
@@ -40,7 +36,7 @@ internal sealed class ServiceMailboxHandoff : IDisposable
         if (!ReferenceEquals(tracked.MailboxLifetime, Lifetime))
         { throw new IOException("Service provider belongs to another transport lifetime scope."); }
         return CompleteCoreAsync(
-            () => { tracked.Dispose(); return Task.CompletedTask; },
+            tracked.RetireMailboxOwnersAsync,
             () => { actual.RequireMailboxGuardianQuiescent(); tracked.RequireTransportDelegationClear(); },
             intentionalStop, token);
     }
@@ -51,22 +47,40 @@ internal sealed class ServiceMailboxHandoff : IDisposable
     {
         if (Interlocked.Exchange(ref completionAttempted, 1) != 0)
         { throw new IOException("Service transport retirement is never replayed."); }
-        Lifetime.Seal();
+        retainedOwnerClose = closeOwners;
+        retainedGuardianProof = requireGuardianClear;
         try
         {
-            requireGuardianClear();
-            await closeOwners().WaitAsync(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            retainedGuardianProof!();
+            // Worker producers and guarded lifecycle cleanup have already stopped.
+            // The remaining owner close may need its own admitted getter/cleanup.
+            // Run synchronous Dispose off the caller so its remaining budget also
+            // bounds that phase; retain the actual task through timeout or fault.
+            ownerRetirement = Task.Run(async () =>
+            {
+                try { await retainedOwnerClose!().ConfigureAwait(false); }
+                catch (Exception error) { Lifetime.Fail(error); throw; }
+                finally { Lifetime.Seal(); }
+            }, CancellationToken.None);
+            await ownerRetirement.WaitAsync(token).ConfigureAwait(false);
             await Lifetime.WhenTerminal.WaitAsync(token).ConfigureAwait(false);
-            requireGuardianClear();
+            retainedGuardianProof!();
+            token.ThrowIfCancellationRequested();
             if (!Lifetime.SuccessfullyTerminal) { throw new IOException("Service transport retirement is unresolved."); }
             if (intentionalStop) { run?.PublishQuiescent(); }
         }
-        catch (Exception error) { Lifetime.Fail(error); throw; }
+        catch (Exception error)
+        {
+            Lifetime.Fail(error);
+            if (ownerRetirement is null) { Lifetime.Seal(); }
+            throw;
+        }
     }
 
     public void Dispose()
     {
-        if (!Lifetime.SuccessfullyTerminal)
+        if (ownerRetirement?.IsCompletedSuccessfully != true || !Lifetime.SuccessfullyTerminal)
         {
             // Keep process-wide custody on timeout/fault, even when DI teardown
             // drops the provider. OS process exit cannot mint a receipt.
@@ -74,6 +88,8 @@ internal sealed class ServiceMailboxHandoff : IDisposable
             { _ = System.Runtime.InteropServices.GCHandle.Alloc(this); }
             return;
         }
-        try { run?.Dispose(); } finally { unenrolledExclusion?.Dispose(); }
+        if (startup is not null) { startup.Dispose(); } else { run?.Dispose(); }
+        retainedOwnerClose = null;
+        retainedGuardianProof = null;
     }
 }

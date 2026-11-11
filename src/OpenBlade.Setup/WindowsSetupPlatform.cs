@@ -99,11 +99,12 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         return WindowsSetupRetainedNativeLaunch.Capture(await WindowsSetupCandidateService.ReadAsync(token),
             priorNativeSelection.ServicePath, priorNativeSelection.ServiceSha256);
     }
-    private void ConfirmNativeStop(WindowsSetupRetainedNativeLaunch? original)
+    private async Task ConfirmNativeStopAsync(WindowsSetupRetainedNativeLaunch? original, TimeSpan budget, CancellationToken token)
     {
         if (priorNativeSelection is null || priorNativeSelection.Record.Phase == NativeEpochPhase.Retired) { return; }
         if (original is null) { priorNativeSelection.RetireRecoverableSelection(); return; }
-        original.RequireExited();
+        await original.WaitForExitAsync(budget, token).ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
         priorNativeSelection!.RetireAfterStatusDrain(original.Launch.ProcessId, original.Launch.CreationFileTimeUtc);
     }
 
@@ -256,6 +257,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         // refusal with missing history. Managed preparation carries no native fence.
         if (priorNativeSelection is not null && priorNativeSelection.Record.Phase != NativeEpochPhase.Retired)
         { ServiceTransition = SetupServiceTransition.NativeRetirementPossible; }
+        long stopStarted = System.Diagnostics.Stopwatch.GetTimestamp();
         using var nativeStop = await CaptureNativeStopAsync(cancellationToken);
         SetupServiceState? state = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
         using var managedStop = incomingMailbox is not null
@@ -278,18 +280,19 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         if (managedStop is not null)
         {
             var transfer = managedTransfer ?? throw new IOException("Managed handoff request was not retained.");
-            SetupManagedMailboxAdmission.Confirm(managedStop, transfer);
+            await SetupManagedMailboxAdmission.ConfirmAsync(managedStop, transfer,
+                TimeSpan.FromSeconds(30) - System.Diagnostics.Stopwatch.GetElapsedTime(stopStarted), cancellationToken).ConfigureAwait(false);
             (selectedNativeTransaction ?? throw new IOException("Native payload must be staged before managed handoff."))
                 .BindManagedHandoff(transfer);
             managedTransfer = null;
         }
-        ConfirmNativeStop(nativeStop);
+        await ConfirmNativeStopAsync(nativeStop, TimeSpan.FromSeconds(30) - System.Diagnostics.Stopwatch.GetElapsedTime(stopStarted), cancellationToken).ConfigureAwait(false);
         ServiceTransition = priorNativeSelection is null ? SetupServiceTransition.ManagedPrepared : SetupServiceTransition.NativeRetired;
     }
 
     private async Task<ISetupOriginalManagedProcess> CaptureManagedMailboxStopAsync(SetupServiceState? state, CancellationToken token)
     {
-        if (priorNativeSelection is not null || state != SetupServiceState.Running)
+        if (priorNativeSelection is { Record.Phase: not NativeEpochPhase.Retired } || state != SetupServiceState.Running)
         { throw new IOException("Native mailbox observation requires a running handoff-capable managed upgrade first."); }
         var files = WindowsNativeEpochFiles.OpenProtected(WindowsNativeEpochFiles.ManagedHandoffRoot);
         WindowsSetupRetainedNativeLaunch? original = null;
@@ -788,11 +791,12 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     public async Task RemoveServiceAsync(CancellationToken cancellationToken)
     {
+        long stopStarted = System.Diagnostics.Stopwatch.GetTimestamp();
         using var nativeStop = await CaptureNativeStopAsync(cancellationToken);
         if (!await serviceControl.ExistsAsync(ServiceName, cancellationToken))
         {
             guardianQuiescenceGuard.EnsureClear();
-            ConfirmNativeStop(nativeStop);
+            await ConfirmNativeStopAsync(nativeStop, TimeSpan.FromSeconds(30) - System.Diagnostics.Stopwatch.GetElapsedTime(stopStarted), cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -803,7 +807,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             TimeSpan.FromSeconds(30),
             cancellationToken);
         guardianQuiescenceGuard.EnsureClear();
-        ConfirmNativeStop(nativeStop);
+        await ConfirmNativeStopAsync(nativeStop, TimeSpan.FromSeconds(30) - System.Diagnostics.Stopwatch.GetElapsedTime(stopStarted), cancellationToken).ConfigureAwait(false);
         await serviceControl.RunAsync(["delete", ServiceName], [ServiceDoesNotExist], cancellationToken);
         await serviceControl.WaitForDeletionAsync(ServiceName, TimeSpan.FromSeconds(30), cancellationToken);
     }

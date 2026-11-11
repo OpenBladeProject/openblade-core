@@ -131,16 +131,16 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
                 NativeCanonical.Digest(package.Record), request.ToString("N"), package.Service.Id, package.Agent.Id,
                 new string('0', 64), NativeCanonical.Digest(startupOwner));
             byte[] selection = value.Encode();
-            if (package.Service.ReadOnlyMailbox)
-            {
-                (managedTransfer ?? throw new IOException("A real managed transport handoff is required for native observation."))
-                    .BindEpoch(files, value);
-            }
             files.CreateDirectoryOnce(Path.Combine(directory, "attempts"));
             files.PublishCustody(Path.Combine(directory, "attempts", "custody.lock"), NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", epoch));
             files.Publish(Path.Combine(directory, "startup-policy.bin"), NativeCanonical.Lines("OpenBlade.NativeStartupPolicy.v1",
                 epoch, NativeCanonical.Digest(selection), package.Service.Id, package.Service.StartupPolicy));
             files.Publish(Path.Combine(directory, "origin.bin"), selection);
+            if (package.Service.ReadOnlyMailbox)
+            {
+                (managedTransfer ?? throw new IOException("A real managed transport handoff is required for native observation."))
+                    .BindEpoch(files, value);
+            }
             testCrashBoundary?.Invoke(NativeEpochBoundary.OriginWritten);
             files.Publish(Path.Combine(directory, "Provisional.bin"), selection);
             testCrashBoundary?.Invoke(NativeEpochBoundary.PhaseWritten);
