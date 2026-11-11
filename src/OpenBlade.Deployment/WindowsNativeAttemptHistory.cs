@@ -40,7 +40,22 @@ internal static class WindowsNativeAttemptHistory
                 record.Request, NativeCanonical.Digest(origin), record.Package, record.ServiceId)))
             { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Native startup submission differs from its original attempt."); }
         }
-        if (record.Phase == NativeEpochPhase.Committed && (!submitted || launches.Count == 0))
+        // Metadata recovery may have changed Committed to Unresolved. Preserve
+        // the original readiness declaration instead of checking only current.
+        bool committedHistory = record.Phase == NativeEpochPhase.Committed;
+        string committedPath = Path.Combine(directory, "Committed.bin");
+        bool hasCommitted;
+        try { _ = File.GetAttributes(committedPath); hasCommitted = true; }
+        catch (FileNotFoundException) { hasCommitted = false; }
+        if (hasCommitted)
+        {
+            var committed = NativeEpochRecord.Parse(Read(committedPath));
+            if (committed.Phase != NativeEpochPhase.Committed
+                || committed with { Phase = record.Phase, Readiness = record.Readiness } != record)
+            { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Preserved committed native history differs from the exact attempt."); }
+            committedHistory = true;
+        }
+        if (committedHistory && (!submitted || launches.Count == 0))
         { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Committed native readiness contradicts missing startup/launch history; evidence was preserved."); }
         if (launches.Count != drains.Count || !submitted && launches.Count != 0)
         { throw new NativeRecoveryException(NativeRecoveryReason.MissingAttemptDrain, "Native launch/submission/drain history is incomplete; no startup was replayed."); }

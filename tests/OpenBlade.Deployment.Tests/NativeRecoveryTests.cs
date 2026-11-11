@@ -95,6 +95,31 @@ public sealed class NativeRecoveryTests
     }
 
     [Theory]
+    [InlineData((int)NativeEpochBoundary.PhaseWritten)]
+    [InlineData((int)NativeEpochBoundary.FrontierWritten)]
+    [InlineData((int)NativeEpochBoundary.SelectionPublished)]
+    public async Task InterruptedCommitKeepsReadinessContradictionAcrossUnresolvedRecovery(int boundary)
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var package = await WindowsNativeEpochTests.Package(files);
+        string epoch;
+        using (var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()))
+        {
+            epoch = tx.Record.Epoch;
+            tx.MarkStartupSubmitted();
+            // Injected metadata readiness contradicts absent actual launch evidence.
+            Assert.Throws<IOException>(() => tx.CommitAfterBoundReadiness(new string('e', 64), b =>
+            { if ((int)b == boundary) { throw new IOException("commit publication crash"); } }));
+        }
+        using var selection = await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None);
+        byte[] original = File.ReadAllBytes(Path.Combine(files.Root, epoch, "Committed.bin"));
+        Assert.Equal(NativeRecoveryReason.UnknownAttemptHistory,
+            Assert.Throws<NativeRecoveryException>(() => selection!.RetireRecoverableSelection()).Reason);
+        Assert.Equal(original, File.ReadAllBytes(Path.Combine(files.Root, epoch, "Committed.bin")));
+        Assert.NotEqual(NativeEpochPhase.Retired, NativeEpochRecord.Parse(files.ReadCurrent()!).Phase);
+    }
+
+    [Theory]
     [InlineData("missing-drain")]
     [InlineData("later-restart")]
     [InlineData("wrong-process")]
