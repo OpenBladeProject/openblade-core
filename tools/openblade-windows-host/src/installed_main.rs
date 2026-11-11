@@ -17,6 +17,12 @@ mod scm_host;
 #[cfg(windows)]
 #[path = "windows/scm/identity.rs"]
 mod scm_identity;
+#[cfg(all(windows, feature = "scratch-candidate-receipt"))]
+#[allow(dead_code)]
+mod scratch_receipt_policy;
+#[cfg(all(windows, feature = "scratch-candidate-receipt"))]
+#[allow(dead_code)]
+mod scratch_receiver_closure;
 #[cfg(windows)]
 mod service_frame;
 #[cfg(windows)]
@@ -30,7 +36,13 @@ mod session_native;
 #[cfg(windows)]
 #[allow(dead_code)] // Shared with the development writer, which is not linked here.
 mod windows_protected_path;
-#[cfg(all(windows, test, feature = "native-agent-entry-compile-check"))]
+#[cfg(all(
+    windows,
+    any(
+        feature = "scratch-candidate-receipt",
+        all(test, feature = "native-agent-entry-compile-check")
+    )
+))]
 mod windows_token;
 
 #[cfg(not(test))]

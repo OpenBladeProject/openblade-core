@@ -27,6 +27,7 @@
     <DefineConstants>$(DefineConstants);OPENBLADE_CANDIDATE_RECEIPT_FIXTURE</DefineConstants>
   </PropertyGroup>
   <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <None Include="../../tools/openblade-windows-host/tests/data/scratch-receiver-closure-v1.json" Link="scratch-receiver-closure-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../../src/OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj" />
     <ProjectReference Include="../OpenBlade.CandidateReceipt.Scratch/OpenBlade.CandidateReceipt.Scratch.csproj" />
   </ItemGroup>

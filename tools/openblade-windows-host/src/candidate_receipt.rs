@@ -30,6 +30,8 @@ const COMMITTED_NAME: &str = "candidate-package.committed.json";
 const MAX_RECEIPT_BYTES: u64 = 4096;
 const EMPTY_GUID: &str = "00000000-0000-0000-0000-000000000000";
 const AGENT_NAME: &str = "OpenBlade.SessionAgent.exe";
+#[cfg(feature = "scratch-candidate-receipt")]
+pub(super) const SCRATCH_LAUNCH_NAME: &str = "candidate-setup-launch.v2";
 
 #[derive(Clone, Copy)]
 enum Phase {
@@ -75,7 +77,7 @@ fn verify_scratch_launch(
     active: &[u8],
     issuer: &ActiveBinding<'_>,
 ) -> io::Result<[u8; 32]> {
-    // v1: broker generation, receiver generation, then three SHA-256 digests.
+    // v2 launch file: broker/receiver generations, active/closure/secret digests.
     let active_digest: [u8; 32] = Sha256::digest(active).into();
     if evidence[12..24] != issuer.setup_identity
         || evidence[24..56] != active_digest
@@ -85,16 +87,48 @@ fn verify_scratch_launch(
             "provisional Setup issuer differs from the broker launch evidence",
         ));
     }
-    Ok(evidence[56..88].try_into().expect("fixed v1 image digest"))
+    Ok(evidence[56..88]
+        .try_into()
+        .expect("fixed v2 closure digest"))
+}
+
+// The caller supplies the kernel-pinned identity; tests exercise comparison only.
+#[cfg(feature = "scratch-candidate-receipt")]
+pub(super) fn verify_setup_generation(commitment: &str, identity: [u8; 12]) -> io::Result<()> {
+    let identity_hex: String = identity.iter().map(|byte| format!("{byte:02x}")).collect();
+    if commitment.len() != 152 || !lower_hex(commitment, 152) || commitment[128..] != identity_hex {
+        return Err(denied("provisional Setup process generation differs"));
+    }
+    Ok(())
+}
+
+// In-memory stream seam for size/stability failures; production supplies a same-handle snapshot.
+#[cfg(feature = "scratch-candidate-receipt")]
+fn read_launch_evidence(
+    mut reader: impl Read,
+    size: u64,
+    unchanged: impl FnOnce() -> io::Result<bool>,
+) -> io::Result<[u8; 120]> {
+    let mut evidence = [0; 120];
+    if size != evidence.len() as u64 {
+        return Err(denied("invalid scratch launch evidence length"));
+    }
+    reader.read_exact(&mut evidence)?;
+    if !unchanged()? {
+        return Err(denied(
+            "scratch launch evidence changed during verification",
+        ));
+    }
+    Ok(evidence)
 }
 
 #[cfg(all(test, feature = "scratch-candidate-receipt"))]
 mod scratch_launch_tests {
     use super::*;
 
-    #[test]
-    fn issuer_requires_the_original_launch_generation_binding_and_secret() {
-        let active = b"active deployment";
+    // A test-only byte authority for guard coverage, never a live peer claim.
+    fn authenticated_test_evidence() -> (Vec<u8>, ActiveBinding<'static>, [u8; 120]) {
+        let active = b"canonical active deployment test evidence".to_vec();
         let issuer = ActiveBinding {
             digest: [0; 32],
             setup_identity: [1; 12],
@@ -103,18 +137,95 @@ mod scratch_launch_tests {
         };
         let mut evidence = [0; 120];
         evidence[12..24].copy_from_slice(&issuer.setup_identity);
-        evidence[24..56].copy_from_slice(&Sha256::digest(active));
+        evidence[24..56].copy_from_slice(&Sha256::digest(&active));
         evidence[56..88].fill(3);
         evidence[88..].copy_from_slice(&issuer.launch_secret_digest);
         assert_eq!(
-            verify_scratch_launch(&evidence, active, &issuer).unwrap(),
+            verify_scratch_launch(&evidence, &active, &issuer).unwrap(),
             [3; 32]
         );
-        for offset in [16, 24, 88] {
-            let mut changed = evidence;
-            changed[offset] ^= 1;
-            assert!(verify_scratch_launch(&changed, active, &issuer).is_err());
+        (active, issuer, evidence)
+    }
+
+    fn reject_launch_byte(offset: usize) {
+        let (active, issuer, mut evidence) = authenticated_test_evidence();
+        evidence[offset] ^= 1;
+        assert_eq!(
+            verify_scratch_launch(&evidence, &active, &issuer)
+                .unwrap_err()
+                .to_string(),
+            "provisional Setup issuer differs from the broker launch evidence"
+        );
+    }
+
+    #[test]
+    fn authenticated_launch_rejects_receiver_generation() {
+        reject_launch_byte(16);
+    }
+    #[test]
+    fn authenticated_launch_rejects_original_active_binding() {
+        reject_launch_byte(24);
+    }
+    #[test]
+    fn authenticated_launch_rejects_inherited_secret() {
+        reject_launch_byte(88);
+    }
+
+    #[test]
+    fn authenticated_startup_rejects_different_kernel_pinned_generation_comparison() {
+        let (_, issuer, _) = authenticated_test_evidence();
+        let mut commitment = "00".repeat(64);
+        commitment.extend(
+            issuer
+                .setup_identity
+                .iter()
+                .map(|byte| format!("{byte:02x}")),
+        );
+        verify_setup_generation(&commitment, issuer.setup_identity).unwrap();
+        let mut other = issuer.setup_identity;
+        other[4] ^= 1;
+        assert_eq!(
+            verify_setup_generation(&commitment, other)
+                .unwrap_err()
+                .to_string(),
+            "provisional Setup process generation differs"
+        );
+    }
+
+    #[test]
+    fn authenticated_launch_rejects_exact_length_before_reading() {
+        let (_, _, evidence) = authenticated_test_evidence();
+        for size in [0, 119, 121] {
+            assert_eq!(
+                read_launch_evidence(evidence.as_slice(), size, || panic!(
+                    "length must refuse first"
+                ))
+                .unwrap_err()
+                .to_string(),
+                "invalid scratch launch evidence length"
+            );
         }
+    }
+
+    #[test]
+    fn authenticated_launch_rejects_same_handle_change_after_reading() {
+        let (_, _, evidence) = authenticated_test_evidence();
+        assert_eq!(
+            read_launch_evidence(evidence.as_slice(), 120, || Ok(true)).unwrap(),
+            evidence
+        );
+        assert_eq!(
+            read_launch_evidence(evidence.as_slice(), 120, || Ok(false))
+                .unwrap_err()
+                .to_string(),
+            "scratch launch evidence changed during verification"
+        );
+        assert_eq!(
+            read_launch_evidence(&evidence[..119], 120, || Ok(true))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::UnexpectedEof
+        );
     }
 }
 
@@ -168,8 +279,24 @@ pub(super) fn read(
 #[cfg(feature = "scratch-candidate-receipt")]
 pub(super) struct ProvisionalStartup {
     _files: RetainedRecord,
-    _binding: File,
-    _agent: File,
+    _evidence: StartupEvidence,
+}
+
+#[cfg(feature = "scratch-candidate-receipt")]
+struct StartupEvidence {
+    binding: File,
+    agent: File,
+    _launch: File,
+    _request: File,
+    _staging: File,
+    closure: crate::scratch_receiver_closure::ScratchReceiverClosure,
+}
+
+#[cfg(feature = "scratch-candidate-receipt")]
+impl ProvisionalStartup {
+    pub(super) fn require_unchanged(&mut self) -> io::Result<()> {
+        self._evidence.closure.require_unchanged().map(|_| ())
+    }
 }
 
 #[cfg(feature = "scratch-candidate-receipt")]
@@ -190,13 +317,16 @@ pub(super) fn read_provisional(
         || Some(expected),
         Some(active_binding),
     )?;
-    let (binding, agent) = startup.expect("startup evidence retains both files");
     Ok(ProvisionalStartup {
         _files: files,
-        _binding: binding,
-        _agent: agent,
+        _evidence: startup.expect("startup retains the complete launch evidence and closure"),
     })
 }
+
+#[cfg(feature = "scratch-candidate-receipt")]
+type OptionalStartup = Option<StartupEvidence>;
+#[cfg(not(feature = "scratch-candidate-receipt"))]
+type OptionalStartup = Option<()>;
 
 fn read_record(
     install: &Path,
@@ -206,7 +336,7 @@ fn read_record(
     check_file: impl Fn(&File) -> io::Result<()>,
     expected_receipt: impl FnOnce() -> Option<[u8; 32]>,
     #[cfg(feature = "scratch-candidate-receipt")] active_binding: Option<ActiveBinding<'_>>,
-) -> io::Result<(RetainedRecord, Option<(File, File)>)> {
+) -> io::Result<(RetainedRecord, OptionalStartup)> {
     let (root, ancestors, info) = pin_root(install)?;
     require_ntfs(&ancestors[0])?;
     let check_directories = || {
@@ -326,28 +456,21 @@ fn read_record(
         };
         let staging = open_directory(scratch, "staging")?;
         let request = open_directory(&staging, &record.request_id.replace('-', ""))?;
-        let mut launch = open(&request, "candidate-setup-launch.v1")?;
+        let launch = open(&request, SCRATCH_LAUNCH_NAME)?;
         verify_file(&launch)?;
         let launch_snapshot = snapshot(&launch)?;
-        let mut evidence = [0; 120];
-        if launch_snapshot.size != evidence.len() as u64 {
-            return Err(denied("invalid scratch launch evidence length"));
-        }
-        launch.read_exact(&mut evidence)?;
-        if snapshot(&launch)? != launch_snapshot {
-            return Err(denied(
-                "scratch launch evidence changed during verification",
-            ));
-        }
+        let mut reader = &launch;
+        let evidence = read_launch_evidence(&mut reader, launch_snapshot.size, || {
+            Ok(snapshot(&launch)? == launch_snapshot)
+        })?;
         let receiver_digest = verify_scratch_launch(&evidence, &active, &expected_binding)?;
-        let receiver_directory = open_directory(scratch, "receiver")?;
-        let mut receiver = open(
-            &receiver_directory,
-            "OpenBlade.CandidateReceipt.Scratch.exe",
-        )?;
-        verify_file(&receiver)?;
-        let size = snapshot(&receiver)?.size;
-        service_image::verify(&mut receiver, size, receiver_digest).map_err(|error| {
+        let owner = crate::scratch_receipt_policy::retained_owner(scratch)?;
+        let closure = crate::scratch_receiver_closure::ScratchReceiverClosure::retain(
+            scratch,
+            &owner,
+            receiver_digest,
+        )
+        .map_err(|error| {
             io::Error::new(
                 error.kind(),
                 format!("Setup issuer image verification failed: {error}"),
@@ -366,7 +489,14 @@ fn read_record(
                 format!("Session Agent verification failed: {error}"),
             )
         })?;
-        Some((binding, agent))
+        Some(StartupEvidence {
+            binding,
+            agent,
+            _launch: launch,
+            _request: request,
+            _staging: staging,
+            closure,
+        })
     } else {
         None
     };
@@ -381,9 +511,15 @@ fn read_record(
     verify_file(&image)?;
     verify_file(&receipt)?;
     #[cfg(feature = "scratch-candidate-receipt")]
-    if let Some((binding, agent)) = &startup {
-        verify_file(binding)?;
-        verify_file(agent)?;
+    if let Some(evidence) = &startup {
+        verify_file(&evidence.binding)?;
+        verify_file(&evidence.agent)?;
+    }
+    #[cfg(feature = "scratch-candidate-receipt")]
+    let mut startup = startup;
+    #[cfg(feature = "scratch-candidate-receipt")]
+    if let Some(evidence) = &mut startup {
+        evidence.closure.require_unchanged()?;
     }
     check_directories()?;
     if snapshot(&receipt)? != before {
