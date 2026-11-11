@@ -321,3 +321,73 @@ async fn in_memory_rapid_valid_baselines_and_eof_use_capped_backoff() {
     );
     assert_eq!(baselines.get(), 8);
 }
+
+#[tokio::test(start_paused = true)]
+async fn configured_initial_start_pending_reconnects_to_running_with_fresh_authority() {
+    use crate::scm_identity::ScmEvidence;
+    use windows_sys::Win32::System::Services::{
+        SERVICE_RUNNING, SERVICE_START_PENDING, SERVICE_WIN32_OWN_PROCESS,
+    };
+    struct ScmFactory {
+        state: Cell<u32>,
+        acquisitions: Cell<usize>,
+        original: Rc<Proof>,
+    }
+    impl InstalledServiceAuthority for ScmFactory {
+        fn acquire_generation(
+            &self,
+        ) -> Result<Box<dyn InstalledServiceGeneration + '_>, ServiceAuthorityError> {
+            self.acquisitions.set(self.acquisitions.get() + 1);
+            crate::session_native::scm_peer::classify_service(
+                ScmEvidence {
+                    matches_config: true,
+                    service_type: SERVICE_WIN32_OWN_PROCESS,
+                    state: self.state.get(),
+                    process_id: if self.state.get() == SERVICE_RUNNING {
+                        PID
+                    } else {
+                        0
+                    },
+                },
+                None,
+            )?;
+            Ok(Box::new(self.original.clone()))
+        }
+    }
+    let authority = ScmFactory {
+        state: Cell::new(SERVICE_START_PENDING),
+        acquisitions: Cell::new(0),
+        original: Proof::live(PID),
+    };
+    let (client, mut server) = duplex(16_384);
+    let mut client = Some(client);
+    let start = Instant::now();
+    let watch = watch_on(
+        Some(&authority),
+        pending(),
+        || Ok(REQUEST_ID.into()),
+        async || Ok(client.take().expect("one fresh connection")),
+        |_| Ok((PID, 0)),
+        |update| match update {
+            StatusUpdate::Reconnecting => {
+                assert_eq!(start.elapsed(), Duration::ZERO);
+                authority.state.set(SERVICE_RUNNING);
+                Ok(())
+            }
+            StatusUpdate::Opened(_) => {
+                assert_eq!(start.elapsed(), INITIAL_RECONNECT_DELAY);
+                Err(io::ErrorKind::Interrupted.into())
+            }
+            StatusUpdate::Event(_) => panic!("no event"),
+        },
+    );
+    let serve = async {
+        accept(&mut server, REQUEST_ID).await;
+        server.write_all(frames()[1]).await.unwrap();
+    };
+    assert_eq!(
+        tokio::join!(watch, serve).0.unwrap_err().kind(),
+        io::ErrorKind::Interrupted
+    );
+    assert_eq!(authority.acquisitions.get(), 2);
+}

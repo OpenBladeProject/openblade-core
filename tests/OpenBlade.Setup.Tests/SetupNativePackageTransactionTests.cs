@@ -12,7 +12,7 @@ public sealed partial class SetupCommandRunnerTests
     [InlineData((int)NativeEpochBoundary.SelectionPublished)]
     [InlineData((int)NativeEpochBoundary.EvidenceRetaining)]
     [InlineData((int)NativeEpochBoundary.EvidenceRetained)]
-    public async Task NativePreparationFailureRecoversPriorLifecycleAndDisposesWithoutActivation(int boundary)
+    public async Task NativePreparationFailurePreservesExplicitRecoveryWithoutRestoringInvalidService(int boundary)
     {
         using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
         using var package = await WindowsNativeEpochTests.Package(files);
@@ -25,13 +25,13 @@ public sealed partial class SetupCommandRunnerTests
             ServiceExists = true,
             Transaction = new RecordingPayloadTransaction(true)
         };
-        await Assert.ThrowsAsync<IOException>(() => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+        await Assert.ThrowsAsync<NativeRecoveryException>(() => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
         Assert.False(native.IsActivated);
-        Assert.False(native.RequiresExplicitNativeRecovery);
+        Assert.True(native.RequiresExplicitNativeRecovery);
         Assert.Equal(0, payload.Activations);
-        Assert.Equal(1, payload.Rollbacks);
+        Assert.Equal(0, payload.Rollbacks);
         Assert.Equal(1, payload.Disposals);
-        Assert.Contains("service-restore", platform.Operations);
+        Assert.DoesNotContain("service-restore", platform.Operations);
         Assert.DoesNotContain("service-install", platform.Operations);
         await Assert.ThrowsAsync<InvalidOperationException>(() => native.ActivateAsync(CancellationToken.None));
         await native.DisposeAsync();
@@ -69,18 +69,18 @@ public sealed partial class SetupCommandRunnerTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task PayloadFailureBeforeNativeStartupRecoversButPossibleServiceStartupForbidsFallback(bool possibleStartup)
+    public async Task NativeFailureAfterRetirementNeverRestoresRetiredOrUnpreparedService(bool possibleStartup)
     {
         using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
         using var package = await WindowsNativeEpochTests.Package(files);
         var payload = new NativePayload { FailActivation = !possibleStartup };
         var native = new SetupNativePackageTransaction(payload, files, package, Guid.NewGuid());
         var platform = new RecordingSetupPlatform { PayloadOverride = native, FailurePoint = possibleStartup ? "service-install" : null };
-        await Assert.ThrowsAsync<InvalidOperationException>(() => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
-        Assert.Equal(possibleStartup, native.RequiresExplicitNativeRecovery);
-        Assert.Equal(possibleStartup ? 0 : 1, payload.Rollbacks);
+        await Assert.ThrowsAsync<NativeRecoveryException>(() => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+        Assert.True(native.RequiresExplicitNativeRecovery);
+        Assert.Equal(0, payload.Rollbacks);
         Assert.Equal(possibleStartup ? 0 : 1, payload.Disposals);
-        Assert.Equal(possibleStartup ? NativeEpochPhase.Unresolved : NativeEpochPhase.Provisional, NativeEpochRecord.Parse(files.ReadCurrent()!).Phase);
+        Assert.Equal(NativeEpochPhase.Unresolved, NativeEpochRecord.Parse(files.ReadCurrent()!).Phase);
         if (possibleStartup) { Assert.DoesNotContain("tray-startup-restore:Shortcut", platform.Operations); }
     }
 
@@ -142,6 +142,57 @@ public sealed partial class SetupCommandRunnerTests
         Assert.Null(action.Arguments);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ActualPlatformStoppedOrAbsentServiceRetiresBeforeAgentDisposalAndFreshWriter(bool absent)
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var package = await WindowsNativeEpochTests.Package(files);
+        string prior;
+        using (var epoch = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()))
+        {
+            prior = epoch.Record.Epoch; epoch.MarkStartupSubmitted();
+            NativeRecoveryTests.AddAttempt(files, epoch.Record, 17, 1, true);
+            epoch.CommitAfterBoundReadiness(new string('e', 64));
+        }
+        var selection = await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None);
+        var operations = new List<string>();
+        var scm = new InertNativeScm { Exists = !absent };
+        var paths = SetupPaths.Create(@"C:\Offline\Programs", @"C:\Offline\Data", @"C:\Offline\User", @"C:\Offline\Menu\Startup");
+        var platform = WindowsSetupPlatformTestFactory.Create(serviceControl: scm, paths: paths,
+            processOperations: new InertNativeProcesses(operations), fileOperations: new InertNativeFiles());
+        platform.BindExistingNativeSelection(selection);
+        if (absent) { await platform.RemoveServiceAsync(CancellationToken.None); }
+        else { await platform.PrepareServiceForInstallAsync(CancellationToken.None); }
+        Assert.Equal(NativeEpochPhase.Retired, selection!.Record.Phase);
+        Assert.Throws<IOException>(() => files.AcquireWriter());
+        await platform.StopSessionAgentAsync(CancellationToken.None);
+        Assert.Equal(new[] { "OpenBlade.SessionAgent" }, operations);
+        using var incoming = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid());
+        Assert.NotEqual(prior, incoming.Record.Epoch);
+        Assert.Equal(2, incoming.Record.Ordinal);
+    }
+
+    [Fact]
+    public async Task ActualPlatformNativePreStartFailureRefusesGenericRestoreWithoutAnyScmMutation()
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var package = await WindowsNativeEpochTests.Package(files);
+        await using var native = new SetupNativePackageTransaction(new NativePayload(), files, package, Guid.NewGuid());
+        native.MarkPriorRetirementPossible();
+        var scm = new InertNativeScm();
+        var platform = WindowsSetupPlatformTestFactory.Create(serviceControl: scm, fileOperations: new InertNativeFiles());
+        platform.BindSelectedNativeTransaction(native);
+        await Assert.ThrowsAsync<NativeRecoveryException>(() => platform.RestoreServiceInstallStateAsync(new SetupServiceInstallState(true, true), CancellationToken.None));
+        Assert.Empty(scm.Commands);
+    }
+    private sealed class InertNativeProcesses(List<string> operations) : ISetupProcessOperations
+    {
+        public IReadOnlyList<ISetupProcess> GetProcessesByName(string processName) { operations.Add(processName); return []; }
+        public bool TrySignalEvent(string name) => throw new InvalidOperationException("no actual processes");
+    }
+
     private sealed class InertNativeFiles : ISetupFileOperations
     {
         public bool FileExists(string path) => false;
@@ -150,7 +201,8 @@ public sealed partial class SetupCommandRunnerTests
     private sealed class InertNativeScm : ISetupServiceControl
     {
         internal List<string[]> Commands { get; } = [];
-        public Task<bool> ExistsAsync(string name, CancellationToken token) => Task.FromResult(false);
+        internal bool Exists;
+        public Task<bool> ExistsAsync(string name, CancellationToken token) => Task.FromResult(Exists);
         public Task<SetupServiceState?> GetStateAsync(string name, CancellationToken token) => Task.FromResult<SetupServiceState?>(SetupServiceState.Stopped);
         public Task RunAsync(IReadOnlyList<string> arguments, IReadOnlyCollection<int> codes, CancellationToken token) { Commands.Add(arguments.ToArray()); return Task.CompletedTask; }
         public Task WaitForStateAsync(string name, SetupServiceState state, TimeSpan timeout, CancellationToken token) => Task.CompletedTask;

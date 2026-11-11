@@ -16,6 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="../OpenBlade.Deployment.AlgorithmTests/OpenBlade.Deployment.AlgorithmTests.csproj" Condition="'$(OpenBladeNativePackageTests)' != 'true'" />
     <ProjectReference Include="../../src/OpenBlade.Deployment/OpenBlade.Deployment.csproj" Condition="'$(OpenBladeNativePackageTests)' == 'true'" />
+    <None Include="../../tools/openblade-windows-host/tests/data/native-origin-corrections-v1.json" Link="native-origin-corrections-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/native-verification-v1.json" Link="native-verification-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/native-package-v1.json" Link="native-package-v1.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

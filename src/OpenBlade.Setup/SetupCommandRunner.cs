@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using OpenBlade.Deployment;
 
 namespace OpenBlade.Setup;
 
@@ -132,6 +133,7 @@ public sealed class SetupCommandRunner(
                 await platform.RemoveUninstallShortcutAsync(cancellationToken);
                 await platform.RemoveUninstallRegistrationAsync(cancellationToken);
                 progress.Report(SetupProgressCode.StopServiceForReplacement);
+                if (transaction is SetupNativePackageTransaction retiringNative) { retiringNative.MarkPriorRetirementPossible(); }
                 await platform.PrepareServiceForInstallAsync(cancellationToken);
                 progress.Report(SetupProgressCode.StopTrayAndSessionAgent);
                 await platform.StopTrayAsync(cancellationToken);
@@ -180,7 +182,8 @@ public sealed class SetupCommandRunner(
                 {
                     try { native.RecordUnresolvedFailure(); }
                     catch (Exception publicationFailure) { throw new AggregateException(failure, publicationFailure); }
-                    ExceptionDispatchInfo.Capture(failure).Throw();
+                    throw new NativeRecoveryException(NativeRecoveryReason.PreStartTransitionInterrupted,
+                        "Native transition requires explicit selection/attempt recovery; retired paths and incoming startup were not replayed.", failure);
                 }
                 progress.Report(SetupProgressCode.RestorePreviousState);
                 List<Exception> recoveryFailures = [];

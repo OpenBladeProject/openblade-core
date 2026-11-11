@@ -141,63 +141,86 @@ internal static class DevelopmentDeploymentProvisioner
         RequireNoUnresolvedDeployment(paths.RootDirectory);
         using (WindowsCpuVoltageDeployment.RequirePriorClosedAndAcquireLease(requireExistingClosedHost: true)) { }
 
-        // Disabling start closes the normal-user service-start race until every replacement is durable.
-        // Any failure from this point leaves maintenance disabled for attended diagnosis, never uninstall.
-        service.SetDisabled(true);
-        await service.StopAndWaitAsync(cancellationToken).ConfigureAwait(false);
-        using IDisposable cpuLease = WindowsCpuVoltageDeployment.RequirePriorClosedAndAcquireLease(requireExistingClosedHost: true);
-        service.RequireStopped();
-        RequireNoUnresolvedDeployment(paths.RootDirectory);
-        BrokerEnrollment confirmed = await store.LoadAsync(cancellationToken).ConfigureAwait(false);
-        if (confirmed != original)
-        {
-            throw new InvalidOperationException("The broker enrollment changed during maintenance admission.");
-        }
-        _ = CreateCpuVoltageUpgrade(confirmed, trust, ActiveConsoleUser.GetSid(), upgraded.BrokerVersion);
-        RequireProtectedUpgradeTarget(brokerTarget, null);
-        RequireProtectedUpgradeTarget(clientTarget, original.EnrolledAccountSid);
-        await ReplaceUpgradeFileAsync(brokerTarget, brokerSource, cancellationToken).ConfigureAwait(false);
-        await ReplaceUpgradeFileAsync(clientTarget, clientSource, cancellationToken).ConfigureAwait(false);
-        OpenBlade.Deployment.WindowsNativeTrustLifecycle.RequireReadyForEnrollmentChange();
-        using MemoryStream enrollmentBytes = new(BrokerEnrollmentCodec.SerializeCanonical(upgraded));
-        await ReplaceUpgradeFileAsync(paths.EnrollmentPath, enrollmentBytes, cancellationToken).ConfigureAwait(false);
-        using MemoryStream receiptBytes = new(CreateReceipt(upgraded));
-        await ReplaceUpgradeFileAsync(DevelopmentDeploymentLayout.ReceiptPath, receiptBytes, cancellationToken).ConfigureAwait(false);
-        if (await store.LoadAsync(cancellationToken).ConfigureAwait(false) != upgraded)
-        {
-            throw new InvalidDataException("The upgraded enrollment could not be verified.");
-        }
-        RequireProtectedUpgradeTarget(brokerTarget, null);
-        RequireProtectedUpgradeTarget(clientTarget, original.EnrolledAccountSid);
-        VerifyUpgradeFileSecurity(DevelopmentDeploymentLayout.ReceiptPath, original.EnrolledAccountSid);
-        await VerifyUpgradePayloadAsync(brokerTarget, brokerSource, cancellationToken).ConfigureAwait(false);
-        await VerifyUpgradePayloadAsync(clientTarget, clientSource, cancellationToken).ConfigureAwait(false);
-        if (!(await File.ReadAllBytesAsync(DevelopmentDeploymentLayout.ReceiptPath, cancellationToken).ConfigureAwait(false))
-            .SequenceEqual(CreateReceipt(upgraded)))
-        {
-            throw new InvalidDataException("The upgraded public receipt could not be verified.");
-        }
-        service.RequireStopped();
-        try
-        {
-            service.SetDisabled(false);
-            service.RequireConfiguration(disabled: false);
-        }
-        catch (Exception completionFailure)
-        {
-            try
+        await RunNativeTrustChangeAsync(OpenBlade.Deployment.WindowsNativeTrustLifecycle.RequireReadyForEnrollmentChange,
+            async () =>
             {
+                // Disabling start closes the normal-user service-start race until every replacement is durable.
+                // Any failure from this point leaves maintenance disabled for attended diagnosis, never uninstall.
                 service.SetDisabled(true);
-                service.RequireConfiguration(disabled: true);
-            }
-            catch (Exception retentionFailure)
+                await service.StopAndWaitAsync(cancellationToken).ConfigureAwait(false);
+                IDisposable cpuLease = WindowsCpuVoltageDeployment.RequirePriorClosedAndAcquireLease(requireExistingClosedHost: true);
+                try
+                {
+                    service.RequireStopped();
+                    RequireNoUnresolvedDeployment(paths.RootDirectory);
+                    BrokerEnrollment confirmed = await store.LoadAsync(cancellationToken).ConfigureAwait(false);
+                    if (confirmed != original)
+                    {
+                        throw new InvalidOperationException("The broker enrollment changed during maintenance admission.");
+                    }
+                    _ = CreateCpuVoltageUpgrade(confirmed, trust, ActiveConsoleUser.GetSid(), upgraded.BrokerVersion);
+                    RequireProtectedUpgradeTarget(brokerTarget, null);
+                    RequireProtectedUpgradeTarget(clientTarget, original.EnrolledAccountSid);
+                    return cpuLease;
+                }
+                catch { cpuLease.Dispose(); throw; }
+            },
+            async () =>
             {
-                throw new AggregateException(
-                    "Broker maintenance completion and disabled-state verification are unresolved.",
-                    completionFailure, retentionFailure);
-            }
-            throw;
-        }
+                await ReplaceUpgradeFileAsync(brokerTarget, brokerSource, cancellationToken).ConfigureAwait(false);
+                await ReplaceUpgradeFileAsync(clientTarget, clientSource, cancellationToken).ConfigureAwait(false);
+                using MemoryStream enrollmentBytes = new(BrokerEnrollmentCodec.SerializeCanonical(upgraded));
+                await ReplaceUpgradeFileAsync(paths.EnrollmentPath, enrollmentBytes, cancellationToken).ConfigureAwait(false);
+                using MemoryStream receiptBytes = new(CreateReceipt(upgraded));
+                await ReplaceUpgradeFileAsync(DevelopmentDeploymentLayout.ReceiptPath, receiptBytes, cancellationToken).ConfigureAwait(false);
+                if (await store.LoadAsync(cancellationToken).ConfigureAwait(false) != upgraded)
+                {
+                    throw new InvalidDataException("The upgraded enrollment could not be verified.");
+                }
+                RequireProtectedUpgradeTarget(brokerTarget, null);
+                RequireProtectedUpgradeTarget(clientTarget, original.EnrolledAccountSid);
+                VerifyUpgradeFileSecurity(DevelopmentDeploymentLayout.ReceiptPath, original.EnrolledAccountSid);
+                await VerifyUpgradePayloadAsync(brokerTarget, brokerSource, cancellationToken).ConfigureAwait(false);
+                await VerifyUpgradePayloadAsync(clientTarget, clientSource, cancellationToken).ConfigureAwait(false);
+                if (!(await File.ReadAllBytesAsync(DevelopmentDeploymentLayout.ReceiptPath, cancellationToken).ConfigureAwait(false))
+                    .SequenceEqual(CreateReceipt(upgraded)))
+                {
+                    throw new InvalidDataException("The upgraded public receipt could not be verified.");
+                }
+                service.RequireStopped();
+                try
+                {
+                    service.SetDisabled(false);
+                    service.RequireConfiguration(disabled: false);
+                }
+                catch (Exception completionFailure)
+                {
+                    try
+                    {
+                        service.SetDisabled(true);
+                        service.RequireConfiguration(disabled: true);
+                    }
+                    catch (Exception retentionFailure)
+                    {
+                        throw new AggregateException(
+                            "Broker maintenance completion and disabled-state verification are unresolved.",
+                            completionFailure, retentionFailure);
+                    }
+                    throw;
+                }
+            }).ConfigureAwait(false);
+    }
+
+    // The same seam orders product maintenance and injected offline regressions.
+    // The first check precedes disable/stop and every byte replacement; the fresh
+    // quiesced check still runs under the existing CPU/deployment serialization.
+    internal static async Task RunNativeTrustChangeAsync(Action requireNativeReady,
+        Func<Task<IDisposable>> quiesce, Func<Task> replace)
+    {
+        requireNativeReady();
+        using var maintenance = await quiesce().ConfigureAwait(false);
+        requireNativeReady();
+        await replace().ConfigureAwait(false);
     }
 
     internal static BrokerEnrollment CreateCpuVoltageUpgrade(

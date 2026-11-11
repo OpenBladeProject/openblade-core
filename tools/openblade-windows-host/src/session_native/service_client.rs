@@ -34,6 +34,12 @@ pub(crate) enum ServiceAuthorityError {
     Denied(io::Error),
 }
 
+impl From<io::Error> for ServiceAuthorityError {
+    fn from(error: io::Error) -> Self {
+        Self::Denied(error)
+    }
+}
+
 impl ServiceAuthorityError {
     fn into_io(self) -> io::Error {
         match self {

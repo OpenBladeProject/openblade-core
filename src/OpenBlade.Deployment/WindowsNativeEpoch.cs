@@ -71,6 +71,8 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
         {
             byte[]? previous = files.ReadCurrent();
             RequireFrontier(files, previous);
+            if (previous is null && WindowsNativeRecoveryState.Inspect(files).State != NativeInstallationState.VerifiedBootstrap)
+            { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Native bootstrap admission changed; preserved mappings/reservations/ownership were not reset."); }
             var predecessor = previous is null ? null : NativeEpochRecord.Parse(previous);
             if (predecessor is { Phase: NativeEpochPhase.Provisional or NativeEpochPhase.Unresolved }
                 && (explicitlyRecoverCurrent is null || NativeCanonical.Digest(previous!) != explicitlyRecoverCurrent))
@@ -101,6 +103,8 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
                     }
                 }
             }
+            if (!package.Service.Features.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal))
+            { throw new InvalidDataException("Native startup requires a custody-capable signed service artifact."); }
             string epoch = Guid.NewGuid().ToString("N");
             string directory = Path.Combine(files.Root, epoch);
             files.CreateDirectoryOnce(directory);
@@ -127,6 +131,10 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
                 NativeCanonical.Digest(package.Record), request.ToString("N"), package.Service.Id, package.Agent.Id,
                 new string('0', 64), NativeCanonical.Digest(startupOwner));
             byte[] selection = value.Encode();
+            files.CreateDirectoryOnce(Path.Combine(directory, "attempts"));
+            files.Publish(Path.Combine(directory, "attempts", "custody.lock"), NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", epoch));
+            files.Publish(Path.Combine(directory, "startup-policy.bin"), NativeCanonical.Lines("OpenBlade.NativeStartupPolicy.v1",
+                epoch, NativeCanonical.Digest(selection), package.Service.Id, "metadata-only-no-firmware"));
             files.Publish(Path.Combine(directory, "origin.bin"), selection);
             testCrashBoundary?.Invoke(NativeEpochBoundary.OriginWritten);
             files.Publish(Path.Combine(directory, "Provisional.bin"), selection);
@@ -151,12 +159,11 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
     {
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
         // Inert private-filesystem test data; never present in product builds.
-        return NativeCanonical.Lines("OpenBlade.NativeStartupOwner.v1", epoch, request.ToString("N"), "17", "1", "0", @"C:\offline\Setup.exe");
+        return new NativeStartupOwner(epoch, request.ToString("N"), 17, 1, 0, @"C:\offline\Setup.exe").Encode();
 #else
         using var process = System.Diagnostics.Process.GetCurrentProcess();
-        return NativeCanonical.Lines("OpenBlade.NativeStartupOwner.v1", epoch, request.ToString("N"),
-            process.Id.ToString(CultureInfo.InvariantCulture), process.StartTime.ToUniversalTime().ToFileTimeUtc().ToString(CultureInfo.InvariantCulture),
-            process.SessionId.ToString(CultureInfo.InvariantCulture), process.MainModule?.FileName ?? throw new IOException("Setup main module is unavailable."));
+        return new NativeStartupOwner(epoch, request.ToString("N"), checked((uint)process.Id), process.StartTime.ToUniversalTime().ToFileTimeUtc(),
+            checked((uint)process.SessionId), process.MainModule?.FileName ?? throw new IOException("Setup main module is unavailable.")).Encode();
 #endif
     }
 
@@ -166,6 +173,16 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
         foreach (string name in new[] { "startup-owner.bin", "verification.bin", "release.json", "release.sig", "package.bin", "roles.bin", "package.exe", "origin.bin",
             @"app\OpenBlade.Service.exe", @"app\OpenBlade.SessionAgent.exe" })
         { evidence.Add(files.OpenFile(Path.Combine(GenerationDirectory, name))); testCrashBoundary?.Invoke(NativeEpochBoundary.EvidenceRetaining); }
+    }
+
+    internal void MarkStartupSubmitted()
+    {
+        RequireProvisional();
+        byte[] bytes = NativeCanonical.Lines("OpenBlade.NativeStartupSubmission.v1", current.Epoch, current.Request,
+            NativeCanonical.Digest(selected), current.Package, current.ServiceId);
+        files.Publish(Path.Combine(GenerationDirectory, "submission.bin"), bytes);
+        using var readback = files.OpenFile(Path.Combine(GenerationDirectory, "submission.bin"));
+        WindowsNativeEpochFiles.RequireExact(readback, bytes);
     }
 
     internal void RequireProvisional()
@@ -221,7 +238,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
     private static void PublishFrontier(WindowsNativeEpochFiles files, NativeEpochRecord record, byte[] bytes)
         => files.Publish(Path.Combine(files.Root, FrontierName(record)), bytes);
 
-    private static byte[]? ReadFrontier(WindowsNativeEpochFiles files)
+    internal static byte[]? ReadFrontier(WindowsNativeEpochFiles files)
     {
         string? latest = Directory.EnumerateFiles(files.Root, "selection-*.bin").Order(StringComparer.Ordinal).LastOrDefault();
         if (latest is null) { return null; }
@@ -242,6 +259,12 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
         Action<NativeEpochBoundary>? testCrashBoundary = null)
     {
         using var owner = files.AcquireWriter();
+        RecoverUnresolvedPublicationUnderWriter(files, expectedFrontier, testCrashBoundary);
+    }
+
+    internal static void RecoverUnresolvedPublicationUnderWriter(WindowsNativeEpochFiles files, string expectedFrontier,
+        Action<NativeEpochBoundary>? testCrashBoundary = null)
+    {
         byte[] prior = ReadFrontier(files) ?? throw new InvalidDataException("No native publication to recover.");
         if (NativeCanonical.Digest(prior) != expectedFrontier) { throw new InvalidDataException("Native recovery frontier changed."); }
         var record = NativeEpochRecord.Parse(prior);
@@ -249,7 +272,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
         // A durable retirement intent may precede its frontier. Finish only that
         // exact attempt; an ordinary committed epoch is never retired by recovery.
         bool retirement = record.Phase == NativeEpochPhase.Retired
-            || (record.Phase == NativeEpochPhase.Committed && File.Exists(retiredPath));
+            || File.Exists(retiredPath);
         var unresolved = record with
         {
             Phase = retirement ? NativeEpochPhase.Retired : NativeEpochPhase.Unresolved,
@@ -268,14 +291,12 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
         {
             using var retiredFile = files.OpenFile(retiredPath);
             WindowsNativeEpochFiles.RequireExact(retiredFile, bytes);
-            using var committedFile = files.OpenFile(Path.Combine(directory, "Committed.bin"));
-            var committed = NativeEpochRecord.Parse(WindowsNativeEpochFiles.ReadBounded(committedFile, 16384));
-            if (committed.Phase != NativeEpochPhase.Committed
-                || committed with { Phase = NativeEpochPhase.Retired, Readiness = new string('0', 64) } != unresolved)
-            { throw new InvalidDataException("Native retirement has no matching committed attempt."); }
-            byte[]? selected = files.ReadCurrent();
-            if (selected is null || (!selected.AsSpan().SequenceEqual(committed.Encode()) && !selected.AsSpan().SequenceEqual(bytes)))
+            byte[] selected = files.ReadCurrent() ?? throw new InvalidDataException("Native retirement selection is absent.");
+            var previous = NativeEpochRecord.Parse(selected);
+            if (previous with { Phase = NativeEpochPhase.Retired, Readiness = new string('0', 64) } != unresolved)
             { throw new InvalidDataException("Native retirement selection differs from its exact attempt."); }
+            using var previousFile = files.OpenFile(Path.Combine(directory, previous.Phase + ".bin"));
+            WindowsNativeEpochFiles.RequireExact(previousFile, selected);
         }
         // Explicit recovery reconciles an already-created exact phase/frontier;
         // it never repeats native startup, readiness, retirement or a hardware write.

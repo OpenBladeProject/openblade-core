@@ -94,6 +94,38 @@ public sealed class ProvisionerContractTests
         Assert.DoesNotContain("cpuVoltageValidationEnabled", receipt, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(0)]
+    public async Task NativeTrustRefusalPrecedesMaintenanceAndEveryReplacement(int refuseAt)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "OpenBlade-trust-order-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var calls = new List<string>();
+            string file = Path.Combine(root, "broker.bin");
+            await File.WriteAllTextAsync(file, "original");
+            int checks = 0;
+            Task Run() => DevelopmentDeploymentProvisioner.RunNativeTrustChangeAsync(
+                () => { calls.Add("guard"); if (++checks == refuseAt) { throw new IOException("native ownership unresolved"); } },
+                () => { calls.Add("disable-stop"); return Task.FromResult<IDisposable>(new MaintenanceLease(calls)); },
+                async () => { calls.Add("replace"); await File.WriteAllTextAsync(file, "replacement"); });
+            if (refuseAt == 0) { await Run(); }
+            else { await Assert.ThrowsAsync<IOException>(Run); }
+            Assert.Equal(refuseAt == 0 ? "replacement" : "original", await File.ReadAllTextAsync(file));
+            Assert.Equal(refuseAt switch
+            {
+                1 => new[] { "guard" },
+                2 => new[] { "guard", "disable-stop", "guard", "release" },
+                _ => new[] { "guard", "disable-stop", "guard", "replace", "release" },
+            }, calls);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    private sealed class MaintenanceLease(List<string> calls) : IDisposable { public void Dispose() => calls.Add("release"); }
+
     [Fact]
     public void CpuUpgrade_PreservesIdentityAndOnlyUpdatesVersionAndCapability()
     {

@@ -362,3 +362,89 @@ fn real_commit_frontier_before_current_is_bounded_same_attempt_promotion() {
             .is_err()
     );
 }
+
+#[test]
+fn shared_origin_correction_descriptors_and_owner_paths() {
+    use std::os::windows::ffi::OsStrExt;
+    let v: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../tests/data/native-origin-corrections-v1.json"
+    ))
+    .unwrap();
+    for case in v["descriptors"].as_array().unwrap() {
+        let descriptor = decode64(case["descriptor"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            paths::accepts_descriptor(&descriptor, Policy::PROGRAM_DATA),
+            Some(case["programData"].as_bool().unwrap())
+        );
+        assert_eq!(
+            paths::accepts_descriptor(&descriptor, Policy::ANCESTOR),
+            Some(false)
+        );
+        assert_eq!(
+            paths::accepts_descriptor(&descriptor, Policy::Directory { extra_rights: 0 }),
+            Some(false)
+        );
+        assert_eq!(
+            paths::accepts_descriptor(&descriptor, Policy::ROOT),
+            Some(false)
+        );
+        assert_eq!(
+            paths::accepts_descriptor(&descriptor, Policy::Record),
+            Some(false)
+        );
+        assert_eq!(paths::accepts_public_native_root(&descriptor), Some(false));
+    }
+    for case in v["owners"].as_array().unwrap() {
+        let bytes = decode64_bounded(case["record"].as_str().unwrap(), 32768).unwrap();
+        let owner = StartupOwner::parse(&bytes).unwrap();
+        let expected: Vec<u16> = case["units"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|u| u.as_u64().unwrap() as u16)
+            .collect();
+        assert_eq!(
+            owner.image.as_os_str().encode_wide().collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!((owner.pid, owner.created, owner.session), (17, 1, 0));
+    }
+    for case in v["malformedOwners"].as_array().unwrap() {
+        let bytes = decode64_bounded(case.as_str().unwrap(), 32768).unwrap();
+        assert!(StartupOwner::parse(&bytes).is_err());
+    }
+    let legacy = encode(
+        "OpenBlade.NativeStartupOwner.v1",
+        &[
+            &"a".repeat(32),
+            &"b".repeat(32),
+            "17",
+            "1",
+            "0",
+            r"C:\ASCII\Setup.exe",
+        ],
+    );
+    assert_eq!(
+        StartupOwner::parse(&legacy).unwrap().image,
+        PathBuf::from(r"C:\ASCII\Setup.exe")
+    );
+}
+#[test]
+fn owner_path_rejects_noncanonical_odd_nul_and_excessive_encoding() {
+    for value in [
+        "",
+        "QQ==",
+        "QQB=",
+        "QQA= ",
+        "AA A=",
+        "AAAA",
+        "!!!!",
+        &"AAAA".repeat(2731),
+    ] {
+        let record = encode(
+            "OpenBlade.NativeStartupOwner.v2",
+            &[&"a".repeat(32), &"b".repeat(32), "17", "1", "0", value],
+        );
+        assert!(StartupOwner::parse(&record).is_err(), "accepted {value:?}");
+    }
+}

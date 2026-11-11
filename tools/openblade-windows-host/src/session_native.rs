@@ -6,7 +6,7 @@ use std::{
 
 #[cfg(not(test))]
 mod installed_monitor;
-#[cfg(not(test))]
+#[allow(dead_code)]
 mod scm_peer;
 pub(crate) mod service_client;
 mod token;

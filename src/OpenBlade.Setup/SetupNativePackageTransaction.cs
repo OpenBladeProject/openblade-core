@@ -16,6 +16,7 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
     private SetupCandidateLaunch? launch;
     private ISetupRetainedCandidateLaunch? retained;
     private SetupCandidateServiceVerification? verified;
+    private bool priorRetirementPossible;
     private bool preparationAttempted, possiblePayloadActivation, possibleNativeActivation, disposed;
     private readonly Action<NativeEpochBoundary>? preparationBoundary;
     private readonly SetupNativeReadinessAdapters readiness;
@@ -34,7 +35,8 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
     public string StagedPayloadDirectory => payload.StagedPayloadDirectory;
     public bool HadExistingInstall => payload.HadExistingInstall;
     public bool IsActivated => possiblePayloadActivation || payload.IsActivated;
-    internal bool RequiresExplicitNativeRecovery => possibleNativeActivation;
+    internal bool RequiresExplicitNativeRecovery => possibleNativeActivation || priorRetirementPossible;
+    internal void MarkPriorRetirementPossible() => priorRetirementPossible = true;
     public string? CommitWarning => payload.CommitWarning;
     internal string ServicePath => (epoch ?? throw new InvalidOperationException()).ServicePath;
     internal string AgentPath => (epoch ?? throw new InvalidOperationException()).AgentPath;
@@ -62,6 +64,7 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
     {
         (epoch ?? throw new InvalidOperationException()).RequireProvisional();
         possibleNativeActivation = true;
+        epoch.MarkStartupSubmitted();
     }
 
     // The next integrated origin owner must supply the original retained launch,
@@ -106,9 +109,9 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
         await readiness.VerifyLaunchAsync(cancellationToken);
         current.RequireProvisional();
         var incoming = launch!;
-        byte[] bound = NativeCanonical.Lines("OpenBlade.NativeReadiness.v1", Convert.ToHexStringLower(current.ProvisionalCommitment),
+        byte[] bound = NativeCanonical.Lines("OpenBlade.NativeReadiness.v2", Convert.ToHexStringLower(current.ProvisionalCommitment),
             incoming.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            incoming.CreationFileTimeUtc.ToString(System.Globalization.CultureInfo.InvariantCulture), incoming.ExecutablePath, incoming.ExecutableSha256);
+            incoming.CreationFileTimeUtc.ToString(System.Globalization.CultureInfo.InvariantCulture), NativeStartupOwner.EncodePath(incoming.ExecutablePath), incoming.ExecutableSha256);
         current.CommitAfterBoundReadiness(Convert.ToHexStringLower(SHA256.HashData(bound)));
     }
 

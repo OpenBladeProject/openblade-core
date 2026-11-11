@@ -7,9 +7,9 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
 {
     private readonly WindowsNativeEpochFiles files;
     private readonly List<IDisposable> held = [];
-    private readonly byte[] selected;
+    private byte[] selected;
     private WindowsNativePackage? package;
-    internal NativeEpochRecord Record { get; }
+    internal NativeEpochRecord Record { get; private set; }
     internal string ServicePath => Path.Combine(files.Root, Record.Epoch, "app", "OpenBlade.Service.exe");
     internal string AgentPath => Path.Combine(files.Root, Record.Epoch, "app", "OpenBlade.SessionAgent.exe");
     internal string ServiceSha256 => package?.Service.Sha256 ?? throw new ObjectDisposedException(nameof(WindowsNativeInstalledSelection));
@@ -19,17 +19,39 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
     {
         if (!WindowsNativeEpochFiles.IsPresentDirectory(WindowsNativeEpochFiles.ProductRoot)) { return null; }
         var files = WindowsNativeEpochFiles.OpenProduct();
-        try { return await OpenAsync(files, token); }
+        try { return await OpenForSetupAsync(files, token); }
         catch { files.Dispose(); throw; }
+    }
+    internal static async Task<WindowsNativeInstalledSelection?> OpenForSetupAsync(WindowsNativeEpochFiles files, CancellationToken token)
+    {
+        var writer = files.AcquireWriter();
+        try
+        {
+            var inspection = WindowsNativeRecoveryState.Inspect(files);
+            if (inspection.State == NativeInstallationState.VerifiedBootstrap)
+            { writer.Dispose(); files.Dispose(); return null; }
+            if (inspection.State == NativeInstallationState.UnresolvedHistory)
+            { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Native selection is absent/inconsistent with preserved history; no bootstrap reset was performed."); }
+            var value = await OpenWithWriterAsync(files, inspection.Selection!, writer, token,
+                inspection.State == NativeInstallationState.InterruptedPublication);
+            return value;
+        }
+        catch { writer.Dispose(); throw; }
     }
     internal static async Task<WindowsNativeInstalledSelection> OpenAsync(WindowsNativeEpochFiles files, CancellationToken token)
     {
-        var selected = files.ReadCurrent() ?? throw new IOException("Native selection is unavailable.");
+        var writer = files.AcquireWriter();
+        try { return await OpenWithWriterAsync(files, files.ReadCurrent() ?? throw new IOException("Native selection is unavailable."), writer, token, false); }
+        catch { writer.Dispose(); throw; }
+    }
+    private static async Task<WindowsNativeInstalledSelection> OpenWithWriterAsync(WindowsNativeEpochFiles files, byte[] selected,
+        FileStream writer, CancellationToken token, bool interrupted)
+    {
         var value = new WindowsNativeInstalledSelection(files, selected);
         try
         {
-            value.held.Add(files.AcquireWriter());
-            value.RequireCurrent();
+            value.held.Add(writer);
+            if (!interrupted) { value.RequireCurrent(); }
             string directory = Path.Combine(files.Root, value.Record.Epoch);
             value.held.Add(files.RetainDirectory(directory));
             value.held.Add(files.RetainDirectory(Path.Combine(directory, "app")));
@@ -59,6 +81,14 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
                 if (stream.Length != role.Item2.Size || Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(stream)) != role.Item2.Sha256)
                 { throw new InvalidDataException("Native cleanup executable differs."); }
             }
+            if (interrupted)
+            {
+                // Authenticate the exact signed package and phase above before
+                // finishing metadata publication. This grants no drain authority.
+                WindowsNativeEpochTransaction.RecoverUnresolvedPublicationUnderWriter(files, NativeCanonical.Digest(selected));
+                value.selected = files.ReadCurrent()!;
+                value.Record = NativeEpochRecord.Parse(value.selected);
+            }
             value.RequireCurrent();
             return value;
         }
@@ -75,19 +105,58 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
     internal void RetireAfterStatusDrain(uint pid, long created)
     {
         RequireCurrent();
+        if (package!.Service.Features.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal))
+        { RetireRecoverableSelection(pid, created); return; }
         string directory = Path.Combine(files.Root, Record.Epoch);
         using var drain = files.OpenFile(Path.Combine(directory, $"status-drain-{pid}-{created}.bin"));
         WindowsNativeEpochFiles.RequireExact(drain, NativeCanonical.Lines("OpenBlade.NativeStatusDrain.v1", Record.Epoch,
             pid.ToString(System.Globalization.CultureInfo.InvariantCulture), created.ToString(System.Globalization.CultureInfo.InvariantCulture)));
-        // Metadata drain cannot clear a native firmware-owner fence.
+        // Legacy recovery requires the independently retained live original and
+        // actual exit at the caller. An absent process never enters this route.
+        PublishRetirement(directory);
+    }
+    internal void RetireRecoverableSelection(uint? expectedPid = null, long? expectedCreated = null)
+    {
+        RequireCurrent();
+        if (Record.Phase == NativeEpochPhase.Retired) { return; }
+        string directory = Path.Combine(files.Root, Record.Epoch);
+        if (!package!.Service.Features.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal))
+        { throw new NativeRecoveryException(NativeRecoveryReason.LegacyLaunchEvidenceUnavailable, "Legacy native stopped state lacks original launch/drain evidence; history was preserved."); }
+        using var attempts = files.RetainDirectory(Path.Combine(directory, "attempts"));
+        // A sharing violation is active/unknown custody, never an absent owner.
+        using var custody = AcquireRecoveryCustody(Path.Combine(directory, "attempts", "custody.lock"));
+        WindowsNativeEpochFiles.RequireExact(custody, NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", Record.Epoch));
+        RequireCurrent();
         WindowsNativeTrustLifecycle.RequireOwnerRetired(files);
-        if (Record.Phase != NativeEpochPhase.Committed) { throw new IOException("Interrupted native startup needs explicit same-attempt metadata recovery."); }
+        byte[] proof;
+        try { proof = WindowsNativeAttemptHistory.RequireDrained(files, Record, directory, package.Service.Features, expectedPid, expectedCreated); }
+        catch (NativeRecoveryException) { throw; }
+        catch (Exception error) when (error is InvalidDataException or IOException or UnauthorizedAccessException)
+        { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Native attempt history is unreadable, partial or malformed; original evidence was retained.", error); }
+        string proofPath = Path.Combine(directory, "retirement-proof.bin");
+        if (File.Exists(proofPath)) { using var held = files.OpenFile(proofPath); WindowsNativeEpochFiles.RequireExact(held, proof); }
+        else { files.Publish(proofPath, proof); }
+        PublishRetirement(directory);
+    }
+    private FileStream AcquireRecoveryCustody(string path)
+    {
+        try { return files.AcquireServiceCustody(path); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { throw new NativeRecoveryException(NativeRecoveryReason.ActiveOrUnknownCustody, "Native service custody is active or unavailable; recovery did not infer process exit or drain.", error); }
+    }
+    private void PublishRetirement(string directory)
+    {
+        WindowsNativeTrustLifecycle.RequireOwnerRetired(files);
+        RequireCurrent();
         var retired = Record with { Phase = NativeEpochPhase.Retired, Readiness = new string('0', 64) };
         byte[] bytes = retired.Encode();
-        files.Publish(Path.Combine(directory, "Retired.bin"), bytes);
+        string intent = Path.Combine(directory, "Retired.bin");
+        if (File.Exists(intent)) { using var existing = files.OpenFile(intent); WindowsNativeEpochFiles.RequireExact(existing, bytes); }
+        else { files.Publish(intent, bytes); }
         files.Publish(Path.Combine(files.Root, $"selection-{Record.Ordinal:D20}-3.bin"), bytes);
         files.PublishCurrent(bytes);
         if (!(files.ReadCurrent() ?? []).AsSpan().SequenceEqual(bytes)) { throw new IOException("Native retirement publication is unresolved."); }
+        selected = bytes; Record = retired;
     }
     public void Dispose()
     {

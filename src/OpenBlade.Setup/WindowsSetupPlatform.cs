@@ -84,12 +84,16 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         if (priorNativeSelection is null || priorNativeSelection.Record.Phase == NativeEpochPhase.Retired) { return null; }
         priorNativeSelection.RequireCurrent();
+        // Stopped/absent is not drain evidence. The recovery path below uses
+        // enforced original-attempt custody/history instead of a Running capture.
+        if (await serviceControl.GetStateAsync(ServiceName, token) != SetupServiceState.Running) { return null; }
         return WindowsSetupRetainedNativeLaunch.Capture(await WindowsSetupCandidateService.ReadAsync(token),
             priorNativeSelection.ServicePath, priorNativeSelection.ServiceSha256);
     }
     private void ConfirmNativeStop(WindowsSetupRetainedNativeLaunch? original)
     {
-        if (original is null) { return; }
+        if (priorNativeSelection is null || priorNativeSelection.Record.Phase == NativeEpochPhase.Retired) { return; }
+        if (original is null) { priorNativeSelection.RetireRecoverableSelection(); return; }
         original.RequireExited();
         priorNativeSelection!.RetireAfterStatusDrain(original.Launch.ProcessId, original.Launch.CreationFileTimeUtc);
     }
@@ -268,6 +272,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(priorState);
+        if (selectedNativeTransaction?.RequiresExplicitNativeRecovery == true)
+        { throw new NativeRecoveryException(NativeRecoveryReason.PreStartTransitionInterrupted, "Native predecessor retirement requires explicit recovery; a retired or unprepared service path cannot be restored."); }
         if (!priorState.Existed)
         {
             await RemoveServiceAsync(cancellationToken);
@@ -678,6 +684,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         if (!await serviceControl.ExistsAsync(ServiceName, cancellationToken))
         {
             guardianQuiescenceGuard.EnsureClear();
+            ConfirmNativeStop(nativeStop);
             return;
         }
 

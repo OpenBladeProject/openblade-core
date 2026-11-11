@@ -22,7 +22,10 @@ use std::{
 use windows_sys::Win32::{
     Foundation::{FILETIME, WAIT_OBJECT_0, WAIT_TIMEOUT},
     System::{
-        Services::{SERVICE_AUTO_START, SERVICE_RUNNING, SERVICE_WIN32_OWN_PROCESS},
+        Services::{
+            SERVICE_AUTO_START, SERVICE_RUNNING, SERVICE_START_PENDING, SERVICE_STOP_PENDING,
+            SERVICE_STOPPED, SERVICE_WIN32_OWN_PROCESS,
+        },
         Threading::{
             GetProcessId, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
             PROCESS_SYNCHRONIZE, QueryFullProcessImageNameW, WaitForSingleObject,
@@ -59,20 +62,21 @@ impl InstalledServiceAuthority for WindowsInstalledServiceAuthority {
     ) -> Result<Box<dyn InstalledServiceGeneration + '_>, ServiceAuthorityError> {
         self.acquire()
             .map(|g| Box::new(g) as Box<dyn InstalledServiceGeneration>)
-            .map_err(ServiceAuthorityError::Denied)
     }
 }
 impl WindowsInstalledServiceAuthority {
-    fn acquire(&self) -> io::Result<Generation> {
+    fn acquire(&self) -> Result<Generation, ServiceAuthorityError> {
         self.origin.verify()?;
         let mut package = native_package::read_installed_package()?;
         if package.agent_path != self.origin.image {
-            return Err(deny());
+            return Err(ServiceAuthorityError::Denied(deny()));
         }
-        let command = OsString::from(format!("\"{}\"", package.service_path.display()));
+        let mut command = OsString::from("\"");
+        command.push(&package.service_path);
+        command.push("\"");
         let registration = Registration::open("OpenBlade")?;
         let first = registration.query(&command, SERVICE_AUTO_START)?;
-        let pid = require_running(first)?;
+        let pid = classify_service(first, None)?;
         // The one and only PID open. Inheritance is false and no token rights
         // or process QUERY_INFORMATION are requested by this readonly supplier.
         let raw = unsafe {
@@ -83,18 +87,18 @@ impl WindowsInstalledServiceAuthority {
             )
         };
         if raw.is_null() {
-            return Err(io::Error::last_os_error());
+            return Err(ServiceAuthorityError::Denied(io::Error::last_os_error()));
         }
         let process = unsafe { OwnedHandle::from_raw_handle(raw) };
-        wait(&process).map_err(as_io)?;
+        wait(&process)?;
         let (actual, created, image) = metadata(&process)?;
-        wait(&process).map_err(as_io)?;
+        wait(&process)?;
         if actual != pid.get() || image != package.service_path || created == 0 {
-            return Err(deny());
+            return Err(ServiceAuthorityError::Denied(deny()));
         }
         package.require_current()?;
-        if require_running(registration.query(&command, SERVICE_AUTO_START)?)? != pid {
-            return Err(deny());
+        if classify_service(registration.query(&command, SERVICE_AUTO_START)?, Some(pid))? != pid {
+            return Err(ServiceAuthorityError::Denied(deny()));
         }
         self.origin.verify()?;
         let generation = Generation {
@@ -108,57 +112,81 @@ impl WindowsInstalledServiceAuthority {
             command,
             state: Cell::new(0),
         };
-        generation.verify_live_process().map_err(as_io)?;
+        generation.verify_live_process()?;
         Ok(generation)
     }
 }
 impl InstalledServiceGeneration for Generation {
     fn verify_live_process(&self) -> Result<NonZeroU32, ServiceAuthorityError> {
-        match self.state.get() {
-            1 => return Err(ServiceAuthorityError::Retired),
-            2 => return Err(ServiceAuthorityError::Denied(deny())),
-            _ => (),
-        }
-        let result = (|| {
-            wait(&self.process)?;
-            let observation = (|| {
+        verify_retained(
+            &self.state,
+            || wait(&self.process),
+            || {
                 self.origin.verify()?;
                 self.package.borrow_mut().require_current()?;
-                if require_running(self.registration.query(&self.command, SERVICE_AUTO_START)?)?
-                    != self.pid
-                {
-                    return Err(deny());
-                }
+                let scm = self.registration.query(&self.command, SERVICE_AUTO_START)?;
+                let availability = classify_service(scm, Some(self.pid));
                 let (pid, created, image) = metadata(&self.process)?;
                 if pid != self.pid.get() || created != self.created || image != self.image {
-                    return Err(deny());
+                    return Err(ServiceAuthorityError::Denied(deny()));
                 }
                 self.package.borrow_mut().require_current()?;
-                Ok(self.pid)
-            })();
-            wait(&self.process)?;
-            observation.map_err(ServiceAuthorityError::Denied)
-        })();
-        if let Err(error) = &result {
-            self.state
-                .set(if matches!(error, ServiceAuthorityError::Retired) {
-                    1
-                } else {
-                    2
-                });
-        }
-        result
+                availability
+            },
+        )
     }
 }
-fn require_running(s: crate::scm_identity::ScmEvidence) -> io::Result<NonZeroU32> {
+// Origin/package/query/identity errors stay denied. Operational availability is
+// classified only after the exact immutable configuration has been validated.
+pub(super) fn classify_service(
+    s: crate::scm_identity::ScmEvidence,
+    original: Option<NonZeroU32>,
+) -> Result<NonZeroU32, ServiceAuthorityError> {
     if !s.matches_config
         || s.service_type != SERVICE_WIN32_OWN_PROCESS
-        || s.state != SERVICE_RUNNING
+        || original.is_some_and(|pid| s.process_id != 0 && s.process_id != pid.get())
     {
-        return Err(deny());
+        return Err(ServiceAuthorityError::Denied(deny()));
     }
-    NonZeroU32::new(s.process_id).ok_or_else(deny)
+    match s.state {
+        SERVICE_RUNNING => {
+            NonZeroU32::new(s.process_id).ok_or_else(|| ServiceAuthorityError::Denied(deny()))
+        }
+        SERVICE_START_PENDING | SERVICE_STOP_PENDING | SERVICE_STOPPED => {
+            Err(ServiceAuthorityError::Unavailable)
+        }
+        _ => Err(ServiceAuthorityError::Denied(deny())),
+    }
 }
+fn verify_retained<T>(
+    state: &Cell<u8>,
+    wait_original: impl Fn() -> Result<(), ServiceAuthorityError>,
+    observe: impl FnOnce() -> Result<T, ServiceAuthorityError>,
+) -> Result<T, ServiceAuthorityError> {
+    match state.get() {
+        1 => return Err(ServiceAuthorityError::Retired),
+        2 => return Err(ServiceAuthorityError::Denied(deny())),
+        _ => (),
+    }
+    let result = (|| {
+        wait_original()?;
+        let observation = observe();
+        // A temporary StopPending still waits on THIS object. Never reopen here.
+        // A real mismatch remains sticky even if exit is observed simultaneously.
+        if matches!(&observation, Err(ServiceAuthorityError::Denied(_))) {
+            return observation;
+        }
+        wait_original()?;
+        observation
+    })();
+    match &result {
+        Err(ServiceAuthorityError::Retired) => state.set(1),
+        Err(ServiceAuthorityError::Denied(_)) => state.set(2),
+        _ => (),
+    }
+    result
+}
+
 fn wait(process: &OwnedHandle) -> Result<(), ServiceAuthorityError> {
     match unsafe { WaitForSingleObject(process.as_raw_handle(), 0) } {
         WAIT_TIMEOUT => Ok(()),
@@ -199,16 +227,105 @@ fn metadata(process: &OwnedHandle) -> io::Result<(u32, u64, std::path::PathBuf)>
         OsString::from_wide(&text[..n as usize]).into(),
     ))
 }
-fn as_io(e: ServiceAuthorityError) -> io::Error {
-    match e {
-        ServiceAuthorityError::Retired => io::ErrorKind::ConnectionAborted.into(),
-        ServiceAuthorityError::Unavailable => io::ErrorKind::WouldBlock.into(),
-        ServiceAuthorityError::Denied(e) => e,
-    }
-}
 fn deny() -> io::Error {
     io::Error::new(
         io::ErrorKind::PermissionDenied,
         "readonly Service generation evidence lost or unavailable",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn scm(state: u32, pid: u32, matches_config: bool) -> crate::scm_identity::ScmEvidence {
+        crate::scm_identity::ScmEvidence {
+            process_id: pid,
+            service_type: SERVICE_WIN32_OWN_PROCESS,
+            state,
+            matches_config,
+        }
+    }
+    #[test]
+    fn initial_pending_stopped_and_restart_are_typed_unavailable() {
+        for state in [SERVICE_START_PENDING, SERVICE_STOP_PENDING, SERVICE_STOPPED] {
+            assert!(matches!(
+                classify_service(scm(state, 0, true), None),
+                Err(ServiceAuthorityError::Unavailable)
+            ));
+            assert!(matches!(
+                classify_service(scm(state, 0, false), None),
+                Err(ServiceAuthorityError::Denied(_))
+            ));
+        }
+        assert_eq!(
+            classify_service(scm(SERVICE_RUNNING, 17, true), None)
+                .unwrap_or_else(|_| panic!())
+                .get(),
+            17
+        );
+        for (state, pid) in [(SERVICE_RUNNING, 0), (99, 17)] {
+            assert!(matches!(
+                classify_service(scm(state, pid, true), None),
+                Err(ServiceAuthorityError::Denied(_))
+            ));
+        }
+        let mut wrong_type = scm(SERVICE_STOPPED, 0, true);
+        wrong_type.service_type = 0x20;
+        assert!(matches!(
+            classify_service(wrong_type, None),
+            Err(ServiceAuthorityError::Denied(_))
+        ));
+        let query_error: Result<(), ServiceAuthorityError> =
+            Err(io::Error::new(io::ErrorKind::NotFound, "SCM query failed").into());
+        assert!(matches!(query_error, Err(ServiceAuthorityError::Denied(_))));
+    }
+    #[test]
+    fn retained_stop_pending_waits_original_exit_without_latching_unavailability() {
+        let state = Cell::new(0);
+        let pid = NonZeroU32::new(17).unwrap();
+        assert!(matches!(
+            verify_retained(
+                &state,
+                || Ok(()),
+                || classify_service(scm(SERVICE_STOP_PENDING, 17, true), Some(pid))
+            ),
+            Err(ServiceAuthorityError::Unavailable)
+        ));
+        assert_eq!(state.get(), 0);
+        assert!(matches!(
+            verify_retained(
+                &state,
+                || Err(ServiceAuthorityError::Retired),
+                || -> Result<NonZeroU32, ServiceAuthorityError> { panic!("must not reopen") }
+            ),
+            Err(ServiceAuthorityError::Retired)
+        ));
+        assert_eq!(state.get(), 1);
+        assert!(matches!(
+            verify_retained(&state, || panic!("never rebind retired object"), || Ok(pid)),
+            Err(ServiceAuthorityError::Retired)
+        ));
+    }
+    #[test]
+    fn retained_actual_mismatch_remains_denied_across_pending_running_and_exit() {
+        let state = Cell::new(0);
+        let pid = NonZeroU32::new(17).unwrap();
+        assert!(matches!(
+            verify_retained(
+                &state,
+                || Ok(()),
+                || classify_service(scm(SERVICE_RUNNING, 18, true), Some(pid))
+            ),
+            Err(ServiceAuthorityError::Denied(_))
+        ));
+        assert_eq!(state.get(), 2);
+        assert!(matches!(
+            verify_retained(
+                &state,
+                || Err(ServiceAuthorityError::Retired),
+                || classify_service(scm(SERVICE_RUNNING, 17, true), Some(pid))
+            ),
+            Err(ServiceAuthorityError::Denied(_))
+        ));
+    }
 }

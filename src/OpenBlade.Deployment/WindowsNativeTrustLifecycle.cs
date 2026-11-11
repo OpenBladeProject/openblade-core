@@ -9,6 +9,7 @@ public static class WindowsNativeTrustLifecycle
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     public static void RequireReadyForEnrollmentChange()
     {
+        WindowsNativeEpochFiles.RequireLegacyStoreAbsent();
         if (!WindowsNativeEpochFiles.IsPresentDirectory(WindowsNativeEpochFiles.ProductRoot)) { return; }
         using var files = WindowsNativeEpochFiles.OpenProduct();
         using var writer = files.AcquireWriter();
@@ -23,6 +24,12 @@ public static class WindowsNativeTrustLifecycle
         // relocation, adoption or history reset in this revocation path.
     }
     internal static void RequireOwnerRetired(WindowsNativeEpochFiles files)
+    {
+        try { RequireOwnerRetiredCore(files); }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
+        { throw new NativeRecoveryException(NativeRecoveryReason.FirmwareOwnerUnresolved, "Native firmware ownership history is active, partial or unknown; no drain was inferred.", error); }
+    }
+    private static void RequireOwnerRetiredCore(WindowsNativeEpochFiles files)
     {
         string owner = Path.Combine(files.Root, "owner");
         using var directory = files.RetainDirectory(owner);

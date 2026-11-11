@@ -1,0 +1,72 @@
+namespace OpenBlade.Deployment;
+
+// Caller holds both the epoch writer and the service's SAME custody lock. This
+// certifies metadata retirement only. Firmware ownership is a separate fence.
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+internal static class WindowsNativeAttemptHistory
+{
+    internal static byte[] RequireDrained(WindowsNativeEpochFiles files, NativeEpochRecord record, string directory,
+        string serviceFeatures, uint? expectedPid = null, long? expectedCreated = null)
+    {
+        if (!serviceFeatures.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal))
+        { throw new NativeRecoveryException(NativeRecoveryReason.LegacyLaunchEvidenceUnavailable, "This native artifact predates durable launch custody; stopped-state drain is unproven."); }
+        byte[] Read(string path, int max = 16384)
+        { using var held = files.OpenFile(path); return WindowsNativeEpochFiles.ReadBounded(held, max); }
+        byte[] origin = Read(Path.Combine(directory, "origin.bin"));
+        byte[] policy = Read(Path.Combine(directory, "startup-policy.bin"));
+        if (!policy.AsSpan().SequenceEqual(NativeCanonical.Lines("OpenBlade.NativeStartupPolicy.v1", record.Epoch,
+            NativeCanonical.Digest(origin), record.ServiceId, "metadata-only-no-firmware")))
+        { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Native startup custody policy differs from the signed service artifact."); }
+        string attempts = Path.Combine(directory, "attempts");
+        string[] entries = Directory.EnumerateFileSystemEntries(attempts).Order(StringComparer.Ordinal).ToArray();
+        if (entries.Length > 8193) { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Native attempt history exceeds its bound."); }
+        var launches = new Dictionary<string, byte[]>();
+        var drains = new Dictionary<string, byte[]>();
+        foreach (string path in entries)
+        {
+            string name = Path.GetFileName(path);
+            if (name == "custody.lock") { continue; }
+            if (name.StartsWith("launch-", StringComparison.Ordinal) && name.EndsWith(".bin", StringComparison.Ordinal)) { launches.Add(name[7..], Read(path)); }
+            else if (name.StartsWith("drain-", StringComparison.Ordinal) && name.EndsWith(".bin", StringComparison.Ordinal)) { drains.Add(name[6..], Read(path)); }
+            else { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Unknown native attempt history was preserved."); }
+        }
+        string submission = Path.Combine(directory, "submission.bin");
+        bool submitted;
+        try { _ = File.GetAttributes(submission); submitted = true; }
+        catch (FileNotFoundException) { submitted = false; }
+        if (submitted)
+        {
+            if (!Read(submission).AsSpan().SequenceEqual(NativeCanonical.Lines("OpenBlade.NativeStartupSubmission.v1", record.Epoch,
+                record.Request, NativeCanonical.Digest(origin), record.Package, record.ServiceId)))
+            { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Native startup submission differs from its original attempt."); }
+        }
+        if (record.Phase == NativeEpochPhase.Committed && (!submitted || launches.Count == 0))
+        { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Committed native readiness contradicts missing startup/launch history; evidence was preserved."); }
+        if (launches.Count != drains.Count || !submitted && launches.Count != 0)
+        { throw new NativeRecoveryException(NativeRecoveryReason.MissingAttemptDrain, "Native launch/submission/drain history is incomplete; no startup was replayed."); }
+        var commitments = new List<string>();
+        bool matchedOriginal = expectedPid is null;
+        foreach (var (name, bytes) in launches.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            string[] f = NativeCanonical.ParseLines(bytes, "OpenBlade.NativeServiceLaunch.v1", 11);
+            var identity = NativeStartupOwner.Parse(NativeCanonical.Lines("OpenBlade.NativeStartupOwner.v2", f[0], f[2], f[5], f[6], f[7], f[9]));
+            if (f[0] != record.Epoch || f[1] != NativeCanonical.Digest(origin) || f[2] != record.Request || f[3] != record.Package
+                || f[4] != record.ServiceId || f[7] != "0" || f[8] != "LocalSystem-primary-session0"
+                || identity.Path != Path.Combine(directory, "app", "OpenBlade.Service.exe") || name != $"{identity.ProcessId}-{identity.Created}.bin")
+            { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Native launch identity differs from the original package/process attempt."); }
+            if (!drains.TryGetValue(name, out byte[]? drain) || !drain.AsSpan().SequenceEqual(NativeCanonical.Lines("OpenBlade.NativeStatusDrain.v2",
+                record.Epoch, NativeCanonical.Digest(bytes), f[5], f[6])))
+            { throw new NativeRecoveryException(NativeRecoveryReason.MissingAttemptDrain, "The exact native process attempt has no confirmed metadata drain."); }
+            matchedOriginal |= identity.ProcessId == expectedPid && identity.Created == expectedCreated;
+            commitments.Add(NativeCanonical.Digest(bytes)); commitments.Add(NativeCanonical.Digest(drain));
+        }
+        if (!matchedOriginal) { throw new NativeRecoveryException(NativeRecoveryReason.MissingAttemptDrain, "The retained original process does not match durable native launch history."); }
+        // No launch is accepted only because this signed entry recipe MUST hold
+        // custody and durably record its attempt before dispatcher/factory. A
+        // pending submission cannot cross admission after retirement under lock.
+        return NativeCanonical.Lines("OpenBlade.NativeRetirementProof.v1", record.Epoch, NativeCanonical.Digest(record.Encode()),
+            NativeCanonical.Digest(origin), submitted ? "submission-retained" : "never-submitted",
+            launches.Count == 0 ? "no-admitted-metadata-attempt" : "all-metadata-attempts-drained",
+            NativeCanonical.Digest(System.Text.Encoding.ASCII.GetBytes("OpenBlade.NativeAttemptSet.v1\n" + string.Join('\n', commitments) + "\n")));
+    }
+}

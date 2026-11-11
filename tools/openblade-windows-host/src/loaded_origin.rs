@@ -78,6 +78,14 @@ impl Origin {
             return Err(deny());
         }
         package.require_current()?;
+        if role == "service" {
+            package.begin_service_attempt(
+                std::process::id(),
+                process.creation(),
+                process.session(),
+                &image,
+            )?;
+        }
         let value = Arc::new(Self {
             service_path: package.service_path.clone(),
             pid: std::process::id(),
@@ -104,7 +112,9 @@ impl Origin {
             process.check_live().map_err(instance_io)?;
             if self.role == "service" {
                 process.require_service().map_err(instance_io)?;
-                let command = std::ffi::OsString::from(format!("\"{}\"", self.image.display()));
+                let mut command = std::ffi::OsString::from("\"");
+                command.push(&self.image);
+                command.push("\"");
                 let scm = crate::scm_identity::query_registration(
                     "OpenBlade",
                     &command,

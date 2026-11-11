@@ -55,8 +55,113 @@ fn lines<'a>(bytes: &'a [u8], header: &str, count: usize) -> io::Result<Vec<&'a 
     }
     Ok(parts[1..parts.len() - 1].to_vec())
 }
+fn encode64(bytes: &[u8]) -> String {
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for group in bytes.chunks(3) {
+        let n = (group[0] as u32) << 16
+            | (group.get(1).copied().unwrap_or(0) as u32) << 8
+            | group.get(2).copied().unwrap_or(0) as u32;
+        out.push(A[(n >> 18) as usize] as char);
+        out.push(A[((n >> 12) & 63) as usize] as char);
+        out.push(if group.len() > 1 {
+            A[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if group.len() > 2 {
+            A[(n & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+fn create_attempt_record(parent: &File, name: &str, bytes: &[u8]) -> io::Result<()> {
+    use std::io::Write;
+    // CREATE-only: an incomplete attempt survives; never replay or overwrite it.
+    let mut file = paths::open_relative(
+        parent,
+        OsStr::new(name),
+        windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_READ
+            | windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_WRITE,
+        0,
+        windows_sys::Wdk::Storage::FileSystem::FILE_CREATE,
+        FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+    )?;
+    paths::check_regular_file(&file)?;
+    paths::verify_security(&file, Policy::Record)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    if read_bytes(&mut file, 16384)? != bytes {
+        return Err(deny());
+    }
+    Ok(())
+}
+
 fn encode(header: &str, fields: &[&str]) -> Vec<u8> {
     format!("{header}\n{}\n", fields.join("\n")).into_bytes()
+}
+
+struct StartupOwner {
+    epoch: String,
+    request: String,
+    pid: u32,
+    created: u64,
+    session: u32,
+    image: PathBuf,
+}
+impl StartupOwner {
+    fn parse(bytes: &[u8]) -> io::Result<Self> {
+        use std::os::windows::ffi::OsStringExt;
+        // v1's final field remains literal ASCII; never reinterpret it as base64.
+        let legacy = bytes.starts_with(b"OpenBlade.NativeStartupOwner.v1\n");
+        let f = lines(
+            bytes,
+            if legacy {
+                "OpenBlade.NativeStartupOwner.v1"
+            } else {
+                "OpenBlade.NativeStartupOwner.v2"
+            },
+            6,
+        )?;
+        let units: Vec<u16> = if legacy {
+            f[5].encode_utf16().collect()
+        } else {
+            let raw = decode64_bounded(f[5], 10924)?;
+            if !raw.len().is_multiple_of(2) {
+                return Err(deny());
+            }
+            raw.chunks_exact(2)
+                .map(|v| u16::from_le_bytes([v[0], v[1]]))
+                .collect()
+        };
+        if units.is_empty() || units.len() > 4096 || units.contains(&0) {
+            return Err(deny());
+        }
+        let pid: u32 = f[2].parse().map_err(|_| deny())?;
+        let created: u64 = f[3].parse().map_err(|_| deny())?;
+        let session: u32 = f[4].parse().map_err(|_| deny())?;
+        if !is_hex(f[0], 32)
+            || !is_hex(f[1], 32)
+            || pid == 0
+            || pid.to_string() != f[2]
+            || created == 0
+            || created > i64::MAX as u64
+            || created.to_string() != f[3]
+            || session.to_string() != f[4]
+        {
+            return Err(deny());
+        }
+        Ok(Self {
+            epoch: f[0].into(),
+            request: f[1].into(),
+            pid,
+            created,
+            session,
+            image: std::ffi::OsString::from_wide(&units).into(),
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -166,7 +271,10 @@ struct Enrollment {
 }
 
 fn decode64(value: &str) -> io::Result<Vec<u8>> {
-    if value.is_empty() || !value.len().is_multiple_of(4) || value.len() > 4096 {
+    decode64_bounded(value, 4096)
+}
+fn decode64_bounded(value: &str, maximum: usize) -> io::Result<Vec<u8>> {
+    if value.is_empty() || !value.len().is_multiple_of(4) || value.len() > maximum {
         return Err(deny());
     }
     let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -676,32 +784,128 @@ pub(crate) struct InstalledPackage {
     service_identity: Vec<u8>,
     agent_identity: Vec<u8>,
     committed_phase_retained: bool,
+    service_custody: Option<File>,
+    service_attempt: Option<(File, String)>,
 }
 impl InstalledPackage {
-    pub(crate) fn record_metadata_drain(&self, pid: u32, created: u64) -> io::Result<()> {
-        use std::io::Write;
-        let name = format!("status-drain-{pid}-{created}.bin");
-        let mut file = paths::open_relative(
-            &self.directories[0],
-            OsStr::new(&name),
-            windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_READ
-                | windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_WRITE,
-            0,
-            windows_sys::Wdk::Storage::FileSystem::FILE_CREATE,
-            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
-        )?;
-        paths::check_regular_file(&file)?;
-        paths::verify_security(&file, Policy::Record)?;
-        let bytes = encode(
-            "OpenBlade.NativeStatusDrain.v1",
-            &[&self.epoch.id, &pid.to_string(), &created.to_string()],
-        );
-        file.write_all(&bytes)?;
-        file.sync_all()?;
-        if read_bytes(&mut file, 4096)? != bytes {
+    // This fixed metadata-only entry contract is committed by the signed service
+    // feature identity. Custody lasts until Origin/process teardown, including
+    // drain publication after revocation. It is never firmware Authority.
+    pub(crate) fn begin_service_attempt(
+        &mut self,
+        pid: u32,
+        created: u64,
+        session: u32,
+        image: &std::path::Path,
+    ) -> io::Result<()> {
+        use std::os::windows::ffi::OsStrExt;
+        if self.service_custody.is_some()
+            || pid == 0
+            || created == 0
+            || session != 0
+            || image != self.service_path
+        {
             return Err(deny());
         }
+        let origin = retain_bytes(&self.directories[0], "origin.bin", 16384, &mut self.held)?;
+        let policy = retain_bytes(
+            &self.directories[0],
+            "startup-policy.bin",
+            2048,
+            &mut self.held,
+        )?;
+        if policy
+            != encode(
+                "OpenBlade.NativeStartupPolicy.v1",
+                &[
+                    &self.epoch.id,
+                    &digest(&origin),
+                    &self.epoch.service,
+                    "metadata-only-no-firmware",
+                ],
+            )
+        {
+            return Err(deny());
+        }
+        let attempts = paths::open_directory(&self.directories[0], OsStr::new("attempts"))?;
+        paths::verify_security(&attempts, Policy::Directory { extra_rights: 0 })?;
+        let mut custody = paths::open_relative(
+            &attempts,
+            OsStr::new("custody.lock"),
+            windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_READ,
+            0,
+            FILE_OPEN,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+        )?;
+        paths::check_regular_file(&custody)?;
+        paths::verify_security(&custody, Policy::Record)?;
+        if read_bytes(&mut custody, 256)?
+            != encode("OpenBlade.NativeServiceCustody.v1", &[&self.epoch.id])
+        {
+            return Err(deny());
+        }
+        self.service_custody = Some(custody);
+        // Pending starts must revalidate after acquiring custody, so Setup can
+        // retire while holding the same lock without an old startup entering.
+        self.require_current()?;
+        let submission =
+            retain_bytes(&self.directories[0], "submission.bin", 2048, &mut self.held)?;
+        if submission
+            != encode(
+                "OpenBlade.NativeStartupSubmission.v1",
+                &[
+                    &self.epoch.id,
+                    &self.epoch.request,
+                    &digest(&origin),
+                    &self.epoch.package,
+                    &self.epoch.service,
+                ],
+            )
+        {
+            return Err(deny());
+        }
+        let path: Vec<u8> = image
+            .as_os_str()
+            .encode_wide()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        if path.is_empty() || path.len() > 8192 {
+            return Err(deny());
+        }
+        let bytes = encode(
+            "OpenBlade.NativeServiceLaunch.v1",
+            &[
+                &self.epoch.id,
+                &digest(&origin),
+                &self.epoch.request,
+                &self.epoch.package,
+                &self.epoch.service,
+                &pid.to_string(),
+                &created.to_string(),
+                &session.to_string(),
+                "LocalSystem-primary-session0",
+                &encode64(&path),
+            ],
+        );
+        create_attempt_record(&attempts, &format!("launch-{pid}-{created}.bin"), &bytes)?;
+        self.service_attempt = Some((attempts, digest(&bytes)));
         Ok(())
+    }
+    pub(crate) fn record_metadata_drain(&self, pid: u32, created: u64) -> io::Result<()> {
+        let (attempts, launch) = self.service_attempt.as_ref().ok_or_else(deny)?;
+        if self.service_custody.is_none() {
+            return Err(deny());
+        }
+        let bytes = encode(
+            "OpenBlade.NativeStatusDrain.v2",
+            &[
+                &self.epoch.id,
+                launch,
+                &pid.to_string(),
+                &created.to_string(),
+            ],
+        );
+        create_attempt_record(attempts, &format!("drain-{pid}-{created}.bin"), &bytes)
     }
     pub(crate) fn identity(&self, role: &str) -> &[u8] {
         if role == "service" {
@@ -924,20 +1128,20 @@ fn read_package(allow_provisional: bool) -> io::Result<InstalledPackage> {
         return Err(deny());
     }
     let startup_owner = if epoch.phase == "Provisional" {
-        let bytes = retain_bytes(&generation, "startup-owner.bin", 4096, &mut held)?;
+        let bytes = retain_bytes(&generation, "startup-owner.bin", 16384, &mut held)?;
         if digest(&bytes) != epoch.owner {
             return Err(deny());
         }
-        let f = lines(&bytes, "OpenBlade.NativeStartupOwner.v1", 6)?;
-        if f[0] != epoch.id || f[1] != epoch.request {
+        let owner = StartupOwner::parse(&bytes)?;
+        if owner.epoch != epoch.id || owner.request != epoch.request {
             return Err(deny());
         }
         Some(
             crate::retained_process::RetainedProcessInstance::capture_expected(
-                f[2].parse().map_err(|_| deny())?,
-                f[3].parse().map_err(|_| deny())?,
-                std::path::Path::new(f[5]),
-                f[4].parse().map_err(|_| deny())?,
+                owner.pid,
+                owner.created,
+                &owner.image,
+                owner.session,
             )?,
         )
     } else {
@@ -1043,6 +1247,8 @@ fn read_package(allow_provisional: bool) -> io::Result<InstalledPackage> {
         committed_phase_retained: epoch.phase == "Committed",
         epoch,
         startup_owner,
+        service_custody: None,
+        service_attempt: None,
     };
     result.require_current()?;
     Ok(result)

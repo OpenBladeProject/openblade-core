@@ -355,7 +355,9 @@ impl Policy {
         extra_rights: FILE_ADD_SUBDIRECTORY,
     };
     pub(crate) const PROGRAM_DATA: Self = Self::Directory {
-        extra_rights: FILE_ADD_SUBDIRECTORY | 2,
+        // Fixed ProgramData only: child creation and ordinary metadata.
+        // No delete-child, replacement, or security mutation rights.
+        extra_rights: FILE_ADD_SUBDIRECTORY | 2 | 0x10 | 0x100,
     };
     pub(crate) const ROOT: Self = Self::Setup {
         ace_flags: OBJECT_AND_CONTAINER_INHERIT,

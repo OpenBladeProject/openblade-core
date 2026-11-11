@@ -104,6 +104,18 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         return true;
     }
 
+    internal static void RequireLegacyStoreAbsent() => RequireLegacyStoreAbsent(
+        () => IsPresentDirectory(Path.GetDirectoryName(LegacyProductRoot)!),
+        () => OpenProtected(Path.GetDirectoryName(LegacyProductRoot)!),
+        () => IsPresentDirectory(LegacyProductRoot));
+
+    internal static void RequireLegacyStoreAbsent(Func<bool> parentPresent, Func<IDisposable> pinParent, Func<bool> legacyPresent)
+    {
+        using var parent = parentPresent() ? pinParent() : null;
+        if (legacyPresent())
+        { throw new IOException("Historical native epoch storage requires explicit transition; history was preserved."); }
+    }
+
     internal static WindowsNativeEpochFiles CreateOrOpenProductForInstall()
     {
         string parent = Path.GetDirectoryName(ProductRoot)!;
@@ -114,11 +126,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         { VerifySharedAncestor(ancestors.Handles[i], i + 1 == ancestors.Handles.Count); }
         // Pin a present legacy private parent before deciding the old child is
         // absent. A redirected/unreadable old ancestor is not transition evidence.
-        string legacyParentPath = Path.GetDirectoryName(LegacyProductRoot)!;
-        using var legacyParent = IsPresentDirectory(legacyParentPath) ? OpenProtected(legacyParentPath) : null;
-        // No silent relocation/adoption of historical mappings or unresolved state.
-        if (IsPresentDirectory(LegacyProductRoot))
-        { throw new IOException("Historical native epoch storage requires explicit transition; history was preserved."); }
+        RequireLegacyStoreAbsent();
         if (!IsPresentDirectory(ProductRoot))
         {
             RequireAbsent(ProductRoot);
@@ -172,10 +180,16 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
     private static void VerifySharedAncestor(SafeFileHandle handle, bool programData)
     {
         var descriptor = new RawSecurityDescriptor(new HandleSecurity(handle, true).GetSecurityDescriptorBinaryForm(), 0);
+        RequireSharedAncestor(descriptor, programData);
+    }
+    internal static void RequireSharedAncestor(RawSecurityDescriptor descriptor, bool programData)
+    {
         static bool Trusted(SecurityIdentifier? sid) => sid?.Value is "S-1-5-18" or "S-1-5-32-544"
             or "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464";
         if (!Trusted(descriptor.Owner) || descriptor.DiscretionaryAcl is null) { throw new UnauthorizedAccessException("Untrusted native root ancestry."); }
-        int forbidden = (0x40000000 | 0x10000000 | 0x000D0156) & ~(programData ? 6 : 4);
+        // Only the fixed ProgramData creation ancestor admits ordinary WEA/WA
+        // metadata grants. Private/product/token policies remain strict.
+        int forbidden = (0x40000000 | 0x10000000 | 0x000D0156) & ~(programData ? 0x116 : 4);
         foreach (GenericAce entry in descriptor.DiscretionaryAcl)
         {
             if (entry is not CommonAce ace || ace.IsCallback) { throw new UnauthorizedAccessException("Unsupported ancestor ACE."); }
@@ -249,10 +263,14 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         return new FileStream(handle, FileAccess.Read);
     }
 
+    internal FileStream AcquireServiceCustody(string path) => new(OpenChecked(path, false, this, exclusive: true), FileAccess.Read);
+
     internal byte[]? ReadCurrent()
     {
         string path = Path.Combine(Root, "current.bin");
-        if (!File.Exists(path)) { return null; }
+        try { _ = File.GetAttributes(path); }
+        catch (FileNotFoundException) { return null; }
+        catch (DirectoryNotFoundException) { return null; }
         using var file = new FileStream(OpenChecked(path, false, this, mutable: true), FileAccess.Read);
         return ReadBounded(file, 16384);
     }

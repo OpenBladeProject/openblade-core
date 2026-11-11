@@ -11,7 +11,7 @@ namespace OpenBlade.Deployment.Tests;
 [SupportedOSPlatform("windows")]
 public sealed class WindowsNativeEpochTests
 {
-    private const string Features = "installed-service-candidate,native-agent-entry-compile-check";
+    private const string Features = "installed-service-candidate,native-agent-entry-compile-check,startup-custody-v1";
 
     internal static byte[] Image(string role, char nonce = 'b', byte marker = 1)
     {
@@ -35,11 +35,17 @@ public sealed class WindowsNativeEpochTests
     {
         byte[] bytes = WindowsNativeInventoryBurnExtractorTests.NativeEpochBundle(Image("service", nonce, marker), Image("agent", nonce, 2));
         using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bytes, new string('a', 40));
-        string path = Path.Combine(files.Root, Guid.NewGuid().ToString("N") + ".exe");
+        if (!File.Exists(Path.Combine(files.Root, "root.bin")))
+        {
+            files.Publish(Path.Combine(files.Root, "root.bin"), NativeCanonical.Lines("OpenBlade.NativeRoot.v1", "legacy-store-absent"));
+            Directory.CreateDirectory(Path.Combine(files.Root, "owner"));
+        }
+        var source = WindowsNativeEpochFiles.CreatePrivateFixture();
+        string path = Path.Combine(source.Root, "package.exe");
         File.WriteAllBytes(path, bytes);
-        var held = files.OpenFile(path);
+        var held = source.OpenFile(path);
         var release = OpenBladeSignedReleaseVerifier.Verify(signed.ManifestBytes, signed.SignatureBytes, signed.Policy);
-        return await WindowsNativePackage.OpenLocalDevAsync(held, new EmptyLease(), signed.ManifestBytes,
+        return await WindowsNativePackage.OpenLocalDevAsync(held, source, signed.ManifestBytes,
             signed.SignatureBytes, NativeLocalDevEnrollment.ForAlgorithmTests(release.Manifest.InstallationId, signed.Policy), CancellationToken.None);
     }
 
@@ -132,10 +138,10 @@ public sealed class WindowsNativeEpochTests
         Assert.Throws<IOException>(() => WindowsNativeEpochTransaction.Begin(files, first, Guid.NewGuid(), testCrashBoundary:
             reached => { if (reached == NativeEpochBoundary.PackageWritten) { throw new IOException("abandoned preparation"); } }));
         using var conflicting = await Package(files, marker: 9);
-        Assert.Throws<InvalidDataException>(() => WindowsNativeEpochTransaction.Begin(files, conflicting, Guid.NewGuid()));
+        Assert.Throws<NativeRecoveryException>(() => WindowsNativeEpochTransaction.Begin(files, conflicting, Guid.NewGuid()));
         Assert.Single(Directory.EnumerateFiles(files.Root, "package.bin", SearchOption.AllDirectories));
-        using var retriedOriginal = WindowsNativeEpochTransaction.Begin(files, first, Guid.NewGuid());
-        Assert.Equal(1, retriedOriginal.Record.Ordinal);
+        Assert.Equal(NativeRecoveryReason.UnknownBootstrapHistory,
+            Assert.Throws<NativeRecoveryException>(() => WindowsNativeEpochTransaction.Begin(files, first, Guid.NewGuid())).Reason);
     }
 
     [Theory]
@@ -286,12 +292,13 @@ public sealed class WindowsNativeEpochTests
         foreach (string record in Directory.EnumerateFiles(files.Root, "package.bin", SearchOption.AllDirectories))
         { Assert.Equal(package.Record, File.ReadAllBytes(record)); }
         files.CrashBoundaryForTests = null;
-        // A real crash may leave a partial temporary file. It is not a mapping,
-        // phase or selection and must not poison the durable artifact ledger.
-        string abandoned = Directory.EnumerateDirectories(files.Root).Single();
+        // A real crash may leave a partial file/reservation. Keep every byte;
+        // null selection cannot reset that history into a clean ordinal 1.
+        string abandoned = Directory.EnumerateDirectories(files.Root).Single(p => Path.GetFileName(p) != "owner");
         File.WriteAllBytes(Path.Combine(abandoned, "receipt-abandoned.tmp"), [1, 2]);
-        using var fresh = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid());
-        Assert.Equal(1, fresh.Record.Ordinal);
+        Assert.Throws<NativeRecoveryException>(() => WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()));
+        Assert.Null(files.ReadCurrent());
+        Assert.True(Directory.Exists(abandoned));
     }
 
     [Theory]
@@ -462,12 +469,12 @@ public sealed class WindowsNativeEpochTests
         { epoch = tx.Record.Epoch; tx.CommitAfterBoundReadiness(new string('e', 64)); }
         using var cleanup = await WindowsNativeInstalledSelection.OpenAsync(files, CancellationToken.None);
         Assert.Equal(Path.Combine(files.Root, epoch, "app", "OpenBlade.Service.exe"), cleanup.ServicePath);
-        Assert.Throws<IOException>(() => cleanup.RetireAfterStatusDrain(17, 1));
+        Assert.Throws<NativeRecoveryException>(() => cleanup.RetireAfterStatusDrain(17, 1));
         files.Publish(Path.Combine(files.Root, epoch, "status-drain-17-1.bin"), NativeCanonical.Lines("OpenBlade.NativeStatusDrain.v1", epoch, "17", "1"));
-        string owner = Path.Combine(files.Root, "owner"); files.CreateDirectoryOnce(owner);
+        string owner = Path.Combine(files.Root, "owner");
         files.Publish(Path.Combine(owner, "owner-00000000000000000001.bin"), NativeCanonical.Lines("OpenBlade.NativeOwner.v1", "Active", "1", new string('0', 64), cleanup.Record.Installation, epoch,
             package.Service.Id, "17:1", new string('f', 64)));
-        Assert.Throws<IOException>(() => cleanup.RetireAfterStatusDrain(17, 1));
+        Assert.Throws<NativeRecoveryException>(() => cleanup.RetireAfterStatusDrain(17, 1));
         Assert.Equal(NativeEpochPhase.Committed, NativeEpochRecord.Parse(files.ReadCurrent()!).Phase);
     }
 
@@ -491,7 +498,7 @@ public sealed class WindowsNativeEpochTests
         files.CreateDirectoryOnce(owner);
         WindowsNativeTrustLifecycle.RequireOwnerRetired(files);
         files.Publish(Path.Combine(owner, "unrecognized.bin"), NativeCanonical.Lines("unknown-owner-state", "retain"));
-        Assert.Throws<InvalidDataException>(() => WindowsNativeTrustLifecycle.RequireOwnerRetired(files));
+        Assert.Throws<NativeRecoveryException>(() => WindowsNativeTrustLifecycle.RequireOwnerRetired(files));
     }
 
     private static FileStream OpenNativeCurrent(string path)
