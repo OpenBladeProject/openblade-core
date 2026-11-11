@@ -9,7 +9,7 @@ public static class WindowsNativeTrustLifecycle
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     public static void RequireReadyForEnrollmentChange()
     {
-        if (!Directory.Exists(WindowsNativeEpochFiles.ProductRoot)) { return; }
+        if (!WindowsNativeEpochFiles.IsPresentDirectory(WindowsNativeEpochFiles.ProductRoot)) { return; }
         using var files = WindowsNativeEpochFiles.OpenProduct();
         using var writer = files.AcquireWriter();
         byte[]? selected = files.ReadCurrent();
@@ -29,8 +29,9 @@ public static class WindowsNativeTrustLifecycle
         byte[]? previous = null;
         string[]? priorFields = null;
         int count = 0;
-        foreach (string path in Directory.EnumerateFiles(owner, "owner-*.bin").Order(StringComparer.Ordinal))
+        foreach (string path in Directory.EnumerateFileSystemEntries(owner).Order(StringComparer.Ordinal))
         {
+            if (Path.GetFileName(path) == "writer.lock") { continue; }
             if (++count > 4096) { throw new IOException("Native owner history exceeds its bound."); }
             using var held = files.OpenFile(path);
             byte[] bytes = WindowsNativeEpochFiles.ReadBounded(held, 4096);

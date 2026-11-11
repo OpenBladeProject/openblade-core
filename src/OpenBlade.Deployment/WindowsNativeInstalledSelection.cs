@@ -17,7 +17,7 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
     { this.files = files; this.selected = selected; Record = NativeEpochRecord.Parse(selected); }
     internal static async Task<WindowsNativeInstalledSelection?> OpenProductAsync(CancellationToken token)
     {
-        if (!Directory.Exists(WindowsNativeEpochFiles.ProductRoot)) { return null; }
+        if (!WindowsNativeEpochFiles.IsPresentDirectory(WindowsNativeEpochFiles.ProductRoot)) { return null; }
         var files = WindowsNativeEpochFiles.OpenProduct();
         try { return await OpenAsync(files, token); }
         catch { files.Dispose(); throw; }

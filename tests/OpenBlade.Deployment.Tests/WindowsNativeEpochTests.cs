@@ -471,6 +471,29 @@ public sealed class WindowsNativeEpochTests
         Assert.Equal(NativeEpochPhase.Committed, NativeEpochRecord.Parse(files.ReadCurrent()!).Phase);
     }
 
+    [Fact]
+    public void FixedRootPresenceRequiresExplicitAbsenceAndPreservesUnknownHistory()
+    {
+        Assert.True(WindowsNativeEpochFiles.ObserveDirectoryPresence(() => FileAttributes.Directory));
+        Assert.False(WindowsNativeEpochFiles.ObserveDirectoryPresence(() => throw new FileNotFoundException()));
+        Assert.False(WindowsNativeEpochFiles.ObserveDirectoryPresence(() => throw new DirectoryNotFoundException()));
+        Assert.Throws<UnauthorizedAccessException>(() => WindowsNativeEpochFiles.ObserveDirectoryPresence(() => throw new UnauthorizedAccessException("denied")));
+        Assert.Throws<IOException>(() => WindowsNativeEpochFiles.ObserveDirectoryPresence(() => throw new IOException("unknown history")));
+        Assert.Throws<UnauthorizedAccessException>(() => WindowsNativeEpochFiles.ObserveDirectoryPresence(() => FileAttributes.Directory | FileAttributes.ReparsePoint));
+        Assert.Throws<UnauthorizedAccessException>(() => WindowsNativeEpochFiles.ObserveDirectoryPresence(() => FileAttributes.Normal));
+    }
+
+    [Fact]
+    public void UnknownOwnerEntryCannotBecomeAnEmptyHistoryRetirementCertificate()
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        string owner = Path.Combine(files.Root, "owner");
+        files.CreateDirectoryOnce(owner);
+        WindowsNativeTrustLifecycle.RequireOwnerRetired(files);
+        files.Publish(Path.Combine(owner, "unrecognized.bin"), NativeCanonical.Lines("unknown-owner-state", "retain"));
+        Assert.Throws<InvalidDataException>(() => WindowsNativeTrustLifecycle.RequireOwnerRetired(files));
+    }
+
     private static FileStream OpenNativeCurrent(string path)
     {
         var handle = CreateFileW(path, 0x00120089, 5, 0, 3, 0x00200000, 0);

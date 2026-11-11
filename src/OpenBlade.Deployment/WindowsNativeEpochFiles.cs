@@ -89,6 +89,21 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         return value;
     }
 
+    internal static bool IsPresentDirectory(string path) => ObserveDirectoryPresence(() => File.GetAttributes(path));
+
+    // Directory.Exists suppresses access/I/O failures. Only explicit not-found
+    // evidence permits absence; unreadable historical state must not be reset.
+    internal static bool ObserveDirectoryPresence(Func<FileAttributes> read)
+    {
+        FileAttributes attributes;
+        try { attributes = read(); }
+        catch (FileNotFoundException) { return false; }
+        catch (DirectoryNotFoundException) { return false; }
+        if ((attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != FileAttributes.Directory)
+        { throw new UnauthorizedAccessException("Native root is not a plain directory."); }
+        return true;
+    }
+
     internal static WindowsNativeEpochFiles CreateOrOpenProductForInstall()
     {
         string parent = Path.GetDirectoryName(ProductRoot)!;
@@ -97,10 +112,14 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         PinAncestors(parent, ancestors, null);
         for (int i = 0; i < ancestors.Handles.Count; i++)
         { VerifySharedAncestor(ancestors.Handles[i], i + 1 == ancestors.Handles.Count); }
+        // Pin a present legacy private parent before deciding the old child is
+        // absent. A redirected/unreadable old ancestor is not transition evidence.
+        string legacyParentPath = Path.GetDirectoryName(LegacyProductRoot)!;
+        using var legacyParent = IsPresentDirectory(legacyParentPath) ? OpenProtected(legacyParentPath) : null;
         // No silent relocation/adoption of historical mappings or unresolved state.
-        if (Directory.Exists(LegacyProductRoot) || File.Exists(LegacyProductRoot))
+        if (IsPresentDirectory(LegacyProductRoot))
         { throw new IOException("Historical native epoch storage requires explicit transition; history was preserved."); }
-        if (!Directory.Exists(ProductRoot))
+        if (!IsPresentDirectory(ProductRoot))
         {
             RequireAbsent(ProductRoot);
             var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
