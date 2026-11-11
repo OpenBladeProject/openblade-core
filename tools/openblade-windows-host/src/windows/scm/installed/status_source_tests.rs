@@ -250,7 +250,7 @@ async fn partial_observations_replace_prior_fields_and_caller_projection_keeps_r
     assert_eq!(unavailable["revision"], 3);
     assert_eq!(
         unavailable["message"],
-        "Device identity is unavailable. Control ownership is unverified."
+        "Device identity is unavailable. Firmware observation denied: adapter, activity and managed drain admission are unavailable."
     );
 }
 
