@@ -98,21 +98,14 @@ fn process_evidence() -> io::Result<ProcessEvidence> {
 
 pub(super) struct AdmittedRuntime {
     origin: Arc<Origin>,
-    authority: super::readiness::ownership::durable::NativeAuthority,
 }
 impl AdmittedRuntime {
-    pub(super) fn verify_launch(
-        self,
-        launch: &LaunchIdentity,
-    ) -> io::Result<(
-        Arc<Origin>,
-        super::readiness::ownership::durable::NativeAuthority,
-    )> {
+    pub(super) fn verify_launch(self, launch: &LaunchIdentity) -> io::Result<Arc<Origin>> {
         self.origin.verify()?;
         if self.origin.pid != launch.pid || self.origin.image != launch.image {
             return Err(denied("installed origin differs"));
         }
-        Ok((self.origin, self.authority))
+        Ok(self.origin)
     }
 }
 fn admit_candidate(launch: &LaunchIdentity) -> io::Result<AdmittedRuntime> {
@@ -128,7 +121,5 @@ fn admit_candidate(launch: &LaunchIdentity) -> io::Result<AdmittedRuntime> {
     }
     // Firmware remains explicitly denied: no full adapter/activity supplier or
     // coordinated managed drain handoff exists. Metadata never calls the HID worker.
-    let authority =
-        super::readiness::ownership::durable::NativeAuthority::from_origin(origin.clone())?;
-    Ok(AdmittedRuntime { origin, authority })
+    Ok(AdmittedRuntime { origin })
 }

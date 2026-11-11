@@ -1,6 +1,7 @@
 use std::{env, fs, path::PathBuf, process::Command};
 
 fn main() {
+    println!("cargo::rustc-check-cfg=cfg(openblade_metadata_acquisition_probe)");
     for name in ["OPENBLADE_NATIVE_BUILD_NONCE", "OPENBLADE_NATIVE_SOURCE"] {
         println!("cargo:rerun-if-env-changed={name}");
     }
@@ -32,6 +33,25 @@ fn main() {
         })
         .collect();
     features.sort();
+    let has = |name: &str| features.iter().any(|f| f == name);
+    let metadata = has("service-metadata-only-v1");
+    let hardware = has("service-hardware-compile-check");
+    assert!(
+        !(metadata
+            && (hardware
+                || has("firmware-performance-compile-check")
+                || has("hid-identity-compile-check")
+                || features
+                    .iter()
+                    .any(|f| f.contains("fixture") || f.starts_with("scratch-")))),
+        "metadata composition excludes real firmware acquisition and fixtures"
+    );
+    if has("installed-service-candidate") {
+        assert!(
+            metadata != hardware,
+            "Service requires one explicit composition"
+        );
+    }
     let compiler = Command::new(env::var_os("RUSTC").expect("rustc"))
         .arg("--version")
         .output()
@@ -51,8 +71,17 @@ fn main() {
         } else {
             format!("{nonce}-{role}")
         };
+        let capabilities = if role == "service" && has("installed-service-candidate") {
+            if metadata {
+                "private-service-custody-v1,service-metadata-only-v1"
+            } else {
+                "private-service-custody-v1"
+            }
+        } else {
+            "none"
+        };
         let record = format!(
-            "OpenBlade.NativeArtifact.v1\n{id}\n{role}\n{target}\n{source}\n{}\n{}\n{profile}\n",
+            "OpenBlade.NativeArtifact.v2\n{id}\n{role}\n{target}\n{source}\n{}\n{}\n{profile}\n{capabilities}\n",
             features.join(","),
             compiler.trim()
         );

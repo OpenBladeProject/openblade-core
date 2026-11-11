@@ -7,7 +7,7 @@ use std::{
 
 #[cfg(any(test, feature = "hid-identity-compile-check"))]
 mod hid_lease;
-#[cfg(all(windows, feature = "installed-service-candidate"))]
+#[cfg(all(windows, any(test, feature = "service-hardware-compile-check")))]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
 pub(crate) use hid_lease::performance;
 #[cfg(all(windows, test))]

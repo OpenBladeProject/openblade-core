@@ -4,7 +4,10 @@ use tokio::time::Instant;
 
 use super::ownership::{Authority, Binding};
 use super::{Caller, Logon, Observation, Snapshot};
-use crate::discovery::performance::{Admission, ObservedPerformance, Worker, native_worker};
+use crate::discovery::performance::{Admission, ObservedPerformance, Worker};
+
+#[cfg(feature = "service-hardware-compile-check")]
+use crate::discovery::performance::native_worker;
 
 type Project = dyn Fn(Admission) -> Option<Snapshot>;
 
@@ -19,6 +22,7 @@ pub(in crate::installed) struct FirmwareSource {
 }
 
 impl FirmwareSource {
+    #[cfg(feature = "service-hardware-compile-check")]
     pub(in crate::installed) fn native(
         launch_pid: u32,
         authority: Option<&dyn Authority>,
@@ -32,6 +36,7 @@ impl FirmwareSource {
         )
     }
 
+    #[cfg(feature = "service-hardware-compile-check")]
     pub(in crate::installed) fn native_with_package(
         launch_pid: u32,
         authority: Option<&dyn Authority>,

@@ -95,7 +95,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
                 foreach (string encoded in prior[8..10])
                 {
                     byte[] priorArtifact = Convert.FromBase64String(encoded);
-                    string[] artifact = NativeCanonical.ParseLines(priorArtifact, "OpenBlade.NativeArtifactRecord.v1", 11);
+                    string[] artifact = NativeArtifact.RecordFields(priorArtifact);
                     foreach (var candidate in new[] { package.Service, package.Agent })
                     {
                         if (artifact[0] == candidate.Id && !priorArtifact.AsSpan().SequenceEqual(candidate.Encode()))
@@ -103,7 +103,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
                     }
                 }
             }
-            if (!package.Service.Features.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal))
+            if (!package.Service.HasStartupCustody)
             { throw new InvalidDataException("Native startup requires a custody-capable signed service artifact."); }
             string epoch = Guid.NewGuid().ToString("N");
             string directory = Path.Combine(files.Root, epoch);
@@ -134,7 +134,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
             files.CreateDirectoryOnce(Path.Combine(directory, "attempts"));
             files.PublishCustody(Path.Combine(directory, "attempts", "custody.lock"), NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", epoch));
             files.Publish(Path.Combine(directory, "startup-policy.bin"), NativeCanonical.Lines("OpenBlade.NativeStartupPolicy.v1",
-                epoch, NativeCanonical.Digest(selection), package.Service.Id, "metadata-only-no-firmware"));
+                epoch, NativeCanonical.Digest(selection), package.Service.Id, package.Service.StartupPolicy));
             files.Publish(Path.Combine(directory, "origin.bin"), selection);
             testCrashBoundary?.Invoke(NativeEpochBoundary.OriginWritten);
             files.Publish(Path.Combine(directory, "Provisional.bin"), selection);

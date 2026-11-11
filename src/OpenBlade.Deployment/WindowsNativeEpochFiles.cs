@@ -264,7 +264,12 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         return new FileStream(handle, FileAccess.Read);
     }
 
-    internal FileStream AcquireServiceCustody(string path) => new(OpenChecked(path, false, this, exclusive: true, privateCustody: true), FileAccess.Read);
+    internal FileStream AcquireServiceCustody(string path, bool authenticatedLegacyCleanup = false) =>
+        new(OpenChecked(path, false, this, exclusive: true, privateCustody: true, legacyCustody: authenticatedLegacyCleanup), FileAccess.Read);
+
+    // SAME lock as native durable Store::open. Recovery never creates it.
+    internal FileStream AcquireOwnerWriter() =>
+        new(OpenChecked(Path.Combine(Root, "owner", "writer.lock"), false, this, exclusive: true), FileAccess.Read);
 
     internal byte[]? ReadCurrent()
     {
@@ -455,7 +460,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
     }
 
     private static SafeFileHandle OpenChecked(string path, bool directory, WindowsNativeEpochFiles? scope,
-        bool delete = false, bool mutable = false, bool exclusive = false, bool privateCustody = false)
+        bool delete = false, bool mutable = false, bool exclusive = false, bool privateCustody = false, bool legacyCustody = false)
     {
         const uint listDirectoryAndReadControl = 0x00020001;
         const uint genericRead = 0x80000000;
@@ -485,7 +490,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
             {
                 throw new IOException("Native epoch storage requires its exact non-reparse path and a single-link file.");
             }
-            scope?.VerifyAccess(handle, directory, path == scope.Root, path, privateCustody || Path.GetFileName(path) == "custody.lock");
+            scope?.VerifyAccess(handle, directory, path == scope.Root, path, privateCustody || Path.GetFileName(path) == "custody.lock", legacyCustody);
             return handle;
         }
         catch
@@ -507,8 +512,8 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         return new FileInfo(path).Create(FileMode.CreateNew, FileSystemRights.FullControl, FileShare.None, 4096, FileOptions.WriteThrough, security);
     }
 
-    // Legacy public locks require explicit generation replacement. Never change
-    // their ACL in place while the original custody is uncertain.
+    // Runtime and v2 cleanup require this exact private promise. Authenticated v1
+    // cleanup separately retains the older no-unprivileged-mutation contract.
     internal static bool AcceptsPrivateCustody(RawSecurityDescriptor descriptor, SecurityIdentifier? fixtureOwner = null)
     {
         if (!descriptor.ControlFlags.HasFlag(ControlFlags.DiscretionaryAclProtected)
@@ -526,11 +531,35 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         return seen.Count == principals.Length;
     }
 
-    private void VerifyAccess(SafeFileHandle handle, bool directory, bool isRoot, string path, bool privateCustody)
+    // V1 authenticates no-unprivileged-write, not an original private-only promise.
+    // Cleanup retains the exact original descriptor and exclusive lock.
+    internal static bool AcceptsLegacyCustody(RawSecurityDescriptor descriptor, SecurityIdentifier? fixtureOwner = null)
+    {
+        bool Trusted(SecurityIdentifier? sid) => fixtureOwner is null
+            ? sid?.Value is "S-1-5-18" or "S-1-5-32-544" : sid == fixtureOwner;
+        if (!Trusted(descriptor.Owner) || descriptor.DiscretionaryAcl is not { Count: >= 1 and <= 64 } acl) { return false; }
+        const int readOnly = unchecked((int)0xA01200A9); // generic/file read+execute, READ_CONTROL, SYNCHRONIZE
+        foreach (GenericAce entry in acl)
+        {
+            if (entry is not CommonAce ace || ace.IsCallback
+                || ace.AceQualifier is not (AceQualifier.AccessAllowed or AceQualifier.AccessDenied)) { return false; }
+            if (ace.AceQualifier == AceQualifier.AccessAllowed && (ace.AceFlags & AceFlags.InheritOnly) == 0
+                && !Trusted(ace.SecurityIdentifier) && (ace.AccessMask & ~readOnly) != 0) { return false; }
+        }
+        return true;
+    }
+
+    private void VerifyAccess(SafeFileHandle handle, bool directory, bool isRoot, string path, bool privateCustody, bool legacyCustody = false)
     {
         var descriptor = new RawSecurityDescriptor(
             new HandleSecurity(handle, directory).GetSecurityDescriptorBinaryForm(), 0);
 
+        if (legacyCustody)
+        {
+            if (!AcceptsPrivateCustody(descriptor, owner) && !AcceptsLegacyCustody(descriptor, owner))
+            { throw new UnauthorizedAccessException("Authenticated legacy cleanup custody permits untrusted mutation."); }
+            return;
+        }
         if (privateCustody)
         {
             if (!AcceptsPrivateCustody(descriptor, owner)) { throw new UnauthorizedAccessException("Native custody requires a protected private lock; legacy public locks are not adopted."); }

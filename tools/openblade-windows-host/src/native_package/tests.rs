@@ -251,7 +251,10 @@ fn actual_pe_obid_reader_does_not_accept_a_marker_elsewhere_or_wrong_geometry() 
     let v = vector();
     let mut image = bytes(&v, "serviceImage");
     let record = compiled_record(&image).unwrap().to_vec();
-    assert!(record.starts_with(b"OpenBlade.NativeArtifact.v1\n"));
+    assert!(
+        record.starts_with(b"OpenBlade.NativeArtifact.v1\n")
+            || record.starts_with(b"OpenBlade.NativeArtifact.v2\n")
+    );
     image[0] ^= 1; // full PE validation remains inspect_artifact's job
     let r = authenticate(
         &bytes(&v, "enrollment"),
@@ -581,4 +584,107 @@ fn shared_attempt_budget_reserves_last_drain_and_preserves_exhausted_or_malforme
             .downcast_ref::<AttemptRefusal>(),
         Some(&AttemptRefusal::MalformedHistory)
     );
+}
+
+#[test]
+fn shared_v2_capabilities_preserve_combined_agent_features_and_reject_forgery() {
+    let data: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/data/native-capabilities-v2.json")).unwrap();
+    let v = vector();
+    let release = authenticate(
+        &bytes(&v, "enrollment"),
+        &bytes(&v, "manifest"),
+        &bytes(&v, "signature"),
+    )
+    .unwrap();
+    for case in data["cases"].as_array().unwrap() {
+        let image = bytes(case, "image");
+        let record = bytes(case, "record");
+        let role = case["role"].as_str().unwrap();
+        let result = inspect_artifact(&record, &image, role, &release);
+        assert_eq!(
+            result.is_ok(),
+            case["accepted"].as_bool().unwrap(),
+            "{}",
+            case["name"]
+        );
+        if result.is_ok() {
+            let f = lines(&record, "OpenBlade.NativeArtifactRecord.v2", 11).unwrap();
+            assert_eq!(record, encode("OpenBlade.NativeArtifactRecord.v2", &f));
+            if role == "agent" {
+                assert!(f[4].contains("service-metadata-only-v1"));
+                assert_eq!(f[10], "none");
+            }
+            let mut tampered = f.clone();
+            tampered[10] = "unknown";
+            assert!(
+                inspect_artifact(
+                    &encode("OpenBlade.NativeArtifactRecord.v2", &tampered),
+                    &image,
+                    role,
+                    &release
+                )
+                .is_err()
+            );
+        }
+    }
+}
+
+#[test]
+fn legacy_artifact_record_and_compiled_identity_reencode_byte_exact() {
+    let v = vector();
+    for role in ["service", "agent"] {
+        let record = bytes(&v, &format!("{role}Record"));
+        let f = lines(&record, "OpenBlade.NativeArtifactRecord.v1", 10).unwrap();
+        assert_eq!(record, encode("OpenBlade.NativeArtifactRecord.v1", &f));
+        let image = bytes(&v, &format!("{role}Image"));
+        assert_eq!(
+            compiled_record(&image).unwrap(),
+            encode("OpenBlade.NativeArtifact.v1", &f[..7])
+        );
+    }
+}
+
+#[test]
+fn late_queued_start_cannot_reuse_submission_after_retirement_or_unresolved_selection() {
+    let v = vector();
+    let selected = bytes(&v, "epoch");
+    let epoch = Epoch::parse(&selected).unwrap();
+    let origin = b"authenticated original bytes supplied after custody";
+    let marker = encode(
+        "OpenBlade.NativeStartupSubmission.v1",
+        &[
+            &epoch.id,
+            &epoch.request,
+            &digest(origin),
+            &epoch.package,
+            &epoch.service,
+        ],
+    );
+    require_submission(&epoch, origin, &marker).unwrap();
+    assert!(require_submission(&epoch, origin, b"").is_err());
+    let mut torn = marker.clone();
+    torn[0] ^= 1;
+    assert!(require_submission(&epoch, origin, &torn).is_err());
+    for phase in ["Retired", "Unresolved"] {
+        let next = String::from_utf8(selected.clone())
+            .unwrap()
+            .replace("Committed", phase)
+            .replace(&epoch.readiness, ZERO)
+            .into_bytes();
+        let retired = Epoch::parse(&next).unwrap();
+        assert!(require_submission(&retired, origin, &marker).is_err());
+        assert!(
+            Promotion::default()
+                .check(
+                    &epoch,
+                    &selected,
+                    &next,
+                    &next,
+                    None,
+                    std::time::Instant::now()
+                )
+                .is_err()
+        );
+    }
 }

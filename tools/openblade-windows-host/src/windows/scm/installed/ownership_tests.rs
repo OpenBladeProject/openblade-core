@@ -125,6 +125,7 @@ fn idle_source(authority: Option<&dyn Authority>) -> io::Result<FirmwareSource> 
 #[test]
 fn in_memory_candidate_refuses_missing_or_mismatched_generation_before_worker_factory() {
     let factory = |_| panic!("hardware factory must remain unopened");
+    #[cfg(feature = "service-hardware-compile-check")]
     assert!(FirmwareSource::native(PID, None, |_| None).is_err());
     assert!(FirmwareSource::bind(PID, None, factory, |_| None).is_err());
     for loaded in [None, Some(epoch(PID + 1))] {

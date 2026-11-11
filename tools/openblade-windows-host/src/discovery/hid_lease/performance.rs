@@ -21,11 +21,13 @@ pub(crate) mod worker_tests;
 
 #[cfg(any(test, feature = "firmware-performance-compile-check"))]
 mod worker;
-#[cfg(all(windows, feature = "installed-service-candidate"))]
+#[cfg(all(windows, feature = "service-hardware-compile-check"))]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
 pub(crate) use windows::native_worker;
-#[cfg(all(windows, feature = "installed-service-candidate"))]
+#[cfg(all(windows, feature = "service-hardware-compile-check"))]
 #[allow(unused_imports)]
+pub(crate) use worker::Worker;
+#[cfg(all(windows, test, not(feature = "service-hardware-compile-check")))]
 pub(crate) use worker::Worker;
 
 const MODEL: &str = "RZ09-0581";

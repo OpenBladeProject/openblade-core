@@ -111,7 +111,7 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
     internal void RetireAfterStatusDrain(uint pid, long created)
     {
         RequireCurrent();
-        if (package!.Service.Features.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal))
+        if (package!.Service.HasStartupCustody)
         { RetireRecoverableSelection(pid, created); return; }
         string directory = Path.Combine(files.Root, Record.Epoch);
         using var drain = files.OpenFile(Path.Combine(directory, $"status-drain-{pid}-{created}.bin"));
@@ -119,14 +119,15 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             pid.ToString(System.Globalization.CultureInfo.InvariantCulture), created.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         // Legacy recovery requires the independently retained live original and
         // actual exit at the caller. An absent process never enters this route.
-        Recover(NativeRecoveryReason.RetirementPublicationFailed, () => { PublishRetirement(directory); return true; });
+        using var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
+        Recover(NativeRecoveryReason.RetirementPublicationFailed, () => { PublishRetirement(directory, owner); return true; });
     }
     internal void RetireRecoverableSelection(uint? expectedPid = null, long? expectedCreated = null)
     {
         RequireCurrent();
         if (Record.Phase == NativeEpochPhase.Retired) { return; }
         string directory = Path.Combine(files.Root, Record.Epoch);
-        if (!package!.Service.Features.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal))
+        if (!package!.Service.HasStartupCustody)
         { throw new NativeRecoveryException(NativeRecoveryReason.LegacyLaunchEvidenceUnavailable, "Legacy native stopped state lacks original launch/drain evidence; history was preserved."); }
         using var attempts = Recover(NativeRecoveryReason.UnknownAttemptHistory,
             () => files.RetainDirectory(Path.Combine(directory, "attempts")));
@@ -138,13 +139,13 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             return true;
         });
         RequireCurrent();
-        WindowsNativeTrustLifecycle.RequireOwnerRetired(files);
+        using var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
         byte[] proof = Recover(NativeRecoveryReason.UnknownAttemptHistory,
-            () => WindowsNativeAttemptHistory.RequireDrained(files, Record, directory, package.Service.Features, expectedPid, expectedCreated));
+            () => WindowsNativeAttemptHistory.RequireDrained(files, Record, directory, package.Service, owner.Commitment, expectedPid, expectedCreated));
         Recover(NativeRecoveryReason.RetirementPublicationFailed, () =>
         {
             PublishProofSnapshot(directory, proof);
-            PublishRetirement(directory);
+            PublishRetirement(directory, owner);
             return true;
         });
     }
@@ -154,6 +155,7 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         var attempts = Recover(NativeRecoveryReason.UnknownAttemptHistory,
             () => files.RetainDirectory(Path.Combine(directory, "attempts")));
         FileStream? custody = null;
+        WindowsNativeTrustLifecycle.OwnerLease? owner = null;
         try
         {
             custody = AcquireRecoveryCustody(Path.Combine(directory, "attempts", "custody.lock"));
@@ -162,17 +164,17 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
                 WindowsNativeEpochFiles.RequireExact(custody, NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", Record.Epoch));
                 return true;
             });
-            WindowsNativeTrustLifecycle.RequireOwnerRetired(files);
+            owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
             byte[] proof = Recover(NativeRecoveryReason.UnknownAttemptHistory,
-                () => WindowsNativeAttemptHistory.RequireDrained(files, proofRecord, directory, package!.Service.Features));
+                () => WindowsNativeAttemptHistory.RequireDrained(files, proofRecord, directory, package!.Service, owner.Commitment));
             Recover(NativeRecoveryReason.RetirementPublicationFailed, () => { PublishProofSnapshot(directory, proof); return true; });
-            return new RecoveryCustody(attempts, custody);
+            return new RecoveryCustody(attempts, custody, owner);
         }
-        catch { custody?.Dispose(); attempts.Dispose(); throw; }
+        catch { owner?.Dispose(); custody?.Dispose(); attempts.Dispose(); throw; }
     }
-    private sealed class RecoveryCustody(IDisposable attempts, IDisposable custody) : IDisposable
+    private sealed class RecoveryCustody(IDisposable attempts, IDisposable custody, IDisposable owner) : IDisposable
     {
-        public void Dispose() { try { custody.Dispose(); } finally { attempts.Dispose(); } }
+        public void Dispose() { try { owner.Dispose(); } finally { try { custody.Dispose(); } finally { attempts.Dispose(); } } }
     }
     private static T Recover<T>(NativeRecoveryReason reason, Func<T> operation)
     {
@@ -206,11 +208,12 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
                 continue;
             }
             byte[] bytes = WindowsNativeEpochFiles.ReadBounded(held, 2048);
-            string[] fields = NativeCanonical.ParseLines(bytes, "OpenBlade.NativeRetirementProof.v1", 7);
+            bool v2 = bytes.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v2\n"u8);
+            string[] fields = NativeCanonical.ParseLines(bytes, v2 ? "OpenBlade.NativeRetirementProof.v2" : "OpenBlade.NativeRetirementProof.v1", v2 ? 8 : 7);
             if (Path.GetFileName(existing) != NativeCanonical.Digest(bytes) + ".bin" || fields[0] != Record.Epoch
-                || !IsDigest(fields[1]) || !IsDigest(fields[2]) || !IsDigest(fields[5])
+                || !IsDigest(fields[1]) || !IsDigest(fields[2]) || !IsDigest(fields[5]) || v2 && !IsDigest(fields[6])
                 || fields[3] is not ("submission-retained" or "never-submitted")
-                || fields[4] is not ("no-admitted-metadata-attempt" or "all-metadata-attempts-drained"))
+                || fields[4] is not ("no-admitted-metadata-attempt" or "all-metadata-attempts-drained") && !(v2 && fields[4] == "metadata-attempts-classified"))
             { throw new InvalidDataException("Native retirement snapshot is malformed or differs from its content address."); }
             if (existing == path)
             {
@@ -229,13 +232,14 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
     private static bool IsDigest(string value) => value.Length == 64 && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
     private FileStream AcquireRecoveryCustody(string path)
     {
-        try { return files.AcquireServiceCustody(path); }
+        try { return files.AcquireServiceCustody(path, authenticatedLegacyCleanup: package!.Service.Schema == 1 && package.Service.HasStartupCustody); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         { throw new NativeRecoveryException(NativeRecoveryReason.ActiveOrUnknownCustody, "Native service custody is active or unavailable; recovery did not infer process exit or drain.", error); }
     }
-    private void PublishRetirement(string directory)
+    private void PublishRetirement(string directory, WindowsNativeTrustLifecycle.OwnerLease owner)
     {
-        WindowsNativeTrustLifecycle.RequireOwnerRetired(files);
+        // Caller holds this independent lease through final publication/readback.
+        ArgumentNullException.ThrowIfNull(owner);
         RequireCurrent();
         var retired = Record with { Phase = NativeEpochPhase.Retired, Readiness = new string('0', 64) };
         byte[] bytes = retired.Encode();

@@ -10,6 +10,7 @@ public sealed class NativeRecoveryTests
     {
         using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
         Directory.CreateDirectory(Path.Combine(files.Root, "owner"));
+        if (!File.Exists(Path.Combine(files.Root, "owner", "writer.lock"))) { File.WriteAllBytes(Path.Combine(files.Root, "owner", "writer.lock"), []); }
         files.Publish(Path.Combine(files.Root, "root.bin"), NativeCanonical.Lines("OpenBlade.NativeRoot.v1", "legacy-store-absent"));
         Assert.Null(await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None));
         using var package = await WindowsNativeEpochTests.Package(files);
@@ -22,6 +23,7 @@ public sealed class NativeRecoveryTests
     {
         using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
         Directory.CreateDirectory(Path.Combine(files.Root, "owner"));
+        if (!File.Exists(Path.Combine(files.Root, "owner", "writer.lock"))) { File.WriteAllBytes(Path.Combine(files.Root, "owner", "writer.lock"), []); }
         files.Publish(Path.Combine(files.Root, "root.bin"), NativeCanonical.Lines("OpenBlade.NativeRoot.v1", "legacy-store-absent"));
         Assert.Null(await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None));
         byte[] reservation = "preserved"u8.ToArray();
@@ -41,6 +43,7 @@ public sealed class NativeRecoveryTests
     {
         using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
         Directory.CreateDirectory(Path.Combine(files.Root, "owner"));
+        if (!File.Exists(Path.Combine(files.Root, "owner", "writer.lock"))) { File.WriteAllBytes(Path.Combine(files.Root, "owner", "writer.lock"), []); }
         files.Publish(Path.Combine(files.Root, "root.bin"), NativeCanonical.Lines("OpenBlade.NativeRoot.v1", "legacy-store-absent"));
         byte[] bytes = "preserve-exactly"u8.ToArray();
         string path = Path.Combine(files.Root, name == "unknown-owner" ? "owner/unknown.bin" : name);
@@ -68,6 +71,7 @@ public sealed class NativeRecoveryTests
             if (phase == (int)NativeEpochPhase.Unresolved) { tx.MarkUnresolved(); }
         }
         Directory.CreateDirectory(Path.Combine(files.Root, "owner"));
+        if (!File.Exists(Path.Combine(files.Root, "owner", "writer.lock"))) { File.WriteAllBytes(Path.Combine(files.Root, "owner", "writer.lock"), []); }
         using (var selection = await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None))
         {
             selection!.RetireRecoverableSelection();
@@ -88,6 +92,7 @@ public sealed class NativeRecoveryTests
         { if (b == NativeEpochBoundary.FrontierWritten) { throw new IOException("crash"); } }));
         Assert.Null(files.ReadCurrent());
         Directory.CreateDirectory(Path.Combine(files.Root, "owner"));
+        if (!File.Exists(Path.Combine(files.Root, "owner", "writer.lock"))) { File.WriteAllBytes(Path.Combine(files.Root, "owner", "writer.lock"), []); }
         using var selection = await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None);
         Assert.Equal(NativeEpochPhase.Unresolved, selection!.Record.Phase);
         selection.RetireRecoverableSelection();
@@ -139,6 +144,7 @@ public sealed class NativeRecoveryTests
         using (var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()))
         { tx.MarkStartupSubmitted(); record = tx.Record; AddAttempt(files, record, 17, 1, fault != "missing-drain"); tx.CommitAfterBoundReadiness(new string('e', 64)); }
         Directory.CreateDirectory(Path.Combine(files.Root, "owner"));
+        if (!File.Exists(Path.Combine(files.Root, "owner", "writer.lock"))) { File.WriteAllBytes(Path.Combine(files.Root, "owner", "writer.lock"), []); }
         string attempts = Path.Combine(files.Root, record.Epoch, "attempts");
         if (fault is "wrong-package" or "wrong-request" or "wrong-epoch")
         {

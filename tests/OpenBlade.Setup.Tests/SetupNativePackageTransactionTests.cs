@@ -7,6 +7,68 @@ namespace OpenBlade.Setup.Tests;
 public sealed partial class SetupCommandRunnerTests
 {
     [Theory]
+    [InlineData("capture")]
+    [InlineData("prerequisite")]
+    [InlineData("cancel")]
+    public async Task AlreadyRetiredPredecessorDoesNotRetypePreMutationFailureOrCreateEpoch(string stage)
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var package = await WindowsNativeEpochTests.Package(files);
+        using (var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid())) { }
+        using (var selection = await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None))
+        { selection!.RetireRecoverableSelection(); }
+        var baseline = Directory.GetFiles(files.Root, "*", SearchOption.AllDirectories).ToDictionary(path => path, File.ReadAllBytes);
+        var inventory = Directory.GetFileSystemEntries(files.Root, "*", SearchOption.AllDirectories).Order().ToArray();
+        Exception expected = stage == "cancel" ? new OperationCanceledException("injected pre-mutation cancellation") : new InvalidOperationException(stage);
+        var payload = new NativePayload();
+        var native = new SetupNativePackageTransaction(payload, files, package, Guid.NewGuid());
+        var platform = new RecordingSetupPlatform
+        {
+            PayloadOverride = native,
+            CaptureFailure = stage == "capture" ? expected : null,
+            PrerequisiteFailure = stage != "capture" ? expected : null,
+            PredecessorKind = SetupServicePredecessorKind.Native
+        };
+        platform.ServiceTransition = SetupServiceTransition.NativeRetired;
+        var actual = await Record.ExceptionAsync(() => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+        Assert.Same(expected, actual);
+        Assert.False(native.RequiresExplicitNativeRecovery);
+        Assert.Equal(0, payload.Activations);
+        Assert.Equal(1, payload.Disposals);
+        Assert.DoesNotContain(platform.Operations, op => op.StartsWith("service-"));
+        Assert.Equal(inventory, Directory.GetFileSystemEntries(files.Root, "*", SearchOption.AllDirectories).Order().ToArray());
+        foreach (var (path, bytes) in baseline) { Assert.Equal(bytes, File.ReadAllBytes(path)); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PostRenameOrReadbackSubmissionFailureFencesRollbackBeforeExplicitStart(bool readback)
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var package = await WindowsNativeEpochTests.Package(files, schema: 2);
+        var payload = new NativePayload();
+        var native = new SetupNativePackageTransaction(payload, files, package, Guid.NewGuid());
+        files.PublishedForTests = path =>
+        {
+            if (Path.GetFileName(path) != "submission.bin") { return; }
+            if (readback) { File.WriteAllBytes(path, "torn submission readback"u8.ToArray()); }
+            else { throw new IOException("submission renamed before failure"); }
+        };
+        var platform = new RecordingSetupPlatform { PayloadOverride = native };
+        var failure = await Assert.ThrowsAsync<NativeRecoveryException>(() => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+        Assert.Equal(NativeRecoveryReason.PreStartTransitionInterrupted, failure.Reason);
+        Assert.True(native.RequiresExplicitNativeRecovery);
+        Assert.Equal(0, payload.Rollbacks);
+        Assert.Equal(0, payload.Disposals);
+        Assert.DoesNotContain("service-install", platform.Operations);
+        var record = NativeEpochRecord.Parse(files.ReadCurrent()!);
+        Assert.Equal(NativeEpochPhase.Unresolved, record.Phase);
+        Assert.True(File.Exists(Path.Combine(files.Root, record.Epoch, "submission.bin")));
+        Assert.DoesNotContain("service-restore", platform.Operations);
+    }
+
+    [Theory]
     [InlineData((int)NativeEpochBoundary.Reserved)]
     [InlineData((int)NativeEpochBoundary.FrontierWritten)]
     [InlineData((int)NativeEpochBoundary.SelectionPublished)]

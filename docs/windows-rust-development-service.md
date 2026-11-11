@@ -287,7 +287,8 @@ observer inputs and peer evidence over in-memory streams.
 ## Compile the installed service launch boundary
 
 The standalone Windows host workspace has a separate `openblade-windows-service-candidate`
-binary behind the `installed-service-candidate` feature. It compiles separately
+binary with common installed-service-candidate runtime and an explicit
+service-metadata-only-v1 composition. It compiles separately
 from both fixtures and accepts no process arguments. The SCM callback must supply only the service name
 `OpenBlade`. Startup checks the exact quoted image command for
 `<Program Files>\OpenBlade\OpenBlade.Service.exe`, automatic own-process
@@ -295,12 +296,31 @@ registration, the LocalSystem token, session zero, and the same nonzero PID from
 SCM in `START_PENDING`.
 
 ```powershell
-cargo +1.99.1 check --offline --locked --manifest-path tools/openblade-windows-host/Cargo.toml --features installed-service-candidate --bin openblade-windows-service-candidate
+cargo +1.99.1 check --offline --locked --manifest-path tools/openblade-windows-host/Cargo.toml --features service-metadata-only-v1 --bin openblade-windows-service-candidate
 ```
 
-The installed admission seam currently returns failure. Integration needs
-independent signed image and protected path evidence for the running candidate,
-plus the installed controller and ownership checks. The separate endpoint seam
+The metadata entry authenticates the original signed package, exact role image,
+compiled identity, current/frontier and submission before publishing a launch.
+Its v2 artifact grants Service private custody and metadata-only recovery;
+the combined Agent retains the same actual Cargo features with capabilities
+none. V1 bytes retain their schema and exact commitments. V1 cleanup can
+retain its original public-read/no-unprivileged-write custody descriptor only
+with complete matching drains; it gains no abandonment privilege.
+
+Metadata production excludes the real firmware and HID acquisition constructors
+at compilation. The separate service-hardware-compile-check composition covers
+those constructors without granting metadata-only recovery. Firmware observation
+remains unavailable; installed status reports truthful hardware fields.
+
+Recovery authenticates the old artifact and holds epoch writer, original
+exclusive custody and the same independent owner/writer.lock in that order,
+through proof and retirement publication. Only authenticated v2 metadata artifacts
+can classify valid unmatched launches as abandoned metadata. Paired drains stay
+distinct. Malformed evidence and unresolved owner history refuse retirement.
+Immutable v2 proof snapshots bind the complete attempt-set dispositions and
+independently validated owner chain. Public readers may still block legacy
+custody. Recovery preserves descriptors, launches, drains, counters, snapshots
+and partial staging evidence. The separate endpoint seam
 requires the installed ACL, caller admission, and a successful correlated v79
 `GetStatus` response with a status snapshot on `OpenBlade.Service.v2`, bound to
 the admitted PID. The candidate publishes `SERVICE_RUNNING` only after that

@@ -51,7 +51,7 @@ Push-Location -LiteralPath $source
 try {
     & cargo +1.99.1 build --offline --locked --release --target $target --target-dir $cargoTarget `
         --manifest-path tools/openblade-windows-host/Cargo.toml `
-        --features installed-service-candidate,native-agent-entry-compile-check --bin $service --bin $agent
+        --features service-metadata-only-v1,native-agent-entry-compile-check --bin $service --bin $agent
 }
 finally { Pop-Location }
 foreach ($role in $service,$agent) {

@@ -61,13 +61,13 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
         await payload.ActivateAsync(cancellationToken);
     }
 
-    // The platform crosses this boundary immediately before StartService.
-    // Earlier configuration/cancellation cannot have submitted native startup.
+    // Marker publication may rename before readback fails. Fence rollback before
+    // publication, after provisional validation; earlier configuration stays safe.
     internal void MarkNativeStartupPossible()
     {
         (epoch ?? throw new InvalidOperationException()).RequireProvisional();
-        epoch.MarkStartupSubmitted();
         possibleNativeActivation = true;
+        epoch.MarkStartupSubmitted();
     }
 
     // The next integrated origin owner must supply the original retained launch,

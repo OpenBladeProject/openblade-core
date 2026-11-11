@@ -8,13 +8,56 @@ namespace OpenBlade.Deployment;
 
 // Package facts only. Neither the compiled marker nor this inventory proves loaded origin.
 internal sealed record NativeArtifact(string Id, string Role, string Target, string Source,
-    string Features, string Compiler, string Profile, long Size, string Sha256, string Imports)
+    string Features, string Compiler, string Profile, long Size, string Sha256, string Imports,
+    int Schema = 1, string Capabilities = "none")
 {
-    internal byte[] Encode() => NativeCanonical.Lines("OpenBlade.NativeArtifactRecord.v1", Id, Role,
-        Target, Source, Features, Compiler, Profile, Size.ToString(System.Globalization.CultureInfo.InvariantCulture), Sha256, Imports);
+    internal bool HasStartupCustody => Features.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal);
+    internal bool PrivateCustody => Schema == 2 && Capabilities.Split(',').Contains("private-service-custody-v1", StringComparer.Ordinal);
+    internal bool MetadataOnly => Schema == 2 && Capabilities.Split(',').Contains("service-metadata-only-v1", StringComparer.Ordinal);
+    internal string StartupPolicy => MetadataOnly ? "service-metadata-only-v1" : Schema == 1 ? "metadata-only-no-firmware" : "service-hardware-compile-check";
+
+    internal byte[] Encode()
+    {
+        string[] fields = [Id, Role, Target, Source, Features, Compiler, Profile,
+            Size.ToString(System.Globalization.CultureInfo.InvariantCulture), Sha256, Imports];
+        return NativeCanonical.Lines($"OpenBlade.NativeArtifactRecord.v{Schema}", Schema == 1 ? fields : [.. fields, Capabilities]);
+    }
+
+    internal static string[] RecordFields(byte[] bytes)
+    {
+        bool v2 = bytes.AsSpan().StartsWith("OpenBlade.NativeArtifactRecord.v2\n"u8);
+        return NativeCanonical.ParseLines(bytes, v2 ? "OpenBlade.NativeArtifactRecord.v2" : "OpenBlade.NativeArtifactRecord.v1", v2 ? 12 : 11);
+    }
+
+    // Capabilities describe role composition. Features retain the whole Cargo
+    // invocation, including Service features shared by a combined Agent build.
+    private static void RequireCapabilities(int schema, string role, string[] features, string capabilities)
+    {
+        bool metadata = features.Contains("service-metadata-only-v1", StringComparer.Ordinal);
+        bool hardware = features.Contains("service-hardware-compile-check", StringComparer.Ordinal);
+        bool firmware = features.Contains("firmware-performance-compile-check", StringComparer.Ordinal);
+        if (schema == 1)
+        {
+            if (metadata || hardware) { throw new InvalidDataException("Legacy artifacts cannot assert v2 composition."); }
+            return;
+        }
+        string expected = "none";
+        if (metadata && (hardware || firmware || features.Contains("hid-identity-compile-check", StringComparer.Ordinal) || features.Any(f => f.Contains("fixture", StringComparison.Ordinal) || f.StartsWith("scratch-", StringComparison.Ordinal))))
+        { throw new InvalidDataException("Metadata composition includes incompatible acquisition or fixture features."); }
+        if (hardware != firmware || (metadata || hardware) && !features.Contains("installed-service-candidate", StringComparer.Ordinal))
+        { throw new InvalidDataException("Native feature composition contradicts its role provenance."); }
+        if (role == "service")
+        {
+            if (metadata == hardware || !features.Contains("startup-custody-v1", StringComparer.Ordinal) || hardware != firmware)
+            { throw new InvalidDataException("Native Service requires an explicit coherent composition."); }
+            expected = metadata ? "private-service-custody-v1,service-metadata-only-v1" : "private-service-custody-v1";
+        }
+        if (capabilities != expected) { throw new InvalidDataException("Native capabilities differ from the authenticated role composition."); }
+    }
 
     internal static NativeArtifact Inspect(ImmutableArray<byte> image, string role, string source)
     {
+        if (role is not ("service" or "agent")) { throw new InvalidDataException("Unknown native artifact role."); }
         using PEReader reader = new(image);
         var headers = reader.PEHeaders;
         if (image.Length is < 512 or > WindowsNativeRoleInventory.MaximumRoleImageBytes
@@ -34,7 +77,8 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         }
         var section = sections[0];
         byte[] metadata = image.AsSpan().Slice(section.PointerToRawData, section.VirtualSize).ToArray();
-        string[] fields = NativeCanonical.ParseLines(metadata, "OpenBlade.NativeArtifact.v1", 8);
+        int schema = metadata.AsSpan().StartsWith("OpenBlade.NativeArtifact.v2\n"u8) ? 2 : 1;
+        string[] fields = NativeCanonical.ParseLines(metadata, $"OpenBlade.NativeArtifact.v{schema}", schema == 2 ? 9 : 8);
         if (fields[0].Length != 65 + role.Length || fields[1] != role || fields[2] != "x86_64-pc-windows-msvc" || fields[3] != source
             || fields[0] != fields[0].ToLowerInvariant() || !fields[0].EndsWith("-" + role, StringComparison.Ordinal)
             || !NativeCanonical.IsHex(fields[0][..^(role.Length + 1)], 64)
@@ -51,6 +95,8 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         {
             throw new InvalidDataException("Native artifact features do not admit the selected role.");
         }
+        string capabilities = schema == 2 ? fields[7] : "none";
+        RequireCapabilities(schema, role, features, capabilities);
         // This bounded package recipe has exactly two app-local executables. Imports
         // must be Windows system or the existing shared VC runtime contracts; dynamic optional integrations require their
         // own later loader/origin policy. No Microsoft-only CIG policy is installed.
@@ -74,7 +120,7 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         }
         if (!terminated) { throw new InvalidDataException("Unterminated native import table."); }
         return new(fields[0], role, fields[2], fields[3], fields[4], fields[5], fields[6], image.Length,
-            Convert.ToHexStringLower(SHA256.HashData(image.AsSpan())), string.Join(',', imports));
+            Convert.ToHexStringLower(SHA256.HashData(image.AsSpan())), string.Join(',', imports), schema, capabilities);
     }
 
     private static bool IsSystemImport(string name) => name is "kernel32.dll" or "ntdll.dll" or "advapi32.dll"

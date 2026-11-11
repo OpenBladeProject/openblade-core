@@ -27,9 +27,12 @@ use crate::{
 mod windows;
 use windows::{Caller, ControlSession, Logon, MAX_CONNECTIONS, Pending, Stream};
 
+#[cfg(any(test, feature = "service-hardware-compile-check"))]
 #[path = "firmware_source.rs"]
 mod firmware_source;
+#[cfg(any(test, feature = "service-hardware-compile-check"))]
 pub(super) use firmware_source::FirmwareSource;
+#[cfg(any(test, feature = "service-hardware-compile-check"))]
 #[path = "ownership.rs"]
 pub(super) mod ownership;
 
@@ -166,8 +169,8 @@ pub(super) async fn prepare_installed_endpoint(
     shutdown: oneshot::Receiver<()>,
     failed: oneshot::Sender<()>,
 ) -> io::Result<(Readiness, impl Future<Output = io::Result<()>> + use<>)> {
-    let (origin, authority) = admission.verify_launch(launch)?;
-    let source = status_source::native_status_source(origin, authority);
+    let origin = admission.verify_launch(launch)?;
+    let source = status_source::native_status_source(origin);
     let endpoint = windows::NativeEndpoint::open_managed(
         &production_path(),
         launch.pid,
@@ -560,3 +563,12 @@ async fn status_payload(
 #[cfg(test)]
 #[path = "readiness_tests.rs"]
 mod tests;
+
+// Offline compile probe: metadata must fail to resolve BOTH real constructors.
+// Hardware compile-only composition must type-check it; neither probe is run.
+#[cfg(openblade_metadata_acquisition_probe)]
+fn acquisition_exclusion_probe(package: crate::candidate_receipt::CommittedServiceImage) {
+    let _ = FirmwareSource::native(1, None, |_| None);
+    let _ = FirmwareSource::native_with_package(1, None, package, |_| None);
+    let _ = crate::discovery::performance::native_worker(|| None);
+}

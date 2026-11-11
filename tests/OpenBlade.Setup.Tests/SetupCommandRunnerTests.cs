@@ -947,11 +947,14 @@ public sealed partial class SetupCommandRunnerTests
     private sealed class RecordingSetupPlatform : ISetupPlatform
     {
         public bool PrerequisiteFails { get; init; }
+        public Exception? PrerequisiteFailure { get; init; }
+        public Exception? CaptureFailure { get; init; }
         public bool PrerequisiteRebootRequired { get; init; }
         public string[] OperationsAtPrerequisite { get; private set; } = [];
         public Task<bool> EnsureCpuTemperaturePrerequisiteAsync(string stagedPayloadDirectory, CancellationToken cancellationToken)
         {
             OperationsAtPrerequisite = Operations.ToArray();
+            if (PrerequisiteFailure is { } failure) { return Task.FromException<bool>(failure); }
             return PrerequisiteFails ? Task.FromException<bool>(new InvalidOperationException("PawnIO failed"))
                 : Task.FromResult(PrerequisiteRebootRequired);
         }
@@ -960,7 +963,7 @@ public sealed partial class SetupCommandRunnerTests
         public bool FailPayloadStage { get; init; }
         public bool ServiceExists { get; init; }
         public SetupServicePredecessorKind? PredecessorKind { get; init; }
-        public SetupServiceTransition ServiceTransition { get; private set; }
+        public SetupServiceTransition ServiceTransition { get; set; }
         public SetupServiceTransition PreparedTransition { get; init; } = SetupServiceTransition.ManagedPrepared;
         public Action? PrepareNativeTransition { get; init; }
         public bool ServiceWasRunning { get; init; } = true;
@@ -1012,6 +1015,7 @@ public sealed partial class SetupCommandRunnerTests
             CancellationToken cancellationToken)
         {
             Operations.Add("lifecycle-capture");
+            if (CaptureFailure is { } failure) { return Task.FromException<SetupInstallLifecycleState>(failure); }
             if (FailurePoint == "lifecycle-capture")
             {
                 FailurePoint = null;

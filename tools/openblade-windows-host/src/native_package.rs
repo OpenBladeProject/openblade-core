@@ -649,13 +649,114 @@ fn compiled_record(image: &[u8]) -> io::Result<&[u8]> {
     result.ok_or_else(deny)
 }
 
+// This contract is authenticated transitively by signed package -> exact PE ->
+// .obid. Neither an incoming image nor a policy label grants old-epoch rights.
+fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Result<()> {
+    let features: Vec<_> = features.split(',').collect();
+    let has = |name| features.contains(&name);
+    let metadata = has("service-metadata-only-v1");
+    let hardware = has("service-hardware-compile-check");
+    let firmware = has("firmware-performance-compile-check");
+    if schema == 1 {
+        return if metadata || hardware {
+            Err(deny())
+        } else {
+            Ok(())
+        };
+    }
+    if metadata
+        && (hardware
+            || firmware
+            || has("hid-identity-compile-check")
+            || features
+                .iter()
+                .any(|f| f.contains("fixture") || f.starts_with("scratch-")))
+    {
+        return Err(deny());
+    }
+    if !matches!(role, "service" | "agent")
+        || hardware != firmware
+        || ((metadata || hardware) && !has("installed-service-candidate"))
+    {
+        return Err(deny());
+    }
+    let expected = if role == "service" {
+        if metadata == hardware || !has("startup-custody-v1") || hardware != firmware {
+            return Err(deny());
+        }
+        if metadata {
+            "private-service-custody-v1,service-metadata-only-v1"
+        } else {
+            "private-service-custody-v1"
+        }
+    } else {
+        "none"
+    };
+    if value != expected {
+        return Err(deny());
+    }
+    Ok(())
+}
+
+// Called after SAME custody acquisition and fresh current/frontier admission,
+// before launch publication. A matching stale marker never revives a retired epoch.
+fn require_submission(epoch: &Epoch, origin: &[u8], submission: &[u8]) -> io::Result<()> {
+    if !matches!(epoch.phase.as_str(), "Provisional" | "Committed")
+        || submission
+            != encode(
+                "OpenBlade.NativeStartupSubmission.v1",
+                &[
+                    &epoch.id,
+                    &epoch.request,
+                    &digest(origin),
+                    &epoch.package,
+                    &epoch.service,
+                ],
+            )
+    {
+        return Err(deny());
+    }
+    Ok(())
+}
+
+fn startup_policy(identity: &[u8]) -> io::Result<&'static str> {
+    if identity.starts_with(b"OpenBlade.NativeArtifact.v2\n") {
+        let f = lines(identity, "OpenBlade.NativeArtifact.v2", 8)?;
+        capabilities(2, f[1], f[4], f[7])?;
+        Ok(
+            if f[7] == "private-service-custody-v1,service-metadata-only-v1" {
+                "service-metadata-only-v1"
+            } else {
+                "service-hardware-compile-check"
+            },
+        )
+    } else {
+        lines(identity, "OpenBlade.NativeArtifact.v1", 7)?;
+        Ok("metadata-only-no-firmware")
+    }
+}
+
 fn inspect_artifact(
     record: &[u8],
     image: &[u8],
     role: &str,
     release: &Release,
 ) -> io::Result<String> {
-    let f = lines(record, "OpenBlade.NativeArtifactRecord.v1", 10)?;
+    let schema = if record.starts_with(b"OpenBlade.NativeArtifactRecord.v2\n") {
+        2
+    } else {
+        1
+    };
+    let f = lines(
+        record,
+        if schema == 2 {
+            "OpenBlade.NativeArtifactRecord.v2"
+        } else {
+            "OpenBlade.NativeArtifactRecord.v1"
+        },
+        if schema == 2 { 11 } else { 10 },
+    )?;
+    capabilities(schema, role, f[4], if schema == 2 { f[10] } else { "none" })?;
     if !artifact_id(f[0], role)
         || f[1] != role
         || f[2] != "x86_64-pc-windows-msvc"
@@ -735,7 +836,24 @@ fn inspect_artifact(
             marker = Some(image.get(raw..raw + size).ok_or_else(deny)?);
         }
     }
-    if marker != Some(encode("OpenBlade.NativeArtifact.v1", &f[..7]).as_slice()) {
+    let marker_fields: Vec<_> = f[..7]
+        .iter()
+        .copied()
+        .chain((schema == 2).then_some(f.get(10).copied().unwrap_or("none")))
+        .collect();
+    if marker
+        != Some(
+            encode(
+                if schema == 2 {
+                    "OpenBlade.NativeArtifact.v2"
+                } else {
+                    "OpenBlade.NativeArtifact.v1"
+                },
+                &marker_fields,
+            )
+            .as_slice(),
+        )
+    {
         return Err(deny());
     }
     let section_bytes = |rva: usize| -> io::Result<&[u8]> {
@@ -935,7 +1053,7 @@ impl InstalledPackage {
                     &self.epoch.id,
                     &digest(&origin),
                     &self.epoch.service,
-                    "metadata-only-no-firmware",
+                    startup_policy(&self.service_identity)?,
                 ],
             )
         {
@@ -964,20 +1082,7 @@ impl InstalledPackage {
         self.require_current()?;
         let submission =
             retain_bytes(&self.directories[0], "submission.bin", 2048, &mut self.held)?;
-        if submission
-            != encode(
-                "OpenBlade.NativeStartupSubmission.v1",
-                &[
-                    &self.epoch.id,
-                    &self.epoch.request,
-                    &digest(&origin),
-                    &self.epoch.package,
-                    &self.epoch.service,
-                ],
-            )
-        {
-            return Err(deny());
-        }
+        require_submission(&self.epoch, &origin, &submission)?;
         let path: Vec<u8> = image
             .as_os_str()
             .encode_wide()

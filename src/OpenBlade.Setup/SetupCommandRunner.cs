@@ -184,7 +184,7 @@ public sealed class SetupCommandRunner(
             }
             catch (Exception failure)
             {
-                if (transaction is SetupNativePackageTransaction observedNative) { observedNative.ObservePredecessorTransition(platform.ServiceTransition); }
+                if (mutationStarted && transaction is SetupNativePackageTransaction observedNative) { observedNative.ObservePredecessorTransition(platform.ServiceTransition); }
                 if (transaction is SetupNativePackageTransaction { RequiresExplicitNativeRecovery: true }
                     || mutationStarted && (priorLifecycle?.Service.Kind == SetupServicePredecessorKind.Native
                         || platform.ServiceTransition is SetupServiceTransition.NativeRetirementPossible or SetupServiceTransition.NativeRetired))

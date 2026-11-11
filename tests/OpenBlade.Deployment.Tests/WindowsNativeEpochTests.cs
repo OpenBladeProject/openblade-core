@@ -13,7 +13,7 @@ public sealed class WindowsNativeEpochTests
 {
     private const string Features = "installed-service-candidate,native-agent-entry-compile-check,startup-custody-v1";
 
-    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1)
+    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null)
     {
         byte[] bytes = new byte[0xA00];
         void U16(int n, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(n), v);
@@ -22,8 +22,11 @@ public sealed class WindowsNativeEpochTests
         U16(0x84, 0x8664); U16(0x86, 2); U16(0x94, 240); U16(0x96, 2); U16(0x98, 0x20b);
         U32(0x98 + 32, 0x1000); U32(0x98 + 36, 0x200); U32(0x98 + 56, 0x3000); U32(0x98 + 60, 0x400); U32(0x98 + 108, 16);
         U32(0x98 + 120, 0x2000); U32(0x98 + 124, 40);
-        byte[] metadata = NativeCanonical.Lines("OpenBlade.NativeArtifact.v1", new string(nonce, 64) + "-" + role,
-            role, "x86_64-pc-windows-msvc", new string('a', 40), Features, "rustc 1.99.1 (inert test data)", "debug");
+        string[] fields = [new string(nonce, 64) + "-" + role, role, "x86_64-pc-windows-msvc", new string('a', 40),
+            schema == 1 ? Features : "installed-service-candidate,native-agent-entry-compile-check,service-metadata-only-v1,startup-custody-v1",
+            "rustc 1.99.1 (inert test data)", "debug"];
+        byte[] metadata = NativeCanonical.Lines($"OpenBlade.NativeArtifact.v{schema}", schema == 1 ? fields
+            : [.. fields, capabilities ?? (role == "service" ? "private-service-custody-v1,service-metadata-only-v1" : "none")]);
         int section = 0x98 + 240;
         ".obid"u8.CopyTo(bytes.AsSpan(section)); U32(section + 8, (uint)metadata.Length); U32(section + 12, 0x1000); U32(section + 16, 0x400); U32(section + 20, 0x400); U32(section + 36, 0x40000040);
         ".idata"u8.CopyTo(bytes.AsSpan(section + 40)); U32(section + 48, 0x200); U32(section + 52, 0x2000); U32(section + 56, 0x200); U32(section + 60, 0x800); U32(section + 76, 0x40000040);
@@ -31,14 +34,15 @@ public sealed class WindowsNativeEpochTests
         return bytes;
     }
 
-    internal static async Task<WindowsNativePackage> Package(WindowsNativeEpochFiles files, char nonce = 'b', byte marker = 1)
+    internal static async Task<WindowsNativePackage> Package(WindowsNativeEpochFiles files, char nonce = 'b', byte marker = 1, int schema = 1)
     {
-        byte[] bytes = WindowsNativeInventoryBurnExtractorTests.NativeEpochBundle(Image("service", nonce, marker), Image("agent", nonce, 2));
+        byte[] bytes = WindowsNativeInventoryBurnExtractorTests.NativeEpochBundle(Image("service", nonce, marker, schema), Image("agent", nonce, 2, schema));
         using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bytes, new string('a', 40));
         if (!File.Exists(Path.Combine(files.Root, "root.bin")))
         {
             files.Publish(Path.Combine(files.Root, "root.bin"), NativeCanonical.Lines("OpenBlade.NativeRoot.v1", "legacy-store-absent"));
             Directory.CreateDirectory(Path.Combine(files.Root, "owner"));
+            if (!File.Exists(Path.Combine(files.Root, "owner", "writer.lock"))) { File.WriteAllBytes(Path.Combine(files.Root, "owner", "writer.lock"), []); }
         }
         var source = WindowsNativeEpochFiles.CreatePrivateFixture();
         string path = Path.Combine(source.Root, "package.exe");
@@ -68,6 +72,12 @@ public sealed class WindowsNativeEpochTests
         var a = NativeArtifact.Inspect([.. Image("service", 'b')], "service", new string('a', 40));
         var b = NativeArtifact.Inspect([.. Image("service", 'c')], "service", new string('a', 40));
         Assert.NotEqual(a.Id, b.Id); Assert.NotEqual(a.Sha256, b.Sha256);
+        Assert.Equal(2, a.Schema); Assert.Equal(2, b.Schema);
+        Assert.True(a.PrivateCustody);
+        Assert.Equal(Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_COMPOSITION") != "hardware", a.MetadataOnly);
+        Assert.Equal("none", b.Capabilities); Assert.False(b.PrivateCustody); Assert.False(b.MetadataOnly);
+        if (Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_COMPOSITION") == "combined")
+        { Assert.Equal(a.Features, b.Features); Assert.Contains("service-metadata-only-v1", b.Features); }
     }
 
     [Fact]
@@ -257,6 +267,12 @@ public sealed class WindowsNativeEpochTests
         var a = NativeArtifact.Inspect([.. File.ReadAllBytes(service)], "service", source);
         var b = NativeArtifact.Inspect([.. File.ReadAllBytes(agent)], "agent", source);
         Assert.NotEqual(a.Id, b.Id); Assert.NotEqual(a.Sha256, b.Sha256);
+        Assert.Equal(2, a.Schema); Assert.Equal(2, b.Schema);
+        Assert.True(a.PrivateCustody);
+        Assert.Equal(Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_COMPOSITION") != "hardware", a.MetadataOnly);
+        Assert.Equal("none", b.Capabilities); Assert.False(b.PrivateCustody); Assert.False(b.MetadataOnly);
+        if (Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_COMPOSITION") == "combined")
+        { Assert.Equal(a.Features, b.Features); Assert.Contains("service-metadata-only-v1", b.Features); }
     }
 
     [Theory]
@@ -506,6 +522,7 @@ public sealed class WindowsNativeEpochTests
         using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
         string owner = Path.Combine(files.Root, "owner");
         files.CreateDirectoryOnce(owner);
+        File.WriteAllBytes(Path.Combine(owner, "writer.lock"), []);
         WindowsNativeTrustLifecycle.RequireOwnerRetired(files);
         files.Publish(Path.Combine(owner, "unrecognized.bin"), NativeCanonical.Lines("unknown-owner-state", "retain"));
         Assert.Throws<NativeRecoveryException>(() => WindowsNativeTrustLifecycle.RequireOwnerRetired(files));

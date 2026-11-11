@@ -14,10 +14,13 @@ use tokio::{
 };
 
 use super::{
-    Caller, FirmwareSource, Observation, Pending, Snapshot, StatusSource,
+    Caller, Observation, Pending, Snapshot, StatusSource,
     subscription::{Publication, REFRESH_INTERVAL},
 };
 use crate::service_frame::invalid;
+
+#[cfg(any(test, feature = "service-hardware-compile-check"))]
+use super::FirmwareSource;
 
 const REFRESH_BUDGET: Duration = Duration::from_secs(1);
 const CONTROLLER_UNKNOWN: &str = "Competing controller observation is unavailable.";
@@ -81,6 +84,7 @@ impl Refresh {
 
 struct ObservedStatus {
     read: Option<Arc<ReadEvidence>>,
+    #[cfg(any(test, feature = "service-hardware-compile-check"))]
     firmware: Option<FirmwareSource>,
     refresh: Option<Refresh>,
     last: Option<(i64, StatusFields)>,
@@ -92,6 +96,7 @@ impl ObservedStatus {
     fn new(read: impl Fn(&AtomicBool) -> Evidence + Send + Sync + 'static) -> Self {
         Self {
             read: Some(Arc::new(read)),
+            #[cfg(any(test, feature = "service-hardware-compile-check"))]
             firmware: None,
             refresh: None,
             last: None,
@@ -255,6 +260,12 @@ impl StatusSource for ObservedStatus {
     }
 
     fn observe_performance(&mut self, caller: Caller, deadline: Instant) -> Observation {
+        #[cfg(not(any(test, feature = "service-hardware-compile-check")))]
+        {
+            let _ = (caller, deadline);
+            Box::pin(async { Ok(None) })
+        }
+        #[cfg(any(test, feature = "service-hardware-compile-check"))]
         self.firmware.as_ref().map_or_else(
             || Box::pin(async { Ok(None) }) as Observation,
             |firmware| firmware.observe(caller, deadline),
@@ -287,6 +298,7 @@ impl StatusSource for ObservedStatus {
             self.observed_at = None;
             self.publisher = None;
             let firmware = async {
+                #[cfg(any(test, feature = "service-hardware-compile-check"))]
                 if let Some(firmware) = &self.firmware {
                     firmware.stop().await?;
                 }
@@ -324,24 +336,21 @@ mod lifecycle;
 #[cfg(not(test))]
 pub(super) fn native_status_source(
     origin: Arc<crate::loaded_origin::Origin>,
-    authority: super::ownership::durable::NativeAuthority,
 ) -> Box<dyn StatusSource> {
     Box::new(GuardedStatus {
         inner: ObservedStatus::new(read_windows),
         origin,
-        authority,
     })
 }
 #[cfg(not(test))]
 struct GuardedStatus {
     inner: ObservedStatus,
     origin: Arc<crate::loaded_origin::Origin>,
-    authority: super::ownership::durable::NativeAuthority,
 }
 #[cfg(not(test))]
 impl StatusSource for GuardedStatus {
     fn observe_performance(&mut self, _: Caller, _: Instant) -> Observation {
-        let reason = self.authority.admission_denial();
+        let reason = "Firmware acquisition is unavailable in this installed metadata runtime.";
         Box::pin(async move { Err(io::Error::new(io::ErrorKind::PermissionDenied, reason)) })
     }
     fn verify_origin(&self) -> io::Result<()> {

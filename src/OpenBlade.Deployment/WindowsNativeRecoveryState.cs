@@ -32,7 +32,7 @@ internal static class WindowsNativeRecoveryState
         string[] names = Directory.EnumerateFileSystemEntries(files.Root).Select(Path.GetFileName).Order(StringComparer.Ordinal).ToArray()!;
         if (!names.SequenceEqual(new[] { "owner", "root.bin", "writer.lock" }))
         { return new(NativeInstallationState.UnresolvedHistory, null); }
-        WindowsNativeTrustLifecycle.RequireOwnerRetired(files);
+        using var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
         if (Directory.EnumerateFileSystemEntries(Path.Combine(files.Root, "owner")).Any(p => Path.GetFileName(p) != "writer.lock"))
         { return new(NativeInstallationState.UnresolvedHistory, null); }
         return new(NativeInstallationState.VerifiedBootstrap, null);
