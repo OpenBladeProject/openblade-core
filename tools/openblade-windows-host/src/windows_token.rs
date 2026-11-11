@@ -5,7 +5,7 @@ use std::{
     ffi::c_void,
     io,
     mem::{size_of, size_of_val},
-    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    os::windows::io::{AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle},
     ptr::null_mut,
 };
 
@@ -13,7 +13,8 @@ use windows_sys::Win32::{
     Foundation::{HANDLE, LUID, LocalFree},
     Security::{
         Authorization::ConvertSidToStringSidW, GetTokenInformation, SECURITY_MAX_SID_SIZE,
-        TOKEN_QUERY, TOKEN_STATISTICS, TOKEN_USER, TokenSessionId, TokenStatistics, TokenUser,
+        TOKEN_QUERY, TOKEN_STATISTICS, TOKEN_USER, TokenPrimary, TokenSessionId, TokenStatistics,
+        TokenUser,
     },
     System::Threading::{GetCurrentProcess, OpenProcessToken},
 };
@@ -22,6 +23,7 @@ pub struct Identity {
     pub(crate) sid: String,
     pub(crate) authentication: LUID,
     pub(crate) session: u32,
+    pub(crate) primary: bool,
 }
 
 impl Identity {
@@ -51,6 +53,7 @@ impl Identity {
             sid: user_sid(token)?,
             authentication: statistics.AuthenticationId,
             session,
+            primary: statistics.TokenType == TokenPrimary,
         })
     }
 }
@@ -84,14 +87,19 @@ fn user_sid(token: &OwnedHandle) -> io::Result<String> {
 }
 
 pub(crate) fn process_token() -> io::Result<OwnedHandle> {
+    // SAFETY: the current-process pseudohandle is borrowed only, never closed.
+    open_process_token(unsafe { GetCurrentProcess() })
+}
+
+pub(crate) fn process_token_for(process: BorrowedHandle<'_>) -> io::Result<OwnedHandle> {
+    open_process_token(process.as_raw_handle())
+}
+
+fn open_process_token(process: HANDLE) -> io::Result<OwnedHandle> {
     let mut token: HANDLE = null_mut();
-    // SAFETY: the pseudohandle is valid and the writable out pointer is scoped to the call.
+    // SAFETY: a borrowed process/pseudohandle and a scoped writable output.
     unsafe {
-        check(OpenProcessToken(
-            GetCurrentProcess(),
-            TOKEN_QUERY,
-            &mut token,
-        ))?;
+        check(OpenProcessToken(process, TOKEN_QUERY, &mut token))?;
         Ok(OwnedHandle::from_raw_handle(token))
     }
 }

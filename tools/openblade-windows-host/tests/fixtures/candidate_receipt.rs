@@ -11,6 +11,9 @@ mod pipe_server_identity;
 #[path = "../../src/windows/scm/installed/readiness_windows.rs"]
 mod readiness_pipe;
 #[cfg(windows)]
+#[path = "../../src/retained_process.rs"]
+mod retained_process;
+#[cfg(windows)]
 #[path = "../../src/scratch_receipt_policy.rs"]
 mod scratch_receipt_policy;
 #[cfg(windows)]
@@ -253,13 +256,8 @@ mod scratch {
         // Request full process-query rights for mitigation-policy readback;
         // do not rely on the narrower rights sufficient for an image path.
         // SAFETY: Query and wait only, with no handle inheritance.
-        let handle = unsafe {
-            OpenProcess(
-                PROCESS_QUERY_INFORMATION | PROCESS_SYNCHRONIZE,
-                0,
-                pid,
-            )
-        };
+        let handle =
+            unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_SYNCHRONIZE, 0, pid) };
         if handle.is_null() {
             return Err(denied("provisional Setup process is unavailable"));
         }

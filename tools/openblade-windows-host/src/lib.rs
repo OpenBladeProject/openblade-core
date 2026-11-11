@@ -29,3 +29,8 @@ pub mod reporter_pipe;
 mod windows_protected_path;
 #[cfg(windows)]
 mod windows_token;
+
+#[cfg(windows)]
+mod pipe_server_identity;
+#[cfg(windows)]
+mod retained_process;

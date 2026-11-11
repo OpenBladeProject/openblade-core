@@ -13,6 +13,8 @@ mod installed;
 #[cfg(windows)]
 mod pipe_server_identity;
 #[cfg(windows)]
+mod retained_process;
+#[cfg(windows)]
 mod scm_host;
 #[cfg(windows)]
 #[path = "windows/scm/identity.rs"]
@@ -36,13 +38,7 @@ mod session_native;
 #[cfg(windows)]
 #[allow(dead_code)] // Shared with the development writer, which is not linked here.
 mod windows_protected_path;
-#[cfg(all(
-    windows,
-    any(
-        feature = "scratch-candidate-receipt",
-        all(test, feature = "native-agent-entry-compile-check")
-    )
-))]
+#[cfg(windows)]
 mod windows_token;
 
 #[cfg(not(test))]

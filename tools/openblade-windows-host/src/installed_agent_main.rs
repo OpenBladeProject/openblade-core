@@ -3,6 +3,8 @@
 #[cfg(windows)]
 mod pipe_server_identity;
 #[cfg(windows)]
+mod retained_process;
+#[cfg(windows)]
 mod service_frame;
 #[cfg(windows)]
 #[allow(dead_code)] // Also contains producer helpers when both candidates are enabled.
