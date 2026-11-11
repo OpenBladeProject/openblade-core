@@ -13,7 +13,7 @@ public sealed class DeploymentVariantIsolationTests
         Assert.NotEqual(Path.GetFullPath(product), Path.GetFullPath(algorithm));
         var productMethods = ReadMethods(product);
         var algorithmMethods = ReadMethods(algorithm);
-        foreach (string seam in new[] { "NativeLocalDevEnrollment.ForAlgorithmTests", "WindowsNativeEpochFiles.get_CrashBoundaryForTests" })
+        foreach (string seam in new[] { "NativeLocalDevEnrollment.ForAlgorithmTests", "WindowsNativeEpochFiles.get_CrashBoundaryForTests", "WindowsNativeEpochFiles.get_PublishedForTests" })
         {
             Assert.DoesNotContain(seam, productMethods);
             Assert.Contains(seam, algorithmMethods);

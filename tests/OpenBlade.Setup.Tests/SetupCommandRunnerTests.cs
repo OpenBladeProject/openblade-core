@@ -921,6 +921,23 @@ public sealed partial class SetupCommandRunnerTests
             < progress.Events.FindIndex(item => item.Code == SetupProgressCode.InstallService));
     }
 
+    [Fact]
+    public async Task ManagedIncomingTransactionAlsoPreservesNativePredecessorRecoveryFence()
+    {
+        var platform = new RecordingSetupPlatform
+        {
+            ServiceExists = true,
+            PredecessorKind = SetupServicePredecessorKind.Native,
+            PreparedTransition = SetupServiceTransition.NativeRetired,
+            Transaction = new RecordingPayloadTransaction(true),
+            FailurePoint = "tray-stop",
+        };
+        await Assert.ThrowsAsync<OpenBlade.Deployment.NativeRecoveryException>(() => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+        Assert.DoesNotContain("service-restore", platform.Operations);
+        Assert.DoesNotContain("tray-startup-restore:Shortcut", platform.Operations);
+        Assert.DoesNotContain("service-install", platform.Operations);
+    }
+
     private static void AssertEndsWith(IReadOnlyList<string> actual, IReadOnlyList<string> expected)
     {
         Assert.True(actual.Count >= expected.Count);
@@ -942,6 +959,10 @@ public sealed partial class SetupCommandRunnerTests
         public List<CancellationToken> CleanupTokens { get; } = [];
         public bool FailPayloadStage { get; init; }
         public bool ServiceExists { get; init; }
+        public SetupServicePredecessorKind? PredecessorKind { get; init; }
+        public SetupServiceTransition ServiceTransition { get; private set; }
+        public SetupServiceTransition PreparedTransition { get; init; } = SetupServiceTransition.ManagedPrepared;
+        public Action? PrepareNativeTransition { get; init; }
         public bool ServiceWasRunning { get; init; } = true;
         public SetupStartupRegistration TrayStartup { get; init; } = SetupStartupRegistration.Shortcut;
         public SetupStartupRegistration SessionAgentStartup { get; init; } = SetupStartupRegistration.Shortcut;
@@ -1020,7 +1041,7 @@ public sealed partial class SetupCommandRunnerTests
             BundleOwnershipIdentity? capturedOwnership =
                 OmitBundleOwnershipSnapshot ? null : bundleOwnership;
             return Task.FromResult(new SetupInstallLifecycleState(
-                new(serviceRegistered, serviceRunning),
+                new(serviceRegistered, serviceRunning) { Kind = PredecessorKind ?? (serviceRegistered ? SetupServicePredecessorKind.Managed : SetupServicePredecessorKind.Absent) },
                 new(
                     trayStartup,
                     sessionAgentStartup,
@@ -1041,6 +1062,8 @@ public sealed partial class SetupCommandRunnerTests
 
         public Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
         {
+            ServiceTransition = PreparedTransition;
+            PrepareNativeTransition?.Invoke();
             serviceRunning = false;
             if (Operations.Contains("payload-activate"))
             {
@@ -1080,6 +1103,8 @@ public sealed partial class SetupCommandRunnerTests
 
         public Task InstallServiceAsync(CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (PayloadOverride is SetupNativePackageTransaction native) { native.MarkNativeStartupPossible(); }
             serviceRegistered = true;
             serviceRunning = true;
             return AddAsync("service-install", cancellationToken);

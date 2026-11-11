@@ -36,7 +36,10 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
     public bool HadExistingInstall => payload.HadExistingInstall;
     public bool IsActivated => possiblePayloadActivation || payload.IsActivated;
     internal bool RequiresExplicitNativeRecovery => possibleNativeActivation || priorRetirementPossible;
-    internal void MarkPriorRetirementPossible() => priorRetirementPossible = true;
+    internal void ObservePredecessorTransition(SetupServiceTransition transition)
+    {
+        priorRetirementPossible |= transition is SetupServiceTransition.NativeRetirementPossible or SetupServiceTransition.NativeRetired;
+    }
     public string? CommitWarning => payload.CommitWarning;
     internal string ServicePath => (epoch ?? throw new InvalidOperationException()).ServicePath;
     internal string AgentPath => (epoch ?? throw new InvalidOperationException()).AgentPath;
@@ -58,13 +61,13 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
         await payload.ActivateAsync(cancellationToken);
     }
 
-    // The runner crosses this boundary immediately before calling the service
-    // platform. A thrown/canceled StartService may still have submitted startup.
+    // The platform crosses this boundary immediately before StartService.
+    // Earlier configuration/cancellation cannot have submitted native startup.
     internal void MarkNativeStartupPossible()
     {
         (epoch ?? throw new InvalidOperationException()).RequireProvisional();
-        possibleNativeActivation = true;
         epoch.MarkStartupSubmitted();
+        possibleNativeActivation = true;
     }
 
     // The next integrated origin owner must supply the original retained launch,
@@ -119,7 +122,7 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
 
     public async Task RollbackAsync(CancellationToken cancellationToken)
     {
-        if (!possibleNativeActivation) { await payload.RollbackAsync(cancellationToken); return; }
+        if (!possibleNativeActivation) { epoch?.MarkUnresolved(); await payload.RollbackAsync(cancellationToken); return; }
         // Startup may have submitted work. Package state cannot certify native
         // drain; preserve unresolved state and require explicit typed recovery.
         epoch?.MarkUnresolved();

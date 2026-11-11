@@ -31,6 +31,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
     internal string Root { get; }
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
     internal NativeFileBoundary? CrashBoundaryForTests { get; set; }
+    internal Action<string>? PublishedForTests { get; set; }
 #endif
     private void AtBoundary(NativeFileBoundary boundary)
     {
@@ -263,7 +264,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         return new FileStream(handle, FileAccess.Read);
     }
 
-    internal FileStream AcquireServiceCustody(string path) => new(OpenChecked(path, false, this, exclusive: true), FileAccess.Read);
+    internal FileStream AcquireServiceCustody(string path) => new(OpenChecked(path, false, this, exclusive: true, privateCustody: true), FileAccess.Read);
 
     internal byte[]? ReadCurrent()
     {
@@ -328,7 +329,9 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         return new FileStream(OpenChecked(path, directory: false, this), FileAccess.Read);
     }
 
-    internal void Publish(string path, byte[] bytes, bool replace = false)
+    internal void PublishCustody(string path, byte[] bytes) => Publish(path, bytes, privateCustody: true);
+
+    internal void Publish(string path, byte[] bytes, bool replace = false, bool privateCustody = false)
     {
         if (bytes.Length is < 1 or > MaximumRecordBytes)
         {
@@ -342,8 +345,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         bool created = false;
         try
         {
-            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write,
-                FileShare.None, 4096, FileOptions.WriteThrough))
+            using (var stream = CreatePublicationFile(temporary, privateCustody))
             {
                 created = true;
                 AtBoundary(NativeFileBoundary.Created);
@@ -352,7 +354,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
                 stream.Flush(flushToDisk: true);
                 AtBoundary(NativeFileBoundary.Flushed);
             }
-            using var retained = new FileStream(OpenChecked(temporary, directory: false, this, delete: true),
+            using var retained = new FileStream(OpenChecked(temporary, directory: false, this, delete: true, privateCustody: privateCustody),
                 FileAccess.Read);
             RequireExact(retained, bytes);
             AtBoundary(NativeFileBoundary.Verified);
@@ -361,6 +363,9 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
             PublishByHandle(retained.SafeFileHandle, path, replace);
             created = false;
             AtBoundary(NativeFileBoundary.Renamed);
+#if OPENBLADE_NATIVE_PACKAGE_TESTS
+            PublishedForTests?.Invoke(path);
+#endif
         }
         catch (Exception failure)
         {
@@ -450,7 +455,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
     }
 
     private static SafeFileHandle OpenChecked(string path, bool directory, WindowsNativeEpochFiles? scope,
-        bool delete = false, bool mutable = false, bool exclusive = false)
+        bool delete = false, bool mutable = false, bool exclusive = false, bool privateCustody = false)
     {
         const uint listDirectoryAndReadControl = 0x00020001;
         const uint genericRead = 0x80000000;
@@ -480,7 +485,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
             {
                 throw new IOException("Native epoch storage requires its exact non-reparse path and a single-link file.");
             }
-            scope?.VerifyAccess(handle, directory, path == scope.Root, path);
+            scope?.VerifyAccess(handle, directory, path == scope.Root, path, privateCustody || Path.GetFileName(path) == "custody.lock");
             return handle;
         }
         catch
@@ -490,11 +495,47 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         }
     }
 
-    private void VerifyAccess(SafeFileHandle handle, bool directory, bool isRoot, string path)
+    private FileStream CreatePublicationFile(string path, bool privateCustody)
+    {
+        if (!privateCustody) { return new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough); }
+        var security = new FileSecurity();
+        security.SetOwner(owner ?? new SecurityIdentifier("S-1-5-32-544"));
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        foreach (var principal in owner is null
+            ? new[] { new SecurityIdentifier("S-1-5-18"), new SecurityIdentifier("S-1-5-32-544") } : new[] { owner })
+        { security.AddAccessRule(new FileSystemAccessRule(principal, FileSystemRights.FullControl, AccessControlType.Allow)); }
+        return new FileInfo(path).Create(FileMode.CreateNew, FileSystemRights.FullControl, FileShare.None, 4096, FileOptions.WriteThrough, security);
+    }
+
+    // Legacy public locks require explicit generation replacement. Never change
+    // their ACL in place while the original custody is uncertain.
+    internal static bool AcceptsPrivateCustody(RawSecurityDescriptor descriptor, SecurityIdentifier? fixtureOwner = null)
+    {
+        if (!descriptor.ControlFlags.HasFlag(ControlFlags.DiscretionaryAclProtected)
+            || descriptor.DiscretionaryAcl is not { } acl) { return false; }
+        string[] principals = fixtureOwner is null ? ["S-1-5-18", "S-1-5-32-544"] : [fixtureOwner.Value];
+        if (!(fixtureOwner is null ? descriptor.Owner?.Value is "S-1-5-18" or "S-1-5-32-544" : descriptor.Owner == fixtureOwner)
+            || acl.Count != principals.Length) { return false; }
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (GenericAce entry in acl)
+        {
+            if (entry is not CommonAce ace || ace.IsCallback || ace.AceFlags != AceFlags.None
+                || ace.AceQualifier != AceQualifier.AccessAllowed || ace.AccessMask != (int)FileSystemRights.FullControl
+                || !principals.Contains(ace.SecurityIdentifier.Value, StringComparer.Ordinal) || !seen.Add(ace.SecurityIdentifier.Value)) { return false; }
+        }
+        return seen.Count == principals.Length;
+    }
+
+    private void VerifyAccess(SafeFileHandle handle, bool directory, bool isRoot, string path, bool privateCustody)
     {
         var descriptor = new RawSecurityDescriptor(
             new HandleSecurity(handle, directory).GetSecurityDescriptorBinaryForm(), 0);
 
+        if (privateCustody)
+        {
+            if (!AcceptsPrivateCustody(descriptor, owner)) { throw new UnauthorizedAccessException("Native custody requires a protected private lock; legacy public locks are not adopted."); }
+            return;
+        }
         if (owner is null)
         {
             static bool Trusted(SecurityIdentifier? sid) => sid?.Value is "S-1-5-18" or "S-1-5-32-544"

@@ -348,6 +348,7 @@ pub(crate) enum Policy {
     Directory { extra_rights: u32 },
     Setup { ace_flags: u8 },
     Record,
+    PrivateCustody,
 }
 
 impl Policy {
@@ -449,9 +450,12 @@ pub(crate) fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
         return Some(false);
     }
     let owner = sid(section(bytes, 4)?)?;
-    let setup = matches!(policy, Policy::Setup { .. });
+    let setup = matches!(policy, Policy::Setup { .. } | Policy::PrivateCustody);
     if match policy {
         Policy::Record => owner != ADMINISTRATORS && owner != SYSTEM,
+        Policy::PrivateCustody => {
+            !matches!(owner, ADMINISTRATORS | SYSTEM) || control & SE_DACL_PROTECTED == 0
+        }
         Policy::Directory { .. } => !matches!(owner, ADMINISTRATORS | SYSTEM | TRUSTED_INSTALLER),
         Policy::Setup { .. } => owner != ADMINISTRATORS || control & SE_DACL_PROTECTED == 0,
     } {
@@ -511,6 +515,12 @@ pub(crate) fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
             // Setup grants FullControl to exactly SYSTEM and Administrators.
             Policy::Setup { ace_flags } => {
                 if kind != 0 || flags != ace_flags || mask != FILE_ALL_ACCESS || principal == 0 {
+                    return Some(false);
+                }
+                setup_principals |= principal;
+            }
+            Policy::PrivateCustody => {
+                if kind != 0 || flags != 0 || mask != FILE_ALL_ACCESS || principal == 0 {
                     return Some(false);
                 }
                 setup_principals |= principal;

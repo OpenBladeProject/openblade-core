@@ -129,8 +129,11 @@ async fn run_candidate<A, F: Future<Output = io::Result<()>>>(
     ) -> io::Result<(Readiness, F)>,
     mut publish: impl FnMut(&SERVICE_STATUS) -> io::Result<()>,
 ) -> io::Result<()> {
+    let stop_lost = std::cell::Cell::new(false);
     let stop = async {
-        let _ = stop.await;
+        if stop.await.is_err() {
+            stop_lost.set(true);
+        }
     };
     tokio::pin!(stop);
     run_lifecycle(
@@ -194,7 +197,10 @@ async fn run_candidate<A, F: Future<Output = io::Result<()>>>(
                 let _ = shutdown.send(());
             }
             let retired = if drive_pending { drive.await } else { Ok(()) };
-            normalize_startup_stop(result).and(stopping).and(retired)
+            let outcome = normalize_startup_stop(result).and(stopping).and(retired);
+            if stop_lost.get() {
+                outcome.and(Err(io::Error::new(io::ErrorKind::BrokenPipe, "SCM stop channel was lost")))
+            } else { outcome }
         },
     )
     .await

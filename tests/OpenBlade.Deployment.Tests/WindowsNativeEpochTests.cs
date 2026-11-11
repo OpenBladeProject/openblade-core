@@ -305,34 +305,36 @@ public sealed class WindowsNativeEpochTests
     [InlineData((int)NativeEpochBoundary.PhaseWritten)]
     [InlineData((int)NativeEpochBoundary.FrontierWritten)]
     [InlineData((int)NativeEpochBoundary.SelectionPublished)]
-    public async Task InterruptedRetirementAndEveryRecoveryBoundaryAreIdempotent(int retirementBoundary)
+    public async Task InterruptedRetirementRequiresFreshAuthenticatedCustodyAndIsIdempotent(int retirementBoundary)
     {
-        foreach (var recoveryBoundary in new[] { NativeEpochBoundary.PhaseWritten, NativeEpochBoundary.FrontierWritten, NativeEpochBoundary.SelectionPublished })
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var package = await Package(files);
+        string epoch;
+        using (var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()))
         {
-            using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
-            using var package = await Package(files);
-            string epoch;
-            using (var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()))
-            {
-                epoch = tx.Record.Epoch;
-                tx.CommitAfterBoundReadiness(new string('e', 64));
-                Assert.Throws<IOException>(() => tx.RetirePackageSelection(reached =>
-                { if ((int)reached == retirementBoundary) { throw new IOException("retirement interrupted"); } }));
-                Assert.Throws<IOException>(() => tx.RequireProvisional());
-            }
-            string Frontier() => NativeCanonical.Digest(File.ReadAllBytes(Directory.EnumerateFiles(files.Root, "selection-*.bin").Order(StringComparer.Ordinal).Last()));
-            Assert.Throws<IOException>(() => WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier(), reached =>
-            { if (reached == recoveryBoundary) { throw new IOException("recovery interrupted"); } }));
-            WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier());
-            byte[] retired = files.ReadCurrent()!;
-            WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier());
-            Assert.Equal(retired, files.ReadCurrent());
-            Assert.Equal(NativeEpochPhase.Retired, NativeEpochRecord.Parse(retired).Phase);
-            using var fresh = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid());
-            Assert.NotEqual(epoch, fresh.Record.Epoch);
-            Assert.Equal(2, fresh.Record.Ordinal);
-            Assert.Equal(NativeCanonical.Digest(retired), fresh.Record.Predecessor);
+            epoch = tx.Record.Epoch; tx.MarkStartupSubmitted();
+            NativeRecoveryTests.AddAttempt(files, tx.Record, 17, 1, true);
+            tx.CommitAfterBoundReadiness(new string('e', 64));
+            Assert.Throws<IOException>(() => tx.RetirePackageSelection(reached =>
+            { if ((int)reached == retirementBoundary) { throw new IOException("retirement interrupted"); } }));
+            Assert.Throws<IOException>(() => tx.RequireProvisional());
         }
+        string Frontier() => NativeCanonical.Digest(File.ReadAllBytes(Directory.EnumerateFiles(files.Root, "selection-*.bin").Order(StringComparer.Ordinal).Last()));
+        byte[] before = files.ReadCurrent()!;
+        Assert.Equal(NativeRecoveryReason.RetirementPublicationFailed,
+            Assert.Throws<NativeRecoveryException>(() => WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier())).Reason);
+        Assert.Equal(before, files.ReadCurrent());
+        using (var recovery = await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None))
+        { recovery!.RetireRecoverableSelection(); }
+        byte[] retired = files.ReadCurrent()!;
+        using (var recovery = await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None))
+        { recovery!.RetireRecoverableSelection(); }
+        Assert.Equal(retired, files.ReadCurrent());
+        Assert.Equal(NativeEpochPhase.Retired, NativeEpochRecord.Parse(retired).Phase);
+        using var fresh = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid());
+        Assert.NotEqual(epoch, fresh.Record.Epoch);
+        Assert.Equal(2, fresh.Record.Ordinal);
+        Assert.Equal(NativeCanonical.Digest(retired), fresh.Record.Predecessor);
     }
 
     [Fact]
@@ -341,6 +343,7 @@ public sealed class WindowsNativeEpochTests
         using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
         using var package = await Package(files);
         using var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid());
+        tx.MarkStartupSubmitted(); NativeRecoveryTests.AddAttempt(files, tx.Record, 17, 1, true);
         tx.CommitAfterBoundReadiness(new string('e', 64));
         byte[] committed = files.ReadCurrent()!;
         // Same NT access/share/options as native_package::open_file(current,true).
@@ -356,7 +359,7 @@ public sealed class WindowsNativeEpochTests
         tx.Dispose();
         files.PublishCurrent(committed);
         Assert.Throws<IOException>(() => WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()));
-        WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, NativeCanonical.Digest(retired));
+        using var recovery = await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None);
         Assert.Equal(retired, files.ReadCurrent());
     }
 
@@ -372,6 +375,7 @@ public sealed class WindowsNativeEpochTests
         using var package = await Package(files);
         using (var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()))
         {
+            tx.MarkStartupSubmitted(); NativeRecoveryTests.AddAttempt(files, tx.Record, 17, 1, true);
             tx.CommitAfterBoundReadiness(new string('e', 64));
             files.CrashBoundaryForTests = (NativeFileBoundary)boundary;
             Assert.Throws<IOException>(() => tx.RetirePackageSelection());
@@ -379,11 +383,17 @@ public sealed class WindowsNativeEpochTests
         }
         files.CrashBoundaryForTests = null;
         string Frontier() => NativeCanonical.Digest(File.ReadAllBytes(Directory.EnumerateFiles(files.Root, "selection-*.bin").Order(StringComparer.Ordinal).Last()));
-        WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier());
+        if (boundary == (int)NativeFileBoundary.Renamed)
+        {
+            using var recovery = await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None);
+            recovery!.RetireRecoverableSelection();
+        }
+        else { WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier()); }
         var phase = NativeEpochRecord.Parse(files.ReadCurrent()!).Phase;
         Assert.Equal(boundary == (int)NativeFileBoundary.Renamed ? NativeEpochPhase.Retired : NativeEpochPhase.Unresolved, phase);
         byte[] recovered = files.ReadCurrent()!;
-        WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier());
+        using (var recovery = await WindowsNativeInstalledSelection.OpenForSetupAsync(files, CancellationToken.None))
+        { Assert.Equal(phase, recovery!.Record.Phase); }
         Assert.Equal(recovered, files.ReadCurrent());
     }
 

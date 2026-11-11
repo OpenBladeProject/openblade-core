@@ -333,3 +333,31 @@ async fn stop_during_prepare_still_reports_retirement_failure() {
         ]
     );
 }
+
+#[tokio::test(start_paused = true)]
+async fn lost_scm_stop_sender_is_not_a_successful_stop() {
+    let controls = Controls::new();
+    let (sender, receiver) = oneshot::channel();
+    drop(sender);
+    let statuses = RefCell::new(Vec::new());
+    let result = run_candidate(
+        &controls,
+        receiver,
+        || Ok(process()),
+        |_| Ok(registration()),
+        |_| Ok(()),
+        async |_, (), _, _| Ok((readiness(), std::future::pending::<io::Result<()>>())),
+        |status| {
+            statuses
+                .borrow_mut()
+                .push((status.dwCurrentState, status.dwWin32ExitCode));
+            Ok(())
+        },
+    )
+    .await;
+    assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+    assert_eq!(
+        statuses.borrow().last(),
+        Some(&(SERVICE_STOPPED, ERROR_GEN_FAILURE))
+    );
+}

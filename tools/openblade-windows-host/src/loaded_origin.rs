@@ -9,10 +9,7 @@ use crate::{
 use std::{
     io,
     path::PathBuf,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
 };
 use windows_sys::Win32::System::{
     LibraryLoader::{GetModuleFileNameW, LOAD_LIBRARY_SEARCH_SYSTEM32, SetDefaultDllDirectories},
@@ -21,6 +18,9 @@ use windows_sys::Win32::System::{
         SERVICE_WIN32_OWN_PROCESS,
     },
 };
+
+#[path = "origin_lifetime.rs"]
+pub(crate) mod lifetime;
 
 pub(crate) struct Origin {
     package: Mutex<InstalledPackage>,
@@ -33,7 +33,7 @@ pub(crate) struct Origin {
     pub(crate) epoch: String,
     pub(crate) installation: String,
     role: &'static str,
-    lost: AtomicBool,
+    lifetime: lifetime::Lifetime,
 }
 impl Origin {
     pub(crate) fn acquire(role: &'static str, compiled: &[u8]) -> io::Result<Arc<Self>> {
@@ -97,15 +97,13 @@ impl Origin {
             process: Mutex::new(process),
             image,
             role,
-            lost: AtomicBool::new(false),
+            lifetime: lifetime::Lifetime::default(),
         });
         value.verify()?;
         Ok(value)
     }
     pub(crate) fn verify(&self) -> io::Result<()> {
-        if self.lost.load(Ordering::Acquire) {
-            return Err(deny());
-        }
+        self.lifetime.verify()?;
         let result = (|| {
             self.package.lock().map_err(|_| deny())?.require_current()?;
             let mut process = self.process.lock().map_err(|_| deny())?;
@@ -137,12 +135,15 @@ impl Origin {
         if result.is_err() {
             self.revoke();
         }
-        result
+        result.and_then(|()| self.lifetime.verify())
     }
     // Callback ingress and any failed/unknown observation latch before coalescing.
     // This makes no claim about transients never delivered or sampled.
     pub(crate) fn revoke(&self) {
-        self.lost.store(true, Ordering::Release);
+        self.lifetime.lose_trust();
+    }
+    pub(crate) fn revoke_for_stop(&self) {
+        self.lifetime.stop();
     }
     pub(crate) fn confirm_metadata_drain(&self) -> io::Result<()> {
         // Called only after the actual listener and metadata workers drained.

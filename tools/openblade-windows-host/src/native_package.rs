@@ -99,6 +99,120 @@ fn create_attempt_record(parent: &File, name: &str, bytes: &[u8]) -> io::Result<
     Ok(())
 }
 
+// One custody record plus 4096 launch/drain pairs is the shared C#/Rust limit.
+// Admission reserves the final drain slot; drain publication never checks it.
+const MAXIMUM_ATTEMPTS: usize = 4096;
+const MAXIMUM_ATTEMPT_ENTRIES: usize = 1 + 2 * MAXIMUM_ATTEMPTS;
+#[derive(Debug, PartialEq)]
+enum AttemptRefusal {
+    BudgetExhausted,
+    HistoryOverLimit,
+    MalformedHistory,
+}
+impl std::fmt::Display for AttemptRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "native attempt history: {self:?}")
+    }
+}
+impl std::error::Error for AttemptRefusal {}
+fn attempt_refusal(reason: AttemptRefusal) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, reason)
+}
+fn require_launch_budget(
+    names: Vec<String>,
+    mut read: impl FnMut(&str) -> io::Result<Vec<u8>>,
+    epoch: &Epoch,
+    origin: &[u8],
+    image: &std::path::Path,
+) -> io::Result<()> {
+    use std::collections::BTreeMap;
+    if names.len() > MAXIMUM_ATTEMPT_ENTRIES {
+        return Err(attempt_refusal(AttemptRefusal::HistoryOverLimit));
+    }
+    let mut launches = BTreeMap::new();
+    let mut drains = BTreeMap::new();
+    let mut custody = false;
+    let malformed = || attempt_refusal(AttemptRefusal::MalformedHistory);
+    for name in names {
+        if name == "custody.lock" {
+            if custody {
+                return Err(malformed());
+            }
+            custody = true;
+            continue;
+        }
+        let (target, key) = if let Some(key) = name.strip_prefix("launch-") {
+            (&mut launches, key.to_owned())
+        } else if let Some(key) = name.strip_prefix("drain-") {
+            (&mut drains, key.to_owned())
+        } else {
+            return Err(malformed());
+        };
+        if !key.ends_with(".bin") || target.insert(key, read(&name)?).is_some() {
+            return Err(malformed());
+        }
+    }
+    if !custody {
+        return Err(malformed());
+    }
+    if launches.len() > MAXIMUM_ATTEMPTS || drains.len() > MAXIMUM_ATTEMPTS {
+        return Err(attempt_refusal(AttemptRefusal::HistoryOverLimit));
+    }
+    for (name, bytes) in &launches {
+        let f = lines(bytes, "OpenBlade.NativeServiceLaunch.v1", 10).map_err(|_| malformed())?;
+        let owner = StartupOwner::parse(&encode(
+            "OpenBlade.NativeStartupOwner.v2",
+            &[f[0], f[2], f[5], f[6], f[7], f[9]],
+        ))
+        .map_err(|_| malformed())?;
+        if f[0] != epoch.id
+            || f[1] != digest(origin)
+            || f[2] != epoch.request
+            || f[3] != epoch.package
+            || f[4] != epoch.service
+            || f[7] != "0"
+            || f[8] != "LocalSystem-primary-session0"
+            || owner.image != image
+            || name != &format!("{}-{}.bin", owner.pid, owner.created)
+        {
+            return Err(malformed());
+        }
+        if let Some(drain) = drains.get(name) {
+            if *drain
+                != encode(
+                    "OpenBlade.NativeStatusDrain.v2",
+                    &[&epoch.id, &digest(bytes), f[5], f[6]],
+                )
+            {
+                return Err(malformed());
+            }
+        }
+    }
+    if drains.keys().any(|key| !launches.contains_key(key)) {
+        return Err(malformed());
+    }
+    // An unmatched older launch is retained. This is not a drain certificate;
+    // recovery still refuses it, including after a later original's clean stop.
+    if launches.len() == MAXIMUM_ATTEMPTS {
+        return Err(attempt_refusal(AttemptRefusal::BudgetExhausted));
+    }
+    Ok(())
+}
+
+fn publish_metadata_drain(
+    epoch: &str,
+    launch: &str,
+    pid: u32,
+    created: u64,
+    publish: impl FnOnce(&str, &[u8]) -> io::Result<()>,
+) -> io::Result<()> {
+    let bytes = encode(
+        "OpenBlade.NativeStatusDrain.v2",
+        &[epoch, launch, &pid.to_string(), &created.to_string()],
+    );
+    publish(&format!("drain-{pid}-{created}.bin"), &bytes)
+}
+
 fn encode(header: &str, fields: &[&str]) -> Vec<u8> {
     format!("{header}\n{}\n", fields.join("\n")).into_bytes()
 }
@@ -838,7 +952,7 @@ impl InstalledPackage {
             FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
         )?;
         paths::check_regular_file(&custody)?;
-        paths::verify_security(&custody, Policy::Record)?;
+        paths::verify_security(&custody, Policy::PrivateCustody)?;
         if read_bytes(&mut custody, 256)?
             != encode("OpenBlade.NativeServiceCustody.v1", &[&self.epoch.id])
         {
@@ -887,6 +1001,39 @@ impl InstalledPackage {
                 &encode64(&path),
             ],
         );
+        // The retained directory ancestry prevents path replacement during this
+        // bounded enumeration; individual records are opened relative to it.
+        let attempt_path = self
+            .service_path
+            .parent()
+            .and_then(std::path::Path::parent)
+            .ok_or_else(deny)?
+            .join("attempts");
+        let names = std::fs::read_dir(attempt_path)?
+            .take(MAXIMUM_ATTEMPT_ENTRIES + 1)
+            .map(|entry| {
+                entry.and_then(|entry| entry.file_name().into_string().map_err(|_| deny()))
+            })
+            .collect::<io::Result<Vec<_>>>()?;
+        require_launch_budget(
+            names,
+            |name| {
+                let mut record = paths::open_relative(
+                    &attempts,
+                    OsStr::new(name),
+                    FILE_GENERIC_READ,
+                    FILE_SHARE_READ,
+                    FILE_OPEN,
+                    FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+                )?;
+                paths::check_regular_file(&record)?;
+                paths::verify_security(&record, Policy::Record)?;
+                read_bytes(&mut record, 16384)
+            },
+            &self.epoch,
+            &origin,
+            image,
+        )?;
         create_attempt_record(&attempts, &format!("launch-{pid}-{created}.bin"), &bytes)?;
         self.service_attempt = Some((attempts, digest(&bytes)));
         Ok(())
@@ -896,16 +1043,9 @@ impl InstalledPackage {
         if self.service_custody.is_none() {
             return Err(deny());
         }
-        let bytes = encode(
-            "OpenBlade.NativeStatusDrain.v2",
-            &[
-                &self.epoch.id,
-                launch,
-                &pid.to_string(),
-                &created.to_string(),
-            ],
-        );
-        create_attempt_record(attempts, &format!("drain-{pid}-{created}.bin"), &bytes)
+        publish_metadata_drain(&self.epoch.id, launch, pid, created, |name, bytes| {
+            create_attempt_record(attempts, name, bytes)
+        })
     }
     pub(crate) fn identity(&self, role: &str) -> &[u8] {
         if role == "service" {
@@ -947,6 +1087,7 @@ impl InstalledPackage {
                 paths::check_regular_file(file)?;
                 paths::verify_security(file, Policy::Record)?;
             }
+            require_no_retirement(&self.directories[0])?;
             // Setup commits phase -> frontier -> current. Treat only this exact
             // authenticated live-attempt interval as typed pending promotion.
             // Unrelated/unknown publication remains terminal; no startup is replayed.
@@ -989,6 +1130,12 @@ impl InstalledPackage {
             self.denied = true;
         }
         result
+    }
+}
+fn require_no_retirement(parent: &File) -> io::Result<()> {
+    match open_file(parent, "Retired.bin", false) {
+        Err(error) if paths::missing_leaf(&error) => Ok(()),
+        _ => Err(deny()),
     }
 }
 fn open_file(parent: &File, name: &str, mutable: bool) -> io::Result<File> {
@@ -1113,6 +1260,7 @@ fn read_package(allow_provisional: bool) -> io::Result<InstalledPackage> {
     frontier_matches(&root, &root_path, &selection)?;
     let generation = paths::open_directory(&root, OsStr::new(&epoch.id))?;
     paths::verify_security(&generation, Policy::Directory { extra_rights: 0 })?;
+    require_no_retirement(&generation)?;
     let mut held = vec![selected];
     let phase = retain_bytes(
         &generation,

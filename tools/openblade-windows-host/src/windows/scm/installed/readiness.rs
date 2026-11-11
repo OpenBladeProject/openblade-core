@@ -244,14 +244,24 @@ impl Ports {
         mut shutdown: oneshot::Receiver<()>,
         failed: oneshot::Sender<()>,
     ) -> io::Result<()> {
-        let (result, signal_consumed) = LocalSet::new()
+        let (mut result, signal_consumed) = LocalSet::new()
             .run_until(self.serve_connections(&mut shutdown))
             .await;
         if !signal_consumed {
             // Notify SCM before a bounded drain so the service is no longer
             // reported as running after the listener or source failed.
             let _ = failed.send(());
-            let _ = shutdown.await;
+            let signal = shutdown.await.map_err(|_| lost_shutdown());
+            // Only a typed STOP revocation followed by the real shutdown signal
+            // is expected. A lost channel or any earlier trust failure stays fatal.
+            result = if result
+                .as_ref()
+                .is_err_and(crate::loaded_origin::lifetime::expected_stop)
+            {
+                signal
+            } else {
+                result.and(signal)
+            };
         }
         result.and(self.retire().await)
     }
@@ -376,6 +386,9 @@ async fn serve_connection(
     subscriptions: Rc<Subscriptions>,
 ) -> Result<(), ExchangeError> {
     let (request, caller) = read_request(&mut *stream, false).await?;
+    // Receipt precedes waiting for an in-flight observer's source mutex. Its
+    // completion can satisfy this GET only when it is newer than this instant.
+    let requested = Instant::now();
     let guard = source.lock().await.publication_guard();
     guard().map_err(ExchangeError::Runtime)?;
     if request.is_subscription() {
@@ -393,7 +406,6 @@ async fn serve_connection(
         serve_observation(&mut *stream, &request, caller, &source).await
     } else {
         caller.access().map_err(ExchangeError::Client)?;
-        let requested = Instant::now();
         let payload = {
             let mut source = source.lock().await;
             let caller = resolve_caller(&*stream, caller)?;

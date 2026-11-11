@@ -4,7 +4,8 @@ internal enum NativeInstallationState { VerifiedBootstrap, Selected, Interrupted
 internal enum NativeRecoveryReason
 {
     UnknownBootstrapHistory, InterruptedPublication, LegacyLaunchEvidenceUnavailable,
-    UnknownAttemptHistory, ActiveOrUnknownCustody, MissingAttemptDrain, FirmwareOwnerUnresolved, PreStartTransitionInterrupted
+    UnknownAttemptHistory, ActiveOrUnknownCustody, MissingAttemptDrain, FirmwareOwnerUnresolved, PreStartTransitionInterrupted,
+    RetirementPublicationFailed, AttemptBudgetExhausted, AttemptHistoryOverLimit
 }
 internal sealed class NativeRecoveryException(NativeRecoveryReason reason, string message, Exception? inner = null) : IOException(message, inner)
 { internal NativeRecoveryReason Reason { get; } = reason; }

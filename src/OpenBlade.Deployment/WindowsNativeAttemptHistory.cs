@@ -5,6 +5,9 @@ namespace OpenBlade.Deployment;
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 internal static class WindowsNativeAttemptHistory
 {
+    internal const int MaximumAttempts = 4096;
+    internal const int MaximumEntries = 1 + 2 * MaximumAttempts;
+
     internal static byte[] RequireDrained(WindowsNativeEpochFiles files, NativeEpochRecord record, string directory,
         string serviceFeatures, uint? expectedPid = null, long? expectedCreated = null)
     {
@@ -18,8 +21,8 @@ internal static class WindowsNativeAttemptHistory
             NativeCanonical.Digest(origin), record.ServiceId, "metadata-only-no-firmware")))
         { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Native startup custody policy differs from the signed service artifact."); }
         string attempts = Path.Combine(directory, "attempts");
-        string[] entries = Directory.EnumerateFileSystemEntries(attempts).Order(StringComparer.Ordinal).ToArray();
-        if (entries.Length > 8193) { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Native attempt history exceeds its bound."); }
+        string[] entries = Directory.EnumerateFileSystemEntries(attempts).Take(MaximumEntries + 1).Order(StringComparer.Ordinal).ToArray();
+        if (entries.Length > MaximumEntries) { throw new NativeRecoveryException(NativeRecoveryReason.AttemptHistoryOverLimit, "Native attempt history exceeds the shared 4096-attempt bound; history was preserved."); }
         var launches = new Dictionary<string, byte[]>();
         var drains = new Dictionary<string, byte[]>();
         foreach (string path in entries)
@@ -30,6 +33,8 @@ internal static class WindowsNativeAttemptHistory
             else if (name.StartsWith("drain-", StringComparison.Ordinal) && name.EndsWith(".bin", StringComparison.Ordinal)) { drains.Add(name[6..], Read(path)); }
             else { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Unknown native attempt history was preserved."); }
         }
+        if (launches.Count > MaximumAttempts || drains.Count > MaximumAttempts)
+        { throw new NativeRecoveryException(NativeRecoveryReason.AttemptHistoryOverLimit, "Native launch/drain history exceeds the shared attempt budget."); }
         string submission = Path.Combine(directory, "submission.bin");
         bool submitted;
         try { _ = File.GetAttributes(submission); submitted = true; }

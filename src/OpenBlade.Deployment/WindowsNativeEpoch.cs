@@ -132,7 +132,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
                 new string('0', 64), NativeCanonical.Digest(startupOwner));
             byte[] selection = value.Encode();
             files.CreateDirectoryOnce(Path.Combine(directory, "attempts"));
-            files.Publish(Path.Combine(directory, "attempts", "custody.lock"), NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", epoch));
+            files.PublishCustody(Path.Combine(directory, "attempts", "custody.lock"), NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", epoch));
             files.Publish(Path.Combine(directory, "startup-policy.bin"), NativeCanonical.Lines("OpenBlade.NativeStartupPolicy.v1",
                 epoch, NativeCanonical.Digest(selection), package.Service.Id, "metadata-only-no-firmware"));
             files.Publish(Path.Combine(directory, "origin.bin"), selection);
@@ -263,7 +263,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
     }
 
     internal static void RecoverUnresolvedPublicationUnderWriter(WindowsNativeEpochFiles files, string expectedFrontier,
-        Action<NativeEpochBoundary>? testCrashBoundary = null)
+        Action<NativeEpochBoundary>? testCrashBoundary = null, Func<NativeEpochRecord, IDisposable>? retirementAdmission = null)
     {
         byte[] prior = ReadFrontier(files) ?? throw new InvalidDataException("No native publication to recover.");
         if (NativeCanonical.Digest(prior) != expectedFrontier) { throw new InvalidDataException("Native recovery frontier changed."); }
@@ -272,7 +272,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
         // A durable retirement intent may precede its frontier. Finish only that
         // exact attempt; an ordinary committed epoch is never retired by recovery.
         bool retirement = record.Phase == NativeEpochPhase.Retired
-            || File.Exists(retiredPath);
+            || PresentRecoveryFile(retiredPath);
         var unresolved = record with
         {
             Phase = retirement ? NativeEpochPhase.Retired : NativeEpochPhase.Unresolved,
@@ -298,6 +298,12 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
             using var previousFile = files.OpenFile(Path.Combine(directory, previous.Phase + ".bin"));
             WindowsNativeEpochFiles.RequireExact(previousFile, selected);
         }
+        // Even metadata reconciliation must freshly authenticate the current
+        // attempt set under custody before finishing retirement publication.
+        using var retirementProof = retirement
+            ? (retirementAdmission ?? throw new NativeRecoveryException(NativeRecoveryReason.RetirementPublicationFailed,
+                "Retirement reconciliation requires fresh authenticated attempt custody."))(NativeEpochRecord.Parse(files.ReadCurrent()!))
+            : null;
         // Explicit recovery reconciles an already-created exact phase/frontier;
         // it never repeats native startup, readiness, retirement or a hardware write.
         EnsureExactOrPublish(files, Path.Combine(directory, unresolved.Phase + ".bin"), bytes);
@@ -307,6 +313,12 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
         if (!(files.ReadCurrent() ?? []).AsSpan().SequenceEqual(bytes)) { files.PublishCurrent(bytes); }
         testCrashBoundary?.Invoke(NativeEpochBoundary.SelectionPublished);
         RequireFrontier(files, files.ReadCurrent());
+    }
+
+    private static bool PresentRecoveryFile(string path)
+    {
+        try { _ = File.GetAttributes(path); return true; }
+        catch (FileNotFoundException) { return false; }
     }
 
     private static void EnsureExactOrPublish(WindowsNativeEpochFiles files, string path, byte[] bytes)

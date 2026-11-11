@@ -14,7 +14,13 @@ public interface ISetupPayloadTransaction : IAsyncDisposable
     Task RollbackAsync(CancellationToken cancellationToken);
 }
 
-public sealed record SetupServiceInstallState(bool Existed, bool WasRunning);
+public enum SetupServicePredecessorKind { Absent, Managed, Native }
+public enum SetupServiceTransition { Unchanged, ManagedPrepared, NativeRetirementPossible, NativeRetired }
+public sealed record SetupServiceInstallState(bool Existed, bool WasRunning)
+{
+    public SetupServicePredecessorKind Kind { get; init; } = Existed ? SetupServicePredecessorKind.Managed : SetupServicePredecessorKind.Absent;
+    public string? ExecutablePath { get; init; }
+}
 
 public enum SetupStartupRegistration
 {
@@ -43,6 +49,7 @@ public sealed record SetupInstallLifecycleState(
 public interface ISetupPlatform
 {
     string CurrentUserSid { get; }
+    SetupServiceTransition ServiceTransition => SetupServiceTransition.Unchanged;
     Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken);
     Task<bool> EnsureCpuTemperaturePrerequisiteAsync(string stagedPayloadDirectory, CancellationToken cancellationToken);
     Task<SetupInstallLifecycleState> CaptureInstallLifecycleStateAsync(CancellationToken cancellationToken);
@@ -133,8 +140,8 @@ public sealed class SetupCommandRunner(
                 await platform.RemoveUninstallShortcutAsync(cancellationToken);
                 await platform.RemoveUninstallRegistrationAsync(cancellationToken);
                 progress.Report(SetupProgressCode.StopServiceForReplacement);
-                if (transaction is SetupNativePackageTransaction retiringNative) { retiringNative.MarkPriorRetirementPossible(); }
                 await platform.PrepareServiceForInstallAsync(cancellationToken);
+                if (transaction is SetupNativePackageTransaction preparedNative) { preparedNative.ObservePredecessorTransition(platform.ServiceTransition); }
                 progress.Report(SetupProgressCode.StopTrayAndSessionAgent);
                 await platform.StopTrayAsync(cancellationToken);
                 await platform.StopSessionAgentAsync(cancellationToken);
@@ -147,7 +154,6 @@ public sealed class SetupCommandRunner(
                     await platform.InstallUninstallerAsync(cancellationToken);
                 }
                 progress.Report(SetupProgressCode.InstallService);
-                if (transaction is SetupNativePackageTransaction incomingNative) { incomingNative.MarkNativeStartupPossible(); }
                 await platform.InstallServiceAsync(cancellationToken);
                 progress.Report(SetupProgressCode.VerifyServiceHealth);
                 if (transaction is SetupNativePackageTransaction native)
@@ -178,9 +184,12 @@ public sealed class SetupCommandRunner(
             }
             catch (Exception failure)
             {
-                if (transaction is SetupNativePackageTransaction native && native.RequiresExplicitNativeRecovery)
+                if (transaction is SetupNativePackageTransaction observedNative) { observedNative.ObservePredecessorTransition(platform.ServiceTransition); }
+                if (transaction is SetupNativePackageTransaction { RequiresExplicitNativeRecovery: true }
+                    || mutationStarted && (priorLifecycle?.Service.Kind == SetupServicePredecessorKind.Native
+                        || platform.ServiceTransition is SetupServiceTransition.NativeRetirementPossible or SetupServiceTransition.NativeRetired))
                 {
-                    try { native.RecordUnresolvedFailure(); }
+                    try { (transaction as SetupNativePackageTransaction)?.RecordUnresolvedFailure(); }
                     catch (Exception publicationFailure) { throw new AggregateException(failure, publicationFailure); }
                     throw new NativeRecoveryException(NativeRecoveryReason.PreStartTransitionInterrupted,
                         "Native transition requires explicit selection/attempt recovery; retired paths and incoming startup were not replayed.", failure);

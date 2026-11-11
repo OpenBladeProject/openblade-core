@@ -318,6 +318,16 @@ async fn lifecycle(
     events: &Events,
     action: impl FnOnce(),
 ) -> io::Result<()> {
+    lifecycle_reporting(controls, ports, events, action, None).await
+}
+
+async fn lifecycle_reporting(
+    controls: &Controls,
+    ports: io::Result<Ports>,
+    events: &Events,
+    action: impl FnOnce(),
+    report_failure: Option<&str>,
+) -> io::Result<()> {
     let mut action = Some(action);
     run_candidate(
         controls,
@@ -357,6 +367,9 @@ async fn lifecycle(
             events.borrow_mut().push(event);
             if event == "running" {
                 action.take().unwrap()();
+            }
+            if report_failure == Some(event) {
+                return Err(io::Error::other("SCM report failed"));
             }
             Ok(())
         },
@@ -645,3 +658,159 @@ async fn session_authority_failure_is_runtime_failure_before_status_read() {
 
 #[path = "subscription_tests.rs"]
 mod subscription_tests;
+
+struct LifetimeSource {
+    inner: TestSource,
+    state: Rc<crate::loaded_origin::lifetime::Lifetime>,
+    ack_failure: bool,
+}
+impl StatusSource for LifetimeSource {
+    fn snapshot(&mut self, caller: Caller, at: Instant) -> Pending<'_, Snapshot> {
+        self.inner.snapshot(caller, at)
+    }
+    fn verify_origin(&self) -> io::Result<()> {
+        self.state.verify()
+    }
+    fn drain(&mut self) -> Pending<'_, ()> {
+        self.inner.drain()
+    }
+    fn confirm_drained(&self) -> io::Result<()> {
+        self.inner.events.borrow_mut().push("ack");
+        if self.ack_failure {
+            Err(io::Error::other("ack failed"))
+        } else {
+            Ok(())
+        }
+    }
+}
+async fn lifetime_ports(
+    fault: Fault,
+    events: &Events,
+    state: Rc<crate::loaded_origin::lifetime::Lifetime>,
+    ack_failure: bool,
+) -> (Ports, mpsc::UnboundedSender<Box<dyn Stream>>) {
+    let (ports, tx) = ports(fault, events);
+    *ports.source.lock().await = Box::new(LifetimeSource {
+        inner: TestSource {
+            fault,
+            events: events.clone(),
+            publications: None,
+        },
+        state,
+        ack_failure,
+    });
+    (ports, tx)
+}
+
+#[tokio::test(start_paused = true)]
+async fn running_report_stop_before_first_drive_tick_is_expected_only_after_real_shutdown() {
+    let controls = Controls::new();
+    let events = Events::default();
+    let state = Rc::new(crate::loaded_origin::lifetime::Lifetime::default());
+    let (ports, _tx) = lifetime_ports(Fault::None, &events, state.clone(), false).await;
+    lifecycle(&controls, Ok(ports), &events, || {
+        state.stop();
+        controls.request_stop();
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        *events.borrow(),
+        [
+            "starting", "connect", "snapshot", "running", "stopping", "close", "drain", "ack",
+            "stopped"
+        ]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn stop_ingress_one_poll_before_channel_delivery_waits_for_shutdown_and_ack() {
+    let events = Events::default();
+    let state = Rc::new(crate::loaded_origin::lifetime::Lifetime::default());
+    let (ports, _tx) = lifetime_ports(Fault::None, &events, state.clone(), false).await;
+    let (shutdown, receiver) = oneshot::channel();
+    let (failed, notified) = oneshot::channel();
+    state.stop();
+    let drive = ports.drive(receiver, failed);
+    tokio::pin!(drive);
+    tokio::select! { biased; result = &mut drive => panic!("STOP needs real shutdown: {result:?}"), _ = tokio::task::yield_now() => {} }
+    notified.await.unwrap();
+    assert!(events.borrow().is_empty());
+    shutdown.send(()).unwrap();
+    drive.await.unwrap();
+    assert_eq!(*events.borrow(), ["close", "drain", "ack"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn typed_stop_never_masks_trust_loss_cleanup_or_ack_failure() {
+    for (fault, trust_lost, ack_failure, message) in [
+        (Fault::None, true, false, "loaded origin trust was lost"),
+        (Fault::ListenerDrain, false, false, "listener drain failed"),
+        (Fault::RuntimeDrain, false, false, "runtime drain failed"),
+        (Fault::None, false, true, "ack failed"),
+    ] {
+        let controls = Controls::new();
+        let events = Events::default();
+        let state = Rc::new(crate::loaded_origin::lifetime::Lifetime::default());
+        let (ports, _tx) = lifetime_ports(fault, &events, state.clone(), ack_failure).await;
+        let error = lifecycle(&controls, Ok(ports), &events, || {
+            if trust_lost {
+                state.lose_trust();
+            }
+            state.stop();
+            controls.request_stop();
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(error.to_string(), message);
+        assert_eq!(events.borrow().last(), Some(&"failed"));
+        let events = events.borrow();
+        assert!(
+            events.iter().position(|e| *e == "close").unwrap()
+                < events.iter().position(|e| *e == "drain").unwrap()
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn expected_stop_with_lost_shutdown_is_failure_and_still_drains() {
+    let events = Events::default();
+    let state = Rc::new(crate::loaded_origin::lifetime::Lifetime::default());
+    let (ports, _tx) = lifetime_ports(Fault::None, &events, state.clone(), false).await;
+    let (shutdown, receiver) = oneshot::channel();
+    let (failed, _notified) = oneshot::channel();
+    state.stop();
+    drop(shutdown);
+    let error = ports.drive(receiver, failed).await.unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+    assert_eq!(*events.borrow(), ["close", "drain", "ack"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn typed_stop_does_not_hide_real_scm_report_failures() {
+    for phase in ["running", "stopping", "stopped"] {
+        let controls = Controls::new();
+        let events = Events::default();
+        let state = Rc::new(crate::loaded_origin::lifetime::Lifetime::default());
+        let (ports, _tx) = lifetime_ports(Fault::None, &events, state.clone(), false).await;
+        let error = lifecycle_reporting(
+            &controls,
+            Ok(ports),
+            &events,
+            || {
+                state.stop();
+                controls.request_stop();
+            },
+            Some(phase),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.to_string(), "SCM report failed");
+        let events = events.borrow();
+        assert!(
+            events.iter().position(|e| *e == "close").unwrap()
+                < events.iter().position(|e| *e == "drain").unwrap()
+        );
+        assert!(events.contains(&"ack"));
+    }
+}

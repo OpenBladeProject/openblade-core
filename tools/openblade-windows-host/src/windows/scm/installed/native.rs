@@ -27,7 +27,15 @@ pub(crate) fn entry(origin: Arc<Origin>) -> io::Result<()> {
         if code != windows_sys::Win32::System::Services::SERVICE_CONTROL_INTERROGATE {
             if let Ok(slot) = ENTRY_ORIGIN.lock() {
                 if let Some(origin) = &*slot {
-                    origin.revoke();
+                    if matches!(
+                        code,
+                        windows_sys::Win32::System::Services::SERVICE_CONTROL_STOP
+                            | windows_sys::Win32::System::Services::SERVICE_CONTROL_SHUTDOWN
+                    ) {
+                        origin.revoke_for_stop();
+                    } else {
+                        origin.revoke();
+                    }
                 }
             }
         }

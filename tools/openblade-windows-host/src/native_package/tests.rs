@@ -448,3 +448,137 @@ fn owner_path_rejects_noncanonical_odd_nul_and_excessive_encoding() {
         assert!(StartupOwner::parse(&record).is_err(), "accepted {value:?}");
     }
 }
+
+#[test]
+fn private_custody_descriptor_parity_preserves_public_record_access() {
+    let v: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../tests/data/native-recovery-lifetime-v1.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        v["maximumAttempts"].as_u64().unwrap() as usize,
+        MAXIMUM_ATTEMPTS
+    );
+    for case in v["descriptors"].as_array().unwrap() {
+        let bytes = decode64(case["bytes"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            paths::accepts_descriptor(&bytes, Policy::PrivateCustody),
+            Some(case["privateCustody"].as_bool().unwrap()),
+            "{}",
+            case["name"]
+        );
+        // The stricter custody policy does not change ordinary public evidence.
+        assert_eq!(
+            paths::accepts_descriptor(&bytes, Policy::Record),
+            Some(case["name"] != "inheriting")
+        );
+    }
+}
+
+#[test]
+fn shared_attempt_budget_reserves_last_drain_and_preserves_exhausted_or_malformed_history() {
+    use std::{collections::BTreeMap, os::windows::ffi::OsStrExt};
+    let epoch = Epoch::parse(&bytes(&vector(), "epoch")).unwrap();
+    let origin = b"private injected origin";
+    let image = PathBuf::from(r"C:\Fixture\app\OpenBlade.Service.exe");
+    let path: Vec<u8> = image
+        .as_os_str()
+        .encode_wide()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    let mut records = BTreeMap::new();
+    records.insert(
+        "custody.lock".to_owned(),
+        encode("OpenBlade.NativeServiceCustody.v1", &[&epoch.id]),
+    );
+    let add_launch = |records: &mut BTreeMap<String, Vec<u8>>, pid: usize| {
+        let p = pid.to_string();
+        let launch = encode(
+            "OpenBlade.NativeServiceLaunch.v1",
+            &[
+                &epoch.id,
+                &digest(origin),
+                &epoch.request,
+                &epoch.package,
+                &epoch.service,
+                &p,
+                &p,
+                "0",
+                "LocalSystem-primary-session0",
+                &encode64(&path),
+            ],
+        );
+        records.insert(format!("launch-{p}-{p}.bin"), launch.clone());
+        launch
+    };
+    let drain = |records: &mut BTreeMap<String, Vec<u8>>, launch: &[u8], pid: usize| {
+        publish_metadata_drain(
+            &epoch.id,
+            &digest(launch),
+            pid as u32,
+            pid as u64,
+            |name, bytes| {
+                assert!(records.insert(name.to_owned(), bytes.to_vec()).is_none());
+                Ok(())
+            },
+        )
+        .unwrap();
+    };
+    let check = |records: &BTreeMap<String, Vec<u8>>| {
+        require_launch_budget(
+            records.keys().cloned().collect(),
+            |name| Ok(records[name].clone()),
+            &epoch,
+            origin,
+            &image,
+        )
+    };
+    for pid in 1..MAXIMUM_ATTEMPTS {
+        let launch = add_launch(&mut records, pid);
+        drain(&mut records, &launch, pid);
+    }
+    check(&records).unwrap();
+    let last = add_launch(&mut records, MAXIMUM_ATTEMPTS);
+    let error = check(&records).unwrap_err();
+    assert_eq!(
+        error.get_ref().unwrap().downcast_ref::<AttemptRefusal>(),
+        Some(&AttemptRefusal::BudgetExhausted)
+    );
+    // Actual drain publication seam has no launch-budget check.
+    drain(&mut records, &last, MAXIMUM_ATTEMPTS);
+    assert_eq!(records.len(), MAXIMUM_ATTEMPT_ENTRIES);
+    let before = records.clone();
+    assert_eq!(
+        check(&records)
+            .unwrap_err()
+            .get_ref()
+            .unwrap()
+            .downcast_ref::<AttemptRefusal>(),
+        Some(&AttemptRefusal::BudgetExhausted)
+    );
+    assert_eq!(records, before);
+    records.insert(
+        "launch-4097-4097.bin".into(),
+        b"preserved over-limit data".to_vec(),
+    );
+    let oversized = records.clone();
+    assert_eq!(
+        check(&records)
+            .unwrap_err()
+            .get_ref()
+            .unwrap()
+            .downcast_ref::<AttemptRefusal>(),
+        Some(&AttemptRefusal::HistoryOverLimit)
+    );
+    assert_eq!(records, oversized);
+    let mut malformed = before;
+    malformed.insert("launch-1-1.bin".into(), b"malformed".to_vec());
+    assert_eq!(
+        check(&malformed)
+            .unwrap_err()
+            .get_ref()
+            .unwrap()
+            .downcast_ref::<AttemptRefusal>(),
+        Some(&AttemptRefusal::MalformedHistory)
+    );
+}

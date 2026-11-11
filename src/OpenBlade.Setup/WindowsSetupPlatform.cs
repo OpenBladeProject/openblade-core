@@ -74,7 +74,13 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private Guid nativeRequest;
     private SetupNativePackageTransaction? selectedNativeTransaction;
     private WindowsNativeInstalledSelection? priorNativeSelection;
-    internal void BindExistingNativeSelection(WindowsNativeInstalledSelection? selection) => priorNativeSelection = selection;
+    public SetupServiceTransition ServiceTransition { get; private set; }
+    internal Func<CancellationToken, Task<SetupCandidateServiceObservation>> ReadPredecessorService { get; set; } = WindowsSetupCandidateService.ReadAsync;
+    internal void BindExistingNativeSelection(WindowsNativeInstalledSelection? selection)
+    {
+        priorNativeSelection = selection;
+        if (selection?.Record.Phase == NativeEpochPhase.Retired) { ServiceTransition = SetupServiceTransition.NativeRetired; }
+    }
     internal void BindSelectedNativeTransaction(SetupNativePackageTransaction selection)
     {
         if (selectedNativeTransaction is not null) { throw new InvalidOperationException("Native selection cannot be replaced."); }
@@ -206,8 +212,24 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 paths.InstallDirectory,
                 CurrentUserSid,
                 cancellationToken);
+        string? managedPath = null;
+        if (selectedNativeTransaction is not null && state is not null && priorNativeSelection is null)
+        {
+            // Only the fixed managed predecessor may be restarted on this path.
+            // Capture its exact SCM configuration before any transition mutation.
+            var observed = await ReadPredecessorService(cancellationToken);
+            managedPath = Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe");
+            if (observed.ServiceType != 0x10 || observed.StartType != 2 || observed.Account != "LocalSystem"
+                || observed.CommandLine != $"\"{managedPath}\"")
+            { throw new InvalidDataException("The prior service is not the verified fixed managed predecessor."); }
+        }
         return new(
-            new(state is not null, state == SetupServiceState.Running),
+            new(state is not null, state == SetupServiceState.Running)
+            {
+                Kind = priorNativeSelection is not null ? SetupServicePredecessorKind.Native
+                    : state is null ? SetupServicePredecessorKind.Absent : SetupServicePredecessorKind.Managed,
+                ExecutablePath = managedPath,
+            },
             new(
                 tray,
                 sessionAgent,
@@ -225,6 +247,10 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
     {
+        // Set before a possibly submitted native stop/retirement, including a
+        // refusal with missing history. Managed preparation carries no native fence.
+        if (priorNativeSelection is not null && priorNativeSelection.Record.Phase != NativeEpochPhase.Retired)
+        { ServiceTransition = SetupServiceTransition.NativeRetirementPossible; }
         using var nativeStop = await CaptureNativeStopAsync(cancellationToken);
         SetupServiceState? state = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
 
@@ -242,6 +268,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         }
         guardianQuiescenceGuard.EnsureClear();
         ConfirmNativeStop(nativeStop);
+        ServiceTransition = priorNativeSelection is null ? SetupServiceTransition.ManagedPrepared : SetupServiceTransition.NativeRetired;
     }
 
     public async Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken)
@@ -272,7 +299,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(priorState);
-        if (selectedNativeTransaction?.RequiresExplicitNativeRecovery == true)
+        if (selectedNativeTransaction?.RequiresExplicitNativeRecovery == true
+            || priorState.Kind == SetupServicePredecessorKind.Native
+            || ServiceTransition is SetupServiceTransition.NativeRetirementPossible or SetupServiceTransition.NativeRetired)
         { throw new NativeRecoveryException(NativeRecoveryReason.PreStartTransitionInterrupted, "Native predecessor retirement requires explicit recovery; a retired or unprepared service path cannot be restored."); }
         if (!priorState.Existed)
         {
@@ -283,20 +312,16 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         SetupServiceState? current = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
         if (priorState.WasRunning)
         {
-            if (current != SetupServiceState.Running)
+            if (current != SetupServiceState.Running || selectedNativeTransaction is not null)
             {
-                await ConfigureServiceAsync(startService: true, cancellationToken);
+                await ConfigureServiceAsync(startService: current != SetupServiceState.Running, cancellationToken, RestoreManagedPath(priorState));
             }
 
             await VerifyServiceHealthAsync("rollback", cancellationToken);
             return;
         }
 
-        if (current is null)
-        {
-            await ConfigureServiceAsync(startService: false, cancellationToken);
-        }
-        else if (current == SetupServiceState.Running)
+        if (current == SetupServiceState.Running)
         {
             await serviceControl.RunAsync(
                 ["stop", ServiceName],
@@ -308,6 +333,21 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 TimeSpan.FromSeconds(30),
                 cancellationToken);
         }
+        if (current is null || selectedNativeTransaction is not null)
+        {
+            // Configuration may already name the incoming native image even
+            // though StartService was never submitted. Restore the captured path
+            // for a stopped predecessor too, without starting it.
+            await ConfigureServiceAsync(startService: false, cancellationToken, RestoreManagedPath(priorState));
+        }
+    }
+
+    private string RestoreManagedPath(SetupServiceInstallState priorState)
+    {
+        string expected = Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe");
+        if (selectedNativeTransaction is not null && priorState.ExecutablePath != expected)
+        { throw new InvalidDataException("Managed rollback requires the exact captured predecessor path."); }
+        return priorState.ExecutablePath ?? expected;
     }
 
     public async Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken)
@@ -371,9 +411,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     private async Task ConfigureServiceAsync(
         bool startService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string? restoredManagedPath = null)
     {
-        string serviceExecutable = selectedNativeTransaction?.SelectedServicePath() ?? Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe");
+        string serviceExecutable = restoredManagedPath ?? selectedNativeTransaction?.SelectedServicePath() ?? Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe");
         bool serviceExists = await serviceControl.ExistsAsync(ServiceName, cancellationToken);
         await serviceControl.RunAsync(
             [serviceExists ? "config" : "create", ServiceName, "binPath=", $"\"{serviceExecutable}\"", "start=", "auto", "obj=", "LocalSystem", "DisplayName=", "OpenBlade Service"],
@@ -387,6 +427,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         await serviceControl.RunAsync(["failureflag", ServiceName, "1"], Array.Empty<int>(), cancellationToken);
         if (startService)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (restoredManagedPath is null) { selectedNativeTransaction?.MarkNativeStartupPossible(); }
             await serviceControl.RunAsync(["start", ServiceName], Array.Empty<int>(), cancellationToken);
             await serviceControl.WaitForStateAsync(
                 ServiceName,
@@ -492,13 +534,14 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     }
 
     public Task InstallSessionAgentStartupAsync(CancellationToken cancellationToken)
+        => RegisterSessionAgentStartupAsync(selectedNativeTransaction?.SelectedAgentPath()
+            ?? Path.Combine(paths.InstallDirectory, "OpenBlade.SessionAgent.exe"), cancellationToken);
+
+    private Task RegisterSessionAgentStartupAsync(string executable, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         signInTaskScheduler.Register(new SignInTaskDefinition(
-            SignInTaskNames.SessionAgent,
-            selectedNativeTransaction?.SelectedAgentPath() ?? Path.Combine(paths.InstallDirectory, "OpenBlade.SessionAgent.exe"),
-            selectedNativeTransaction is null ? paths.InstallDirectory : Path.GetDirectoryName(selectedNativeTransaction.SelectedAgentPath())!,
-            null,
+            SignInTaskNames.SessionAgent, executable, Path.GetDirectoryName(executable)!, null,
             "Starts the OpenBlade Session Agent when you sign in."));
         DeleteSessionAgentStartupFiles();
         return Task.CompletedTask;
@@ -516,6 +559,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         SetupStartupRegistration prior,
         CancellationToken cancellationToken)
     {
+        RequireSafeStartupRestoration();
         switch (prior)
         {
             case SetupStartupRegistration.Shortcut:
@@ -537,6 +581,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         SetupStartupRegistration prior,
         CancellationToken cancellationToken)
     {
+        RequireSafeStartupRestoration();
         switch (prior)
         {
             case SetupStartupRegistration.Shortcut:
@@ -548,9 +593,16 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                     cancellationToken).ConfigureAwait(false);
                 break;
             case SetupStartupRegistration.SignInTask:
-                await InstallSessionAgentStartupAsync(cancellationToken).ConfigureAwait(false);
+                await RegisterSessionAgentStartupAsync(Path.Combine(paths.InstallDirectory, "OpenBlade.SessionAgent.exe"), cancellationToken).ConfigureAwait(false);
                 break;
         }
+    }
+
+    private void RequireSafeStartupRestoration()
+    {
+        if (selectedNativeTransaction?.RequiresExplicitNativeRecovery == true
+            || ServiceTransition is SetupServiceTransition.NativeRetirementPossible or SetupServiceTransition.NativeRetired)
+        { throw new NativeRecoveryException(NativeRecoveryReason.PreStartTransitionInterrupted, "Startup restoration requires a safe managed predecessor; native recovery remains fenced."); }
     }
 
     private void DeleteTrayStartupFiles()

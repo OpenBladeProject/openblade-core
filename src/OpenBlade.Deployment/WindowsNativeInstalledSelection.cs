@@ -85,7 +85,13 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             {
                 // Authenticate the exact signed package and phase above before
                 // finishing metadata publication. This grants no drain authority.
-                WindowsNativeEpochTransaction.RecoverUnresolvedPublicationUnderWriter(files, NativeCanonical.Digest(selected));
+                Recover(value.Record.Phase == NativeEpochPhase.Retired ? NativeRecoveryReason.RetirementPublicationFailed : NativeRecoveryReason.InterruptedPublication,
+                    () =>
+                    {
+                        WindowsNativeEpochTransaction.RecoverUnresolvedPublicationUnderWriter(files, NativeCanonical.Digest(selected),
+                            retirementAdmission: value.AcquireRetirementProof);
+                        return true;
+                    });
                 value.selected = files.ReadCurrent()!;
                 value.Record = NativeEpochRecord.Parse(value.selected);
             }
@@ -113,7 +119,7 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             pid.ToString(System.Globalization.CultureInfo.InvariantCulture), created.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         // Legacy recovery requires the independently retained live original and
         // actual exit at the caller. An absent process never enters this route.
-        PublishRetirement(directory);
+        Recover(NativeRecoveryReason.RetirementPublicationFailed, () => { PublishRetirement(directory); return true; });
     }
     internal void RetireRecoverableSelection(uint? expectedPid = null, long? expectedCreated = null)
     {
@@ -122,22 +128,105 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         string directory = Path.Combine(files.Root, Record.Epoch);
         if (!package!.Service.Features.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal))
         { throw new NativeRecoveryException(NativeRecoveryReason.LegacyLaunchEvidenceUnavailable, "Legacy native stopped state lacks original launch/drain evidence; history was preserved."); }
-        using var attempts = files.RetainDirectory(Path.Combine(directory, "attempts"));
-        // A sharing violation is active/unknown custody, never an absent owner.
+        using var attempts = Recover(NativeRecoveryReason.UnknownAttemptHistory,
+            () => files.RetainDirectory(Path.Combine(directory, "attempts")));
+        // Sharing/ACL/content failures all mean active or unknown custody.
         using var custody = AcquireRecoveryCustody(Path.Combine(directory, "attempts", "custody.lock"));
-        WindowsNativeEpochFiles.RequireExact(custody, NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", Record.Epoch));
+        Recover(NativeRecoveryReason.ActiveOrUnknownCustody, () =>
+        {
+            WindowsNativeEpochFiles.RequireExact(custody, NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", Record.Epoch));
+            return true;
+        });
         RequireCurrent();
         WindowsNativeTrustLifecycle.RequireOwnerRetired(files);
-        byte[] proof;
-        try { proof = WindowsNativeAttemptHistory.RequireDrained(files, Record, directory, package.Service.Features, expectedPid, expectedCreated); }
+        byte[] proof = Recover(NativeRecoveryReason.UnknownAttemptHistory,
+            () => WindowsNativeAttemptHistory.RequireDrained(files, Record, directory, package.Service.Features, expectedPid, expectedCreated));
+        Recover(NativeRecoveryReason.RetirementPublicationFailed, () =>
+        {
+            PublishProofSnapshot(directory, proof);
+            PublishRetirement(directory);
+            return true;
+        });
+    }
+    private IDisposable AcquireRetirementProof(NativeEpochRecord proofRecord)
+    {
+        string directory = Path.Combine(files.Root, Record.Epoch);
+        var attempts = Recover(NativeRecoveryReason.UnknownAttemptHistory,
+            () => files.RetainDirectory(Path.Combine(directory, "attempts")));
+        FileStream? custody = null;
+        try
+        {
+            custody = AcquireRecoveryCustody(Path.Combine(directory, "attempts", "custody.lock"));
+            Recover(NativeRecoveryReason.ActiveOrUnknownCustody, () =>
+            {
+                WindowsNativeEpochFiles.RequireExact(custody, NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", Record.Epoch));
+                return true;
+            });
+            WindowsNativeTrustLifecycle.RequireOwnerRetired(files);
+            byte[] proof = Recover(NativeRecoveryReason.UnknownAttemptHistory,
+                () => WindowsNativeAttemptHistory.RequireDrained(files, proofRecord, directory, package!.Service.Features));
+            Recover(NativeRecoveryReason.RetirementPublicationFailed, () => { PublishProofSnapshot(directory, proof); return true; });
+            return new RecoveryCustody(attempts, custody);
+        }
+        catch { custody?.Dispose(); attempts.Dispose(); throw; }
+    }
+    private sealed class RecoveryCustody(IDisposable attempts, IDisposable custody) : IDisposable
+    {
+        public void Dispose() { try { custody.Dispose(); } finally { attempts.Dispose(); } }
+    }
+    private static T Recover<T>(NativeRecoveryReason reason, Func<T> operation)
+    {
+        try { return operation(); }
         catch (NativeRecoveryException) { throw; }
         catch (Exception error) when (error is InvalidDataException or IOException or UnauthorizedAccessException)
-        { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Native attempt history is unreadable, partial or malformed; original evidence was retained.", error); }
-        string proofPath = Path.Combine(directory, "retirement-proof.bin");
-        if (File.Exists(proofPath)) { using var held = files.OpenFile(proofPath); WindowsNativeEpochFiles.RequireExact(held, proof); }
-        else { files.Publish(proofPath, proof); }
-        PublishRetirement(directory);
+        { throw new NativeRecoveryException(reason, "Native recovery refused uncertain evidence or publication; original history was retained.", error); }
     }
+    private void PublishProofSnapshot(string directory, byte[] proof)
+    {
+        // Snapshot history has a separate bound from attempts. Old snapshots are
+        // immutable audit evidence, never admission for a later phase/attempt set.
+        const int maximumSnapshots = 16384;
+        string snapshots = Path.Combine(directory, "retirement-proofs");
+        if (!WindowsNativeEpochFiles.IsPresentDirectory(snapshots)) { files.CreateDirectoryOnce(snapshots); }
+        using var pinned = files.RetainDirectory(snapshots);
+        string path = Path.Combine(snapshots, NativeCanonical.Digest(proof) + ".bin");
+        bool found = false;
+        int count = 0;
+        foreach (string existing in Directory.EnumerateFileSystemEntries(snapshots))
+        {
+            if (++count > maximumSnapshots) { throw new InvalidDataException("Native retirement snapshot history exceeds its bound."); }
+            using var held = files.OpenFile(existing);
+            string name = Path.GetFileName(existing);
+            // A power loss before rename may leave an unpublished partial file.
+            // Preserve bounded canonical staging files; they prove no drain.
+            if (name.Length == 44 && name.StartsWith("receipt-", StringComparison.Ordinal) && name.EndsWith(".tmp", StringComparison.Ordinal)
+                && NativeCanonical.IsHex(name[8..40], 32))
+            {
+                if (held.Length > 2048) { throw new InvalidDataException("Unpublished retirement snapshot exceeds its bound."); }
+                continue;
+            }
+            byte[] bytes = WindowsNativeEpochFiles.ReadBounded(held, 2048);
+            string[] fields = NativeCanonical.ParseLines(bytes, "OpenBlade.NativeRetirementProof.v1", 7);
+            if (Path.GetFileName(existing) != NativeCanonical.Digest(bytes) + ".bin" || fields[0] != Record.Epoch
+                || !IsDigest(fields[1]) || !IsDigest(fields[2]) || !IsDigest(fields[5])
+                || fields[3] is not ("submission-retained" or "never-submitted")
+                || fields[4] is not ("no-admitted-metadata-attempt" or "all-metadata-attempts-drained"))
+            { throw new InvalidDataException("Native retirement snapshot is malformed or differs from its content address."); }
+            if (existing == path)
+            {
+                if (!bytes.AsSpan().SequenceEqual(proof)) { throw new InvalidDataException("Fresh retirement snapshot differs."); }
+                found = true;
+            }
+        }
+        if (!found)
+        {
+            if (count == maximumSnapshots) { throw new InvalidDataException("Native retirement snapshot budget is exhausted."); }
+            files.Publish(path, proof);
+        }
+        using var current = files.OpenFile(path);
+        WindowsNativeEpochFiles.RequireExact(current, proof);
+    }
+    private static bool IsDigest(string value) => value.Length == 64 && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
     private FileStream AcquireRecoveryCustody(string path)
     {
         try { return files.AcquireServiceCustody(path); }
@@ -151,12 +240,19 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         var retired = Record with { Phase = NativeEpochPhase.Retired, Readiness = new string('0', 64) };
         byte[] bytes = retired.Encode();
         string intent = Path.Combine(directory, "Retired.bin");
-        if (File.Exists(intent)) { using var existing = files.OpenFile(intent); WindowsNativeEpochFiles.RequireExact(existing, bytes); }
+        if (PresentFile(intent)) { using var existing = files.OpenFile(intent); WindowsNativeEpochFiles.RequireExact(existing, bytes); }
         else { files.Publish(intent, bytes); }
-        files.Publish(Path.Combine(files.Root, $"selection-{Record.Ordinal:D20}-3.bin"), bytes);
+        string frontier = Path.Combine(files.Root, $"selection-{Record.Ordinal:D20}-3.bin");
+        if (PresentFile(frontier)) { using var existing = files.OpenFile(frontier); WindowsNativeEpochFiles.RequireExact(existing, bytes); }
+        else { files.Publish(frontier, bytes); }
         files.PublishCurrent(bytes);
         if (!(files.ReadCurrent() ?? []).AsSpan().SequenceEqual(bytes)) { throw new IOException("Native retirement publication is unresolved."); }
         selected = bytes; Record = retired;
+    }
+    private static bool PresentFile(string path)
+    {
+        try { _ = File.GetAttributes(path); return true; }
+        catch (FileNotFoundException) { return false; }
     }
     public void Dispose()
     {
