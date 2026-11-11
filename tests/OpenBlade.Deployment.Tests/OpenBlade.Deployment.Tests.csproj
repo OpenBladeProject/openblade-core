@@ -13,10 +13,7 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenBlade.Deployment\OpenBlade.Deployment.csproj" />
-    <Compile Include="..\..\build\development-deployment\WindowsNativeRoleInventory.cs" Link="WindowsNativeRoleInventory.cs" />
-    <Compile Include="..\..\build\development-deployment\WindowsNativeInventoryBurnExtractor.cs" Link="WindowsNativeInventoryBurnExtractor.cs" />
-    <Compile Include="..\..\build\development-deployment\BurnFixtureCabinet.cs" Link="BurnFixtureCabinet.cs" />
-    <Compile Include="..\..\build\development-deployment\WindowsNativePackageRoleProof.cs" Link="WindowsNativePackageRoleProof.cs" />
+    <ProjectReference Include="..\..\src\OpenBlade.Deployment\OpenBlade.Deployment.csproj" AdditionalProperties="OpenBladeNativePackageTests=true" />
+    <None Include="../../tools/openblade-windows-host/tests/data/native-package-v1.json" Link="native-package-v1.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -34,3 +34,9 @@ mod windows_token;
 mod pipe_server_identity;
 #[cfg(windows)]
 mod retained_process;
+
+#[cfg(windows)]
+mod native_package;
+#[cfg(windows)]
+#[allow(dead_code)]
+mod service_install_identity;

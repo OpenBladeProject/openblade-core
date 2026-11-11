@@ -32,6 +32,25 @@ impl FirmwareSource {
         )
     }
 
+    pub(in crate::installed) fn native_with_package(
+        launch_pid: u32,
+        authority: Option<&dyn Authority>,
+        package: crate::candidate_receipt::CommittedServiceImage,
+        project: impl Fn(Admission) -> Option<Snapshot> + 'static,
+    ) -> io::Result<Self> {
+        Self::bind(
+            launch_pid,
+            authority,
+            |binding| {
+                // Attach before constructing any worker. The same binding is kept
+                // by native work and quarantines files along with its owner fence.
+                binding.retain_package(package);
+                native_worker(move || binding.authorize())
+            },
+            project,
+        )
+    }
+
     pub(in crate::installed) fn bind(
         launch_pid: u32,
         authority: Option<&dyn Authority>,

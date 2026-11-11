@@ -147,7 +147,14 @@ public sealed class SetupCommandRunner(
                 progress.Report(SetupProgressCode.InstallService);
                 await platform.InstallServiceAsync(cancellationToken);
                 progress.Report(SetupProgressCode.VerifyServiceHealth);
-                await platform.VerifyServiceHealthAsync(cancellationToken);
+                if (transaction is SetupNativePackageTransaction native)
+                {
+                    await native.VerifyReadinessAsync(cancellationToken);
+                }
+                else
+                {
+                    await platform.VerifyServiceHealthAsync(cancellationToken);
+                }
                 progress.Report(SetupProgressCode.CreateShortcuts);
                 await platform.InstallSessionAgentStartupAsync(cancellationToken);
                 await platform.InstallStartMenuShortcutAsync(cancellationToken);
@@ -168,6 +175,12 @@ public sealed class SetupCommandRunner(
             }
             catch (Exception failure)
             {
+                if (transaction is SetupNativePackageTransaction native && native.IsActivated)
+                {
+                    try { native.RecordUnresolvedFailure(); }
+                    catch (Exception publicationFailure) { throw new AggregateException(failure, publicationFailure); }
+                    ExceptionDispatchInfo.Capture(failure).Throw();
+                }
                 progress.Report(SetupProgressCode.RestorePreviousState);
                 List<Exception> recoveryFailures = [];
                 using CancellationTokenSource recoveryTimeout = new(TimeSpan.FromSeconds(60));

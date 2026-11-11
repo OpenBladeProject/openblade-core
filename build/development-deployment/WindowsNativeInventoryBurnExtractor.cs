@@ -513,13 +513,15 @@ internal static class WindowsNativeInventoryBurnExtractor
 
     private static RoleMember ReadRole(BurnFixtureCabinet cabinet, Payload payload, CancellationToken cancellationToken)
     {
-        var (sha512, sha256) = cabinet.HashMember(payload.Member, cancellationToken);
+        byte[] image = cabinet.Extract(payload.Member, cancellationToken);
+        byte[] sha512 = SHA512.HashData(image);
+        byte[] sha256 = SHA256.HashData(image);
         if (!CryptographicOperations.FixedTimeEquals(sha512, payload.Hash))
         {
             throw Invalid("A native role does not match its Burn payload digest.");
         }
 
-        return new(payload.Id, payload.Path, payload.Member, payload.Length, Convert.ToHexStringLower(sha256));
+        return new(payload.Id, payload.Path, payload.Member, payload.Length, Convert.ToHexStringLower(sha256), [.. image]);
     }
 
     private static bool IsCanonicalId(string value) =>
@@ -600,6 +602,6 @@ internal static class WindowsNativeInventoryBurnExtractor
     private sealed record SignedLayout(uint EngineChecksum, uint OuterChecksum, string EngineHash, string OuterHash);
     private sealed record Payload(string Id, string Member, int Length, byte[] Hash, string Path);
 
-    internal sealed record RoleMember(string PayloadId, string PayloadPath, string CabinetMember, int Length, string Sha256);
+    internal sealed record RoleMember(string PayloadId, string PayloadPath, string CabinetMember, int Length, string Sha256, ImmutableArray<byte> Image);
     internal sealed record RoleExtraction(ImmutableArray<byte> Resource, RoleMember Service, RoleMember SessionAgent);
 }

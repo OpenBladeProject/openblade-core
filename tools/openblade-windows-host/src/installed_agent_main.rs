@@ -1,5 +1,7 @@
 //! Standalone installed sign-in entry. Fixture modules are outside this binary.
 
+include!(concat!(env!("OUT_DIR"), "/agent_identity.rs"));
+
 #[cfg(windows)]
 mod pipe_server_identity;
 #[cfg(windows)]
@@ -15,6 +17,7 @@ mod session_native;
 mod windows_token;
 
 fn main() -> std::process::ExitCode {
+    std::hint::black_box(&NATIVE_ARTIFACT_IDENTITY);
     #[cfg(windows)]
     let result = session_native::entry(std::env::args_os().skip(1));
     #[cfg(not(windows))]

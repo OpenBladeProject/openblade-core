@@ -15,8 +15,6 @@ use windows_sys::{
     Win32::Storage::FileSystem::{FILE_GENERIC_READ, FILE_SHARE_READ, FILE_TYPE_DISK, GetFileType},
 };
 
-#[cfg(feature = "installed-service-candidate")]
-use crate::windows_protected_path::{Policy, verify_security};
 use crate::{
     service_image::{self, MAX_IMAGE_BYTES, snapshot},
     service_install_identity::IMAGE_NAME,
@@ -25,6 +23,9 @@ use crate::{
         require_ntfs,
     },
 };
+
+#[path = "native_package.rs"]
+mod native_package;
 
 const COMMITTED_NAME: &str = "candidate-package.committed.json";
 const MAX_RECEIPT_BYTES: u64 = 4096;
@@ -53,7 +54,17 @@ impl Phase {
 /// Evidence about files on disk. The process must separately prove that it
 /// loaded this generation before it can open the production endpoint.
 pub(crate) struct CommittedServiceImage {
-    _files: RetainedRecord,
+    _files: Option<RetainedRecord>,
+    package: Option<native_package::InstalledPackage>,
+}
+
+impl CommittedServiceImage {
+    pub(crate) fn require_current(&mut self) -> io::Result<()> {
+        if let Some(package) = &mut self.package {
+            package.require_current()?;
+        }
+        Ok(())
+    }
 }
 
 struct RetainedRecord {
@@ -232,28 +243,11 @@ mod scratch_launch_tests {
 #[cfg(feature = "installed-service-candidate")]
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn read_installed() -> io::Result<CommittedServiceImage> {
-    use crate::service_install_identity::{INSTALL_DIRECTORY, program_files};
-
-    let install = program_files()?.join(INSTALL_DIRECTORY);
-    read(
-        &install,
-        EMPTY_GUID,
-        |file, _, is_root, _| {
-            verify_security(
-                file,
-                if is_root {
-                    Policy::Directory { extra_rights: 0 }
-                } else {
-                    Policy::ANCESTOR
-                },
-            )
-        },
-        |file| verify_security(file, Policy::Record),
-        // Production needs a separately authenticated commitment to the exact
-        // canonical record (including release, installation, request and both
-        // role identities). No production Burn-to-Setup authority is wired yet.
-        || None,
-    )
+    let package = native_package::read_installed_package()?;
+    Ok(CommittedServiceImage {
+        _files: None,
+        package: Some(package),
+    })
 }
 
 pub(super) fn read(
@@ -273,7 +267,10 @@ pub(super) fn read(
         #[cfg(feature = "scratch-candidate-receipt")]
         None,
     )?;
-    Ok(CommittedServiceImage { _files: files })
+    Ok(CommittedServiceImage {
+        _files: Some(files),
+        package: None,
+    })
 }
 
 #[cfg(feature = "scratch-candidate-receipt")]

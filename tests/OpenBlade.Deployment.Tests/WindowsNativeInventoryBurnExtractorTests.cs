@@ -625,12 +625,21 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
          255, 255, 1, 0, 2, 0, 3, 0,
          .. SHA256.HashData("service"u8), .. SHA256.HashData("agent"u8)];
 
+    internal static byte[] NativeEpochBundle(byte[] service, byte[] agent)
+    {
+        var build = new WindowsNativeBuildIdentity(new string('a', 40), Version.Parse(LocalDevVersion));
+        byte[] inventory = WindowsNativeRoleInventory.CreateResource(build,
+            file => file == WindowsNativeRoleInventory.FileName(WindowsNativeRole.Service) ? [.. service] : [.. agent]).ToArray();
+        return Bundle(inventory, includeRoles: true, authored: true, serviceImage: service, agentImage: agent);
+    }
+
     private static byte[] Bundle(byte[] resource, Action<XElement>? editManifest = null,
-        Action<byte[]>? editCabinet = null, bool extraMember = false, bool includeRoles = false, bool authored = false)
+        Action<byte[]>? editCabinet = null, bool extraMember = false, bool includeRoles = false, bool authored = false,
+        byte[]? serviceImage = null, byte[]? agentImage = null)
     {
         byte[] setup = "abc"u8.ToArray();
-        byte[] service = "service"u8.ToArray();
-        byte[] agent = "agent"u8.ToArray();
+        byte[] service = serviceImage ?? "service"u8.ToArray();
+        byte[] agent = agentImage ?? "agent"u8.ToArray();
         byte[] attached = authored ? Cabinet(("a0", resource), ("a1", setup), ("a2", service), ("a3", agent), ("a4", [2]))
             : includeRoles ? Cabinet(("a0", resource), ("a1", setup), ("a2", service), ("a3", agent))
             : extraMember ? Cabinet(("a0", resource), ("a1", setup), ("a2", [1]))

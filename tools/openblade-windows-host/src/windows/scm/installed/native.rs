@@ -79,10 +79,10 @@ impl AdmittedRuntime {
 }
 
 fn admit_candidate(launch: &LaunchIdentity) -> io::Result<AdmittedRuntime> {
-    let _disk = crate::candidate_receipt::read_installed()?;
+    let disk = crate::candidate_receipt::read_installed()?;
     // The retained files describe disk state. Startup also requires independent
     // proof that this process loaded that exact Service generation.
-    let firmware = FirmwareSource::native(launch.pid, None, |_| None)?;
+    let firmware = FirmwareSource::native_with_package(launch.pid, None, disk, |_| None)?;
     Ok(AdmittedRuntime {
         launch_pid: launch.pid,
         firmware: Some(firmware),

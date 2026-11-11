@@ -3,7 +3,7 @@
 use std::{
     io,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicU8, Ordering},
     },
 };
@@ -67,6 +67,7 @@ pub(in crate::installed) struct Binding {
     epoch: AuthorityEpoch,
     admission: Admission,
     state: AtomicU8,
+    package: Mutex<Option<crate::candidate_receipt::CommittedServiceImage>>,
 }
 
 impl Binding {
@@ -100,11 +101,32 @@ impl Binding {
             epoch,
             admission,
             state: AtomicU8::new(ACQUIRED),
+            package: Mutex::new(None),
         }))
+    }
+
+    pub(in crate::installed) fn retain_package(
+        &self,
+        package: crate::candidate_receipt::CommittedServiceImage,
+    ) {
+        let mut held = self.package.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(
+            held.is_none(),
+            "a native binding cannot upgrade its original package"
+        );
+        *held = Some(package);
     }
 
     pub(in crate::installed) fn authorize(&self) -> Option<Admission> {
         if self.state.load(Ordering::Acquire) != ACQUIRED {
+            return None;
+        }
+        let package_current = self.package.lock().ok().is_some_and(|mut held| {
+            held.as_mut()
+                .is_none_or(|package| package.require_current().is_ok())
+        });
+        if !package_current {
+            self.revoke();
             return None;
         }
         let current = self.lease.as_ref()?.observe();
@@ -155,6 +177,8 @@ impl Drop for Binding {
             // Dropping a source, a canceled drain, or a failed native cleanup
             // cannot release ownership. Preserve the source's original fence.
             std::mem::forget(self.lease.take());
+            let held = self.package.get_mut().unwrap_or_else(|e| e.into_inner());
+            std::mem::forget(held.take());
         }
     }
 }

@@ -1,5 +1,7 @@
 //! Standalone installed SCM entry. Fixture modules are outside this binary.
 
+include!(concat!(env!("OUT_DIR"), "/service_identity.rs"));
+
 #[cfg(windows)]
 mod candidate_receipt;
 #[cfg(windows)]
@@ -43,6 +45,7 @@ mod windows_token;
 
 #[cfg(not(test))]
 fn main() -> std::process::ExitCode {
+    std::hint::black_box(&NATIVE_ARTIFACT_IDENTITY);
     #[cfg(windows)]
     let result = installed::entry();
     #[cfg(not(windows))]
