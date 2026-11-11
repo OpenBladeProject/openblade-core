@@ -82,11 +82,11 @@ public sealed class WindowsNativeEpochTests
     {
         using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
         using var package = await Package(files);
-        var f = NativeCanonical.ParseLines(package.Record, "OpenBlade.NativePackage.v1", 12);
+        var f = NativeCanonical.ParseLines(package.Record, "OpenBlade.NativePackage.v2", 13);
         Assert.Equal("LocalDev", f[0]); Assert.Equal(package.Release.Manifest.InstallerSha256, f[2]);
         Assert.Equal(package.Service.Encode(), Convert.FromBase64String(f[8]));
         Assert.Equal(package.Agent.Encode(), Convert.FromBase64String(f[9]));
-        Assert.Equal("two-executables-system-runtime-imports-v1", f[10]);
+        Assert.Equal("two-executables-static-crt-system-imports-v2", f[10]);
     }
 
     [Fact]
@@ -395,6 +395,80 @@ public sealed class WindowsNativeEpochTests
         using var retried = WindowsNativeEpochTransaction.Begin(files, first, Guid.NewGuid());
         Assert.NotEqual(NativeEpochRecord.Parse(committed).Epoch, retried.Record.Epoch);
         Assert.Equal(2, retried.Record.Ordinal);
+    }
+
+    [Fact]
+    public void PublicProjectionComesFromSameHeldEnrollmentAndMatchesRustCanonicalVector()
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var v = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "native-package-v1.json")));
+        byte[] enrollment = Convert.FromBase64String(v.RootElement.GetProperty("enrollment").GetString()!);
+        string path = Path.Combine(files.Root, "enrollment.json");
+        File.WriteAllBytes(path, enrollment);
+        using var held = files.OpenFile(path);
+        using var source = NativeLocalDevEnrollment.FromHeld(held);
+        using var expected = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "native-verification-v1.json")));
+        Assert.Equal(Convert.FromBase64String(expected.RootElement.GetProperty("projection").GetString()!), source.Projection);
+        Assert.Equal(expected.RootElement.GetProperty("sha256").GetString(), NativeCanonical.Digest(source.Projection));
+        string text = Encoding.ASCII.GetString(source.Projection);
+        Assert.DoesNotContain("enrolledAccountSid", text);
+        Assert.DoesNotContain("cpuVoltage", text);
+        using var reconstructed = NativeLocalDevEnrollment.FromProtectedProjection(source.Projection);
+        Assert.Equal(source.InstallationId, reconstructed.InstallationId);
+        Assert.Equal(source.Policy.TrustedKeys, reconstructed.Policy.TrustedKeys);
+        Assert.Throws<InvalidDataException>(() => NativeLocalDevEnrollment.FromProtectedProjection(Encoding.ASCII.GetBytes(text.Replace("LocalDev", "Stable"))));
+    }
+
+    [Theory]
+    [InlineData("0x1200a9", true)]
+    [InlineData("FA", false)]
+    [InlineData("WD", false)]
+    [InlineData("WO", false)]
+    [InlineData("DC", false)]
+    [InlineData("SD", false)]
+    public void PublicRootRequiresExactProtectedUsersReadExecuteWithoutMutation(string rights, bool accepted)
+    {
+        var descriptor = new System.Security.AccessControl.RawSecurityDescriptor($"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;{rights};;;BU)");
+        Assert.Equal(accepted, WindowsNativeEpochFiles.AcceptsPublicRoot(descriptor));
+        Assert.False(WindowsNativeEpochFiles.AcceptsPublicRoot(new System.Security.AccessControl.RawSecurityDescriptor("O:BAG:BAD:(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)")));
+    }
+
+    [Fact]
+    public async Task PublicProjectionIsCommittedBeforeSelectionAndRetainedWithImmutableGeneration()
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var package = await Package(files);
+        using var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid(), testCrashBoundary: reached =>
+        {
+            if (reached == NativeEpochBoundary.SelectionPublished)
+            {
+                var record = NativeEpochRecord.Parse(files.ReadCurrent()!);
+                string root = Path.Combine(files.Root, record.Epoch);
+                Assert.Equal(package.VerificationProjection, File.ReadAllBytes(Path.Combine(root, "verification.bin")));
+                Assert.Equal(record.Owner, NativeCanonical.Digest(File.ReadAllBytes(Path.Combine(root, "startup-owner.bin"))));
+            }
+        });
+        Assert.Throws<IOException>(() => File.Open(Path.Combine(tx.GenerationDirectory, "verification.bin"), FileMode.Open, FileAccess.Write, FileShare.ReadWrite));
+        tx.CommitAfterBoundReadiness(new string('e', 64));
+    }
+
+    [Fact]
+    public async Task ActualSignedCleanupNeedsOriginalStatusDrainAndCannotClearFirmwareOwnerHistory()
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var package = await Package(files);
+        string epoch;
+        using (var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()))
+        { epoch = tx.Record.Epoch; tx.CommitAfterBoundReadiness(new string('e', 64)); }
+        using var cleanup = await WindowsNativeInstalledSelection.OpenAsync(files, CancellationToken.None);
+        Assert.Equal(Path.Combine(files.Root, epoch, "app", "OpenBlade.Service.exe"), cleanup.ServicePath);
+        Assert.Throws<IOException>(() => cleanup.RetireAfterStatusDrain(17, 1));
+        files.Publish(Path.Combine(files.Root, epoch, "status-drain-17-1.bin"), NativeCanonical.Lines("OpenBlade.NativeStatusDrain.v1", epoch, "17", "1"));
+        string owner = Path.Combine(files.Root, "owner"); files.CreateDirectoryOnce(owner);
+        files.Publish(Path.Combine(owner, "owner-00000000000000000001.bin"), NativeCanonical.Lines("OpenBlade.NativeOwner.v1", "Active", "1", new string('0', 64), cleanup.Record.Installation, epoch,
+            package.Service.Id, "17:1", new string('f', 64)));
+        Assert.Throws<IOException>(() => cleanup.RetireAfterStatusDrain(17, 1));
+        Assert.Equal(NativeEpochPhase.Committed, NativeEpochRecord.Parse(files.ReadCurrent()!).Phase);
     }
 
     private static FileStream OpenNativeCurrent(string path)

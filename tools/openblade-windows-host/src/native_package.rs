@@ -292,13 +292,34 @@ fn authenticate(enrollment: &[u8], manifest: &[u8], signature: &[u8]) -> io::Res
         return Err(deny());
     }
     let e: Enrollment = serde_json::from_slice(enrollment).map_err(|_| deny())?;
-    let r: Release = serde_json::from_slice(manifest).map_err(|_| deny())?;
     if e.schema_version != 1
-        || e.installation_id != r.installation_id
         || e.enrolled_account_sid.is_empty()
         || e.deployment_policy_id.is_empty()
         || e.broker_version.is_empty()
         || e.enrolled_at.is_empty()
+    {
+        return Err(deny());
+    }
+    authenticate_key(
+        &e.installation_id,
+        &e.development_signing_key_id,
+        &e.development_signing_subject_public_key_info_base64,
+        manifest,
+        signature,
+    )
+}
+fn authenticate_key(
+    installation: &str,
+    key: &str,
+    spki64: &str,
+    manifest: &[u8],
+    signature: &[u8],
+) -> io::Result<Release> {
+    if manifest.len() > 4096 {
+        return Err(deny());
+    }
+    let r: Release = serde_json::from_slice(manifest).map_err(|_| deny())?;
+    if installation != r.installation_id
         || r.schema_version != 1
         || r.channel != "LocalDev"
         || r.product != "OpenBlade"
@@ -329,10 +350,8 @@ fn authenticate(enrollment: &[u8], manifest: &[u8], signature: &[u8]) -> io::Res
     {
         return Err(deny());
     }
-    let spki = decode64(&e.development_signing_subject_public_key_info_base64)?;
-    if e.development_signing_key_id != digest(&spki)
-        || r.signing_key_id != e.development_signing_key_id
-    {
+    let spki = decode64(spki64)?;
+    if key != digest(&spki) || r.signing_key_id != key {
         return Err(deny());
     }
     let mut hash = Sha256::new();
@@ -340,6 +359,72 @@ fn authenticate(enrollment: &[u8], manifest: &[u8], signature: &[u8]) -> io::Res
     hash.update(manifest);
     verify_p256(&spki, signature, &hash.finalize().into())?;
     Ok(r)
+}
+
+fn authenticate_bound_projection(
+    projection: &[u8],
+    expected: &str,
+    manifest: &[u8],
+    signature: &[u8],
+) -> io::Result<Release> {
+    if digest(projection) != expected {
+        return Err(deny());
+    }
+    authenticate_projection(projection, manifest, signature)
+}
+fn authenticate_projection(
+    projection: &[u8],
+    manifest: &[u8],
+    signature: &[u8],
+) -> io::Result<Release> {
+    let f = lines(projection, "OpenBlade.NativeVerification.v1", 6)?;
+    if f[0] != "LocalDev" || f[2].is_empty() || !is_hex(f[3], 64) || !is_hex(f[5], 64) {
+        return Err(deny());
+    }
+    // Custody is checked by the fixed protected generation reader before this
+    // crypto function. An adjacent key alone is never a trust root.
+    authenticate_key(f[1], f[3], f[4], manifest, signature)
+}
+
+// Exact .obid payload in a fully verified native PE. Geometry is checked again;
+// this never substitutes for inspect_artifact's full digest/role/target mapping.
+fn compiled_record(image: &[u8]) -> io::Result<&[u8]> {
+    let u16at = |o: usize| -> io::Result<usize> {
+        Ok(u16::from_le_bytes(
+            image
+                .get(o..o + 2)
+                .ok_or_else(deny)?
+                .try_into()
+                .map_err(|_| deny())?,
+        ) as usize)
+    };
+    let u32at = |o: usize| -> io::Result<usize> {
+        Ok(u32::from_le_bytes(
+            image
+                .get(o..o + 4)
+                .ok_or_else(deny)?
+                .try_into()
+                .map_err(|_| deny())?,
+        ) as usize)
+    };
+    let pe = u32at(60)?;
+    let sections = pe.checked_add(24 + u16at(pe + 20)?).ok_or_else(deny)?;
+    let mut result = None;
+    for n in 0..u16at(pe + 6)? {
+        let o = sections + 40 * n;
+        if image.get(o..o + 8) == Some(b".obid\0\0\0") {
+            if result.is_some() {
+                return Err(deny());
+            }
+            let size = u32at(o + 8)?;
+            let raw = u32at(o + 20)?;
+            if size == 0 || size > 1024 {
+                return Err(deny());
+            }
+            result = image.get(raw..raw.checked_add(size).ok_or_else(deny)?);
+        }
+    }
+    result.ok_or_else(deny)
 }
 
 fn inspect_artifact(
@@ -542,16 +627,70 @@ pub(crate) struct InstalledPackage {
     pub(crate) agent_path: PathBuf,
     pub(crate) commitment: [u8; 32],
     denied: bool,
+    epoch: Epoch,
+    startup_owner: Option<crate::retained_process::RetainedProcessInstance>,
+    service_identity: Vec<u8>,
+    agent_identity: Vec<u8>,
 }
 impl InstalledPackage {
+    pub(crate) fn record_metadata_drain(&self, pid: u32, created: u64) -> io::Result<()> {
+        use std::io::Write;
+        let name = format!("status-drain-{pid}-{created}.bin");
+        let mut file = paths::open_relative(
+            &self.directories[0],
+            OsStr::new(&name),
+            windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_READ
+                | windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_WRITE,
+            0,
+            windows_sys::Wdk::Storage::FileSystem::FILE_CREATE,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+        )?;
+        paths::check_regular_file(&file)?;
+        paths::verify_security(&file, Policy::Record)?;
+        let bytes = encode(
+            "OpenBlade.NativeStatusDrain.v1",
+            &[&self.epoch.id, &pid.to_string(), &created.to_string()],
+        );
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        if read_bytes(&mut file, 4096)? != bytes {
+            return Err(deny());
+        }
+        Ok(())
+    }
+    pub(crate) fn identity(&self, role: &str) -> &[u8] {
+        if role == "service" {
+            &self.service_identity
+        } else {
+            &self.agent_identity
+        }
+    }
+    pub(crate) fn epoch_id(&self) -> &str {
+        &self.epoch.id
+    }
+    pub(crate) fn installation(&self) -> &str {
+        &self.epoch.installation
+    }
+    pub(crate) fn is_committed(&self) -> bool {
+        self.epoch.phase == "Committed"
+    }
+
     pub(crate) fn require_current(&mut self) -> io::Result<()> {
         if self.denied {
             return Err(deny());
         }
         let result = (|| {
-            for d in self._ancestors.iter().chain(std::iter::once(&self.root)) {
-                paths::verify_security(d, Policy::ANCESTOR)?;
+            for (i, d) in self._ancestors.iter().enumerate() {
+                paths::verify_security(
+                    d,
+                    if i + 1 == self._ancestors.len() {
+                        Policy::PROGRAM_DATA
+                    } else {
+                        Policy::ANCESTOR
+                    },
+                )?;
             }
+            paths::verify_descriptor(&self.root, paths::accepts_public_native_root)?;
             for d in &self.directories {
                 paths::verify_security(d, Policy::Directory { extra_rights: 0 })?;
             }
@@ -559,11 +698,38 @@ impl InstalledPackage {
                 paths::check_regular_file(file)?;
                 paths::verify_security(file, Policy::Record)?;
             }
+            // The only permitted in-place phase change is this exact live
+            // startup attempt becoming committed after bound readiness.
+            if self.epoch.phase == "Provisional" {
+                let mut current = open_file(&self.root, "current.bin", true)?;
+                let bytes = read_bytes(&mut current, 16384)?;
+                if bytes != self.selection {
+                    let next = Epoch::parse(&bytes)?;
+                    if next.phase != "Committed" || !self.epoch.same_origin(&next) {
+                        return Err(deny());
+                    }
+                    frontier_matches(&self.root, &self.root_path, &bytes)?;
+                    let phase =
+                        retain_bytes(&self.directories[0], "Committed.bin", 16384, &mut self.held)?;
+                    if phase != bytes {
+                        return Err(deny());
+                    }
+                    self.epoch = next;
+                    self.selection = bytes;
+                    self.startup_owner = None;
+                }
+            }
             frontier_matches(&self.root, &self.root_path, &self.selection)?;
             app_names(&self.service_path.parent().ok_or_else(deny)?.to_path_buf())?;
             let mut current = open_file(&self.root, "current.bin", true)?;
-            if read_bytes(&mut current, 16384)? != self.selection {
+            let bytes = read_bytes(&mut current, 16384)?;
+            if bytes != self.selection {
                 return Err(deny());
+            }
+            if let Some(owner) = &mut self.startup_owner {
+                owner
+                    .check_live()
+                    .map_err(crate::retained_process::instance_io)?;
             }
             Ok(())
         })();
@@ -649,30 +815,52 @@ fn frontier_matches(root: &File, path: &std::path::Path, selection: &[u8]) -> io
 fn pin(path: &std::path::Path) -> io::Result<(File, Vec<File>)> {
     let (root, ancestors, _) = paths::pin_root(path)?;
     paths::require_ntfs(&root)?;
-    for d in &ancestors {
-        paths::verify_security(d, Policy::ANCESTOR)?;
+    for (i, d) in ancestors.iter().enumerate() {
+        paths::verify_security(
+            d,
+            if i + 1 == ancestors.len() {
+                Policy::PROGRAM_DATA
+            } else {
+                Policy::ANCESTOR
+            },
+        )?;
     }
-    paths::verify_security(&root, Policy::Directory { extra_rights: 0 })?;
+    paths::verify_descriptor(&root, paths::accepts_public_native_root)?;
     Ok((root, ancestors))
 }
 
 pub(crate) fn read_installed_package() -> io::Result<InstalledPackage> {
+    read_package(false)
+}
+pub(crate) fn read_startup_package() -> io::Result<InstalledPackage> {
+    read_package(true)
+}
+fn read_package(allow_provisional: bool) -> io::Result<InstalledPackage> {
     let data = crate::service_install_identity::known_folder(&FOLDERID_ProgramData)?;
-    let root_path = data.join("OpenBlade").join("NativeEpochs");
-    let (root, mut ancestors) = pin(&root_path)?;
+    let root_path = data.join("OpenBlade.NativeEpochs");
+    let (root, ancestors) = pin(&root_path)?;
+    let mut root_record = open_file(&root, "root.bin", false)?;
+    if read_bytes(&mut root_record, 256)? != b"OpenBlade.NativeRoot.v1\nlegacy-store-absent\n" {
+        return Err(deny());
+    }
     let mut selected = open_file(&root, "current.bin", true)?;
     let selection = read_bytes(&mut selected, 16384)?;
     let epoch = Epoch::parse(&selection)?;
     // Provisional proof is held only by the live Setup transaction; it is never
     // reconstructed from disk, a PID, a lock collision or reboot state.
-    if epoch.phase != "Committed" {
+    if epoch.phase != "Committed" && !(allow_provisional && epoch.phase == "Provisional") {
         return Err(deny());
     }
     frontier_matches(&root, &root_path, &selection)?;
     let generation = paths::open_directory(&root, OsStr::new(&epoch.id))?;
     paths::verify_security(&generation, Policy::Directory { extra_rights: 0 })?;
     let mut held = vec![selected];
-    let phase = retain_bytes(&generation, "Committed.bin", 16384, &mut held)?;
+    let phase = retain_bytes(
+        &generation,
+        &format!("{}.bin", epoch.phase),
+        16384,
+        &mut held,
+    )?;
     if phase != selection {
         return Err(deny());
     }
@@ -680,17 +868,35 @@ pub(crate) fn read_installed_package() -> io::Result<InstalledPackage> {
     if origin.phase != "Provisional" || !epoch.same_origin(&origin) {
         return Err(deny());
     }
+    let startup_owner = if epoch.phase == "Provisional" {
+        let bytes = retain_bytes(&generation, "startup-owner.bin", 4096, &mut held)?;
+        if digest(&bytes) != epoch.owner {
+            return Err(deny());
+        }
+        let f = lines(&bytes, "OpenBlade.NativeStartupOwner.v1", 6)?;
+        if f[0] != epoch.id || f[1] != epoch.request {
+            return Err(deny());
+        }
+        Some(
+            crate::retained_process::RetainedProcessInstance::capture_expected(
+                f[2].parse().map_err(|_| deny())?,
+                f[3].parse().map_err(|_| deny())?,
+                std::path::Path::new(f[5]),
+                f[4].parse().map_err(|_| deny())?,
+            )?,
+        )
+    } else {
+        None
+    };
     let package = retain_bytes(&generation, "package.bin", 16384, &mut held)?;
     if digest(&package) != epoch.package {
         return Err(deny());
     }
-    let f = lines(&package, "OpenBlade.NativePackage.v1", 11)?;
+    let f = lines(&package, "OpenBlade.NativePackage.v2", 12)?;
     let manifest = retain_bytes(&generation, "release.json", 4096, &mut held)?;
     let signature = retain_bytes(&generation, "release.sig", 64, &mut held)?;
-    let broker = data.join("OpenBlade").join("LocalDevDeploymentBroker");
-    let (enrollment_root, enrollment_ancestors) = pin(&broker)?;
-    let enrollment = retain_bytes(&enrollment_root, "enrollment.json", 2048, &mut held)?;
-    let release = authenticate(&enrollment, &manifest, &signature)?;
+    let projection = retain_bytes(&generation, "verification.bin", 2048, &mut held)?;
+    let release = authenticate_bound_projection(&projection, f[11], &manifest, &signature)?;
     if f[0] != "LocalDev"
         || f[1] != epoch.installation
         || f[1] != release.installation_id.replace('-', "")
@@ -699,7 +905,7 @@ pub(crate) fn read_installed_package() -> io::Result<InstalledPackage> {
         || f[4] != digest(&manifest)
         || f[5] != digest(&signature)
         || f[6] != release.signing_key_id
-        || f[10] != "two-executables-system-runtime-imports-v1"
+        || f[10] != "two-executables-static-crt-system-imports-v2"
     {
         return Err(deny());
     }
@@ -764,11 +970,11 @@ pub(crate) fn read_installed_package() -> io::Result<InstalledPackage> {
     {
         return Err(deny());
     }
-    ancestors.extend(enrollment_ancestors);
+    held.push(root_record);
     let mut result = InstalledPackage {
         root,
         _ancestors: ancestors,
-        directories: vec![generation, app, enrollment_root],
+        directories: vec![generation, app],
         held,
         selection: selection.clone(),
         root_path,
@@ -776,6 +982,10 @@ pub(crate) fn read_installed_package() -> io::Result<InstalledPackage> {
         agent_path: app_path.join("OpenBlade.SessionAgent.exe"),
         commitment: Sha256::digest(&selection).into(),
         denied: false,
+        service_identity: compiled_record(&service)?.to_vec(),
+        agent_identity: compiled_record(&agent)?.to_vec(),
+        epoch,
+        startup_owner,
     };
     result.require_current()?;
     Ok(result)

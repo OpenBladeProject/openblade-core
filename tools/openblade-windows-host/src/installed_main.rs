@@ -13,6 +13,10 @@ mod discovery;
 #[path = "windows/scm/installed.rs"]
 mod installed;
 #[cfg(windows)]
+mod loaded_origin;
+#[cfg(windows)]
+mod native_package;
+#[cfg(windows)]
 mod pipe_server_identity;
 #[cfg(windows)]
 mod retained_process;
@@ -47,7 +51,8 @@ mod windows_token;
 fn main() -> std::process::ExitCode {
     std::hint::black_box(&NATIVE_ARTIFACT_IDENTITY);
     #[cfg(windows)]
-    let result = installed::entry();
+    let result = loaded_origin::Origin::acquire("service", &NATIVE_ARTIFACT_IDENTITY)
+        .and_then(installed::entry);
     #[cfg(not(windows))]
     let result: std::io::Result<()> = Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
@@ -62,3 +67,6 @@ fn main() -> std::process::ExitCode {
         }
     }
 }
+
+#[cfg(windows)]
+mod native_owner_record;

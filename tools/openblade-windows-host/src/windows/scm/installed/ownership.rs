@@ -9,6 +9,9 @@ use std::{
 };
 
 use super::denied;
+#[cfg(not(test))]
+#[path = "durable_owner.rs"]
+pub(in crate::installed) mod durable;
 use crate::discovery::performance::Admission;
 
 // Minted by an independently verified loaded-generation source. Keep its
@@ -17,8 +20,8 @@ use crate::discovery::performance::Admission;
 // no installed implementation or public constructor until that proof exists.
 #[derive(Clone)]
 pub(in crate::installed) struct AuthorityEpoch {
-    instance: Arc<()>,
-    launch_pid: u32,
+    pub(super) instance: Arc<()>,
+    pub(super) launch_pid: u32,
 }
 
 impl PartialEq for AuthorityEpoch {

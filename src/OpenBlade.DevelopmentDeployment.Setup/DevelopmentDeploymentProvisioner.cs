@@ -158,6 +158,7 @@ internal static class DevelopmentDeploymentProvisioner
         RequireProtectedUpgradeTarget(clientTarget, original.EnrolledAccountSid);
         await ReplaceUpgradeFileAsync(brokerTarget, brokerSource, cancellationToken).ConfigureAwait(false);
         await ReplaceUpgradeFileAsync(clientTarget, clientSource, cancellationToken).ConfigureAwait(false);
+        OpenBlade.Deployment.WindowsNativeTrustLifecycle.RequireReadyForEnrollmentChange();
         using MemoryStream enrollmentBytes = new(BrokerEnrollmentCodec.SerializeCanonical(upgraded));
         await ReplaceUpgradeFileAsync(paths.EnrollmentPath, enrollmentBytes, cancellationToken).ConfigureAwait(false);
         using MemoryStream receiptBytes = new(CreateReceipt(upgraded));
@@ -431,6 +432,7 @@ internal static class DevelopmentDeploymentProvisioner
 
     private static async Task UninstallAsync(CancellationToken cancellationToken)
     {
+        OpenBlade.Deployment.WindowsNativeTrustLifecycle.RequireReadyForEnrollmentChange();
         await RunServiceControlAsync(
             ["stop", DevelopmentDeploymentLayout.ServiceName],
             cancellationToken,

@@ -278,7 +278,7 @@ pub(crate) fn reserved_device(name: &str) -> bool {
         .is_some_and(|suffix| {
             matches!(
                 suffix,
-                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "Â¹" | "Â²" | "Â³"
             )
         })
 }
@@ -353,6 +353,9 @@ pub(crate) enum Policy {
 impl Policy {
     pub(crate) const ANCESTOR: Self = Self::Directory {
         extra_rights: FILE_ADD_SUBDIRECTORY,
+    };
+    pub(crate) const PROGRAM_DATA: Self = Self::Directory {
+        extra_rights: FILE_ADD_SUBDIRECTORY | 2,
     };
     pub(crate) const ROOT: Self = Self::Setup {
         ace_flags: OBJECT_AND_CONTAINER_INHERIT,
@@ -514,6 +517,48 @@ pub(crate) fn accepts_descriptor(bytes: &[u8], policy: Policy) -> Option<bool> {
         aces = &aces[length..];
     }
     Some(!setup || setup_principals == 3)
+}
+
+// Fixed public native root only. Never use this policy for broker/private data.
+pub(crate) fn accepts_public_native_root(bytes: &[u8]) -> Option<bool> {
+    if !accepts_descriptor(bytes, Policy::Directory { extra_rights: 0 })?
+        || word(bytes, 2)? & SE_DACL_PROTECTED == 0
+        || sid(section(bytes, 4)?)? != ADMINISTRATORS
+    {
+        return Some(false);
+    }
+    let acl = section(bytes, 16)?;
+    if word(acl, 4)? != 3 {
+        return Some(false);
+    }
+    let mut aces = acl.get(8..usize::from(word(acl, 2)?))?;
+    let mut seen = 0;
+    for _ in 0..3 {
+        let n = word(aces, 2)? as usize;
+        let ace = aces.get(..n)?;
+        if ace[0] != 0 || ace[1] != 3 {
+            return Some(false);
+        }
+        let trustee = sid(ace.get(8..)?)?;
+        let mask = dword(ace, 4)?;
+        let bit = if trustee == ADMINISTRATORS && mask == FILE_ALL_ACCESS {
+            1
+        } else if trustee == SYSTEM && mask == FILE_ALL_ACCESS {
+            2
+        } else if trustee == [1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 33, 2, 0, 0]
+            && mask == FILE_GENERIC_READ | FILE_GENERIC_EXECUTE
+        {
+            4
+        } else {
+            return Some(false);
+        };
+        if seen & bit != 0 {
+            return Some(false);
+        }
+        seen |= bit;
+        aces = &aces[n..];
+    }
+    Some(seen == 7)
 }
 
 pub(crate) fn section(bytes: &[u8], field: usize) -> Option<&[u8]> {

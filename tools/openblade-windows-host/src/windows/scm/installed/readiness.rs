@@ -31,7 +31,7 @@ use windows::{Caller, ControlSession, Logon, MAX_CONNECTIONS, Pending, Stream};
 mod firmware_source;
 pub(super) use firmware_source::FirmwareSource;
 #[path = "ownership.rs"]
-mod ownership;
+pub(super) mod ownership;
 
 #[path = "status_source.rs"]
 mod status_source;
@@ -142,6 +142,15 @@ trait StatusSource {
     fn refresh_publications(&mut self) -> Pending<'_, Instant> {
         Box::pin(async { Ok(Instant::now() + subscription::REFRESH_INTERVAL) })
     }
+    fn verify_origin(&self) -> io::Result<()> {
+        Ok(())
+    }
+    fn confirm_drained(&self) -> io::Result<()> {
+        Ok(())
+    }
+    fn publication_guard(&self) -> Rc<dyn Fn() -> io::Result<()>> {
+        Rc::new(|| Ok(()))
+    }
     fn drain(&mut self) -> Pending<'_, ()>;
 }
 
@@ -157,8 +166,8 @@ pub(super) async fn prepare_installed_endpoint(
     shutdown: oneshot::Receiver<()>,
     failed: oneshot::Sender<()>,
 ) -> io::Result<(Readiness, impl Future<Output = io::Result<()>> + use<>)> {
-    let firmware = admission.verify_launch(launch)?;
-    let source = status_source::native_status_source(firmware);
+    let (origin, authority) = admission.verify_launch(launch)?;
+    let source = status_source::native_status_source(origin, authority);
     let endpoint = windows::NativeEndpoint::open_managed(
         &production_path(),
         launch.pid,
@@ -264,9 +273,11 @@ impl Ports {
         tokio::pin!(refresh);
         let mut connections = JoinSet::new();
         let mut accept = self.endpoint.accept();
+        let mut origin_check = tokio::time::interval(Duration::from_millis(500));
         let outcome = loop {
             tokio::select! {
                 biased;
+                _ = origin_check.tick() => { if let Err(error) = self.source.lock().await.verify_origin() { break (Err(error), false); } },
                 signal = &mut *shutdown => break (signal.map_err(|_| lost_shutdown()), true),
                 result = &mut refresh, if publications.is_some() => break (result, false),
                 joined = connections.join_next(), if !connections.is_empty() => match joined {
@@ -303,7 +314,8 @@ impl Ports {
             self.source.lock().await.drain().await
         })
         .await;
-        owned.and(listener?).and(runtime?)
+        owned.and(listener?).and(runtime?)?;
+        self.source.lock().await.confirm_drained()
     }
 }
 
@@ -364,6 +376,8 @@ async fn serve_connection(
     subscriptions: Rc<Subscriptions>,
 ) -> Result<(), ExchangeError> {
     let (request, caller) = read_request(&mut *stream, false).await?;
+    let guard = source.lock().await.publication_guard();
+    guard().map_err(ExchangeError::Runtime)?;
     if request.is_subscription() {
         serve_subscription(
             &mut *stream,
@@ -371,6 +385,7 @@ async fn serve_connection(
             caller,
             publications,
             &subscriptions,
+            &*guard,
             async { source.lock().await.refresh_publications().await.map(drop) },
         )
         .await
@@ -384,9 +399,11 @@ async fn serve_connection(
             let caller = resolve_caller(&*stream, caller)?;
             status_payload(&mut **source, &request, caller, requested).await?
         };
+        guard().map_err(ExchangeError::Runtime)?;
         crate::service_frame::write_payload(&mut *stream, &payload)
             .await
-            .map_err(ExchangeError::Client)
+            .map_err(ExchangeError::Client)?;
+        guard().map_err(ExchangeError::Runtime)
     }
 }
 
@@ -499,11 +516,14 @@ async fn serve_get(
     request: &StatusRequest,
     caller: Caller,
 ) -> Result<(), ExchangeError> {
+    source.verify_origin().map_err(ExchangeError::Runtime)?;
     let caller = resolve_caller(stream, caller)?;
     let payload = status_payload(source, request, caller, Instant::now()).await?;
+    source.verify_origin().map_err(ExchangeError::Runtime)?;
     crate::service_frame::write_payload(stream, &payload)
         .await
-        .map_err(ExchangeError::Client)
+        .map_err(ExchangeError::Client)?;
+    source.verify_origin().map_err(ExchangeError::Runtime)
 }
 
 async fn status_payload(

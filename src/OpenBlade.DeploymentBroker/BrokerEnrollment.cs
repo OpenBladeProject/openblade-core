@@ -425,6 +425,7 @@ public sealed class BrokerEnrollmentStore(BrokerPaths paths)
         BrokerEnrollment enrollment,
         CancellationToken cancellationToken = default)
     {
+        OpenBlade.Deployment.WindowsNativeTrustLifecycle.RequireReadyForEnrollmentChange();
         byte[] bytes = BrokerEnrollmentCodec.SerializeCanonical(enrollment);
         paths.EnsureDirectory(paths.RootDirectory);
         await using FileStream stream = new(

@@ -87,9 +87,11 @@ pub(super) async fn serve_subscription(
     caller: Caller,
     publications: Option<watch::Receiver<Arc<Publication>>>,
     subscriptions: &Subscriptions,
+    verify_origin: &dyn Fn() -> io::Result<()>,
     refresh_initial: impl Future<Output = io::Result<()>>,
 ) -> Result<(), ExchangeError> {
     use ExchangeError::{Client, Runtime};
+    verify_origin().map_err(Runtime)?;
     caller.access().map_err(Client)?;
     if caller.pid.is_none() {
         return Err(Client(denied(
@@ -121,6 +123,7 @@ pub(super) async fn serve_subscription(
         }
         // A publication during the initial write remains pending. Cloning the
         // shared snapshot releases the watch lock before any I/O.
+        verify_origin().map_err(Runtime)?;
         let initial = Arc::clone(&publications.borrow_and_update());
         let snapshot = initial.for_peer(stream, caller)?;
         let mut revision = snapshot.revision();
@@ -128,6 +131,7 @@ pub(super) async fn serve_subscription(
         if !write_while_connected(stream, &encode(&initial).map_err(Runtime)?).await? {
             return Ok(());
         }
+        verify_origin().map_err(Runtime)?;
         let mut probe = [0];
         loop {
             tokio::select! {
@@ -139,6 +143,7 @@ pub(super) async fn serve_subscription(
                     }
                 }
             }
+            verify_origin().map_err(Runtime)?;
             let latest = Arc::clone(&publications.borrow_and_update());
             let snapshot = latest.for_peer(stream, caller)?;
             if snapshot.revision() <= revision {
@@ -149,6 +154,7 @@ pub(super) async fn serve_subscription(
             {
                 return Ok(());
             }
+            verify_origin().map_err(Runtime)?;
             revision = snapshot.revision();
         }
     };

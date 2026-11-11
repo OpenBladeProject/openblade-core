@@ -175,10 +175,10 @@ impl ObservedStatus {
                     HidMetadata::Ambiguous => "ambiguous control HID metadata",
                     HidMetadata::Unavailable => "control HID metadata unavailable",
                 };
-                format!("Matched {model} host ({detail}). Control ownership is unverified.")
+                format!("Matched {model} host ({detail}). Firmware observation denied: adapter, activity and managed drain admission are unavailable.")
             }
             Some(DeviceMetadata::Unavailable) | None => {
-                "Device identity is unavailable. Control ownership is unverified.".to_owned()
+                "Device identity is unavailable. Firmware observation denied: adapter, activity and managed drain admission are unavailable.".to_owned()
             }
         };
         let unsupported_laptop = matches!(
@@ -322,10 +322,65 @@ impl Drop for ObservedStatus {
 mod lifecycle;
 
 #[cfg(not(test))]
-pub(super) fn native_status_source(firmware: Option<FirmwareSource>) -> Box<dyn StatusSource> {
-    let mut source = ObservedStatus::new(read_windows);
-    source.firmware = firmware;
-    Box::new(source)
+pub(super) fn native_status_source(
+    origin: Arc<crate::loaded_origin::Origin>,
+    authority: super::ownership::durable::NativeAuthority,
+) -> Box<dyn StatusSource> {
+    Box::new(GuardedStatus {
+        inner: ObservedStatus::new(read_windows),
+        origin,
+        authority,
+    })
+}
+#[cfg(not(test))]
+struct GuardedStatus {
+    inner: ObservedStatus,
+    origin: Arc<crate::loaded_origin::Origin>,
+    authority: super::ownership::durable::NativeAuthority,
+}
+#[cfg(not(test))]
+impl StatusSource for GuardedStatus {
+    fn observe_performance(&mut self, _: Caller, _: Instant) -> Observation {
+        let reason = self.authority.admission_denial();
+        Box::pin(async move { Err(io::Error::new(io::ErrorKind::PermissionDenied, reason)) })
+    }
+    fn verify_origin(&self) -> io::Result<()> {
+        self.origin.verify()
+    }
+    fn confirm_drained(&self) -> io::Result<()> {
+        self.origin.confirm_metadata_drain()
+    }
+    fn publication_guard(&self) -> std::rc::Rc<dyn Fn() -> io::Result<()>> {
+        let origin = self.origin.clone();
+        std::rc::Rc::new(move || origin.verify())
+    }
+    fn snapshot(&mut self, caller: Caller, requested: Instant) -> Pending<'_, Snapshot> {
+        Box::pin(async move {
+            self.origin.verify()?;
+            let value = self.inner.snapshot(caller, requested).await?;
+            self.origin.verify()?;
+            Ok(value)
+        })
+    }
+    fn publications(&self) -> Option<watch::Receiver<Arc<Publication>>> {
+        self.inner.publications()
+    }
+    fn refresh_publications(&mut self) -> Pending<'_, Instant> {
+        Box::pin(async move {
+            self.origin.verify()?;
+            let due = self.inner.refresh_publications().await?;
+            self.origin.verify()?;
+            Ok(due)
+        })
+    }
+    fn drain(&mut self) -> Pending<'_, ()> {
+        // Cleanup remains possible after revocation; retained origin and package
+        // guards outlive listener/worker drain. It grants no firmware authority.
+        Box::pin(async move {
+            self.origin.revoke();
+            self.inner.drain().await
+        })
+    }
 }
 
 #[cfg(not(test))]

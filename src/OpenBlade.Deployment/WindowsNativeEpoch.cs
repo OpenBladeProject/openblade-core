@@ -87,7 +87,9 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
                 if (!File.Exists(record)) { continue; }
                 using var priorDirectory = files.RetainDirectory(other);
                 using var held = files.OpenFile(record);
-                string[] prior = NativeCanonical.ParseLines(WindowsNativeEpochFiles.ReadBounded(held, 16384), "OpenBlade.NativePackage.v1", 12);
+                byte[] priorBytes = WindowsNativeEpochFiles.ReadBounded(held, 16384);
+                bool legacy = System.Text.Encoding.ASCII.GetString(priorBytes).StartsWith("OpenBlade.NativePackage.v1\n", StringComparison.Ordinal);
+                string[] prior = NativeCanonical.ParseLines(priorBytes, legacy ? "OpenBlade.NativePackage.v1" : "OpenBlade.NativePackage.v2", legacy ? 12 : 13);
                 foreach (string encoded in prior[8..10])
                 {
                     byte[] priorArtifact = Convert.FromBase64String(encoded);
@@ -107,6 +109,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
             string app = Path.Combine(directory, "app");
             files.CreateDirectoryOnce(app);
             void Write(string name, byte[] bytes) { using var stream = new MemoryStream(bytes, false); files.WriteEvidence(Path.Combine(directory, name), stream); }
+            Write("verification.bin", package.VerificationProjection);
             Write("release.json", package.Manifest);
             Write("release.sig", package.Signature);
             files.Publish(Path.Combine(directory, "package.bin"), package.Record);
@@ -116,11 +119,13 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
             using (var output = new FileStream(Path.Combine(directory, "package.exe"), FileMode.CreateNew, FileAccess.Write,
                 FileShare.None, 81920, FileOptions.WriteThrough)) { package.CopyPackageTo(output); output.Flush(true); }
             testCrashBoundary?.Invoke(NativeEpochBoundary.PackageWritten);
+            byte[] startupOwner = CaptureStartupOwner(epoch, request);
+            files.Publish(Path.Combine(directory, "startup-owner.bin"), startupOwner);
             var value = new NativeEpochRecord(NativeEpochPhase.Provisional, epoch,
                 previous is null ? new string('0', 64) : NativeCanonical.Digest(previous),
                 checked((predecessor?.Ordinal ?? 0) + 1), package.Release.Manifest.InstallationId.ToString("N"),
                 NativeCanonical.Digest(package.Record), request.ToString("N"), package.Service.Id, package.Agent.Id,
-                new string('0', 64), Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32)));
+                new string('0', 64), NativeCanonical.Digest(startupOwner));
             byte[] selection = value.Encode();
             files.Publish(Path.Combine(directory, "origin.bin"), selection);
             testCrashBoundary?.Invoke(NativeEpochBoundary.OriginWritten);
@@ -142,10 +147,23 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
         catch { generation?.Dispose(); writer.Dispose(); throw; }
     }
 
+    private static byte[] CaptureStartupOwner(string epoch, Guid request)
+    {
+#if OPENBLADE_NATIVE_PACKAGE_TESTS
+        // Inert private-filesystem test data; never present in product builds.
+        return NativeCanonical.Lines("OpenBlade.NativeStartupOwner.v1", epoch, request.ToString("N"), "17", "1", "0", @"C:\offline\Setup.exe");
+#else
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        return NativeCanonical.Lines("OpenBlade.NativeStartupOwner.v1", epoch, request.ToString("N"),
+            process.Id.ToString(CultureInfo.InvariantCulture), process.StartTime.ToUniversalTime().ToFileTimeUtc().ToString(CultureInfo.InvariantCulture),
+            process.SessionId.ToString(CultureInfo.InvariantCulture), process.MainModule?.FileName ?? throw new IOException("Setup main module is unavailable."));
+#endif
+    }
+
     private void RetainEvidence(Action<NativeEpochBoundary>? testCrashBoundary)
     {
         evidence.Add(files.RetainDirectory(Path.Combine(GenerationDirectory, "app")));
-        foreach (string name in new[] { "release.json", "release.sig", "package.bin", "roles.bin", "package.exe", "origin.bin",
+        foreach (string name in new[] { "startup-owner.bin", "verification.bin", "release.json", "release.sig", "package.bin", "roles.bin", "package.exe", "origin.bin",
             @"app\OpenBlade.Service.exe", @"app\OpenBlade.SessionAgent.exe" })
         { evidence.Add(files.OpenFile(Path.Combine(GenerationDirectory, name))); testCrashBoundary?.Invoke(NativeEpochBoundary.EvidenceRetaining); }
     }
@@ -214,7 +232,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
         return bytes;
     }
 
-    private static void RequireFrontier(WindowsNativeEpochFiles files, byte[]? expected)
+    internal static void RequireFrontier(WindowsNativeEpochFiles files, byte[]? expected)
     {
         if (!(ReadFrontier(files) ?? []).AsSpan().SequenceEqual(expected ?? []))
         { throw new IOException("Native publication is interrupted or selection was replayed; explicit recovery is required."); }

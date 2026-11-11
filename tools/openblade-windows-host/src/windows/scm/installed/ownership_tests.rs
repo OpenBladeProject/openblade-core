@@ -407,6 +407,7 @@ async fn in_memory_checked_candidate_shutdown_waits_before_rollback_acquisition(
         || {
             Ok(ProcessEvidence {
                 has_arguments: false,
+                selected_image: None,
                 program_files: PathBuf::from(r"C:\Program Files"),
                 image: PathBuf::from(r"C:\Program Files\OpenBlade\OpenBlade.Service.exe"),
                 pid: PID,

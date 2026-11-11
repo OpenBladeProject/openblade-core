@@ -41,8 +41,20 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
 
     // Product callers use only the fixed protected namespace. Its provisioning is
     // an installer operation; this reader never creates an unprotected product root.
-    internal static string ProductRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "OpenBlade", "NativeEpochs");
-    internal static WindowsNativeEpochFiles OpenProduct() => OpenProtected(ProductRoot);
+    internal static string ProductRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "OpenBlade.NativeEpochs");
+    internal static string LegacyProductRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "OpenBlade", "NativeEpochs");
+    internal static WindowsNativeEpochFiles OpenProduct()
+    {
+        var files = OpenProtected(ProductRoot);
+        try
+        {
+            using var lease = files.RetainDirectory(files.Root);
+            var descriptor = new RawSecurityDescriptor(new HandleSecurity(lease.Handles[^1], true).GetSecurityDescriptorBinaryForm(), 0);
+            if (!AcceptsPublicRoot(descriptor)) { throw new UnauthorizedAccessException("Native public root DACL differs."); }
+            return files;
+        }
+        catch { files.Dispose(); throw; }
+    }
 
     internal static WindowsNativeEpochFiles OpenProtected(string root)
     {
@@ -80,7 +92,14 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
     internal static WindowsNativeEpochFiles CreateOrOpenProductForInstall()
     {
         string parent = Path.GetDirectoryName(ProductRoot)!;
-        using var protectedParent = OpenProtected(parent);
+        // ProgramData is a shared creation ancestor, not a private product root.
+        using var ancestors = new DirectoryLease();
+        PinAncestors(parent, ancestors, null);
+        for (int i = 0; i < ancestors.Handles.Count; i++)
+        { VerifySharedAncestor(ancestors.Handles[i], i + 1 == ancestors.Handles.Count); }
+        // No silent relocation/adoption of historical mappings or unresolved state.
+        if (Directory.Exists(LegacyProductRoot) || File.Exists(LegacyProductRoot))
+        { throw new IOException("Historical native epoch storage requires explicit transition; history was preserved."); }
         if (!Directory.Exists(ProductRoot))
         {
             RequireAbsent(ProductRoot);
@@ -97,7 +116,77 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
                 InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
             new DirectoryInfo(ProductRoot).Create(security);
         }
-        return OpenProduct();
+        var files = OpenProduct();
+        try
+        {
+            using (var rootLease = files.RetainDirectory(files.Root))
+            {
+                var descriptor = new RawSecurityDescriptor(new HandleSecurity(rootLease.Handles[^1], true).GetSecurityDescriptorBinaryForm(), 0);
+                if (!AcceptsPublicRoot(descriptor)) { throw new UnauthorizedAccessException("Native public root DACL differs from its exact installer recipe."); }
+            }
+            string transition = Path.Combine(files.Root, "root.bin");
+            byte[] expected = NativeCanonical.Lines("OpenBlade.NativeRoot.v1", "legacy-store-absent");
+            if (!File.Exists(transition)) { files.Publish(transition, expected); }
+            using var record = files.OpenFile(transition);
+            RequireExact(record, expected);
+            files.EnsureOwnerStore();
+            return files;
+        }
+        catch { files.Dispose(); throw; }
+    }
+
+    internal static bool AcceptsPublicRoot(RawSecurityDescriptor descriptor)
+    {
+        if (descriptor.Owner?.Value != "S-1-5-32-544" || !descriptor.ControlFlags.HasFlag(ControlFlags.DiscretionaryAclProtected)
+            || descriptor.DiscretionaryAcl is not { Count: 3 } acl) { return false; }
+        var seen = new HashSet<string>();
+        foreach (GenericAce entry in acl)
+        {
+            if (entry is not CommonAce ace || ace.IsCallback || ace.AceQualifier != AceQualifier.AccessAllowed
+                || ace.AceFlags != (AceFlags.ContainerInherit | AceFlags.ObjectInherit) || !seen.Add(ace.SecurityIdentifier.Value)) { return false; }
+            if (ace.SecurityIdentifier.Value is "S-1-5-18" or "S-1-5-32-544")
+            { if (ace.AccessMask != (int)FileSystemRights.FullControl) { return false; } }
+            else if (ace.SecurityIdentifier.Value != "S-1-5-32-545" || ace.AccessMask != (int)(FileSystemRights.ReadAndExecute | FileSystemRights.Synchronize)) { return false; }
+        }
+        return true;
+    }
+    private static void VerifySharedAncestor(SafeFileHandle handle, bool programData)
+    {
+        var descriptor = new RawSecurityDescriptor(new HandleSecurity(handle, true).GetSecurityDescriptorBinaryForm(), 0);
+        static bool Trusted(SecurityIdentifier? sid) => sid?.Value is "S-1-5-18" or "S-1-5-32-544"
+            or "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464";
+        if (!Trusted(descriptor.Owner) || descriptor.DiscretionaryAcl is null) { throw new UnauthorizedAccessException("Untrusted native root ancestry."); }
+        int forbidden = (0x40000000 | 0x10000000 | 0x000D0156) & ~(programData ? 6 : 4);
+        foreach (GenericAce entry in descriptor.DiscretionaryAcl)
+        {
+            if (entry is not CommonAce ace || ace.IsCallback) { throw new UnauthorizedAccessException("Unsupported ancestor ACE."); }
+            if (ace.AceQualifier == AceQualifier.AccessAllowed && (ace.AceFlags & AceFlags.InheritOnly) == 0
+                && !Trusted(ace.SecurityIdentifier) && (ace.AccessMask & forbidden) != 0) { throw new UnauthorizedAccessException("Native root ancestor permits unprivileged replacement."); }
+        }
+    }
+
+    private void EnsureOwnerStore()
+    {
+        string path = Path.Combine(Root, "owner");
+        if (!Directory.Exists(path))
+        {
+            RequireAbsent(path);
+            var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            var security = new DirectorySecurity();
+            security.SetOwner(administrators);
+            security.SetAccessRuleProtection(true, false);
+            foreach (var sid in new[] { administrators, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
+            {
+                security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+            }
+            new DirectoryInfo(path).Create(security);
+        }
+        using var directory = RetainDirectory(path);
+        string lockPath = Path.Combine(path, "writer.lock");
+        if (!File.Exists(lockPath))
+        { using var created = new FileStream(lockPath, FileMode.CreateNew, FileAccess.Write, FileShare.None); created.Flush(true); }
+        // Absence of a native history is NOT a managed-drain certificate.
     }
 
     private static void RequireNtfs(DirectoryLease lease)

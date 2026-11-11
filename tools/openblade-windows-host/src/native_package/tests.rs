@@ -204,3 +204,60 @@ fn fresh_rollback_epoch_cannot_rebind_old_origin() {
     assert!(!e.same_origin(&rollback));
     assert_eq!(e.package, rollback.package);
 }
+
+#[test]
+fn public_projection_matches_csharp_canonical_bytes_and_authenticates_original_signature() {
+    let p: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/data/native-verification-v1.json")).unwrap();
+    let b = bytes(&p, "projection");
+    let v = vector();
+    let fields = lines(&b, "OpenBlade.NativeVerification.v1", 6).unwrap();
+    assert_eq!(b, encode("OpenBlade.NativeVerification.v1", &fields));
+    assert_eq!(digest(&b), p["sha256"].as_str().unwrap());
+    assert!(
+        authenticate_bound_projection(
+            &b,
+            p["sha256"].as_str().unwrap(),
+            &bytes(&v, "manifest"),
+            &bytes(&v, "signature")
+        )
+        .is_ok()
+    );
+    let text = String::from_utf8(b.clone()).unwrap();
+    for bad in [
+        text.replace("LocalDev", "Stable"),
+        text.replace(fields[1], "22222222-2222-2222-2222-222222222222"),
+        text.replace(fields[2], "wrong-policy"),
+        text.replace(fields[3], &"a".repeat(64)),
+        text.replace(fields[5], &"a".repeat(64)),
+        format!("{text}\n"),
+    ] {
+        assert!(
+            authenticate_bound_projection(
+                bad.as_bytes(),
+                p["sha256"].as_str().unwrap(),
+                &bytes(&v, "manifest"),
+                &bytes(&v, "signature")
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        authenticate_projection(&b, &bytes(&v, "manifest"), &bytes(&v, "wrongDomain")).is_err()
+    );
+}
+#[test]
+fn actual_pe_obid_reader_does_not_accept_a_marker_elsewhere_or_wrong_geometry() {
+    let v = vector();
+    let mut image = bytes(&v, "serviceImage");
+    let record = compiled_record(&image).unwrap().to_vec();
+    assert!(record.starts_with(b"OpenBlade.NativeArtifact.v1\n"));
+    image[0] ^= 1; // full PE validation remains inspect_artifact's job
+    let r = authenticate(
+        &bytes(&v, "enrollment"),
+        &bytes(&v, "manifest"),
+        &bytes(&v, "signature"),
+    )
+    .unwrap();
+    assert!(inspect_artifact(&bytes(&v, "serviceRecord"), &image, "service", &r).is_err());
+}

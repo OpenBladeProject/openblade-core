@@ -4,8 +4,33 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(not(test))]
+mod installed_monitor;
+#[cfg(not(test))]
+mod scm_peer;
 pub(crate) mod service_client;
 mod token;
+#[cfg(not(test))]
+pub(crate) fn entry_installed(
+    origin: std::sync::Arc<crate::loaded_origin::Origin>,
+) -> io::Result<()> {
+    let token = token::process_token_evidence()?;
+    if !token.primary
+        || token.elevated
+        || token.token_session == 0
+        || token.token_session != token.process_session
+        || token.process_session != origin.session
+        || matches!(token.sid.as_str(), "S-1-5-18" | "S-1-5-19" | "S-1-5-20")
+        || std::env::current_dir()?
+            != origin
+                .image
+                .parent()
+                .ok_or_else(|| denied("agent image parent missing"))?
+    {
+        return Err(denied("unexpected native Agent token or working directory"));
+    }
+    installed_monitor::run(origin)
+}
 
 use service_client::SubscriptionInitial;
 use token::ProcessTokenEvidence;

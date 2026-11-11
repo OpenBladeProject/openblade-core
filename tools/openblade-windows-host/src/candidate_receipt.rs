@@ -25,7 +25,7 @@ use crate::{
 };
 
 #[path = "native_package.rs"]
-mod native_package;
+pub(crate) mod native_package;
 
 const COMMITTED_NAME: &str = "candidate-package.committed.json";
 const MAX_RECEIPT_BYTES: u64 = 4096;

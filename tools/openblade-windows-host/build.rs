@@ -16,6 +16,15 @@ fn main() {
     {
         panic!("native binding requires a fresh 32-byte lowercase nonce and exact source revision");
     }
+    if !nonce.is_empty()
+        && env::var("TARGET").as_deref() == Ok("x86_64-pc-windows-msvc")
+        && !env::var("CARGO_CFG_TARGET_FEATURE")
+            .unwrap_or_default()
+            .split(',')
+            .any(|v| v == "crt-static")
+    {
+        panic!("bound native generation recipe requires static CRT");
+    }
     let mut features: Vec<_> = env::vars()
         .filter_map(|(k, _)| {
             k.strip_prefix("CARGO_FEATURE_")

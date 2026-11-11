@@ -111,76 +111,92 @@ pub(crate) struct ScmEvidence {
     pub(crate) matches_config: bool,
 }
 
+pub(crate) struct Registration {
+    _manager: ServiceHandle,
+    service: ServiceHandle,
+}
+impl Registration {
+    pub(crate) fn open(name: &str) -> io::Result<Self> {
+        let name: Vec<_> = name.encode_utf16().chain([0]).collect();
+        let manager = ServiceHandle::new(unsafe {
+            OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT)
+        })?;
+        let service = ServiceHandle::new(unsafe {
+            OpenServiceW(
+                manager.0,
+                name.as_ptr(),
+                SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS,
+            )
+        })?;
+        Ok(Self {
+            _manager: manager,
+            service,
+        })
+    }
+    pub(crate) fn query(
+        &self,
+        expected_command: &OsStr,
+        expected_start: u32,
+    ) -> io::Result<ScmEvidence> {
+        // QueryServiceConfigW documents an 8 KiB maximum response, including
+        // the strings referenced from the structure.
+        #[repr(align(8))]
+        struct ConfigBuffer([u16; 4096]);
+        let mut buffer = ConfigBuffer([0; 4096]);
+        let mut needed = 0;
+        // SAFETY: the aligned buffer is writable and sized to the documented maximum.
+        if unsafe {
+            QueryServiceConfigW(
+                self.service.0,
+                buffer.0.as_mut_ptr().cast(),
+                size_of_val(&buffer.0) as u32,
+                &mut needed,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: the successful query initialized the aligned structure.
+        let config = unsafe { &*buffer.0.as_ptr().cast::<QUERY_SERVICE_CONFIGW>() };
+        let matches_config = config.dwServiceType == SERVICE_WIN32_OWN_PROCESS
+            && config.dwStartType == expected_start
+            && config_string_matches(&buffer.0, config.lpBinaryPathName, expected_command)
+            && config_string_matches(
+                &buffer.0,
+                config.lpServiceStartName,
+                OsStr::new("LocalSystem"),
+            );
+
+        let mut status = MaybeUninit::<SERVICE_STATUS_PROCESS>::uninit();
+        // SAFETY: status points to aligned, writable storage for SC_STATUS_PROCESS_INFO.
+        if unsafe {
+            QueryServiceStatusEx(
+                self.service.0,
+                SC_STATUS_PROCESS_INFO,
+                status.as_mut_ptr().cast(),
+                size_of::<SERVICE_STATUS_PROCESS>() as u32,
+                &mut needed,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: the successful query initialized status.
+        let status = unsafe { status.assume_init() };
+        Ok(ScmEvidence {
+            process_id: status.dwProcessId,
+            service_type: status.dwServiceType,
+            state: status.dwCurrentState,
+            matches_config,
+        })
+    }
+}
 pub(crate) fn query_registration(
     name: &str,
     expected_command: &OsStr,
     expected_start: u32,
 ) -> io::Result<ScmEvidence> {
-    let name: Vec<_> = name.encode_utf16().chain([0]).collect();
-    // SAFETY: null pointers select the active services database on the local machine.
-    let manager = ServiceHandle::new(unsafe {
-        OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT)
-    })?;
-    // SAFETY: manager is live and name is NUL-terminated.
-    let service = ServiceHandle::new(unsafe {
-        OpenServiceW(
-            manager.0,
-            name.as_ptr(),
-            SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS,
-        )
-    })?;
-
-    // QueryServiceConfigW documents an 8 KiB maximum response, including
-    // the strings referenced from the structure.
-    #[repr(align(8))]
-    struct ConfigBuffer([u16; 4096]);
-    let mut buffer = ConfigBuffer([0; 4096]);
-    let mut needed = 0;
-    // SAFETY: the aligned buffer is writable and sized to the documented maximum.
-    if unsafe {
-        QueryServiceConfigW(
-            service.0,
-            buffer.0.as_mut_ptr().cast(),
-            size_of_val(&buffer.0) as u32,
-            &mut needed,
-        )
-    } == 0
-    {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: the successful query initialized the aligned structure.
-    let config = unsafe { &*buffer.0.as_ptr().cast::<QUERY_SERVICE_CONFIGW>() };
-    let matches_config = config.dwServiceType == SERVICE_WIN32_OWN_PROCESS
-        && config.dwStartType == expected_start
-        && config_string_matches(&buffer.0, config.lpBinaryPathName, expected_command)
-        && config_string_matches(
-            &buffer.0,
-            config.lpServiceStartName,
-            OsStr::new("LocalSystem"),
-        );
-
-    let mut status = MaybeUninit::<SERVICE_STATUS_PROCESS>::uninit();
-    // SAFETY: status points to aligned, writable storage for SC_STATUS_PROCESS_INFO.
-    if unsafe {
-        QueryServiceStatusEx(
-            service.0,
-            SC_STATUS_PROCESS_INFO,
-            status.as_mut_ptr().cast(),
-            size_of::<SERVICE_STATUS_PROCESS>() as u32,
-            &mut needed,
-        )
-    } == 0
-    {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: the successful query initialized status.
-    let status = unsafe { status.assume_init() };
-    Ok(ScmEvidence {
-        process_id: status.dwProcessId,
-        service_type: status.dwServiceType,
-        state: status.dwCurrentState,
-        matches_config,
-    })
+    Registration::open(name)?.query(expected_command, expected_start)
 }
 
 pub(crate) fn config_string_matches(buffer: &[u16], value: *const u16, expected: &OsStr) -> bool {

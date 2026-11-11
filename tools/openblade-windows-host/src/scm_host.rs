@@ -27,6 +27,17 @@ pub(crate) enum Phase {
 }
 
 pub(crate) static CONTROLS: Controls = Controls::new();
+static INGRESS: Mutex<Option<fn(u32)>> = Mutex::new(None);
+pub(crate) fn set_ingress(hook: fn(u32)) -> io::Result<()> {
+    let mut slot = INGRESS
+        .lock()
+        .map_err(|_| io::Error::other("SCM callback ingress lost"))?;
+    if slot.is_some() {
+        return Err(io::Error::other("SCM callback ingress already bound"));
+    }
+    *slot = Some(hook);
+    Ok(())
+}
 
 pub(crate) struct Controls(Mutex<Option<oneshot::Sender<()>>>);
 
@@ -138,6 +149,11 @@ pub(crate) unsafe extern "system" fn control(
     _: *mut c_void,
     _: *mut c_void,
 ) -> u32 {
+    // Latch before forwarding/coalescing. Unknown callback/registration loss
+    // cannot revive an epoch after a later clear sample.
+    if let Some(hook) = *INGRESS.lock().unwrap_or_else(|e| e.into_inner()) {
+        hook(code);
+    }
     CONTROLS.handle(code)
 }
 

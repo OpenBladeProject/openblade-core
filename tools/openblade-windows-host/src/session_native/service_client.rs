@@ -120,12 +120,13 @@ pub(super) async fn watch_status(
     canceled: impl Future<Output = ()>,
     publish: impl FnMut(StatusUpdate) -> io::Result<()>,
 ) -> io::Result<()> {
-    watch_on(
+    watch_monitored(
         authority,
         canceled,
         request_id,
         connect_installed,
         |pipe| server_identity(pipe.as_raw_handle()),
+        |pipe| crate::pipe_server_identity::retain_monitor(pipe.as_raw_handle()).map(Some),
         publish,
     )
     .await
@@ -134,9 +135,31 @@ pub(super) async fn watch_status(
 pub(crate) async fn watch_on<S: AsyncRead + AsyncWrite + Unpin>(
     authority: Option<&dyn InstalledServiceAuthority>,
     canceled: impl Future<Output = ()>,
+    next_id: impl FnMut() -> io::Result<String>,
+    connect: impl AsyncFnMut() -> io::Result<S>,
+    peer: impl Fn(&S) -> io::Result<(u32, u32)>,
+    publish: impl FnMut(StatusUpdate) -> io::Result<()>,
+) -> io::Result<()> {
+    watch_monitored(
+        authority,
+        canceled,
+        next_id,
+        connect,
+        peer,
+        |_| Ok(None),
+        publish,
+    )
+    .await
+}
+
+type IdlePeer = Box<dyn Fn() -> io::Result<(u32, u32)>>;
+async fn watch_monitored<S: AsyncRead + AsyncWrite + Unpin>(
+    authority: Option<&dyn InstalledServiceAuthority>,
+    canceled: impl Future<Output = ()>,
     mut next_id: impl FnMut() -> io::Result<String>,
     mut connect: impl AsyncFnMut() -> io::Result<S>,
     peer: impl Fn(&S) -> io::Result<(u32, u32)>,
+    monitor: impl Fn(&S) -> io::Result<Option<IdlePeer>>,
     mut publish: impl FnMut(StatusUpdate) -> io::Result<()>,
 ) -> io::Result<()> {
     let watch = async {
@@ -154,10 +177,31 @@ pub(crate) async fn watch_on<S: AsyncRead + AsyncWrite + Unpin>(
                 }
                 Err(error) => return Err(error),
             };
+            let idle_peer = monitor(&stream)?;
             let connected_at = Instant::now();
             publish(StatusUpdate::Opened(initial))?;
             loop {
-                let snapshot = match read_status_event(&mut stream).await {
+                let event = {
+                    let reading = read_status_event(&mut stream);
+                    tokio::pin!(reading);
+                    let mut check = tokio::time::interval(Duration::from_millis(500));
+                    let event = loop {
+                        tokio::select! {
+                            result = &mut reading => break result,
+                            _ = check.tick() => {
+                                let live = generation.verify_live_process().map_err(ServiceAuthorityError::into_io)?;
+                                if live != pid { return Err(super::denied("Service generation changed during idle")); }
+                                if let Some(peer) = &idle_peer {
+                                    let actual = peer();
+                                    generation.verify_live_process().map_err(ServiceAuthorityError::into_io)?;
+                                    if actual.map_err(unverified)? != (pid.get(), 0) { return Err(super::denied("idle pipe peer changed")); }
+                                }
+                            }
+                        }
+                    };
+                    event
+                };
+                let snapshot = match event {
                     Ok(snapshot) => snapshot,
                     Err(error) if retryable(&error) => break,
                     Err(error) => return Err(error),
@@ -177,6 +221,7 @@ pub(crate) async fn watch_on<S: AsyncRead + AsyncWrite + Unpin>(
             if connected_at.elapsed() >= MAX_RECONNECT_DELAY {
                 delay = INITIAL_RECONNECT_DELAY;
             }
+            drop(idle_peer);
             drop(stream);
             drop(generation);
             publish(StatusUpdate::Reconnecting)?;

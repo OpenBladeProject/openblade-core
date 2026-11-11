@@ -25,6 +25,7 @@ use crate::service_status::{PIPE_NAME, PROTOCOL_VERSION};
 struct ProcessEvidence {
     has_arguments: bool,
     program_files: PathBuf,
+    selected_image: Option<PathBuf>,
     image: PathBuf,
     pid: u32,
     local_system: bool,
@@ -32,16 +33,20 @@ struct ProcessEvidence {
 }
 
 struct LaunchIdentity {
+    native_origin: bool,
     image: PathBuf,
     pid: u32,
 }
 
 impl LaunchIdentity {
     fn verify(process: ProcessEvidence) -> io::Result<Self> {
-        let expected = process
-            .program_files
-            .join(INSTALL_DIRECTORY)
-            .join(IMAGE_NAME);
+        let native_origin = process.selected_image.is_some();
+        let expected = process.selected_image.unwrap_or_else(|| {
+            process
+                .program_files
+                .join(INSTALL_DIRECTORY)
+                .join(IMAGE_NAME)
+        });
         if process.has_arguments
             || !process.program_files.is_absolute()
             || process.image.as_os_str() != expected.as_os_str()
@@ -52,6 +57,7 @@ impl LaunchIdentity {
             return Err(denied("unexpected installed service process identity"));
         }
         Ok(Self {
+            native_origin,
             image: expected,
             pid: process.pid,
         })
@@ -68,7 +74,7 @@ impl LaunchIdentity {
         if !scm.matches_config
             || scm.service_type != SERVICE_WIN32_OWN_PROCESS
             || scm.state != SERVICE_START_PENDING
-            || scm.process_id != self.pid
+            || !(scm.process_id == self.pid || self.native_origin && scm.process_id == 0)
         {
             // SCM may omit the PID in START_PENDING. For installed admission,
             // missing PID evidence must fail until there is an independent binding.

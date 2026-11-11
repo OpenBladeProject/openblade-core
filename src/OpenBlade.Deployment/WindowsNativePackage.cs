@@ -81,7 +81,7 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         or "bcrypt.dll" or "crypt32.dll" or "user32.dll" or "userenv.dll" or "shell32.dll" or "ole32.dll"
         or "oleaut32.dll" or "ws2_32.dll" or "iphlpapi.dll" or "setupapi.dll" or "cfgmgr32.dll"
         or "powrprof.dll" or "wtsapi32.dll" or "secur32.dll" or "version.dll" or "wintrust.dll"
-        or "combase.dll" or "bcryptprimitives.dll" or "vcruntime140.dll"
+        or "combase.dll" or "bcryptprimitives.dll"
         or "psapi.dll" or "gdi32.dll" or "dwmapi.dll" or "comctl32.dll" or "comdlg32.dll"
         or "shlwapi.dll" or "hid.dll" or "winmm.dll" or "dbghelp.dll" or "msvcrt.dll"
         || (name.StartsWith("api-ms-win-", StringComparison.Ordinal) && name.EndsWith(".dll", StringComparison.Ordinal)
@@ -122,6 +122,7 @@ internal sealed class NativeLocalDevEnrollment : IDisposable
     private readonly FileStream? held;
     internal Guid InstallationId { get; }
     internal OpenBladeReleaseTrustPolicy Policy { get; }
+    internal byte[] Projection { get; private init; } = [];
     private NativeLocalDevEnrollment(Guid installation, OpenBladeReleaseTrustPolicy policy,
         WindowsNativeEpochFiles? storage, FileStream? held)
     { InstallationId = installation; Policy = policy; this.storage = storage; this.held = held; }
@@ -135,33 +136,61 @@ internal sealed class NativeLocalDevEnrollment : IDisposable
         try
         {
             held = storage.OpenFile(Path.Combine(root, "enrollment.json"));
-            byte[] bytes = WindowsNativeEpochFiles.ReadBounded(held, 2048);
-            using var document = System.Text.Json.JsonDocument.Parse(bytes);
-            string[] required = ["schemaVersion", "installationId", "enrolledAccountSid", "deploymentPolicyId", "brokerVersion",
-                "developmentSigningKeyId", "developmentSigningSubjectPublicKeyInfoBase64", "enrolledAt"];
-            var names = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var property in document.RootElement.EnumerateObject())
-            {
-                if (!names.Add(property.Name) || !required.Contains(property.Name, StringComparer.Ordinal)
-                    && property.Name != "cpuVoltageValidationEnabled")
-                { throw new InvalidDataException("Native trust enrollment schema differs."); }
-            }
-            var enrollment = document.RootElement;
-            if (required.Any(name => !names.Contains(name)) || enrollment.GetProperty("schemaVersion").GetInt32() != 1
-                || !Guid.TryParseExact(enrollment.GetProperty("installationId").GetString(), "D", out var installation)
-                || installation == Guid.Empty)
-            { throw new InvalidDataException("Native LocalDev enrollment is unavailable."); }
-            string key = enrollment.GetProperty("developmentSigningKeyId").GetString() ?? throw new InvalidDataException();
-            string spki = enrollment.GetProperty("developmentSigningSubjectPublicKeyInfoBase64").GetString() ?? throw new InvalidDataException();
-            return new(installation, new(true, [new(key, spki)]), storage, held);
+            return FromCanonical(WindowsNativeEpochFiles.ReadBounded(held, 2048), storage, held);
         }
         catch { held?.Dispose(); storage.Dispose(); throw; }
+    }
+
+    internal static NativeLocalDevEnrollment FromProtectedProjection(byte[] bytes)
+    {
+        string[] f = NativeCanonical.ParseLines(bytes, "OpenBlade.NativeVerification.v1", 7);
+        if (f[0] != "LocalDev" || !Guid.TryParseExact(f[1], "D", out var installation) || installation == Guid.Empty
+            || f[2].Length == 0 || !NativeCanonical.IsHex(f[3], 64) || !NativeCanonical.IsHex(f[5], 64)
+            || NativeCanonical.Digest(Convert.FromBase64String(f[4])) != f[3])
+        { throw new InvalidDataException("Native public verification projection differs."); }
+        return new(installation, new(true, [new(f[3], f[4])]), null, null) { Projection = (byte[])bytes.Clone() };
+    }
+
+    internal static NativeLocalDevEnrollment FromHeld(FileStream original)
+    {
+        original.Position = 0;
+        return FromCanonical(WindowsNativeEpochFiles.ReadBounded(original, 2048), null, null);
+    }
+    private static NativeLocalDevEnrollment FromCanonical(byte[] bytes, WindowsNativeEpochFiles? storage, FileStream? held)
+    {
+
+        using var document = System.Text.Json.JsonDocument.Parse(bytes);
+        string[] required = ["schemaVersion", "installationId", "enrolledAccountSid", "deploymentPolicyId", "brokerVersion",
+                "developmentSigningKeyId", "developmentSigningSubjectPublicKeyInfoBase64", "enrolledAt"];
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            if (!names.Add(property.Name) || !required.Contains(property.Name, StringComparer.Ordinal)
+                && property.Name != "cpuVoltageValidationEnabled")
+            { throw new InvalidDataException("Native trust enrollment schema differs."); }
+        }
+        var enrollment = document.RootElement;
+        if (required.Any(name => !names.Contains(name)) || enrollment.GetProperty("schemaVersion").GetInt32() != 1
+            || !Guid.TryParseExact(enrollment.GetProperty("installationId").GetString(), "D", out var installation)
+            || installation == Guid.Empty)
+        { throw new InvalidDataException("Native LocalDev enrollment is unavailable."); }
+        string key = enrollment.GetProperty("developmentSigningKeyId").GetString() ?? throw new InvalidDataException();
+        string spki = enrollment.GetProperty("developmentSigningSubjectPublicKeyInfoBase64").GetString() ?? throw new InvalidDataException();
+        return new(installation, new(true, [new(key, spki)]), storage, held)
+        {
+            Projection = NativeCanonical.Lines("OpenBlade.NativeVerification.v1", "LocalDev", installation.ToString("D"),
+                enrollment.GetProperty("deploymentPolicyId").GetString() ?? throw new InvalidDataException(), key, spki, NativeCanonical.Digest(bytes))
+        };
     }
 
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
     // Algorithm-only/private-filesystem test seam. It does not exist in product builds.
     internal static NativeLocalDevEnrollment ForAlgorithmTests(Guid installation, OpenBladeReleaseTrustPolicy policy)
-        => new(installation, policy, null, null);
+        => new(installation, policy, null, null)
+        {
+            Projection = NativeCanonical.Lines("OpenBlade.NativeVerification.v1", "LocalDev", installation.ToString("D"),
+                "offline-policy", policy.TrustedKeys.Single().KeyId, policy.TrustedKeys.Single().SubjectPublicKeyInfoBase64, new string('a', 64))
+        };
 #endif
     public void Dispose() { held?.Dispose(); storage?.Dispose(); }
 }
@@ -180,6 +209,7 @@ internal sealed class WindowsNativePackage : IDisposable
     internal byte[] Record => (byte[])record.Clone();
     private readonly byte[] inventory;
     internal byte[] Inventory => (byte[])inventory.Clone();
+    internal byte[] VerificationProjection => (byte[])enrollment.Projection.Clone();
     internal OpenBladeVerifiedRelease Release { get; }
     internal ImmutableArray<byte> ServiceImage { get; }
     internal ImmutableArray<byte> AgentImage { get; }
@@ -205,11 +235,11 @@ internal sealed class WindowsNativePackage : IDisposable
             || Agent.Sha256 != roleInventory.GetExpectedSha256(WindowsNativeRole.SessionAgent))
         { throw new InvalidDataException("Native role/identity inventory substitution."); }
         inventory = extracted.Resource.ToArray();
-        record = NativeCanonical.Lines("OpenBlade.NativePackage.v1", "LocalDev", release.Manifest.InstallationId.ToString("N"),
+        record = NativeCanonical.Lines("OpenBlade.NativePackage.v2", "LocalDev", release.Manifest.InstallationId.ToString("N"),
             release.Manifest.InstallerSha256, release.Manifest.InstallerSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
             NativeCanonical.Digest(manifest), NativeCanonical.Digest(signature), release.SigningKeyId,
             NativeCanonical.Digest(extracted.Resource.AsSpan()), Convert.ToBase64String(Service.Encode()), Convert.ToBase64String(Agent.Encode()),
-            "two-executables-system-runtime-imports-v1");
+            "two-executables-static-crt-system-imports-v2", NativeCanonical.Digest(enrollment.Projection));
     }
 
     internal static async Task<WindowsNativePackage> OpenLocalDevAsync(FileStream heldPackage, IDisposable enrollmentLease,

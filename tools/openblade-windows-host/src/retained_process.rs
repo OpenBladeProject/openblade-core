@@ -27,8 +27,9 @@ use windows_sys::{
         },
         System::{
             Threading::{
-                GetCurrentProcess, GetProcessId, GetProcessTimes, PROCESS_QUERY_INFORMATION,
-                PROCESS_SYNCHRONIZE, QueryFullProcessImageNameW, WaitForSingleObject,
+                GetCurrentProcess, GetProcessId, GetProcessTimes, OpenProcess,
+                PROCESS_QUERY_INFORMATION, PROCESS_SYNCHRONIZE, QueryFullProcessImageNameW,
+                WaitForSingleObject,
             },
             WindowsProgramming::PUBLIC_OBJECT_BASIC_INFORMATION,
         },
@@ -142,6 +143,65 @@ pub(crate) struct RetainedProcessInstance {
 }
 
 impl RetainedProcessInstance {
+    pub(crate) fn capture_expected(
+        pid: u32,
+        created: u64,
+        image: &std::path::Path,
+        session: u32,
+    ) -> io::Result<Self> {
+        // Open exactly once, then retain and compare that original object. This
+        // privileged helper preserves actual primary-token checks.
+        let handle = unsafe { OpenProcess(REQUIRED_ACCESS, 0, pid) };
+        if handle.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+        let mut instance = Self::capture(handle.as_handle()).map_err(instance_io)?;
+        use std::os::windows::ffi::OsStrExt;
+        if instance.snapshot.pid != pid
+            || instance.snapshot.created != created
+            || instance.snapshot.image_path != image.as_os_str().encode_wide().collect::<Vec<_>>()
+            || instance.snapshot.process_session != session
+        {
+            return Err(denied("original startup process differs"));
+        }
+        let token = process_token_for(instance.process.as_handle())?;
+        let mut elevation = windows_sys::Win32::Security::TOKEN_ELEVATION::default();
+        let mut returned = 0;
+        unsafe {
+            check(windows_sys::Win32::Security::GetTokenInformation(
+                token.as_raw_handle(),
+                windows_sys::Win32::Security::TokenElevation,
+                (&mut elevation as *mut windows_sys::Win32::Security::TOKEN_ELEVATION).cast(),
+                size_of_val(&elevation) as u32,
+                &mut returned,
+            ))?;
+        }
+        if instance.snapshot.sid != "S-1-5-18" && elevation.TokenIsElevated == 0 {
+            return Err(denied("startup owner is not privileged"));
+        }
+        instance.check_live().map_err(instance_io)?;
+        Ok(instance)
+    }
+    pub(crate) fn capture_self() -> io::Result<Self> {
+        let handle = unsafe { OpenProcess(REQUIRED_ACCESS, 0, std::process::id()) };
+        if handle.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+        Self::capture(handle.as_handle()).map_err(instance_io)
+    }
+    pub(crate) fn creation(&self) -> u64 {
+        self.snapshot.created
+    }
+    pub(crate) fn session(&self) -> u32 {
+        self.snapshot.process_session
+    }
+    pub(crate) fn image(&self) -> std::path::PathBuf {
+        use std::os::windows::ffi::OsStringExt;
+        std::ffi::OsString::from_wide(&self.snapshot.image_path).into()
+    }
+
     pub(crate) fn capture(original: BorrowedHandle<'_>) -> Result<Self> {
         // Validate the borrowed object's type and rights before DuplicateHandle:
         // duplication must not turn a restricted caller handle into added authority.
@@ -178,6 +238,13 @@ impl RetainedProcessInstance {
             || check_snapshot(&self.process, &self.snapshot),
             || crate::pipe_server_identity::server_identity(pipe.as_raw_handle()),
         )
+    }
+}
+
+pub(crate) fn instance_io(error: InstanceError) -> io::Error {
+    match error {
+        InstanceError::Exited => io::ErrorKind::ConnectionAborted.into(),
+        InstanceError::Denied(error) => error,
     }
 }
 

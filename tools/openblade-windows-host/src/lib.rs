@@ -40,3 +40,6 @@ mod native_package;
 #[cfg(windows)]
 #[allow(dead_code)]
 mod service_install_identity;
+
+#[cfg(windows)]
+mod native_owner_record;

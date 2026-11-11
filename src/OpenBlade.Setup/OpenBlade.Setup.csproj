@@ -15,6 +15,15 @@
     <DefineConstants>$(DefineConstants);OPENBLADE_LOCAL_DEV_DEPLOYMENT</DefineConstants>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(OpenBladeNativeStatusIntegration)' == 'true' And '$(OpenBladeLocalDevDeployment)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_NATIVE_STATUS_INTEGRATION</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeNativeStatusIntegration)' == 'true'">
+    <ProjectReference Include="../OpenBlade.DeploymentBroker/OpenBlade.DeploymentBroker.csproj" />
+  </ItemGroup>
+  <Target Name="RequireNativeStatusLocalDev" BeforeTargets="PrepareForBuild" Condition="'$(OpenBladeNativeStatusIntegration)' == 'true' And '$(OpenBladeLocalDevDeployment)' != 'true'">
+    <Error Text="Native status integration requires the explicitly selected LocalDev trust domain; Stable enrollment is not established." />
+  </Target>
   <!-- Offline-only proof reader and scratch image-pin seam. -->
   <PropertyGroup Condition="'$(OpenBladeScratchNativeReceiver)' == 'true' And '$(OpenBladeCandidateReceiptFixture)' == 'true'">
     <OutputType>Library</OutputType>

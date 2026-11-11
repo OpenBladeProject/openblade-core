@@ -4,8 +4,8 @@ using OpenBlade.Deployment;
 namespace OpenBlade.Setup;
 
 // Typed package-selection wrapper for the existing Setup command runner. Product
-// construction awaits the integrated immutable-layout/loaded-origin launch owner;
-// no command-line implementation toggle, fabricated launch, or firmware authority.
+// construction uses same-held authenticated package selection and the native
+// immutable layout. Readiness does not grant firmware authority.
 internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
 {
     private readonly ISetupPayloadTransaction payload;
@@ -18,15 +18,17 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
     private SetupCandidateServiceVerification? verified;
     private bool preparationAttempted, possiblePayloadActivation, possibleNativeActivation, disposed;
     private readonly Action<NativeEpochBoundary>? preparationBoundary;
+    private readonly SetupNativeReadinessAdapters readiness;
 
     internal SetupNativePackageTransaction(ISetupPayloadTransaction payload, WindowsNativeEpochFiles files,
-        WindowsNativePackage package, Guid request, Action<NativeEpochBoundary>? preparationBoundary = null)
+        WindowsNativePackage package, Guid request, Action<NativeEpochBoundary>? preparationBoundary = null, SetupNativeReadinessAdapters? readiness = null)
     {
         this.payload = payload;
         this.files = files;
         this.package = package;
         this.request = request;
         this.preparationBoundary = preparationBoundary;
+        this.readiness = readiness ?? SetupNativeReadinessAdapters.Windows;
     }
 
     public string StagedPayloadDirectory => payload.StagedPayloadDirectory;
@@ -36,6 +38,9 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
     public string? CommitWarning => payload.CommitWarning;
     internal string ServicePath => (epoch ?? throw new InvalidOperationException()).ServicePath;
     internal string AgentPath => (epoch ?? throw new InvalidOperationException()).AgentPath;
+
+    internal string SelectedServicePath() { (epoch ?? throw new InvalidOperationException()).RequireProvisional(); return ServicePath; }
+    internal string SelectedAgentPath() { (epoch ?? throw new InvalidOperationException()).RequireProvisional(); return AgentPath; }
 
     public async Task ActivateAsync(CancellationToken cancellationToken)
     {
@@ -76,10 +81,17 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
     {
         var current = epoch ?? throw new InvalidOperationException();
         current.RequireProvisional();
-        var expected = launch ?? throw new InvalidDataException("Native loaded-origin launch binding is unavailable.");
+        if (launch is null)
+        {
+            var service = await readiness.ReadService(cancellationToken);
+            var captured = readiness.CaptureOriginal(service, current.ServicePath, package.Service.Sha256);
+            try { BindIncomingLaunch(captured.Launch, captured.Retained); }
+            catch { (captured.Retained as IDisposable)?.Dispose(); throw; }
+        }
+        var expected = launch ?? throw new InvalidDataException("Native original launch binding is unavailable.");
         var original = retained ?? throw new InvalidDataException("Native original launch is unavailable.");
-        var candidate = new SetupCandidateServiceVerification(expected, original, WindowsSetupCandidateService.ReadAsync);
-        await SetupServiceHealthProbe.CreateCandidate().VerifyAsync(cancellationToken, timing: null, candidate);
+        var candidate = new SetupCandidateServiceVerification(expected, original, readiness.ReadService);
+        await readiness.Verify(candidate, cancellationToken);
         current.RequireProvisional();
         verified = candidate;
     }
@@ -123,11 +135,24 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
             { await payload.DisposeAsync(); }
         }
         catch (Exception failure) { failures.Add(failure); }
-        foreach (var resource in new IDisposable?[] { epoch, package, files })
+        foreach (var resource in new IDisposable?[] { retained as IDisposable, epoch, package, files })
         {
             try { resource?.Dispose(); }
             catch (Exception failure) { failures.Add(failure); }
         }
         if (failures.Count != 0) { throw new AggregateException("Native package disposal failed.", failures); }
     }
+}
+
+// Injectable native operations for offline rehearsals. The product singleton
+// always queries fixed SCM, retains the original process and performs real typed IPC.
+internal sealed record SetupNativeReadinessAdapters(
+    Func<CancellationToken, Task<SetupCandidateServiceObservation>> ReadService,
+    Func<SetupCandidateServiceObservation, string, string, (SetupCandidateLaunch Launch, ISetupRetainedCandidateLaunch Retained)> CaptureOriginal,
+    Func<SetupCandidateServiceVerification, CancellationToken, Task> Verify)
+{
+    internal static SetupNativeReadinessAdapters Windows { get; } = new(
+        WindowsSetupCandidateService.ReadAsync,
+        (service, path, digest) => { var original = WindowsSetupRetainedNativeLaunch.Capture(service, path, digest); return (original.Launch, original); },
+        (candidate, token) => SetupServiceHealthProbe.CreateCandidate().VerifyAsync(token, timing: null, candidate));
 }

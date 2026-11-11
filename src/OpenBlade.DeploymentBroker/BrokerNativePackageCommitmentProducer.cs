@@ -8,6 +8,15 @@ namespace OpenBlade.DeploymentBroker;
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 internal static class BrokerNativePackageCommitmentProducer
 {
+    internal static async Task<(WindowsNativePackage Package, Guid Request)> OpenCurrentAsync(CancellationToken cancellationToken)
+    {
+        var paths = BrokerPaths.CreateDefault();
+        using var storage = WindowsNativeEpochFiles.OpenProtected(paths.RootDirectory);
+        using var held = storage.OpenFile(paths.InFlightPath);
+        var active = BrokerInFlightDeploymentCodec.ParseCanonical(WindowsNativeEpochFiles.ReadBounded(held, BrokerInFlightDeploymentCodec.MaximumBytes));
+        return (await OpenAsync(active.RequestId, cancellationToken), active.RequestId);
+    }
+
     internal static async Task<WindowsNativePackage> OpenAsync(Guid request, CancellationToken cancellationToken)
     {
         var paths = BrokerPaths.CreateDefault();
@@ -47,7 +56,7 @@ internal static class BrokerNativePackageCommitmentProducer
             { throw new InvalidDataException("Native package differs from the accepted enrolled release transaction."); }
             package = storage.OpenFile(Path.Combine(stage, FixedLocalDevInboxSource.InstallerFileName));
             return await WindowsNativePackage.OpenLocalDevAsync(package, leases, manifest, signature,
-                NativeLocalDevEnrollment.Acquire(), cancellationToken).ConfigureAwait(false);
+                NativeLocalDevEnrollment.FromHeld(enrollmentFile), cancellationToken).ConfigureAwait(false);
         }
         catch { package?.Dispose(); leases.Dispose(); throw; }
     }

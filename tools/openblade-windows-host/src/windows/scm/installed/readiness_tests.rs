@@ -325,6 +325,7 @@ async fn lifecycle(
         || {
             Ok(ProcessEvidence {
                 has_arguments: false,
+                selected_image: None,
                 program_files: r"C:\Program Files".into(),
                 image: std::path::Path::new(r"C:\Program Files")
                     .join("OpenBlade")

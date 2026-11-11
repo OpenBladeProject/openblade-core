@@ -34,3 +34,32 @@ pub(crate) fn server_identity(pipe: RawHandle) -> io::Result<(u32, u32)> {
     }
     Ok((pid, session))
 }
+
+// Duplicate the actual connected pipe object for idle metadata checks while an
+// async read borrows the stream. No name/PID reopen and no authority is minted.
+pub(crate) fn retain_monitor(
+    pipe: RawHandle,
+) -> io::Result<Box<dyn Fn() -> io::Result<(u32, u32)>>> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::{
+        Foundation::{DUPLICATE_SAME_ACCESS, DuplicateHandle},
+        System::Threading::GetCurrentProcess,
+    };
+    let mut raw = std::ptr::null_mut();
+    if unsafe {
+        DuplicateHandle(
+            GetCurrentProcess(),
+            pipe,
+            GetCurrentProcess(),
+            &mut raw,
+            0,
+            0,
+            DUPLICATE_SAME_ACCESS,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let held = unsafe { OwnedHandle::from_raw_handle(raw) };
+    Ok(Box::new(move || server_identity(held.as_raw_handle())))
+}

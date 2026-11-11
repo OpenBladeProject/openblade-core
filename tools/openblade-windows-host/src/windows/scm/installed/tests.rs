@@ -14,6 +14,7 @@ const PID: u32 = 42;
 fn process() -> ProcessEvidence {
     ProcessEvidence {
         has_arguments: false,
+        selected_image: None,
         program_files: PROGRAM_FILES.into(),
         image: PathBuf::from(PROGRAM_FILES)
             .join("OpenBlade")

@@ -25,6 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenBlade.Setup" />
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
     <ProjectReference Include="..\OpenBlade.Deployment\OpenBlade.Deployment.csproj" />
   </ItemGroup>
