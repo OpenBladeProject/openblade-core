@@ -113,11 +113,7 @@ impl ScratchReceiverClosure {
         }
         let actual = encode_digest(&bytes);
         self.require_members()?;
-        if actual != self.digest {
-            return Err(denied(
-                "native receiver differs from authenticated launch evidence",
-            ));
-        }
+        require_digest(actual, self.digest)?;
         Ok(actual)
     }
     fn require_members(&self) -> io::Result<()> {
@@ -162,6 +158,14 @@ fn write_string(encoded: &mut Vec<u8>, value: &str) {
     }
     encoded.push(length as u8);
     encoded.extend_from_slice(value.as_bytes());
+}
+fn require_digest(actual: [u8; 32], expected: [u8; 32]) -> io::Result<()> {
+    if actual != expected {
+        return Err(denied(
+            "native receiver differs from authenticated launch evidence",
+        ));
+    }
+    Ok(())
 }
 fn require_identity(actual: FileIdentity, expected: FileIdentity, volume: u32) -> io::Result<()> {
     if actual != expected || actual.index == 0 || actual.volume != volume {
@@ -353,6 +357,74 @@ fn enumerate(directory: &File, maximum_members: usize) -> io::Result<Vec<(String
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_byte_change_reaches_the_authenticated_digest_guard() {
+        let v: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/data/scratch-native-receiver-v2.json"
+        ))
+        .unwrap();
+        let mut image: Vec<u8> = v["imageHex"]
+            .as_str()
+            .unwrap()
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|x| u8::from_str_radix(std::str::from_utf8(x).unwrap(), 16).unwrap())
+            .collect();
+        let original = encode_digest(&image);
+        require_digest(original, original).unwrap();
+        image[440] ^= 1;
+        assert!(accept_native_image(&image));
+        assert_eq!(
+            require_digest(encode_digest(&image), original)
+                .unwrap_err()
+                .to_string(),
+            "native receiver differs from authenticated launch evidence"
+        );
+    }
+    #[test]
+    fn retained_identity_index_and_volume_guards_are_independent() {
+        let expected = FileIdentity {
+            volume: 7,
+            index: 42,
+        };
+        require_identity(expected, expected, 7).unwrap();
+        for (actual, volume) in [
+            (
+                FileIdentity {
+                    volume: 7,
+                    index: 43,
+                },
+                7,
+            ),
+            (
+                FileIdentity {
+                    volume: 8,
+                    index: 42,
+                },
+                7,
+            ),
+            (
+                FileIdentity {
+                    volume: 7,
+                    index: 0,
+                },
+                7,
+            ),
+            (expected, 8),
+        ] {
+            assert_eq!(
+                require_identity(actual, expected, volume)
+                    .unwrap_err()
+                    .to_string(),
+                "native receiver identity or volume changed"
+            );
+        }
+        let zero = FileIdentity {
+            volume: 7,
+            index: 0,
+        };
+        assert!(require_identity(zero, zero, 7).is_err());
+    }
     #[test]
     fn shared_native_vector_and_policy_refusals() {
         let v: serde_json::Value = serde_json::from_str(include_str!(

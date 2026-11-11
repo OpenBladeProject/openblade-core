@@ -16,6 +16,7 @@
   <ItemGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
     <InternalsVisibleTo Include="OpenBlade.Setup.Tests" />
     <InternalsVisibleTo Include="OpenBlade.Setup" />
+    <InternalsVisibleTo Include="OpenBlade.CandidateReceipt.Scratch" />
   </ItemGroup>
 
   <ItemGroup>

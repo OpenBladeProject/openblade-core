@@ -32,12 +32,10 @@ impl Drop for Resource {
 }
 
 #[test]
-fn capture_invalid_closed_wrong_type_never_duplicates_or_consumes_original() {
+fn capture_validation_failure_never_duplicates() {
     // Synthetic failures at native original-handle validation, not claims about
     // Windows behavior. No fabricated raw handle is passed to an OS function.
     for code in [6, 5, 87] {
-        let original_closes = Rc::new(Cell::new(0));
-        let original = Resource(original_closes.clone());
         let duplicates = Cell::new(0);
         let owned_closes = Rc::new(Cell::new(0));
         let result = capture_checked(
@@ -52,9 +50,6 @@ fn capture_invalid_closed_wrong_type_never_duplicates_or_consumes_original() {
         is_denied(result);
         assert_eq!(duplicates.get(), 0);
         assert_eq!(owned_closes.get(), 0);
-        assert_eq!(original_closes.get(), 0);
-        drop(original);
-        assert_eq!(original_closes.get(), 1);
     }
 }
 
@@ -82,9 +77,7 @@ fn capture_requires_full_query_and_synchronize_rights() {
 }
 
 #[test]
-fn capture_duplicates_once_and_only_owned_copy_closes() {
-    let original_closes = Rc::new(Cell::new(0));
-    let original = Resource(original_closes.clone());
+fn capture_duplicates_once_and_closes_returned_owner() {
     let owned_closes = Rc::new(Cell::new(0));
     let duplicates = Cell::new(0);
     let waits = Cell::new(0);
@@ -107,21 +100,16 @@ fn capture_duplicates_once_and_only_owned_copy_closes() {
     assert_eq!(owned_closes.get(), 0);
     drop(owned);
     assert_eq!(owned_closes.get(), 1);
-    assert_eq!(original_closes.get(), 0);
-    drop(original);
-    assert_eq!(original_closes.get(), 1);
 }
 
 #[test]
-fn capture_duplicate_failure_owns_nothing() {
-    let closes = Rc::new(Cell::new(0));
+fn capture_duplicate_failure_never_waits_or_queries() {
     is_denied(capture_checked::<Resource>(
         || Ok(()),
         || Err(denied("duplicate failed")),
         |_| panic!("no owned handle"),
         |_| panic!("no owned handle"),
     ));
-    assert_eq!(closes.get(), 0);
 }
 
 #[test]

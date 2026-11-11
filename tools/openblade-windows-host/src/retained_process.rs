@@ -2,6 +2,11 @@
 //!
 //! No PID/path reopen, authority epoch, or installed provider belongs here. An upstream
 //! launch/package owner must supply the original handle under its own reviewed contract.
+//! Process query rights do not grant TOKEN_QUERY on a separate LocalSystem token.
+//! A future supplier must establish that access without weakening token checks or
+//! silently elevating the Agent. Capture and service-peer verification remain unwired.
+//! Pipe PID/session checks below are correlation only: historical NPFS creator-object
+//! retention and a pre-capture PID-reuse premise have not been established here.
 #![allow(unsafe_code, dead_code)] // Prerequisite plumbing; no installed supplier is wired.
 
 use std::{

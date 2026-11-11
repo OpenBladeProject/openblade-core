@@ -115,9 +115,14 @@ public sealed class ScratchCandidateLaunchOfflineTests
             Assert.False(ScratchNativeReceiverLaunch.AcceptPolicies(1, value, 4));
             Assert.False(ScratchNativeReceiverLaunch.AcceptPolicies(1, 1, value));
         }
-        string environment = ScratchNativeReceiverLaunch.CreateEnvironment(@"C:\private\receiver");
+        string environment = ScratchNativeReceiverLaunch.CreateEnvironment(@"C:\private\receiver", @"C:\private\child.data");
         Assert.EndsWith("\0\0", environment, StringComparison.Ordinal);
         Assert.Equal(["LOCALAPPDATA", "SystemRoot", "TEMP", "TMP"], environment.Split('\0', StringSplitOptions.RemoveEmptyEntries).Select(x => x[..x.IndexOf('=')]));
+        Assert.Contains("TEMP=C:\\private\\child.data\0TMP=C:\\private\\child.data\0\0", environment, StringComparison.Ordinal);
+        foreach (string data in new[] { @"C:\private\receiver", @"C:\private\receiver\temp", @"C:\private\receiver\..\receiver" })
+        {
+            Assert.Throws<InvalidDataException>(() => ScratchNativeReceiverLaunch.CreateEnvironment(@"C:\private\receiver", data));
+        }
     }
 
     [Fact]

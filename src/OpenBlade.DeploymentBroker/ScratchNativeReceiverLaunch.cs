@@ -16,25 +16,26 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
     internal const string ReadinessName = "openblade-scratch-candidate-receipt.exe";
     internal const ulong Mitigations = (1UL << 32) | (1UL << 44) | (1UL << 60);
     private readonly SafeProcessHandle original;
-    private readonly AnonymousPipeServerStream input;
-    private readonly AnonymousPipeServerStream output;
-    private readonly AnonymousPipeServerStream error;
+    private readonly SafeFileHandle job;
+    private readonly IDisposable dataLocation;
+    private readonly ScratchChildChannels channels;
     internal Process Process { get; }
     internal StreamWriter StandardInput { get; }
     internal StreamReader StandardOutput { get; }
     internal StreamReader StandardError { get; }
 
     private ScratchNativeReceiverLaunch(SafeProcessHandle original, Process process,
-        AnonymousPipeServerStream input, AnonymousPipeServerStream output, AnonymousPipeServerStream error)
+        ScratchChildChannels channels,
+        SafeFileHandle job, IDisposable dataLocation)
     {
+        this.job = job;
+        this.dataLocation = dataLocation;
         this.original = original;
         Process = process;
-        this.input = input;
-        this.output = output;
-        this.error = error;
-        StandardInput = new StreamWriter(input);
-        StandardOutput = new StreamReader(output);
-        StandardError = new StreamReader(error);
+        this.channels = channels;
+        StandardInput = new StreamWriter(channels.Input);
+        StandardOutput = new StreamReader(channels.Output);
+        StandardError = new StreamReader(channels.Error);
     }
 
     internal static ScratchNativeReceiverLaunch Start(string image, ScratchReceiverClosure retained)
@@ -43,7 +44,7 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
         {
             throw new InvalidDataException("The scratch receiver differs from its fixed launch image.");
         }
-        return StartCore(image, () => retained.RequireUnchanged());
+        return StartCore(image, retained.Storage, () => retained.RequireUnchanged());
     }
 
     internal static ScratchNativeReceiverLaunch StartReadiness(WindowsCandidateReceiptStorage storage, FileStream retained)
@@ -59,22 +60,27 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
                 throw new InvalidDataException("The retained scratch readiness image changed.");
             }
         }
-        return StartCore(Path.Combine(storage.Root, "receiver", ReadinessName), RequireImage);
+        return StartCore(Path.Combine(storage.Root, "receiver", ReadinessName), storage, RequireImage);
     }
 
-    private static ScratchNativeReceiverLaunch StartCore(string image, Action requireImage)
+    private static ScratchNativeReceiverLaunch StartCore(string image, WindowsCandidateReceiptStorage storage, Action requireImage)
     {
         requireImage();
-        AnonymousPipeServerStream? input = null, output = null, error = null;
+        ScratchChildChannels? channels = null;
         SafeProcessHandle? original = null;
         Process? process = null;
-        nint thread = 0, attributes = 0, policy = 0, handles = 0, environment = 0;
+        SafeFileHandle? job = null;
+        IDisposable? dataLocation = null;
+        nint thread = 0, attributes = 0, policy = 0, environment = 0, jobs = 0;
+        uint childId = 0;
         bool initialized = false;
         try
         {
-            input = new AnonymousPipeServerStream(PipeDirection.Out, HandleInheritability.Inheritable);
-            output = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
-            error = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
+            string directory = Path.GetDirectoryName(Path.GetFullPath(image))!;
+            string data = Path.Combine(storage.Root, Path.GetFileNameWithoutExtension(image) + ".data");
+            using (storage.PinDirectory(storage.Root)) { Directory.CreateDirectory(data); }
+            dataLocation = storage.PinDirectory(data);
+            channels = new ScratchChildChannels();
             nuint bytes = 0;
             _ = InitializeProcThreadAttributeList(0, 2, 0, ref bytes);
             if (bytes == 0 || bytes > 65536) { throw new Win32Exception(); }
@@ -84,65 +90,70 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
             policy = Marshal.AllocHGlobal(sizeof(ulong));
             Marshal.WriteInt64(policy, unchecked((long)Mitigations));
             Check(UpdateProcThreadAttribute(attributes, 0, 0x20007, policy, sizeof(ulong), 0, 0));
-            handles = Marshal.AllocHGlobal(3 * nint.Size);
-            Marshal.WriteIntPtr(handles, 0, input.ClientSafePipeHandle.DangerousGetHandle());
-            Marshal.WriteIntPtr(handles, nint.Size, output.ClientSafePipeHandle.DangerousGetHandle());
-            Marshal.WriteIntPtr(handles, 2 * nint.Size, error.ClientSafePipeHandle.DangerousGetHandle());
-            Check(UpdateProcThreadAttribute(attributes, 0, 0x20002, handles, (nuint)(3 * nint.Size), 0, 0));
-            string directory = Path.GetDirectoryName(Path.GetFullPath(image))!;
-            environment = Marshal.StringToHGlobalUni(CreateEnvironment(directory));
+            environment = Marshal.StringToHGlobalUni(CreateEnvironment(directory, data));
             var startup = new StartupInfoEx
             {
                 Startup = new StartupInfo
                 {
                     Size = Marshal.SizeOf<StartupInfoEx>(),
-                    Flags = 0x100,
-                    Input = input.ClientSafePipeHandle.DangerousGetHandle(),
-                    Output = output.ClientSafePipeHandle.DangerousGetHandle(),
-                    Error = error.ClientSafePipeHandle.DangerousGetHandle(),
                 },
                 Attributes = attributes,
             };
-            // CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT |
-            // EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW.
-            Check(CreateProcessW(Path.GetFullPath(image), new StringBuilder("\"" + Path.GetFullPath(image) + "\""),
-                0, 0, true, 0x08080404, environment, directory, ref startup, out var created));
-            original = new SafeProcessHandle(created.Process, ownsHandle: true);
-            thread = created.Thread;
-            process = Process.GetProcessById(checked((int)created.ProcessId));
-            // Authenticate the original returned object before the first loader
-            // instruction. The path is stable under the retained directory and
-            // executable leases; compare the kernel creation generations too.
-            if (!GetProcessTimes(original, out long originalTime, out _, out _, out _)
-                || !GetProcessTimes(process.SafeHandle, out long observedTime, out _, out _, out _)
-                || originalTime != observedTime)
-            {
-                throw new InvalidDataException("The created scratch receiver process generation differs.");
-            }
-            ScratchCandidateLaunch.RequireLiveImage(process, Path.GetFullPath(image));
-            RequirePolicies(original);
-            input.DisposeLocalCopyOfClientHandle();
-            output.DisposeLocalCopyOfClientHandle();
-            error.DisposeLocalCopyOfClientHandle();
-            requireImage();
-            if (ResumeThread(thread) != 1) { throw new Win32Exception(); }
-            return new ScratchNativeReceiverLaunch(original, process, input, output, error);
+            // SDK 26100: JOB_LIST = ProcThreadAttributeValue(13, false, true, false).
+            // Post-creation AssignProcessToJobObject would leave a parent-death gap.
+            AdmitSuspendedChild(
+                configureJob: () =>
+                {
+                    job = CreateJobObjectW(0, null); // Private, unnamed, noninheritable.
+                    if (job.IsInvalid) { throw new Win32Exception(); }
+                    var limits = new JobExtendedLimits { Basic = new JobBasicLimits { LimitFlags = 0x2000 } };
+                    Check(SetInformationJobObject(job, 9, ref limits, (uint)Marshal.SizeOf<JobExtendedLimits>()));
+                },
+                bindJob: () =>
+                {
+                    jobs = Marshal.AllocHGlobal(nint.Size);
+                    Marshal.WriteIntPtr(jobs, job!.DangerousGetHandle());
+                    Check(UpdateProcThreadAttribute(attributes, 0, 0x2000D, jobs, (nuint)nint.Size, 0, 0));
+                },
+                create: () =>
+                {
+                    // CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT |
+                    // EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW. No fallback.
+                    Check(CreateProcessW(Path.GetFullPath(image), new StringBuilder("\"" + Path.GetFullPath(image) + "\" " + channels.Arguments),
+                        0, 0, false, 0x08080404, environment, directory, ref startup, out var created));
+                    original = new SafeProcessHandle(created.Process, ownsHandle: true);
+                    thread = created.Thread;
+                    childId = created.ProcessId;
+                },
+                authenticate: () =>
+                {
+                    process = Process.GetProcessById(checked((int)childId));
+                    if (!GetProcessTimes(original!, out long originalTime, out _, out _, out _)
+                        || !GetProcessTimes(process.SafeHandle, out long observedTime, out _, out _, out _)
+                        || originalTime != observedTime)
+                    {
+                        throw new InvalidDataException("The created scratch receiver process generation differs.");
+                    }
+                    ScratchCandidateLaunch.RequireLiveImage(process, Path.GetFullPath(image));
+                    RequirePolicies(original!);
+                    requireImage();
+                },
+                resume: () => { if (ResumeThread(thread) != 1) { throw new Win32Exception(); } },
+                connect: () => channels.Connect(childId, () =>
+                {
+                    if (WaitForSingleObject(original!, 0) != 258)
+                    {
+                        throw new InvalidDataException("The created scratch channel peer is not live.");
+                    }
+                }));
+            return new ScratchNativeReceiverLaunch(original!, process!, channels, job!, dataLocation);
         }
         catch (Exception failure)
         {
-            Exception? cleanupFailure = null;
-            try { if (original is not null && !original.IsInvalid) { Stop(original); } }
-            catch (Exception stopError) { cleanupFailure = stopError; }
-            try
-            {
-                ScratchReceiverClosure.DisposeRetainedResources(new IDisposable?[]
-                    { process, original, input, output, error }.OfType<IDisposable>());
-            }
-            catch (Exception disposeError)
-            {
-                cleanupFailure = cleanupFailure is null ? disposeError : new AggregateException(cleanupFailure, disposeError);
-            }
-            if (cleanupFailure is not null) { throw new AggregateException(failure, cleanupFailure); }
+            ScratchFixtureFailure.Cleanup(failure,
+                () => { if (original is not null && !original.IsInvalid) { Stop(original); } },
+                () => ScratchReceiverClosure.DisposeRetainedResources(new IDisposable?[]
+                    { channels, process, original, job, dataLocation }.OfType<IDisposable>()));
             throw;
         }
         finally
@@ -150,16 +161,38 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
             if (thread != 0) { _ = CloseHandle(thread); }
             if (initialized) { DeleteProcThreadAttributeList(attributes); }
             Marshal.FreeHGlobal(attributes); Marshal.FreeHGlobal(policy);
-            Marshal.FreeHGlobal(handles); Marshal.FreeHGlobal(environment);
+            Marshal.FreeHGlobal(environment); Marshal.FreeHGlobal(jobs);
         }
     }
 
     // Explicit child block, never inherited launcher environment. NativeAOT
     // has no CLR startup/profiler inputs; external images remain OS-policy bound.
-    internal static string CreateEnvironment(string directory) =>
-        "LOCALAPPDATA=" + Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + '\0'
-        + "SystemRoot=" + Environment.GetFolderPath(Environment.SpecialFolder.Windows) + '\0'
-        + "TEMP=" + directory + '\0' + "TMP=" + directory + "\0\0";
+    internal static string CreateEnvironment(string codeDirectory, string dataDirectory)
+    {
+        string code = Path.GetFullPath(codeDirectory).TrimEnd(Path.DirectorySeparatorChar);
+        string data = Path.GetFullPath(dataDirectory).TrimEnd(Path.DirectorySeparatorChar);
+        if (data.IndexOfAny(['\0', '=']) >= 0
+            || data.Equals(code, StringComparison.OrdinalIgnoreCase)
+            || data.StartsWith(code + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Scratch child data must be outside its retained code closure.");
+        }
+        return "LOCALAPPDATA=" + Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + '\0'
+            + "SystemRoot=" + Environment.GetFolderPath(Environment.SpecialFolder.Windows) + '\0'
+            + "TEMP=" + data + '\0' + "TMP=" + data + "\0\0";
+    }
+
+    // Exercise this exact ordering with injected offline lifecycle outcomes.
+    internal static void AdmitSuspendedChild(Action configureJob, Action bindJob, Action create,
+        Action authenticate, Action resume, Action connect)
+    {
+        configureJob();
+        bindJob();
+        create();
+        authenticate();
+        resume();
+        connect();
+    }
 
     internal static bool AcceptPolicies(uint signature, uint extensions, uint imageLoad) =>
         signature == 1 && extensions == 1 && imageLoad == 4;
@@ -175,20 +208,17 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
         }
     }
 
-    public void Dispose()
+    public void Dispose() => Dispose(null);
+
+    internal void Dispose(Action? afterStop)
     {
-        try
-        {
-            if (!Process.WaitForExit(1000))
-            {
-                Stop(original);
-            }
-        }
-        finally
-        {
-            ScratchReceiverClosure.DisposeRetainedResources([StandardInput, StandardOutput, StandardError,
-                input, output, error, Process, original]);
-        }
+        Exception? failure = null;
+        try { if (!Process.WaitForExit(1000)) { Stop(original); } }
+        catch (Exception stopError) { failure = stopError; }
+        ScratchFixtureFailure.Cleanup(failure,
+            () => afterStop?.Invoke(),
+            () => ScratchReceiverClosure.DisposeRetainedResources([StandardInput, StandardOutput, StandardError,
+                channels, Process, original, job, dataLocation]));
     }
 
     private static void Stop(SafeProcessHandle process) => Stop(
@@ -214,6 +244,29 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
         }
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobBasicLimits
+    {
+        internal long ProcessTime, JobTime;
+        internal uint LimitFlags;
+        internal nuint MinimumWorkingSet, MaximumWorkingSet;
+        internal uint ActiveProcessLimit;
+        internal nuint Affinity;
+        internal uint PriorityClass, SchedulingClass;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobExtendedLimits
+    {
+        internal JobBasicLimits Basic;
+        internal ulong ReadOperations, WriteOperations, OtherOperations, ReadBytes, WriteBytes, OtherBytes;
+        internal nuint ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemory, PeakJobMemory;
+    }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    private static extern SafeFileHandle CreateJobObjectW(nint security, string? name);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetInformationJobObject(SafeFileHandle job, int informationClass,
+        ref JobExtendedLimits information, uint size);
     private static void Check(bool success) { if (!success) { throw new Win32Exception(); } }
     [StructLayout(LayoutKind.Sequential)]
     private struct StartupInfo

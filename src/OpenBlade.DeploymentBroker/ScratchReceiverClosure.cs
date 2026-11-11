@@ -9,6 +9,7 @@ namespace OpenBlade.DeploymentBroker;
 internal sealed class ScratchReceiverClosure : IDisposable
 {
     internal const string Stem = "OpenBlade.CandidateReceipt.Scratch";
+    internal WindowsCandidateReceiptStorage Storage { get; }
     private readonly string directory;
     private readonly WindowsCandidateReceiptStorage.DirectoryLease directoryLease;
     private readonly FileStream image;
@@ -16,6 +17,7 @@ internal sealed class ScratchReceiverClosure : IDisposable
 
     private ScratchReceiverClosure(WindowsCandidateReceiptStorage storage)
     {
+        Storage = storage;
         directory = Path.GetDirectoryName(ScratchCandidateLaunch.ReceiverPath(storage))!;
         directoryLease = storage.PinDirectory(directory);
         try

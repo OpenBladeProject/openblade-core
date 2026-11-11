@@ -20,7 +20,7 @@ internal static class WindowsCandidateSetupReceiver
         return new BrokerCandidateReceiptStage(storage).WithCurrentProcessReceiptAsync(secret, async (receipt, identity, requireLiveLaunch) =>
         {
             WindowsScratchCandidateReadiness? verified = null;
-            await using var transaction = await SetupPayloadTransaction.StageCandidateAsync(paths,
+            var transaction = await SetupPayloadTransaction.StageCandidateAsync(paths,
                 Path.Combine(root, "payload"), new WindowsSetupPayloadFileSystem(), receipt,
                 receipt.InstallationId, receipt.RequestId, () => { }, cancellationToken, requireLiveLaunch,
                 verifyReadinessAtPublication: () =>
@@ -38,25 +38,36 @@ internal static class WindowsCandidateSetupReceiver
                 byte[] commitment = [.. receipt.StartupCommitment(identity), .. identity];
                 await observeStartup(commitment, cancellationToken);
                 requireLiveLaunch();
-                using var candidate = await WindowsScratchCandidateReadiness.ConnectAsync(storage, receipt.RequestId,
+                var candidate = await WindowsScratchCandidateReadiness.ConnectAsync(storage, receipt.RequestId,
                     commitment, secret, cancellationToken);
-                await candidate.VerifyAsync(1, cancellationToken);
-                await candidate.VerifyAsync(2, cancellationToken);
-                verified = candidate;
-                await transaction.CommitAsync(cancellationToken);
+                Exception? readinessFailure = null;
+                try
+                {
+                    await candidate.VerifyAsync(1, cancellationToken);
+                    await candidate.VerifyAsync(2, cancellationToken);
+                    verified = candidate;
+                    await transaction.CommitAsync(cancellationToken);
+                }
+                catch (Exception error) { readinessFailure = error; }
+                candidate.Dispose(readinessFailure);
             }
             catch (Exception failure)
             {
+                Exception? rollbackFailure = null;
                 try
                 {
                     await transaction.RollbackAsync(CancellationToken.None);
                 }
-                catch (Exception rollbackFailure)
-                {
-                    throw new AggregateException(failure, rollbackFailure);
-                }
+                catch (Exception error) { rollbackFailure = error; }
+                Exception? disposeFailure = null;
+                try { await transaction.DisposeAsync(); }
+                catch (Exception error) { disposeFailure = error; }
+                ScratchFixtureFailure.Cleanup(failure,
+                    () => { if (rollbackFailure is not null) { throw rollbackFailure; } },
+                    () => { if (disposeFailure is not null) { throw disposeFailure; } });
                 throw;
             }
+            await transaction.DisposeAsync();
         }, cancellationToken);
     }
 }

@@ -815,6 +815,7 @@ public sealed class WindowsCandidatePackageReceiptTests
             }
             string testDirectory = Path.GetDirectoryName(typeof(WindowsCandidatePackageReceiptTests).Assembly.Location)!;
             string image = Path.Combine(testDirectory, name);
+            if (nativeClosure is not null) { ScratchFixtureBuildPin.Require(image); }
             using var native = nativeClosure is null ? null : ScratchNativeReceiverLaunch.Start(image, nativeClosure);
             using var ordinary = native is null ? Process.Start(new ProcessStartInfo(image)
             {

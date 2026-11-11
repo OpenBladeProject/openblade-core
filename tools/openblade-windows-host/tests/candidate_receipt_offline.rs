@@ -359,6 +359,39 @@ fn install_receiver_closure(root: &Path) -> [u8; 32] {
     candidate_receipt::digest(v["canonicalSha256"].as_str().unwrap()).unwrap()
 }
 #[test]
+fn native_launch_filename_matches_real_csharp_vector() {
+    let v: serde_json::Value =
+        serde_json::from_str(include_str!("data/scratch-native-receiver-v2.json")).unwrap();
+    assert_eq!(
+        candidate_receipt::SCRATCH_LAUNCH_NAME,
+        v["launchEvidenceName"].as_str().unwrap()
+    );
+}
+#[test]
+fn obsolete_launch_evidence_names_cannot_substitute_for_native_v3() {
+    for obsolete in ["candidate-setup-launch.v1", "candidate-setup-launch.v2"] {
+        let tree = Tree::new();
+        let current = tree.launch_path();
+        fs::rename(&current, current.with_file_name(obsolete)).unwrap();
+        assert_eq!(tree.error().kind(), io::ErrorKind::NotFound);
+    }
+}
+#[test]
+fn changed_native_image_reaches_specific_authenticated_digest_refusal() {
+    let tree = Tree::new();
+    let path = tree
+        .root
+        .join("receiver/OpenBlade.CandidateReceipt.Scratch.exe");
+    let mut image = fs::read(&path).unwrap();
+    image[440] ^= 1;
+    assert!(scratch_receiver_closure::accept_native_image(&image));
+    fs::write(path, image).unwrap();
+    assert_eq!(
+        tree.error().to_string(),
+        "native receiver differs from authenticated launch evidence"
+    );
+}
+#[test]
 fn retained_native_image_blocks_writes_and_releases_without_acl_changes() {
     let tree = Tree::new();
     let mut retained = tree.read(REQUEST, tree.active_digest).unwrap();

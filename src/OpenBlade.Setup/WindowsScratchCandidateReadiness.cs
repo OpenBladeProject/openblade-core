@@ -22,6 +22,7 @@ internal sealed class WindowsScratchCandidateReadiness : IDisposable
     internal const byte PipeClaimedMarker = (byte)'1';
     private const string PipePrefix = "OpenBlade.Rust.CandidateReceipt.Test.";
     private readonly ScratchNativeReceiverLaunch launch;
+    private readonly ScratchDiagnosticDrain diagnostics;
     private readonly WindowsSetupRetainedCandidateProcess generation;
     private readonly NamedPipeClientStream pipe;
     private readonly Guid deploymentRequestId;
@@ -30,9 +31,11 @@ internal sealed class WindowsScratchCandidateReadiness : IDisposable
     private readonly FileStream image;
 
     private WindowsScratchCandidateReadiness(ScratchNativeReceiverLaunch launch, WindowsSetupRetainedCandidateProcess generation,
-        NamedPipeClientStream pipe, Guid deploymentRequestId, byte[] commitment, IDisposable location, FileStream image)
+        NamedPipeClientStream pipe, Guid deploymentRequestId, byte[] commitment, IDisposable location, FileStream image,
+        ScratchDiagnosticDrain diagnostics)
     {
         this.launch = launch;
+        this.diagnostics = diagnostics;
         this.generation = generation;
         this.pipe = pipe;
         this.deploymentRequestId = deploymentRequestId;
@@ -55,6 +58,7 @@ internal sealed class WindowsScratchCandidateReadiness : IDisposable
         var location = storage.PinDirectory(directory);
         FileStream? file = null;
         ScratchNativeReceiverLaunch? launch = null;
+        ScratchDiagnosticDrain? diagnostics = null;
         WindowsSetupRetainedCandidateProcess? generation = null;
         NamedPipeClientStream? pipe = null;
         try
@@ -71,6 +75,7 @@ internal sealed class WindowsScratchCandidateReadiness : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             string endpoint = Guid.NewGuid().ToString("D");
             launch = ScratchNativeReceiverLaunch.StartReadiness(storage, file);
+            diagnostics = new ScratchDiagnosticDrain(launch.StandardError);
             Process child = launch.Process;
             var expected = new SetupCandidateProcessIdentity((uint)child.Id, child.StartTime.ToFileTimeUtc(), image);
             generation = WindowsSetupRetainedCandidateProcess.TryCapture(child.SafeHandle, expected, cancellationToken)
@@ -106,18 +111,18 @@ internal sealed class WindowsScratchCandidateReadiness : IDisposable
             await connection;
             await connect.CancelAsync();
             var readiness = new WindowsScratchCandidateReadiness(launch, generation, pipe, deploymentRequestId,
-                commitment, location, file);
+                commitment, location, file, diagnostics);
             readiness.RequireLive(cancellationToken);
             return readiness;
         }
         catch (Exception failure)
         {
-            try
-            {
-                ScratchReceiverClosure.DisposeRetainedResources(new IDisposable?[]
-                    { pipe, generation, launch, file, location }.OfType<IDisposable>());
-            }
-            catch (Exception cleanupFailure) { throw new AggregateException(failure, cleanupFailure); }
+            ScratchFixtureFailure.Cleanup(failure,
+                () => ScratchReceiverClosure.DisposeRetainedResources(new IDisposable?[]
+                    { pipe, generation }.OfType<IDisposable>()),
+                () => launch?.Dispose(() => diagnostics?.Finish(Console.Error)),
+                () => ScratchReceiverClosure.DisposeRetainedResources(new IDisposable?[]
+                    { file, location }.OfType<IDisposable>()));
             throw;
         }
     }
@@ -193,7 +198,12 @@ internal sealed class WindowsScratchCandidateReadiness : IDisposable
         }
     }
 
-    public void Dispose() => ScratchReceiverClosure.DisposeRetainedResources([pipe, generation, launch, image, location]);
+    public void Dispose() => Dispose(null);
+
+    internal void Dispose(Exception? failure) => ScratchFixtureFailure.Cleanup(failure,
+        () => ScratchReceiverClosure.DisposeRetainedResources([pipe, generation]),
+        () => launch.Dispose(() => diagnostics.Finish(Console.Error)),
+        () => ScratchReceiverClosure.DisposeRetainedResources([image, location]));
 
     [DllImport("kernel32.dll", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -14,6 +14,8 @@ mod readiness_pipe;
 #[path = "../../src/retained_process.rs"]
 mod retained_process;
 #[cfg(windows)]
+mod scratch_child_channels;
+#[cfg(windows)]
 #[path = "../../src/scratch_receipt_policy.rs"]
 mod scratch_receipt_policy;
 #[cfg(windows)]
@@ -86,14 +88,14 @@ mod scratch {
         commitment: String,
     }
 
-    pub(super) fn run() -> io::Result<()> {
+    pub(super) fn run(source: &mut dyn Read, output: &mut dyn Write) -> io::Result<()> {
         let owner = crate::scratch_receipt_policy::owner()?;
         // Only committed disk inspection accepts a digest on stdin. Startup
         // accepts routing and the inherited broker launch secret there.
         const COMMITTED_INPUT: usize = 68;
         const PIPE_INPUT: usize = 36 + 36 + 32;
         let mut input = Vec::new();
-        io::stdin()
+        source
             .take((PIPE_INPUT + 1) as u64)
             .read_to_end(&mut input)?;
         if !matches!(input.len(), COMMITTED_INPUT | PIPE_INPUT) {
@@ -139,6 +141,7 @@ mod scratch {
                 .block_on(serve_startup(
                     endpoint_id,
                     &receiver,
+                    output,
                     |first, setup_identity| {
                         candidate_receipt::read_provisional(
                             &install,
@@ -170,6 +173,7 @@ mod scratch {
     async fn serve_startup(
         endpoint_id: &str,
         receiver: &Path,
+        output: &mut dyn Write,
         verify: impl FnOnce(
             &StartupFrame,
             [u8; 12],
@@ -178,10 +182,8 @@ mod scratch {
         let (mut endpoint, session) = NativeEndpoint::open_scratch(endpoint_id)?;
         // Tell the launcher it can connect after the first instance is parked.
         // This byte carries no readiness evidence.
-        let mut output = io::stdout().lock();
         output.write_all(b"1")?;
         output.flush()?;
-        drop(output);
         let mut stream = timeout(STARTUP_TIMEOUT, endpoint.accept()).await??;
         let (mut first, setup_pid) = read_request(&mut *stream, 1, session).await?;
         let (setup, identity) = pin_setup(setup_pid, receiver)?;
@@ -309,8 +311,28 @@ mod scratch {
 
 fn main() -> std::process::ExitCode {
     #[cfg(windows)]
-    if std::env::args_os().nth(1).is_none() {
-        return match scratch::run() {
+    {
+        use std::io::Write;
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let result = if args.is_empty() {
+            scratch::run(&mut std::io::stdin().lock(), &mut std::io::stdout().lock())
+        } else {
+            match scratch_child_channels::open(&args) {
+                Ok([mut input, mut output, mut error]) => {
+                    let result = scratch::run(&mut input, &mut output);
+                    if let Err(ref failure) = result {
+                        let _ = writeln!(error, "{failure}");
+                    }
+                    return if result.is_ok() {
+                        std::process::ExitCode::SUCCESS
+                    } else {
+                        std::process::ExitCode::from(3)
+                    };
+                }
+                Err(error) => Err(error),
+            }
+        };
+        return match result {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("{error}");
@@ -318,5 +340,6 @@ fn main() -> std::process::ExitCode {
             }
         };
     }
+    #[cfg(not(windows))]
     std::process::ExitCode::from(2)
 }
