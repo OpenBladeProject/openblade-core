@@ -139,6 +139,7 @@ async fn run_candidate<A, F: Future<Output = io::Result<()>>>(
     run_lifecycle(
         |phase| controls.publish(phase, &mut publish),
         async |report| {
+            let outcome = async {
             check_starting(stop.as_mut()).await?;
             let launch = LaunchIdentity::verify(process()?)?;
             launch.verify_registration(registration(&launch)?)?;
@@ -197,9 +198,10 @@ async fn run_candidate<A, F: Future<Output = io::Result<()>>>(
                 let _ = shutdown.send(());
             }
             let retired = if drive_pending { drive.await } else { Ok(()) };
-            let outcome = normalize_startup_stop(result).and(stopping).and(retired);
+            normalize_startup_stop(result).and(stopping).and(retired)
+            }.await;
             if stop_lost.get() {
-                outcome.and(Err(io::Error::new(io::ErrorKind::BrokenPipe, "SCM stop channel was lost")))
+                normalize_startup_stop(outcome).and(Err(io::Error::new(io::ErrorKind::BrokenPipe, "SCM stop channel was lost")))
             } else { outcome }
         },
     )
