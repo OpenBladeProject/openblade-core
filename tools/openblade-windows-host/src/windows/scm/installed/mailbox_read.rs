@@ -425,7 +425,7 @@ impl ReadSource {
             // source mutex. Never assign its newer revision to an old snapshot.
             let current = publisher.borrow().active.clone();
             let mut observed = current.with_mailbox_read(
-                reading.performance,
+                reading.performance.projection(),
                 crate::service_status::ReadConfirmation::new(deadline, move || {
                     lease.authorize() == Some(proof)
                 }),

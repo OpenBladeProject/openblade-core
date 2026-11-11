@@ -581,10 +581,11 @@ impl Snapshot {
     #[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
     pub(crate) fn with_mailbox_read(
         mut self,
-        observed: crate::discovery::performance::ObservedPerformance,
+        projection: (Option<i32>, i32, Option<bool>),
         confirmation: ReadConfirmation,
     ) -> Self {
-        let (performance, fans, hyper_boost) = observed.projection();
+        // The shared Agent status module does not own Service discovery types.
+        let (performance, fans, hyper_boost) = projection;
         self.confirmed_state = Some(Map::from_iter([
             ("performance".into(), serde_json::json!(performance)),
             ("fans".into(), serde_json::json!(fans)),
