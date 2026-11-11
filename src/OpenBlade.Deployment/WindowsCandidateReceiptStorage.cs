@@ -274,7 +274,7 @@ internal sealed class WindowsCandidateReceiptStorage
             {
                 throw new IOException("Candidate receipt storage requires its exact non-reparse path and a single-link file.");
             }
-            scope?.VerifyAccess(handle, directory, path == scope.Root);
+            scope?.VerifyAccess(handle, directory, path == scope.Root, path);
             return handle;
         }
         catch
@@ -284,12 +284,91 @@ internal sealed class WindowsCandidateReceiptStorage
         }
     }
 
-    private void VerifyAccess(SafeFileHandle handle, bool directory, bool isRoot)
+    // Retained pre-opened rights restore only this scratch directory's original
+    // DACL. OWNER RIGHTS suppresses even the owner's implicit WRITE_DAC, so a
+    // transient loader input cannot be added by reopening the sealed directory.
+    internal IDisposable SealReceiverDirectory(string path)
+    {
+        RequireInRoot(path);
+        if (!IsReceiverDirectory(path))
+        {
+            throw new UnauthorizedAccessException("Only receiver closure directories may be sealed.");
+        }
+        using var ancestry = PinDirectory(path);
+        using var read = OpenChecked(path, directory: true, this);
+        var original = new HandleSecurity(read, directory: true).GetSecurityDescriptorBinaryForm();
+        var descriptor = new RawSecurityDescriptor(original, 0);
+        if (IsSealed(descriptor))
+        {
+            return new DirectoryLease();
+        }
+        // FILE_ADD_FILE + FILE_ADD_SUBDIRECTORY make incompatible preexisting
+        // directory writers fail sharing admission before changing the DACL.
+        var writable = CreateFileW(path, 0x00060007, FileShare.Read, 0, 3, 0x02200000, 0);
+        if (writable.IsInvalid)
+        {
+            writable.Dispose();
+            throw new IOException("The receiver namespace could not be retained exclusively for sealing.");
+        }
+        try
+        {
+            descriptor.DiscretionaryAcl!.InsertAce(0, SealAce());
+            byte[] sealedBytes = new byte[descriptor.BinaryLength];
+            descriptor.GetBinaryForm(sealedBytes, 0);
+            var security = new HandleSecurity(writable, directory: true);
+            security.SetSecurityDescriptorBinaryForm(sealedBytes, AccessControlSections.Access);
+            security.WriteAccess(writable);
+            return new ReceiverDirectorySeal(writable, original);
+        }
+        catch (Exception failure)
+        {
+            try { new ReceiverDirectorySeal(writable, original).Dispose(); }
+            catch (Exception cleanupFailure) { throw new AggregateException(failure, cleanupFailure); }
+            throw;
+        }
+    }
+
+    private bool IsReceiverDirectory(string path)
+    {
+        string receiver = Path.Combine(Root, "receiver");
+        return path == receiver || path.StartsWith(receiver + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
+    private static CommonAce SealAce() => new(AceFlags.None, AceQualifier.AccessDenied,
+        (int)(FileSystemRights.CreateFiles | FileSystemRights.CreateDirectories | FileSystemRights.Delete
+            | FileSystemRights.DeleteSubdirectoriesAndFiles | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership),
+        new SecurityIdentifier("S-1-3-4"), isCallback: false, opaque: null);
+
+    private static bool IsSealed(RawSecurityDescriptor descriptor) =>
+        descriptor.DiscretionaryAcl is { Count: 2 } acl
+        && acl[0] is CommonAce ace && !ace.IsCallback && ace.AceFlags == AceFlags.None
+        && ace.AceQualifier == AceQualifier.AccessDenied && ace.SecurityIdentifier == SealAce().SecurityIdentifier
+        && ace.AccessMask == SealAce().AccessMask;
+
+    private sealed class ReceiverDirectorySeal(SafeFileHandle handle, byte[] original) : IDisposable
+    {
+        public void Dispose()
+        {
+            try
+            {
+                var security = new HandleSecurity(handle, directory: true);
+                security.SetSecurityDescriptorBinaryForm(original, AccessControlSections.Access);
+                security.WriteAccess(handle);
+            }
+            finally
+            {
+                handle.Dispose();
+            }
+        }
+    }
+
+    private void VerifyAccess(SafeFileHandle handle, bool directory, bool isRoot, string path)
     {
         var descriptor = new RawSecurityDescriptor(
             new HandleSecurity(handle, directory).GetSecurityDescriptorBinaryForm(), 0);
+        bool sealedReceiver = directory && IsReceiverDirectory(path) && IsSealed(descriptor);
         if (descriptor.Owner != owner || descriptor.DiscretionaryAcl is not { Count: >= 1 and <= 2 } acl
-            || (directory && acl.Count != 1)
+            || (directory && acl.Count != (sealedReceiver ? 2 : 1))
             || (isRoot && !descriptor.ControlFlags.HasFlag(ControlFlags.DiscretionaryAclProtected)))
         {
             throw new UnauthorizedAccessException("Candidate receipt storage has an unexpected owner or DACL.");
@@ -300,12 +379,12 @@ internal sealed class WindowsCandidateReceiptStorage
         // to the fixture owner, and the two flags must be distinct.
         AceFlags expected = directory ? AceFlags.ContainerInherit | AceFlags.ObjectInherit : AceFlags.None;
         AceFlags inheritedFlag = isRoot ? AceFlags.None : AceFlags.Inherited;
-        foreach (GenericAce entry in acl)
+        foreach (GenericAce entry in acl.Cast<GenericAce>().Skip(sealedReceiver ? 1 : 0))
         {
             if (entry is not CommonAce ace || ace.IsCallback || ace.AceQualifier != AceQualifier.AccessAllowed
                 || ace.SecurityIdentifier != owner || ace.AccessMask != (int)FileSystemRights.FullControl
                 || (ace.AceFlags & ~inheritedFlag) != expected
-                || (acl.Count == 2 && acl[0].AceFlags == acl[1].AceFlags))
+                || (!sealedReceiver && acl.Count == 2 && acl[0].AceFlags == acl[1].AceFlags))
             {
                 throw new UnauthorizedAccessException("Candidate receipt storage grants unexpected access.");
             }
@@ -326,7 +405,10 @@ internal sealed class WindowsCandidateReceiptStorage
     }
 
     private sealed class HandleSecurity(SafeFileHandle handle, bool directory) : ObjectSecurity<FileSystemRights>(
-        directory, ResourceType.FileObject, handle, AccessControlSections.Owner | AccessControlSections.Access);
+        directory, ResourceType.FileObject, handle, AccessControlSections.Owner | AccessControlSections.Access)
+    {
+        internal void WriteAccess(SafeFileHandle target) => Persist(target, AccessControlSections.Access);
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FileInformation

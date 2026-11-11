@@ -585,6 +585,64 @@ public sealed class WindowsCandidatePackageReceiptTests
         Assert.False(Directory.Exists(blocked.Tree.Install));
     }
 
+    [Fact]
+    public async Task ScratchFilesOnlyReopenRejectsCanonicalInFlightMismatchAfterValidLaunchEvidence()
+    {
+        using var fixture = await Fixture.CreateAsync();
+        Guid request = Guid.NewGuid();
+        await fixture.PrepareAsync(request);
+        byte[] originalPending = File.ReadAllBytes(fixture.Pending(request));
+        var issued = BrokerInFlightDeploymentCodec.ParseCanonical(File.ReadAllBytes(fixture.Paths.InFlightPath));
+        DateTimeOffset issuedAt = WindowsCandidatePackageReceipt.ReadIssuedAt(originalPending);
+        // Simulate an internally consistent active launch over altered immutable
+        // state. No child, process lookup, launch admission or IPC is performed.
+        var changed = issued with
+        {
+            PreviousPayloadSha256 = new string('1', 64),
+            InstallerProcessId = Environment.ProcessId,
+            UpdatedAt = issuedAt.AddSeconds(1),
+        };
+        byte[] active = BrokerInFlightDeploymentCodec.SerializeCanonical(changed);
+        File.WriteAllBytes(fixture.Paths.InFlightPath, active);
+        using var current = Process.GetCurrentProcess();
+        fixture.CopyReceiverFiles();
+        using var closure = ScratchReceiverClosure.Retain(fixture.Storage);
+        byte[] secret = new byte[ScratchCandidateLaunch.SecretLength];
+        byte[] earlierEvidence = ScratchCandidateLaunch.Encode(active, current, current, closure, secret);
+        string evidencePath = Path.Combine(fixture.StageDirectory(request), ScratchCandidateLaunch.EvidenceName);
+        fixture.Storage.Publish(evidencePath, earlierEvidence);
+        using (var evidence = fixture.Storage.OpenFile(evidencePath))
+        {
+            WindowsCandidateReceiptStorage.RequireExact(evidence,
+                ScratchCandidateLaunch.Encode(active, current, current, closure, secret));
+        }
+
+        byte[] manifest = File.ReadAllBytes(Path.Combine(fixture.StageDirectory(request), FixedLocalDevInboxSource.ManifestFileName));
+        byte[] enrollment = File.ReadAllBytes(fixture.Paths.EnrollmentPath);
+        var enrolled = BrokerEnrollmentCodec.ParseCanonical(enrollment);
+        var trust = new OpenBladeReleaseTrustPolicy(true,
+            [new(enrolled.DevelopmentSigningKeyId, enrolled.DevelopmentSigningSubjectPublicKeyInfoBase64)]);
+        var release = OpenBladeSignedReleaseVerifier.Verify(manifest,
+            File.ReadAllBytes(Path.Combine(fixture.StageDirectory(request), FixedLocalDevInboxSource.SignatureFileName)), trust);
+        using var package = fixture.Storage.OpenFile(Path.Combine(fixture.StageDirectory(request), FixedLocalDevInboxSource.InstallerFileName));
+        var proof = await WindowsNativePackageRoleProof.ReadHeldCandidateAsync(package, release,
+            new(PackageHash, new(Revision, System.Version.Parse(Version))), default);
+        byte[] reconstructed = BrokerInFlightDeploymentCodec.SerializeCanonical(changed with
+        {
+            InstallerProcessId = null,
+            UpdatedAt = issuedAt,
+        });
+        var error = Assert.Throws<InvalidDataException>(() => WindowsCandidatePackageReceipt.Reopen(fixture.Storage,
+            proof, release, manifest, enrollment, reconstructed, active, request, issuedAt, originalPending));
+        Assert.Contains("pending candidate receipt differs", error.Message, StringComparison.Ordinal);
+        Assert.Equal(originalPending, File.ReadAllBytes(fixture.Pending(request)));
+        Assert.Equal(active, File.ReadAllBytes(fixture.Paths.InFlightPath));
+        Assert.Equal(earlierEvidence, File.ReadAllBytes(evidencePath));
+        Assert.False(File.Exists(fixture.Claimed(request)));
+        Assert.False(File.Exists(fixture.Startup));
+        Assert.False(File.Exists(fixture.Committed));
+    }
+
     private static void CheckRole(JsonElement role, string path, int length, string digest)
     {
         Assert.Equal(path, role.GetProperty("PayloadPath").GetString());
@@ -598,6 +656,7 @@ public sealed class WindowsCandidatePackageReceiptTests
         private readonly byte[] package;
         private readonly BrokerCandidateReceiptStage broker;
         private readonly WindowsCandidateReceiptStorage storage;
+        internal WindowsCandidateReceiptStorage Storage => storage;
         private Guid ScratchId => storage.ScratchId;
         private readonly string keyId;
 
@@ -662,6 +721,28 @@ public sealed class WindowsCandidatePackageReceiptTests
         internal Task ReconcileAsync(WindowsCandidatePackageReceipt receipt, Guid request) =>
             broker.ReconcileCommittedAsync(receipt, Installation, request, default);
 
+        internal void CopyReceiverFiles()
+        {
+            string source = AppContext.BaseDirectory;
+            string directory = Path.GetDirectoryName(ScratchCandidateLaunch.ReceiverPath(storage))!;
+            if (!Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+                string[] names = ScratchReceiverClosure.RequiredFiles(File.ReadAllBytes(
+                    Path.Combine(source, ScratchReceiverClosure.Stem + ".deps.json")));
+                foreach (string name in names.Append(WindowsScratchCandidateReadiness.ImageName))
+                {
+                    string path = Path.Combine(source, name);
+                    if (name != WindowsScratchCandidateReadiness.ImageName || File.Exists(path))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(directory, name))!);
+                        File.Copy(path, Path.Combine(directory, name));
+                    }
+                }
+            }
+
+        }
+
         internal async Task RunReceiverAsync(Guid request, int expectedExit, string? expectedDiagnostic = null,
             Action<Process>? afterStart = null, bool publishBinding = true, bool wrongSecret = false,
             bool wrongImage = false, bool closeWithoutRelease = false,
@@ -670,23 +751,10 @@ public sealed class WindowsCandidatePackageReceiptTests
             string source = AppContext.BaseDirectory;
             string image = ScratchCandidateLaunch.ReceiverPath(storage);
             string directory = Path.GetDirectoryName(image)!;
-            if (!Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-                foreach (string path in Directory.EnumerateFiles(source))
-                {
-                    string name = Path.GetFileName(path);
-                    if (name == ScratchCandidateLaunch.ReceiverName || name == WindowsScratchCandidateReadiness.ImageName
-                        || name.EndsWith(".dll", StringComparison.Ordinal)
-                        || name is "OpenBlade.CandidateReceipt.Scratch.deps.json" or "OpenBlade.CandidateReceipt.Scratch.runtimeconfig.json")
-                    {
-                        File.Copy(path, Path.Combine(directory, name));
-                    }
-                }
-            }
+            CopyReceiverFiles();
 
             using var root = storage.PinDirectory(directory);
-            using var heldImage = storage.OpenFile(image);
+            using var heldClosure = ScratchReceiverClosure.Retain(storage);
             byte[] secret = RandomNumberGenerator.GetBytes(ScratchCandidateLaunch.SecretLength);
             await RunScratchChildAsync(wrongImage ? Path.Combine(source, ScratchCandidateLaunch.ReceiverName) : image,
                 closeWithoutRelease ? [] : [.. ScratchId.ToByteArray(), .. (wrongSecret ? new byte[secret.Length] : secret)],
@@ -694,11 +762,11 @@ public sealed class WindowsCandidatePackageReceiptTests
                 {
                     if (publishBinding)
                     {
-                        ScratchCandidateLaunch.Bind(storage, request, process, heldImage, secret);
+                        ScratchCandidateLaunch.Bind(storage, request, process, heldClosure, secret);
                     }
                     afterStart?.Invoke(process);
                 }, afterExit: closeWithoutRelease ? child => Assert.Throws<InvalidDataException>(
-                    () => ScratchCandidateLaunch.Bind(storage, request, child, heldImage, secret)) : null,
+                    () => ScratchCandidateLaunch.Bind(storage, request, child, heldClosure, secret)) : null,
                 observeStartup: observeStartup ?? (expectedExit == 0 ? _ => Task.CompletedTask : null));
         }
 

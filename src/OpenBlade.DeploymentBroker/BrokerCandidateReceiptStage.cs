@@ -129,15 +129,16 @@ internal sealed class BrokerCandidateReceiptStage(WindowsCandidateReceiptStorage
         using var broker = ScratchCandidateLaunch.OpenBroker(current.BrokerProcessId);
         string image = ScratchCandidateLaunch.ReceiverPath(storage);
         using var imageDirectory = storage.PinDirectory(Path.GetDirectoryName(image)!);
-        using var heldImage = storage.OpenFile(image);
+        using var heldClosure = ScratchReceiverClosure.Retain(storage);
         ScratchCandidateLaunch.RequireLiveImage(receiver, image);
         using var launch = storage.OpenFile(Path.Combine(stage, ScratchCandidateLaunch.EvidenceName));
-        byte[] launchEvidence = ScratchCandidateLaunch.Encode(active, broker, receiver, heldImage, secret);
+        byte[] launchEvidence = ScratchCandidateLaunch.Encode(active, broker, receiver, heldClosure, secret);
         WindowsCandidateReceiptStorage.RequireExact(launch, launchEvidence);
 
         void RequireLiveLaunch()
         {
             cancellationToken.ThrowIfCancellationRequested();
+            heldClosure.RequireUnchanged();
             if (broker.HasExited)
             {
                 throw new InvalidDataException("The scratch broker exited before Setup completed its handoff.");

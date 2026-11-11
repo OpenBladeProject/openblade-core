@@ -13,7 +13,7 @@ namespace OpenBlade.DeploymentBroker;
 // can issue this evidence on behalf of a descendant.
 internal static class ScratchCandidateLaunch
 {
-    internal const string EvidenceName = "candidate-setup-launch.v1";
+    internal const string EvidenceName = "candidate-setup-launch.v2";
     internal const string ReceiverName = "OpenBlade.CandidateReceipt.Scratch.exe";
     internal const int SecretLength = 32;
     private const int ProcessIdentityLength = sizeof(int) + sizeof(long);
@@ -25,9 +25,10 @@ internal static class ScratchCandidateLaunch
         Path.Combine(storage.Root, "receiver", ReceiverName);
 
     // The fixture passes the Process returned by its own direct launch and the
-    // fixed apphost held since before that launch. The child is waiting on stdin.
+    // complete app-local closure held since before that launch. The child is
+    // waiting on stdin.
     internal static void Bind(WindowsCandidateReceiptStorage storage, Guid request, Process child,
-        FileStream heldImage, byte[] secret)
+        ScratchReceiverClosure heldClosure, byte[] secret)
     {
         var paths = BrokerPaths.CreateForTests(storage.Root);
         using var root = storage.PinDirectory(storage.Root);
@@ -35,11 +36,10 @@ internal static class ScratchCandidateLaunch
         using var directory = storage.PinDirectory(stage);
         using var broker = Process.GetCurrentProcess();
         string image = ReceiverPath(storage);
-        using var fixedImage = storage.OpenFile(image);
-        heldImage.Position = 0;
-        if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(heldImage), SHA256.HashData(fixedImage)))
+        using var fixedClosure = ScratchReceiverClosure.Retain(storage);
+        if (!CryptographicOperations.FixedTimeEquals(heldClosure.RequireUnchanged(), fixedClosure.RequireUnchanged()))
         {
-            throw new InvalidDataException("The scratch launcher did not retain its fixed receiver image.");
+            throw new InvalidDataException("The scratch launcher did not retain its fixed receiver closure.");
         }
         RequireLiveImage(child, image);
         var store = new BrokerInFlightStore(paths);
@@ -52,10 +52,10 @@ internal static class ScratchCandidateLaunch
         {
             throw new InvalidDataException("The scratch launcher has no active launch binding for this request.");
         }
-        storage.Publish(Path.Combine(stage, EvidenceName), Encode(active, broker, child, heldImage, secret));
+        storage.Publish(Path.Combine(stage, EvidenceName), Encode(active, broker, child, heldClosure, secret));
     }
 
-    internal static byte[] Encode(byte[] active, Process broker, Process receiver, FileStream image, byte[] secret)
+    internal static byte[] Encode(byte[] active, Process broker, Process receiver, ScratchReceiverClosure closure, byte[] secret)
     {
         if (secret.Length != SecretLength || broker.HasExited || receiver.HasExited)
         {
@@ -69,8 +69,7 @@ internal static class ScratchCandidateLaunch
         writer.Write(receiver.Id);
         writer.Write(CreationTime(receiver));
         writer.Write(SHA256.HashData(active));
-        image.Position = 0;
-        writer.Write(SHA256.HashData(image));
+        writer.Write(closure.RequireUnchanged());
         writer.Write(SHA256.HashData(secret));
         return bytes.ToArray();
     }
