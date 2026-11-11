@@ -578,7 +578,7 @@ impl Snapshot {
         Some(self)
     }
 
-    #[cfg(all(windows, feature = "installed-service-candidate"))]
+    #[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
     pub(crate) fn with_mailbox_read(
         mut self,
         observed: crate::discovery::performance::ObservedPerformance,
