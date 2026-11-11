@@ -137,8 +137,10 @@ trait StatusSource {
     fn publications(&self) -> Option<watch::Receiver<Arc<Publication>>> {
         None
     }
-    fn refresh_publications(&mut self) -> Pending<'_, ()> {
-        Box::pin(async { Ok(()) })
+    // Return the next due time from the same owner that updates the cache.
+    // A skipped refresh must not add another complete polling interval.
+    fn refresh_publications(&mut self) -> Pending<'_, Instant> {
+        Box::pin(async { Ok(Instant::now() + subscription::REFRESH_INTERVAL) })
     }
     fn drain(&mut self) -> Pending<'_, ()>;
 }
@@ -254,9 +256,10 @@ impl Ports {
         let refresh = subscriptions.refresh_while_subscribed(|| async {
             let mut source = self.source.lock().await;
             if subscriptions.has_subscribers() {
-                source.refresh_publications().await?;
+                source.refresh_publications().await
+            } else {
+                Ok(Instant::now())
             }
-            Ok(())
         });
         tokio::pin!(refresh);
         let mut connections = JoinSet::new();
@@ -368,7 +371,7 @@ async fn serve_connection(
             caller,
             publications,
             &subscriptions,
-            async { source.lock().await.refresh_publications().await },
+            async { source.lock().await.refresh_publications().await.map(drop) },
         )
         .await
     } else if request.is_observation() {

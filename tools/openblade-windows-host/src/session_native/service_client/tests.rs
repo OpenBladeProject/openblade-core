@@ -31,10 +31,33 @@ impl Authority {
 }
 
 impl InstalledServiceAuthority for Authority {
-    fn verify_live_process(&self) -> io::Result<NonZeroU32> {
-        self.pid
+    fn acquire_generation(
+        &self,
+    ) -> Result<Box<dyn InstalledServiceGeneration + '_>, ServiceAuthorityError> {
+        let pid = self
+            .pid
             .get()
-            .ok_or_else(|| io::ErrorKind::PermissionDenied.into())
+            .ok_or_else(|| ServiceAuthorityError::Denied(io::ErrorKind::PermissionDenied.into()))?;
+        Ok(Box::new(Generation {
+            authority: self,
+            pid,
+        }))
+    }
+}
+
+struct Generation<'a> {
+    authority: &'a Authority,
+    pid: NonZeroU32,
+}
+
+impl InstalledServiceGeneration for Generation<'_> {
+    fn verify_live_process(&self) -> Result<NonZeroU32, ServiceAuthorityError> {
+        if self.authority.pid.get() != Some(self.pid) {
+            return Err(ServiceAuthorityError::Denied(
+                io::ErrorKind::PermissionDenied.into(),
+            ));
+        }
+        Ok(self.pid)
     }
 }
 

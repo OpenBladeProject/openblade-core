@@ -22,3 +22,6 @@ third_party/LibreHardwareMonitor/** -text -whitespace
 rust/** text eol=lf
 tools/openblade-discovery/** text eol=lf
 tools/openblade-windows-host/** text eol=lf
+
+# Preserve the orchestrator-owned learning's exact supplied bytes.
+.trail/learnings/2026-11-11-validate-full-native-lifetimes-and-scratch-jack.md text eol=lf

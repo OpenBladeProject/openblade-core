@@ -25,14 +25,47 @@ const STATUS_BUDGET: Duration = Duration::from_secs(2);
 const INITIAL_RECONNECT_DELAY: Duration = Duration::from_millis(250);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
-// The authority must independently verify and retain the installed LocalSystem
-// Service process instance in session zero. Each call checks that the same
-// process is still live and authorized, including across a Service restart.
-pub(crate) trait InstalledServiceAuthority {
-    fn verify_live_process(&self) -> io::Result<NonZeroU32>;
+// Only an independent trusted proof source may classify absence/retirement.
+// Native lookup failures and proof mismatches belong in Denied, never in a
+// retryable variant merely because their OS error looks transient.
+pub(crate) enum ServiceAuthorityError {
+    Unavailable,
+    Retired,
+    Denied(io::Error),
 }
 
-// Implement only for a pinned Service generation whose ObserveState path
+impl ServiceAuthorityError {
+    fn into_io(self) -> io::Error {
+        match self {
+            Self::Unavailable => {
+                io::Error::new(io::ErrorKind::WouldBlock, "Service proof unavailable")
+            }
+            Self::Retired => io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                "Service generation retired",
+            ),
+            Self::Denied(error) => unverified(error),
+        }
+    }
+}
+
+// Retain one independently authorized LocalSystem Service generation in session
+// zero (including a process-instance handle or equivalent trusted proof).
+// Verification MUST check this original generation, even when a replacement
+// has the same PID. Never resolve the current PID/path to rebind this object.
+pub(crate) trait InstalledServiceGeneration {
+    fn verify_live_process(&self) -> Result<NonZeroU32, ServiceAuthorityError>;
+}
+
+// Acquire a fresh independently authorized generation for each new stream.
+// No production proof provider is wired here; pipe/PID/path are not authority.
+pub(crate) trait InstalledServiceAuthority {
+    fn acquire_generation(
+        &self,
+    ) -> Result<Box<dyn InstalledServiceGeneration + '_>, ServiceAuthorityError>;
+}
+
+// Implement only when EVERY acquired generation's ObserveState path
 // independently reads performance or refuses. A v79 status peer alone
 // cannot attest that its observation handler refreshed the hardware.
 pub(crate) trait InstalledObservationAuthority: InstalledServiceAuthority {}
@@ -111,7 +144,7 @@ pub(crate) async fn watch_on<S: AsyncRead + AsyncWrite + Unpin>(
         let mut delay = INITIAL_RECONNECT_DELAY;
         loop {
             let opened = open_on(authority, &mut next_id, &mut connect, &peer).await;
-            let (mut stream, pid, initial) = match opened {
+            let (mut stream, generation, pid, initial) = match opened {
                 Ok(opened) => opened,
                 Err(error) if retryable(&error) => {
                     publish(StatusUpdate::Reconnecting)?;
@@ -121,7 +154,7 @@ pub(crate) async fn watch_on<S: AsyncRead + AsyncWrite + Unpin>(
                 }
                 Err(error) => return Err(error),
             };
-            delay = INITIAL_RECONNECT_DELAY;
+            let connected_at = Instant::now();
             publish(StatusUpdate::Opened(initial))?;
             loop {
                 let snapshot = match read_status_event(&mut stream).await {
@@ -129,17 +162,26 @@ pub(crate) async fn watch_on<S: AsyncRead + AsyncWrite + Unpin>(
                     Err(error) if retryable(&error) => break,
                     Err(error) => return Err(error),
                 };
-                verify_peer(authority, pid, &stream, &peer).map_err(unverified)?;
+                match verify_peer(generation.as_ref(), pid, &stream, &peer) {
+                    Ok(()) => (),
+                    Err(error) if retryable(&error) => break,
+                    Err(error) => return Err(error),
+                }
                 publish(StatusUpdate::Event(StatusObservation {
                     snapshot,
                     received_at: Instant::now(),
                 }))?;
             }
-            // Rotation/EOF releases the old stream before an immediate reopen.
-            // A replacement initial snapshot resets consumers even if its
-            // revision repeats or goes backwards.
+            // A healthy idle subscription is stable too; no event/heartbeat is
+            // needed. Successful opens alone never reset exponential backoff.
+            if connected_at.elapsed() >= MAX_RECONNECT_DELAY {
+                delay = INITIAL_RECONNECT_DELAY;
+            }
             drop(stream);
-            tokio::task::yield_now().await;
+            drop(generation);
+            publish(StatusUpdate::Reconnecting)?;
+            sleep(delay).await;
+            delay = (delay * 2).min(MAX_RECONNECT_DELAY);
         }
     };
     tokio::select! {
@@ -149,24 +191,34 @@ pub(crate) async fn watch_on<S: AsyncRead + AsyncWrite + Unpin>(
     }
 }
 
-async fn open_on<S: AsyncRead + AsyncWrite + Unpin>(
-    authority: &dyn InstalledServiceAuthority,
+async fn open_on<'a, S: AsyncRead + AsyncWrite + Unpin>(
+    authority: &'a dyn InstalledServiceAuthority,
     next_id: impl FnOnce() -> io::Result<String>,
     connect: impl AsyncFnOnce() -> io::Result<S>,
     peer: &impl Fn(&S) -> io::Result<(u32, u32)>,
-) -> io::Result<(S, NonZeroU32, SubscriptionInitial)> {
+) -> io::Result<(
+    S,
+    Box<dyn InstalledServiceGeneration + 'a>,
+    NonZeroU32,
+    SubscriptionInitial,
+)> {
     let deadline = Instant::now() + STATUS_BUDGET;
     timeout_at(deadline, async {
-        let pid = authority.verify_live_process().map_err(unverified)?;
+        let generation = authority
+            .acquire_generation()
+            .map_err(ServiceAuthorityError::into_io)?;
+        let pid = generation
+            .verify_live_process()
+            .map_err(ServiceAuthorityError::into_io)?;
         let id = next_id().map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         let mut stream = connect().await?;
         let snapshot = subscribe(&mut stream, id, |stream| {
             check_deadline(deadline)?;
-            verify_peer(authority, pid, stream, peer).map_err(unverified)
+            verify_peer(generation.as_ref(), pid, stream, peer)
         })
         .await?;
         let initial = SubscriptionInitial(observe_before_deadline(snapshot, deadline)?);
-        Ok((stream, pid, initial))
+        Ok((stream, generation, pid, initial))
     })
     .await?
 }
@@ -248,12 +300,17 @@ async fn request_on<S: AsyncRead + AsyncWrite + Unpin>(
     let deadline = Instant::now() + STATUS_BUDGET;
     let read = async {
         let authority = require_authority(authority)?;
-        let pid = authority.verify_live_process()?;
+        let generation = authority
+            .acquire_generation()
+            .map_err(ServiceAuthorityError::into_io)?;
+        let pid = generation
+            .verify_live_process()
+            .map_err(ServiceAuthorityError::into_io)?;
         let request = request()?;
         let mut stream = connect().await?;
         let snapshot = exchange(&mut stream, &request, None, |stream| {
             check_deadline(deadline)?;
-            verify_peer(authority, pid, stream, &peer)
+            verify_peer(generation.as_ref(), pid, stream, &peer)
         })
         .await?;
         observe_before_deadline(snapshot, deadline)
@@ -279,14 +336,33 @@ fn require_authority(
 }
 
 fn verify_peer<S>(
-    authority: &dyn InstalledServiceAuthority,
+    generation: &dyn InstalledServiceGeneration,
     pid: NonZeroU32,
     stream: &S,
     peer: &impl Fn(&S) -> io::Result<(u32, u32)>,
 ) -> io::Result<()> {
-    if peer(stream)? != (pid.get(), 0) || authority.verify_live_process()? != pid {
-        return Err(super::denied("unverified installed Service pipe peer"));
+    let verify_generation = || {
+        if generation
+            .verify_live_process()
+            .map_err(ServiceAuthorityError::into_io)?
+            != pid
+        {
+            return Err(super::denied("Service generation changed its identity"));
+        }
+        Ok(())
+    };
+    verify_generation()?;
+    match peer(stream) {
+        Ok(actual) if actual == (pid.get(), 0) => (),
+        Ok(_) => return Err(super::denied("unverified installed Service pipe peer")),
+        Err(error) => {
+            // A kernel peer lookup can race a confirmed original-process exit.
+            // Only independent generation proof may classify that as retirement.
+            verify_generation()?;
+            return Err(unverified(error));
+        }
     }
+    verify_generation()?;
     Ok(())
 }
 

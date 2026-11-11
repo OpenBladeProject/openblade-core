@@ -1,6 +1,8 @@
 use super::*;
 use std::{cell::RefCell, collections::VecDeque};
 
+mod generations;
+
 const FRAMES: &[u8] = include_bytes!("../../../../tests/fixtures/subscribe-status-v79.frames");
 const NEXT_ID: &str = "11111111-2222-4333-8444-555555555556";
 const REPLACEMENT_ID: &str = "11111111-2222-4333-8444-555555555563";
@@ -64,7 +66,7 @@ pub(in crate::session_native) fn fixture_initial()
                 server.write_all(frames()[1]).await.unwrap();
             };
             let (result, ()) = tokio::join!(open, send);
-            let (client, _, initial) = result?;
+            let (client, _, _, initial) = result?;
             Ok(((client, server), initial))
         })
 }
@@ -263,7 +265,7 @@ async fn subscription_discards_snapshot_if_peer_or_authority_is_lost() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn interrupted_subscription_reopens_immediately_then_backs_off_and_resets() {
+async fn interrupted_subscription_backs_off_and_resets_after_stable_idle() {
     let (client, mut first) = duplex(16_384);
     let (capacity, mut busy) = duplex(16_384);
     let (replacement, mut last) = duplex(16_384);
@@ -277,7 +279,6 @@ async fn interrupted_subscription_reopens_immediately_then_backs_off_and_resets(
         None,
         None,
         Some(replacement),
-        None,
         None,
     ]);
     let attempts = RefCell::new(Vec::new());
@@ -330,7 +331,7 @@ async fn interrupted_subscription_reopens_immediately_then_backs_off_and_resets(
             response["status"] = serde_json::Value::Null;
         });
         busy.write_all(&capacity).await.unwrap();
-        for _ in 0..7 {
+        for _ in 0..8 {
             assert!(matches!(
                 received.recv().await,
                 Some(StatusUpdate::Reconnecting)
@@ -345,6 +346,7 @@ async fn interrupted_subscription_reopens_immediately_then_backs_off_and_resets(
             panic!("expected replacement initial snapshot")
         };
         assert!(revision(&initial.into_observation()) < latest);
+        advance(MAX_RECONNECT_DELAY).await;
         drop(last);
         assert!(matches!(
             received.recv().await,
@@ -367,6 +369,6 @@ async fn interrupted_subscription_reopens_immediately_then_backs_off_and_resets(
         .collect();
     assert_eq!(
         millis,
-        [0, 0, 250, 750, 1750, 3750, 7750, 12750, 17750, 17750, 18000]
+        [0, 250, 750, 1750, 3750, 7750, 12750, 17750, 22750, 28000]
     );
 }

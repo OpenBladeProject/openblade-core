@@ -321,6 +321,149 @@ fn in_memory_get(tx: &Ingress) -> (DuplexStream, oneshot::Receiver<()>) {
     (client, seen)
 }
 
+struct RefreshDrop(Events, &'static str);
+
+impl Drop for RefreshDrop {
+    fn drop(&mut self) {
+        self.0.borrow_mut().push(self.1);
+    }
+}
+
+struct RefreshLifecycleSource {
+    publisher: Option<watch::Sender<Arc<Publication>>>,
+    due: Instant,
+    snapshots: usize,
+    queue_refresh: bool,
+    entered: mpsc::UnboundedSender<()>,
+    events: Events,
+}
+
+impl StatusSource for RefreshLifecycleSource {
+    fn snapshot(&mut self, caller: Caller, _: Instant) -> Pending<'_, Snapshot> {
+        Box::pin(async move {
+            self.snapshots += 1;
+            if self.queue_refresh && self.snapshots > 1 {
+                let _drop = RefreshDrop(self.events.clone(), "snapshot-dropped");
+                self.entered.send(()).unwrap();
+                return pending().await;
+            }
+            let mut status = managed_status();
+            status["controlAccess"] = json!(caller.access()?);
+            Ok(serde_json::from_value(status)?)
+        })
+    }
+
+    fn publications(&self) -> Option<watch::Receiver<Arc<Publication>>> {
+        self.publisher.as_ref().map(watch::Sender::subscribe)
+    }
+
+    fn refresh_publications(&mut self) -> Pending<'_, Instant> {
+        Box::pin(async move {
+            if Instant::now() < self.due {
+                return Ok(self.due);
+            }
+            assert!(!self.queue_refresh, "queued refresh survived into drain");
+            let _drop = RefreshDrop(self.events.clone(), "refresh-dropped");
+            self.entered.send(()).unwrap();
+            pending().await
+        })
+    }
+
+    fn drain(&mut self) -> Pending<'_, ()> {
+        Box::pin(async move {
+            let expected = if self.queue_refresh {
+                "snapshot-dropped"
+            } else {
+                "refresh-dropped"
+            };
+            assert!(self.events.borrow().contains(&expected));
+            self.events.borrow_mut().push("drain");
+            self.publisher = None;
+            Ok(())
+        })
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn in_memory_shutdown_drops_refresh_holding_or_queued_for_source_before_drain() {
+    for queue_refresh in [false, true] {
+        let events = Events::default();
+        let (publisher, _) = watch::channel(publication(managed_status()));
+        let (entered, mut running) = mpsc::unbounded_channel();
+        let (mut ports, tx) = ports(Fault::None, &events);
+        *Rc::get_mut(&mut ports.source).unwrap().get_mut() = Box::new(RefreshLifecycleSource {
+            publisher: Some(publisher),
+            due: Instant::now() + subscription::REFRESH_INTERVAL,
+            snapshots: 0,
+            queue_refresh,
+            entered,
+            events: events.clone(),
+        });
+        let (shutdown, stop) = oneshot::channel();
+        let (failed, mut failure) = oneshot::channel();
+        let (_, driver) = prepare(PID, stop, failed, Ok(ports)).await.unwrap();
+        let driver_polls = Cell::new(0usize);
+        let mut driver = Box::pin(driver);
+        let driver = std::future::poll_fn(|cx| {
+            driver_polls.set(driver_polls.get() + 1);
+            std::future::Future::poll(driver.as_mut(), cx)
+        });
+        let clients = async {
+            let mut subscriber = connect(&tx, 128);
+            assert_eq!(send_subscribe(&mut subscriber).await["success"], true);
+            let mut get = None;
+            if queue_refresh {
+                advance(subscription::REFRESH_INTERVAL / 2).await;
+                let (mut client, _) = in_memory_get(&tx);
+                write_frame(&mut client, &StatusRequest::get(ID.to_owned()).unwrap())
+                    .await
+                    .unwrap();
+                running.recv().await.unwrap();
+                get = Some(client);
+            }
+            advance(if queue_refresh {
+                subscription::REFRESH_INTERVAL / 2
+            } else {
+                subscription::REFRESH_INTERVAL
+            })
+            .await;
+            if queue_refresh {
+                // Require a completed driver poll after the refresh deadline.
+                // LocalSet::run_until polls serve_connections, whose select
+                // polls the due refresh before connections/ingress. GetStatus
+                // still holds the source mutex, so refresh queues for it.
+                let before = driver_polls.get();
+                while driver_polls.get() == before {
+                    tokio::task::yield_now().await;
+                }
+            } else {
+                running.recv().await.unwrap();
+            }
+            shutdown.send(()).unwrap();
+            assert_eof(&mut subscriber).await;
+            if let Some(mut get) = get {
+                assert_eof(&mut get).await;
+            }
+        };
+        let (result, ()) = timeout(subscription::REFRESH_INTERVAL + DRAIN_TIMEOUT, async {
+            tokio::join!(driver, clients)
+        })
+        .await
+        .expect("refresh scope must end before source drain");
+        result.unwrap();
+        assert!(matches!(
+            failure.try_recv(),
+            Err(oneshot::error::TryRecvError::Closed)
+        ));
+        let events = events.borrow();
+        assert_eq!(events.last(), Some(&"drain"));
+        assert!(
+            events.iter().position(|event| *event == "close").unwrap()
+                < events.iter().position(|event| *event == "drain").unwrap()
+        );
+    }
+}
+
 #[tokio::test]
 async fn in_memory_candidate_shares_initial_refresh_with_get_and_drains_one_pending_worker() {
     use std::sync::{
@@ -424,7 +567,8 @@ async fn in_memory_candidate_shares_initial_refresh_with_get_and_drains_one_pend
 #[tokio::test]
 async fn in_memory_phase_10g_watcher_receives_native_observer_change_through_v79() {
     use crate::session_native::service_client::{
-        InstalledServiceAuthority, StatusUpdate, watch_on,
+        InstalledServiceAuthority, InstalledServiceGeneration, ServiceAuthorityError, StatusUpdate,
+        watch_on,
     };
     use std::{
         num::NonZeroU32,
@@ -432,9 +576,17 @@ async fn in_memory_phase_10g_watcher_receives_native_observer_change_through_v79
     };
 
     struct Authority;
+    struct Generation(NonZeroU32);
+    impl InstalledServiceGeneration for Generation {
+        fn verify_live_process(&self) -> Result<NonZeroU32, ServiceAuthorityError> {
+            Ok(self.0)
+        }
+    }
     impl InstalledServiceAuthority for Authority {
-        fn verify_live_process(&self) -> io::Result<NonZeroU32> {
-            Ok(NonZeroU32::new(PID).unwrap())
+        fn acquire_generation(
+            &self,
+        ) -> Result<Box<dyn InstalledServiceGeneration + '_>, ServiceAuthorityError> {
+            Ok(Box::new(Generation(NonZeroU32::new(PID).unwrap())))
         }
     }
 
@@ -621,13 +773,19 @@ async fn in_memory_firmware_shutdown_reports_pending_native_ownership() {
         client.read_to_end(&mut tail).await.unwrap();
         assert!(tail.is_empty());
     };
-    let (result, ()) = timeout(Duration::from_secs(5), async { tokio::join!(driver, clients) })
-        .await.unwrap();
+    let (result, ()) = timeout(Duration::from_secs(5), async {
+        tokio::join!(driver, clients)
+    })
+    .await
+    .unwrap();
     assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
     assert_eq!(held.submitted.load(Ordering::Acquire), 1);
 
     held.release.send(()).unwrap();
-    timeout(DRAIN_TIMEOUT, worker.stop()).await.unwrap().unwrap();
+    timeout(DRAIN_TIMEOUT, worker.stop())
+        .await
+        .unwrap()
+        .unwrap();
     assert!(held.cancelled.load(Ordering::Acquire));
     assert_eq!(held.submitted.load(Ordering::Acquire), 1);
 }

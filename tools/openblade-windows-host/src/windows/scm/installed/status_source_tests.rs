@@ -303,6 +303,44 @@ async fn in_memory_observer_publishes_one_revision_for_both_views_and_closes_on_
     source.drain().await.unwrap();
 }
 
+#[tokio::test(start_paused = true)]
+async fn in_memory_publication_deadline_uses_shared_observation_without_heartbeat() {
+    let mut source = ObservedStatus::new(|_| panic!("fresh cache must avoid an observer thread"));
+    source
+        .publish(Some(evidence(DeviceMetadata::Unsupported, Power::Unknown)))
+        .unwrap();
+    let mut feed = source.publications().unwrap();
+    let initial = Arc::clone(&feed.borrow_and_update());
+    let observed = Instant::now();
+    source.observed_at = Some(observed);
+    let due = observed + REFRESH_INTERVAL;
+    assert_eq!(source.refresh_publications().await.unwrap(), due);
+
+    tokio::time::advance(REFRESH_INTERVAL - Duration::from_millis(1)).await;
+    let shared = source
+        .snapshot(SYSTEM, observed - Duration::from_millis(1))
+        .await
+        .unwrap();
+    assert_eq!(shared.revision(), initial.active.revision());
+    assert_eq!(source.refresh_publications().await.unwrap(), due);
+    assert!(!feed.has_changed().unwrap());
+    assert!(Arc::ptr_eq(&initial, &feed.borrow()));
+
+    // A GetStatus observation is recorded by this same owner; the scheduler
+    // must return that observation's due time, even near an earlier deadline.
+    let newest = Instant::now();
+    source.observed_at = Some(newest);
+    tokio::time::advance(Duration::from_millis(1)).await;
+    assert_eq!(
+        source.refresh_publications().await.unwrap(),
+        newest + REFRESH_INTERVAL
+    );
+    assert!(!feed.has_changed().unwrap());
+    source.drain().await.unwrap();
+    assert!(feed.has_changed().is_err());
+    assert!(source.refresh_publications().await.is_err());
+}
+
 #[tokio::test]
 async fn expired_refresh_discards_old_evidence_and_prevents_overlapping_reads() {
     let (entered, running) = oneshot::channel();

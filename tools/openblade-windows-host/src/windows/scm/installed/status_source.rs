@@ -265,15 +265,18 @@ impl StatusSource for ObservedStatus {
         self.publisher.as_ref().map(watch::Sender::subscribe)
     }
 
-    fn refresh_publications(&mut self) -> Pending<'_, ()> {
+    fn refresh_publications(&mut self) -> Pending<'_, Instant> {
         Box::pin(async {
-            if self
-                .observed_at
-                .is_some_and(|observed| observed.elapsed() < REFRESH_INTERVAL)
-            {
-                return Ok(());
+            if self.read.is_none() {
+                return Err(invalid("status source retired"));
             }
-            self.observe_since(Instant::now()).await
+            if let Some(due) = self.observed_at.map(|observed| observed + REFRESH_INTERVAL)
+                && Instant::now() < due
+            {
+                return Ok(due);
+            }
+            self.observe_since(Instant::now()).await?;
+            Ok(self.observed_at.expect("observed status") + REFRESH_INTERVAL)
         })
     }
 

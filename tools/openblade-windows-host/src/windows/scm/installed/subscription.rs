@@ -3,7 +3,7 @@ use std::{future::Future, io, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, split},
     sync::{Notify, Semaphore, watch},
-    time::sleep,
+    time::{Instant, sleep, sleep_until},
 };
 
 use super::{
@@ -37,7 +37,7 @@ impl Subscriptions {
         self.slots.available_permits() < self.capacity
     }
 
-    pub(super) async fn refresh_while_subscribed<F: Future<Output = io::Result<()>>>(
+    pub(super) async fn refresh_while_subscribed<F: Future<Output = io::Result<Instant>>>(
         &self,
         mut refresh: impl FnMut() -> F,
     ) -> io::Result<()> {
@@ -45,10 +45,11 @@ impl Subscriptions {
             while !self.has_subscribers() {
                 self.wake.notified().await;
             }
-            sleep(REFRESH_INTERVAL).await;
-            if self.has_subscribers() {
-                refresh().await?;
-            }
+            // The source owns observation freshness, including observations
+            // shared with GetStatus and the initial subscription response.
+            // A young observation defers only until its actual due time.
+            let due = refresh().await?;
+            sleep_until(due).await;
         }
     }
 }
@@ -172,3 +173,7 @@ async fn write_while_connected(
         written = write_payload(&mut writer, frame) => written.map(|()| true).map_err(ExchangeError::Client),
     }
 }
+
+#[cfg(test)]
+#[path = "subscription_cadence_tests.rs"]
+mod cadence_tests;
